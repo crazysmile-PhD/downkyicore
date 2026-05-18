@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -345,20 +345,22 @@ public abstract class DownloadService
         }
 
         // 合并音视频
-        FFMpeg.Instance.MergeVideo(audioUid, videoUid, finalFile);
+        var isMergeSuccess = FFMpeg.Instance.MergeVideo(audioUid, videoUid, finalFile);
 
         // 获取文件大小
-        if (File.Exists(finalFile))
+        if (isMergeSuccess && File.Exists(finalFile))
         {
             var info = new FileInfo(finalFile);
-            downloading.FileSize = Format.FormatFileSize(info.Length);
-        }
-        else
-        {
-            downloading.FileSize = Format.FormatFileSize(0);
+            if (info.Length > 0)
+            {
+                downloading.FileSize = Format.FormatFileSize(info.Length);
+                return finalFile;
+            }
         }
 
-        return finalFile;
+        downloading.FileSize = Format.FormatFileSize(0);
+        LogManager.Error(Tag, $"BaseMixedFlow混流失败或输出文件无效，audioUid: {audioUid}, videoUid: {videoUid}, finalFile: {finalFile}");
+        return string.Empty;
     }
 
 
