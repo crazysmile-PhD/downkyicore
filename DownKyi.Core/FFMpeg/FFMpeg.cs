@@ -1,5 +1,6 @@
-﻿using DownKyi.Core.Logging;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
+using Console = DownKyi.Core.Utils.Debugging.Console;
 using FFMpegCore;
 using FFMpegCore.Enums;
 using FFMpegCore.Helpers;
@@ -10,7 +11,7 @@ namespace DownKyi.Core.FFMpeg;
 public class FFMpeg
 {
     private const string Tag = "FFmpegHelper";
-    private static readonly FFMpeg instance = new();
+    private static readonly Lazy<FFMpeg> InstanceValue = new(() => new FFMpeg());
 
     static FFMpeg()
     {
@@ -22,7 +23,7 @@ public class FFMpeg
         FFMpegHelper.VerifyFFMpegExists(GlobalFFOptions.Current);
     }
 
-    public static FFMpeg Instance => instance;
+    public static FFMpeg Instance => InstanceValue.Value;
 
     /// <summary>
     /// 合并音频和视频
@@ -32,50 +33,102 @@ public class FFMpeg
     /// <param name="destVideo"></param>
     public bool MergeVideo(string? audio, string? video, string destVideo)
     {
-        if (!File.Exists(audio) && !File.Exists(video)) return false;
-
-        var arguments = FFMpegArguments
-            .FromFileInput(audio)
-            .AddFileInput(video)
-            .OutputToFile(destVideo, true, options => options
-                .WithCustomArgument("-strict -2")
-                .WithAudioCodec("copy")
-                .WithVideoCodec("copy")
-                .ForceFormat("mp4")
-            );
-        if (audio == null || !File.Exists(audio))
+        var hasAudio = File.Exists(audio);
+        var hasVideo = File.Exists(video);
+        if (!hasAudio && !hasVideo)
         {
-            arguments = FFMpegArguments.FromFileInput(video).OutputToFile(
+            LogManager.Error(Tag, $"MergeVideo输入文件不存在，audio: {audio}, video: {video}, destVideo: {destVideo}");
+            return false;
+        }
+
+        FFMpegArgumentProcessor arguments;
+        if (hasAudio && hasVideo)
+        {
+            arguments = FFMpegArguments
+                .FromFileInput(audio!)
+                .AddFileInput(video!)
+                .OutputToFile(destVideo, true, options => options
+                    .WithCustomArgument("-strict -2")
+                    .WithAudioCodec("copy")
+                    .WithVideoCodec("copy")
+                    .ForceFormat("mp4")
+                );
+        }
+        else if (hasVideo)
+        {
+            arguments = FFMpegArguments.FromFileInput(video!).OutputToFile(
                 destVideo,
                 true,
                 options => options.WithCustomArgument("-strict -2").WithVideoCodec("copy").WithAudioCodec("copy").ForceFormat("mp4")
             );
         }
-        if (video == null || !File.Exists(video))
+        else if (SettingsManager.GetInstance().GetIsTranscodingAacToMp3() == AllowStatus.Yes)
         {
-            if (SettingsManager.GetInstance().GetIsTranscodingAacToMp3() == AllowStatus.Yes)
-            {
-                arguments = FFMpegArguments.FromFileInput(audio).OutputToFile(
-                    destVideo,
-                    true,
-                    options => options.WithCustomArgument("-strict -2").DisableChannel(Channel.Video).ForceFormat("mp3")
-                );
-            }
-            else
-            {
-                arguments = FFMpegArguments.FromFileInput(audio).OutputToFile(
-                    destVideo,
-                    true,
-                    options => options.WithCustomArgument("-strict -2").DisableChannel(Channel.Video).WithAudioCodec("copy")
-                );
-            }
+            arguments = FFMpegArguments.FromFileInput(audio!).OutputToFile(
+                destVideo,
+                true,
+                options => options.WithCustomArgument("-strict -2").DisableChannel(Channel.Video).ForceFormat("mp3")
+            );
+        }
+        else
+        {
+            arguments = FFMpegArguments.FromFileInput(audio!).OutputToFile(
+                destVideo,
+                true,
+                options => options.WithCustomArgument("-strict -2").DisableChannel(Channel.Video).WithAudioCodec("copy")
+            );
         }
 
         LogManager.Debug(Tag, arguments.Arguments);
 
-        arguments
-            .NotifyOnError(s => LogManager.Debug(Tag, s))
-            .ProcessSynchronously(false);
+        var processSuccess = false;
+        var success = false;
+        try
+        {
+            processSuccess = arguments
+                .NotifyOnError(s => LogManager.Debug(Tag, s))
+                .ProcessSynchronously(false);
+            success = processSuccess && IsValidOutputFile(destVideo);
+
+            if (!success)
+            {
+                LogManager.Error(Tag, $"MergeVideo混流失败，processSuccess: {processSuccess}, outputExists: {File.Exists(destVideo)}, outputLength: {GetFileLength(destVideo)}, audio: {audio}, video: {video}, destVideo: {destVideo}");
+            }
+        }
+        catch (Exception e)
+        {
+            Console.PrintLine("MergeVideo()发生异常: {0}", e);
+            LogManager.Error(Tag, e);
+            success = false;
+        }
+
+        if (!success)
+        {
+            LogManager.Debug(Tag, $"MergeVideo保留输入文件以便恢复，audio: {audio}, video: {video}, destVideo: {destVideo}");
+            return false;
+        }
+
+        DeleteMergeInputs(audio, video);
+        return true;
+    }
+
+    internal static bool IsValidOutputFile(string output)
+    {
+        if (!File.Exists(output))
+        {
+            return false;
+        }
+
+        return new FileInfo(output).Length > 0;
+    }
+
+    internal static long GetFileLength(string output)
+    {
+        return File.Exists(output) ? new FileInfo(output).Length : 0;
+    }
+
+    private static void DeleteMergeInputs(string? audio, string? video)
+    {
         try
         {
             if (audio != null)
@@ -90,11 +143,9 @@ public class FFMpeg
         }
         catch (IOException e)
         {
-            Console.WriteLine("MergeVideo()发生IO异常: {0}", e);
+            Console.PrintLine("MergeVideo()删除输入文件发生IO异常: {0}", e);
             LogManager.Error(Tag, e);
         }
-
-        return true;
     }
 
     /// <summary>
