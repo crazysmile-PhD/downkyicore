@@ -226,6 +226,7 @@ public class FFMpeg
                 .ForceFormat("image2")
                 .WithVideoCodec("mjpeg")
             )
+            .NotifyOnError(x => LogManager.Debug(Tag, x))
             .ProcessAsynchronously(false);
         ms.Position = 0;
         return ms;
