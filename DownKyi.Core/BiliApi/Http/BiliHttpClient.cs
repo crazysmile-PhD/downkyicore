@@ -34,7 +34,7 @@ public class BiliHttpClient : IBiliHttpClient
 
         var handler = CreateDefaultHandler(proxySettingsProvider);
         var httpClient = new HttpClient(handler);
-        cookieProvider ??= new DefaultBiliCookieProvider(new HttpClient(CreateDefaultHandler(proxySettingsProvider)));
+        cookieProvider ??= new DefaultBiliCookieProvider(new HttpClient(CreateDefaultHandler(proxySettingsProvider)), userAgentProvider);
 
         return new BiliHttpClient(httpClient, cookieProvider, userAgentProvider);
     }
@@ -56,23 +56,41 @@ public class BiliHttpClient : IBiliHttpClient
         int retry = 2,
         CancellationToken cancellationToken = default)
     {
-        return SendCoreAsync(
-            url,
-            referer,
-            method,
-            parameters: null,
-            retry,
-            json: false,
-            origin: MobileOrigin,
-            includeBuvid: false,
-            async (response, token) =>
-            {
-                var memoryStream = new MemoryStream();
-                await response.Content.CopyToAsync(memoryStream, token).ConfigureAwait(false);
-                memoryStream.Position = 0;
-                return (Stream)memoryStream;
-            },
-            cancellationToken);
+        return SendStreamAsync(url, referer, method, retry, cancellationToken);
+    }
+
+    public async Task<ApiResult<bool>> DownloadFileAsync(
+        string url,
+        string destFile,
+        string? referer = null,
+        int retry = 2,
+        CancellationToken cancellationToken = default)
+    {
+        var streamResult = await GetStreamAsync(url, referer, retry: retry, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!streamResult.IsSuccess || streamResult.Value == null)
+        {
+            return ApiResult<bool>.Failure(
+                streamResult.ErrorMessage ?? "Download stream request failed.",
+                streamResult.StatusCode,
+                streamResult.Exception);
+        }
+
+        try
+        {
+            await using var inputStream = streamResult.Value;
+            await using var outputStream = new FileStream(destFile, FileMode.Create, FileAccess.Write, FileShare.None);
+            await inputStream.CopyToAsync(outputStream, cancellationToken).ConfigureAwait(false);
+            return ApiResult<bool>.Success(true, streamResult.StatusCode);
+        }
+        catch (OperationCanceledException e) when (cancellationToken.IsCancellationRequested)
+        {
+            return ApiResult<bool>.Failure("Request was canceled.", streamResult.StatusCode, e);
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(Tag, e);
+            return ApiResult<bool>.Failure("Download file write failed.", streamResult.StatusCode, e);
+        }
     }
 
     public Task<ApiResult<string>> SendAsync(
@@ -95,6 +113,85 @@ public class BiliHttpClient : IBiliHttpClient
             includeBuvid: !string.Equals(url, DefaultBiliCookieProvider.SpiUrl, StringComparison.Ordinal),
             async (response, token) => await response.Content.ReadAsStringAsync(token).ConfigureAwait(false),
             cancellationToken);
+    }
+
+    private async Task<ApiResult<Stream>> SendStreamAsync(
+        string url,
+        string? referer,
+        string method,
+        int retry,
+        CancellationToken cancellationToken)
+    {
+        var attempts = Math.Max(1, retry);
+        ApiResult<Stream>? lastResult = null;
+
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return ApiResult<Stream>.Failure("Request was canceled.", exception: new OperationCanceledException(cancellationToken));
+            }
+
+            HttpRequestMessage? request = null;
+            HttpResponseMessage? response = null;
+            var keepResponseOpen = false;
+            try
+            {
+                request = await CreateRequestAsync(
+                    url,
+                    referer,
+                    method,
+                    parameters: null,
+                    json: false,
+                    origin: MobileOrigin,
+                    includeBuvid: false,
+                    cancellationToken).ConfigureAwait(false);
+
+                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                    keepResponseOpen = true;
+                    return ApiResult<Stream>.Success(new ResponseContentStream(stream, response, request), response.StatusCode);
+                }
+
+                lastResult = ApiResult<Stream>.Failure(
+                    $"HTTP request failed with status code {(int)response.StatusCode} ({response.ReasonPhrase}).",
+                    response.StatusCode);
+            }
+            catch (OperationCanceledException e) when (cancellationToken.IsCancellationRequested)
+            {
+                return ApiResult<Stream>.Failure("Request was canceled.", exception: e);
+            }
+            catch (TaskCanceledException e)
+            {
+                lastResult = ApiResult<Stream>.Failure("Request timed out.", exception: e);
+            }
+            catch (TimeoutException e)
+            {
+                lastResult = ApiResult<Stream>.Failure("Request timed out.", exception: e);
+            }
+            catch (HttpRequestException e)
+            {
+                lastResult = ApiResult<Stream>.Failure("Network request failed.", e.StatusCode, e);
+            }
+            catch (Exception e)
+            {
+                lastResult = ApiResult<Stream>.Failure("Unexpected HTTP request failure.", exception: e);
+            }
+            finally
+            {
+                if (!keepResponseOpen)
+                {
+                    response?.Dispose();
+                    request?.Dispose();
+                }
+            }
+        }
+
+        LogFailure(lastResult);
+        return lastResult ?? ApiResult<Stream>.Failure("HTTP request was not attempted.");
     }
 
     private static SocketsHttpHandler CreateDefaultHandler(IProxySettingsProvider proxySettingsProvider)
@@ -199,16 +296,20 @@ public class BiliHttpClient : IBiliHttpClient
             }
         }
 
-        if (lastResult?.Exception != null)
-        {
-            LogManager.Error(Tag, lastResult.Exception);
-        }
-        else if (!string.IsNullOrEmpty(lastResult?.ErrorMessage))
-        {
-            LogManager.Error(Tag, lastResult.ErrorMessage);
-        }
-
+        LogFailure(lastResult);
         return lastResult ?? ApiResult<T>.Failure("HTTP request was not attempted.");
+    }
+
+    private static void LogFailure<T>(ApiResult<T>? result)
+    {
+        if (result?.Exception != null)
+        {
+            LogManager.Error(Tag, result.Exception);
+        }
+        else if (!string.IsNullOrEmpty(result?.ErrorMessage))
+        {
+            LogManager.Error(Tag, result.ErrorMessage);
+        }
     }
 
     private async Task<HttpRequestMessage> CreateRequestAsync(
@@ -304,4 +405,70 @@ public class BiliHttpClient : IBiliHttpClient
             ? new StringContent(JsonSerializer.Serialize(parameters), Encoding.UTF8, "application/json")
             : new FormUrlEncodedContent(parameters.Select(item => new KeyValuePair<string, string>(item.Key, item.Value?.ToString() ?? string.Empty)));
     }
+
+    private sealed class ResponseContentStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly HttpResponseMessage _response;
+        private readonly HttpRequestMessage _request;
+
+        public ResponseContentStream(Stream inner, HttpResponseMessage response, HttpRequestMessage request)
+        {
+            _inner = inner;
+            _response = response;
+            _request = request;
+        }
+
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => _inner.CanSeek;
+        public override bool CanWrite => _inner.CanWrite;
+        public override long Length => _inner.Length;
+
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+
+        public override void Flush() => _inner.Flush();
+
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+
+        public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
+
+        public override void SetLength(long value) => _inner.SetLength(value);
+
+        public override void Write(byte[] buffer, int offset, int count) => _inner.Write(buffer, offset, count);
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            return _inner.ReadAsync(buffer, cancellationToken);
+        }
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            return _inner.WriteAsync(buffer, cancellationToken);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+                _response.Dispose();
+                _request.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await _inner.DisposeAsync().ConfigureAwait(false);
+            _response.Dispose();
+            _request.Dispose();
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
 }

@@ -28,9 +28,14 @@ public static class WebClient
 
     public static void DownloadFile(string url, string destFile, string? referer = null)
     {
-        using var fs = File.Create(destFile);
-        using var stream = RequestStream(url, referer);
-        stream.CopyTo(fs);
+        var result = _httpClient.DownloadFileAsync(url, destFile, referer, retry: 1)
+            .GetAwaiter()
+            .GetResult();
+
+        if (!result.IsSuccess)
+        {
+            throw result.Exception ?? new HttpRequestException(result.ErrorMessage, null, result.StatusCode);
+        }
     }
 
     public static Stream RequestStream(string url, string? referer = null, string method = "GET")

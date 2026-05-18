@@ -132,6 +132,62 @@ public class BiliHttpClientTests
         Assert.Contains("unit-test-agent", userAgentValues);
     }
 
+
+    [Fact]
+    public async Task DownloadFileAsync_StreamsResponseToFile()
+    {
+        var handler = new SequenceHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("download-content")
+        });
+        var client = CreateClient(handler);
+        var destFile = Path.Combine(Path.GetTempPath(), $"downkyi-http-{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            var result = await client.DownloadFileAsync("https://example.test/file", destFile);
+
+            Assert.True(result.IsSuccess);
+            Assert.True(result.Value);
+            Assert.Equal("download-content", await File.ReadAllTextAsync(destFile));
+        }
+        finally
+        {
+            if (File.Exists(destFile))
+            {
+                File.Delete(destFile);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DefaultBiliCookieProvider_AddsSpiRequestHeaders()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        var handler = new SequenceHttpMessageHandler(request =>
+        {
+            capturedRequest = request;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"data\":{\"b_3\":\"buvid3-value\",\"b_4\":\"buvid4-value\"}}")
+            };
+        });
+        var provider = new DefaultBiliCookieProvider(new HttpClient(handler), new FakeUserAgentProvider("spi-agent"));
+
+        var cookies = await provider.GetCookiesAsync(includeBuvid: true);
+
+        Assert.Contains(cookies, cookie => cookie.Name == "buvid3" && cookie.Value == "buvid3-value");
+        Assert.Contains(cookies, cookie => cookie.Name == "buvid4" && cookie.Value == "buvid4-value");
+        Assert.NotNull(capturedRequest);
+        Assert.True(capturedRequest!.Headers.TryGetValues("User-Agent", out var userAgentValues));
+        Assert.Contains("spi-agent", userAgentValues);
+        Assert.True(capturedRequest.Headers.TryGetValues("accept-language", out var acceptLanguageValues));
+        Assert.Contains("zh-CN", acceptLanguageValues);
+        Assert.Contains("zh; q=0.9", acceptLanguageValues);
+        Assert.True(capturedRequest.Headers.TryGetValues("origin", out var originValues));
+        Assert.Contains("https://www.bilibili.com", originValues);
+    }
+
     private static BiliHttpClient CreateClient(
         HttpMessageHandler handler,
         IBiliCookieProvider? cookieProvider = null,

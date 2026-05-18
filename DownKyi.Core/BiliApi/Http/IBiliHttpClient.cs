@@ -16,6 +16,13 @@ public interface IBiliHttpClient
         int retry = 2,
         CancellationToken cancellationToken = default);
 
+    Task<ApiResult<bool>> DownloadFileAsync(
+        string url,
+        string destFile,
+        string? referer = null,
+        int retry = 2,
+        CancellationToken cancellationToken = default);
+
     Task<ApiResult<string>> SendAsync(
         string url,
         string? referer = null,

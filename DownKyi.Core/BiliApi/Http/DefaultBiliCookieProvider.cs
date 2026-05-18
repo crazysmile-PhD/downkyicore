@@ -11,20 +11,24 @@ public class DefaultBiliCookieProvider : IBiliCookieProvider
 {
     public const string SpiUrl = "https://api.bilibili.com/x/frontend/finger/spi";
     private const string Tag = "DefaultBiliCookieProvider";
+    private const string AcceptLanguage = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7";
+    private const string WebOrigin = "https://www.bilibili.com";
 
     private readonly HttpClient _httpClient;
+    private readonly IUserAgentProvider _userAgentProvider;
     private string? _buvid3 = string.Empty;
     private string? _buvid4 = string.Empty;
     private bool _hasRequestedBuvid;
 
     public DefaultBiliCookieProvider()
-        : this(new HttpClient())
+        : this(new HttpClient(), new SettingsUserAgentProvider())
     {
     }
 
-    public DefaultBiliCookieProvider(HttpClient httpClient)
+    public DefaultBiliCookieProvider(HttpClient httpClient, IUserAgentProvider userAgentProvider)
     {
         _httpClient = httpClient;
+        _userAgentProvider = userAgentProvider;
     }
 
     public async Task<IReadOnlyList<DownKyiCookie>> GetCookiesAsync(bool includeBuvid, CancellationToken cancellationToken = default)
@@ -61,6 +65,10 @@ public class DefaultBiliCookieProvider : IBiliCookieProvider
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, SpiUrl);
+            request.Headers.TryAddWithoutValidation("User-Agent", _userAgentProvider.GetUserAgent());
+            request.Headers.TryAddWithoutValidation("accept-language", AcceptLanguage);
+            request.Headers.TryAddWithoutValidation("origin", WebOrigin);
+
             using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
