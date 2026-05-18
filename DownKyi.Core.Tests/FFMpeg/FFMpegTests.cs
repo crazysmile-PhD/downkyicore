@@ -1,3 +1,4 @@
+using Xunit;
 using FFMpegHelper = DownKyi.Core.FFMpeg.FFMpeg;
 
 namespace DownKyi.Core.Tests.FFMpeg;
