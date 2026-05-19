@@ -16,6 +16,8 @@ Scope: documentation-only summary of completed work from PR #11 through PR #28.
 | DSA-07 | Built-in downloader cancellation cleanup | ✅ Completed | #14 | Cancellation path cleanup was hardened for built-in downloads. |
 | DSA-08 | aria2 cancellation cleanup | ✅ Completed | #15 | Cancellation path cleanup was hardened for aria2 downloads. |
 | DSA-13 | FFmpeg concat list temp filename collision hardening | ✅ Completed | #22 | FFmpeg concat list temp filenames are collision-resistant. |
+| DSA-14 | Download failure-context logging hardening | ✅ Completed | #19 | Download failure logging now includes richer contextual fields for diagnosability. |
+| DSA-15 | NFO failure-path logging hardening | ✅ Completed | #20 | NFO generation failure path no longer silently swallows errors. |
 | DSA-09 | Download path parsing hardening | ✅ Completed | #24 | Download path parsing is centralized and guarded. |
 | DSA-10 | Concat temp-segment cleanup policy hardening | ✅ Completed | #26 | Successful concat temp-segment cleanup policy is clarified and guarded. |
 | Built-in resume branch | Resume-state handling for built-in downloader | ✅ Completed | #27 | Built-in downloader resume branch observes completion state. |
@@ -90,8 +92,6 @@ The following audit items were not part of the completed runtime-fix set through
 - DSA-03: FFmpeg mux-phase cancellation support.
 - DSA-11: immediate persistence of failed status.
 - DSA-12: snapshot/guard mutable per-item collections during persistence.
-- DSA-14: richer failure-context logging in `DownloadFailed` paths.
-- DSA-15: remove silent swallow in NFO failure path (log with context).
 
 ## 5) Maintainer notes
 
