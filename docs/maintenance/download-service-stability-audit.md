@@ -175,7 +175,7 @@ Findings:
 |---|---|---|---|---|---|---|
 | DSA-01 | P1 | UI thread safety | `DownKyi/Services/Download/BuiltinDownloadService.cs` / `DownloadByBuiltin()` | Progress updates can raise UI-bound property changes from downloader callback threads. | `DownloadProgressChanged` directly sets `downloading.Progress`, `DownloadingFileSize`, and `SpeedDisplay`. | `fix: marshal built-in download progress updates to UI thread` |
 | DSA-02 | P1 | UI thread safety | `DownKyi/Services/Download/AriaDownloadService.cs` / `AriaTellStatus()` | aria2 polling updates UI-bound properties from the download worker task. | `AriaManager.GetDownloadStatus()` invokes `TellStatus`; handler directly sets `video.Progress`, `DownloadingFileSize`, and `SpeedDisplay`. | `fix: marshal aria2 progress updates to UI thread` |
-| DSA-03 | P1 | Cancellation | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `MergeVideo()` and `DownKyi/Services/Download/DownloadService.cs` / `BaseMixedFlow()` | FFmpeg mux cannot be canceled once started. | No cancellation token is accepted or checked by mux methods. | `fix: support cancellation around ffmpeg mux phase` |
+| DSA-03 | P1 | FFmpeg cancellation | `DownKyi.Core/FFMpeg/FFMpeg.cs`, `DownKyi/Services/Download/DownloadService.cs` / mux and concat phases | FFmpeg mux/concat cancellation is now observed and classified distinctly from failure/success. | Runtime fix completed in PR #33. | ✅ Completed in PR #33 |
 | DSA-04 | P1 | Failure recovery | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `MergeVideo()` | Temp audio/video files can be deleted after FFmpeg failure, forcing large redownloads. | Inputs are deleted after `ProcessSynchronously(false)` without checking final output or process success. | `fix: preserve recoverable files after ffmpeg mux failure` |
 | DSA-05 | P1 | Retry | `DownKyi/Services/Download/BuiltinDownloadService.cs` / `DownloadByBuiltin()` | Backup URLs may not be attempted in built-in mode. | Method loops over `urls` but returns `isComplete` after the first iteration. | `fix: try built-in downloader backup URLs before failing` |
 | DSA-06 | P1 | Overwrite safety | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `MergeVideo()` and `ConcatVideos()` | Final output can overwrite existing files. | `OutputToFile(..., true, ...)` enables overwrite; final pre-mux conflict check is absent. | `fix: enforce explicit final output overwrite policy` |
@@ -195,6 +195,6 @@ Findings:
 
 ## 12. Remaining unresolved risk
 
-- DSA-03: FFmpeg mux-phase cancellation support.
+None from the original DSA runtime-risk table.
 
-See `docs/maintenance/dsa-03-ffmpeg-mux-cancellation-plan.md` for the focused implementation plan for the future runtime PR.
+Closure note: the original DSA findings are now either completed in merged runtime PRs (including DSA-03 in PR #33) or explicitly tracked as non-runtime documentation/maintenance follow-ups where applicable.
