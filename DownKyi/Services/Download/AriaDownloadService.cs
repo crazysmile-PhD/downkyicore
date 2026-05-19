@@ -567,26 +567,29 @@ public class AriaDownloadService : DownloadService, IDownloadService
             percent = (float)completedLength / totalLength * 100;
         }
 
-        // 根据进度判断本次是否需要更新UI
-        if (Math.Abs(percent - video.Progress) < 0.01)
+        App.PropertyChangeAsync(() =>
         {
-            return;
-        }
+            // 根据进度判断本次是否需要更新UI
+            if (Math.Abs(percent - video.Progress) < 0.01)
+            {
+                return;
+            }
 
-        // 下载进度
-        video.Progress = percent;
+            // 下载进度
+            video.Progress = percent;
 
-        // 下载大小
-        video.DownloadingFileSize = Format.FormatFileSize(completedLength) + "/" + Format.FormatFileSize(totalLength);
+            // 下载大小
+            video.DownloadingFileSize = Format.FormatFileSize(completedLength) + "/" + Format.FormatFileSize(totalLength);
 
-        // 下载速度
-        video.SpeedDisplay = Format.FormatSpeed(speed);
+            // 下载速度
+            video.SpeedDisplay = Format.FormatSpeed(speed);
 
-        // 最大下载速度
-        if (video.Downloading.MaxSpeed < speed)
-        {
-            video.Downloading.MaxSpeed = speed;
-        }
+            // 最大下载速度
+            if (video.Downloading.MaxSpeed < speed)
+            {
+                video.Downloading.MaxSpeed = speed;
+            }
+        });
     }
 
     private void AriaDownloadFinish(bool isSuccess, string downloadPath, string gid, string msg)
