@@ -357,20 +357,23 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                 };
                 downloader.DownloadProgressChanged += (_, args) =>
                 {
-                    // 下载进度百分比
-                    downloading.Progress = (float)args.ProgressPercentage;
-
-                    // 下载大小
-                    downloading.DownloadingFileSize = Format.FormatFileSize(args.ReceivedBytesSize) + "/" + Format.FormatFileSize(args.TotalBytesToReceive);
-
-                    // 下载速度
-                    var speed = (long)args.BytesPerSecondSpeed;
-                    downloading.SpeedDisplay = Format.FormatSpeed(speed);
-                    // 最大下载速度
-                    if (downloading.Downloading.MaxSpeed < speed)
+                    App.PropertyChangeAsync(() =>
                     {
-                        downloading.Downloading.MaxSpeed = speed;
-                    }
+                        // 下载进度百分比
+                        downloading.Progress = (float)args.ProgressPercentage;
+
+                        // 下载大小
+                        downloading.DownloadingFileSize = Format.FormatFileSize(args.ReceivedBytesSize) + "/" + Format.FormatFileSize(args.TotalBytesToReceive);
+
+                        // 下载速度
+                        var speed = (long)args.BytesPerSecondSpeed;
+                        downloading.SpeedDisplay = Format.FormatSpeed(speed);
+                        // 最大下载速度
+                        if (downloading.Downloading.MaxSpeed < speed)
+                        {
+                            downloading.Downloading.MaxSpeed = speed;
+                        }
+                    });
                 };
                 downloading.DownloadService = downloader;
                 downloader.DownloadFileTaskAsync(url, Path.Combine(path, localFileName)).ConfigureAwait(false);
