@@ -181,11 +181,13 @@ Findings:
 | DSA-06 | P1 | Overwrite safety | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `MergeVideo()` and `ConcatVideos()` | Final output can overwrite existing files. | `OutputToFile(..., true, ...)` enables overwrite; final pre-mux conflict check is absent. | `fix: enforce explicit final output overwrite policy` |
 | DSA-07 | P1 | Cancellation | `DownKyi/Services/Download/BuiltinDownloadService.cs` / `DownloadByBuiltin()` | Service cancellation may not stop the underlying `Downloader.DownloadService` transfer. | Download task is started with `DownloadFileTaskAsync(...).ConfigureAwait(false)` but not awaited/canceled. | `fix: harden built-in downloader cancellation cleanup` |
 | DSA-08 | P1 | Cancellation | `DownKyi/Services/Download/AriaDownloadService.cs` / `DownloadByAria()` | Token cancellation exits polling without consistently pausing/removing current aria2 GID. | Cancellation is checked in the polling action; GID cleanup exists for delete path in `IsExist()`, not token cancellation. | `fix: harden aria2 cancellation cleanup` |
-| DSA-09 | P2 | Path safety | `DownKyi/Services/Download/DownloadService.cs`, `DownKyi/Services/Download/BuiltinDownloadService.cs`, `DownKyi/Services/Download/AriaDownloadService.cs` / path derivation | `TrimEnd(char[])` can derive the wrong directory for edge-case filenames. | Directory is built from `DownloadBase.FilePath.TrimEnd(filename.ToCharArray())`. | `fix: use Path.GetDirectoryName for download output directory` |
-| DSA-10 | P2 | Temp cleanup | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `ConcatVideos()` | Multi-segment temp files may remain after successful concat. | Concat deletes only the list file, not input segment temp files. | `fix: cleanup successful concat segment temp files` |
+| Built-in resume branch | P2 | Resume-state handling | `DownKyi/Services/Download/BuiltinDownloadService.cs` / resume path | Built-in downloader resume branch now observes completion state before branch exit decisions. | Follow-up runtime fix completed in PR #27. | ✅ Completed in PR #27 |
+| Aria2 cleanup blocking | P2 | Cleanup responsiveness | `DownKyi/Services/Download/AriaDownloadService.cs` / cleanup path | Aria2 cleanup path avoids synchronous waits and uses async best-effort cleanup. | Follow-up runtime fix completed in PR #28. | ✅ Completed in PR #28 |
+| DSA-09 | P2 | Path safety | `DownKyi/Services/Download/DownloadService.cs`, `DownKyi/Services/Download/BuiltinDownloadService.cs`, `DownKyi/Services/Download/AriaDownloadService.cs` / path derivation | Path parsing/derivation is centralized and guarded. | Follow-up runtime fix completed in PR #24. | ✅ Completed in PR #24 |
+| DSA-10 | P2 | Temp cleanup | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `ConcatVideos()` | Successful concat temp-segment cleanup policy is clarified and guarded. | Follow-up runtime fix completed in PR #26. | ✅ Completed in PR #26 |
 | DSA-11 | P2 | Persistence | `DownKyi/Services/Download/DownloadService.cs` / `DownloadFailed()` | Failed status may not be persisted immediately. | `DownloadFailed()` updates in-memory fields but does not call `DownloadStorageService.UpdateDownloading()`. | `fix: persist failed download state immediately` |
 | DSA-12 | P2 | Concurrency | `DownKyi/Services/Download/DownloadService.cs` / `SingleDownload()` and storage calls | Per-item dictionaries/lists can be read for persistence while download task mutates them. | `DownloadFiles` and `DownloadedFiles` are mutable collections persisted as JSON. | `fix: snapshot download file maps before persistence` |
-| DSA-13 | P2 | FFmpeg robustness | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `ConcatVideos()` | Temp concat list file can collide under concurrent concat operations in the same second. | List file name uses `flvlist_{DateTime.Now:yyyyMMddHHmmss}.txt`. | `fix: use unique concat list temp file names` |
+| DSA-13 | P2 | FFmpeg robustness | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `ConcatVideos()` | FFmpeg concat list temp filenames are collision-resistant. | Follow-up runtime fix completed in PR #22. | ✅ Completed in PR #22 |
 | DSA-14 | P2 | Diagnostics | `DownKyi/Services/Download/DownloadService.cs` / `DownloadFailed()` | Failure logs lack video id, path, mode, phase, and exception details. | `DownloadFailed()` does not log; callers often call it without a reason. | `fix: add contextual download failure logging` |
 | DSA-15 | P3 | Logging | `DownKyi/Services/Download/DownloadService.cs` / `GenerateNfoFile()` | NFO generation failures are silently swallowed. | Empty catch block contains only `/**/`. | `fix: log nfo generation failures` |
 | DSA-16 | P3 | Maintainability | `DownKyi/Services/Download/AriaDownloadService.cs` / `AriaDownloadFinish()` | Completion diagnostics were missing and reduced operability in incident triage. | Handler subscription existed; follow-up now emits completion context logs (`success/gid/path/message`). | ✅ Completed in diagnostics-only follow-up PR (no runtime behavior change) |
@@ -215,18 +217,10 @@ Recommended narrow PR order:
    - Scope: pre-mux final file conflict checks for media and sidecars; no schema changes.
    - Why fifth: prevents accidental overwrite/data loss.
 
-6. `fix: use safe output directory derivation`
-   - Scope: replace `TrimEnd(...ToCharArray())` path derivation with `Path.GetDirectoryName()` in download path code.
-   - Why sixth: small edge-case correctness fix.
-
-7. `fix: make aria2 and built-in downloader failure states consistent`
+6. `fix: make aria2 and built-in downloader failure states consistent`
    - Scope: map built-in, aria2, parse, and mux failures into a common logged failure reason and immediate persisted status.
    - Why seventh: improves recoverability and user trust.
 
-8. `fix: cleanup concat temp files after confirmed success`
-   - Scope: unique concat list file naming and post-success segment cleanup.
-   - Why eighth: reduces disk growth while preserving recovery safety.
-
-9. `docs: document download failure recovery behavior`
+7. `docs: document download failure recovery behavior`
    - Scope: user/developer docs explaining which partial files are preserved, when retry resumes, and when delete removes temp data.
    - Why ninth: should follow implementation of explicit policies.
