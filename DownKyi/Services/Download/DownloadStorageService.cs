@@ -20,6 +20,7 @@ namespace DownKyi.Services.Download;
 public class DownloadStorageService : IDisposable
 {
     private const string Tag = "DownloadStorageService";
+    private const int SnapshotRetryCount = 3;
     private readonly SqliteConnection _connection;
     private readonly object _lock = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
@@ -672,17 +673,19 @@ WHERE id = @id";
             return new Dictionary<string, string>();
         }
 
-        while (true)
+        for (var attempt = 0; attempt < SnapshotRetryCount; attempt++)
         {
             try
             {
                 return new Dictionary<string, string>(source);
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException) when (attempt < SnapshotRetryCount - 1)
             {
                 Thread.Yield();
             }
         }
+
+        return new Dictionary<string, string>(source);
     }
 
     private static List<string> SnapshotList(List<string>? source)
@@ -692,17 +695,19 @@ WHERE id = @id";
             return new List<string>();
         }
 
-        while (true)
+        for (var attempt = 0; attempt < SnapshotRetryCount; attempt++)
         {
             try
             {
                 return new List<string>(source);
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException) when (attempt < SnapshotRetryCount - 1)
             {
                 Thread.Yield();
             }
         }
+
+        return new List<string>(source);
     }
 
     private static void BindDownloaded(SqliteCommand cmd, Downloaded d)
