@@ -261,7 +261,7 @@ public class FFMpeg
             LogManager.Debug(Tag, $"开始合并 {inputFlvs.Count} 个视频到 {outputVideo}");
 
 
-            var listFile = Path.Combine(Path.GetTempPath(), $"flvlist_{DateTime.Now:yyyyMMddHHmmss}.txt");
+            var listFile = Path.Combine(Path.GetTempPath(), $"flvlist_{DateTime.Now:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}.txt");
             File.WriteAllLines(listFile, inputFlvs.Select(f => $"file '{f.Replace("'", "'\\''")}'"));
 
             FFMpegArguments
