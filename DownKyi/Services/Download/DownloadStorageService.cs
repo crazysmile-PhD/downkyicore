@@ -20,6 +20,7 @@ namespace DownKyi.Services.Download;
 public class DownloadStorageService : IDisposable
 {
     private const string Tag = "DownloadStorageService";
+    private const int SnapshotRetryCount = 3;
     private readonly SqliteConnection _connection;
     private readonly object _lock = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
@@ -648,10 +649,13 @@ WHERE id = @id";
 
     private static void BindDownloading(SqliteCommand cmd, Downloading dl)
     {
+        var downloadFilesSnapshot = SnapshotDictionary(dl.DownloadFiles);
+        var downloadedFilesSnapshot = SnapshotList(dl.DownloadedFiles);
+
         cmd.Parameters.AddWithValue("@id", dl.Id);
         cmd.Parameters.AddWithValue("@gid", dl.Gid ?? (object)DBNull.Value);
-        cmd.Parameters.AddWithValue("@download_files", ToJson(dl.DownloadFiles));
-        cmd.Parameters.AddWithValue("@downloaded_files", ToJson(dl.DownloadedFiles));
+        cmd.Parameters.AddWithValue("@download_files", ToJson(downloadFilesSnapshot));
+        cmd.Parameters.AddWithValue("@downloaded_files", ToJson(downloadedFilesSnapshot));
         cmd.Parameters.AddWithValue("@play_stream_type", (int)dl.PlayStreamType);
         cmd.Parameters.AddWithValue("@download_status", (int)dl.DownloadStatus);
         cmd.Parameters.AddWithValue("@download_content", dl.DownloadContent ?? (object)DBNull.Value);
@@ -660,6 +664,50 @@ WHERE id = @id";
         cmd.Parameters.AddWithValue("@downloading_file_size", dl.DownloadingFileSize ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("@max_speed", dl.MaxSpeed);
         cmd.Parameters.AddWithValue("@speed_display", dl.SpeedDisplay ?? (object)DBNull.Value);
+    }
+
+    private static Dictionary<string, string> SnapshotDictionary(Dictionary<string, string>? source)
+    {
+        if (source == null)
+        {
+            return new Dictionary<string, string>();
+        }
+
+        for (var attempt = 0; attempt < SnapshotRetryCount; attempt++)
+        {
+            try
+            {
+                return new Dictionary<string, string>(source);
+            }
+            catch (InvalidOperationException) when (attempt < SnapshotRetryCount - 1)
+            {
+                Thread.Yield();
+            }
+        }
+
+        return new Dictionary<string, string>(source);
+    }
+
+    private static List<string> SnapshotList(List<string>? source)
+    {
+        if (source == null)
+        {
+            return new List<string>();
+        }
+
+        for (var attempt = 0; attempt < SnapshotRetryCount; attempt++)
+        {
+            try
+            {
+                return new List<string>(source);
+            }
+            catch (InvalidOperationException) when (attempt < SnapshotRetryCount - 1)
+            {
+                Thread.Yield();
+            }
+        }
+
+        return new List<string>(source);
     }
 
     private static void BindDownloaded(SqliteCommand cmd, Downloaded d)
