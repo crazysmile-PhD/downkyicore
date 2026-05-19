@@ -344,12 +344,14 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             var downloader = downloading.DownloadService;
             var isFinished = false;
             var isComplete = false;
+            var isCancelled = false;
             if (downloading.DownloadService == null)
             {
                 downloader = new Downloader.DownloadService(downloadOpt);
                 downloader.DownloadFileCompleted += (_, args) =>
                 {
                     isComplete = !args.Cancelled && args.Error == null && File.Exists(Path.Combine(path, localFileName));
+                    isCancelled = args.Cancelled;
                     isFinished = true;
                     downloading.DownloadService = null;
                 };
@@ -378,23 +380,45 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                 downloader?.Resume();
             }
 
-            // 阻塞当前任务，监听暂停事件
-            while (!isFinished)
+            try
             {
-                CancellationToken?.ThrowIfCancellationRequested();
-                switch (downloading.Downloading.DownloadStatus)
+                // 阻塞当前任务，监听暂停事件
+                while (!isFinished)
                 {
-                    case DownloadStatus.Pause:
-                        // 暂停下载
-                        downloader?.Pause();
-                        // 通知UI，并阻塞当前线程
-                        Pause(downloading);
-                        break;
-                    case DownloadStatus.Downloading:
-                        break;
+                    CancellationToken?.ThrowIfCancellationRequested();
+                    switch (downloading.Downloading.DownloadStatus)
+                    {
+                        case DownloadStatus.Pause:
+                            // 暂停下载
+                            downloader?.Pause();
+                            // 通知UI，并阻塞当前线程
+                            Pause(downloading);
+                            break;
+                        case DownloadStatus.Downloading:
+                            break;
+                    }
+
+                    Thread.Sleep(100);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                try
+                {
+                    downloader?.Pause();
+                }
+                catch (Exception)
+                {
+                    // 已忽略
                 }
 
-                Thread.Sleep(100);
+                downloading.DownloadService = null;
+                throw;
+            }
+
+            if (isCancelled)
+            {
+                throw new OperationCanceledException("Stop builtin downloader by user action");
             }
 
             if (isComplete)
