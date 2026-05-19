@@ -1,4 +1,12 @@
-# DSA-03 FFmpeg mux-phase cancellation plan
+# DSA-03 FFmpeg mux-phase cancellation plan (closed)
+
+## Status
+
+✅ Completed in PR #33.
+
+This document is retained for historical traceability of the original implementation plan. The planned runtime work has been implemented and merged; DSA-03 should now be treated as closed in active audit tracking.
+
+## Historical plan (archived)
 
 ## Problem
 
