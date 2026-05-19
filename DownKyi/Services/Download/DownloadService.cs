@@ -859,6 +859,29 @@ public abstract class DownloadService
     /// <param name="downloading"></param>
     protected void DownloadFailed(DownloadingItem downloading)
     {
+        try
+        {
+            var downloadBase = downloading.DownloadBase;
+            var needDownloadContent = downloadBase?.NeedDownloadContent;
+
+            var videoRequested = needDownloadContent != null && needDownloadContent.TryGetValue("downloadVideo", out var downloadVideo) && downloadVideo;
+            var audioRequested = needDownloadContent != null && needDownloadContent.TryGetValue("downloadAudio", out var downloadAudio) && downloadAudio;
+            var danmakuRequested = needDownloadContent != null && needDownloadContent.TryGetValue("downloadDanmaku", out var downloadDanmaku) && downloadDanmaku;
+            var subtitleRequested = needDownloadContent != null && needDownloadContent.TryGetValue("downloadSubtitle", out var downloadSubtitle) && downloadSubtitle;
+            var coverRequested = needDownloadContent != null && needDownloadContent.TryGetValue("downloadCover", out var downloadCover) && downloadCover;
+
+            LogManager.Warning(Tag,
+                $"DownloadFailed context: title={downloadBase?.Name ?? NullMark}, bvid={downloadBase?.Bvid ?? NullMark}, avid={downloadBase?.Avid}, cid={downloadBase?.Cid}, " +
+                $"filePath={downloadBase?.FilePath ?? NullMark}, downloaderMode={GetType().Name}, status={downloading.Downloading.DownloadStatus}, " +
+                $"videoCodec={downloadBase?.VideoCodecName ?? NullMark}, videoResolution={downloadBase?.Resolution?.Name ?? NullMark}, audioCodec={downloadBase?.AudioCodec?.Name ?? NullMark}, " +
+                $"needVideo={videoRequested}, needAudio={audioRequested}, needDanmaku={danmakuRequested}, needSubtitle={subtitleRequested}, needCover={coverRequested}");
+        }
+        catch (Exception e)
+        {
+            Console.PrintLine("DownloadFailed记录失败上下文发生异常: {0}", e);
+            LogManager.Error(Tag, e);
+        }
+
         downloading.DownloadStatusTitle = DictionaryResource.GetString("DownloadFailed");
         downloading.DownloadContent = string.Empty;
         downloading.DownloadingFileSize = string.Empty;
