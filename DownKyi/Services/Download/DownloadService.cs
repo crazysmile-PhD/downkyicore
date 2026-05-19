@@ -1005,6 +1005,16 @@ public abstract class DownloadService
         downloading.Downloading.DownloadStatus = DownloadStatus.DownloadFailed;
         downloading.StartOrPause = ButtonIcon.Instance().Retry;
         downloading.StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
+
+        try
+        {
+            DownloadStorageService.UpdateDownloading(downloading);
+        }
+        catch (Exception e)
+        {
+            Console.PrintLine("DownloadFailed持久化失败状态发生异常: {0}", e);
+            LogManager.Error(Tag, e);
+        }
     }
 
     /// <summary>
