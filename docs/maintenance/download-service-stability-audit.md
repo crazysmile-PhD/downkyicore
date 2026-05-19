@@ -185,42 +185,16 @@ Findings:
 | Aria2 cleanup blocking | P2 | Cleanup responsiveness | `DownKyi/Services/Download/AriaDownloadService.cs` / cleanup path | Aria2 cleanup path avoids synchronous waits and uses async best-effort cleanup. | Follow-up runtime fix completed in PR #28. | ✅ Completed in PR #28 |
 | DSA-09 | P2 | Path safety | `DownKyi/Services/Download/DownloadService.cs`, `DownKyi/Services/Download/BuiltinDownloadService.cs`, `DownKyi/Services/Download/AriaDownloadService.cs` / path derivation | Path parsing/derivation is centralized and guarded. | Follow-up runtime fix completed in PR #24. | ✅ Completed in PR #24 |
 | DSA-10 | P2 | Temp cleanup | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `ConcatVideos()` | Successful concat temp-segment cleanup policy is clarified and guarded. | Follow-up runtime fix completed in PR #26. | ✅ Completed in PR #26 |
-| DSA-11 | P2 | Persistence | `DownKyi/Services/Download/DownloadService.cs` / `DownloadFailed()` | Failed status may not be persisted immediately. | `DownloadFailed()` updates in-memory fields but does not call `DownloadStorageService.UpdateDownloading()`. | `fix: persist failed download state immediately` |
-| DSA-12 | P2 | Concurrency | `DownKyi/Services/Download/DownloadService.cs` / `SingleDownload()` and storage calls | Per-item dictionaries/lists can be read for persistence while download task mutates them. | `DownloadFiles` and `DownloadedFiles` are mutable collections persisted as JSON. | `fix: snapshot download file maps before persistence` |
+| DSA-11 | P2 | Persistence | `DownKyi/Services/Download/DownloadService.cs` / `DownloadFailed()` | Failed status persistence is now immediate. | Follow-up runtime fix completed in PR #30. | ✅ Completed in PR #30 |
+| DSA-12 | P2 | Concurrency | `DownKyi/Services/Download/DownloadService.cs` / `SingleDownload()` and storage calls | Persistence now snapshots mutable per-item collections before serialization. | Follow-up runtime fix completed in PR #31. | ✅ Completed in PR #31 |
 | DSA-13 | P2 | FFmpeg robustness | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `ConcatVideos()` | FFmpeg concat list temp filenames are collision-resistant. | Follow-up runtime fix completed in PR #22. | ✅ Completed in PR #22 |
 | DSA-14 | P2 | Diagnostics | `DownKyi/Services/Download/DownloadService.cs` / `DownloadFailed()` | Failure logging includes video id, path, mode, phase, and exception context. | Follow-up runtime fix completed in PR #19. | ✅ Completed in PR #19 |
 | DSA-15 | P3 | Logging | `DownKyi/Services/Download/DownloadService.cs` / `GenerateNfoFile()` | NFO generation failure path logs errors with context instead of silently swallowing. | Follow-up runtime fix completed in PR #20. | ✅ Completed in PR #20 |
 | DSA-16 | P3 | Maintainability | `DownKyi/Services/Download/AriaDownloadService.cs` / `AriaDownloadFinish()` | Completion diagnostics were missing and reduced operability in incident triage. | Handler subscription existed; follow-up now emits completion context logs (`success/gid/path/message`). | ✅ Completed in diagnostics-only follow-up PR (no runtime behavior change) |
 | DSA-17 | P3 | Memory | `DownKyi/Services/Download/BuiltinDownloadService.cs` / `DownloadByBuiltin()` | Aggregate memory use scales with concurrent built-in downloads. | Per-download `MaximumMemoryBufferBytes` is 50 MiB. | ✅ Completed as inline guardrail comments documenting memory budget formula (diagnostics-only) |
 
-## 12. Follow-up PR plan
+## 12. Remaining unresolved risk
 
-Recommended narrow PR order:
+- DSA-03: FFmpeg mux-phase cancellation support.
 
-1. `fix: marshal download progress updates to UI thread`
-   - Scope: `BuiltinDownloadService.DownloadByBuiltin()`, `AriaDownloadService.AriaTellStatus()`, and minimal shared helper if needed.
-   - Why first: reduces crash risk from worker-thread property notifications.
-
-2. `fix: harden download cancellation cleanup`
-   - Scope: make built-in and aria2 active transfers respond consistently to service cancellation, pause, and delete; no refactor beyond cancellation handling.
-   - Why second: cancellation brokenness is a common user-visible stability problem.
-
-3. `fix: preserve recoverable files after ffmpeg mux failure`
-   - Scope: `FFMpeg.MergeVideo()` success detection and input deletion timing; `BaseMixedFlow()` consumes result.
-   - Why third: prevents expensive redownloads and data loss during mux failures.
-
-4. `fix: try built-in downloader backup URLs before failing`
-   - Scope: `BuiltinDownloadService.DownloadByBuiltin()` URL loop only.
-   - Why fourth: improves common recovery without changing the overall pipeline.
-
-5. `fix: enforce explicit final output overwrite policy`
-   - Scope: pre-mux final file conflict checks for media and sidecars; no schema changes.
-   - Why fifth: prevents accidental overwrite/data loss.
-
-6. `fix: make aria2 and built-in downloader failure states consistent`
-   - Scope: map built-in, aria2, parse, and mux failures into a common logged failure reason and immediate persisted status.
-   - Why seventh: improves recoverability and user trust.
-
-7. `docs: document download failure recovery behavior`
-   - Scope: user/developer docs explaining which partial files are preserved, when retry resumes, and when delete removes temp data.
-   - Why ninth: should follow implementation of explicit policies.
+See `docs/maintenance/dsa-03-ffmpeg-mux-cancellation-plan.md` for the focused implementation plan for the future runtime PR.
