@@ -384,8 +384,8 @@ public abstract class DownloadService
         if (mergeResult == FFMpeg.MuxResult.Cancelled)
         {
             downloading.FileSize = Format.FormatFileSize(0);
-            LogManager.Warning(Tag, $"BaseMixedFlow混流已取消，audioUid: {audioUid}, videoUid: {videoUid}, finalFile: {mergeOutputFile}");
-            return string.Empty;
+            LogManager.Info(Tag, $"BaseMixedFlow混流已取消，audioUid: {audioUid}, videoUid: {videoUid}, finalFile: {mergeOutputFile}");
+            throw new OperationCanceledException("FFmpeg mux cancelled");
         }
 
         // 获取文件大小
@@ -443,6 +443,13 @@ public abstract class DownloadService
 
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
         var concatResult = FFMpeg.Instance.ConcatVideos(videoUids, finalFile, (x) => { }, CancellationToken ?? default);
+        if (concatResult == FFMpeg.MuxResult.Cancelled)
+        {
+            downloading.FileSize = Format.FormatFileSize(0);
+            LogManager.Info(Tag, $"ConcatVideos已取消，finalFile: {finalFile}");
+            throw new OperationCanceledException("FFmpeg concat cancelled");
+        }
+
         if (concatResult == FFMpeg.MuxResult.Success && File.Exists(finalFile))
         {
             var info = new FileInfo(finalFile);
@@ -452,10 +459,6 @@ public abstract class DownloadService
         else
         {
             downloading.FileSize = Format.FormatFileSize(0);
-            if (concatResult == FFMpeg.MuxResult.Cancelled)
-            {
-                LogManager.Warning(Tag, $"ConcatVideos已取消，finalFile: {finalFile}");
-            }
         }
 
         return finalFile;

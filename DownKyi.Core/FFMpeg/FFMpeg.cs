@@ -106,7 +106,7 @@ public class FFMpeg
         }
         catch (OperationCanceledException)
         {
-            LogManager.Warning(Tag, $"MergeVideo已取消，audio: {audio}, video: {video}, destVideo: {destVideo}");
+            LogManager.Info(Tag, $"MergeVideo已取消，audio: {audio}, video: {video}, destVideo: {destVideo}");
             DeleteInvalidOutput(destVideo);
             return MuxResult.Cancelled;
         }
@@ -302,29 +302,35 @@ public class FFMpeg
             }
 
             var listFile = Path.Combine(tempDirectory, $"flvlist_{DateTime.Now:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}.txt");
-            File.WriteAllLines(listFile, inputFlvs.Select(f => $"file '{f.Replace("'", "'\\''")}'"));
+            try
+            {
+                File.WriteAllLines(listFile, inputFlvs.Select(f => $"file '{f.Replace("'", "'\\''")}'"));
 
-            FFMpegArguments
-             .FromFileInput(listFile, false, options => options
-                 .WithCustomArgument("-f concat -safe 0"))
-             .OutputToFile(outputVideo, true, options => options
-                 .WithVideoCodec("libx264")  
-                 .WithAudioCodec("aac")   
-                 .WithCustomArgument("-movflags +faststart")
-                 .WithCustomArgument("-avoid_negative_ts make_zero")
-             )
-             .NotifyOnOutput(action.Invoke)
-             .NotifyOnError(action.Invoke)
-             .CancellableThrough(cancellationToken)
-             .ProcessSynchronously(false);
+                FFMpegArguments
+                 .FromFileInput(listFile, false, options => options
+                     .WithCustomArgument("-f concat -safe 0"))
+                 .OutputToFile(outputVideo, true, options => options
+                     .WithVideoCodec("libx264")  
+                     .WithAudioCodec("aac")   
+                     .WithCustomArgument("-movflags +faststart")
+                     .WithCustomArgument("-avoid_negative_ts make_zero")
+                 )
+                 .NotifyOnOutput(action.Invoke)
+                 .NotifyOnError(action.Invoke)
+                 .CancellableThrough(cancellationToken)
+                 .ProcessSynchronously(false);
+            }
+            finally
+            {
+                try { File.Delete(listFile); } catch { /* 已忽略 */ }
+            }
 
-            try { File.Delete(listFile); } catch {  }
             LogManager.Debug(Tag, "视频合并完成");
             return MuxResult.Success;
         }
         catch (OperationCanceledException)
         {
-            LogManager.Warning(Tag, $"ConcatVideos已取消，outputVideo: {outputVideo}");
+            LogManager.Info(Tag, $"ConcatVideos已取消，outputVideo: {outputVideo}");
             DeleteInvalidOutput(outputVideo);
             return MuxResult.Cancelled;
         }
