@@ -567,7 +567,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
             percent = (float)completedLength / totalLength * 100;
         }
 
-        App.PropertyChangeAsync(() =>
+        App.PropertyChangePost(() =>
         {
             // 根据进度判断本次是否需要更新UI
             if (Math.Abs(percent - video.Progress) < 0.01)
