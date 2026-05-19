@@ -594,6 +594,8 @@ public class AriaDownloadService : DownloadService, IDownloadService
 
     private void AriaDownloadFinish(bool isSuccess, string downloadPath, string gid, string msg)
     {
-        //throw new NotImplementedException();
+        // DSA-16: 保持运行时行为不变，仅补充完成事件诊断信息，便于排查aria2任务结束原因。
+        LogManager.Info(Tag, $"Aria download finish. success={isSuccess}, gid={gid}, path={downloadPath}, message={msg}");
+        Core.Utils.Debugging.Console.PrintLine("AriaDownloadFinish: success={0}, gid={1}, path={2}, message={3}", isSuccess, gid, downloadPath, msg);
     }
 }

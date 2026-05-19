@@ -337,6 +337,9 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             RequestConfiguration = requestConfiguration,
             ParallelDownload = true,
             ParallelCount = 2,
+            // DSA-17: 内建下载器每个活跃任务最多使用约50MiB内存缓冲。
+            // 总内存预算近似为: MaxCurrentDownloads * 50MiB + 其它进程开销。
+            // 该参数为既有运行时行为，当前仅补充容量规划注释，不调整数值。
             MaximumMemoryBufferBytes = 1024 * 1024 * 50
         };
         foreach (var url in urls)
