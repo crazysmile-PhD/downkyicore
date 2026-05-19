@@ -261,7 +261,15 @@ public class FFMpeg
             LogManager.Debug(Tag, $"开始合并 {inputFlvs.Count} 个视频到 {outputVideo}");
 
 
-            var listFile = Path.Combine(Path.GetTempPath(), $"flvlist_{DateTime.Now:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}.txt");
+            var tempDirectory = Path.GetTempPath();
+            if (string.IsNullOrWhiteSpace(tempDirectory))
+            {
+                action?.Invoke("系统临时目录不可用");
+                LogManager.Error(Tag, "ConcatVideos失败，Path.GetTempPath()返回空");
+                return false;
+            }
+
+            var listFile = Path.Combine(tempDirectory, $"flvlist_{DateTime.Now:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}.txt");
             File.WriteAllLines(listFile, inputFlvs.Select(f => $"file '{f.Replace("'", "'\\''")}'"));
 
             FFMpegArguments

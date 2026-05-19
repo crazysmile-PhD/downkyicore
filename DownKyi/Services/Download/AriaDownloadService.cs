@@ -97,10 +97,11 @@ public class AriaDownloadService : DownloadService, IDownloadService
         }
 
         // 路径
-        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/");
-        var temp = downloading.DownloadBase.FilePath.Split('/');
-        //string path = downloading.DownloadBase.FilePath.Replace(temp[temp.Length - 1], "");
-        var path = downloading.DownloadBase.FilePath.TrimEnd(temp[temp.Length - 1].ToCharArray());
+        if (!TryGetDownloadDirectory(downloading, out var path))
+        {
+            LogManager.Error(Tag, $"DownloadVideo解析下载目录失败，filePath: {downloading?.DownloadBase?.FilePath ?? NullMark}");
+            return NullMark;
+        }
 
         // 下载文件名
         var fileName = Guid.NewGuid().ToString("N");
