@@ -870,7 +870,7 @@ public abstract class DownloadService
             var subtitleRequested = needDownloadContent != null && needDownloadContent.TryGetValue("downloadSubtitle", out var downloadSubtitle) && downloadSubtitle;
             var coverRequested = needDownloadContent != null && needDownloadContent.TryGetValue("downloadCover", out var downloadCover) && downloadCover;
 
-            LogManager.Warning(Tag,
+            LogManager.Error(Tag,
                 $"DownloadFailed context: title={downloadBase?.Name ?? NullMark}, bvid={downloadBase?.Bvid ?? NullMark}, avid={downloadBase?.Avid}, cid={downloadBase?.Cid}, " +
                 $"filePath={downloadBase?.FilePath ?? NullMark}, downloaderMode={GetType().Name}, status={downloading.Downloading.DownloadStatus}, " +
                 $"videoCodec={downloadBase?.VideoCodecName ?? NullMark}, videoResolution={downloadBase?.Resolution?.Name ?? NullMark}, audioCodec={downloadBase?.AudioCodec?.Name ?? NullMark}, " +
