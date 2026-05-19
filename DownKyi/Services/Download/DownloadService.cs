@@ -46,6 +46,38 @@ public abstract class DownloadService
 
     protected readonly DownloadStorageService DownloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
 
+    protected bool TryGetDownloadDirectory(DownloadingItem downloading, out string directoryPath)
+    {
+        directoryPath = string.Empty;
+        var basePath = downloading?.DownloadBase?.FilePath;
+        if (string.IsNullOrWhiteSpace(basePath))
+        {
+            LogManager.Error(Tag, "TryGetDownloadDirectory失败，DownloadBase.FilePath为空");
+            return false;
+        }
+
+        var normalizedFilePath = basePath.Replace("\\", "/");
+        downloading.DownloadBase.FilePath = normalizedFilePath;
+
+        directoryPath = Path.GetDirectoryName(normalizedFilePath) ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(directoryPath))
+        {
+            return true;
+        }
+
+        if (normalizedFilePath.EndsWith("/", StringComparison.Ordinal))
+        {
+            directoryPath = normalizedFilePath.TrimEnd('/');
+            if (!string.IsNullOrWhiteSpace(directoryPath))
+            {
+                return true;
+            }
+        }
+
+        LogManager.Error(Tag, $"TryGetDownloadDirectory失败，无法从FilePath解析目录: {normalizedFilePath}");
+        return false;
+    }
+
     /// <summary>
     /// 初始化
     /// </summary>
@@ -375,12 +407,17 @@ public abstract class DownloadService
         }
 
         var directory = Path.GetDirectoryName(finalFile);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            LogManager.Error(nameof(DownloadService), $"GetSafeMergeOutputPath目录为空，保持原输出路径: {finalFile}");
+            return finalFile;
+        }
         var filenameWithoutExtension = Path.GetFileNameWithoutExtension(finalFile);
         var extension = Path.GetExtension(finalFile);
 
         for (var i = 1; i < int.MaxValue; i++)
         {
-            var safeFile = Path.Combine(directory ?? string.Empty, $"{filenameWithoutExtension}_{i}{extension}");
+            var safeFile = Path.Combine(directory, $"{filenameWithoutExtension}_{i}{extension}");
             if (!File.Exists(safeFile))
             {
                 return safeFile;
@@ -537,10 +574,15 @@ public abstract class DownloadService
     private async Task SingleDownload(DownloadingItem downloading)
     {
         // 路径
-        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/");
-        var temp = downloading.DownloadBase.FilePath.Split('/');
-        //string path = downloading.DownloadBase.FilePath.Replace(temp[temp.Length - 1], "");
-        var path = downloading.DownloadBase.FilePath.TrimEnd(temp[temp.Length - 1].ToCharArray());
+        if (!TryGetDownloadDirectory(downloading, out var path))
+        {
+            var filePathDisplay = downloading?.DownloadBase?.FilePath ?? NullMark;
+            Console.PrintLine($"{Tag}.SingleDownload()解析下载目录失败，filePath: {filePathDisplay}");
+            LogManager.Error(Tag, $"SingleDownload解析下载目录失败，filePath: {filePathDisplay}");
+            var alertService = new AlertService(DialogService);
+            await alertService.ShowError(DictionaryResource.GetString("DirectoryError"));
+            return;
+        }
 
         // 路径不存在则创建
         if (!Directory.Exists(path))
