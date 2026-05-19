@@ -15,6 +15,8 @@ Scope: documentation-only summary of completed work from PR #11 through PR #17.
 | DSA-06 | FFmpeg output overwrite safety | ✅ Completed | #13 | Final output overwrite behavior was hardened to avoid unsafe overwrite scenarios. |
 | DSA-07 | Built-in downloader cancellation cleanup | ✅ Completed | #14 | Cancellation path cleanup was hardened for built-in downloads. |
 | DSA-08 | aria2 cancellation cleanup | ✅ Completed | #15 | Cancellation path cleanup was hardened for aria2 downloads. |
+| DSA-16 | aria2 completion handler diagnosability cleanup | ✅ Completed | this PR | Added completion-context logs in `AriaDownloadFinish()` without runtime behavior changes. |
+| DSA-17 | built-in downloader memory-budget guardrail docs | ✅ Completed | this PR | Added inline comments documenting per-task memory budget and capacity planning formula. |
 
 Related follow-up hardening (not a separate DSA row in the original table):
 
@@ -80,8 +82,6 @@ The following audit items were not part of PR #11–#17 and should remain on the
 - DSA-13: unique concat-list temp naming for high concurrency.
 - DSA-14: richer failure-context logging in `DownloadFailed` paths.
 - DSA-15: remove silent swallow in NFO failure path (log with context).
-- DSA-16: aria2 completion handler diagnosability cleanup.
-- DSA-17: explicit documentation/guardrails for built-in downloader memory budget.
 
 ## 5) Maintainer notes
 

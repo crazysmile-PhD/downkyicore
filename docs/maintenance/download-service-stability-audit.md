@@ -165,8 +165,8 @@ Findings:
 - `DownloadService.GenerateNfoFile()` swallows all exceptions with an empty `catch (Exception e) { /**/ }`, losing context. Severity: **P3**. Recommended fix: log NFO generation failures with video/path context. Safe as a small PR: **yes**.
 - `BaseDownloadAudio()` catches all exceptions for Dolby/Flac fallback and swallows them without comment-specific logging. Severity: **P3**. Recommended fix: add a comment explaining intentionally ignored missing optional audio variants or log at debug level. Safe as a small PR: **yes**.
 - `DownloadFailed()` updates UI state but does not log the video id/BVID, target path, download mode, phase, or exception. Severity: **P2**. Recommended fix: accept/record failure reason and log `{bvid,cid,path,mode,phase,exception}`. Safe as a small PR: **yes**.
-- `BuiltinDownloadService.DownloadByBuiltin()` progress/error context lacks the current URL index and local file path in logs. Severity: **P3**. Recommended fix: log selected URL host/index and temp path on failures. Safe as a small PR: **yes**.
-- `AriaDownloadService.DownloadByAria()` and `AriaManager.GetDownloadStatus()` log some aria2 errors, but `AriaDownloadFinish()` is empty and does not record success/failure details. Severity: **P3**. Recommended fix: either remove unused event subscription or log completion details including GID/path. Safe as a small PR: **yes**.
+- `BuiltinDownloadService.DownloadByBuiltin()` progress/error context lacks the current URL index and local file path in logs. Severity: **P3**. Recommended fix remains: log selected URL host/index and temp path on failures. Safe as a small PR: **yes**.
+- `AriaDownloadService.DownloadByAria()` and `AriaManager.GetDownloadStatus()` log some aria2 errors; completion-path diagnostics are now covered by `AriaDownloadFinish()` logging of success/failure context (GID/path/message). Severity after follow-up: **closed (diagnostics added)**.
 - FFmpeg logs stderr and arguments, but `BaseMixedFlow()` does not add video id/path/mode context around mux start/failure. Severity: **P2**. Recommended fix: log mux phase with input paths, output path, BVID/CID, and mode. Safe as a small PR: **yes**.
 
 ## 11. Risk table
@@ -188,8 +188,8 @@ Findings:
 | DSA-13 | P2 | FFmpeg robustness | `DownKyi.Core/FFMpeg/FFMpeg.cs` / `ConcatVideos()` | Temp concat list file can collide under concurrent concat operations in the same second. | List file name uses `flvlist_{DateTime.Now:yyyyMMddHHmmss}.txt`. | `fix: use unique concat list temp file names` |
 | DSA-14 | P2 | Diagnostics | `DownKyi/Services/Download/DownloadService.cs` / `DownloadFailed()` | Failure logs lack video id, path, mode, phase, and exception details. | `DownloadFailed()` does not log; callers often call it without a reason. | `fix: add contextual download failure logging` |
 | DSA-15 | P3 | Logging | `DownKyi/Services/Download/DownloadService.cs` / `GenerateNfoFile()` | NFO generation failures are silently swallowed. | Empty catch block contains only `/**/`. | `fix: log nfo generation failures` |
-| DSA-16 | P3 | Maintainability | `DownKyi/Services/Download/AriaDownloadService.cs` / `AriaDownloadFinish()` | Empty completion handler obscures intended aria2 diagnostics. | Handler is subscribed but body is empty. | `fix: log or remove unused aria2 finish handler` |
-| DSA-17 | P3 | Memory | `DownKyi/Services/Download/BuiltinDownloadService.cs` / `DownloadByBuiltin()` | Aggregate memory use scales with concurrent built-in downloads. | Per-download `MaximumMemoryBufferBytes` is 50 MiB. | `docs: document built-in downloader memory budget` |
+| DSA-16 | P3 | Maintainability | `DownKyi/Services/Download/AriaDownloadService.cs` / `AriaDownloadFinish()` | Completion diagnostics were missing and reduced operability in incident triage. | Handler subscription existed; follow-up now emits completion context logs (`success/gid/path/message`). | ✅ Completed in diagnostics-only follow-up PR (no runtime behavior change) |
+| DSA-17 | P3 | Memory | `DownKyi/Services/Download/BuiltinDownloadService.cs` / `DownloadByBuiltin()` | Aggregate memory use scales with concurrent built-in downloads. | Per-download `MaximumMemoryBufferBytes` is 50 MiB. | ✅ Completed as inline guardrail comments documenting memory budget formula (diagnostics-only) |
 
 ## 12. Follow-up PR plan
 
