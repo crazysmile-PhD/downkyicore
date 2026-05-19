@@ -2,7 +2,7 @@
 
 This document summarizes the download-stability audit findings that have already been addressed and merged.
 
-Scope: documentation-only summary of completed work from PR #11 through PR #31.
+Scope: documentation-only summary of completed work from PR #11 through PR #33.
 
 ## 1) Completed findings map
 
@@ -24,8 +24,9 @@ Scope: documentation-only summary of completed work from PR #11 through PR #31.
 | DSA-12 | Persistence collection snapshots | ✅ Completed | #31 | `DownloadFiles` and `DownloadedFiles` are snapshotted before persistence serialization. |
 | Built-in resume branch | Resume-state handling for built-in downloader | ✅ Completed | #27 | Built-in downloader resume branch observes completion state. |
 | Aria2 cleanup blocking | Cleanup path async behavior | ✅ Completed | #28 | Aria2 cleanup no longer uses synchronous waits in the cleanup path. |
-| DSA-16 | aria2 completion handler diagnosability cleanup | ✅ Completed | this PR | Added completion-context logs in `AriaDownloadFinish()` without runtime behavior changes. |
-| DSA-17 | built-in downloader memory-budget guardrail docs | ✅ Completed | this PR | Added inline comments documenting per-task memory budget and capacity planning formula. |
+| DSA-16 | aria2 completion handler diagnosability cleanup | ✅ Completed | #21 | Added completion-context logs in `AriaDownloadFinish()` without runtime behavior changes. |
+| DSA-03 | FFmpeg mux-phase cancellation support | ✅ Completed | #33 | FFmpeg mux/concat phases now honor cancellation and classify cancelled outcomes distinctly from success/failure. |
+| DSA-17 | built-in downloader memory-budget guardrail docs | ✅ Completed | #21 | Added inline comments documenting per-task memory budget and capacity planning formula. |
 
 Related follow-up hardening (not a separate DSA row in the original table):
 
@@ -36,8 +37,7 @@ Related follow-up hardening (not a separate DSA row in the original table):
 
 | Audit ID | Area | PR | Status | Notes |
 |---|---|---|---|---|
-| DSA-11 | Failed state persistence | #30 | Completed | `DownloadFailed(...)` now persists failed state immediately. |
-| DSA-12 | Persistence collection snapshots | #31 | Completed | `DownloadFiles` and `DownloadedFiles` are snapshotted before persistence serialization. |
+| DSA-03 | FFmpeg mux-phase cancellation support | #33 | Completed | FFmpeg mux/concat phases now support cancellation classification distinct from failure/success. |
 
 ## 2) What changed (behavioral summary)
 
@@ -85,6 +85,7 @@ Related follow-up hardening (not a separate DSA row in the original table):
 - PR #28 reduced Aria2 cleanup blocking by replacing synchronous RPC waits with async best-effort cleanup while clearing stale gids for remove-task cleanup paths.
 - PR #30 completed DSA-11 by persisting failed download state immediately in `DownloadFailed(...)`.
 - PR #31 completed DSA-12 by snapshotting mutable per-item persistence collections before serialization.
+- PR #33 completed DSA-03 by adding cancellation-aware FFmpeg mux/concat handling and distinct cancelled outcome classification.
 
 ## 3) What was intentionally **not** changed
 
@@ -99,11 +100,16 @@ To keep the above fixes narrow and low-risk, the completed PRs intentionally did
 
 ## 4) Remaining risks and follow-up recommendations
 
-The following audit items were not part of the completed runtime-fix set through PR #31 and should remain on the follow-up list:
+No remaining unresolved runtime-risk items from the original DSA table remain after PR #33.
 
-- DSA-03: FFmpeg mux-phase cancellation support.
+Any future download-stability work should be treated as new findings or incremental hardening outside the original DSA closure scope.
 
 ## 5) Maintainer notes
 
-- Treat PR #11–#31 as the completed stability batches to date, covering fallback, cancellation cleanup, overwrite protection, thread-safe progress signaling, path safety, concat temp handling, resume-state handling, aria2 cleanup responsiveness, and the DSA-11/DSA-12 persistence hardening updates.
+- Treat PR #11–#33 as the completed stability batches to date, covering fallback, cancellation cleanup, overwrite protection, thread-safe progress signaling, path safety, concat temp handling, resume-state handling, aria2 cleanup responsiveness, persistence hardening updates, and FFmpeg mux/concat cancellation completion (DSA-03).
 - For future stability work, prefer narrow PRs mapped 1:1 to remaining DSA items to keep rollback and verification simple.
+
+
+## 6) Closure note
+
+The original download-service stability audit findings are now closed: each runtime-risk DSA item is either completed in a merged PR (including DSA-03 in PR #33) or explicitly tracked as documentation/maintenance context rather than unresolved runtime risk.
