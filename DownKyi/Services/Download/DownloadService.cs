@@ -441,6 +441,7 @@ public abstract class DownloadService
         {
             var info = new FileInfo(finalFile);
             downloading.FileSize = Format.FormatFileSize(info.Length);
+            CleanupOwnedConcatSegments(downloading, videoUids, finalFile);
         }
         else
         {
@@ -448,6 +449,76 @@ public abstract class DownloadService
         }
 
         return finalFile;
+    }
+
+    /// <summary>
+    /// 仅在concat成功且输出文件可用时，删除当前下载流程明确拥有的临时分段文件。
+    /// 任何归属不明确的输入文件一律保留，避免误删用户文件。
+    /// </summary>
+    private void CleanupOwnedConcatSegments(DownloadingItem downloading, List<string> inputSegments, string finalFile)
+    {
+        if (inputSegments == null || inputSegments.Count == 0)
+        {
+            return;
+        }
+
+        if (downloading?.Downloading?.DownloadFiles == null || downloading.DownloadBase?.FilePath == null)
+        {
+            LogManager.Debug(Tag, "CleanupOwnedConcatSegments跳过清理：上下文信息不足，无法确认文件归属");
+            return;
+        }
+
+        if (!TryGetDownloadDirectory(downloading, out var downloadDirectory))
+        {
+            LogManager.Debug(Tag, "CleanupOwnedConcatSegments跳过清理：下载目录解析失败");
+            return;
+        }
+
+        var ownedFileNames = new HashSet<string>(
+            downloading.Downloading.DownloadFiles.Values
+                .Where(x => !string.IsNullOrWhiteSpace(x)),
+            StringComparer.Ordinal);
+        var finalFileFullPath = Path.GetFullPath(finalFile);
+        var downloadDirectoryFullPath = Path.GetFullPath(downloadDirectory);
+
+        foreach (var segment in inputSegments.Where(x => !string.IsNullOrWhiteSpace(x)))
+        {
+            try
+            {
+                var segmentFullPath = Path.GetFullPath(segment);
+                if (string.Equals(segmentFullPath, finalFileFullPath, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var fileName = Path.GetFileName(segmentFullPath);
+                var fileDirectory = Path.GetDirectoryName(segmentFullPath) ?? string.Empty;
+                var isUnderDownloadDirectory = string.Equals(
+                    Path.GetFullPath(fileDirectory),
+                    downloadDirectoryFullPath,
+                    StringComparison.Ordinal);
+
+                // 归属判定：
+                // 1) 文件名出现在本次任务的DownloadFiles记录中；
+                // 2) 文件位于当前任务下载目录下。
+                // 仅在同时满足时才删除，避免误删用户手动指定的源文件。
+                if (!ownedFileNames.Contains(fileName) || !isUnderDownloadDirectory)
+                {
+                    LogManager.Debug(Tag, $"CleanupOwnedConcatSegments保留未明确归属文件: {segmentFullPath}");
+                    continue;
+                }
+
+                if (File.Exists(segmentFullPath))
+                {
+                    File.Delete(segmentFullPath);
+                }
+            }
+            catch (Exception e)
+            {
+                LogManager.Error(Tag, e);
+                Console.PrintLine("CleanupOwnedConcatSegments发生异常: {0}", e);
+            }
+        }
     }
 
 
