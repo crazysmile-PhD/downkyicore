@@ -2,7 +2,7 @@
 
 This document summarizes the download-stability audit findings that have already been addressed and merged.
 
-Scope: documentation-only summary of completed work from PR #11 through PR #17.
+Scope: documentation-only summary of completed work from PR #11 through PR #28.
 
 ## 1) Completed findings map
 
@@ -15,6 +15,13 @@ Scope: documentation-only summary of completed work from PR #11 through PR #17.
 | DSA-06 | FFmpeg output overwrite safety | ✅ Completed | #13 | Final output overwrite behavior was hardened to avoid unsafe overwrite scenarios. |
 | DSA-07 | Built-in downloader cancellation cleanup | ✅ Completed | #14 | Cancellation path cleanup was hardened for built-in downloads. |
 | DSA-08 | aria2 cancellation cleanup | ✅ Completed | #15 | Cancellation path cleanup was hardened for aria2 downloads. |
+| DSA-13 | FFmpeg concat list temp filename collision hardening | ✅ Completed | #22 | FFmpeg concat list temp filenames are collision-resistant. |
+| DSA-14 | Download failure-context logging hardening | ✅ Completed | #19 | Download failure logging now includes richer contextual fields for diagnosability. |
+| DSA-15 | NFO failure-path logging hardening | ✅ Completed | #20 | NFO generation failure path no longer silently swallows errors. |
+| DSA-09 | Download path parsing hardening | ✅ Completed | #24 | Download path parsing is centralized and guarded. |
+| DSA-10 | Concat temp-segment cleanup policy hardening | ✅ Completed | #26 | Successful concat temp-segment cleanup policy is clarified and guarded. |
+| Built-in resume branch | Resume-state handling for built-in downloader | ✅ Completed | #27 | Built-in downloader resume branch observes completion state. |
+| Aria2 cleanup blocking | Cleanup path async behavior | ✅ Completed | #28 | Aria2 cleanup no longer uses synchronous waits in the cleanup path. |
 | DSA-16 | aria2 completion handler diagnosability cleanup | ✅ Completed | this PR | Added completion-context logs in `AriaDownloadFinish()` without runtime behavior changes. |
 | DSA-17 | built-in downloader memory-budget guardrail docs | ✅ Completed | this PR | Added inline comments documenting per-task memory budget and capacity planning formula. |
 
@@ -59,6 +66,14 @@ Related follow-up hardening (not a separate DSA row in the original table):
 - Progress callback handling was adjusted to avoid blocking downloader callbacks while retaining UI-thread-safe updates.
 - This reduces callback backpressure and potential throughput/latency regressions introduced by strict marshaling.
 
+## Runtime fixes completed after the diagnostics batch
+
+- PR #22 completed DSA-13 by making FFmpeg concat list temp filenames collision-resistant.
+- PR #24 completed DSA-09 by centralizing download directory parsing and adding path guards.
+- PR #26 completed DSA-10 by adding guarded cleanup for clearly owned concat temp segments after successful concat.
+- PR #27 hardened the built-in downloader resume branch so resumed downloads update local completion/cancellation state.
+- PR #28 reduced Aria2 cleanup blocking by replacing synchronous RPC waits with async best-effort cleanup while clearing stale gids for remove-task cleanup paths.
+
 ## 3) What was intentionally **not** changed
 
 To keep the above fixes narrow and low-risk, the completed PRs intentionally did **not** redesign broader runtime behavior such as:
@@ -72,18 +87,13 @@ To keep the above fixes narrow and low-risk, the completed PRs intentionally did
 
 ## 4) Remaining risks and follow-up recommendations
 
-The following audit items were not part of PR #11–#17 and should remain on the follow-up list:
+The following audit items were not part of the completed runtime-fix set through PR #28 and should remain on the follow-up list:
 
 - DSA-03: FFmpeg mux-phase cancellation support.
-- DSA-09: path derivation hardening (`Path.GetDirectoryName` style safety).
-- DSA-10: successful concat temp-segment cleanup policy.
 - DSA-11: immediate persistence of failed status.
 - DSA-12: snapshot/guard mutable per-item collections during persistence.
-- DSA-13: unique concat-list temp naming for high concurrency.
-- DSA-14: richer failure-context logging in `DownloadFailed` paths.
-- DSA-15: remove silent swallow in NFO failure path (log with context).
 
 ## 5) Maintainer notes
 
-- Treat PR #11–#17 as a focused “stability batch” that prioritized correctness and safety in: fallback, cancellation cleanup, overwrite protection, and thread-safe progress signaling.
+- Treat PR #11–#28 as the completed stability batches to date, covering fallback, cancellation cleanup, overwrite protection, thread-safe progress signaling, path safety, concat temp handling, resume-state handling, and aria2 cleanup responsiveness.
 - For future stability work, prefer narrow PRs mapped 1:1 to remaining DSA items to keep rollback and verification simple.
