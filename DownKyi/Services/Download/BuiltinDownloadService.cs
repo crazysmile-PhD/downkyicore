@@ -350,16 +350,13 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             var isFinished = false;
             var isComplete = false;
             var isCancelled = false;
-            if (downloading.DownloadService == null)
+            EventHandler<DownloadFileCompletedArgs>? downloadFileCompletedHandler = null;
+            var isNewDownloader = false;
+
+            if (downloader == null)
             {
+                isNewDownloader = true;
                 downloader = new Downloader.DownloadService(downloadOpt);
-                downloader.DownloadFileCompleted += (_, args) =>
-                {
-                    isComplete = !args.Cancelled && args.Error == null && File.Exists(Path.Combine(path, localFileName));
-                    isCancelled = args.Cancelled;
-                    isFinished = true;
-                    downloading.DownloadService = null;
-                };
                 downloader.DownloadProgressChanged += (_, args) =>
                 {
                     App.PropertyChangePost(() =>
@@ -381,6 +378,19 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                     });
                 };
                 downloading.DownloadService = downloader;
+            }
+
+            downloadFileCompletedHandler = (_, args) =>
+            {
+                isComplete = !args.Cancelled && args.Error == null && File.Exists(Path.Combine(path, localFileName));
+                isCancelled = args.Cancelled;
+                isFinished = true;
+                downloading.DownloadService = null;
+            };
+            downloader.DownloadFileCompleted += downloadFileCompletedHandler;
+
+            if (isNewDownloader)
+            {
                 downloader.DownloadFileTaskAsync(url, Path.Combine(path, localFileName)).ConfigureAwait(false);
             }
             else
@@ -426,13 +436,17 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
 
             if (isCancelled)
             {
+                downloader.DownloadFileCompleted -= downloadFileCompletedHandler;
                 throw new OperationCanceledException("Stop builtin downloader by user action");
             }
 
             if (isComplete)
             {
+                downloader.DownloadFileCompleted -= downloadFileCompletedHandler;
                 return true;
             }
+
+            downloader.DownloadFileCompleted -= downloadFileCompletedHandler;
         }
 
         return false;
