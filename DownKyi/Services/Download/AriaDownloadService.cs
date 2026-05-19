@@ -316,7 +316,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
         }
         else
         {
-            _ = CleanupAriaTaskAsync(downloading, true, true);
+            StartRemoveAriaTaskCleanup(downloading, true);
 
             return Task.FromResult(false);
         }
@@ -479,7 +479,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
                 switch (downloading.Downloading.DownloadStatus)
                 {
                     case DownloadStatus.Pause:
-                        _ = CleanupAriaTaskAsync(downloading, false, false);
+                        _ = CleanupAriaTaskAsync(downloading.Downloading.Gid, false, false);
                         // 通知UI，并阻塞当前线程
                         Pause(downloading);
                         break;
@@ -492,14 +492,14 @@ public class AriaDownloadService : DownloadService, IDownloadService
         {
             LogManager.Info(Tag, $"DownloadByAria cancelled, gid={downloading.Downloading.Gid}");
             Core.Utils.Debugging.Console.PrintLine("DownloadByAria取消下载: {0}", e.Message);
-            _ = CleanupAriaTaskAsync(downloading, false, false);
+            _ = CleanupAriaTaskAsync(downloading.Downloading.Gid, false, false);
             return DownloadResult.ABORT;
         }
         catch (Exception e)
         {
             LogManager.Error(Tag, e);
             Core.Utils.Debugging.Console.PrintLine("DownloadByAria发生异常: {0}", e);
-            _ = CleanupAriaTaskAsync(downloading, true, true);
+            StartRemoveAriaTaskCleanup(downloading, true);
             return DownloadResult.FAILED;
         }
     }
@@ -510,9 +510,15 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// <param name="downloading"></param>
     /// <param name="removeTask">是否删除任务</param>
     /// <param name="removeResult">是否删除任务结果</param>
-    private async Task CleanupAriaTaskAsync(DownloadingItem downloading, bool removeTask, bool removeResult)
+    private void StartRemoveAriaTaskCleanup(DownloadingItem downloading, bool removeResult)
     {
         var gid = downloading.Downloading.Gid;
+        downloading.Downloading.Gid = null;
+        _ = CleanupAriaTaskAsync(gid, true, removeResult);
+    }
+
+    private async Task CleanupAriaTaskAsync(string? gid, bool removeTask, bool removeResult)
+    {
         if (string.IsNullOrEmpty(gid))
         {
             return;
@@ -527,7 +533,6 @@ public class AriaDownloadService : DownloadService, IDownloadService
                 if (removeResult || ariaRemove == null || ariaRemove.Result == gid)
                 {
                     _ = await AriaClient.RemoveDownloadResultAsync(gid);
-                    downloading.Downloading.Gid = null;
                 }
             }
             else
