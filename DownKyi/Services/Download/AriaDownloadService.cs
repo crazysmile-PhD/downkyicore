@@ -306,26 +306,18 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// </summary>
     /// <param name="downloading"></param>
     /// <returns></returns>
-    private async Task<bool> IsExist(DownloadingItem downloading)
+    private Task<bool> IsExist(DownloadingItem downloading)
     {
         var isExist = DownloadingList.Contains(downloading);
         if (isExist)
         {
-            return true;
+            return Task.FromResult(true);
         }
         else
         {
-            // 先恢复为waiting状态，暂停状态下Remove会导致文件重新下载，原因暂不清楚
-            await AriaClient.UnpauseAsync(downloading.Downloading.Gid);
-            // 移除下载项
-            var ariaRemove = await AriaClient.RemoveAsync(downloading.Downloading.Gid);
-            if (ariaRemove == null || ariaRemove.Result == downloading.Downloading.Gid)
-            {
-                // 从内存中删除下载项
-                await AriaClient.RemoveDownloadResultAsync(downloading.Downloading.Gid);
-            }
+            CleanupAriaTask(downloading, true, true);
 
-            return false;
+            return Task.FromResult(false);
         }
     }
 
@@ -478,20 +470,75 @@ public class AriaDownloadService : DownloadService, IDownloadService
         var ariaManager = new AriaManager();
         ariaManager.TellStatus += AriaTellStatus;
         ariaManager.DownloadFinish += AriaDownloadFinish;
-        return ariaManager.GetDownloadStatus(downloading.Downloading.Gid, new Action(() =>
+        try
         {
-            CancellationToken?.ThrowIfCancellationRequested();
-            switch (downloading.Downloading.DownloadStatus)
+            return ariaManager.GetDownloadStatus(downloading.Downloading.Gid, new Action(() =>
             {
-                case DownloadStatus.Pause:
-                    var ariaPause = AriaClient.PauseAsync(downloading.Downloading.Gid);
-                    // 通知UI，并阻塞当前线程
-                    Pause(downloading);
-                    break;
-                case DownloadStatus.Downloading:
-                    break;
+                CancellationToken?.ThrowIfCancellationRequested();
+                switch (downloading.Downloading.DownloadStatus)
+                {
+                    case DownloadStatus.Pause:
+                        CleanupAriaTask(downloading, false, false);
+                        // 通知UI，并阻塞当前线程
+                        Pause(downloading);
+                        break;
+                    case DownloadStatus.Downloading:
+                        break;
+                }
+            }));
+        }
+        catch (OperationCanceledException e)
+        {
+            LogManager.Info(Tag, $"DownloadByAria cancelled, gid={downloading.Downloading.Gid}");
+            Core.Utils.Debugging.Console.PrintLine("DownloadByAria取消下载: {0}", e.Message);
+            CleanupAriaTask(downloading, false, false);
+            return DownloadResult.ABORT;
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(Tag, e);
+            Core.Utils.Debugging.Console.PrintLine("DownloadByAria发生异常: {0}", e);
+            CleanupAriaTask(downloading, true, true);
+            return DownloadResult.FAILED;
+        }
+    }
+
+    /// <summary>
+    /// 清理aria任务
+    /// </summary>
+    /// <param name="downloading"></param>
+    /// <param name="removeTask">是否删除任务</param>
+    /// <param name="removeResult">是否删除任务结果</param>
+    private void CleanupAriaTask(DownloadingItem downloading, bool removeTask, bool removeResult)
+    {
+        var gid = downloading.Downloading.Gid;
+        if (string.IsNullOrEmpty(gid))
+        {
+            return;
+        }
+
+        try
+        {
+            if (removeTask)
+            {
+                _ = AriaClient.UnpauseAsync(gid).GetAwaiter().GetResult();
+                var ariaRemove = AriaClient.RemoveAsync(gid).GetAwaiter().GetResult();
+                if (removeResult || ariaRemove == null || ariaRemove.Result == gid)
+                {
+                    _ = AriaClient.RemoveDownloadResultAsync(gid).GetAwaiter().GetResult();
+                    downloading.Downloading.Gid = null;
+                }
             }
-        }));
+            else
+            {
+                _ = AriaClient.PauseAsync(gid).GetAwaiter().GetResult();
+            }
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(Tag, e);
+            Core.Utils.Debugging.Console.PrintLine("CleanupAriaTask发生异常: {0}", e);
+        }
     }
 
     private void AriaTellStatus(long totalLength, long completedLength, long speed, string gid)
