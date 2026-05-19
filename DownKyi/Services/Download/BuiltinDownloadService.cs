@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Net;
 using System.Threading;
@@ -350,16 +351,12 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             var isFinished = false;
             var isComplete = false;
             var isCancelled = false;
-            if (downloading.DownloadService == null)
+            var isNewDownloader = false;
+
+            if (downloader == null)
             {
+                isNewDownloader = true;
                 downloader = new Downloader.DownloadService(downloadOpt);
-                downloader.DownloadFileCompleted += (_, args) =>
-                {
-                    isComplete = !args.Cancelled && args.Error == null && File.Exists(Path.Combine(path, localFileName));
-                    isCancelled = args.Cancelled;
-                    isFinished = true;
-                    downloading.DownloadService = null;
-                };
                 downloader.DownloadProgressChanged += (_, args) =>
                 {
                     App.PropertyChangePost(() =>
@@ -381,15 +378,29 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                     });
                 };
                 downloading.DownloadService = downloader;
-                downloader.DownloadFileTaskAsync(url, Path.Combine(path, localFileName)).ConfigureAwait(false);
             }
-            else
+
+            void DownloadFileCompletedHandler(object? _, AsyncCompletedEventArgs args)
             {
-                downloader?.Resume();
+                isComplete = !args.Cancelled && args.Error == null && File.Exists(Path.Combine(path, localFileName));
+                isCancelled = args.Cancelled;
+                isFinished = true;
+                downloading.DownloadService = null;
             }
 
             try
             {
+                downloader.DownloadFileCompleted += DownloadFileCompletedHandler;
+
+                if (isNewDownloader)
+                {
+                    downloader.DownloadFileTaskAsync(url, Path.Combine(path, localFileName)).ConfigureAwait(false);
+                }
+                else
+                {
+                    downloader.Resume();
+                }
+
                 // 阻塞当前任务，监听暂停事件
                 while (!isFinished)
                 {
@@ -408,6 +419,16 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
 
                     Thread.Sleep(100);
                 }
+
+                if (isCancelled)
+                {
+                    throw new OperationCanceledException("Stop builtin downloader by user action");
+                }
+
+                if (isComplete)
+                {
+                    return true;
+                }
             }
             catch (OperationCanceledException)
             {
@@ -423,15 +444,9 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                 downloading.DownloadService = null;
                 throw;
             }
-
-            if (isCancelled)
+            finally
             {
-                throw new OperationCanceledException("Stop builtin downloader by user action");
-            }
-
-            if (isComplete)
-            {
-                return true;
+                downloader.DownloadFileCompleted -= DownloadFileCompletedHandler;
             }
         }
 
