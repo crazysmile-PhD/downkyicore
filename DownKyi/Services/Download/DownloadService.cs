@@ -344,23 +344,49 @@ public abstract class DownloadService
                     : $"{downloading.DownloadBase.FilePath}.aac";
         }
 
+        var mergeOutputFile = GetSafeMergeOutputPath(finalFile);
+
         // 合并音视频
-        var isMergeSuccess = FFMpeg.Instance.MergeVideo(audioUid, videoUid, finalFile);
+        var isMergeSuccess = FFMpeg.Instance.MergeVideo(audioUid, videoUid, mergeOutputFile);
 
         // 获取文件大小
-        if (isMergeSuccess && File.Exists(finalFile))
+        if (isMergeSuccess && File.Exists(mergeOutputFile))
         {
-            var info = new FileInfo(finalFile);
+            var info = new FileInfo(mergeOutputFile);
             if (info.Length > 0)
             {
                 downloading.FileSize = Format.FormatFileSize(info.Length);
-                return finalFile;
+                return mergeOutputFile;
             }
         }
 
         downloading.FileSize = Format.FormatFileSize(0);
-        LogManager.Error(Tag, $"BaseMixedFlow混流失败或输出文件无效，audioUid: {audioUid}, videoUid: {videoUid}, finalFile: {finalFile}");
+        LogManager.Error(Tag, $"BaseMixedFlow混流失败或输出文件无效，audioUid: {audioUid}, videoUid: {videoUid}, finalFile: {mergeOutputFile}");
         return string.Empty;
+    }
+
+
+    private static string GetSafeMergeOutputPath(string finalFile)
+    {
+        if (!File.Exists(finalFile))
+        {
+            return finalFile;
+        }
+
+        var directory = Path.GetDirectoryName(finalFile);
+        var filenameWithoutExtension = Path.GetFileNameWithoutExtension(finalFile);
+        var extension = Path.GetExtension(finalFile);
+
+        for (var i = 1; i < int.MaxValue; i++)
+        {
+            var safeFile = Path.Combine(directory ?? string.Empty, $"{filenameWithoutExtension}_{i}{extension}");
+            if (!File.Exists(safeFile))
+            {
+                return safeFile;
+            }
+        }
+
+        return finalFile;
     }
 
 

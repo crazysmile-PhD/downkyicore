@@ -47,7 +47,7 @@ public class FFMpeg
             arguments = FFMpegArguments
                 .FromFileInput(audio!)
                 .AddFileInput(video!)
-                .OutputToFile(destVideo, true, options => options
+                .OutputToFile(destVideo, false, options => options
                     .WithCustomArgument("-strict -2")
                     .WithAudioCodec("copy")
                     .WithVideoCodec("copy")
@@ -58,7 +58,7 @@ public class FFMpeg
         {
             arguments = FFMpegArguments.FromFileInput(video!).OutputToFile(
                 destVideo,
-                true,
+                false,
                 options => options.WithCustomArgument("-strict -2").WithVideoCodec("copy").WithAudioCodec("copy").ForceFormat("mp4")
             );
         }
@@ -66,7 +66,7 @@ public class FFMpeg
         {
             arguments = FFMpegArguments.FromFileInput(audio!).OutputToFile(
                 destVideo,
-                true,
+                false,
                 options => options.WithCustomArgument("-strict -2").DisableChannel(Channel.Video).ForceFormat("mp3")
             );
         }
@@ -74,7 +74,7 @@ public class FFMpeg
         {
             arguments = FFMpegArguments.FromFileInput(audio!).OutputToFile(
                 destVideo,
-                true,
+                false,
                 options => options.WithCustomArgument("-strict -2").DisableChannel(Channel.Video).WithAudioCodec("copy")
             );
         }
