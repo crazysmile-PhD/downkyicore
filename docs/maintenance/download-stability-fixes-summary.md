@@ -99,11 +99,11 @@ To keep the above fixes narrow and low-risk, the completed PRs intentionally did
 
 ## 4) Remaining risks and follow-up recommendations
 
-The following audit items were not part of the completed runtime-fix set through PR #28 and should remain on the follow-up list:
+The following audit items were not part of the completed runtime-fix set through PR #31 and should remain on the follow-up list:
 
 - DSA-03: FFmpeg mux-phase cancellation support.
 
 ## 5) Maintainer notes
 
-- Treat PR #11–#28 as the completed stability batches to date, covering fallback, cancellation cleanup, overwrite protection, thread-safe progress signaling, path safety, concat temp handling, resume-state handling, and aria2 cleanup responsiveness.
+- Treat PR #11–#31 as the completed stability batches to date, covering fallback, cancellation cleanup, overwrite protection, thread-safe progress signaling, path safety, concat temp handling, resume-state handling, aria2 cleanup responsiveness, and the DSA-11/DSA-12 persistence hardening updates.
 - For future stability work, prefer narrow PRs mapped 1:1 to remaining DSA items to keep rollback and verification simple.
