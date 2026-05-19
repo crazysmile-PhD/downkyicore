@@ -197,6 +197,11 @@ public partial class App : PrismApplication
         Dispatcher.UIThread.Invoke(callback);
     }
 
+    public static void PropertyChangePost(Action callback)
+    {
+        Dispatcher.UIThread.Post(callback);
+    }
+
     /// <summary>
     /// 下载完成列表排序
     /// </summary>

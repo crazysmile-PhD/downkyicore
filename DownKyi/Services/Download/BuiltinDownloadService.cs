@@ -357,7 +357,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                 };
                 downloader.DownloadProgressChanged += (_, args) =>
                 {
-                    App.PropertyChangeAsync(() =>
+                    App.PropertyChangePost(() =>
                     {
                         // 下载进度百分比
                         downloading.Progress = (float)args.ProgressPercentage;
