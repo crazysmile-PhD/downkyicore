@@ -409,7 +409,7 @@ public abstract class DownloadService
         var directory = Path.GetDirectoryName(finalFile);
         if (string.IsNullOrWhiteSpace(directory))
         {
-            LogManager.Error(Tag, $"GetSafeMergeOutputPath目录为空，保持原输出路径: {finalFile}");
+            LogManager.Error(nameof(DownloadService), $"GetSafeMergeOutputPath目录为空，保持原输出路径: {finalFile}");
             return finalFile;
         }
         var filenameWithoutExtension = Path.GetFileNameWithoutExtension(finalFile);
