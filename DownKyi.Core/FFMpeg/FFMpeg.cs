@@ -10,6 +10,13 @@ namespace DownKyi.Core.FFMpeg;
 
 public class FFMpeg
 {
+    public enum MuxResult
+    {
+        Success,
+        Cancelled,
+        Failed
+    }
+
     private const string Tag = "FFmpegHelper";
     private static readonly Lazy<FFMpeg> InstanceValue = new(() => new FFMpeg());
 
@@ -31,14 +38,14 @@ public class FFMpeg
     /// <param name="audio">音频</param>
     /// <param name="video">视频</param>
     /// <param name="destVideo"></param>
-    public bool MergeVideo(string? audio, string? video, string destVideo)
+    public MuxResult MergeVideo(string? audio, string? video, string destVideo, CancellationToken cancellationToken = default)
     {
         var hasAudio = File.Exists(audio);
         var hasVideo = File.Exists(video);
         if (!hasAudio && !hasVideo)
         {
             LogManager.Error(Tag, $"MergeVideo输入文件不存在，audio: {audio}, video: {video}, destVideo: {destVideo}");
-            return false;
+            return MuxResult.Failed;
         }
 
         FFMpegArgumentProcessor arguments;
@@ -85,8 +92,10 @@ public class FFMpeg
         var success = false;
         try
         {
+            LogManager.Debug(Tag, $"MergeVideo开始，audio: {audio}, video: {video}, destVideo: {destVideo}");
             processSuccess = arguments
                 .NotifyOnError(s => LogManager.Debug(Tag, s))
+                .CancellableThrough(cancellationToken)
                 .ProcessSynchronously(false);
             success = processSuccess && IsValidOutputFile(destVideo);
 
@@ -94,6 +103,12 @@ public class FFMpeg
             {
                 LogManager.Error(Tag, $"MergeVideo混流失败，processSuccess: {processSuccess}, outputExists: {File.Exists(destVideo)}, outputLength: {GetFileLength(destVideo)}, audio: {audio}, video: {video}, destVideo: {destVideo}");
             }
+        }
+        catch (OperationCanceledException)
+        {
+            LogManager.Warning(Tag, $"MergeVideo已取消，audio: {audio}, video: {video}, destVideo: {destVideo}");
+            DeleteInvalidOutput(destVideo);
+            return MuxResult.Cancelled;
         }
         catch (Exception e)
         {
@@ -104,12 +119,13 @@ public class FFMpeg
 
         if (!success)
         {
+            DeleteInvalidOutput(destVideo);
             LogManager.Debug(Tag, $"MergeVideo保留输入文件以便恢复，audio: {audio}, video: {video}, destVideo: {destVideo}");
-            return false;
+            return MuxResult.Failed;
         }
 
         DeleteMergeInputs(audio, video);
-        return true;
+        return MuxResult.Success;
     }
 
     internal static bool IsValidOutputFile(string output)
@@ -125,6 +141,22 @@ public class FFMpeg
     internal static long GetFileLength(string output)
     {
         return File.Exists(output) ? new FileInfo(output).Length : 0;
+    }
+
+    private static void DeleteInvalidOutput(string output)
+    {
+        try
+        {
+            if (File.Exists(output))
+            {
+                File.Delete(output);
+            }
+        }
+        catch (IOException e)
+        {
+            Console.PrintLine("DeleteInvalidOutput()删除输出文件发生IO异常: {0}", e);
+            LogManager.Error(Tag, e);
+        }
     }
 
     private static void DeleteMergeInputs(string? audio, string? video)
@@ -239,13 +271,13 @@ public class FFMpeg
     /// <param name="outputVideo">输出视频路径</param>
     /// <param name="action">进度回调</param>
     /// <returns>是否成功</returns>
-    public bool ConcatVideos(List<string> inputFlvs, string outputVideo, Action<string> action)
+    public MuxResult ConcatVideos(List<string> inputFlvs, string outputVideo, Action<string> action, CancellationToken cancellationToken = default)
     {
         try
         {
             if (inputFlvs == null || inputFlvs.Count == 0)
             {
-                return false;
+                return MuxResult.Failed;
             }
 
             // 验证所有输入文件都存在
@@ -254,7 +286,7 @@ public class FFMpeg
                 if (!File.Exists(video))
                 {
                     action?.Invoke($"文件不存在: {video}");
-                    return false;
+                    return MuxResult.Failed;
                 }
             }
 
@@ -266,7 +298,7 @@ public class FFMpeg
             {
                 action?.Invoke("系统临时目录不可用");
                 LogManager.Error(Tag, "ConcatVideos失败，Path.GetTempPath()返回空");
-                return false;
+                return MuxResult.Failed;
             }
 
             var listFile = Path.Combine(tempDirectory, $"flvlist_{DateTime.Now:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}.txt");
@@ -283,16 +315,24 @@ public class FFMpeg
              )
              .NotifyOnOutput(action.Invoke)
              .NotifyOnError(action.Invoke)
+             .CancellableThrough(cancellationToken)
              .ProcessSynchronously(false);
 
             try { File.Delete(listFile); } catch {  }
             LogManager.Debug(Tag, "视频合并完成");
-            return true;
+            return MuxResult.Success;
+        }
+        catch (OperationCanceledException)
+        {
+            LogManager.Warning(Tag, $"ConcatVideos已取消，outputVideo: {outputVideo}");
+            DeleteInvalidOutput(outputVideo);
+            return MuxResult.Cancelled;
         }
         catch (Exception ex)
         {
+            DeleteInvalidOutput(outputVideo);
             LogManager.Error(Tag, ex);
-            return false;
+            return MuxResult.Failed;
         }
     }
 }

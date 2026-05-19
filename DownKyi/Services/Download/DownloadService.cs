@@ -380,10 +380,16 @@ public abstract class DownloadService
         var mergeOutputFile = GetSafeMergeOutputPath(finalFile);
 
         // 合并音视频
-        var isMergeSuccess = FFMpeg.Instance.MergeVideo(audioUid, videoUid, mergeOutputFile);
+        var mergeResult = FFMpeg.Instance.MergeVideo(audioUid, videoUid, mergeOutputFile, CancellationToken ?? default);
+        if (mergeResult == FFMpeg.MuxResult.Cancelled)
+        {
+            downloading.FileSize = Format.FormatFileSize(0);
+            LogManager.Warning(Tag, $"BaseMixedFlow混流已取消，audioUid: {audioUid}, videoUid: {videoUid}, finalFile: {mergeOutputFile}");
+            return string.Empty;
+        }
 
         // 获取文件大小
-        if (isMergeSuccess && File.Exists(mergeOutputFile))
+        if (mergeResult == FFMpeg.MuxResult.Success && File.Exists(mergeOutputFile))
         {
             var info = new FileInfo(mergeOutputFile);
             if (info.Length > 0)
@@ -436,8 +442,8 @@ public abstract class DownloadService
         downloading.SpeedDisplay = string.Empty;
 
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
-        FFMpeg.Instance.ConcatVideos(videoUids, finalFile, (x) => { });
-        if (File.Exists(finalFile))
+        var concatResult = FFMpeg.Instance.ConcatVideos(videoUids, finalFile, (x) => { }, CancellationToken ?? default);
+        if (concatResult == FFMpeg.MuxResult.Success && File.Exists(finalFile))
         {
             var info = new FileInfo(finalFile);
             downloading.FileSize = Format.FormatFileSize(info.Length);
@@ -446,6 +452,10 @@ public abstract class DownloadService
         else
         {
             downloading.FileSize = Format.FormatFileSize(0);
+            if (concatResult == FFMpeg.MuxResult.Cancelled)
+            {
+                LogManager.Warning(Tag, $"ConcatVideos已取消，finalFile: {finalFile}");
+            }
         }
 
         return finalFile;
