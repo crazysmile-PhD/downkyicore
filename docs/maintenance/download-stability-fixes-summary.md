@@ -24,9 +24,9 @@ Scope: documentation-only summary of completed work from PR #11 through PR #33.
 | DSA-12 | Persistence collection snapshots | ✅ Completed | #31 | `DownloadFiles` and `DownloadedFiles` are snapshotted before persistence serialization. |
 | Built-in resume branch | Resume-state handling for built-in downloader | ✅ Completed | #27 | Built-in downloader resume branch observes completion state. |
 | Aria2 cleanup blocking | Cleanup path async behavior | ✅ Completed | #28 | Aria2 cleanup no longer uses synchronous waits in the cleanup path. |
-| DSA-16 | aria2 completion handler diagnosability cleanup | ✅ Completed | #32 | Added completion-context logs in `AriaDownloadFinish()` without runtime behavior changes. |
+| DSA-16 | aria2 completion handler diagnosability cleanup | ✅ Completed | #21 | Added completion-context logs in `AriaDownloadFinish()` without runtime behavior changes. |
 | DSA-03 | FFmpeg mux-phase cancellation support | ✅ Completed | #33 | FFmpeg mux/concat phases now honor cancellation and classify cancelled outcomes distinctly from success/failure. |
-| DSA-17 | built-in downloader memory-budget guardrail docs | ✅ Completed | #32 | Added inline comments documenting per-task memory budget and capacity planning formula. |
+| DSA-17 | built-in downloader memory-budget guardrail docs | ✅ Completed | #21 | Added inline comments documenting per-task memory budget and capacity planning formula. |
 
 Related follow-up hardening (not a separate DSA row in the original table):
 
@@ -37,8 +37,6 @@ Related follow-up hardening (not a separate DSA row in the original table):
 
 | Audit ID | Area | PR | Status | Notes |
 |---|---|---|---|---|
-| DSA-16 | aria2 completion handler diagnosability cleanup | #32 | Completed | Added completion-context logs in `AriaDownloadFinish()` without runtime behavior changes. |
-| DSA-17 | built-in downloader memory-budget guardrail docs | #32 | Completed | Added inline memory-budget guardrail comments for capacity planning. |
 | DSA-03 | FFmpeg mux-phase cancellation support | #33 | Completed | FFmpeg mux/concat phases now support cancellation classification distinct from failure/success. |
 
 ## 2) What changed (behavioral summary)
