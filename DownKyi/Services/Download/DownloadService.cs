@@ -314,7 +314,8 @@ public abstract class DownloadService
         }
         catch (Exception e)
         {
-            /**/
+            Console.PrintLine($"{Tag}.GenerateNfoFile()发生异常: {0}", e);
+            LogManager.Error($"{Tag}.GenerateNfoFile()", e);
         }
     }
 
