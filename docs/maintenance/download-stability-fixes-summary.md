@@ -2,7 +2,7 @@
 
 This document summarizes the download-stability audit findings that have already been addressed and merged.
 
-Scope: documentation-only summary of completed work from PR #11 through PR #28.
+Scope: documentation-only summary of completed work from PR #11 through PR #31.
 
 ## 1) Completed findings map
 
@@ -20,6 +20,8 @@ Scope: documentation-only summary of completed work from PR #11 through PR #28.
 | DSA-15 | NFO failure-path logging hardening | ✅ Completed | #20 | NFO generation failure path no longer silently swallows errors. |
 | DSA-09 | Download path parsing hardening | ✅ Completed | #24 | Download path parsing is centralized and guarded. |
 | DSA-10 | Concat temp-segment cleanup policy hardening | ✅ Completed | #26 | Successful concat temp-segment cleanup policy is clarified and guarded. |
+| DSA-11 | Failed state persistence | ✅ Completed | #30 | `DownloadFailed(...)` now persists failed state immediately. |
+| DSA-12 | Persistence collection snapshots | ✅ Completed | #31 | `DownloadFiles` and `DownloadedFiles` are snapshotted before persistence serialization. |
 | Built-in resume branch | Resume-state handling for built-in downloader | ✅ Completed | #27 | Built-in downloader resume branch observes completion state. |
 | Aria2 cleanup blocking | Cleanup path async behavior | ✅ Completed | #28 | Aria2 cleanup no longer uses synchronous waits in the cleanup path. |
 | DSA-16 | aria2 completion handler diagnosability cleanup | ✅ Completed | this PR | Added completion-context logs in `AriaDownloadFinish()` without runtime behavior changes. |
@@ -28,6 +30,14 @@ Scope: documentation-only summary of completed work from PR #11 through PR #28.
 Related follow-up hardening (not a separate DSA row in the original table):
 
 - PR #17 prevents blocking downloader callbacks while still performing UI-thread marshaling for progress updates.
+
+
+## 1.1) Newly completed fixes since the last summary refresh
+
+| Audit ID | Area | PR | Status | Notes |
+|---|---|---|---|---|
+| DSA-11 | Failed state persistence | #30 | Completed | `DownloadFailed(...)` now persists failed state immediately. |
+| DSA-12 | Persistence collection snapshots | #31 | Completed | `DownloadFiles` and `DownloadedFiles` are snapshotted before persistence serialization. |
 
 ## 2) What changed (behavioral summary)
 
@@ -73,6 +83,8 @@ Related follow-up hardening (not a separate DSA row in the original table):
 - PR #26 completed DSA-10 by adding guarded cleanup for clearly owned concat temp segments after successful concat.
 - PR #27 hardened the built-in downloader resume branch so resumed downloads update local completion/cancellation state.
 - PR #28 reduced Aria2 cleanup blocking by replacing synchronous RPC waits with async best-effort cleanup while clearing stale gids for remove-task cleanup paths.
+- PR #30 completed DSA-11 by persisting failed download state immediately in `DownloadFailed(...)`.
+- PR #31 completed DSA-12 by snapshotting mutable per-item persistence collections before serialization.
 
 ## 3) What was intentionally **not** changed
 
@@ -87,13 +99,11 @@ To keep the above fixes narrow and low-risk, the completed PRs intentionally did
 
 ## 4) Remaining risks and follow-up recommendations
 
-The following audit items were not part of the completed runtime-fix set through PR #28 and should remain on the follow-up list:
+The following audit items were not part of the completed runtime-fix set through PR #31 and should remain on the follow-up list:
 
 - DSA-03: FFmpeg mux-phase cancellation support.
-- DSA-11: immediate persistence of failed status.
-- DSA-12: snapshot/guard mutable per-item collections during persistence.
 
 ## 5) Maintainer notes
 
-- Treat PR #11–#28 as the completed stability batches to date, covering fallback, cancellation cleanup, overwrite protection, thread-safe progress signaling, path safety, concat temp handling, resume-state handling, and aria2 cleanup responsiveness.
+- Treat PR #11–#31 as the completed stability batches to date, covering fallback, cancellation cleanup, overwrite protection, thread-safe progress signaling, path safety, concat temp handling, resume-state handling, aria2 cleanup responsiveness, and the DSA-11/DSA-12 persistence hardening updates.
 - For future stability work, prefer narrow PRs mapped 1:1 to remaining DSA items to keep rollback and verification simple.
