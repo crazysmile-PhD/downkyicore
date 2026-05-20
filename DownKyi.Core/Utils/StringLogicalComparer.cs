@@ -15,16 +15,33 @@ public class StringLogicalComparer<T> : IComparer<T>
             throw new ArgumentException("Parameters can't be null");
         }
 
-        var fileA = x as string;
-        var fileB = y as string;
-        var arr1 = fileA?.ToCharArray();
-        var arr2 = fileB?.ToCharArray();
-        int i = 0, j = 0;
-        while (i < arr1?.Length && j < arr2?.Length)
+        // StringLogicalComparer<T> is intended for string-compatible values.
+        // Keep existing behavior for non-string T inputs.
+        string? fileA = x as string;
+        string? fileB = y as string;
+        char[]? arr1 = fileA?.ToCharArray();
+        char[]? arr2 = fileB?.ToCharArray();
+
+        if (arr1 == null || arr2 == null)
+        {
+            int? arr1Length = arr1?.Length;
+            int? arr2Length = arr2?.Length;
+            if (arr1Length == arr2Length)
+            {
+                return 0;
+            }
+
+            return arr1Length > arr2Length ? 1 : -1;
+        }
+
+        int i = 0;
+        int j = 0;
+        while (i < arr1.Length && j < arr2.Length)
         {
             if (char.IsDigit(arr1[i]) && char.IsDigit(arr2[j]))
             {
-                string s1 = "", s2 = "";
+                string s1 = "";
+                string s2 = "";
                 while (i < arr1.Length && char.IsDigit(arr1[i]))
                 {
                     s1 += arr1[i];
@@ -64,11 +81,11 @@ public class StringLogicalComparer<T> : IComparer<T>
             }
         }
 
-        if (arr1?.Length == arr2?.Length)
+        if (arr1.Length == arr2.Length)
         {
             return 0;
         }
 
-        return arr1?.Length > arr2?.Length ? 1 : -1;
+        return arr1.Length > arr2.Length ? 1 : -1;
     }
 }
