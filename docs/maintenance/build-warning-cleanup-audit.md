@@ -102,3 +102,5 @@ Do not:
 
 - PR #XX: removed unused usings and obviously unused locals without behavior changes.
 - PR #XX: added pure helper nullability cleanup audit; no nullable code changes yet.
+
+- PR #XX: annotated formatting helper nullability in `DownKyi.Core/Utils/Format.cs` without behavior changes.
