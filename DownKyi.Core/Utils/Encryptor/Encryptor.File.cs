@@ -82,9 +82,9 @@ public static partial class Encryptor
         var outValue = 0;
 
         var iv = new byte[16];
-        fin.Read(iv, 0, 16);
+        fin.ReadExactly(iv, 0, iv.Length);
         var salt = new byte[16];
-        fin.Read(salt, 0, 16);
+        fin.ReadExactly(salt, 0, salt.Length);
 
         var sma = CreateRijndael(password, salt);
         sma.IV = iv;
