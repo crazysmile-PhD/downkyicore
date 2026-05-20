@@ -1,5 +1,7 @@
 ﻿namespace DownKyi.Core.Utils;
 
+using System.Diagnostics.CodeAnalysis;
+
 public static class Format
 {
     /// <summary>
@@ -118,7 +120,7 @@ public static class Format
     /// </summary>
     /// <param name="originName"></param>
     /// <returns></returns>
-    public static string FormatFileName(string originName)
+    public static string FormatFileName([DisallowNull] string originName)
     {
         var destName = originName;
         destName = Path.GetInvalidFileNameChars().Aggregate(destName, (current, c) => current.Replace(c.ToString(), string.Empty));
