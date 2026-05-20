@@ -81,8 +81,14 @@ public static class ObjectHelper
     /// <param name="file"></param>
     /// <param name="cookieJar"></param>
     /// <returns></returns>
-    public static bool WriteCookiesToDisk(string file, List<DownKyiCookie> cookieJar)
+    public static bool WriteCookiesToDisk(string file, List<DownKyiCookie>? cookieJar
+    )
     {
+        if (cookieJar is null)
+        {
+            return false;
+        }
+
         return WriteObjectToDisk(file, cookieJar);
     }
 
@@ -118,10 +124,15 @@ public static class ObjectHelper
     /// </summary>
     /// <param name="stream"></param>
     /// <returns></returns>
-    public static List<DownKyiCookie>? ReadCookiesFromStream(Stream stream)
+    public static List<DownKyiCookie>? ReadCookiesFromStream(Stream? stream)
     {
         try
         {
+            if (stream is null)
+            {
+                return null;
+            }
+
             if (stream.CanSeek)
             {
                 stream.Seek(0, SeekOrigin.Begin);
@@ -152,10 +163,15 @@ public static class ObjectHelper
     /// <param name="file"></param>
     /// <param name="obj"></param>
     /// <returns></returns>
-    public static bool WriteObjectToDisk(string file, object obj)
+    public static bool WriteObjectToDisk(string file, object? obj)
     {
         try
         {
+            if (obj is null)
+            {
+                return false;
+            }
+
             using Stream stream = File.Create(file);
             Console.PrintLine("Writing object to disk... ");
 
