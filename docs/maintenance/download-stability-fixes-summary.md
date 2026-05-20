@@ -4,6 +4,8 @@ This document summarizes the download-stability audit findings that have already
 
 Scope: documentation-only summary of completed work from PR #11 through PR #33.
 
+Regression checklist: see `docs/maintenance/download-stability-regression-checklist.md` for ongoing manual verification of the completed batch.
+
 ## 1) Completed findings map
 
 | Finding ID | Risk area | Status | Implemented in PR | Notes |
