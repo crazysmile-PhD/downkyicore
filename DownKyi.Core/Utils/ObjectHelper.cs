@@ -17,17 +17,18 @@ public static class ObjectHelper
     /// <returns></returns>
     public static List<DownKyiCookie> ParseCookie(string? url)
     {
-        var cookies = new List<DownKyiCookie>();
-        if (url is null or "") return cookies;
+        if (string.IsNullOrEmpty(url))
+        {
+            return new List<DownKyiCookie>();
+        }
 
         var uri = new Uri(url);
         var queryString = uri.Query;
         var query = HttpUtility.ParseQueryString(queryString);
-        cookies = (from item in query.AllKeys.OfType<string>()
+        return (from item in query.AllKeys.OfType<string>()
             let value = query[item]
             where item is not ("Expires" or "gourl")
             select new DownKyiCookie(item, value, ".bilibili.com")).ToList();
-        return cookies;
         // if (url is null or "")
         // {
         //     return cookieContainer;
