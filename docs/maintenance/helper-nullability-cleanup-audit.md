@@ -78,3 +78,7 @@ Future PR rules:
 - no downloader behavior changes
 - no FFmpeg process behavior changes
 - GitHub Actions PR Build passes
+
+## 7. Related discovery docs
+
+- `docs/maintenance/path-string-helper-nullability-candidates.md` — concrete file-level candidates for the next path/string helper nullable cleanup PR.
