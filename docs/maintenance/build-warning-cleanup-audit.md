@@ -101,3 +101,4 @@ Do not:
 ## Progress log
 
 - PR #XX: removed unused usings and obviously unused locals without behavior changes.
+- PR #XX: added pure helper nullability cleanup audit; no nullable code changes yet.
