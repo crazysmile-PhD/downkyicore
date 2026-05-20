@@ -113,3 +113,4 @@ Do not:
 - PR #XX: aligned the third small Aria2 JSON-RPC wrapper DTO nullability batch with nullable result/error response semantics.
 
 - PR #XX: refreshed build warning inventory after the first three Aria2 DTO nullability batches; no production code changes.
+- PR #XX: aligned small Aria2 leaf DTO nullability for `AriaUri` and `SystemMulticallMathod` with nullable deserialization semantics.
