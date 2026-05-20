@@ -6,16 +6,16 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaGetSessionInfo
     {
         [JsonProperty("id")]
-        public string Id { get; set; }
+        public string? Id { get; set; }
 
         [JsonProperty("jsonrpc")]
-        public string Jsonrpc { get; set; }
+        public string? Jsonrpc { get; set; }
 
         [JsonProperty("result")]
-        public AriaGetSessionInfoResult Result { get; set; }
+        public AriaGetSessionInfoResult? Result { get; set; }
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; }
+        public AriaError? Error { get; set; }
 
         public override string ToString()
         {
@@ -27,7 +27,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaGetSessionInfoResult
     {
         [JsonProperty("sessionId")]
-        public string SessionId { get; set; }
+        public string? SessionId { get; set; }
 
         public override string ToString()
         {
