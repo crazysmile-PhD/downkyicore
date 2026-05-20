@@ -109,3 +109,5 @@ Do not:
 - PR #XX: fixed CA2022 in `Encryptor.File` by requiring exact IV/salt reads during decrypt setup.
 - PR #XX: aligned the first small Aria2 JSON-RPC response DTO nullability batch with nullable result/error response semantics.
 - PR #XX: aligned the second small Aria2 JSON-RPC response/result DTO nullability batch with nullable deserialization semantics.
+
+- PR #XX: aligned the third small Aria2 JSON-RPC wrapper DTO nullability batch with nullable result/error response semantics.
