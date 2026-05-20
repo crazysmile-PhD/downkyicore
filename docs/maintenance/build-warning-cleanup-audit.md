@@ -97,3 +97,7 @@ Do not:
 - modify database/settings schema
 - add warning suppressions
 - fix nullable warnings in this PR
+
+## Progress log
+
+- PR #XX: removed unused usings and obviously unused locals without behavior changes.
