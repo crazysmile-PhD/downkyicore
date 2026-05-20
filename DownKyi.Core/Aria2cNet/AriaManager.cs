@@ -10,7 +10,7 @@ public class AriaManager
     // gid对应项目的状态
     public delegate void TellStatusHandler(long totalLength, long completedLength, long speed, string gid);
 
-    public event TellStatusHandler TellStatus;
+    public event TellStatusHandler? TellStatus;
 
     protected virtual void OnTellStatus(long totalLength, long completedLength, long speed, string gid)
     {
@@ -18,11 +18,11 @@ public class AriaManager
     }
 
     // 下载结果回调
-    public delegate void DownloadFinishHandler(bool isSuccess, string downloadPath, string gid, string msg = null);
+    public delegate void DownloadFinishHandler(bool isSuccess, string? downloadPath, string gid, string? msg = null);
 
-    public event DownloadFinishHandler DownloadFinish;
+    public event DownloadFinishHandler? DownloadFinish;
 
-    protected virtual void OnDownloadFinish(bool isSuccess, string downloadPath, string gid, string msg = null)
+    protected virtual void OnDownloadFinish(bool isSuccess, string? downloadPath, string gid, string? msg = null)
     {
         DownloadFinish?.Invoke(isSuccess, downloadPath, gid, msg);
     }
@@ -30,7 +30,7 @@ public class AriaManager
     // 全局下载状态
     public delegate void GetGlobalStatusHandler(long speed);
 
-    public event GetGlobalStatusHandler GlobalStatus;
+    public event GetGlobalStatusHandler? GlobalStatus;
 
     protected virtual void OnGlobalStatus(long speed)
     {
@@ -46,7 +46,7 @@ public class AriaManager
     /// <param name="gid"></param>
     /// <param name="action"></param>
     /// <returns></returns>
-    public DownloadResult GetDownloadStatus(string gid, Action action = null)
+    public DownloadResult GetDownloadStatus(string gid, Action? action = null)
     {
         string filePath = "";
         while (true)
