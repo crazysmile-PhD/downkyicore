@@ -106,3 +106,4 @@ Do not:
 - PR #42: annotated formatting helper nullability in `DownKyi.Core/Utils/Format.cs` without behavior changes.
 - PR #XX: added `docs/maintenance/path-string-helper-nullability-candidates.md` as discovery inventory for the next narrow helper nullability batch (docs-only).
 - PR #XX: annotated `StringLogicalComparer<T>` nullability without changing comparator ordering behavior.
+- PR #45: annotated `ObjectHelper` nullable flow without changing cookie, stream, or serialization behavior.
