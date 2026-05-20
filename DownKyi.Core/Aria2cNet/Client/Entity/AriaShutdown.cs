@@ -6,16 +6,16 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaShutdown
     {
         [JsonProperty("id")]
-        public string Id { get; set; }
+        public string? Id { get; set; }
 
         [JsonProperty("jsonrpc")]
-        public string Jsonrpc { get; set; }
+        public string? Jsonrpc { get; set; }
 
         [JsonProperty("result")]
-        public string Result { get; set; }
+        public string? Result { get; set; }
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; }
+        public AriaError? Error { get; set; }
 
         public override string ToString()
         {
