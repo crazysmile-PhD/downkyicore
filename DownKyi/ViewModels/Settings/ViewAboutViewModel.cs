@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -11,8 +11,8 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using Prism.Commands;
 using Prism.Events;
-using Prism.Regions;
-using Prism.Services.Dialogs;
+using Prism.Navigation.Regions;
+using Prism.Dialogs;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.Settings;
@@ -95,22 +95,22 @@ public class ViewAboutViewModel : ViewModelBase
     #region 命令申明
 
     // 访问主页事件
-    private AsyncDelegateCommand? _appNameCommand;
+    private DownKyiAsyncDelegateCommand? _appNameCommand;
 
-    public AsyncDelegateCommand AppNameCommand => _appNameCommand ??= new AsyncDelegateCommand(ExecuteAppNameCommand);
+    public DownKyiAsyncDelegateCommand AppNameCommand => _appNameCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAppNameCommand);
 
     /// <summary>
     /// 访问主页事件
     /// </summary>
     private async Task ExecuteAppNameCommand()
     {
-        await PlatformHelper.OpenUrl("https://github.com/yaobiao131/downkyicore/releases", EventAggregator);
+        await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases", EventAggregator);
     }
 
     // 检查更新事件
     private ICommand? _checkUpdateCommand;
 
-    public ICommand CheckUpdateCommand => _checkUpdateCommand ??= new AsyncDelegateCommand(ExecuteCheckUpdateCommand);
+    public ICommand CheckUpdateCommand => _checkUpdateCommand ??= new DownKyiAsyncDelegateCommand(ExecuteCheckUpdateCommand);
 
 
     /// <summary>
@@ -138,16 +138,16 @@ public class ViewAboutViewModel : ViewModelBase
     }
 
     // 意见反馈事件
-    private AsyncDelegateCommand? _feedbackCommand;
+    private DownKyiAsyncDelegateCommand? _feedbackCommand;
 
-    public AsyncDelegateCommand FeedbackCommand => _feedbackCommand ??= new AsyncDelegateCommand(ExecuteFeedbackCommand);
+    public DownKyiAsyncDelegateCommand FeedbackCommand => _feedbackCommand ??= new DownKyiAsyncDelegateCommand(ExecuteFeedbackCommand);
 
     /// <summary>
     /// 意见反馈事件
     /// </summary>
     private async Task ExecuteFeedbackCommand()
     {
-        await PlatformHelper.OpenUrl("https://github.com/yaobiao131/downkyicore/issues", EventAggregator);
+        await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/issues", EventAggregator);
     }
 
     // 是否接收测试版更新事件
@@ -183,9 +183,9 @@ public class ViewAboutViewModel : ViewModelBase
     }
 
     // Google.Protobuf许可证查看事件
-    private AsyncDelegateCommand? _protobufLicenseCommand;
+    private DownKyiAsyncDelegateCommand? _protobufLicenseCommand;
 
-    public AsyncDelegateCommand ProtobufLicenseCommand => _protobufLicenseCommand ??= new AsyncDelegateCommand(ExecuteProtobufLicenseCommand);
+    public DownKyiAsyncDelegateCommand ProtobufLicenseCommand => _protobufLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteProtobufLicenseCommand);
 
     /// <summary>
     /// Google.Protobuf许可证查看事件
@@ -196,9 +196,9 @@ public class ViewAboutViewModel : ViewModelBase
     }
 
     // Newtonsoft.Json许可证查看事件
-    private AsyncDelegateCommand? _newtonsoftLicenseCommand;
+    private DownKyiAsyncDelegateCommand? _newtonsoftLicenseCommand;
 
-    public AsyncDelegateCommand NewtonsoftLicenseCommand => _newtonsoftLicenseCommand ??= new AsyncDelegateCommand(ExecuteNewtonsoftLicenseCommand);
+    public DownKyiAsyncDelegateCommand NewtonsoftLicenseCommand => _newtonsoftLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteNewtonsoftLicenseCommand);
 
     /// <summary>
     /// Newtonsoft.Json许可证查看事件
@@ -209,9 +209,9 @@ public class ViewAboutViewModel : ViewModelBase
     }
 
     // Prism.DryIoc许可证查看事件
-    private AsyncDelegateCommand? _prismLicenseCommand;
+    private DownKyiAsyncDelegateCommand? _prismLicenseCommand;
 
-    public AsyncDelegateCommand PrismLicenseCommand => _prismLicenseCommand ??= new AsyncDelegateCommand(ExecutePrismLicenseCommand);
+    public DownKyiAsyncDelegateCommand PrismLicenseCommand => _prismLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecutePrismLicenseCommand);
 
     /// <summary>
     /// Prism.DryIoc许可证查看事件
@@ -222,9 +222,9 @@ public class ViewAboutViewModel : ViewModelBase
     }
 
     // QRCoder许可证查看事件
-    private AsyncDelegateCommand? _qRCoderLicenseCommand;
+    private DownKyiAsyncDelegateCommand? _qRCoderLicenseCommand;
 
-    public AsyncDelegateCommand QRCoderLicenseCommand => _qRCoderLicenseCommand ??= new AsyncDelegateCommand(ExecuteQRCoderLicenseCommand);
+    public DownKyiAsyncDelegateCommand QRCoderLicenseCommand => _qRCoderLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteQRCoderLicenseCommand);
 
     /// <summary>
     /// QRCoder许可证查看事件
@@ -235,9 +235,9 @@ public class ViewAboutViewModel : ViewModelBase
     }
 
     // System.Data.SQLite.Core许可证查看事件
-    private AsyncDelegateCommand? _sQLiteLicenseCommand;
+    private DownKyiAsyncDelegateCommand? _sQLiteLicenseCommand;
 
-    public AsyncDelegateCommand SQLiteLicenseCommand => _sQLiteLicenseCommand ??= new AsyncDelegateCommand(ExecuteSQLiteLicenseCommand);
+    public DownKyiAsyncDelegateCommand SQLiteLicenseCommand => _sQLiteLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSQLiteLicenseCommand);
 
     /// <summary>
     /// System.Data.SQLite.Core许可证查看事件
@@ -248,9 +248,9 @@ public class ViewAboutViewModel : ViewModelBase
     }
 
     // Aria2c许可证查看事件
-    private AsyncDelegateCommand? _ariaLicenseCommand;
+    private DownKyiAsyncDelegateCommand? _ariaLicenseCommand;
 
-    public AsyncDelegateCommand AriaLicenseCommand => _ariaLicenseCommand ??= new AsyncDelegateCommand(ExecuteAriaLicenseCommand);
+    public DownKyiAsyncDelegateCommand AriaLicenseCommand => _ariaLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAriaLicenseCommand);
 
     /// <summary>
     /// Aria2c许可证查看事件
@@ -261,9 +261,9 @@ public class ViewAboutViewModel : ViewModelBase
     }
 
     // FFmpeg许可证查看事件
-    private AsyncDelegateCommand? _fFmpegLicenseCommand;
+    private DownKyiAsyncDelegateCommand? _fFmpegLicenseCommand;
 
-    public AsyncDelegateCommand FFmpegLicenseCommand => _fFmpegLicenseCommand ??= new AsyncDelegateCommand(ExecuteFFmpegLicenseCommand);
+    public DownKyiAsyncDelegateCommand FFmpegLicenseCommand => _fFmpegLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteFFmpegLicenseCommand);
 
     /// <summary>
     /// FFmpeg许可证查看事件

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading;
@@ -14,7 +14,7 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Prism.Commands;
 using Prism.Events;
-using Prism.Regions;
+using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 

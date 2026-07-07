@@ -11,7 +11,6 @@ namespace DownKyi.Core.Storage.Database;
 public sealed class SqliteDatabase : IDisposable
 {
     private readonly string _connectionString;
-    private SqliteConnection? _connection;
 
     /// <summary>
     /// 创建或连接一个SQLite数据库
@@ -23,7 +22,8 @@ public sealed class SqliteDatabase : IDisposable
         {
             Mode = SqliteOpenMode.ReadWriteCreate,
             DataSource = dbPath,
-            Pooling = false
+            Pooling = true,
+            DefaultTimeout = 30
         }.ToString();
     }
 
@@ -38,7 +38,9 @@ public sealed class SqliteDatabase : IDisposable
         {
             Mode = SqliteOpenMode.ReadWriteCreate,
             Password = secretKey,
-            DataSource = dbPath
+            DataSource = dbPath,
+            Pooling = true,
+            DefaultTimeout = 30
         }.ToString();
     }
     
@@ -101,9 +103,21 @@ public sealed class SqliteDatabase : IDisposable
     /// </summary>
     private SqliteConnection CreateConnection()
     {
-        _connection = new SqliteConnection(_connectionString);
-        _connection.Open();
-        return _connection;
+        var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        ConfigureConnection(connection);
+        return connection;
+    }
+
+    private static void ConfigureConnection(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+PRAGMA foreign_keys = ON;
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA busy_timeout = 5000;";
+        command.ExecuteNonQuery();
     }
 
     /// <summary>
@@ -111,16 +125,5 @@ public sealed class SqliteDatabase : IDisposable
     /// </summary>
     public void Dispose()
     {
-        _connection?.Close();
-        _connection?.Dispose();
-        _connection = null;
-        
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        try 
-        {
-            SqliteConnection.ClearAllPools();
-        }
-        catch {  }
     }
 }

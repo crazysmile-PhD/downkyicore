@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 namespace DownKyi.ViewModels;
 
@@ -210,8 +211,14 @@ public sealed class ImmutableObservableCollection<T> : IList<T>,IList, INotifyCo
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
-    public void AddRange(List<T> downloadingItems)
+    public void AddRange(IEnumerable<T> items)
     {
-       _items = _items.AddRange(downloadingItems);
+        CheckReentrancy();
+        var added = items as ICollection<T> ?? items.ToList();
+        if (added.Count == 0) return;
+
+        _items = _items.AddRange(added);
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+        OnPropertyChanged(nameof(Count));
     }
 }

@@ -1,8 +1,8 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using DownKyi.Images;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.Services;

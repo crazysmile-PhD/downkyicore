@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using DownKyi.Core.Settings;
@@ -9,7 +9,7 @@ using DownKyi.Images;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Events;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
@@ -393,7 +393,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
             { "downloadCover", DownloadCover }
         };
 
-        RaiseRequestClose(new DialogResult(ButtonResult.OK, parameters));
+        RaiseRequestClose(new DialogResult(ButtonResult.OK) { Parameters = parameters });
     }
 
     #endregion

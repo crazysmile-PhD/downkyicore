@@ -4,7 +4,7 @@ using System.Windows.Input;
 
 namespace DownKyi.Commands;
 
-public class AsyncDelegateCommand<T> : ICommand
+public class DownKyiAsyncDelegateCommand<T> : ICommand
 {
     private readonly Func<T?, Task> _execute;
     private readonly Func<T, bool>? _canExecute;
@@ -12,7 +12,7 @@ public class AsyncDelegateCommand<T> : ICommand
 
     public event EventHandler? CanExecuteChanged;
 
-    public AsyncDelegateCommand(Func<T?, Task> execute, Func<T, bool>? canExecute = null)
+    public DownKyiAsyncDelegateCommand(Func<T?, Task> execute, Func<T, bool>? canExecute = null)
     {
         _execute = execute ?? throw new ArgumentNullException(nameof(execute));
         _canExecute = canExecute;
@@ -76,14 +76,14 @@ public class AsyncDelegateCommand<T> : ICommand
     }
 }
 
-public class AsyncDelegateCommand : AsyncDelegateCommand<object>
+public class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
 {
-    public AsyncDelegateCommand(Func<object?, Task> execute, Func<object, bool>? canExecute = null)
+    public DownKyiAsyncDelegateCommand(Func<object?, Task> execute, Func<object, bool>? canExecute = null)
         : base(execute, canExecute)
     {
     }
     
-    public AsyncDelegateCommand(Func<Task> execute, Func<bool>? canExecute = null)
+    public DownKyiAsyncDelegateCommand(Func<Task> execute, Func<bool>? canExecute = null)
         : this(_ => execute(), 
             canExecute != null ? _ => canExecute() : null)
     {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -168,9 +168,9 @@ public class ViewDelogoViewModel : ViewModelBase
     #region 命令申明
 
     // 选择视频事件
-    private AsyncDelegateCommand? _selectVideoCommand;
+    private DownKyiAsyncDelegateCommand? _selectVideoCommand;
 
-    public AsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new AsyncDelegateCommand(ExecuteSelectVideoCommand);
+    public DownKyiAsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSelectVideoCommand);
 
     /// <summary>
     /// 选择视频事件

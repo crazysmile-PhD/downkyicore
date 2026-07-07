@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -117,9 +117,9 @@ public class ViewBiliHelperViewModel : ViewModelBase
     }
 
     // 访问网页事件
-    private AsyncDelegateCommand? _gotoWebCommand;
+    private DownKyiAsyncDelegateCommand? _gotoWebCommand;
 
-    public AsyncDelegateCommand GotoWebCommand => _gotoWebCommand ??= new AsyncDelegateCommand(ExecuteGotoWebCommand);
+    public DownKyiAsyncDelegateCommand GotoWebCommand => _gotoWebCommand ??= new DownKyiAsyncDelegateCommand(ExecuteGotoWebCommand);
 
     /// <summary>
     /// 访问网页事件
@@ -157,9 +157,9 @@ public class ViewBiliHelperViewModel : ViewModelBase
     }
 
     // 访问用户空间事件
-    private AsyncDelegateCommand? _visitUserSpaceCommand;
+    private DownKyiAsyncDelegateCommand? _visitUserSpaceCommand;
 
-    public AsyncDelegateCommand VisitUserSpaceCommand => _visitUserSpaceCommand ??= new AsyncDelegateCommand(ExecuteVisitUserSpaceCommand);
+    public DownKyiAsyncDelegateCommand VisitUserSpaceCommand => _visitUserSpaceCommand ??= new DownKyiAsyncDelegateCommand(ExecuteVisitUserSpaceCommand);
 
     /// <summary>
     /// 访问用户空间事件

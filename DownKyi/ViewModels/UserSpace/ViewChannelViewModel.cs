@@ -1,10 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using DownKyi.Core.BiliApi.Users.Models;
 using Prism.Commands;
 using Prism.Events;
-using Prism.Regions;
+using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.UserSpace;
 

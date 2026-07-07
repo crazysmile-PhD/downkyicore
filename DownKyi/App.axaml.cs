@@ -1,9 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-#if !DEBUG
 using System.Threading;
-#endif
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -40,7 +40,7 @@ namespace DownKyi;
 
 public partial class App : PrismApplication
 {
-    public const string RepoOwner = "yaobiao131";
+    public const string RepoOwner = "crazysmile-PhD";
     public const string RepoName = "downkyicore";
 
     public static ImmutableObservableCollection<DownloadingItem> DownloadingList { get; set; } = new();
@@ -49,11 +49,13 @@ public partial class App : PrismApplication
     public new MainWindow MainWindow => Container.Resolve<MainWindow>();
     public IClassicDesktopStyleApplicationLifetime? AppLife;
 #if !DEBUG
-    private static Mutex _mutex;
+    private static Mutex? _mutex;
 #endif
 
     // 下载服务
     private IDownloadService? _downloadService;
+    private readonly CancellationTokenSource _startupCancellation = new();
+    private Task? _downloadStartupTask;
 
     public override void Initialize()
     {
@@ -148,39 +150,13 @@ public partial class App : PrismApplication
 
     protected override AvaloniaObject CreateShell()
     {
-        if (Design.IsDesignMode)
+        var shell = Container.Resolve<MainWindow>();
+        if (!Design.IsDesignMode)
         {
-            return Container.Resolve<MainWindow>();
+            Dispatcher.UIThread.Post(StartDownloadBootstrap, DispatcherPriority.Background);
         }
 
-        // 下载数据存储服务（内部完成建表 DDL）
-        var downloadStorageService = Container.Resolve<DownloadStorageService>();
-
-        // 从数据库读取
-        var downloadingItems = downloadStorageService.GetDownloading();
-        var downloadedItems = downloadStorageService.GetDownloaded();
-        DownloadingList.AddRange(downloadingItems);
-        DownloadedList.AddRange(downloadedItems);
-
-        // 启动下载服务
-        var download = SettingsManager.GetInstance().GetDownloader();
-        switch (download)
-        {
-            case Core.Settings.Downloader.NotSet:
-                break;
-            case Core.Settings.Downloader.BuiltIn:
-                _downloadService = new BuiltinDownloadService(DownloadingList, DownloadedList, (IDialogService?)Container.GetContainer().GetService(typeof(IDialogService)));
-                break;
-            case Core.Settings.Downloader.Aria:
-                _downloadService = new AriaDownloadService(DownloadingList, DownloadedList, (IDialogService?)Container.GetContainer().GetService(typeof(IDialogService)));
-                break;
-            case Core.Settings.Downloader.CustomAria:
-                _downloadService = new CustomAriaDownloadService(DownloadingList, DownloadedList, (IDialogService?)Container.GetContainer().GetService(typeof(IDialogService)));
-                break;
-        }
-
-        _downloadService?.Start();
-        return Container.Resolve<MainWindow>();
+        return shell;
     }
 
     protected override void OnInitialized()
@@ -195,6 +171,69 @@ public partial class App : PrismApplication
     public static void PropertyChangeAsync(Action callback)
     {
         Dispatcher.UIThread.Invoke(callback);
+    }
+
+    public static void PropertyChangePost(Action callback)
+    {
+        Dispatcher.UIThread.Post(callback);
+    }
+
+    private void StartDownloadBootstrap()
+    {
+        _downloadStartupTask ??= LoadDownloadStateAndStartServiceAsync(_startupCancellation.Token);
+    }
+
+    private async Task LoadDownloadStateAndStartServiceAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var downloadStorageService = Container.Resolve<DownloadStorageService>();
+            var downloadState = await LoadDownloadStateAsync(downloadStorageService, cancellationToken);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            DownloadingList.AddRange(downloadState.DownloadingItems);
+            DownloadedList.AddRange(downloadState.DownloadedItems);
+
+            _downloadService = CreateDownloadService();
+            if (_downloadService != null)
+            {
+                await _downloadService.StartAsync(cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // App 正在关闭时允许取消。
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(nameof(App), e);
+        }
+    }
+
+    private static async Task<DownloadStartupState> LoadDownloadStateAsync(
+        DownloadStorageService downloadStorageService,
+        CancellationToken cancellationToken)
+    {
+        var downloadingItemsTask = downloadStorageService.GetDownloadingAsync(cancellationToken);
+        var downloadedItemsTask = downloadStorageService.GetDownloadedAsync(cancellationToken);
+
+        await Task.WhenAll(downloadingItemsTask, downloadedItemsTask);
+
+        return new DownloadStartupState(
+            downloadingItemsTask.Result,
+            downloadedItemsTask.Result);
+    }
+
+    private IDownloadService? CreateDownloadService()
+    {
+        var dialogService = Container.Resolve<IDialogService>();
+        return SettingsManager.GetInstance().GetDownloader() switch
+        {
+            Core.Settings.Downloader.BuiltIn => new BuiltinDownloadService(DownloadingList, DownloadedList, dialogService),
+            Core.Settings.Downloader.Aria => new AriaDownloadService(DownloadingList, DownloadedList, dialogService),
+            Core.Settings.Downloader.CustomAria => new CustomAriaDownloadService(DownloadingList, DownloadedList, dialogService),
+            _ => null
+        };
     }
 
     /// <summary>
@@ -242,16 +281,33 @@ public partial class App : PrismApplication
         DownloadedList.AddRange(downloadedItems);
     }
 
-    private void OnExit(object sender, ControlledApplicationLifetimeExitEventArgs e)
+    private async void OnExit(object sender, ControlledApplicationLifetimeExitEventArgs e)
     {
+        _startupCancellation.Cancel();
+
         // 强制落盘设置（防止防抖延迟期间退出导致配置丢失）
         SettingsManager.GetInstance().Flush();
+
+        if (_downloadStartupTask != null)
+        {
+            await Task.WhenAny(_downloadStartupTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        }
+
         // 关闭下载服务
-        _downloadService?.End();
+        if (_downloadService != null)
+        {
+            await _downloadService.EndAsync();
+        }
+
+        await LogManager.FlushAsync(TimeSpan.FromSeconds(2));
     }
 
     private void NativeMenuItem_OnClick(object? sender, EventArgs e)
     {
         AppLife?.Shutdown();
     }
+
+    private sealed record DownloadStartupState(
+        List<DownloadingItem> DownloadingItems,
+        List<DownloadedItem> DownloadedItems);
 }

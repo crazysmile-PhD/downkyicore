@@ -5,11 +5,11 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using DownKyi.PrismExtension.Common;
 using Prism.Ioc;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace DownKyi.PrismExtension.Dialog;
 
-public class DialogService : Prism.Services.Dialogs.DialogService, IDialogService
+public class DialogService : Prism.Dialogs.DialogService, IDialogService
 {
     private readonly IContainerExtension _containerExtension;
 
@@ -32,7 +32,8 @@ public class DialogService : Prism.Services.Dialogs.DialogService, IDialogServic
         parameters ??= new DialogParameters();
 
         var dialogWindow = CreateDialogWindow(windowName);
-        ConfigureDialogWindowEvents(dialogWindow, callback);
+        var dialogCallback = callback == null ? DialogCallback.Empty : new DialogCallback().OnClose(callback);
+        ConfigureDialogWindowEvents(dialogWindow, dialogCallback);
         ConfigureDialogWindowContent(name, dialogWindow, parameters);
 
         return ShowDialogWindow(dialogWindow, isModal, parentWindow);

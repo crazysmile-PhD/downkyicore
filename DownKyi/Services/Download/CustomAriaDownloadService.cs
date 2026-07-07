@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.Aria2cNet;
 using DownKyi.Core.Aria2cNet.Client;
@@ -251,16 +252,17 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
     /// <summary>
     /// 停止下载服务
     /// </summary>
-    public void End()
+    public Task EndAsync()
     {
-        Task.Run(EndTask).Wait();
+        return EndTask();
     }
 
     /// <summary>
     /// 启动下载服务
     /// </summary>
-    public void Start()
+    public Task StartAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // 设置aria token
         AriaClient.SetToken(SettingsManager.GetInstance().GetAriaToken());
         // 设置aria host
@@ -270,6 +272,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
 
         // 启动基本服务
         BaseStart();
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -335,7 +338,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
 #endif
 
         // 关闭服务器
-        bool close = AriaServer.CloseServer();
+        bool close = await AriaServer.CloseServerAsync();
 #if DEBUG
         Core.Utils.Debugging.Console.PrintLine(close);
 #endif
@@ -407,7 +410,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         AriaManager ariaManager = new AriaManager();
         ariaManager.TellStatus += AriaTellStatus;
         ariaManager.DownloadFinish += AriaDownloadFinish;
-        return ariaManager.GetDownloadStatus(downloading.Downloading.Gid, new Action(() =>
+        return ariaManager.GetDownloadStatusAsync(downloading.Downloading.Gid, new Action(() =>
         {
             CancellationToken?.ThrowIfCancellationRequested();
             switch (downloading.Downloading.DownloadStatus)
@@ -420,7 +423,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
                 case DownloadStatus.Downloading:
                     break;
             }
-        }));
+        }), CancellationToken ?? System.Threading.CancellationToken.None).GetAwaiter().GetResult();
     }
 
     private void AriaTellStatus(long totalLength, long completedLength, long speed, string gid)
@@ -471,7 +474,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         }
     }
 
-    private void AriaDownloadFinish(bool isSuccess, string downloadPath, string gid, string msg)
+    private void AriaDownloadFinish(bool isSuccess, string? downloadPath, string gid, string? msg)
     {
         //throw new NotImplementedException();
     }

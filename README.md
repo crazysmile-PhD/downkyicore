@@ -2,18 +2,18 @@
 
 <div align="center">
 
-[![GitHub Repo stars](https://img.shields.io/github/stars/yaobiao131/downkyicore)](https://github.com/yaobiao131/downkyicore/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/yaobiao131/downkyicore)](https://github.com/yaobiao131/downkyicore/network)
-[![GitHub issues](https://img.shields.io/github/issues/yaobiao131/downkyicore)](https://github.com/yaobiao131/downkyicore/issues)
-[![LICENSE](https://img.shields.io/github/license/yaobiao131/downkyicore)](https://github.com/yaobiao131/downkyicore/blob/main/LICENSE)
+[![GitHub Repo stars](https://img.shields.io/github/stars/crazysmile-PhD/downkyicore)](https://github.com/crazysmile-PhD/downkyicore/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/crazysmile-PhD/downkyicore)](https://github.com/crazysmile-PhD/downkyicore/network)
+[![GitHub issues](https://img.shields.io/github/issues/crazysmile-PhD/downkyicore)](https://github.com/crazysmile-PhD/downkyicore/issues)
+[![LICENSE](https://img.shields.io/github/license/crazysmile-PhD/downkyicore)](https://github.com/crazysmile-PhD/downkyicore/blob/main/LICENSE)
 
 </div>
 
 ## 下载
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/yaobiao131/downkyicore)](https://github.com/yaobiao131/downkyicore/releases/latest)
-[![GitHub Release Date](https://img.shields.io/github/release-date/yaobiao131/downkyicore)](https://github.com/yaobiao131/downkyicore/releases/latest)
-[![GitHub all releases](https://img.shields.io/github/downloads/yaobiao131/downkyicore/total)](https://github.com/yaobiao131/downkyicore/releases/latest)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/crazysmile-PhD/downkyicore)](https://github.com/crazysmile-PhD/downkyicore/releases/latest)
+[![GitHub Release Date](https://img.shields.io/github/release-date/crazysmile-PhD/downkyicore)](https://github.com/crazysmile-PhD/downkyicore/releases/latest)
+[![GitHub all releases](https://img.shields.io/github/downloads/crazysmile-PhD/downkyicore/total)](https://github.com/crazysmile-PhD/downkyicore/releases/latest)
 
 [更新日志](CHANGELOG.md)
 

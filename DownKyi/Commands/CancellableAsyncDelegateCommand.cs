@@ -5,7 +5,7 @@ using System.Windows.Input;
 
 namespace DownKyi.Commands;
 
-public class CancellableAsyncDelegateCommand<T> : ICommand
+public class CancellableDownKyiAsyncDelegateCommand<T> : ICommand
 {
     private readonly Func<T, CancellationToken, Task> _execute;
     private readonly Func<T, bool>? _canExecute;
@@ -14,7 +14,7 @@ public class CancellableAsyncDelegateCommand<T> : ICommand
 
     public event EventHandler? CanExecuteChanged;
 
-    public CancellableAsyncDelegateCommand(
+    public CancellableDownKyiAsyncDelegateCommand(
         Func<T, CancellationToken, Task> execute, 
         Func<T, bool>? canExecute = null)
     {

@@ -1,5 +1,5 @@
 using Avalonia.Controls;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace DownKyi.PrismExtension.Dialog;
 

@@ -509,7 +509,7 @@
                         HorizontalAlignment="Left"
                         VerticalAlignment="Top"
                         VerticalContentAlignment="Center"
-                        Watermark="{DynamicResource SearchVideoByName}"
+                        PlaceholderText="{DynamicResource SearchVideoByName}"
                         Text="{Binding Path=InputSearchText, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
                         TextWrapping="Wrap">
                         <TextBox.KeyBindings>

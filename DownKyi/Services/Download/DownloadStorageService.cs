@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Logging;
@@ -31,7 +32,8 @@ public class DownloadStorageService : IDisposable
         {
             DataSource = dbPath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = false
+            Pooling = true,
+            DefaultTimeout = 30
         }.ToString();
 
         _connection = new SqliteConnection(connString);
@@ -47,6 +49,10 @@ public class DownloadStorageService : IDisposable
     {
         const string ddl = @"
                            PRAGMA foreign_keys = ON;
+                           PRAGMA journal_mode = WAL;
+                           PRAGMA synchronous = NORMAL;
+                           PRAGMA temp_store = MEMORY;
+                           PRAGMA busy_timeout = 5000;
 
                            CREATE TABLE IF NOT EXISTS download_base (
                                id                    TEXT PRIMARY KEY,
@@ -91,6 +97,10 @@ public class DownloadStorageService : IDisposable
                                finished_timestamp    INTEGER NOT NULL DEFAULT 0,
                                finished_time         TEXT NOT NULL DEFAULT ''
                            );
+
+                           CREATE INDEX IF NOT EXISTS ix_downloading_status ON downloading(download_status);
+                           CREATE INDEX IF NOT EXISTS ix_downloaded_finished_timestamp ON downloaded(finished_timestamp DESC);
+                           CREATE INDEX IF NOT EXISTS ix_download_base_main_title_order ON download_base(main_title, [order]);
                            ";
         lock (_lock)
         {
@@ -250,7 +260,8 @@ SELECT
     db.name, db.duration, db.video_codec_name, db.resolution, db.audio_codec,
     db.file_path, db.file_size, db.page
 FROM downloading dl
-LEFT JOIN download_base db ON db.id = dl.id";
+LEFT JOIN download_base db ON db.id = dl.id
+ORDER BY db.main_title COLLATE NOCASE, db.""order"" ASC";
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
                 {
@@ -300,6 +311,11 @@ LEFT JOIN download_base db ON db.id = dl.id";
         }
 
         return result;
+    }
+
+    public Task<List<DownloadingItem>> GetDownloadingAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() => GetDownloading(), cancellationToken);
     }
 
     /// <summary>
@@ -472,7 +488,8 @@ SELECT
     db.name, db.duration, db.video_codec_name, db.resolution, db.audio_codec,
     db.file_path, db.file_size, db.page
 FROM downloaded d
-LEFT JOIN download_base db ON db.id = d.id";
+LEFT JOIN download_base db ON db.id = d.id
+ORDER BY d.finished_timestamp DESC";
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
                 {
@@ -500,6 +517,11 @@ LEFT JOIN download_base db ON db.id = d.id";
         }
 
         return result;
+    }
+
+    public Task<List<DownloadedItem>> GetDownloadedAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() => GetDownloaded(), cancellationToken);
     }
 
     /// <summary>

@@ -1,10 +1,10 @@
 using System;
 using System.Threading.Tasks;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace DownKyi.PrismExtension.Dialog;
 
-public interface IDialogService : Prism.Services.Dialogs.IDialogService
+public interface IDialogService : Prism.Dialogs.IDialogService
 {
     public Task ShowDialogAsync(string name, IDialogParameters? parameters, Action<IDialogResult>? callback = null,
         string? windowName = null);

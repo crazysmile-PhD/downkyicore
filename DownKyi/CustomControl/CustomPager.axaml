@@ -243,7 +243,7 @@
                      Margin="5,0,0,0"
                      VerticalAlignment="Center"  
                      MaxLength="5"
-                     Watermark="{DynamicResource JumpTo}"
+                     PlaceholderText="{DynamicResource JumpTo}"
                      CornerRadius="4"
                      Width="65">
                      <Interaction.Behaviors>

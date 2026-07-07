@@ -35,7 +35,7 @@ namespace DownKyi.Core.Aria2cNet.Server
             // 日志文件
             var logFile = Path.Combine(ariaDir, "aira.log");
             // 自动保存会话文件的时间间隔
-            var saveSessionInterval = 30;
+            var saveSessionInterval = 120;
 
             // --enable-rpc --rpc-listen-all=true --rpc-allow-origin-all=true --continue=true
             await Task.Run(() =>
@@ -59,16 +59,14 @@ namespace DownKyi.Core.Aria2cNet.Server
                 }
                 else
                 {
-                    // 日志文件存在，如果大于100M，则删除
+                    // 日志文件存在，如果大于1M，则截断
                     try
                     {
-                        var stream = File.Open(logFile, FileMode.Open);
-                        if (stream.Length >= 10 * 1024 * 1024L)
+                        using var stream = File.Open(logFile, FileMode.Open);
+                        if (stream.Length >= 1 * 1024 * 1024L)
                         {
                             stream.SetLength(0);
                         }
-
-                        stream.Close();
                     }
                     catch (Exception e)
                     {
@@ -140,10 +138,18 @@ namespace DownKyi.Core.Aria2cNet.Server
             // 等待进程结束
             await Task.Run(() =>
             {
+                if (Server == null)
+                {
+                    return;
+                }
+
                 Server.WaitForExit(30000);
                 try
                 {
-                    Server.Kill();
+                    if (!Server.HasExited)
+                    {
+                        Server.Kill();
+                    }
                 }
                 catch (Exception)
                 {
@@ -179,11 +185,19 @@ namespace DownKyi.Core.Aria2cNet.Server
             var task = AriaClient.ShutdownAsync();
             if (task.Result != null && task.Result.Result != null && task.Result.Result == "OK")
             {
+                if (Server == null)
+                {
+                    return true;
+                }
+
                 // 等待进程结束
                 Server.WaitForExit(30000);
                 try
                 {
-                    Server.Kill();
+                    if (!Server.HasExited)
+                    {
+                        Server.Kill();
+                    }
                 }
                 catch (Exception)
                 {

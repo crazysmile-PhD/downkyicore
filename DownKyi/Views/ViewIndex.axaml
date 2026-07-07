@@ -82,7 +82,7 @@
                     VerticalContentAlignment="Center"
                     BorderThickness="0"
                     FontSize="16"
-                    Watermark="{DynamicResource IndexHintText}"
+                    PlaceholderText="{DynamicResource IndexHintText}"
                     Text="{Binding InputText,Mode=TwoWay}">
                     <TextBox.KeyBindings>
                         <KeyBinding Command="{Binding InputCommand}" Gesture="Enter" />

@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.Aria2cNet.Client;
+using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Client.Entity;
 using DownKyi.Core.Logging;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -7,10 +7,12 @@ namespace DownKyi.Core.Aria2cNet;
 
 public class AriaManager
 {
+    private const int PollDelayMilliseconds = 500;
+
     // gid对应项目的状态
     public delegate void TellStatusHandler(long totalLength, long completedLength, long speed, string gid);
 
-    public event TellStatusHandler TellStatus;
+    public event TellStatusHandler? TellStatus;
 
     protected virtual void OnTellStatus(long totalLength, long completedLength, long speed, string gid)
     {
@@ -18,11 +20,11 @@ public class AriaManager
     }
 
     // 下载结果回调
-    public delegate void DownloadFinishHandler(bool isSuccess, string downloadPath, string gid, string msg = null);
+    public delegate void DownloadFinishHandler(bool isSuccess, string? downloadPath, string gid, string? msg = null);
 
-    public event DownloadFinishHandler DownloadFinish;
+    public event DownloadFinishHandler? DownloadFinish;
 
-    protected virtual void OnDownloadFinish(bool isSuccess, string downloadPath, string gid, string msg = null)
+    protected virtual void OnDownloadFinish(bool isSuccess, string? downloadPath, string gid, string? msg = null)
     {
         DownloadFinish?.Invoke(isSuccess, downloadPath, gid, msg);
     }
@@ -30,7 +32,7 @@ public class AriaManager
     // 全局下载状态
     public delegate void GetGlobalStatusHandler(long speed);
 
-    public event GetGlobalStatusHandler GlobalStatus;
+    public event GetGlobalStatusHandler? GlobalStatus;
 
     protected virtual void OnGlobalStatus(long speed)
     {
@@ -38,113 +40,118 @@ public class AriaManager
     }
 
     /// <summary>
-    /// 获取gid下载项的状态
-    /// 
-    /// TODO
-    /// 对于下载的不同状态的返回值的测试
+    /// 获取gid下载项的状态。
     /// </summary>
-    /// <param name="gid"></param>
-    /// <param name="action"></param>
-    /// <returns></returns>
-    public DownloadResult GetDownloadStatus(string gid, Action action = null)
+    public DownloadResult GetDownloadStatus(string gid, Action? action = null)
     {
-        string filePath = "";
+        return GetDownloadStatusAsync(gid, action).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// 获取gid下载项的状态。
+    /// </summary>
+    public async Task<DownloadResult> GetDownloadStatusAsync(
+        string gid,
+        Action? action = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(gid))
+        {
+            return DownloadResult.FAILED;
+        }
+
+        string? filePath = null;
         while (true)
         {
-            Task<AriaTellStatus> status = AriaClient.TellStatus(gid);
-            if (status == null || status.Result == null)
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var status = await AriaClient.TellStatus(gid).ConfigureAwait(false);
+            if (status?.Result == null)
             {
+                if (status?.Error?.Message?.Contains("is not found", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    OnDownloadFinish(false, null, gid, status.Error.Message);
+                    return DownloadResult.ABORT;
+                }
+
+                await Task.Delay(PollDelayMilliseconds, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-            if (status.Result.Result == null && status.Result.Error != null)
+            var result = status.Result;
+            if (result.Files?.Count >= 1)
             {
-                if (status.Result.Error.Message.Contains("is not found"))
-                {
-                    OnDownloadFinish(false, null, gid, status.Result.Error.Message);
-                    return DownloadResult.ABORT;
-                }
+                filePath = result.Files[0].Path;
             }
 
-            if (status.Result.Result.Files != null && status.Result.Result.Files.Count >= 1)
-            {
-                filePath = status.Result.Result.Files[0].Path;
-            }
-
-            long totalLength = long.Parse(status.Result.Result.TotalLength);
-            long completedLength = long.Parse(status.Result.Result.CompletedLength);
-            long speed = long.Parse(status.Result.Result.DownloadSpeed);
+            var totalLength = ParseLong(result.TotalLength);
+            var completedLength = ParseLong(result.CompletedLength);
+            var speed = ParseLong(result.DownloadSpeed);
 
             // 回调
             OnTellStatus(totalLength, completedLength, speed, gid);
 
             // 在外部执行
-            if (action != null)
+            action?.Invoke();
+
+            if (result.Status == "complete")
             {
-                action.Invoke();
+                OnDownloadFinish(true, filePath, gid, null);
+                return DownloadResult.SUCCESS;
             }
 
-            if (status.Result.Result.Status == "complete")
+            if (!string.IsNullOrEmpty(result.ErrorCode) && result.ErrorCode != "0")
             {
-                break;
-            }
-
-            if (status.Result.Result.ErrorCode != null && status.Result.Result.ErrorCode != "0")
-            {
-                if (status.Result != null)
+                if (!string.IsNullOrEmpty(result.ErrorMessage))
                 {
-                    Console.PrintLine("ErrorMessage: " + status.Result.Result.ErrorMessage);
-                    LogManager.Error("AriaManager", status.Result.Result.ErrorMessage);
+                    Console.PrintLine("ErrorMessage: " + result.ErrorMessage);
+                    LogManager.Error("AriaManager", result.ErrorMessage);
                 }
 
-                //// 如果返回状态码不是200，则继续
-                //if (status.Result.Result.ErrorMessage.Contains("The response status is not successful"))
-                //{
-                //    Thread.Sleep(1000);
-                //    continue;
-                //}
-
-                // aira中删除记录
-                Task<AriaRemove> ariaRemove1 = AriaClient.RemoveDownloadResultAsync(gid);
-                Console.PrintLine(ariaRemove1);
-                if (ariaRemove1.Result != null)
+                var ariaRemove = await AriaClient.RemoveDownloadResultAsync(gid).ConfigureAwait(false);
+                if (ariaRemove?.Result != null)
                 {
-                    LogManager.Debug("AriaManager", ariaRemove1.Result.Result);
+                    LogManager.Debug("AriaManager", ariaRemove.Result);
                 }
 
-                // 返回回调信息，退出函数
-                OnDownloadFinish(false, null, gid, status.Result.Result.ErrorMessage);
+                OnDownloadFinish(false, null, gid, result.ErrorMessage);
                 return DownloadResult.FAILED;
             }
 
-            // 降低CPU占用
-            Thread.Sleep(100);
+            await Task.Delay(PollDelayMilliseconds, cancellationToken).ConfigureAwait(false);
         }
-
-        OnDownloadFinish(true, filePath, gid, null);
-        return DownloadResult.SUCCESS;
     }
 
     /// <summary>
-    /// 获取全局下载速度
+    /// 获取全局下载速度。
     /// </summary>
-    public async void GetGlobalStatus()
+    public void GetGlobalStatus()
     {
-        while (true)
+        _ = GetGlobalStatusAsync();
+    }
+
+    /// <summary>
+    /// 获取全局下载速度。
+    /// </summary>
+    public async Task GetGlobalStatusAsync(CancellationToken cancellationToken = default)
+    {
+        while (!cancellationToken.IsCancellationRequested)
         {
-            // 查询全局status
-            AriaGetGlobalStat globalStatus = await AriaClient.GetGlobalStatAsync();
-            if (globalStatus == null || globalStatus.Result == null)
+            var globalStatus = await AriaClient.GetGlobalStatAsync().ConfigureAwait(false);
+            if (globalStatus?.Result == null)
             {
+                await Task.Delay(PollDelayMilliseconds, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-            long globalSpeed = long.Parse(globalStatus.Result.DownloadSpeed);
-            // 回调
-            OnGlobalStatus(globalSpeed);
+            OnGlobalStatus(ParseLong(globalStatus.Result.DownloadSpeed));
 
-            // 降低CPU占用
-            Thread.Sleep(100);
+            await Task.Delay(PollDelayMilliseconds, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static long ParseLong(string? value)
+    {
+        return long.TryParse(value, out var parsed) ? parsed : 0;
     }
 }

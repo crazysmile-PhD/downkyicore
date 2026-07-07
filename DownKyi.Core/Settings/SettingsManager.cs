@@ -62,10 +62,15 @@ public partial class SettingsManager
     {
         try
         {
+            if (!File.Exists(_settingsName))
+            {
+                return CreateDefaultSettingsFile();
+            }
+
             var jsonWordTemplate = File.ReadAllText(_settingsName, Encoding.UTF8);
             try
             {
-                return JsonConvert.DeserializeObject<AppSettings>(jsonWordTemplate);
+                return JsonConvert.DeserializeObject<AppSettings>(jsonWordTemplate) ?? new AppSettings();
             }
             catch
             {
@@ -98,6 +103,22 @@ public partial class SettingsManager
         return new AppSettings();
     }
 
+    private AppSettings CreateDefaultSettingsFile()
+    {
+        var settings = new AppSettings();
+        try
+        {
+            WriteSettingsFile(settings);
+        }
+        catch (Exception e)
+        {
+            Console.PrintLine("CreateDefaultSettingsFile()发生异常: {0}", e);
+            LogManager.Error("SettingsManager", e);
+        }
+
+        return settings;
+    }
+
     /// <summary>
     /// 触发防抖计时器：500ms 内多次调用只落盘一次
     /// </summary>
@@ -126,8 +147,7 @@ public partial class SettingsManager
             if (!_dirty) return;
             try
             {
-                var json = JsonConvert.SerializeObject(_appSettings);
-                File.WriteAllText(_settingsName, json, Encoding.UTF8);
+                WriteSettingsFile(_appSettings);
                 _dirty = false;
             }
             catch (Exception e)
@@ -146,5 +166,17 @@ public partial class SettingsManager
         _flushTimer?.Dispose();
         _flushTimer = null;
         FlushNow();
+    }
+
+    private void WriteSettingsFile(AppSettings settings)
+    {
+        var directory = Path.GetDirectoryName(_settingsName);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var json = JsonConvert.SerializeObject(settings);
+        File.WriteAllText(_settingsName, json, Encoding.UTF8);
     }
 }

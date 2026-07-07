@@ -1,10 +1,10 @@
-﻿using System;
+using System;
 using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Mvvm;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
@@ -111,10 +111,10 @@ public class BaseDialogViewModel : BindableBase, IDialogAware
     //触发窗体关闭事件
     public virtual void RaiseRequestClose(IDialogResult dialogResult)
     {
-        RequestClose?.Invoke(dialogResult);
+        RequestClose.Invoke(dialogResult);
     }
 
-    public event Action<IDialogResult>? RequestClose;
+    public DialogCloseListener RequestClose { get; }
 
     public virtual bool CanCloseDialog()
     {

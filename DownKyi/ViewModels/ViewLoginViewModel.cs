@@ -8,7 +8,7 @@ using DownKyi.Events;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Events;
-using Prism.Regions;
+using Prism.Navigation.Regions;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels;

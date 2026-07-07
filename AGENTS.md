@@ -25,7 +25,7 @@
 
 **DownKyi** 是一个跨平台的 Bilibili 视频下载器，使用以下技术构建：
 
-- **Avalonia 11** — 跨平台 XAML UI（Windows、Linux、macOS）
+- **Avalonia 12** — 跨平台 XAML UI（Windows、Linux、macOS）
 - **Prism.DryIoc.Avalonia** — MVVM 框架、依赖注入、导航、发布/订阅事件
 - **Microsoft.Data.Sqlite** — SQLite 原生 SQL 存储（下载队列、历史记录）
 - **FFMpegCore** — 音视频混流
@@ -36,8 +36,8 @@
 
 | 项目 | 类型 | 目标框架 |
 |---|---|---|
-| `DownKyi` | WinExe（Avalonia UI） | `net8.0` |
-| `DownKyi.Core` | 类库 | `net8.0` |
+| `DownKyi` | WinExe（Avalonia UI） | `net10.0` |
+| `DownKyi.Core` | 类库 | `net10.0` |
 
 目标运行时：`win-x64`、`win-x86`、`linux-x64`、`linux-arm64`、`osx-x64`、`osx-arm64`。
 
@@ -90,7 +90,7 @@ DownKyi/
 
 ### 前置条件
 
-- .NET 8 SDK
+- .NET 10 SDK
 - 系统 PATH 中存在 FFmpeg 二进制文件（开发时混流操作所需）
 - `PupNet` 工具（仅打包时需要，开发构建无需）
 

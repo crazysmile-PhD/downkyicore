@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using DownKyi.Core.Settings;
 using DownKyi.Events;
@@ -6,7 +6,7 @@ using DownKyi.Models;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Events;
-using Prism.Regions;
+using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Settings;
 

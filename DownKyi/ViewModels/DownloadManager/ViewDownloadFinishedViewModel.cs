@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -12,7 +12,7 @@ using DownKyi.Services.Download;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Events;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.DownloadManager;
@@ -140,8 +140,8 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
     }
 
     // 打开视频事件
-    private AsyncDelegateCommand<DownloadedItem>? _openVideoCommand;
-    public AsyncDelegateCommand<DownloadedItem> OpenVideoCommand => _openVideoCommand ??= new AsyncDelegateCommand<DownloadedItem>(ExecuteOpenVideoCommand);
+    private DownKyiAsyncDelegateCommand<DownloadedItem>? _openVideoCommand;
+    public DownKyiAsyncDelegateCommand<DownloadedItem> OpenVideoCommand => _openVideoCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteOpenVideoCommand);
 
     /// <summary>
     /// 打开视频事件
@@ -167,9 +167,9 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
     }
 
     // 打开文件夹事件
-    private AsyncDelegateCommand<DownloadedItem>? _openFolderCommand;
+    private DownKyiAsyncDelegateCommand<DownloadedItem>? _openFolderCommand;
 
-    public AsyncDelegateCommand<DownloadedItem> OpenFolderCommand => _openFolderCommand ??= new AsyncDelegateCommand<DownloadedItem>(ExecuteOpenFolderCommand);
+    public DownKyiAsyncDelegateCommand<DownloadedItem> OpenFolderCommand => _openFolderCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteOpenFolderCommand);
 
 
     private static readonly IReadOnlyDictionary<string, string[]> FileSuffixMap = new Dictionary<string, string[]>

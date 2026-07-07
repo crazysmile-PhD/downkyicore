@@ -6,7 +6,7 @@ public partial class SettingsManager
     private const AllowStatus IsReceiveBetaVersion = AllowStatus.No;
 
     // 是否在启动时自动检查更新
-    private const AllowStatus AutoUpdateWhenLaunch = AllowStatus.Yes;
+    private const AllowStatus AutoUpdateWhenLaunch = AllowStatus.No;
 
     /// <summary>
     /// 获取是否接收测试版更新

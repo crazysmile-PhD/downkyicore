@@ -21,8 +21,8 @@ using DownKyi.ViewModels.PageViewModels;
 using Newtonsoft.Json;
 using Prism.Commands;
 using Prism.Events;
-using Prism.Regions;
-using Prism.Services.Dialogs;
+using Prism.Navigation.Regions;
+using Prism.Dialogs;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 

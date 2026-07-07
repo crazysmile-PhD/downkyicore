@@ -1,8 +1,8 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using Avalonia.Controls.Documents;
 using DownKyi.Utils;
 using Prism.Commands;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 using System.Linq;
 using System.Threading.Tasks;
 using DownKyi.Commands;
@@ -15,12 +15,12 @@ namespace DownKyi.ViewModels.Dialogs
     {
         public const string Tag = "NewVersionAvailable";
 
-        private AsyncDelegateCommand? _allowCommand;
+        private DownKyiAsyncDelegateCommand? _allowCommand;
 
         private DelegateCommand? _skipCurrentVersionCommand;
 
         public DelegateCommand SkipCurrentVersionCommand => _skipCurrentVersionCommand ??= new DelegateCommand(ExecuteSkipCurrentVersionCommand);
-        public AsyncDelegateCommand AllowCommand => _allowCommand ??= new AsyncDelegateCommand(ExecuteAllowCommand);
+        public DownKyiAsyncDelegateCommand AllowCommand => _allowCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAllowCommand);
 
         private async Task ExecuteAllowCommand()
         {

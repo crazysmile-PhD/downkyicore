@@ -246,26 +246,19 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     }
 
     /// <summary>
-    /// 停止下载服务(转换await和Task.Wait两种调用形式)
-    /// </summary>
-    private async Task EndTask()
-    {
-        // 停止基本任务
-        await BaseEndTask();
-    }
-
-    /// <summary>
     /// 停止下载服务
     /// </summary>
-    public void End()
+    public Task EndAsync()
     {
-        Task.Run(EndTask).Wait();
+        return BaseEndTask();
     }
 
-    public void Start()
+    public Task StartAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // 启动基本服务
         BaseStart();
+        return Task.CompletedTask;
     }
 
     /// <summary>

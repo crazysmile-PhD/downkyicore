@@ -1,6 +1,6 @@
 using DownKyi.Images;
 using Prism.Commands;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 

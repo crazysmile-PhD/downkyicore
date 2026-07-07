@@ -43,7 +43,7 @@ namespace DownKyi.Core.Settings
         private const int AriaListenPort = 35076;
 
         // Aria日志等级
-        private const AriaConfigLogLevel AriaLogLevel = AriaConfigLogLevel.INFO;
+        private const AriaConfigLogLevel AriaLogLevel = AriaConfigLogLevel.WARN;
 
         // Aria单文件最大线程数
         private const int AriaSplit = 5;
