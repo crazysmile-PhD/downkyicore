@@ -2,3 +2,17 @@
 .vs/
 .vscode/
 **/.DS_Store
+
+Aria/*
+Cache/*
+Config/*
+Logs/*
+Media/*
+Storage/*
+
+!Aria/.gitkeep
+!Cache/.gitkeep
+!Config/.gitkeep
+!Logs/.gitkeep
+!Media/.gitkeep
+!Storage/.gitkeep
