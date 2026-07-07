@@ -3,16 +3,16 @@
 .vscode/
 **/.DS_Store
 
-*/**/obj
-*/**/bin
-TestResults/
-**/TestResults/
+Aria/*
+Cache/*
+Config/*
+Logs/*
+Media/*
+Storage/*
 
-DownKyi.Core/Binary/*
-
-script/downloads
-script/pupnet/output
-script/macos/*.dmg
-script/macos/*.app
-
-*.sln.DotSettings.user
+!Aria/.gitkeep
+!Cache/.gitkeep
+!Config/.gitkeep
+!Logs/.gitkeep
+!Media/.gitkeep
+!Storage/.gitkeep
