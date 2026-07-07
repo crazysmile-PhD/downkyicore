@@ -81,20 +81,6 @@ jobs:
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}-trimmed.${{ matrix.kind }}
           path: script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}-trimmed.${{ matrix.kind }}
-      - name: Release
-        uses: ncipollo/release-action@v1
-        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.trimmed == false }}
-        with:
-          allowUpdates: true
-          artifacts: script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
-          body: ${{ needs.changelog.outputs.release_body }}
-      - name: Release trimmed
-        uses: ncipollo/release-action@v1
-        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.trimmed == true }}
-        with:
-          allowUpdates: true
-          artifacts: script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}-trimmed.${{ matrix.kind }}
-          body: ${{ needs.changelog.outputs.release_body }}
   build-linux:
     runs-on: ubuntu-22.04
     needs: changelog
@@ -154,22 +140,15 @@ jobs:
         run: |
           "$GITHUB_WORKSPACE/.tools/pupnet" DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r linux-${{ matrix.cpu }} -y
         working-directory: ./script/pupnet
-      - name: Upload build artifacts ${{ matrix.kind }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
-          path: script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}-1${{ matrix.package-tail }}.${{ matrix.kind }}
       - name: Change Name
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         run: mv "${{ matrix.package-head }}${{ steps.version.outputs.content }}-1${{ matrix.package-tail }}.${{ matrix.kind }}" "${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}"
         working-directory: ./script/pupnet/output/
-      - name: Release
-        uses: ncipollo/release-action@v1
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+      - name: Upload build artifacts ${{ matrix.kind }}
+        uses: actions/upload-artifact@v7
         with:
-          allowUpdates: true
-          artifacts: script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
-          body: ${{ needs.changelog.outputs.release_body }}
+          name: ${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
+          path: script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
   build-macos:
     runs-on: macos-15
     needs: changelog
@@ -251,10 +230,21 @@ jobs:
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
           path: script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs: [changelog, build-windows, build-linux, build-macos]
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+          merge-multiple: true
       - name: Release
         uses: ncipollo/release-action@v1
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         with:
           allowUpdates: true
-          artifacts: script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+          replacesArtifacts: true
+          artifacts: artifacts/*
           body: ${{ needs.changelog.outputs.release_body }}
