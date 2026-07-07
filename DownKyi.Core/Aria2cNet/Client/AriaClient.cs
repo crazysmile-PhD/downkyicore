@@ -1058,23 +1058,23 @@ public static class AriaClient
     /// <typeparam name="T"></typeparam>
     /// <param name="ariaSend"></param>
     /// <returns></returns>
-    private async static Task<T> GetRpcResponseAsync<T>(AriaSendData ariaSend)
+    private static async Task<T> GetRpcResponseAsync<T>(AriaSendData ariaSend) where T : new()
     {
         // 去掉null
         var jsonSetting = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
         // 转换为json字符串
         string sendJson = JsonConvert.SerializeObject(ariaSend, Formatting.Indented, jsonSetting);
         // 向服务器请求数据
-        string result = string.Empty;
+        string? result = null;
         await Task.Run(() =>
         {
             result = Request(GetRpcUri(), sendJson);
         });
-        if (result == null) { return default; }
+        if (result == null) { return new T(); }
 
         // 反序列化
         var aria = JsonConvert.DeserializeObject<T>(result);
-        return aria;
+        return aria ?? new T();
     }
     
     
@@ -1086,7 +1086,7 @@ public static class AriaClient
     /// <param name="parameters"></param>
     /// <param name="retry"></param>
     /// <returns></returns>
-    private static string Request(string url, string parameters, int retry = 3)
+    private static string? Request(string url, string parameters, int retry = 3)
     {
         // 重试次数
         if (retry <= 0) { return null; }
@@ -1104,8 +1104,7 @@ public static class AriaClient
         }
         catch (HttpRequestException e) when (e.StatusCode != null)
         {
-            var response = (HttpResponseMessage)e.Data["Response"];
-            if (response == null) { return null; }
+            if (e.Data["Response"] is not HttpResponseMessage response) { return null; }
         
             using var reader = new StreamReader(response.Content.ReadAsStream(), Encoding.UTF8);
             var html = reader.ReadToEnd();

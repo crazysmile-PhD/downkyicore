@@ -10,7 +10,7 @@ public class ViewAlertDialogViewModel : BaseDialogViewModel
 
     #region 页面属性申明
 
-    private VectorImage _image;
+    private VectorImage _image = null!;
 
     public VectorImage Image
     {
@@ -18,7 +18,7 @@ public class ViewAlertDialogViewModel : BaseDialogViewModel
         set => SetProperty(ref _image, value);
     }
 
-    private string _message;
+    private string _message = string.Empty;
 
     public string Message
     {

@@ -25,7 +25,7 @@ public class ViewAboutViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private string _appName;
+    private string _appName = string.Empty;
 
     public string AppName
     {
@@ -33,7 +33,7 @@ public class ViewAboutViewModel : ViewModelBase
         set => SetProperty(ref _appName, value);
     }
 
-    private string _appVersion;
+    private string _appVersion = string.Empty;
 
     public string AppVersion
     {

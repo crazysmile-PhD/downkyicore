@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Logging;
+namespace DownKyi.Core.Logging;
 
 /// <summary>
 /// 日志信息
@@ -23,30 +23,30 @@ public class LogInfo
     /// <summary>
     /// 异常源
     /// </summary>
-    public string Source { get; set; }
+    public string Source { get; set; } = string.Empty;
 
     /// <summary>
     /// 异常信息
     /// </summary>
-    public string Message { get; set; }
+    public string Message { get; set; } = string.Empty;
 
     /// <summary>
     /// 异常对象
     /// </summary>
-    public Exception Exception { get; set; }
+    public Exception? Exception { get; set; }
 
     /// <summary>
     /// 日志类型
     /// </summary>
-    public string ExceptionType { get; set; }
+    public string ExceptionType { get; set; } = string.Empty;
 
     /// <summary>
     /// 请求路径
     /// </summary>
-    public string RequestUrl { get; set; }
+    public string RequestUrl { get; set; } = string.Empty;
 
     /// <summary>
     /// 客户端代理
     /// </summary>
-    public string UserAgent { get; set; }
+    public string UserAgent { get; set; } = string.Empty;
 }

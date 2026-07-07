@@ -74,7 +74,7 @@ public class ChannelMedia : BindableBase
     #region 命令申明
 
     // 视频标题点击事件
-    private DelegateCommand<object> _titleCommand;
+    private DelegateCommand<object>? _titleCommand;
 
     public DelegateCommand<object> TitleCommand => _titleCommand ?? (_titleCommand = new DelegateCommand<object>(ExecuteTitleCommand));
 

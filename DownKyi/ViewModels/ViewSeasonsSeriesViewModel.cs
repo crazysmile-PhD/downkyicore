@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using DownKyi.Commands;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
@@ -27,7 +28,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 {
     public const string Tag = "PageSeasonsSeries";
 
-    private CancellationTokenSource tokenSource;
+    private CancellationTokenSource tokenSource = null!;
 
     private long mid = -1;
     private long id = -1;
@@ -70,7 +71,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         set => SetProperty(ref _noDataVisibility, value);
     }
 
-    private VectorImage _arrowBack;
+    private VectorImage _arrowBack = null!;
 
     public VectorImage ArrowBack
     {
@@ -78,7 +79,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         set => SetProperty(ref _arrowBack, value);
     }
 
-    private VectorImage _downloadManage;
+    private VectorImage _downloadManage = null!;
 
     public VectorImage DownloadManage
     {
@@ -86,7 +87,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         set => SetProperty(ref _downloadManage, value);
     }
 
-    private string _title;
+    private string _title = string.Empty;
 
     public string Title
     {
@@ -102,7 +103,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         set => SetProperty(ref _isEnabled, value);
     }
 
-    private CustomPagerViewModel _pager;
+    private CustomPagerViewModel _pager = null!;
 
     public CustomPagerViewModel Pager
     {
@@ -110,7 +111,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         set => SetProperty(ref _pager, value);
     }
 
-    private ObservableCollection<ChannelMedia> _medias;
+    private ObservableCollection<ChannelMedia> _medias = new();
 
     public ObservableCollection<ChannelMedia> Medias
     {
@@ -157,7 +158,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     #region 命令申明
 
     // 返回事件
-    private DelegateCommand _backSpaceCommand;
+    private DelegateCommand? _backSpaceCommand;
 
     public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
 
@@ -181,7 +182,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     }
 
     // 前往下载管理页面
-    private DelegateCommand _downloadManagerCommand;
+    private DelegateCommand? _downloadManagerCommand;
 
     public DelegateCommand DownloadManagerCommand => _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
 
@@ -200,7 +201,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     }
 
     // 全选按钮点击事件
-    private DelegateCommand<object> _selectAllCommand;
+    private DelegateCommand<object>? _selectAllCommand;
 
     public DelegateCommand<object> SelectAllCommand => _selectAllCommand ??= new DelegateCommand<object>(ExecuteSelectAllCommand);
 
@@ -227,7 +228,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     }
 
     // 列表选择事件
-    private DelegateCommand<object> _mediasCommand;
+    private DelegateCommand<object>? _mediasCommand;
 
     public DelegateCommand<object> MediasCommand => _mediasCommand ??= new DelegateCommand<object>(ExecuteMediasCommand);
 
@@ -246,38 +247,28 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     }
 
     // 添加选中项到下载列表事件
-    private DelegateCommand _addToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DelegateCommand(ExecuteAddToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
 
     /// <summary>
     /// 添加选中项到下载列表事件
     /// </summary>
-    private void ExecuteAddToDownloadCommand()
-    {
-        AddToDownload(true);
-    }
-
     // 添加所有视频到下载列表事件
-    private DelegateCommand _addAllToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DelegateCommand(ExecuteAddAllToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
 
     /// <summary>
     /// 添加所有视频到下载列表事件
     /// </summary>
-    private void ExecuteAddAllToDownloadCommand()
-    {
-        AddToDownload(false);
-    }
-
     #endregion
 
     /// <summary>
     /// 添加到下载
     /// </summary>
     /// <param name="isOnlySelected"></param>
-    private async void AddToDownload(bool isOnlySelected)
+    private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // 频道里只有视频
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
@@ -347,18 +338,18 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
         if (type == 1)
         {
-            UpdateSeasons(current);
+            RunFireAndForget(UpdateSeasonsAsync(current), nameof(UpdateSeasonsAsync));
         }
 
         if (type == 2)
         {
-            UpdateSeries(current);
+            RunFireAndForget(UpdateSeriesAsync(current), nameof(UpdateSeriesAsync));
         }
 
         return true;
     }
 
-    //private async void UpdateChannel(int current)
+    //private async Task UpdateChannelAsync(int current)
     //{
     //    // 是否正在获取数据
     //    // 在所有的退出分支中都需要设为true
@@ -454,7 +445,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     //    IsEnabled = true;
     //}
 
-    private async void UpdateSeasons(int current)
+    private async Task UpdateSeasonsAsync(int current)
     {
         // 是否正在获取数据
         // 在所有的退出分支中都需要设为true
@@ -538,7 +529,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         IsEnabled = true;
     }
 
-    private async void UpdateSeries(int current)
+    private async Task UpdateSeriesAsync(int current)
     {
         // 是否正在获取数据
         // 在所有的退出分支中都需要设为true

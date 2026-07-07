@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -27,7 +28,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
 {
     public const string Tag = "PageMyBangumiFollow";
 
-    private CancellationTokenSource _tokenSource;
+    private CancellationTokenSource _tokenSource = null!;
 
     private long _mid = -1;
 
@@ -44,7 +45,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
         set => SetProperty(ref _pageName, value);
     }
 
-    private VectorImage _arrowBack;
+    private VectorImage _arrowBack = null!;
 
     public VectorImage ArrowBack
     {
@@ -52,7 +53,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
         set => SetProperty(ref _arrowBack, value);
     }
 
-    private VectorImage _downloadManage;
+    private VectorImage _downloadManage = null!;
 
     public VectorImage DownloadManage
     {
@@ -60,7 +61,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
         set => SetProperty(ref _downloadManage, value);
     }
 
-    private ObservableCollection<TabHeader> _tabHeaders;
+    private ObservableCollection<TabHeader> _tabHeaders = new();
 
     public ObservableCollection<TabHeader> TabHeaders
     {
@@ -92,7 +93,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
         set => SetProperty(ref _contentVisibility, value);
     }
 
-    private CustomPagerViewModel _pager;
+    private CustomPagerViewModel _pager = null!;
 
     public CustomPagerViewModel Pager
     {
@@ -100,7 +101,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
         set => SetProperty(ref _pager, value);
     }
 
-    private ObservableCollection<BangumiFollowMedia> _medias;
+    private ObservableCollection<BangumiFollowMedia> _medias = new();
 
     public ObservableCollection<BangumiFollowMedia> Medias
     {
@@ -311,38 +312,28 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
     }
 
     // 添加选中项到下载列表事件
-    private DelegateCommand? _addToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DelegateCommand(ExecuteAddToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
 
     /// <summary>
     /// 添加选中项到下载列表事件
     /// </summary>
-    private void ExecuteAddToDownloadCommand()
-    {
-        AddToDownload(true);
-    }
-
     // 添加所有视频到下载列表事件
-    private DelegateCommand? _addAllToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DelegateCommand(ExecuteAddAllToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
 
     /// <summary>
     /// 添加所有视频到下载列表事件
     /// </summary>
-    private void ExecuteAddAllToDownloadCommand()
-    {
-        AddToDownload(false);
-    }
-
     #endregion
 
     /// <summary>
     /// 添加到下载
     /// </summary>
     /// <param name="isOnlySelected"></param>
-    private async void AddToDownload(bool isOnlySelected)
+    private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // 订阅里只有BANGUMI类型
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Bangumi);
@@ -401,12 +392,12 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
             return false;
         }
 
-        UpdateBangumiMediaList(current);
+        RunFireAndForget(UpdateBangumiMediaListAsync(current), nameof(UpdateBangumiMediaListAsync));
 
         return true;
     }
 
-    private async void UpdateBangumiMediaList(int current)
+    private async Task UpdateBangumiMediaListAsync(int current)
     {
         Medias.Clear();
         IsSelectAll = false;

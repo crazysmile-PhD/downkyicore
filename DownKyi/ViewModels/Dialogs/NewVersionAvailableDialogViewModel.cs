@@ -35,7 +35,7 @@ namespace DownKyi.ViewModels.Dialogs
             RaiseRequestClose(new DialogResult());
         }
 
-        private string _tagName;
+        private string _tagName = string.Empty;
 
         public string TagName
         {
@@ -43,7 +43,7 @@ namespace DownKyi.ViewModels.Dialogs
             set => SetProperty(ref _tagName, value);
         }
 
-        private string _markdownText;
+        private string _markdownText = string.Empty;
 
         public string MarkdownText
         {
@@ -54,7 +54,7 @@ namespace DownKyi.ViewModels.Dialogs
         private bool _enableSkipVersionOnLaunch = false;
 
 
-        private string _newVersion;
+        private string _newVersion = string.Empty;
 
         private string NewVersion
         {

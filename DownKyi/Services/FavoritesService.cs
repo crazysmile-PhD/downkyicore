@@ -29,10 +29,10 @@ public class FavoritesService : IFavoritesService
         }
 
         // 查询、保存封面
-        var coverUrl = favoritesMetaInfo?.Cover;
+        var coverUrl = favoritesMetaInfo.Cover ?? string.Empty;
 
         // 获取用户头像
-        var upName = favoritesMetaInfo?.Upper != null ? favoritesMetaInfo.Upper.Name : "";
+        var upName = favoritesMetaInfo.Upper?.Name ?? string.Empty;
 
         // 为Favorites赋值
         var favorites = new Favorites();
@@ -54,8 +54,8 @@ public class FavoritesService : IFavoritesService
             favorites.MediaCount = favoritesMetaInfo.MediaCount;
 
             favorites.UpName = upName;
-            favorites.UpHeader = favoritesMetaInfo.Upper.Face;
-            favorites.UpperMid = favoritesMetaInfo.Upper.Mid;
+            favorites.UpHeader = favoritesMetaInfo.Upper?.Face ?? string.Empty;
+            favorites.UpperMid = favoritesMetaInfo.Upper?.Mid ?? -1;
         });
 
         return favorites;

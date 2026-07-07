@@ -12,7 +12,7 @@ public static class BangumiInfo
     /// </summary>
     /// <param name="mediaId"></param>
     /// <returns></returns>
-    public static BangumiMedia BangumiMediaInfo(long mediaId)
+    public static BangumiMedia? BangumiMediaInfo(long mediaId)
     {
         var url = $"https://api.bilibili.com/pgc/review/user?media_id={mediaId}";
         const string referer = "https://www.bilibili.com";

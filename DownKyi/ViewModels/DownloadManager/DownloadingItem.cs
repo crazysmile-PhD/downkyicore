@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.VideoStream.Models;
+using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Utils;
@@ -25,7 +25,7 @@ namespace DownKyi.ViewModels.DownloadManager
         public DownloadService? DownloadService;
 
         // model数据
-        private Downloading _downloading;
+        private Downloading _downloading = null!;
         
         
         public MovieMetadata? Metadata { get; set; } 
@@ -68,7 +68,7 @@ namespace DownKyi.ViewModels.DownloadManager
         }
 
         // 视频流链接
-        public PlayUrl PlayUrl { get; set; }
+        public PlayUrl PlayUrl { get; set; } = null!;
 
         // 正在下载内容（音频、视频、弹幕、字幕、封面）
         public string? DownloadContent
@@ -126,7 +126,7 @@ namespace DownKyi.ViewModels.DownloadManager
         }
 
         // 操作提示
-        private string _operationTip;
+        private string _operationTip = string.Empty;
 
         public string OperationTip
         {
@@ -136,7 +136,7 @@ namespace DownKyi.ViewModels.DownloadManager
 
         #region 控制按钮
 
-        private VectorImage _startOrPause;
+        private VectorImage _startOrPause = null!;
 
         public VectorImage StartOrPause
         {
@@ -147,11 +147,11 @@ namespace DownKyi.ViewModels.DownloadManager
 
                 OperationTip = value.Equals(ButtonIcon.Instance().Start) ? DictionaryResource.GetString("StartDownload")
                     : value.Equals(ButtonIcon.Instance().Pause) ? DictionaryResource.GetString("PauseDownload")
-                    : value.Equals(ButtonIcon.Instance().Retry) ? DictionaryResource.GetString("RetryDownload") : null;
+                    : value.Equals(ButtonIcon.Instance().Retry) ? DictionaryResource.GetString("RetryDownload") : string.Empty;
             }
         }
 
-        private VectorImage _delete;
+        private VectorImage _delete = null!;
 
         public VectorImage Delete
         {

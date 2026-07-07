@@ -1,4 +1,4 @@
-﻿using DownKyi.Images;
+using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Utils;
 
@@ -22,7 +22,7 @@ public class DownloadedItem : DownloadBaseItem
     }
 
     // model数据
-    public Downloaded Downloaded { get; set; }
+    public Downloaded Downloaded { get; set; } = null!;
 
     //  下载速度
     public string? MaxSpeedDisplay
@@ -48,7 +48,7 @@ public class DownloadedItem : DownloadBaseItem
 
     #region 控制按钮
 
-    private VectorImage _openFolder;
+    private VectorImage _openFolder = null!;
 
     public VectorImage OpenFolder
     {
@@ -56,7 +56,7 @@ public class DownloadedItem : DownloadBaseItem
         set => SetProperty(ref _openFolder, value);
     }
 
-    private VectorImage _openVideo;
+    private VectorImage _openVideo = null!;
 
     public VectorImage OpenVideo
     {
@@ -64,7 +64,7 @@ public class DownloadedItem : DownloadBaseItem
         set => SetProperty(ref _openVideo, value);
     }
 
-    private VectorImage _removeVideo;
+    private VectorImage _removeVideo = null!;
 
     public VectorImage RemoveVideo
     {

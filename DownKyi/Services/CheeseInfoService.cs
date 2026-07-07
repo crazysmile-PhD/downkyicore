@@ -71,7 +71,7 @@ public class CheeseInfoService : IInfoService
             var page = new VideoPage
             {
                 Avid = episode.Aid,
-                Bvid = null,
+                Bvid = string.Empty,
                 Cid = episode.Cid,
                 EpisodeId = episode.Id,
                 FirstFrame = episode.Cover,
@@ -163,7 +163,7 @@ public class CheeseInfoService : IInfoService
         var videoInfoView = new VideoInfoView();
         App.PropertyChangeAsync(() =>
         {
-            videoInfoView.CoverUrl = coverUrl;
+            videoInfoView.CoverUrl = coverUrl ?? string.Empty;
 
             videoInfoView.Title = _cheeseView.Title;
 
@@ -184,8 +184,8 @@ public class CheeseInfoService : IInfoService
             videoInfoView.Description = _cheeseView.Subtitle;
 
             videoInfoView.UpName = upName;
-            videoInfoView.UpHeader = _cheeseView.UpInfo.Avatar;
-            videoInfoView.UpperMid = _cheeseView.UpInfo.Mid;
+            videoInfoView.UpHeader = _cheeseView.UpInfo?.Avatar ?? string.Empty;
+            videoInfoView.UpperMid = _cheeseView.UpInfo?.Mid ?? -1;
         });
 
         return videoInfoView;

@@ -10,13 +10,13 @@ public class ResetGridSplitterBehavior : Behavior<GridSplitter>
 {
     private Dictionary<int, GridLength> _originalColumnWidths = new ();
     private Dictionary<int, GridLength> _originalRowHeights = new ();
-    private Grid _parentGrid;
+    private Grid? _parentGrid;
   
     protected override void OnAttached()
     {
         base.OnAttached();
         var gridSplitter = AssociatedObject;
-        _parentGrid = gridSplitter.Parent as Grid;
+        _parentGrid = gridSplitter?.Parent as Grid;
 
         if (_parentGrid != null)
         {

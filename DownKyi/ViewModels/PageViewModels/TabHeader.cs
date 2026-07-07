@@ -13,7 +13,7 @@ public class TabHeader : BindableBase
         set => SetProperty(ref id, value);
     }
 
-    private VectorImage image;
+    private VectorImage image = null!;
 
     public VectorImage Image
     {

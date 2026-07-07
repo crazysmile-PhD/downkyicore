@@ -69,7 +69,7 @@ public static class FavoritesResource
     /// </summary>
     /// <param name="mediaId"></param>
     /// <returns></returns>
-    public static List<FavoritesMediaId> GetFavoritesMediaId(long mediaId)
+    public static List<FavoritesMediaId>? GetFavoritesMediaId(long mediaId)
     {
         var url = $"https://api.bilibili.com/x/v3/fav/resource/ids?media_id={mediaId}";
         const string referer = "https://www.bilibili.com";

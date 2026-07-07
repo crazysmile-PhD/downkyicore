@@ -1,6 +1,8 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using DownKyi.Commands;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils.Validator;
@@ -31,7 +33,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _useSsl, value);
     }
 
-    private string _userAgent;
+    private string _userAgent = string.Empty;
 
     public string UserAgent
     {
@@ -63,7 +65,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _customAria2C, value);
     }
 
-    private List<int> _maxCurrentDownloads;
+    private List<int> _maxCurrentDownloads = new();
 
     public List<int> MaxCurrentDownloads
     {
@@ -95,7 +97,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _customNetworkProxy, value);
     }
 
-    private List<int> _splits;
+    private List<int> _splits = new();
 
     public List<int> Splits
     {
@@ -119,7 +121,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _isHttpProxy, value);
     }
 
-    private string _httpProxy;
+    private string _httpProxy = string.Empty;
 
     public string HttpProxy
     {
@@ -135,7 +137,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _httpProxyPort, value);
     }
 
-    private string _ariaHost;
+    private string _ariaHost = string.Empty;
 
     public string AriaHost
     {
@@ -151,7 +153,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _ariaListenPort, value);
     }
 
-    private string _ariaToken;
+    private string _ariaToken = string.Empty;
 
     public string AriaToken
     {
@@ -159,7 +161,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _ariaToken, value);
     }
 
-    private List<string> _ariaLogLevels;
+    private List<string> _ariaLogLevels = new();
 
     public List<string> AriaLogLevels
     {
@@ -167,7 +169,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _ariaLogLevels, value);
     }
 
-    private string _selectedAriaLogLevel;
+    private string _selectedAriaLogLevel = string.Empty;
 
     public string SelectedAriaLogLevel
     {
@@ -175,7 +177,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _selectedAriaLogLevel, value);
     }
 
-    private List<int> _ariaMaxConcurrentDownloads;
+    private List<int> _ariaMaxConcurrentDownloads = new();
 
     public List<int> AriaMaxConcurrentDownloads
     {
@@ -191,7 +193,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _selectedAriaMaxConcurrentDownload, value);
     }
 
-    private List<int> _ariaSplits;
+    private List<int> _ariaSplits = new();
 
     public List<int> AriaSplits
     {
@@ -231,7 +233,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _isAriaHttpProxy, value);
     }
 
-    private string _ariaHttpProxy;
+    private string _ariaHttpProxy = string.Empty;
 
     public string AriaHttpProxy
     {
@@ -247,7 +249,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _ariaHttpProxyPort, value);
     }
 
-    private List<string> _ariaFileAllocations;
+    private List<string> _ariaFileAllocations = new();
 
     public List<string> AriaFileAllocations
     {
@@ -255,7 +257,7 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _ariaFileAllocations, value);
     }
 
-    private string _selectedAriaFileAllocation;
+    private string _selectedAriaFileAllocation = string.Empty;
 
     public string SelectedAriaFileAllocation
     {
@@ -448,15 +450,15 @@ public class ViewNetworkViewModel : ViewModelBase
     }
 
     // 下载器选择事件
-    private DelegateCommand<string>? _selectDownloaderCommand;
+    private DownKyiAsyncDelegateCommand<string>? _selectDownloaderCommand;
 
-    public DelegateCommand<string> SelectDownloaderCommand => _selectDownloaderCommand ??= new DelegateCommand<string>(ExecuteSelectDownloaderCommand);
+    public DownKyiAsyncDelegateCommand<string> SelectDownloaderCommand => _selectDownloaderCommand ??= new DownKyiAsyncDelegateCommand<string>(ExecuteSelectDownloaderCommand);
 
     /// <summary>
     /// 下载器选择事件
     /// </summary>
     /// <param name="parameter"></param>
-    private async void ExecuteSelectDownloaderCommand(string parameter)
+    private async Task ExecuteSelectDownloaderCommand(string? parameter)
     {
         Core.Settings.Downloader downloader;
         switch (parameter)
@@ -492,11 +494,11 @@ public class ViewNetworkViewModel : ViewModelBase
         }
     }
 
-    private DelegateCommand<object>? _networkProxyCommand;
+    private DownKyiAsyncDelegateCommand<object>? _networkProxyCommand;
 
-    public DelegateCommand<object> NetworkProxyCommand => _networkProxyCommand ??= new DelegateCommand<object>(ExecuteNetworkProxyCommand);
+    public DownKyiAsyncDelegateCommand<object> NetworkProxyCommand => _networkProxyCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteNetworkProxyCommand);
 
-    private async void ExecuteNetworkProxyCommand(object obj)
+    private async Task ExecuteNetworkProxyCommand(object? obj)
     {
         if (obj is not NetworkProxy networkProxy) return;
         NetworkProxy = networkProxy;
@@ -527,15 +529,15 @@ public class ViewNetworkViewModel : ViewModelBase
     
 
     // builtin同时下载数事件
-    private DelegateCommand<object>? _maxCurrentDownloadsCommand;
+    private DownKyiAsyncDelegateCommand<object>? _maxCurrentDownloadsCommand;
 
-    public DelegateCommand<object> MaxCurrentDownloadsCommand => _maxCurrentDownloadsCommand ??= new DelegateCommand<object>(ExecuteMaxCurrentDownloadsCommand);
+    public DownKyiAsyncDelegateCommand<object> MaxCurrentDownloadsCommand => _maxCurrentDownloadsCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteMaxCurrentDownloadsCommand);
 
     /// <summary>
     /// builtin同时下载数事件
     /// </summary>
     /// <param name="parameter"></param>
-    private async void ExecuteMaxCurrentDownloadsCommand(object? parameter)
+    private async Task ExecuteMaxCurrentDownloadsCommand(object? parameter)
     {
         // SelectedMaxCurrentDownload = (int)parameter;
         if(parameter == null) return;
@@ -575,7 +577,7 @@ public class ViewNetworkViewModel : ViewModelBase
     /// <summary>
     /// 是否开启builtin http代理事件
     /// </summary>
-    private async void ExecuteIsHttpProxyCommand()
+    private void ExecuteIsHttpProxyCommand()
     {
         var isHttpProxy = IsHttpProxy ? AllowStatus.Yes : AllowStatus.No;
 
@@ -693,16 +695,16 @@ public class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria同时下载数事件
-    private DelegateCommand<object?>? _ariaMaxConcurrentDownloadsCommand;
+    private DownKyiAsyncDelegateCommand<object>? _ariaMaxConcurrentDownloadsCommand;
 
-    public DelegateCommand<object?> AriaMaxConcurrentDownloadsCommand =>
-        _ariaMaxConcurrentDownloadsCommand ??= new DelegateCommand<object?>(ExecuteAriaMaxConcurrentDownloadsCommand);
+    public DownKyiAsyncDelegateCommand<object> AriaMaxConcurrentDownloadsCommand =>
+        _ariaMaxConcurrentDownloadsCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteAriaMaxConcurrentDownloadsCommand);
 
     /// <summary>
     /// Aria同时下载数事件
     /// </summary>
     /// <param name="parameter"></param>
-    private async void ExecuteAriaMaxConcurrentDownloadsCommand(object? parameter)
+    private async Task ExecuteAriaMaxConcurrentDownloadsCommand(object? parameter)
     {
         if (parameter == null) return;
         SelectedAriaMaxConcurrentDownload = (int)parameter;

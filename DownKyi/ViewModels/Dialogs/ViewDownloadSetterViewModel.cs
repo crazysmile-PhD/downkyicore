@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Utils;
@@ -23,7 +24,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
 
     #region 页面属性申明
 
-    private VectorImage _cloudDownloadIcon;
+    private VectorImage _cloudDownloadIcon = null!;
 
     public VectorImage CloudDownloadIcon
     {
@@ -31,7 +32,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         set => SetProperty(ref _cloudDownloadIcon, value);
     }
 
-    private VectorImage _folderIcon;
+    private VectorImage _folderIcon = null!;
 
     public VectorImage FolderIcon
     {
@@ -51,7 +52,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
     public ObservableCollection<string> DirectoryList { get; set; }
     
 
-    private string _directory;
+    private string _directory = string.Empty;
 
     public string Directory
     {
@@ -66,7 +67,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         }
     }
 
-    private string _driveName;
+    private string _driveName = string.Empty;
 
     public string DriveName
     {
@@ -74,7 +75,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         set => SetProperty(ref _driveName, value);
     }
 
-    private string _driveNameFreeSpace;
+    private string _driveNameFreeSpace = string.Empty;
 
     public string DriveNameFreeSpace
     {
@@ -183,14 +184,14 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
     #region 命令申明
 
     // 浏览文件夹事件
-    private DelegateCommand? _browseCommand;
+    private DownKyiAsyncDelegateCommand? _browseCommand;
 
-    public DelegateCommand BrowseCommand => _browseCommand ??= new DelegateCommand(ExecuteBrowseCommand);
+    public DownKyiAsyncDelegateCommand BrowseCommand => _browseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteBrowseCommand);
 
     /// <summary>
     /// 浏览文件夹事件
     /// </summary>
-    private async void ExecuteBrowseCommand()
+    private async Task ExecuteBrowseCommand()
     {
         var directory = await SetDirectory();
 

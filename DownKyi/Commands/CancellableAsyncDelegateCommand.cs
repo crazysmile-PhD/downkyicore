@@ -32,7 +32,12 @@ public class CancellableDownKyiAsyncDelegateCommand<T> : ICommand
         return !_isExecuting && (_canExecute?.Invoke(typedParameter) ?? true);
     }
 
-    public async void Execute(object? parameter)
+    public void Execute(object? parameter)
+    {
+        _ = ExecuteAsync(parameter);
+    }
+
+    private async Task ExecuteAsync(object? parameter)
     {
         if (parameter is not T typedParameter)
         {

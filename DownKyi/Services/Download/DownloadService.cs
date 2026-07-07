@@ -164,7 +164,7 @@ public abstract class DownloadService
         return null;
     }
 
-    protected string BaseDownloadCover(DownloadingItem downloading, string coverUrl, string fileName)
+    protected string? BaseDownloadCover(DownloadingItem downloading, string? coverUrl, string fileName)
     {
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
@@ -177,7 +177,7 @@ public abstract class DownloadService
         // 复制图片到指定位置
         try
         {
-            if (coverUrl == null) return null;
+            if (string.IsNullOrWhiteSpace(coverUrl)) return null;
             WebClient.DownloadFile(coverUrl, fileName);
 
             // 记录本次下载的文件
@@ -240,11 +240,12 @@ public abstract class DownloadService
             CustomOffset = 0
         };
 
-        Core.Danmaku2Ass.Bilibili.GetInstance()
-            .SetTopFilter(SettingsManager.GetInstance().GetDanmakuTopFilter() == AllowStatus.Yes)
-            .SetBottomFilter(SettingsManager.GetInstance().GetDanmakuBottomFilter() == AllowStatus.Yes)
-            .SetScrollFilter(SettingsManager.GetInstance().GetDanmakuScrollFilter() == AllowStatus.Yes)
-            .Create(downloading.DownloadBase.Avid, downloading.DownloadBase.Cid, subtitleConfig, assFile);
+        var bilibili = Core.Danmaku2Ass.Bilibili.GetInstance();
+        bilibili.SetTopFilter(SettingsManager.GetInstance().GetDanmakuTopFilter() == AllowStatus.Yes);
+        bilibili.SetBottomFilter(SettingsManager.GetInstance().GetDanmakuBottomFilter() == AllowStatus.Yes);
+        bilibili.SetScrollFilter(SettingsManager.GetInstance().GetDanmakuScrollFilter() == AllowStatus.Yes);
+        var downloadBase = downloading.DownloadBase ?? throw new InvalidOperationException("DownloadBase is required to download danmaku.");
+        bilibili.Create(downloadBase.Avid, downloadBase.Cid, subtitleConfig, assFile);
 
         return assFile;
     }
@@ -263,11 +264,6 @@ public abstract class DownloadService
         var srtFiles = new List<string>();
 
         var subRipTexts = VideoStream.GetSubtitle(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid);
-        if (subRipTexts == null)
-        {
-            return null;
-        }
-
         foreach (var subRip in subRipTexts)
         {
             var srtFile = $"{downloading.DownloadBase.FilePath}_{subRip.LanDoc}.srt";
@@ -314,12 +310,12 @@ public abstract class DownloadService
         }
         catch (Exception e)
         {
-            /**/
+            LogManager.Error($"{Tag}.GenerateNfoFile()", e);
         }
     }
 
 
-    protected string BaseMixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
+    protected string? BaseMixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("MixedFlow");
@@ -407,11 +403,11 @@ public abstract class DownloadService
         // 设置下载状态
         downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
 
-        // 解析
+        PlayUrl? playUrl = null;
         switch (downloading.Downloading.PlayStreamType)
         {
             case PlayStreamType.Video:
-                downloading.PlayUrl ??= SettingsManager.GetInstance().GetVideoParseType() switch
+                playUrl = downloading.PlayUrl ?? SettingsManager.GetInstance().GetVideoParseType() switch
                 {
                     0 => VideoStream.GetVideoPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid),
                     1 => VideoStream.GetVideoPlayUrlWebPage(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
@@ -420,16 +416,24 @@ public abstract class DownloadService
                 };
                 break;
             case PlayStreamType.Bangumi:
-                downloading.PlayUrl ??= VideoStream.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid);
+                playUrl = downloading.PlayUrl ?? VideoStream.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid);
                 break;
             case PlayStreamType.Cheese:
-                downloading.PlayUrl ??= VideoStream.GetCheesePlayUrl(downloading.DownloadBase.Avid,
+                playUrl = downloading.PlayUrl ?? VideoStream.GetCheesePlayUrl(downloading.DownloadBase.Avid,
                     downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                     downloading.DownloadBase.EpisodeId);
                 break;
             default:
                 break;
         }
+
+        if (playUrl == null)
+        {
+            DownloadFailed(downloading);
+            return;
+        }
+
+        downloading.PlayUrl = playUrl;
     }
 
     private readonly SemaphoreSlim _downloadSemaphore = new(SettingsManager.GetInstance()
@@ -645,8 +649,8 @@ public abstract class DownloadService
                             foreach (var item in toRetry)
                             {
                                 downloading.PlayUrl.Durl = new List<PlayUrlDurl> { item.Value.Durl };
-                                var result = DownloadVideo(downloading);
-                                downloadStatus[item.Key] = new { item.Value.Durl, Result = result };
+                    var result = DownloadVideo(downloading);
+                    downloadStatus[item.Key] = new { item.Value.Durl, Result = result ?? NullMark };
                             }
 
                             retryCount++;
@@ -947,12 +951,12 @@ public abstract class DownloadService
     #region 抽象接口函数
 
     public abstract void Parse(DownloadingItem downloading);
-    public abstract string DownloadAudio(DownloadingItem downloading);
-    public abstract string DownloadVideo(DownloadingItem downloading);
+    public abstract string? DownloadAudio(DownloadingItem downloading);
+    public abstract string? DownloadVideo(DownloadingItem downloading);
     public abstract string DownloadDanmaku(DownloadingItem downloading);
     public abstract List<string> DownloadSubtitle(DownloadingItem downloading);
-    public abstract string DownloadCover(DownloadingItem downloading, string coverUrl, string fileName);
-    public abstract string MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid);
+    public abstract string? DownloadCover(DownloadingItem downloading, string? coverUrl, string fileName);
+    public abstract string? MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid);
 
     protected abstract void Pause(DownloadingItem downloading);
 

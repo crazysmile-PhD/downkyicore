@@ -16,7 +16,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private string _avid;
+    private string _avid = string.Empty;
 
     public string Avid
     {
@@ -24,7 +24,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
         set => SetProperty(ref _avid, value);
     }
 
-    private string _bvid;
+    private string _bvid = string.Empty;
 
     public string Bvid
     {
@@ -32,7 +32,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
         set => SetProperty(ref _bvid, value);
     }
 
-    private string _danmakuUserId;
+    private string _danmakuUserId = string.Empty;
 
     public string DanmakuUserId
     {
@@ -60,14 +60,14 @@ public class ViewBiliHelperViewModel : ViewModelBase
     #region 命令申明
 
     // 输入avid事件
-    private DelegateCommand<string>? _avidCommand;
+    private DownKyiAsyncDelegateCommand<string>? _avidCommand;
 
-    public DelegateCommand<string> AvidCommand => _avidCommand ??= new DelegateCommand<string>(ExecuteAvidCommand);
+    public DownKyiAsyncDelegateCommand<string> AvidCommand => _avidCommand ??= new DownKyiAsyncDelegateCommand<string>(ExecuteAvidCommand);
 
     /// <summary>
     /// 输入avid事件
     /// </summary>
-    private async void ExecuteAvidCommand(string parameter)
+    private async Task ExecuteAvidCommand(string? parameter)
     {
         if (string.IsNullOrEmpty(parameter))
         {
@@ -89,15 +89,15 @@ public class ViewBiliHelperViewModel : ViewModelBase
     }
 
     // 输入bvid事件
-    private DelegateCommand<string>? _bvidCommand;
+    private DownKyiAsyncDelegateCommand<string>? _bvidCommand;
 
-    public DelegateCommand<string> BvidCommand => _bvidCommand ??= new DelegateCommand<string>(ExecuteBvidCommand);
+    public DownKyiAsyncDelegateCommand<string> BvidCommand => _bvidCommand ??= new DownKyiAsyncDelegateCommand<string>(ExecuteBvidCommand);
 
     /// <summary>
     /// 输入bvid事件
     /// </summary>
     /// <param name="parameter"></param>
-    private async void ExecuteBvidCommand(string parameter)
+    private async Task ExecuteBvidCommand(string? parameter)
     {
         if (string.IsNullOrEmpty(parameter))
         {
@@ -131,14 +131,14 @@ public class ViewBiliHelperViewModel : ViewModelBase
     }
 
     // 查询弹幕发送者事件
-    private DelegateCommand? _findDanmakuSenderCommand;
+    private DownKyiAsyncDelegateCommand? _findDanmakuSenderCommand;
 
-    public DelegateCommand FindDanmakuSenderCommand => _findDanmakuSenderCommand ??= new DelegateCommand(ExecuteFindDanmakuSenderCommand);
+    public DownKyiAsyncDelegateCommand FindDanmakuSenderCommand => _findDanmakuSenderCommand ??= new DownKyiAsyncDelegateCommand(ExecuteFindDanmakuSenderCommand);
 
     /// <summary>
     /// 查询弹幕发送者事件
     /// </summary>
-    private async void ExecuteFindDanmakuSenderCommand()
+    private async Task ExecuteFindDanmakuSenderCommand()
     {
         await Task.Run(() =>
         {

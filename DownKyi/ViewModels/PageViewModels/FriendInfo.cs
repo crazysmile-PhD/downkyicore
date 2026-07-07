@@ -48,7 +48,7 @@ public class FriendInfo : BindableBase
     #region 命令申明
 
     // 视频标题点击事件
-    private DelegateCommand<object> _userCommand;
+    private DelegateCommand<object>? _userCommand;
 
     public DelegateCommand<object> UserCommand => _userCommand ??= new DelegateCommand<object>(ExecuteUserCommand);
 

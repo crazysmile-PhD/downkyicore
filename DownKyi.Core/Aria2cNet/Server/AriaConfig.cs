@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Aria2cNet.Server;
+namespace DownKyi.Core.Aria2cNet.Server;
 
 /// <summary>
 /// Aria服务器的启动配置
@@ -6,7 +6,7 @@
 public class AriaConfig
 {
     public int ListenPort { get; set; } // 服务器端口号，取值：1024-65535
-    public string Token { get; set; } // 连接服务器的token
+    public string Token { get; set; } = string.Empty;// 连接服务器的token
     public AriaConfigLogLevel LogLevel { get; set; } // 日志等级，debug info notice warn error
     public int MaxConcurrentDownloads { get; set; } // 最大同时下载数(任务数)，取值：1-*
     public int MaxConnectionPerServer { get; set; } // 同服务器连接数，取值：1-16
@@ -20,5 +20,5 @@ public class AriaConfig
     public bool ContinueDownload { get; set; } // 断点续传
     public AriaConfigFileAllocation FileAllocation { get; set; } // 文件预分配, none prealloc
 
-    public List<string> Headers { get; set; }
+    public List<string> Headers { get; set; } = new();
 }

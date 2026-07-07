@@ -28,7 +28,7 @@ public class MovieMetadata
     public List<Actor> Actors { get; set; } = new();
 
     [XmlElement("uniqueid")]
-    public  UniqueId BilibiliId { get; set; }
+    public  UniqueId BilibiliId { get; set; } = null!;
 
     [XmlElement("premiered")]
     public string Premiered { get; set; } = string.Empty;

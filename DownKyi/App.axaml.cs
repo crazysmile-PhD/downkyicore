@@ -284,7 +284,12 @@ public partial class App : PrismApplication
         DownloadedList.AddRange(downloadedItems);
     }
 
-    private async void OnExit(object sender, ControlledApplicationLifetimeExitEventArgs e)
+    private void OnExit(object sender, ControlledApplicationLifetimeExitEventArgs e)
+    {
+        OnExitAsync().GetAwaiter().GetResult();
+    }
+
+    private async Task OnExitAsync()
     {
         _startupCancellation.Cancel();
 

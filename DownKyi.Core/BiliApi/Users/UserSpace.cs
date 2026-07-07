@@ -66,8 +66,9 @@ public static class UserSpace
 
         var result = new List<SpacePublicationListTypeVideoZone>();
         var typeList = JObject.Parse(publication.Tlist.ToString("N"));
-        foreach (KeyValuePair<string, JToken> item in typeList)
+        foreach (var item in typeList)
         {
+            if (item.Value == null) continue;
             var value = JsonConvert.DeserializeObject<SpacePublicationListTypeVideoZone>(item.Value.ToString());
             if (value != null)
                 result.Add(value);
@@ -210,7 +211,7 @@ public static class UserSpace
             const int ps = 100;
 
             var data = GetChannelVideoList(mid, cid, i, ps);
-            if (data?.Count == 0)
+            if (data == null || data.Count == 0)
             {
                 break;
             }

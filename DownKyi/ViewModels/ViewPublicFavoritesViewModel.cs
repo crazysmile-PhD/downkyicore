@@ -1,7 +1,9 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Logging;
@@ -22,7 +24,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
 {
     public const string Tag = "PagePublicFavorites";
 
-    private CancellationTokenSource _tokenSource;
+    private CancellationTokenSource _tokenSource = null!;
 
     #region 页面属性申明
 
@@ -34,7 +36,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _pageName, value);
     }
 
-    private VectorImage _arrowBack;
+    private VectorImage _arrowBack = null!;
 
     public VectorImage ArrowBack
     {
@@ -42,7 +44,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _arrowBack, value);
     }
 
-    private VectorImage _downloadManage;
+    private VectorImage _downloadManage = null!;
 
     public VectorImage DownloadManage
     {
@@ -50,7 +52,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _downloadManage, value);
     }
 
-    private Favorites _favorites;
+    private Favorites _favorites = null!;
 
     public Favorites Favorites
     {
@@ -58,7 +60,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _favorites, value);
     }
 
-    private ObservableCollection<FavoritesMedia> _favoritesMedias;
+    private ObservableCollection<FavoritesMedia> _favoritesMedias = new();
 
     public ObservableCollection<FavoritesMedia> FavoritesMedias
     {
@@ -214,14 +216,14 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     }
 
     // 复制封面URL事件
-    private DelegateCommand? _copyCoverUrlCommand;
+    private DownKyiAsyncDelegateCommand? _copyCoverUrlCommand;
 
-    public DelegateCommand CopyCoverUrlCommand => _copyCoverUrlCommand ??= new DelegateCommand(ExecuteCopyCoverUrlCommand);
+    public DownKyiAsyncDelegateCommand CopyCoverUrlCommand => _copyCoverUrlCommand ??= new DownKyiAsyncDelegateCommand(ExecuteCopyCoverUrlCommand);
 
     /// <summary>
     /// 复制封面URL事件
     /// </summary>
-    private async void ExecuteCopyCoverUrlCommand()
+    private async Task ExecuteCopyCoverUrlCommand()
     {
         // 复制封面url到剪贴板
         await ClipboardManager.SetText(Favorites.CoverUrl);
@@ -241,31 +243,21 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     }
 
     // 添加选中项到下载列表事件
-    private DelegateCommand? _addToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DelegateCommand(ExecuteAddToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
 
     /// <summary>
     /// 添加选中项到下载列表事件
     /// </summary>
-    private void ExecuteAddToDownloadCommand()
-    {
-        AddToDownload(true);
-    }
-
     // 添加所有视频到下载列表事件
-    private DelegateCommand? _addAllToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DelegateCommand(ExecuteAddAllToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
 
     /// <summary>
     /// 添加所有视频到下载列表事件
     /// </summary>
-    private void ExecuteAddAllToDownloadCommand()
-    {
-        AddToDownload(false);
-    }
-
     // 列表选择事件
     private DelegateCommand<object>? _favoritesMediasCommand;
 
@@ -281,7 +273,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
 
     #endregion
 
-    private async void AddToDownload(bool isOnlySelected)
+    private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // 收藏夹里只有视频
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
@@ -360,8 +352,8 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     {
         LoadingVisibility = true;
 
-        Favorites = favoritesService.GetFavorites(favoritesId);
-        if (Favorites == null)
+        var favorites = favoritesService.GetFavorites(favoritesId);
+        if (favorites == null)
         {
             LogManager.Debug(Tag, "Favorites is null.");
 
@@ -370,12 +362,11 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
             NoDataVisibility = true;
             return;
         }
-        else
-        {
-            ContentVisibility = true;
-            LoadingVisibility = false;
-            NoDataVisibility = false;
-        }
+
+        Favorites = favorites;
+        ContentVisibility = true;
+        LoadingVisibility = false;
+        NoDataVisibility = false;
 
         MediaLoadingVisibility = true;
 
@@ -399,23 +390,34 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     /// 接收收藏夹id参数
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override async void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(NavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
+        RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync));
+    }
 
-        // 根据传入参数不同执行不同任务
-        var parameter = navigationContext.Parameters.GetValue<long>("Parameter");
-        if (parameter == 0)
+    private async Task OnNavigatedToAsync(NavigationContext navigationContext)
+    {
+        try
         {
-            return;
+            // 根据传入参数不同执行不同任务
+            var parameter = navigationContext.Parameters.GetValue<long>("Parameter");
+            if (parameter == 0)
+            {
+                return;
+            }
+
+            InitView();
+            await Task.Run(() =>
+            {
+                var cancellationToken = _tokenSource.Token;
+
+                UpdateView(new FavoritesService(), parameter, cancellationToken);
+            }, (_tokenSource = new CancellationTokenSource()).Token);
         }
-
-        InitView();
-        await Task.Run(() =>
+        catch (Exception e)
         {
-            var cancellationToken = _tokenSource.Token;
-
-            UpdateView(new FavoritesService(), parameter, cancellationToken);
-        }, (_tokenSource = new CancellationTokenSource()).Token);
+            LogManager.Error(nameof(ViewPublicFavoritesViewModel), e);
+        }
     }
 }

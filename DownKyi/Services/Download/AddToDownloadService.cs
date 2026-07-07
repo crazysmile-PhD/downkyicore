@@ -30,7 +30,7 @@ namespace DownKyi.Services.Download;
 public class AddToDownloadService
 {
     private readonly string Tag = "AddToDownloadService";
-    private IInfoService _videoInfoService;
+    private IInfoService _videoInfoService = null!;
     private VideoInfoView? _videoInfoView;
     private List<VideoSection>? _videoSections;
     private DownloadStorageService _downloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
@@ -119,7 +119,7 @@ public class AddToDownloadService
                     Id = 0,
                     Title = "default",
                     IsSelected = true,
-                    VideoPages = _videoInfoService.GetVideoPages()
+                    VideoPages = _videoInfoService.GetVideoPages() ?? new List<VideoPage>()
                 }
             };
         }
@@ -247,6 +247,11 @@ public class AddToDownloadService
             return -1;
         }
 
+        if (_videoInfoView == null)
+        {
+            return -1;
+        }
+
         // 视频计数
         var i = 0;
         // 添加到下载
@@ -285,6 +290,11 @@ public class AddToDownloadService
                     continue;
                 }
 
+                var videoQuality = page.VideoQuality;
+                var ownerMid = page.Owner?.Mid ?? -1;
+                var ownerName = page.Owner?.Name ?? string.Empty;
+                var audioCodec = Constant.GetAudioQualities().FirstOrDefault(t => t.Name == page.AudioQualityFormat) ?? new Quality();
+
                 // 判断是否同一个视频，需要cid、画质、音质、视频编码都相同
 
                 // 如果存在正在下载列表，则跳过，并提示
@@ -299,8 +309,8 @@ public class AddToDownloadService
                     }
 
                     bool isSameVideo = item.DownloadBase.Cid == page.Cid &&
-                                       item.Resolution.Id == page.VideoQuality.Quality &&
-                                       item.VideoCodecName == page.VideoQuality.SelectedVideoCodec;
+                                       item.Resolution.Id == videoQuality.Quality &&
+                                       item.VideoCodecName == videoQuality.SelectedVideoCodec;
                     
                     if (page.PlayUrl.Dash != null)
                     {
@@ -331,8 +341,8 @@ public class AddToDownloadService
                     }
 
                     bool isSameVideo = item.DownloadBase.Cid == page.Cid &&
-                                       item.Resolution.Id == page.VideoQuality.Quality &&
-                                       item.VideoCodecName == page.VideoQuality.SelectedVideoCodec;
+                                       item.Resolution.Id == videoQuality.Quality &&
+                                       item.VideoCodecName == videoQuality.SelectedVideoCodec;
                     
                     if (page.PlayUrl.Dash != null)
                     {
@@ -356,7 +366,10 @@ public class AddToDownloadService
                                         { "message", $"{item.Name}已下载，是否重新下载" },
                                     };
 
-                                    await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; });
+                                    if (dialogService != null)
+                                    {
+                                        await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; });
+                                    }
                                 });
 
                                 if (result == ButtonResult.OK)
@@ -430,18 +443,18 @@ public class AddToDownloadService
                     .SetPageTitle(Format.FormatFileName(page.Name))
                     .SetVideoZone(_videoInfoView.VideoZone.Split('>')[0])
                     .SetAudioQuality(page.AudioQualityFormat)
-                    .SetVideoQuality(page.VideoQuality == null ? "" : page.VideoQuality.QualityFormat)
-                    .SetVideoCodec(page.VideoQuality == null ? "" :
-                        page.VideoQuality.SelectedVideoCodec.Contains("AVC") ? "AVC" :
-                        page.VideoQuality.SelectedVideoCodec.Contains("HEVC") ? "HEVC" :
-                        page.VideoQuality.SelectedVideoCodec.Contains("Dolby") ? "Dolby Vision" :
-                        page.VideoQuality.SelectedVideoCodec.Contains("AV1") ? "AV1" : "")
+                    .SetVideoQuality(videoQuality.QualityFormat)
+                    .SetVideoCodec(
+                        videoQuality.SelectedVideoCodec.Contains("AVC") ? "AVC" :
+                        videoQuality.SelectedVideoCodec.Contains("HEVC") ? "HEVC" :
+                        videoQuality.SelectedVideoCodec.Contains("Dolby") ? "Dolby Vision" :
+                        videoQuality.SelectedVideoCodec.Contains("AV1") ? "AV1" : "")
                     .SetVideoPublishTime(page.PublishTime)
                     .SetAvid(page.Avid)
                     .SetBvid(page.Bvid)
                     .SetCid(page.Cid)
-                    .SetUpMid(page.Owner.Mid)
-                    .SetUpName(Format.FormatFileName(page.Owner.Name));
+                    .SetUpMid(ownerMid)
+                    .SetUpName(Format.FormatFileName(ownerName));
 
                 // 序号设置
                 var orderFormat = SettingsManager.GetInstance().GetOrderFormat();
@@ -535,9 +548,9 @@ public class AddToDownloadService
                         MainTitle = _videoInfoView.Title,
                         Name = page.Name,
                         Duration = page.Duration,
-                        VideoCodecName = page.VideoQuality.SelectedVideoCodec,
-                        Resolution = new Quality { Name = page.VideoQuality.QualityFormat, Id = page.VideoQuality.Quality },
-                        AudioCodec = Constant.GetAudioQualities().FirstOrDefault(t => { return t.Name == page.AudioQualityFormat; }),
+                        VideoCodecName = videoQuality.SelectedVideoCodec,
+                        Resolution = new Quality { Name = videoQuality.QualityFormat, Id = videoQuality.Quality },
+                        AudioCodec = audioCodec,
                         Page = page.Page
                     };
                     var downloading = new Downloading
@@ -580,17 +593,18 @@ public class AddToDownloadService
 
     private MovieMetadata BuildMovieMetadata(VideoPage page)
     {
+        var score = _videoInfoView?.Score;
         var metadata = new MovieMetadata
         {
             Title = page.Name,
-            Plot = _videoInfoView.Description,
+            Plot = _videoInfoView?.Description ?? string.Empty,
             Year = page.OriginalPublishTime.Year.ToString(),
             Premiered = page.OriginalPublishTime.ToString("yyyy-MM-dd"),
             BilibiliId = new UniqueId("bilibili", page.Bvid),
-            Actors = new List<Actor> { new(page.Owner.Name, page.Owner.Mid.ToString()) },
-            Genres = _videoInfoView.VideoZone?.Split(">")?.ToList() ?? new List<string>(),
+            Actors = new List<Actor> { new(page.Owner?.Name ?? string.Empty, (page.Owner?.Mid ?? -1).ToString()) },
+            Genres = _videoInfoView?.VideoZone?.Split(">")?.ToList() ?? new List<string>(),
             Tags = page.LazyTags?.Value ?? new List<string>(),
-            Ratings = _videoInfoView.Score != null
+            Ratings = score != null
                 ? new List<Rating>
                 {
                     new()
@@ -598,7 +612,7 @@ public class AddToDownloadService
                         IsDefault = true,
                         Max = 10,
                         Name = "bilibili",
-                        Value = _videoInfoView.Score.Value
+                        Value = score.Value
                     }
                 }
                 : new List<Rating>()

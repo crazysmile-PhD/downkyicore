@@ -103,9 +103,9 @@ public class HistoryMedia : BindableBase
     }
 
     // 观看平台
-    private VectorImage _platform;
+    private VectorImage? _platform;
 
-    public VectorImage Platform
+    public VectorImage? Platform
     {
         get => _platform;
         set => SetProperty(ref _platform, value);
@@ -152,7 +152,7 @@ public class HistoryMedia : BindableBase
     #region 命令申明
 
     // 视频标题点击事件
-    private DelegateCommand<object> _titleCommand;
+    private DelegateCommand<object>? _titleCommand;
 
     public DelegateCommand<object> TitleCommand => _titleCommand ??= new DelegateCommand<object>(ExecuteTitleCommand);
 
@@ -171,7 +171,7 @@ public class HistoryMedia : BindableBase
     }
 
     // UP主头像点击事件
-    private DelegateCommand<object> _upCommand;
+    private DelegateCommand<object>? _upCommand;
 
     public DelegateCommand<object> UpCommand => _upCommand ??= new DelegateCommand<object>(ExecuteUpCommand);
 

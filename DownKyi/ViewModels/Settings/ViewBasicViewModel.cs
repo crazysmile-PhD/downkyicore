@@ -82,7 +82,7 @@ public class ViewBasicViewModel : ViewModelBase
         set => SetProperty(ref _autoParseVideo, value);
     }
 
-    private List<ParseScopeDisplay> _parseScopes;
+    private List<ParseScopeDisplay> _parseScopes = new();
 
     public List<ParseScopeDisplay> ParseScopes
     {
@@ -90,7 +90,7 @@ public class ViewBasicViewModel : ViewModelBase
         set => SetProperty(ref _parseScopes, value);
     }
 
-    private ParseScopeDisplay _selectedParseScope;
+    private ParseScopeDisplay _selectedParseScope = null!;
 
     public ParseScopeDisplay SelectedParseScope
     {
@@ -114,7 +114,7 @@ public class ViewBasicViewModel : ViewModelBase
         set => SetProperty(ref _repeatFileAutoAddNumberSuffix, value);
     }
 
-    private List<RepeatDownloadStrategyDisplay> _repeatDownloadStrategy;
+    private List<RepeatDownloadStrategyDisplay> _repeatDownloadStrategy = new();
 
     public List<RepeatDownloadStrategyDisplay> RepeatDownloadStrategy
     {
@@ -122,7 +122,7 @@ public class ViewBasicViewModel : ViewModelBase
         set => SetProperty(ref _repeatDownloadStrategy, value);
     }
 
-    private RepeatDownloadStrategyDisplay _selectedRepeatDownloadStrategy;
+    private RepeatDownloadStrategyDisplay _selectedRepeatDownloadStrategy = null!;
 
     public RepeatDownloadStrategyDisplay SelectedRepeatDownloadStrategy
     {
@@ -194,7 +194,7 @@ public class ViewBasicViewModel : ViewModelBase
 
         // 解析范围
         var parseScope = SettingsManager.GetInstance().GetParseScope();
-        SelectedParseScope = ParseScopes.FirstOrDefault(t => { return t.ParseScope == parseScope; });
+        SelectedParseScope = ParseScopes.FirstOrDefault(t => t.ParseScope == parseScope) ?? ParseScopes.First();
 
         // 解析后是否自动下载解析视频
         var isAutoDownloadAll = SettingsManager.GetInstance().GetIsAutoDownloadAll();
@@ -202,7 +202,7 @@ public class ViewBasicViewModel : ViewModelBase
 
         // 重复下载策略
         var repeatDownloadStrategy = SettingsManager.GetInstance().GetRepeatDownloadStrategy();
-        SelectedRepeatDownloadStrategy = RepeatDownloadStrategy.FirstOrDefault(t => { return t.RepeatDownloadStrategy == repeatDownloadStrategy; });
+        SelectedRepeatDownloadStrategy = RepeatDownloadStrategy.FirstOrDefault(t => t.RepeatDownloadStrategy == repeatDownloadStrategy) ?? RepeatDownloadStrategy.First();
 
         // 重复下载文件自动添加数字后缀
         var repeatFileAutoAddNumberSuffix = SettingsManager.GetInstance().IsRepeatFileAutoAddNumberSuffix();

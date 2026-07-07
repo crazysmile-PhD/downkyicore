@@ -66,7 +66,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref shareNumber, value);
     }
 
-    private VectorImage play;
+    private VectorImage play = null!;
 
     public VectorImage Play
     {
@@ -74,7 +74,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref play, value);
     }
 
-    private VectorImage like;
+    private VectorImage like = null!;
 
     public VectorImage Like
     {
@@ -82,7 +82,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref like, value);
     }
 
-    private VectorImage favorite;
+    private VectorImage favorite = null!;
 
     public VectorImage Favorite
     {
@@ -90,7 +90,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref favorite, value);
     }
 
-    private VectorImage share;
+    private VectorImage share = null!;
 
     public VectorImage Share
     {

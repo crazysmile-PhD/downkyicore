@@ -55,7 +55,7 @@ public static partial class Encryptor
         chash.Close();
 
         // 读取散列
-        var hash = hasher.Hash;
+        var hash = hasher.Hash ?? throw new CryptoHelpException("无法生成文件散列");
 
         // 输入文件写入散列
         cout.Write(hash, 0, hash.Length);
@@ -82,9 +82,9 @@ public static partial class Encryptor
         var outValue = 0;
 
         var iv = new byte[16];
-        fin.Read(iv, 0, 16);
+        fin.ReadExactly(iv);
         var salt = new byte[16];
-        fin.Read(salt, 0, 16);
+        fin.ReadExactly(salt);
 
         var sma = CreateRijndael(password, salt);
         sma.IV = iv;
@@ -134,7 +134,7 @@ public static partial class Encryptor
             fout.Flush();
             fout.Close();
 
-            var curHash = hasher.Hash;
+            var curHash = hasher.Hash ?? throw new CryptoHelpException("无法生成文件散列");
 
             // 获取比较和旧的散列对象
             var oldHash = new byte[hasher.HashSize / 8];

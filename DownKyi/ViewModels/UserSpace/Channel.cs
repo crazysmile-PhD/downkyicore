@@ -1,4 +1,4 @@
-﻿using Prism.Mvvm;
+using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.UserSpace;
 
@@ -13,7 +13,7 @@ public class Channel : BindableBase
         set => SetProperty(ref cover, value);
     }*/
 
-    private string name;
+    private string name = string.Empty;
 
     public string Name
     {
@@ -29,7 +29,7 @@ public class Channel : BindableBase
         set => SetProperty(ref count, value);
     }
 
-    private string ctime;
+    private string ctime = string.Empty;
 
     public string Ctime
     {

@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Danmaku2Ass;
+namespace DownKyi.Core.Danmaku2Ass;
 
 public class Config
 {
@@ -27,7 +27,7 @@ public class Config
         }
     }
 
-    public string LayoutAlgorithm; // 布局算法，async/sync
+    public string LayoutAlgorithm = string.Empty; // 布局算法，async/sync
     public int TuneDuration; // 微调时长
     public int DropOffset; // 丢弃偏移
     public int BottomMargin; // 底部边距

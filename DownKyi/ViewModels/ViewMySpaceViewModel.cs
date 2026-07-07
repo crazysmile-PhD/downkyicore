@@ -22,14 +22,14 @@ public class ViewMySpaceViewModel : ViewModelBase
 {
     public const string Tag = "PageMySpace";
 
-    private CancellationTokenSource _tokenSource;
+    private CancellationTokenSource _tokenSource = null!;
 
     // mid
     private long _mid = -1;
 
     #region 页面属性申明
 
-    private VectorImage _arrowBack;
+    private VectorImage _arrowBack = null!;
 
     public VectorImage ArrowBack
     {
@@ -37,7 +37,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _arrowBack, value);
     }
 
-    private VectorImage _logout;
+    private VectorImage _logout = null!;
 
     public VectorImage Logout
     {
@@ -85,7 +85,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _contentVisibility, value);
     }
 
-    private string _topNavigationBg;
+    private string _topNavigationBg = string.Empty;
 
     public string TopNavigationBg
     {
@@ -93,23 +93,23 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _topNavigationBg, value);
     }
 
-    private string _background;
+    private string? _background;
 
-    public string Background
+    public string? Background
     {
         get => _background;
         set => SetProperty(ref _background, value);
     }
 
-    private string _header;
+    private string? _header;
 
-    public string Header
+    public string? Header
     {
         get => _header;
         set => SetProperty(ref _header, value);
     }
 
-    private string _userName;
+    private string _userName = string.Empty;
 
     public string UserName
     {
@@ -117,17 +117,17 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _userName, value);
     }
 
-    private Bitmap _sex;
+    private Bitmap? _sex;
 
-    public Bitmap Sex
+    public Bitmap? Sex
     {
         get => _sex;
         set => SetProperty(ref _sex, value);
     }
 
-    private Bitmap _level;
+    private Bitmap? _level;
 
-    public Bitmap Level
+    public Bitmap? Level
     {
         get => _level;
         set => SetProperty(ref _level, value);
@@ -141,7 +141,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _vipTypeVisibility, value);
     }
 
-    private string _vipType;
+    private string _vipType = string.Empty;
 
     public string VipType
     {
@@ -149,7 +149,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _vipType, value);
     }
 
-    private string _sign;
+    private string _sign = string.Empty;
 
     public string Sign
     {
@@ -157,7 +157,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _sign, value);
     }
 
-    private VectorImage _coinIcon;
+    private VectorImage _coinIcon = null!;
 
     public VectorImage CoinIcon
     {
@@ -165,7 +165,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _coinIcon, value);
     }
 
-    private string _coin;
+    private string _coin = string.Empty;
 
     public string Coin
     {
@@ -173,7 +173,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _coin, value);
     }
 
-    private VectorImage _moneyIcon;
+    private VectorImage _moneyIcon = null!;
 
     public VectorImage MoneyIcon
     {
@@ -181,7 +181,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _moneyIcon, value);
     }
 
-    private string _money;
+    private string _money = string.Empty;
 
     public string Money
     {
@@ -189,7 +189,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _money, value);
     }
 
-    private VectorImage _bindingEmail;
+    private VectorImage _bindingEmail = null!;
 
     public VectorImage BindingEmail
     {
@@ -205,7 +205,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _bindingEmailVisibility, value);
     }
 
-    private VectorImage _bindingPhone;
+    private VectorImage _bindingPhone = null!;
 
     public VectorImage BindingPhone
     {
@@ -221,7 +221,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _bindingPhoneVisibility, value);
     }
 
-    private string _levelText;
+    private string _levelText = string.Empty;
 
     public string LevelText
     {
@@ -229,7 +229,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _levelText, value);
     }
 
-    private string _currentExp;
+    private string _currentExp = string.Empty;
 
     public string CurrentExp
     {
@@ -253,7 +253,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _maxExp, value);
     }
 
-    private ObservableCollection<SpaceItem> _statusList;
+    private ObservableCollection<SpaceItem> _statusList = new();
 
     public ObservableCollection<SpaceItem> StatusList
     {
@@ -261,7 +261,7 @@ public class ViewMySpaceViewModel : ViewModelBase
         set => SetProperty(ref _statusList, value);
     }
 
-    private ObservableCollection<SpaceItem> _packageList;
+    private ObservableCollection<SpaceItem> _packageList = new();
 
     public ObservableCollection<SpaceItem> PackageList
     {
@@ -410,7 +410,7 @@ public class ViewMySpaceViewModel : ViewModelBase
     }
 
     // 页面选择事件
-    private DelegateCommand _packageListCommand;
+    private DelegateCommand? _packageListCommand;
 
     public DelegateCommand PackageListCommand => _packageListCommand ??= new DelegateCommand(ExecutePackageListCommand);
 
@@ -515,14 +515,14 @@ public class ViewMySpaceViewModel : ViewModelBase
     /// <summary>
     /// 更新用户信息
     /// </summary>
-    private async void UpdateSpaceInfo()
+    private async Task UpdateSpaceInfoAsync()
     {
         var isCancel = false;
         var isNoData = true;
         string? toutuUri = null;
-        string headerUri = null;
+        string? headerUri = null;
         Uri? sexUri = null;
-        Uri levelUri = null;
+        Uri? levelUri = null;
 
         await Task.Run(() =>
         {
@@ -553,7 +553,7 @@ public class ViewMySpaceViewModel : ViewModelBase
                 }
 
                 // 显示vip信息
-                if (myInfo.Vip.Label.Text == null || myInfo.Vip.Label.Text == "")
+                if (myInfo.Vip.Label?.Text is null or "")
                 {
                     VipTypeVisibility = false;
                 }
@@ -695,6 +695,6 @@ public class ViewMySpaceViewModel : ViewModelBase
         _mid = parameter;
 
         InitView();
-        UpdateSpaceInfo();
+        RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync));
     }
 }

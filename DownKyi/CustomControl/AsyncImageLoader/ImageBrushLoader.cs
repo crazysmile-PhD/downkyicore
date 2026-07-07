@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Logging;
 using Avalonia.Media;
@@ -21,7 +22,12 @@ public static class ImageBrushLoader
         Logger = Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);
     }
 
-    private static async void OnSourceChanged(ImageBrush imageBrush, AvaloniaPropertyChangedEventArgs args)
+    private static void OnSourceChanged(ImageBrush imageBrush, AvaloniaPropertyChangedEventArgs args)
+    {
+        _ = OnSourceChangedAsync(imageBrush, args);
+    }
+
+    private static async Task OnSourceChangedAsync(ImageBrush imageBrush, AvaloniaPropertyChangedEventArgs args)
     {
         var (oldValue, newValue) = args.GetOldAndNewValue<string?>();
         if (oldValue == newValue)

@@ -1,11 +1,11 @@
-﻿using DownKyi.Images;
+using DownKyi.Images;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.UserSpace;
 
 public class TabLeftBanner : BindableBase
 {
-    public object Object { get; set; }
+    public object Object { get; set; } = new();
 
     public int Id { get; set; }
 
@@ -17,7 +17,7 @@ public class TabLeftBanner : BindableBase
         set => SetProperty(ref isSelected, value);
     }
 
-    private VectorImage icon;
+    private VectorImage icon = null!;
 
     public VectorImage Icon
     {
@@ -25,7 +25,7 @@ public class TabLeftBanner : BindableBase
         set => SetProperty(ref icon, value);
     }
 
-    private string iconColor;
+    private string iconColor = string.Empty;
 
     public string IconColor
     {
@@ -33,7 +33,7 @@ public class TabLeftBanner : BindableBase
         set => SetProperty(ref iconColor, value);
     }
 
-    private string title;
+    private string title = string.Empty;
 
     public string Title
     {

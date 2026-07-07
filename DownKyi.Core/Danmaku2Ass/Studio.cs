@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Danmaku2Ass;
+namespace DownKyi.Core.Danmaku2Ass;
 
 /// <summary>
 /// 字幕工程类
@@ -8,7 +8,7 @@ public class Studio
     public Config Config;
     public List<Danmaku> Danmakus;
 
-    public Creater Creater;
+    public Creater Creater = null!;
     public int KeepedCount;
     public int DropedCount;
 

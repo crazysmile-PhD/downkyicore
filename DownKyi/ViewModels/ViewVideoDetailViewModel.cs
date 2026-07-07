@@ -89,7 +89,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
         set => SetProperty(ref _videoInfoView, value);
     }
 
-    private ObservableCollection<VideoSection> _videoSections;
+    private ObservableCollection<VideoSection> _videoSections = new();
 
     public ObservableCollection<VideoSection> VideoSections
     {
@@ -248,7 +248,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
                 _input = InputText;
 
                 // 更新页面
-                UnityUpdateView(UpdateView, _input, null, true);
+                UnityUpdateView(UpdateView, _input, true);
 
                 // 是否自动解析视频
                 if (SettingsManager.GetInstance().GetIsAutoParseVideo() == AllowStatus.Yes)
@@ -318,6 +318,11 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// </summary>
     private void ExecuteUpperCommand()
     {
+        if (VideoInfoView == null)
+        {
+            return;
+        }
+
         NavigateToView.NavigateToViewUserSpace(EventAggregator, Tag, VideoInfoView.UpperMid);
     }
 
@@ -477,8 +482,13 @@ public class ViewVideoDetailViewModel : ViewModelBase
         // 是否选择了解析范围
         if (parseScope == ParseScope.None)
         {
+            if (DialogService == null)
+            {
+                return;
+            }
+
             //打开解析选择器
-            await DialogService?.ShowDialogAsync(ViewParsingSelectorViewModel.Tag, null, async result =>
+            await DialogService.ShowDialogAsync(ViewParsingSelectorViewModel.Tag, null, async result =>
             {
                 if (result.Result != ButtonResult.OK) return;
                 // 选择的解析范围
@@ -618,7 +628,29 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// <param name="input"></param>
     /// <param name="page"></param>
     /// <param name="refresh"></param>
+    private void UnityUpdateView(Action<IInfoService> action, string input, bool refresh = false)
+    {
+        var infoService = GetInfoService(input, refresh);
+        if (infoService == null)
+        {
+            return;
+        }
+
+        action(infoService);
+    }
+
     private void UnityUpdateView(Action<IInfoService, VideoPage> action, string input, VideoPage page, bool refresh = false)
+    {
+        var infoService = GetInfoService(input, refresh);
+        if (infoService == null)
+        {
+            return;
+        }
+
+        action(infoService, page);
+    }
+
+    private IInfoService? GetInfoService(string input, bool refresh)
     {
         if (_infoService == null || refresh)
         {
@@ -643,12 +675,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
             }
         }
 
-        if (_infoService == null)
-        {
-            return;
-        }
-
-        action(_infoService, page);
+        return _infoService;
     }
 
     /// <summary>
@@ -656,7 +683,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// </summary>
     /// <param name="videoInfoService"></param>
     /// <param name="param"></param>
-    private void UpdateView(IInfoService videoInfoService, VideoPage param)
+    private void UpdateView(IInfoService videoInfoService)
     {
         // 获取视频详情
         VideoInfoView = videoInfoService.GetVideoView();

@@ -115,7 +115,7 @@ public class FavoritesMedia : BindableBase
     #region 命令申明
 
     // 视频标题点击事件
-    private DelegateCommand<object> _titleCommand;
+    private DelegateCommand<object>? _titleCommand;
 
     public DelegateCommand<object> TitleCommand => _titleCommand ??= new DelegateCommand<object>(ExecuteTitleCommand);
 
@@ -135,7 +135,7 @@ public class FavoritesMedia : BindableBase
     }
 
     // 视频的UP主点击事件
-    private DelegateCommand<object> _videoUpperCommand;
+    private DelegateCommand<object>? _videoUpperCommand;
 
     public DelegateCommand<object> VideoUpperCommand => _videoUpperCommand ??= new DelegateCommand<object>(ExecuteVideoUpperCommand);
 

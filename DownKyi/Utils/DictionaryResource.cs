@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -46,6 +47,8 @@ public static class DictionaryResource
             Application.Current?.TryGetResource(resourceKey, Application.Current.ActualThemeVariant, out obj);
             return obj;
         });
-        return (T)obj;
+        return obj is T value
+            ? value
+            : throw new KeyNotFoundException($"Resource '{resourceKey}' was not found or is not a {typeof(T).Name}.");
     }
 }

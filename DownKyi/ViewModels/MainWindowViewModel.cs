@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Events;
 using DownKyi.Models;
@@ -96,8 +97,8 @@ public class MainWindowViewModel : BindableBase
         {
             var param = new NavigationParameters
             {
-                { "Parent", view.ParentViewName },
-                { "Parameter", view.Parameter }
+                { "Parent", view.ParentViewName ?? string.Empty },
+                { "Parameter", view.Parameter ?? string.Empty }
             };
             regionManager.RequestNavigate(ContentRegion, view.ViewName, param);
         });
@@ -130,7 +131,7 @@ public class MainWindowViewModel : BindableBase
                return;
             }
             Upgrade();
-            CheckForUpdates();
+            _ = CheckForUpdatesAsync();
             _clipboardListener = new ClipboardListener(App.Current.MainWindow);
             _clipboardListener.Changed += ClipboardListenerOnChanged;
             var param = new NavigationParameters
@@ -188,7 +189,7 @@ public class MainWindowViewModel : BindableBase
         _dialogService.ShowDialogAsync(ViewUpgradingDialogViewModel.Tag, new DialogParameters(), (result) => { });
     }
     
-    private async void CheckForUpdates()
+    private async Task CheckForUpdatesAsync()
     {
         try
         {
@@ -205,7 +206,7 @@ public class MainWindowViewModel : BindableBase
         }
         catch (Exception ex)
         {
-            /**/
+            LogManager.Error(nameof(MainWindowViewModel), ex);
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 
 namespace DownKyi.Core.Danmaku2Ass;
 
@@ -7,8 +7,8 @@ namespace DownKyi.Core.Danmaku2Ass;
 /// </summary>
 public class Display
 {
-    public Config Config;
-    public Danmaku Danmaku;
+    public Config Config = null!;
+    public Danmaku Danmaku = null!;
     public int LineIndex;
 
     public int FontSize;
@@ -17,8 +17,8 @@ public class Display
     public int Width;
     public int Height;
 
-    public Tuple<int, int> Horizontal;
-    public Tuple<int, int> Vertical;
+    public Tuple<int, int> Horizontal = null!;
+    public Tuple<int, int> Vertical = null!;
 
     public int Duration;
     public int Leave;
@@ -381,7 +381,7 @@ public class ScrollDisplay : Display
         var method = typeof(ScrollDisplay).GetMethod(methodName);
         if (method != null)
         {
-            return (int)method.Invoke(this, null);
+            return method.Invoke(this, null) is int duration ? duration : 0;
         }
 
         return 0;

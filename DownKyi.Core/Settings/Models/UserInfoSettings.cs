@@ -1,14 +1,14 @@
-﻿namespace DownKyi.Core.Settings.Models;
+namespace DownKyi.Core.Settings.Models;
 
 public class UserInfoSettings : IEquatable<UserInfoSettings>
 {
     public long Mid { get; set; }
-    public string Name { get; set; }
+    public string Name { get; set; } = string.Empty;
     public bool IsLogin { get; set; } // 是否登录
     public bool IsVip { get; set; } // 是否为大会员，未登录时为false
 
-    public string ImgKey { get; set; }
-    public string SubKey { get; set; }
+    public string ImgKey { get; set; } = string.Empty;
+    public string SubKey { get; set; } = string.Empty;
     
     public override int GetHashCode()
     {

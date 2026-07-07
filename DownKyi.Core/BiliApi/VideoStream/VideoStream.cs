@@ -56,13 +56,13 @@ public static class VideoStream
 
     /// <summary>
     /// 获取所有字幕<br/>
-    /// 若视频没有字幕，返回null
+    /// 若视频没有字幕，返回空列表
     /// </summary>
     /// <param name="avid"></param>
     /// <param name="bvid"></param>
     /// <param name="cid"></param>
     /// <returns></returns>
-    public static List<SubRipText>? GetSubtitle(long avid, string? bvid, long cid)
+    public static List<SubRipText> GetSubtitle(long avid, string? bvid, long cid)
     {
         var subRipTexts = new List<SubRipText>();
 
@@ -73,9 +73,9 @@ public static class VideoStream
             return subRipTexts;
         }
 
-        if (player.Subtitle != null && player.Subtitle.Subtitles != null && player.Subtitle.Subtitles.Count == 0)
+        if (player.Subtitle?.Subtitles == null || player.Subtitle.Subtitles.Count == 0)
         {
-            return null;
+            return subRipTexts;
         }
 
         foreach (var subtitle in player.Subtitle.Subtitles)
@@ -210,7 +210,7 @@ public static class VideoStream
     /// <param name="cid"></param>
     /// <param name="quality"></param>
     /// <returns></returns>
-    public static PlayUrl GetCheesePlayUrl(long avid, string bvid, long cid, long episodeId, int quality = 125)
+    public static PlayUrl? GetCheesePlayUrl(long avid, string bvid, long cid, long episodeId, int quality = 125)
     {
         var baseUrl = $"https://api.bilibili.com/pugv/player/web/playurl?cid={cid}&qn={quality}&fourk=1&fnver=0&fnval=4048";
         string url;

@@ -35,7 +35,12 @@ public static class ImageLoader
 
     private static readonly ConcurrentDictionary<Image, CancellationTokenSource> PendingOperations = new();
 
-    private static async void OnSourceChanged(Image sender, AvaloniaPropertyChangedEventArgs args)
+    private static void OnSourceChanged(Image sender, AvaloniaPropertyChangedEventArgs args)
+    {
+        _ = OnSourceChangedAsync(sender, args);
+    }
+
+    private static async Task OnSourceChangedAsync(Image sender, AvaloniaPropertyChangedEventArgs args)
     {
         var url = args.GetNewValue<string?>();
 

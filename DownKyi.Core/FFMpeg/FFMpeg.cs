@@ -32,30 +32,36 @@ public class FFMpeg
     /// <param name="destVideo"></param>
     public bool MergeVideo(string? audio, string? video, string destVideo)
     {
-        if (!File.Exists(audio) && !File.Exists(video)) return false;
+        var audioPath = !string.IsNullOrEmpty(audio) && File.Exists(audio) ? audio : null;
+        var videoPath = !string.IsNullOrEmpty(video) && File.Exists(video) ? video : null;
+        if (audioPath == null && videoPath == null) return false;
 
-        var arguments = FFMpegArguments
-            .FromFileInput(audio)
-            .AddFileInput(video)
-            .OutputToFile(destVideo, true, options => options
-                .WithCustomArgument("-strict -2")
-                .WithAudioCodec("copy")
-                .WithVideoCodec("copy")
-                .ForceFormat("mp4")
-            );
-        if (audio == null || !File.Exists(audio))
+        FFMpegArgumentProcessor arguments;
+        if (audioPath != null && videoPath != null)
         {
-            arguments = FFMpegArguments.FromFileInput(video).OutputToFile(
+            arguments = FFMpegArguments
+                .FromFileInput(audioPath)
+                .AddFileInput(videoPath)
+                .OutputToFile(destVideo, true, options => options
+                    .WithCustomArgument("-strict -2")
+                    .WithAudioCodec("copy")
+                    .WithVideoCodec("copy")
+                    .ForceFormat("mp4")
+                );
+        }
+        else if (videoPath != null)
+        {
+            arguments = FFMpegArguments.FromFileInput(videoPath).OutputToFile(
                 destVideo,
                 true,
                 options => options.WithCustomArgument("-strict -2").WithVideoCodec("copy").WithAudioCodec("copy").ForceFormat("mp4")
             );
         }
-        if (video == null || !File.Exists(video))
+        else
         {
             if (SettingsManager.GetInstance().GetIsTranscodingAacToMp3() == AllowStatus.Yes)
             {
-                arguments = FFMpegArguments.FromFileInput(audio).OutputToFile(
+                arguments = FFMpegArguments.FromFileInput(audioPath!).OutputToFile(
                     destVideo,
                     true,
                     options => options.WithCustomArgument("-strict -2").DisableChannel(Channel.Video).ForceFormat("mp3")
@@ -63,7 +69,7 @@ public class FFMpeg
             }
             else
             {
-                arguments = FFMpegArguments.FromFileInput(audio).OutputToFile(
+                arguments = FFMpegArguments.FromFileInput(audioPath!).OutputToFile(
                     destVideo,
                     true,
                     options => options.WithCustomArgument("-strict -2").DisableChannel(Channel.Video).WithAudioCodec("copy")

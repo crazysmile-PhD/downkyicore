@@ -13,7 +13,7 @@ public class SpaceItem : BindableBase
         set => SetProperty(ref _isEnabled, value);
     }
 
-    private VectorImage image;
+    private VectorImage image = null!;
 
     public VectorImage Image
     {

@@ -67,7 +67,7 @@ public class ViewFollowerViewModel : ViewModelBase
         set => SetProperty(ref _noDataVisibility, value);
     }
 
-    private CustomPagerViewModel _pager;
+    private CustomPagerViewModel _pager = null!;
 
     public CustomPagerViewModel Pager
     {
@@ -75,7 +75,7 @@ public class ViewFollowerViewModel : ViewModelBase
         set => SetProperty(ref _pager, value);
     }
 
-    private ObservableCollection<FriendInfo> _contents;
+    private ObservableCollection<FriendInfo> _contents = new();
 
     public ObservableCollection<FriendInfo> Contents
     {
@@ -111,7 +111,7 @@ public class ViewFollowerViewModel : ViewModelBase
         }
     }
 
-    private async void UpdateContent(int current)
+    private async Task UpdateContentAsync(int current)
     {
         // 是否正在获取数据
         // 在所有的退出分支中都需要设为true
@@ -179,7 +179,7 @@ public class ViewFollowerViewModel : ViewModelBase
             return false;
         }
 
-        UpdateContent(current);
+        RunFireAndForget(UpdateContentAsync(current), nameof(UpdateContentAsync));
 
         return true;
     }

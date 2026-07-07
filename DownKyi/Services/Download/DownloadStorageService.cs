@@ -155,9 +155,9 @@ public class DownloadStorageService : IDisposable
         Resolution = FromJson(
             r.IsDBNull(r.GetOrdinal("resolution")) ? null : r.GetString(r.GetOrdinal("resolution")),
             new Quality()),
-        AudioCodec = FromJson<Quality?>(
+        AudioCodec = FromJson(
             r.IsDBNull(r.GetOrdinal("audio_codec")) ? null : r.GetString(r.GetOrdinal("audio_codec")),
-            null)!,
+            new Quality()),
         FilePath = r.IsDBNull(r.GetOrdinal("file_path")) ? "" : r.GetString(r.GetOrdinal("file_path")),
         FileSize = r.IsDBNull(r.GetOrdinal("file_size")) ? null : r.GetString(r.GetOrdinal("file_size")),
         Page = r.GetInt32(r.GetOrdinal("page"))

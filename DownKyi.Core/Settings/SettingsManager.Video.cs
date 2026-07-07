@@ -151,13 +151,6 @@ public partial class SettingsManager
     /// <returns></returns>
     public int GetVideoParseType()
     {
-        if (_appSettings.Video.VideoParseType == null)
-        {
-            // 第一次获取，先设置默认值
-            SetVideoParseType(VideoParseType);
-            return VideoParseType;
-        }
-
         return _appSettings.Video.VideoParseType;
     }
     
@@ -369,11 +362,12 @@ public partial class SettingsManager
     /// </summary>
     /// <param name="fileNameParts"></param>
     /// <returns></returns>
-    public bool SetFileNameParts(List<FileNamePart> fileNameParts)
+    public bool SetFileNameParts(List<FileNamePart>? fileNameParts)
     {
+        var parts = fileNameParts is { Count: > 0 } ? fileNameParts : _fileNameParts;
         return SetProperty(
             _appSettings.Video.FileNameParts,
-            fileNameParts,
+            parts,
             v => _appSettings.Video.FileNameParts = v);
     }
 

@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.VisualTree;
+using DownKyi.Commands;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Events;
 using DownKyi.Utils;
@@ -20,7 +21,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private string _videoPathsStr;
+    private string _videoPathsStr = string.Empty;
 
     public string VideoPathsStr
     {
@@ -28,7 +29,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
         set => SetProperty(ref _videoPathsStr, value);
     }
 
-    private string[] _videoPaths;
+    private string[] _videoPaths = null!;
 
     public string[] VideoPaths
     {
@@ -40,7 +41,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
         }
     }
 
-    private string _status;
+    private string _status = string.Empty;
 
     public string Status
     {
@@ -62,14 +63,14 @@ public class ViewExtractMediaViewModel : ViewModelBase
     #region 命令申明
 
     // 选择视频事件
-    private DelegateCommand? _selectVideoCommand;
+    private DownKyiAsyncDelegateCommand? _selectVideoCommand;
 
-    public DelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DelegateCommand(ExecuteSelectVideoCommand);
+    public DownKyiAsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSelectVideoCommand);
 
     /// <summary>
     /// 选择视频事件
     /// </summary>
-    private async void ExecuteSelectVideoCommand()
+    private async Task ExecuteSelectVideoCommand()
     {
         if (_isExtracting)
         {
@@ -77,18 +78,18 @@ public class ViewExtractMediaViewModel : ViewModelBase
             return;
         }
 
-        VideoPaths = await DialogUtils.SelectMultiVideoFile();
+        VideoPaths = await DialogUtils.SelectMultiVideoFile() ?? Array.Empty<string>();
     }
 
     // 提取音频事件
-    private DelegateCommand? _extractAudioCommand;
+    private DownKyiAsyncDelegateCommand? _extractAudioCommand;
 
-    public DelegateCommand ExtractAudioCommand => _extractAudioCommand ??= new DelegateCommand(ExecuteExtractAudioCommand);
+    public DownKyiAsyncDelegateCommand ExtractAudioCommand => _extractAudioCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExtractAudioCommand);
 
     /// <summary>
     /// 提取音频事件
     /// </summary>
-    private async void ExecuteExtractAudioCommand()
+    private async Task ExecuteExtractAudioCommand()
     {
         if (_isExtracting)
         {
@@ -120,14 +121,14 @@ public class ViewExtractMediaViewModel : ViewModelBase
     }
 
     // 提取视频事件
-    private DelegateCommand? _extractVideoCommand;
+    private DownKyiAsyncDelegateCommand? _extractVideoCommand;
 
-    public DelegateCommand ExtractVideoCommand => _extractVideoCommand ??= new DelegateCommand(ExecuteExtractVideoCommand);
+    public DownKyiAsyncDelegateCommand ExtractVideoCommand => _extractVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExtractVideoCommand);
 
     /// <summary>
     /// 提取视频事件
     /// </summary>
-    private async void ExecuteExtractVideoCommand()
+    private async Task ExecuteExtractVideoCommand()
     {
         if (_isExtracting)
         {

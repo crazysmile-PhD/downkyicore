@@ -17,6 +17,7 @@ using Avalonia.VisualTree;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.FFMpeg;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using DownKyi.Events;
 using DownKyi.Utils;
@@ -35,7 +36,7 @@ public class ViewDelogoViewModel : ViewModelBase
     // 是否正在执行去水印任务
     private bool _isDelogo = false;
 
-    private IImage _source;
+    private IImage _source = null!;
 
 
     public IImage Source
@@ -102,7 +103,7 @@ public class ViewDelogoViewModel : ViewModelBase
         }
     }
 
-    private string _status;
+    private string _status = string.Empty;
 
     public string Status
     {
@@ -134,7 +135,7 @@ public class ViewDelogoViewModel : ViewModelBase
     public List<SolidColorBrush> AvailableColors { get; }
     
     
-    private SolidColorBrush _selectedColor;
+    private SolidColorBrush _selectedColor = null!;
 
     public SolidColorBrush SelectedColor
     {
@@ -191,20 +192,20 @@ public class ViewDelogoViewModel : ViewModelBase
             }
             catch (Exception e)
             {
-                /**/
+                LogManager.Error(nameof(ViewDelogoViewModel), e);
             }
         }
     }
 
     // 去水印事件
-    private DelegateCommand? _delogoCommand;
+    private DownKyiAsyncDelegateCommand? _delogoCommand;
 
-    public DelegateCommand DelogoCommand => _delogoCommand ??= new DelegateCommand(ExecuteDelogoCommand);
+    public DownKyiAsyncDelegateCommand DelogoCommand => _delogoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDelogoCommand);
 
     /// <summary>
     /// 去水印事件
     /// </summary>
-    private async void ExecuteDelogoCommand()
+    private async Task ExecuteDelogoCommand()
     {
         if (_isDelogo)
         {

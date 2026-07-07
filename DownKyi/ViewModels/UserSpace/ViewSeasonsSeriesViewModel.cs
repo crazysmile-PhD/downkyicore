@@ -25,7 +25,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private ObservableCollection<SeasonsSeries> _seasonsSeries;
+    private ObservableCollection<SeasonsSeries> _seasonsSeries = new();
 
     public ObservableCollection<SeasonsSeries> SeasonsSeries
     {
@@ -55,7 +55,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     #region 命令申明
 
     // 视频选择事件
-    private DelegateCommand<object> _seasonsSeriesCommand;
+    private DelegateCommand<object>? _seasonsSeriesCommand;
 
     public DelegateCommand<object> SeasonsSeriesCommand => _seasonsSeriesCommand ??= new DelegateCommand<object>(ExecuteSeasonsSeriesCommand);
 

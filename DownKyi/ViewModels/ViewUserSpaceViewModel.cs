@@ -28,7 +28,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private VectorImage _arrowBack;
+    private VectorImage _arrowBack = null!;
 
     public VectorImage ArrowBack
     {
@@ -76,7 +76,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         set => SetProperty(ref _contentVisibility, value);
     }
 
-    private string _topNavigationBg;
+    private string _topNavigationBg = string.Empty;
 
     public string TopNavigationBg
     {
@@ -84,23 +84,23 @@ public class ViewUserSpaceViewModel : ViewModelBase
         set => SetProperty(ref _topNavigationBg, value);
     }
 
-    private string _background;
+    private string? _background;
 
-    public string Background
+    public string? Background
     {
         get => _background;
         set => SetProperty(ref _background, value);
     }
 
-    private string _header;
+    private string? _header;
 
-    public string Header
+    public string? Header
     {
         get => _header;
         set => SetProperty(ref _header, value);
     }
 
-    private string _userName;
+    private string _userName = string.Empty;
 
     public string UserName
     {
@@ -108,17 +108,17 @@ public class ViewUserSpaceViewModel : ViewModelBase
         set => SetProperty(ref _userName, value);
     }
 
-    private Bitmap _sex;
+    private Bitmap? _sex;
 
-    public Bitmap Sex
+    public Bitmap? Sex
     {
         get => _sex;
         set => SetProperty(ref _sex, value);
     }
 
-    private Bitmap _level;
+    private Bitmap? _level;
 
-    public Bitmap Level
+    public Bitmap? Level
     {
         get => _level;
         set => SetProperty(ref _level, value);
@@ -132,7 +132,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         set => SetProperty(ref _vipTypeVisibility, value);
     }
 
-    private string _vipType;
+    private string _vipType = string.Empty;
 
     public string VipType
     {
@@ -140,7 +140,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         set => SetProperty(ref _vipType, value);
     }
 
-    private string _sign;
+    private string _sign = string.Empty;
 
     public string Sign
     {
@@ -148,7 +148,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         set => SetProperty(ref _sign, value);
     }
 
-    private string _isFollowed;
+    private string _isFollowed = string.Empty;
 
     public string IsFollowed
     {
@@ -156,7 +156,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         set => SetProperty(ref _isFollowed, value);
     }
 
-    private ObservableCollection<TabLeftBanner> _tabLeftBanners;
+    private ObservableCollection<TabLeftBanner> _tabLeftBanners = new();
 
     public ObservableCollection<TabLeftBanner> TabLeftBanners
     {
@@ -164,7 +164,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         set => SetProperty(ref _tabLeftBanners, value);
     }
 
-    private ObservableCollection<TabRightBanner> _tabRightBanners;
+    private ObservableCollection<TabRightBanner> _tabRightBanners = new();
 
     public ObservableCollection<TabRightBanner> TabRightBanners
     {
@@ -336,7 +336,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
     /// <summary>
     /// 更新用户信息
     /// </summary>
-    private async void UpdateSpaceInfo()
+    private async Task UpdateSpaceInfoAsync()
     {
         var isNoData = true;
         string? toutuUri = null;
@@ -575,6 +575,6 @@ public class ViewUserSpaceViewModel : ViewModelBase
         mid = parameter;
 
         InitView();
-        UpdateSpaceInfo();
+        RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync));
     }
 }

@@ -117,7 +117,7 @@ public class ViewIndexViewModel : ViewModelBase
         Toolbox = ButtonIcon.Instance().Toolbox;
         Toolbox.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-        UpdateUserInfo();
+        RunFireAndForget(UpdateUserInfoAsync(), nameof(UpdateUserInfoAsync));
     }
 
     // 输入确认事件
@@ -258,7 +258,7 @@ public class ViewIndexViewModel : ViewModelBase
     /// <summary>
     /// 更新用户登录信息
     /// </summary>
-    private async void UpdateUserInfo(bool isBackgroud = false)
+    private async Task UpdateUserInfoAsync(bool isBackgroud = false)
     {
         try
         {
@@ -319,7 +319,7 @@ public class ViewIndexViewModel : ViewModelBase
         {
             case null:
                 // 其他情况只更新设置的用户信息，不更新UI
-                UpdateUserInfo(true);
+                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync));
                 return;
             // 启动
             case "start":
@@ -327,11 +327,11 @@ public class ViewIndexViewModel : ViewModelBase
             case "login":
             // 注销
             case "logout":
-                UpdateUserInfo();
+                RunFireAndForget(UpdateUserInfoAsync(), nameof(UpdateUserInfoAsync));
                 break;
             default:
                 // 其他情况只更新设置的用户信息，不更新UI
-                UpdateUserInfo(true);
+                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync));
                 break;
         }
     }

@@ -16,7 +16,7 @@ public class ViewChannelViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private ObservableCollection<Channel> channels;
+    private ObservableCollection<Channel> channels = new();
 
     public ObservableCollection<Channel> Channels
     {
@@ -46,7 +46,7 @@ public class ViewChannelViewModel : ViewModelBase
     #region 命令申明
 
     // 视频选择事件
-    private DelegateCommand<object> channelsCommand;
+    private DelegateCommand<object>? channelsCommand;
 
     public DelegateCommand<object> ChannelsCommand =>
         channelsCommand ?? (channelsCommand = new DelegateCommand<object>(ExecuteChannelsCommand));

@@ -93,11 +93,11 @@ public class VideoInfoService : IInfoService
                 Name = name,
                 Duration = "N/A",
                 Page = page.Page,
-                LazyTags = new Lazy<List<string>?>(() =>
+                LazyTags = new Lazy<List<string>>(() =>
                 {
                     return VideoInfo.GetBiliTagInfo(_videoView.Bvid, page.Cid)
                         ?.Select(x => x.TagName)
-                        .ToList();
+                        .ToList() ?? new List<string>();
                 })
             };
 
@@ -190,7 +190,7 @@ public class VideoInfoService : IInfoService
             Id = 0,
             Title = "default",
             IsSelected = true,
-            VideoPages = GetVideoPages()
+            VideoPages = GetVideoPages() ?? new List<VideoPage>()
         };
     }
 
@@ -202,6 +202,7 @@ public class VideoInfoService : IInfoService
             Title = episode.Title,
             VideoPages = new List<VideoPage>()
         };
+        var owner = _videoView?.Owner ?? new VideoOwner { Name = string.Empty, Face = string.Empty, Mid = -1 };
         var order = 1;
         foreach (var p in episode.Pages)
         {
@@ -216,15 +217,15 @@ public class VideoInfoService : IInfoService
                 Order = order++,
                 Name = p.Part,
                 Duration = "N/A",
-                Owner = _videoView.Owner,
+                Owner = owner,
                 Page = p.Page,
                 PublishTime = dateTime.ToString(timeFormat),
                 OriginalPublishTime = dateTime,
-                LazyTags = new Lazy<List<string>?>(() =>
+                LazyTags = new Lazy<List<string>>(() =>
                 {
                     return VideoInfo.GetBiliTagInfo(episode.Bvid, p.Cid)
                         ?.Select(x => x.TagName)
-                        .ToList();
+                        .ToList() ?? new List<string>();
                 })
             });
         }
@@ -246,11 +247,11 @@ public class VideoInfoService : IInfoService
             Duration = "N/A",
             Owner = _videoView?.Owner ?? new VideoOwner { Name = "", Face = "", Mid = -1 },
             Page = episode.Page.Page,
-            LazyTags = new Lazy<List<string>?>(() =>
+            LazyTags = new Lazy<List<string>>(() =>
             {
                 return VideoInfo.GetBiliTagInfo(episode.Bvid, episode.Cid)
                     ?.Select(x => x.TagName)
-                    .ToList();
+                    .ToList() ?? new List<string>();
             })
         };
         var dateTime = startTime.AddSeconds(episode.Arc.Ctime);
@@ -281,18 +282,19 @@ public class VideoInfoService : IInfoService
     /// <returns></returns>
     public VideoInfoView? GetVideoView()
     {
-        if (_videoView == null)
+        var videoView = _videoView;
+        if (videoView == null)
         {
             return null;
         }
 
         // 查询、保存封面
-        var coverUrl = _videoView.Pic;
+        var coverUrl = videoView.Pic;
 
         // 分区
         var videoZone = string.Empty;
         var zoneList = VideoZone.Instance().GetZones();
-        var zone = zoneList.Find(it => it.Id == _videoView.Tid);
+        var zone = zoneList.Find(it => it.Id == videoView.Tid);
         if (zone != null)
         {
             var zoneParent = zoneList.Find(it => it.Id == zone.ParentId);
@@ -307,14 +309,14 @@ public class VideoInfoService : IInfoService
         }
         else
         {
-            videoZone = _videoView.Tname;
+            videoZone = videoView.Tname;
         }
 
         // 获取用户头像
         string upName;
-        if (_videoView?.Owner != null)
+        if (videoView.Owner != null)
         {
-            upName = _videoView.Owner.Name;
+            upName = videoView.Owner.Name;
         }
         else
         {
@@ -325,28 +327,28 @@ public class VideoInfoService : IInfoService
         var videoInfoView = new VideoInfoView();
         App.PropertyChangeAsync(() =>
         {
-            videoInfoView.CoverUrl = coverUrl;
-            videoInfoView.Title = _videoView.Title;
+            videoInfoView.CoverUrl = coverUrl ?? string.Empty;
+            videoInfoView.Title = videoView.Title;
 
             // 分区id
-            videoInfoView.TypeId = _videoView.Tid;
+            videoInfoView.TypeId = videoView.Tid;
 
             videoInfoView.VideoZone = videoZone;
 
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
-            var dateTime = startTime.AddSeconds(_videoView.Pubdate);
+            var dateTime = startTime.AddSeconds(videoView.Pubdate);
             videoInfoView.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss");
 
-            videoInfoView.PlayNumber = Format.FormatNumber(_videoView.Stat.View);
-            videoInfoView.DanmakuNumber = Format.FormatNumber(_videoView.Stat.Danmaku);
-            videoInfoView.LikeNumber = Format.FormatNumber(_videoView.Stat.Like);
-            videoInfoView.CoinNumber = Format.FormatNumber(_videoView.Stat.Coin);
-            videoInfoView.FavoriteNumber = Format.FormatNumber(_videoView.Stat.Favorite);
-            videoInfoView.ShareNumber = Format.FormatNumber(_videoView.Stat.Share);
-            videoInfoView.ReplyNumber = Format.FormatNumber(_videoView.Stat.Reply);
-            videoInfoView.Description = _videoView.Desc;
-            videoInfoView.UpHeader = _videoView.Owner.Face ?? "";
-            videoInfoView.UpperMid = _videoView.Owner.Mid;
+            videoInfoView.PlayNumber = Format.FormatNumber(videoView.Stat.View);
+            videoInfoView.DanmakuNumber = Format.FormatNumber(videoView.Stat.Danmaku);
+            videoInfoView.LikeNumber = Format.FormatNumber(videoView.Stat.Like);
+            videoInfoView.CoinNumber = Format.FormatNumber(videoView.Stat.Coin);
+            videoInfoView.FavoriteNumber = Format.FormatNumber(videoView.Stat.Favorite);
+            videoInfoView.ShareNumber = Format.FormatNumber(videoView.Stat.Share);
+            videoInfoView.ReplyNumber = Format.FormatNumber(videoView.Stat.Reply);
+            videoInfoView.Description = videoView.Desc;
+            videoInfoView.UpHeader = videoView.Owner?.Face ?? string.Empty;
+            videoInfoView.UpperMid = videoView.Owner?.Mid ?? -1;
 
             videoInfoView.UpName = upName;
         });

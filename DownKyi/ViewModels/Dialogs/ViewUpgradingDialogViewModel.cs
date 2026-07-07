@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Avalonia.Threading;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Login;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Storage.Database;
 using DownKyi.Models;
@@ -94,11 +95,24 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
 
     private void Upgrade()
     {
-        Task.Run(Upgrade1_0_20To1_0_21);
+        _ = UpgradeAsync();
+    }
+
+    private async Task UpgradeAsync()
+    {
+        try
+        {
+            await Task.Run(Upgrade1_0_20To1_0_21);
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(nameof(ViewUpgradingDialogViewModel), e);
+            await SetImportantMessage("数据迁移失败，请查看日志", 0);
+        }
     }
 
 #pragma warning disable SYSLIB5005
-    private async void Upgrade1_0_20To1_0_21()
+    private async Task Upgrade1_0_20To1_0_21()
     {
         var noMigrate = false;
         var loginInfoPath = StorageManager.GetLogin();

@@ -1,5 +1,7 @@
 using System;
+using System.Threading.Tasks;
 using Avalonia.Threading;
+using DownKyi.Core.Logging;
 using DownKyi.PrismExtension.Dialog;
 using Prism.Events;
 using Prism.Mvvm;
@@ -65,6 +67,23 @@ public class ViewModelBase : BindableBase, INavigationAware
     protected void PropertyChange(Action callback)
     {
         Dispatcher.UIThread.Invoke(callback);
+    }
+
+    protected void RunFireAndForget(Task task, string operation)
+    {
+        _ = RunFireAndForgetAsync(task, operation);
+    }
+
+    private static async Task RunFireAndForgetAsync(Task task, string operation)
+    {
+        try
+        {
+            await task;
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(operation, e);
+        }
     }
     
 }

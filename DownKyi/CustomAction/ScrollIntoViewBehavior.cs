@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using DownKyi.Core.Logging;
 
 namespace DownKyi.CustomAction;
 
@@ -12,30 +13,50 @@ public class ScrollIntoViewBehavior : Behavior<DataGrid>
     protected override void OnAttached()
     {
         base.OnAttached();
-        AssociatedObject.SelectionChanged += OnSelectionChanged;
+        if (AssociatedObject != null)
+        {
+            AssociatedObject.SelectionChanged += OnSelectionChanged;
+        }
     }
 
     protected override void OnDetaching()
     {
         base.OnDetaching();
-        AssociatedObject.SelectionChanged -= OnSelectionChanged;
+        if (AssociatedObject != null)
+        {
+            AssociatedObject.SelectionChanged -= OnSelectionChanged;
+        }
     }
 
-    private async void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (AssociatedObject.SelectedItem == null)
+        _ = OnSelectionChangedAsync();
+    }
+
+    private async Task OnSelectionChangedAsync()
+    {
+        try
         {
-            return;
+            var dataGrid = AssociatedObject;
+            var selectedItem = dataGrid?.SelectedItem;
+            if (dataGrid == null || selectedItem == null)
+            {
+                return;
+            }
+
+            // 等待UI更新完成
+            await Task.Delay(100);
+
+            // 使用UI线程异步执行滚动操作
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                // 直接使用DataGrid的ScrollIntoView方法滚动到选中项
+                dataGrid.ScrollIntoView(selectedItem, null);
+            });
         }
-
-        // 等待UI更新完成
-        await Task.Delay(100);
-
-        // 使用UI线程异步执行滚动操作
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        catch (Exception ex)
         {
-            // 直接使用DataGrid的ScrollIntoView方法滚动到选中项
-            AssociatedObject.ScrollIntoView(AssociatedObject.SelectedItem, null);
-        });
+            LogManager.Error(nameof(ScrollIntoViewBehavior), ex);
+        }
     }
 }

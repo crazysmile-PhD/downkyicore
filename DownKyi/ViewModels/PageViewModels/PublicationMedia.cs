@@ -37,7 +37,7 @@ public class PublicationMedia : BindableBase
         set => SetProperty(ref _isSelected, value);
     }
 
-    private Bitmap _cover;
+    private Bitmap _cover = null!;
 
     public Bitmap Cover
     {
@@ -82,7 +82,7 @@ public class PublicationMedia : BindableBase
     #region 命令申明
 
     // 视频标题点击事件
-    private DelegateCommand<object> _titleCommand;
+    private DelegateCommand<object>? _titleCommand;
 
     public DelegateCommand<object> TitleCommand => _titleCommand ??= new DelegateCommand<object>(ExecuteTitleCommand);
 

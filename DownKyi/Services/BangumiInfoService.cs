@@ -42,7 +42,10 @@ public class BangumiInfoService : IInfoService
         {
             var mediaId = ParseEntrance.GetBangumiMediaId(input);
             var bangumiMedia = BangumiInfo.BangumiMediaInfo(mediaId);
-            _bangumiSeason = BangumiInfo.BangumiSeasonInfo(bangumiMedia.SeasonId);
+            if (bangumiMedia != null)
+            {
+                _bangumiSeason = BangumiInfo.BangumiSeasonInfo(bangumiMedia.SeasonId);
+            }
         }
     }
 
@@ -110,7 +113,7 @@ public class BangumiInfoService : IInfoService
                 Order = order,
                 Name = name,
                 Duration = "N/A",
-                LazyTags = new Lazy<List<string>>(_bangumiSeason.Styles?.ToList())
+                LazyTags = new Lazy<List<string>>(_bangumiSeason.Styles.ToList())
             };
 
             // UP主信息
@@ -204,7 +207,7 @@ public class BangumiInfoService : IInfoService
                     Order = order,
                     Name = name,
                     Duration = "N/A",
-                    LazyTags = new Lazy<List<string>>(_bangumiSeason.Styles?.ToList())
+                    LazyTags = new Lazy<List<string>>(_bangumiSeason.Styles.ToList())
                 };
 
                 // UP主信息
@@ -290,7 +293,7 @@ public class BangumiInfoService : IInfoService
         var videoInfoView = new VideoInfoView();
         App.PropertyChangeAsync(() =>
         {
-            videoInfoView.CoverUrl = coverUrl;
+            videoInfoView.CoverUrl = coverUrl ?? string.Empty;
 
             videoInfoView.Title = _bangumiSeason.Title;
 
@@ -310,7 +313,7 @@ public class BangumiInfoService : IInfoService
 
             videoInfoView.Score = _bangumiSeason.Rating?.Score;
             videoInfoView.UpName = upName;
-            videoInfoView.UpHeader = _bangumiSeason.UpInfo?.Avatar;
+            videoInfoView.UpHeader = _bangumiSeason.UpInfo?.Avatar ?? string.Empty;
             videoInfoView.UpperMid = _bangumiSeason.UpInfo?.Mid ?? -1;
         });
 

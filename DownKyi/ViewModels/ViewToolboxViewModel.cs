@@ -17,7 +17,7 @@ namespace DownKyi.ViewModels
 
         #region 页面属性申明
 
-        private List<TabHeader> _tabHeaders;
+        private List<TabHeader> _tabHeaders = new();
 
         public List<TabHeader> TabHeaders
         {

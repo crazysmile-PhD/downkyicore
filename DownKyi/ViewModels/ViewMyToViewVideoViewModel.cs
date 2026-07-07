@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Commands;
 using DownKyi.Core.BiliApi.History;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Events;
@@ -22,7 +23,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
 {
     public const string Tag = "PageMyToView";
 
-    private CancellationTokenSource _tokenSource;
+    private CancellationTokenSource _tokenSource = null!;
 
     #region 页面属性申明
 
@@ -34,7 +35,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _pageName, value);
     }
 
-    private VectorImage _arrowBack;
+    private VectorImage _arrowBack = null!;
 
     public VectorImage ArrowBack
     {
@@ -42,7 +43,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _arrowBack, value);
     }
 
-    private VectorImage _downloadManage;
+    private VectorImage _downloadManage = null!;
 
     public VectorImage DownloadManage
     {
@@ -58,7 +59,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _contentVisibility, value);
     }
 
-    private ObservableCollection<ToViewMedia> _medias;
+    private ObservableCollection<ToViewMedia> _medias = new();
 
     public ObservableCollection<ToViewMedia> Medias
     {
@@ -220,38 +221,28 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
     }
 
     // 添加选中项到下载列表事件
-    private DelegateCommand? _addToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DelegateCommand(ExecuteAddToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
 
     /// <summary>
     /// 添加选中项到下载列表事件
     /// </summary>
-    private void ExecuteAddToDownloadCommand()
-    {
-        AddToDownload(true);
-    }
-
     // 添加所有视频到下载列表事件
-    private DelegateCommand? _addAllToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DelegateCommand(ExecuteAddAllToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
 
     /// <summary>
     /// 添加所有视频到下载列表事件
     /// </summary>
-    private void ExecuteAddAllToDownloadCommand()
-    {
-        AddToDownload(false);
-    }
-
     #endregion
 
     /// <summary>
     /// 添加到下载
     /// </summary>
     /// <param name="isOnlySelected"></param>
-    private async void AddToDownload(bool isOnlySelected)
+    private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // 稍后再看里只有视频
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
@@ -300,7 +291,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
             : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
     }
 
-    private async void UpdateToViewMediaList()
+    private async Task UpdateToViewMediaListAsync()
     {
         LoadingVisibility = true;
         NoDataVisibility = false;
@@ -414,6 +405,6 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
 
         InitView();
 
-        UpdateToViewMediaList();
+        RunFireAndForget(UpdateToViewMediaListAsync(), nameof(UpdateToViewMediaListAsync));
     }
 }

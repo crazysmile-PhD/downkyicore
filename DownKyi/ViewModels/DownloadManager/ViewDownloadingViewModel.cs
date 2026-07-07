@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using DownKyi.Commands;
 using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Services;
@@ -130,14 +131,14 @@ namespace DownKyi.ViewModels.DownloadManager
         }
 
         // 删除所有下载事件
-        private DelegateCommand? _deleteAllDownloadingCommand;
+        private DownKyiAsyncDelegateCommand? _deleteAllDownloadingCommand;
 
-        public DelegateCommand DeleteAllDownloadingCommand => _deleteAllDownloadingCommand ??= new DelegateCommand(ExecuteDeleteAllDownloadingCommand);
+        public DownKyiAsyncDelegateCommand DeleteAllDownloadingCommand => _deleteAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDeleteAllDownloadingCommand);
 
         /// <summary>
         /// 删除所有下载事件
         /// </summary>
-        private async void ExecuteDeleteAllDownloadingCommand()
+        private async Task ExecuteDeleteAllDownloadingCommand()
         {
             var alertService = new AlertService(DialogService);
             var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"));
@@ -165,14 +166,19 @@ namespace DownKyi.ViewModels.DownloadManager
 
 
         // 下载列表删除事件
-        private DelegateCommand<DownloadingItem>? _deleteCommand;
-        public DelegateCommand<DownloadingItem> DeleteCommand => _deleteCommand ??= new DelegateCommand<DownloadingItem>(ExecuteDeleteCommand);
+        private DownKyiAsyncDelegateCommand<DownloadingItem>? _deleteCommand;
+        public DownKyiAsyncDelegateCommand<DownloadingItem> DeleteCommand => _deleteCommand ??= new DownKyiAsyncDelegateCommand<DownloadingItem>(ExecuteDeleteCommand);
 
         /// <summary>
         /// 下载列表删除事件
         /// </summary>
-        private async void ExecuteDeleteCommand(DownloadingItem downloadingItem)
+        private async Task ExecuteDeleteCommand(DownloadingItem? downloadingItem)
         {
+            if (downloadingItem == null)
+            {
+                return;
+            }
+
             var alertService = new AlertService(DialogService);
             var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2);
             if (result != ButtonResult.OK)

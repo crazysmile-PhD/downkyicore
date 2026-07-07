@@ -110,7 +110,7 @@ public class BangumiFollowMedia : BindableBase
     #region 命令申明
 
     // 视频标题点击事件
-    private DelegateCommand<object> titleCommand;
+    private DelegateCommand<object>? titleCommand;
 
     public DelegateCommand<object> TitleCommand =>
         titleCommand ?? (titleCommand = new DelegateCommand<object>(ExecuteTitleCommand));

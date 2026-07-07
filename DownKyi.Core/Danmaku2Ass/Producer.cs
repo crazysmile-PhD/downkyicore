@@ -1,12 +1,12 @@
-﻿namespace DownKyi.Core.Danmaku2Ass;
+namespace DownKyi.Core.Danmaku2Ass;
 
 public class Producer
 {
     public Dictionary<string, bool> Config;
-    public Dictionary<string, Filter> Filters;
+    public Dictionary<string, Filter> Filters = new();
     public List<Danmaku> Danmakus;
-    public List<Danmaku> KeepedDanmakus;
-    public Dictionary<string, int> FilterDetail;
+    public List<Danmaku> KeepedDanmakus = new();
+    public Dictionary<string, int> FilterDetail = new();
 
     public Producer(Dictionary<string, bool> config, List<Danmaku> danmakus)
     {

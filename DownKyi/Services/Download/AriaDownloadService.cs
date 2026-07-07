@@ -42,7 +42,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// </summary>
     /// <param name="downloading"></param>
     /// <returns></returns>
-    public override string DownloadAudio(DownloadingItem downloading)
+    public override string? DownloadAudio(DownloadingItem downloading)
     {
         var downloadAudio = BaseDownloadAudio(downloading);
 
@@ -54,7 +54,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// </summary>
     /// <param name="downloading"></param>
     /// <returns></returns>
-    public override string DownloadVideo(DownloadingItem downloading)
+    public override string? DownloadVideo(DownloadingItem downloading)
     {
         var downloadVideo = BaseDownloadVideo(downloading);
 
@@ -67,8 +67,13 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// <param name="downloading"></param>
     /// <param name="downloadVideo"></param>
     /// <returns></returns>
-    private string DownloadVideo(DownloadingItem downloading, VideoPlayUrlBasic? downloadVideo)
+    private string? DownloadVideo(DownloadingItem downloading, VideoPlayUrlBasic? downloadVideo)
     {
+        if (downloadVideo == null)
+        {
+            return null;
+        }
+
         return DownloadVideo(downloading,new PlayUrlDashVideo
         {
             Id = downloadVideo.Id,
@@ -78,7 +83,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
         } );
     }
 
-    private string DownloadVideo(DownloadingItem downloading, PlayUrlDashVideo? downloadVideo)
+    private string? DownloadVideo(DownloadingItem downloading, PlayUrlDashVideo? downloadVideo)
     {
         // 如果为空，说明没有匹配到可下载的音频视频
         if (downloadVideo == null)
@@ -192,7 +197,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// <param name="coverUrl"></param>
     /// <param name="fileName"></param>
     /// <returns></returns>
-    public override string DownloadCover(DownloadingItem downloading, string coverUrl, string fileName)
+    public override string? DownloadCover(DownloadingItem downloading, string? coverUrl, string fileName)
     {
         return BaseDownloadCover(downloading, coverUrl, fileName);
     }
@@ -222,7 +227,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// <param name="audioUid"></param>
     /// <param name="videoUid"></param>
     /// <returns></returns>
-    public override string MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
+    public override string? MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
         if (videoUid == NullMark)
         {
@@ -319,13 +324,19 @@ public class AriaDownloadService : DownloadService, IDownloadService
         else
         {
             // 先恢复为waiting状态，暂停状态下Remove会导致文件重新下载，原因暂不清楚
-            await AriaClient.UnpauseAsync(downloading.Downloading.Gid);
+            var gid = downloading.Downloading.Gid;
+            if (string.IsNullOrWhiteSpace(gid))
+            {
+                return false;
+            }
+
+            await AriaClient.UnpauseAsync(gid);
             // 移除下载项
-            var ariaRemove = await AriaClient.RemoveAsync(downloading.Downloading.Gid);
-            if (ariaRemove == null || ariaRemove.Result == downloading.Downloading.Gid)
+            var ariaRemove = await AriaClient.RemoveAsync(gid);
+            if (ariaRemove == null || ariaRemove.Result == gid)
             {
                 // 从内存中删除下载项
-                await AriaClient.RemoveDownloadResultAsync(downloading.Downloading.Gid);
+                await AriaClient.RemoveDownloadResultAsync(gid);
             }
 
             return false;

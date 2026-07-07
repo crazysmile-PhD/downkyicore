@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading.Tasks;
+using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.FileName;
 using DownKyi.Core.Settings;
@@ -23,7 +25,7 @@ public class ViewVideoViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private List<Quality> _videoCodecs;
+    private List<Quality> _videoCodecs = new();
 
     public List<Quality> VideoCodecs
     {
@@ -31,7 +33,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _videoCodecs, value);
     }
 
-    private Quality _selectedVideoCodec;
+    private Quality _selectedVideoCodec = null!;
 
     public Quality SelectedVideoCodec
     {
@@ -39,7 +41,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedVideoCodec, value);
     }
 
-    private List<Quality> _videoQualityList;
+    private List<Quality> _videoQualityList = new();
 
     public List<Quality> VideoQualityList
     {
@@ -47,7 +49,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _videoQualityList, value);
     }
 
-    private Quality _selectedVideoQuality;
+    private Quality _selectedVideoQuality = null!;
 
     public Quality SelectedVideoQuality
     {
@@ -55,7 +57,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedVideoQuality, value);
     }
 
-    private List<Quality> _audioQualityList;
+    private List<Quality> _audioQualityList = new();
 
     public List<Quality> AudioQualityList
     {
@@ -63,7 +65,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _audioQualityList, value);
     }
 
-    private Quality _selectedAudioQuality;
+    private Quality _selectedAudioQuality = null!;
 
     public Quality SelectedAudioQuality
     {
@@ -71,7 +73,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedAudioQuality, value);
     }
 
-    private List<VideoParseType> _videoParseTypeList;
+    private List<VideoParseType> _videoParseTypeList = new();
 
     public List<VideoParseType> VideoParseTypeList
     {
@@ -79,7 +81,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _videoParseTypeList, value);
     }
 
-    private VideoParseType _selectedVideoParseType;
+    private VideoParseType _selectedVideoParseType = null!;
 
     public VideoParseType SelectedVideoParseType
     {
@@ -111,7 +113,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _isUseDefaultDirectory, value);
     }
 
-    private string _saveVideoDirectory;
+    private string _saveVideoDirectory = string.Empty;
 
     public string SaveVideoDirectory
     {
@@ -176,7 +178,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _generateMovieMetadata, value);
     }
 
-    private ObservableCollection<DisplayFileNamePart> _selectedFileName;
+    private ObservableCollection<DisplayFileNamePart> _selectedFileName = new();
 
     public ObservableCollection<DisplayFileNamePart> SelectedFileName
     {
@@ -184,7 +186,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedFileName, value);
     }
 
-    private ObservableCollection<DisplayFileNamePart> _optionalFields;
+    private ObservableCollection<DisplayFileNamePart> _optionalFields = new();
 
     public ObservableCollection<DisplayFileNamePart> OptionalFields
     {
@@ -200,7 +202,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedOptionalField, value);
     }
 
-    private List<string> _fileNamePartTimeFormatList;
+    private List<string> _fileNamePartTimeFormatList = new();
 
     public List<string> FileNamePartTimeFormatList
     {
@@ -208,7 +210,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _fileNamePartTimeFormatList, value);
     }
 
-    private string _selectedFileNamePartTimeFormat;
+    private string _selectedFileNamePartTimeFormat = string.Empty;
 
     public string SelectedFileNamePartTimeFormat
     {
@@ -216,7 +218,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedFileNamePartTimeFormat, value);
     }
 
-    private List<OrderFormatDisplay> _orderFormatList;
+    private List<OrderFormatDisplay> _orderFormatList = new();
 
     public List<OrderFormatDisplay> OrderFormatList
     {
@@ -224,7 +226,7 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _orderFormatList, value);
     }
 
-    private OrderFormatDisplay _orderFormatDisplay;
+    private OrderFormatDisplay _orderFormatDisplay = null!;
 
     public OrderFormatDisplay OrderFormatDisplay
     {
@@ -316,19 +318,19 @@ public class ViewVideoViewModel : ViewModelBase
         // 优先下载的视频编码
         var videoCodecs = SettingsManager.GetInstance().GetVideoCodecs();
         //SelectedVideoCodec = GetVideoCodecsString(videoCodecs);
-        SelectedVideoCodec = VideoCodecs.FirstOrDefault(t => { return t.Id == videoCodecs; });
+        SelectedVideoCodec = VideoCodecs.FirstOrDefault(t => t.Id == videoCodecs) ?? VideoCodecs.First();
 
         // 优先下载画质
         var quality = SettingsManager.GetInstance().GetQuality();
-        SelectedVideoQuality = VideoQualityList.FirstOrDefault(t => t.Id == quality);
+        SelectedVideoQuality = VideoQualityList.FirstOrDefault(t => t.Id == quality) ?? VideoQualityList.First();
 
         // 优先下载音质
         var audioQuality = SettingsManager.GetInstance().GetAudioQuality();
-        SelectedAudioQuality = AudioQualityList.FirstOrDefault(t => t.Id == audioQuality);
+        SelectedAudioQuality = AudioQualityList.FirstOrDefault(t => t.Id == audioQuality) ?? AudioQualityList.First();
 
         // 首选视频解析方式
         var videoParseType = SettingsManager.GetInstance().GetVideoParseType();
-        SelectedVideoParseType = VideoParseTypeList.FirstOrDefault(t => t.Id == videoParseType);
+        SelectedVideoParseType = VideoParseTypeList.FirstOrDefault(t => t.Id == videoParseType) ?? VideoParseTypeList.First();
 
         // 是否下载flv视频后转码为mp4
         var isTranscodingFlvToMp4 = SettingsManager.GetInstance().GetIsTranscodingFlvToMp4();
@@ -377,7 +379,7 @@ public class ViewVideoViewModel : ViewModelBase
 
         // 文件命名中的序号格式
         var orderFormat = SettingsManager.GetInstance().GetOrderFormat();
-        OrderFormatDisplay = OrderFormatList.FirstOrDefault(t => { return t.OrderFormat == orderFormat; });
+        OrderFormatDisplay = OrderFormatList.FirstOrDefault(t => t.OrderFormat == orderFormat) ?? OrderFormatList.First();
 
         _isOnNavigatedTo = false;
     }
@@ -516,14 +518,14 @@ public class ViewVideoViewModel : ViewModelBase
     }
 
     // 修改默认下载目录事件
-    private DelegateCommand? _changeSaveVideoDirectoryCommand;
+    private DownKyiAsyncDelegateCommand? _changeSaveVideoDirectoryCommand;
 
-    public DelegateCommand ChangeSaveVideoDirectoryCommand => _changeSaveVideoDirectoryCommand ??= new DelegateCommand(ExecuteChangeSaveVideoDirectoryCommand);
+    public DownKyiAsyncDelegateCommand ChangeSaveVideoDirectoryCommand => _changeSaveVideoDirectoryCommand ??= new DownKyiAsyncDelegateCommand(ExecuteChangeSaveVideoDirectoryCommand);
 
     /// <summary>
     /// 修改默认下载目录事件
     /// </summary>
-    private async void ExecuteChangeSaveVideoDirectoryCommand()
+    private async Task ExecuteChangeSaveVideoDirectoryCommand()
     {
         var directory = await DialogUtils.SetDownloadDirectory();
         if (string.IsNullOrEmpty(directory))
@@ -669,9 +671,9 @@ public class ViewVideoViewModel : ViewModelBase
     public DelegateCommand DownloadCoverCommand => _downloadCoverCommand ??= new DelegateCommand(ExecuteDownloadCoverCommand);
 
 
-    private DelegateCommand _generateMovieMetadataCommand;
+    private DelegateCommand? _generateMovieMetadataCommand;
 
-    public DelegateCommand GenerateMovieMetadataCommand => new DelegateCommand(ExecuteGenerateMovieMetadataCommand);
+    public DelegateCommand GenerateMovieMetadataCommand => _generateMovieMetadataCommand ??= new DelegateCommand(ExecuteGenerateMovieMetadataCommand);
 
 
     private void ExecuteGenerateMovieMetadataCommand()

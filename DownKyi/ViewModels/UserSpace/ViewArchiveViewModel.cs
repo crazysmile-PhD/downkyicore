@@ -22,7 +22,7 @@ public class ViewArchiveViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private ObservableCollection<PublicationZone> _publicationZones;
+    private ObservableCollection<PublicationZone> _publicationZones = new();
 
     public ObservableCollection<PublicationZone> PublicationZones
     {

@@ -67,6 +67,10 @@ public static class DialogUtils
         );
 
         // 选择文件
-        return files.Select(file => file.TryGetLocalPath()).ToArray();
+        return files
+            .Select(file => file.TryGetLocalPath())
+            .Where(path => !string.IsNullOrEmpty(path))
+            .Select(path => path!)
+            .ToArray();
     }
 }

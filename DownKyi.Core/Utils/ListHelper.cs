@@ -26,7 +26,7 @@ public static class ListHelper
     /// <param name="item"></param>
     public static void AddUnique<T>(List<T> list, T item)
     {
-        if (!list.Exists(t => t.Equals(item)))
+        if (!list.Exists(t => EqualityComparer<T>.Default.Equals(t, item)))
         {
             list.Add(item);
         }
@@ -51,7 +51,7 @@ public static class ListHelper
             var previousSelection = currentSelection;
             list.Remove(item);
             list.Insert(index, item);
-            if (previousSelection != null && previousSelection.Equals(item))
+            if (previousSelection != null && EqualityComparer<T>.Default.Equals(previousSelection, item))
             {
                 currentSelection = previousSelection;
             }
@@ -60,7 +60,7 @@ public static class ListHelper
 
     public static void InsertUnique<T>(Collection<T> list, T item, int index)
     {
-        T defaultSelection = default;
+        T defaultSelection = default!;
         InsertUnique(list, item, index, ref defaultSelection); 
     }
 }

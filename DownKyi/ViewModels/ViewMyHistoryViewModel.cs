@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.History;
@@ -26,8 +25,6 @@ public class ViewMyHistoryViewModel : ViewModelBase
 {
     public const string Tag = "PageMyHistory";
 
-    private CancellationTokenSource? _tokenSource;
-
     // 每页视频数量，暂时在此写死，以后在设置中增加选项
     private const int VideoNumberInPage = 30;
 
@@ -41,7 +38,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
         set => SetProperty(ref _pageName, value);
     }
 
-    private VectorImage _arrowBack;
+    private VectorImage _arrowBack = null!;
 
     public VectorImage ArrowBack
     {
@@ -49,7 +46,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
         set => SetProperty(ref _arrowBack, value);
     }
 
-    private VectorImage _downloadManage;
+    private VectorImage _downloadManage = null!;
 
     public VectorImage DownloadManage
     {
@@ -65,7 +62,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
         set => SetProperty(ref _contentVisibility, value);
     }
 
-    private ObservableCollection<HistoryMedia> _medias;
+    private ObservableCollection<HistoryMedia> _medias = new();
 
     public ObservableCollection<HistoryMedia> Medias
     {
@@ -151,9 +148,6 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
 
-        // 结束任务
-        _tokenSource?.Cancel();
-
         var parameter = new NavigationParam
         {
             ViewName = ParentView,
@@ -232,24 +226,19 @@ public class ViewMyHistoryViewModel : ViewModelBase
     }
 
     // 添加选中项到下载列表事件
-    private DelegateCommand? _addToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DelegateCommand AddToDownloadCommand =>
-        _addToDownloadCommand ??= new DelegateCommand(ExecuteAddToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand =>
+        _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
 
     /// <summary>
     /// 添加选中项到下载列表事件
     /// </summary>
-    private void ExecuteAddToDownloadCommand()
-    {
-        AddToDownload(true);
-    }
-
     // 添加所有视频到下载列表事件
-    private DelegateCommand? _addAllToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DelegateCommand AddAllToDownloadCommand =>
-        _addAllToDownloadCommand ??= new DelegateCommand(ExecuteAddAllToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand =>
+        _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
     
     public DownKyiAsyncDelegateCommand LoadMoreCommand => new (ExecuteLoadMoreCommand);
     
@@ -265,7 +254,9 @@ public class ViewMyHistoryViewModel : ViewModelBase
         if (result?.List?.Count > 0)
         {
             Medias.AddRange(result.List.Select(x => Convert(x,EventAggregator))
-                .Where(v => v != null && !string.IsNullOrEmpty(v.Title)).ToList());
+                .Where(v => v != null && !string.IsNullOrEmpty(v.Title))
+                .Cast<HistoryMedia>()
+                .ToList());
             _nextMax = result.Cursor.Max;
             _nextViewAt = result.Cursor.ViewAt;
         }
@@ -274,18 +265,13 @@ public class ViewMyHistoryViewModel : ViewModelBase
     /// <summary>
     /// 添加所有视频到下载列表事件
     /// </summary>
-    private void ExecuteAddAllToDownloadCommand()
-    {
-        AddToDownload(false);
-    }
-
     #endregion
 
     /// <summary>
     /// 添加到下载
     /// </summary>
     /// <param name="isOnlySelected"></param>
-    private async void AddToDownload(bool isOnlySelected)
+    private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // BANGUMI类型
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
@@ -344,7 +330,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
             : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
     }
 
-    private async void UpdateHistoryMediaList()
+    private async Task UpdateHistoryMediaListAsync()
     {
         LoadingVisibility = true;
         NoDataVisibility = false;
@@ -425,7 +411,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
         InitView();
 
-        UpdateHistoryMediaList();
+        RunFireAndForget(UpdateHistoryMediaListAsync(), nameof(UpdateHistoryMediaListAsync));
     }
 
     private static bool IsValidBusiness(string business)
@@ -474,18 +460,18 @@ public class ViewMyHistoryViewModel : ViewModelBase
         return new HistoryMedia(eventAggregator)
         {
             Business = history.History.Business,
-            Bvid = history.History.Bvid,
+            Bvid = history.History.Bvid ?? string.Empty,
             Url = url,
             UpMid = history.AuthorMid,
             Cover = coverUrl ?? "avares://DownKyi/Resources/video-placeholder.png",
-            Title = history.Title,
-            SubTitle = history.ShowTitle,
+            Title = history.Title ?? string.Empty,
+            SubTitle = history.ShowTitle ?? string.Empty,
             Duration = history.Duration,
-            TagName = history.TagName,
-            Partdesc = history.NewDesc,
+            TagName = history.TagName ?? string.Empty,
+            Partdesc = history.NewDesc ?? string.Empty,
             Progress = BuildProgressText(history.Progress),
             Platform = platform,
-            UpName = history.AuthorFace != null ? history.AuthorName : "",
+            UpName = history.AuthorFace != null ? history.AuthorName ?? string.Empty : string.Empty,
             UpHeader = history.AuthorFace ?? "",
             PartdescVisibility = !string.IsNullOrEmpty(history.NewDesc),
             UpAndTagVisibility = history.History.Business == "archive"

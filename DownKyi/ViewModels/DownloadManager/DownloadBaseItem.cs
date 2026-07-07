@@ -10,19 +10,16 @@ namespace DownKyi.ViewModels.DownloadManager
     public class DownloadBaseItem : BindableBase
     {
         // model数据
-        private DownloadBase? _downloadBase;
+        private DownloadBase _downloadBase = new();
 
-        public DownloadBase? DownloadBase
+        public DownloadBase DownloadBase
         {
             get => _downloadBase;
             set
             {
                 _downloadBase = value;
 
-                if (value != null && DownloadBase?.ZoneId != null)
-                {
-                    ZoneImage = DictionaryResource.Get<DrawingImage>(VideoZoneIcon.Instance().GetZoneImageKey(DownloadBase.ZoneId));
-                }
+                ZoneImage = DictionaryResource.Get<DrawingImage>(VideoZoneIcon.Instance().GetZoneImageKey(DownloadBase.ZoneId));
             }
         }
 
@@ -38,10 +35,10 @@ namespace DownKyi.ViewModels.DownloadManager
         // 视频序号
         public int Order
         {
-            get => DownloadBase == null ? 0 : DownloadBase.Order;
+            get => DownloadBase.Order;
             set
             {
-                if (DownloadBase != null) DownloadBase.Order = value;
+                DownloadBase.Order = value;
                 RaisePropertyChanged();
             }
         }
@@ -49,10 +46,10 @@ namespace DownKyi.ViewModels.DownloadManager
         // 视频主标题
         public string MainTitle
         {
-            get => DownloadBase == null ? "" : DownloadBase.MainTitle;
+            get => DownloadBase.MainTitle;
             set
             {
-                if (DownloadBase != null) DownloadBase.MainTitle = value;
+                DownloadBase.MainTitle = value;
                 RaisePropertyChanged();
             }
         }
@@ -60,10 +57,10 @@ namespace DownKyi.ViewModels.DownloadManager
         // 视频标题
         public string Name
         {
-            get => DownloadBase == null ? "" : DownloadBase.Name;
+            get => DownloadBase.Name;
             set
             {
-                if (DownloadBase != null) DownloadBase.Name = value;
+                DownloadBase.Name = value;
                 RaisePropertyChanged();
             }
         }
@@ -71,10 +68,10 @@ namespace DownKyi.ViewModels.DownloadManager
         // 时长
         public string Duration
         {
-            get => DownloadBase == null ? "" : DownloadBase.Duration;
+            get => DownloadBase.Duration;
             set
             {
-                if (DownloadBase != null) DownloadBase.Duration = value;
+                DownloadBase.Duration = value;
                 RaisePropertyChanged();
             }
         }
@@ -82,10 +79,10 @@ namespace DownKyi.ViewModels.DownloadManager
         // 视频编码名称，AVC、HEVC
         public string VideoCodecName
         {
-            get => DownloadBase == null ? "" : DownloadBase.VideoCodecName;
+            get => DownloadBase.VideoCodecName;
             set
             {
-                if (DownloadBase != null) DownloadBase.VideoCodecName = value;
+                DownloadBase.VideoCodecName = value;
                 RaisePropertyChanged();
             }
         }
@@ -93,10 +90,10 @@ namespace DownKyi.ViewModels.DownloadManager
         // 视频画质
         public Quality Resolution
         {
-            get => DownloadBase == null ? null : DownloadBase.Resolution;
+            get => DownloadBase.Resolution;
             set
             {
-                if (DownloadBase != null) DownloadBase.Resolution = value;
+                DownloadBase.Resolution = value;
                 RaisePropertyChanged();
             }
         }
@@ -104,10 +101,10 @@ namespace DownKyi.ViewModels.DownloadManager
         // 音频编码
         public Quality AudioCodec
         {
-            get => DownloadBase == null ? null : DownloadBase.AudioCodec;
+            get => DownloadBase.AudioCodec;
             set
             {
-                if (DownloadBase != null) DownloadBase.AudioCodec = value;
+                DownloadBase.AudioCodec = value;
                 RaisePropertyChanged();
             }
         }
@@ -115,10 +112,10 @@ namespace DownKyi.ViewModels.DownloadManager
         // 文件大小
         public string? FileSize
         {
-            get => DownloadBase == null ? "" : DownloadBase.FileSize;
+            get => DownloadBase.FileSize;
             set
             {
-                if (DownloadBase != null) DownloadBase.FileSize = value;
+                DownloadBase.FileSize = value;
                 RaisePropertyChanged();
             }
         }

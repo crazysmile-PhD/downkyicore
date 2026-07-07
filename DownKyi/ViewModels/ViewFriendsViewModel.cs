@@ -21,7 +21,7 @@ namespace DownKyi.ViewModels
 
         #region 页面属性申明
 
-        private VectorImage _arrowBack;
+        private VectorImage _arrowBack = null!;
 
         public VectorImage ArrowBack
         {
@@ -29,7 +29,7 @@ namespace DownKyi.ViewModels
             set => SetProperty(ref _arrowBack, value);
         }
 
-        private ObservableCollection<TabHeader> _tabHeaders;
+        private ObservableCollection<TabHeader> _tabHeaders = new();
 
         public ObservableCollection<TabHeader> TabHeaders
         {
@@ -69,7 +69,7 @@ namespace DownKyi.ViewModels
         #region 命令申明
 
         // 返回事件
-        private DelegateCommand _backSpaceCommand;
+        private DelegateCommand? _backSpaceCommand;
 
         public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
 
@@ -92,7 +92,7 @@ namespace DownKyi.ViewModels
         }
 
         // 顶部tab点击事件
-        private DelegateCommand<object> _tabHeadersCommand;
+        private DelegateCommand<object>? _tabHeadersCommand;
 
         public DelegateCommand<object> TabHeadersCommand => _tabHeadersCommand ??= new DelegateCommand<object>(ExecuteTabHeadersCommand);
 

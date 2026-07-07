@@ -40,7 +40,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// </summary>
     /// <param name="downloading"></param>
     /// <returns></returns>
-    public override string DownloadAudio(DownloadingItem downloading)
+    public override string? DownloadAudio(DownloadingItem downloading)
     {
         var downloadAudio = BaseDownloadAudio(downloading);
 
@@ -52,15 +52,20 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// </summary>
     /// <param name="downloading"></param>
     /// <returns></returns>
-    public override string DownloadVideo(DownloadingItem downloading)
+    public override string? DownloadVideo(DownloadingItem downloading)
     {
         var downloadVideo = BaseDownloadVideo(downloading);
 
         return DownloadVideo(downloading, downloadVideo);
     }
 
-    private string DownloadVideo(DownloadingItem downloading, VideoPlayUrlBasic? downloadVideo)
+    private string? DownloadVideo(DownloadingItem downloading, VideoPlayUrlBasic? downloadVideo)
     {
+        if (downloadVideo == null)
+        {
+            return null;
+        }
+
         return DownloadVideo(downloading, new PlayUrlDashVideo
         {
             Id = downloadVideo.Id,
@@ -76,7 +81,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// <param name="downloading"></param>
     /// <param name="downloadVideo"></param>
     /// <returns></returns>
-    private string DownloadVideo(DownloadingItem downloading, PlayUrlDashVideo? downloadVideo)
+    private string? DownloadVideo(DownloadingItem downloading, PlayUrlDashVideo? downloadVideo)
     {
         // 如果为空，说明没有匹配到可下载的音频视频
         if (downloadVideo == null)
@@ -199,7 +204,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// <param name="coverUrl"></param>
     /// <param name="fileName"></param>
     /// <returns></returns>
-    public override string DownloadCover(DownloadingItem downloading, string coverUrl, string fileName)
+    public override string? DownloadCover(DownloadingItem downloading, string? coverUrl, string fileName)
     {
         return BaseDownloadCover(downloading, coverUrl, fileName);
     }
@@ -231,7 +236,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// <param name="audioUid"></param>
     /// <param name="videoUid"></param>
     /// <returns></returns>
-    public override string MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
+    public override string? MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
         return BaseMixedFlow(downloading, audioUid, videoUid);
     }

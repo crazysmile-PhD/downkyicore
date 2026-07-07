@@ -18,7 +18,7 @@ public class ViewSettingsViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private VectorImage _arrowBack;
+    private VectorImage _arrowBack = null!;
 
     public VectorImage ArrowBack
     {
@@ -26,7 +26,7 @@ public class ViewSettingsViewModel : ViewModelBase
         set => SetProperty(ref _arrowBack, value);
     }
 
-    private List<TabHeader> _tabHeaders;
+    private List<TabHeader> _tabHeaders = new();
 
     public List<TabHeader> TabHeaders
     {
@@ -68,7 +68,7 @@ public class ViewSettingsViewModel : ViewModelBase
     #region 命令申明
 
     // 返回事件
-    private DelegateCommand _backSpaceCommand;
+    private DelegateCommand? _backSpaceCommand;
 
     public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
 
@@ -87,7 +87,7 @@ public class ViewSettingsViewModel : ViewModelBase
     }
 
     // 左侧tab点击事件
-    private DelegateCommand<object> _leftTabHeadersCommand;
+    private DelegateCommand<object>? _leftTabHeadersCommand;
 
     public DelegateCommand<object> LeftTabHeadersCommand => _leftTabHeadersCommand ??= new DelegateCommand<object>(ExecuteLeftTabHeadersCommand);
 
@@ -122,7 +122,7 @@ public class ViewSettingsViewModel : ViewModelBase
         }
     }
 
-    private DelegateCommand _loadedCommand;
+    private DelegateCommand? _loadedCommand;
 
     public DelegateCommand LoadedCommand => _loadedCommand ??= new DelegateCommand(ExecuteLoadedCommand);
 

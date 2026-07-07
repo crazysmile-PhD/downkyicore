@@ -23,7 +23,7 @@ public class InfiniteScrollBehavior : Behavior<ListBox>
     protected override void OnAttached()
     {
         base.OnAttached();
-        AssociatedObject.AddHandler(
+        AssociatedObject?.AddHandler(
             ScrollViewer.ScrollChangedEvent, 
             HandleScrollChanged);
     }
@@ -31,10 +31,10 @@ public class InfiniteScrollBehavior : Behavior<ListBox>
     protected override void OnDetaching()
     {
         base.OnDetaching();
-        AssociatedObject.RemoveHandler(ScrollViewer.ScrollChangedEvent, HandleScrollChanged);
+        AssociatedObject?.RemoveHandler(ScrollViewer.ScrollChangedEvent, HandleScrollChanged);
     }
 
-    private void HandleScrollChanged(object sender, ScrollChangedEventArgs e)
+    private void HandleScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (_isExecuting || LoadMoreCommand == null)
             return;

@@ -213,7 +213,7 @@ internal static class Utils
             // 寻找是否已存在这个画质
             // 不存在则添加，存在则修改
             //string codecName = GetVideoCodecName(video.Codecs);
-            var codecName = codeIds.FirstOrDefault(t => t.Id == video.CodecId).Name;
+            var codecName = codeIds.FirstOrDefault(t => t.Id == video.CodecId)?.Name ?? string.Empty;
             var videoQualityExist = videoQualityList.FirstOrDefault(t => t.Quality == video.Id);
             if (videoQualityExist == null)
             {
@@ -251,7 +251,7 @@ internal static class Utils
             }
 
             // 设置选中的视频编码
-            var videoCodecsName = codeIds.FirstOrDefault(t => t.Id == videoCodecs).Name;
+            var videoCodecsName = codeIds.FirstOrDefault(t => t.Id == videoCodecs)?.Name ?? string.Empty;
             if (videoQualityList[videoQualityList.IndexOf(selectedVideoQuality)].VideoCodecList.Contains(videoCodecsName))
             {
                 videoQualityList[videoQualityList.IndexOf(selectedVideoQuality)].SelectedVideoCodec = videoCodecsName;

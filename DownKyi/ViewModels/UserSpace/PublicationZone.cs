@@ -1,4 +1,4 @@
-﻿using Avalonia.Media;
+using Avalonia.Media;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.UserSpace;
@@ -7,7 +7,7 @@ public class PublicationZone : BindableBase
 {
     public int Tid { get; set; }
 
-    private DrawingImage icon;
+    private DrawingImage icon = null!;
 
     public DrawingImage Icon
     {
@@ -15,7 +15,7 @@ public class PublicationZone : BindableBase
         set => SetProperty(ref icon, value);
     }
 
-    private string name;
+    private string name = string.Empty;
 
     public string Name
     {

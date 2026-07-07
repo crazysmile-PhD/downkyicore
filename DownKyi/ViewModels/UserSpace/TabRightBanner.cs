@@ -1,4 +1,4 @@
-﻿using Prism.Mvvm;
+using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.UserSpace;
 
@@ -14,7 +14,7 @@ public class TabRightBanner : BindableBase
         set => SetProperty(ref isEnabled, value);
     }
 
-    private string labelColor;
+    private string labelColor = string.Empty;
 
     public string LabelColor
     {
@@ -22,7 +22,7 @@ public class TabRightBanner : BindableBase
         set => SetProperty(ref labelColor, value);
     }
 
-    private string countColor;
+    private string countColor = string.Empty;
 
     public string CountColor
     {
@@ -30,7 +30,7 @@ public class TabRightBanner : BindableBase
         set => SetProperty(ref countColor, value);
     }
 
-    private string label;
+    private string label = string.Empty;
 
     public string Label
     {
@@ -38,7 +38,7 @@ public class TabRightBanner : BindableBase
         set => SetProperty(ref label, value);
     }
 
-    private string count;
+    private string count = string.Empty;
 
     public string Count
     {

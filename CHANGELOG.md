@@ -1,5 +1,18 @@
 # 更新日志
 
+## [1.0.27] - 2026-07-07
+
+### Refactor
+
+- 清理 Release build nullable、未使用成员与潜在 null reference 警告，使 Release build 回到 0 warnings。
+- 移除非 UI 必要的 `async void` 用法，改用 `Task`、异步命令与集中记录未观察例外。
+- 收紧下载、视频解析、空间页、收藏、历史与设置相关模型的 nullability 合约，减少隐藏 NRE 风险。
+
+### Performance
+
+- 减少启动与下载管理流程中的同步等待和不可观察异步执行，降低 UI 卡顿与死锁风险。
+- 改善下载服务与 ViewModel 的异步入口，避免背景任务例外在终端机中无上下文爆出。
+
 ## [1.0.24] - 2026-04-01
 
 ### Bug Fixes

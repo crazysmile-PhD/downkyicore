@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using DownKyi.Commands;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Utils;
 using DownKyi.CustomControl;
@@ -290,38 +291,28 @@ namespace DownKyi.ViewModels
         }
 
         // 添加选中项到下载列表事件
-        private DelegateCommand _addToDownloadCommand;
+        private DownKyiAsyncDelegateCommand _addToDownloadCommand;
 
-        public DelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DelegateCommand(ExecuteAddToDownloadCommand);
+        public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
 
         /// <summary>
         /// 添加选中项到下载列表事件
         /// </summary>
-        private void ExecuteAddToDownloadCommand()
-        {
-            AddToDownload(true);
-        }
-
         // 添加所有视频到下载列表事件
-        private DelegateCommand _addAllToDownloadCommand;
+        private DownKyiAsyncDelegateCommand _addAllToDownloadCommand;
 
-        public DelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DelegateCommand(ExecuteAddAllToDownloadCommand);
+        public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
 
         /// <summary>
         /// 添加所有视频到下载列表事件
         /// </summary>
-        private void ExecuteAddAllToDownloadCommand()
-        {
-            AddToDownload(false);
-        }
-
         #endregion
 
         /// <summary>
         /// 添加到下载
         /// </summary>
         /// <param name="isOnlySelected"></param>
-        private async void AddToDownload(bool isOnlySelected)
+        private async Task AddToDownloadAsync(bool isOnlySelected)
         {
             // 收藏夹里只有视频
             var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);

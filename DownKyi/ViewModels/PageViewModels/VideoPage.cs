@@ -98,7 +98,7 @@ public class VideoPage : BindableBase
     }
 
     [JsonIgnore]
-    public Lazy<List<string>?> LazyTags { get; set; } = new(() => null);
+    public Lazy<List<string>> LazyTags { get; set; } = new(() => new());
 
     public VideoPage CloneForCache()
     {
@@ -127,15 +127,15 @@ public class VideoPage : BindableBase
             AudioQualityFormat = AudioQualityFormat,
             VideoQualityList = qualityList,
             VideoQuality = selectedQuality,
-            LazyTags = new Lazy<List<string>?>(() =>
-                LazyTags.IsValueCreated ? LazyTags.Value?.ToList() : null)
+            LazyTags = new Lazy<List<string>>(() =>
+                LazyTags.IsValueCreated ? LazyTags.Value.ToList() : new List<string>())
         };
     }
 
     #region
 
     // 视频画质选择事件
-    private DelegateCommand _videoQualitySelectedCommand;
+    private DelegateCommand? _videoQualitySelectedCommand;
 
     public DelegateCommand VideoQualitySelectedCommand => _videoQualitySelectedCommand ??= new DelegateCommand(ExecuteVideoQualitySelectedCommand);
 

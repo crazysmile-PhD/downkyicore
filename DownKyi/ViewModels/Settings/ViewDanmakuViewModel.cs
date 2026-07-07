@@ -59,7 +59,7 @@ public class ViewDanmakuViewModel : ViewModelBase
         set => SetProperty(ref _screenHeight, value);
     }
 
-    private List<string> _fonts;
+    private List<string> _fonts = new();
 
     public List<string> Fonts
     {
@@ -67,7 +67,7 @@ public class ViewDanmakuViewModel : ViewModelBase
         set => SetProperty(ref _fonts, value);
     }
 
-    private string _selectedFont;
+    private string _selectedFont = string.Empty;
 
     public string SelectedFont
     {
@@ -176,7 +176,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     #region 命令申明
 
     // 屏蔽顶部弹幕事件
-    private DelegateCommand _topFilterCommand;
+    private DelegateCommand? _topFilterCommand;
 
     public DelegateCommand TopFilterCommand => _topFilterCommand ??= new DelegateCommand(ExecuteTopFilterCommand);
 
@@ -192,7 +192,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 屏蔽底部弹幕事件
-    private DelegateCommand _bottomFilterCommand;
+    private DelegateCommand? _bottomFilterCommand;
 
     public DelegateCommand BottomFilterCommand => _bottomFilterCommand ??= new DelegateCommand(ExecuteBottomFilterCommand);
 
@@ -208,7 +208,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 屏蔽滚动弹幕事件
-    private DelegateCommand _scrollFilterCommand;
+    private DelegateCommand? _scrollFilterCommand;
 
     public DelegateCommand ScrollFilterCommand => _scrollFilterCommand ??= new DelegateCommand(ExecuteScrollFilterCommand);
 
@@ -224,7 +224,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 设置分辨率-宽事件
-    private DelegateCommand<string> _screenWidthCommand;
+    private DelegateCommand<string>? _screenWidthCommand;
 
     public DelegateCommand<string> ScreenWidthCommand => _screenWidthCommand ??= new DelegateCommand<string>(ExecuteScreenWidthCommand);
 
@@ -242,7 +242,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 设置分辨率-高事件
-    private DelegateCommand<string> _screenHeightCommand;
+    private DelegateCommand<string>? _screenHeightCommand;
 
     public DelegateCommand<string> ScreenHeightCommand => _screenHeightCommand ??= new DelegateCommand<string>(ExecuteScreenHeightCommand);
 
@@ -260,7 +260,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 弹幕字体选择事件
-    private DelegateCommand<string> _fontSelectCommand;
+    private DelegateCommand<string>? _fontSelectCommand;
 
     public DelegateCommand<string> FontSelectCommand => _fontSelectCommand ??= new DelegateCommand<string>(ExecuteFontSelectCommand);
 
@@ -275,7 +275,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 弹幕字体大小事件
-    private DelegateCommand<string> _fontSizeCommand;
+    private DelegateCommand<string>? _fontSizeCommand;
 
     public DelegateCommand<string> FontSizeCommand => _fontSizeCommand ??= new DelegateCommand<string>(ExecuteFontSizeCommand);
 
@@ -293,7 +293,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 弹幕限制行数事件
-    private DelegateCommand<string> _lineCountCommand;
+    private DelegateCommand<string>? _lineCountCommand;
 
     public DelegateCommand<string> LineCountCommand => _lineCountCommand ??= new DelegateCommand<string>(ExecuteLineCountCommand);
 
@@ -311,7 +311,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 弹幕布局算法事件
-    private DelegateCommand<string> _layoutAlgorithmCommand;
+    private DelegateCommand<string>? _layoutAlgorithmCommand;
 
     public DelegateCommand<string> LayoutAlgorithmCommand => _layoutAlgorithmCommand ??= new DelegateCommand<string>(ExecuteLayoutAlgorithmCommand);
 

@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
+using DownKyi.Core.Logging;
 using DownKyi.Models;
 using Newtonsoft.Json;
 
@@ -52,7 +53,7 @@ namespace DownKyi.Services
             }
             catch (Exception e)
             {
-               /**/
+                LogManager.Error(nameof(VersionCheckerService), e);
             }
 
             return null;

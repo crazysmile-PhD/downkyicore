@@ -64,10 +64,10 @@ public class DownloadBase
     [Description("视频编码名称，AVC、HEVC")] public string VideoCodecName { get; set; } = string.Empty;
 
     // 视频画质
-    [Description("视频画质")] public Quality Resolution { get; set; }
+    [Description("视频画质")] public Quality Resolution { get; set; } = new();
 
     // 音频编码
-    [Description("音频编码")] public Quality? AudioCodec { get; set; }
+    [Description("音频编码")] public Quality AudioCodec { get; set; } = new();
 
     // 文件路径，不包含扩展名，所有内容均以此路径下载
     [Description("文件路径，不包含扩展名，所有内容均以此路径下载")]

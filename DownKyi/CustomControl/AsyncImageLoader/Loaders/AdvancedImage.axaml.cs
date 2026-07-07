@@ -187,7 +187,12 @@ public class AdvancedImage : ContentControl
         }
     }
 
-    private async void UpdateImage(string? source, IAsyncImageLoader? loader)
+    private void UpdateImage(string? source, IAsyncImageLoader? loader)
+    {
+        _ = UpdateImageAsync(source, loader);
+    }
+
+    private async Task UpdateImageAsync(string? source, IAsyncImageLoader? loader)
     {
         var cancellationTokenSource = new CancellationTokenSource();
 

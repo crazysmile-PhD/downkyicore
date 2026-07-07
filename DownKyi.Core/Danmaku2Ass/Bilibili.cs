@@ -1,10 +1,10 @@
-﻿using DownKyi.Core.BiliApi.Danmaku;
+using DownKyi.Core.BiliApi.Danmaku;
 
 namespace DownKyi.Core.Danmaku2Ass;
 
 public class Bilibili
 {
-    private static Bilibili instance;
+    private static Bilibili instance = null!;
 
     private readonly Dictionary<string, bool> config = new Dictionary<string, bool>
     {

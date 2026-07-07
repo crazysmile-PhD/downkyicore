@@ -108,13 +108,13 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
     }
 
     // 清空下载完成列表事件
-    private DelegateCommand? _clearAllDownloadedCommand;
-    public DelegateCommand ClearAllDownloadedCommand => _clearAllDownloadedCommand ??= new DelegateCommand(ExecuteClearAllDownloadedCommand);
+    private DownKyiAsyncDelegateCommand? _clearAllDownloadedCommand;
+    public DownKyiAsyncDelegateCommand ClearAllDownloadedCommand => _clearAllDownloadedCommand ??= new DownKyiAsyncDelegateCommand(ExecuteClearAllDownloadedCommand);
 
     /// <summary>
     /// 清空下载完成列表事件
     /// </summary>
-    private async void ExecuteClearAllDownloadedCommand()
+    private async Task ExecuteClearAllDownloadedCommand()
     {
         try
         {
@@ -210,15 +210,20 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
     }
 
     // 删除事件
-    private DelegateCommand<DownloadedItem>? _removeVideoCommand;
+    private DownKyiAsyncDelegateCommand<DownloadedItem>? _removeVideoCommand;
 
-    public DelegateCommand<DownloadedItem> RemoveVideoCommand => _removeVideoCommand ??= new DelegateCommand<DownloadedItem>(ExecuteRemoveVideoCommand);
+    public DownKyiAsyncDelegateCommand<DownloadedItem> RemoveVideoCommand => _removeVideoCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteRemoveVideoCommand);
 
     /// <summary>
     /// 删除事件
     /// </summary>
-    private async void ExecuteRemoveVideoCommand(DownloadedItem downloadedItem)
+    private async Task ExecuteRemoveVideoCommand(DownloadedItem? downloadedItem)
     {
+        if (downloadedItem == null)
+        {
+            return;
+        }
+
         var alertService = new AlertService(DialogService);
         var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2);
         if (result != ButtonResult.OK)

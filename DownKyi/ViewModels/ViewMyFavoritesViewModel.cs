@@ -5,8 +5,10 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.Core.BiliApi.VideoStream;
+using DownKyi.Core.Logging;
 using DownKyi.CustomControl;
 using DownKyi.Events;
 using DownKyi.Images;
@@ -27,8 +29,8 @@ public class ViewMyFavoritesViewModel : ViewModelBase
 
     //private readonly IDialogService dialogService;
 
-    private CancellationTokenSource _tokenSource1;
-    private CancellationTokenSource _tokenSource2;
+    private CancellationTokenSource _tokenSource1 = null!;
+    private CancellationTokenSource _tokenSource2 = null!;
 
     private long _mid = -1;
 
@@ -109,7 +111,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _mediaNoDataVisibility, value);
     }
 
-    private VectorImage _arrowBack;
+    private VectorImage _arrowBack = null!;
 
     public VectorImage ArrowBack
     {
@@ -117,7 +119,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _arrowBack, value);
     }
 
-    private VectorImage _downloadManage;
+    private VectorImage _downloadManage = null!;
 
     public VectorImage DownloadManage
     {
@@ -125,7 +127,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _downloadManage, value);
     }
 
-    private ObservableCollection<TabHeader> _tabHeaders;
+    private ObservableCollection<TabHeader> _tabHeaders = new();
 
     public ObservableCollection<TabHeader> TabHeaders
     {
@@ -149,7 +151,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _isEnabled, value);
     }
 
-    private CustomPagerViewModel _pager;
+    private CustomPagerViewModel _pager = null!;
 
     public CustomPagerViewModel Pager
     {
@@ -157,7 +159,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _pager, value);
     }
 
-    private ObservableCollection<FavoritesMedia> _medias;
+    private ObservableCollection<FavoritesMedia> _medias = new();
 
     public ObservableCollection<FavoritesMedia> Medias
     {
@@ -335,38 +337,28 @@ public class ViewMyFavoritesViewModel : ViewModelBase
     }
 
     // 添加选中项到下载列表事件
-    private DelegateCommand? _addToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DelegateCommand(ExecuteAddToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
 
     /// <summary>
     /// 添加选中项到下载列表事件
     /// </summary>
-    private void ExecuteAddToDownloadCommand()
-    {
-        AddToDownload(true);
-    }
-
     // 添加所有视频到下载列表事件
-    private DelegateCommand? _addAllToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DelegateCommand(ExecuteAddAllToDownloadCommand);
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
 
     /// <summary>
     /// 添加所有视频到下载列表事件
     /// </summary>
-    private void ExecuteAddAllToDownloadCommand()
-    {
-        AddToDownload(false);
-    }
-
     #endregion
 
     /// <summary>
     /// 添加到下载
     /// </summary>
     /// <param name="isOnlySelected"></param>
-    private async void AddToDownload(bool isOnlySelected)
+    private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // 收藏夹里只有视频
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
@@ -425,47 +417,56 @@ public class ViewMyFavoritesViewModel : ViewModelBase
             return false;
         }
 
-        UpdateFavoritesMediaList(current);
+        RunFireAndForget(UpdateFavoritesMediaListAsync(current), nameof(UpdateFavoritesMediaListAsync));
 
         return true;
     }
 
-    private async void UpdateFavoritesMediaList(int current)
+    private async Task UpdateFavoritesMediaListAsync(int current)
     {
-        Medias.Clear();
-        IsSelectAll = false;
-
-        MediaLoadingVisibility = true;
-        MediaNoDataVisibility = false;
-
-        // 是否正在获取数据
-        // 在所有的退出分支中都需要设为true
-        IsEnabled = false;
-
-        var tab = TabHeaders[SelectTabId];
-
-        await Task.Run(() =>
+        try
         {
-            var cancellationToken = _tokenSource2.Token;
+            Medias.Clear();
+            IsSelectAll = false;
 
-            var medias = FavoritesResource.GetFavoritesMedia(tab.Id, current, VideoNumberInPage);
-            if (medias == null || medias.Count == 0)
-            {
-                MediaContentVisibility = true;
-                MediaLoadingVisibility = false;
-                MediaNoDataVisibility = true;
-                return;
-            }
-
-            MediaContentVisibility = true;
-            MediaLoadingVisibility = false;
+            MediaLoadingVisibility = true;
             MediaNoDataVisibility = false;
 
-            var service = new FavoritesService();
-            service.GetFavoritesMediaList(medias, Medias, EventAggregator, cancellationToken);
-        }, (_tokenSource2 = new CancellationTokenSource()).Token);
+            // 是否正在获取数据
+            // 在所有的退出分支中都需要设为true
+            IsEnabled = false;
 
-        IsEnabled = true;
+            var tab = TabHeaders[SelectTabId];
+
+            await Task.Run(() =>
+            {
+                var cancellationToken = _tokenSource2.Token;
+
+                var medias = FavoritesResource.GetFavoritesMedia(tab.Id, current, VideoNumberInPage);
+                if (medias == null || medias.Count == 0)
+                {
+                    MediaContentVisibility = true;
+                    MediaLoadingVisibility = false;
+                    MediaNoDataVisibility = true;
+                    return;
+                }
+
+                MediaContentVisibility = true;
+                MediaLoadingVisibility = false;
+                MediaNoDataVisibility = false;
+
+                var service = new FavoritesService();
+                service.GetFavoritesMediaList(medias, Medias, EventAggregator, cancellationToken);
+            }, (_tokenSource2 = new CancellationTokenSource()).Token);
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(nameof(ViewMyFavoritesViewModel), e);
+        }
+        finally
+        {
+            IsEnabled = true;
+        }
     }
 
     /// <summary>
@@ -496,49 +497,60 @@ public class ViewMyFavoritesViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override async void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(NavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
+        RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync));
+    }
 
-        // 根据传入参数不同执行不同任务
-        _mid = navigationContext.Parameters.GetValue<long>("Parameter");
-        if (_mid == 0)
+    private async Task OnNavigatedToAsync(NavigationContext navigationContext)
+    {
+        try
         {
-            return;
-        }
+            // 根据传入参数不同执行不同任务
+            _mid = navigationContext.Parameters.GetValue<long>("Parameter");
+            if (_mid == 0)
+            {
+                return;
+            }
 
-        InitView();
+            InitView();
 
-        await Task.Run(() =>
-        {
-            var cancellationToken = _tokenSource1.Token;
+            await Task.Run(() =>
+            {
+                var cancellationToken = _tokenSource1.Token;
 
-            var service = new FavoritesService();
-            service.GetCreatedFavorites(_mid, TabHeaders, cancellationToken);
-            service.GetCollectedFavorites(_mid, TabHeaders, cancellationToken);
-        }, (_tokenSource1 = new CancellationTokenSource()).Token);
+                var service = new FavoritesService();
+                service.GetCreatedFavorites(_mid, TabHeaders, cancellationToken);
+                service.GetCollectedFavorites(_mid, TabHeaders, cancellationToken);
+            }, (_tokenSource1 = new CancellationTokenSource()).Token);
 
-        if (TabHeaders.Count == 0)
-        {
-            ContentVisibility = false;
+            if (TabHeaders.Count == 0)
+            {
+                ContentVisibility = false;
+                LoadingVisibility = false;
+                NoDataVisibility = true;
+
+                return;
+            }
+
+            ContentVisibility = true;
             LoadingVisibility = false;
-            NoDataVisibility = true;
+            NoDataVisibility = false;
 
-            return;
+            // 初始选中项
+            SelectTabId = 0;
+
+            // 页面选择
+            Pager = new CustomPagerViewModel(1,
+                (int)Math.Ceiling(double.Parse(TabHeaders[0].SubTitle) / VideoNumberInPage));
+            Pager.CurrentChanged += OnCurrentChanged_Pager;
+            Pager.CountChanged += OnCountChanged_Pager;
+            Pager.Current = 1;
         }
-
-        ContentVisibility = true;
-        LoadingVisibility = false;
-        NoDataVisibility = false;
-
-        // 初始选中项
-        SelectTabId = 0;
-
-        // 页面选择
-        Pager = new CustomPagerViewModel(1,
-            (int)Math.Ceiling(double.Parse(TabHeaders[0].SubTitle) / VideoNumberInPage));
-        Pager.CurrentChanged += OnCurrentChanged_Pager;
-        Pager.CountChanged += OnCountChanged_Pager;
-        Pager.Current = 1;
+        catch (Exception e)
+        {
+            LogManager.Error(nameof(ViewMyFavoritesViewModel), e);
+        }
     }
 }

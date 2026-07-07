@@ -1,4 +1,4 @@
-﻿using Avalonia.Media.Imaging;
+using Avalonia.Media.Imaging;
 using DownKyi.Images;
 using Prism.Mvvm;
 
@@ -8,7 +8,7 @@ public class SeasonsSeries : BindableBase
 {
     public long Id { get; set; }
 
-    private string _cover;
+    private string _cover = string.Empty;
 
     public string Cover
     {
@@ -16,7 +16,7 @@ public class SeasonsSeries : BindableBase
         set => SetProperty(ref _cover, value);
     }
 
-    private VectorImage typeImage;
+    private VectorImage typeImage = null!;
 
     public VectorImage TypeImage
     {
@@ -24,7 +24,7 @@ public class SeasonsSeries : BindableBase
         set => SetProperty(ref typeImage, value);
     }
 
-    private string name;
+    private string name = string.Empty;
 
     public string Name
     {
@@ -40,7 +40,7 @@ public class SeasonsSeries : BindableBase
         set => SetProperty(ref count, value);
     }
 
-    private string ctime;
+    private string ctime = string.Empty;
 
     public string Ctime
     {

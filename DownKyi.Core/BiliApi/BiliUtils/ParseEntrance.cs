@@ -478,7 +478,7 @@ public static class ParseEntrance
     {
         if (!IsUrl(url))
         {
-            return null;
+            return url;
         }
 
         return url.Replace("http://", "https://");
