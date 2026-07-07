@@ -1,0 +1,253 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DownKyi.Views.DownloadManager.ViewDownloadFinished"
+             xmlns:vmdm="clr-namespace:DownKyi.ViewModels.DownloadManager"
+             x:DataType="vmdm:ViewDownloadFinishedViewModel">
+    <UserControl.Resources>
+        <ControlTheme x:Key="DownloadedStyle" TargetType="{x:Type ListBoxItem}" x:DataType="vmdm:DownloadedItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                        <Grid
+                            Width="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type ListBox}}, Path=Bounds.Width}"
+                            Height="70">
+                            <Grid ColumnDefinitions="70,*,auto,120,30">
+
+                                <Image
+                                    Grid.Column="0"
+                                    Width="48"
+                                    Height="48"
+                                    Source="{Binding ZoneImage}" />
+
+                                <!--  标题等视频信息  -->
+                                <Grid
+                                    Grid.Column="1"
+                                    Margin="0,0,10,0"
+                                    HorizontalAlignment="Left" RowDefinitions="*,*">
+
+                                    <TextBlock
+                                        Grid.Row="0"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Center"
+                                        FontSize="14"
+                                        Foreground="{DynamicResource BrushTextDark}"
+                                        TextTrimming="CharacterEllipsis">
+                                        <ToolTip.Tip>
+                                            <TextBlock>
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0}-{1}">
+                                                        <Binding Path="MainTitle" />
+                                                        <Binding Path="Name" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </ToolTip.Tip>
+                                        <TextBlock.Text>
+                                            <MultiBinding StringFormat="{}{0}-{1}-{2}">
+                                                <Binding Path="Order" />
+                                                <Binding Path="MainTitle" />
+                                                <Binding Path="Name" />
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+
+                                    <TextBlock
+                                        Grid.Row="1"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Center"
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey2}">
+                                        <TextBlock.Text>
+                                            <MultiBinding StringFormat="{}{0} · {1} · {2} · {3} · {4} · {5}">
+                                                <Binding Path="Duration" />
+                                                <Binding Path="Resolution.Name" />
+                                                <Binding Path="VideoCodecName" />
+                                                <Binding Path="AudioCodec.Name" />
+                                                <Binding Path="FileSize" />
+                                                <Binding Path="MaxSpeedDisplay" />
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                </Grid>
+
+                                <TextBlock
+                                    Grid.Column="2"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    FontSize="12"
+                                    Foreground="{DynamicResource BrushTextDark}"
+                                    Text="{Binding FinishedTime}" />
+
+                                <!--  控制面板，暂停继续删除  -->
+                                <Grid Grid.Column="3" ColumnDefinitions="*,*,*">
+
+                                    <Button
+                                        Grid.Column="0"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding ElementName=DownloadedList,Path=((vmdm:ViewDownloadFinishedViewModel)DataContext).OpenFolderCommand}"
+                                        CommandParameter="{Binding }"
+                                        Theme="{StaticResource ImageBtnStyle}"
+                                        ToolTip.Tip="{DynamicResource OpenFolder}">
+                                        <ContentControl Width="20" Height="20">
+                                            <Path
+                                                Width="{Binding OpenFolder.Width}"
+                                                Height="{Binding OpenFolder.Height}"
+                                                Data="{Binding OpenFolder.Data}"
+                                                Fill="{Binding OpenFolder.Fill}"
+                                                Stretch="Uniform" />
+                                        </ContentControl>
+                                    </Button>
+
+                                    <Button
+                                        Grid.Column="1"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding ElementName=DownloadedList,Path=((vmdm:ViewDownloadFinishedViewModel)DataContext).OpenVideoCommand}"
+                                        CommandParameter="{Binding }"
+                                        Theme="{StaticResource ImageBtnStyle}"
+                                        ToolTip.Tip="{DynamicResource OpenVideo}">
+                                        <ContentControl Width="20" Height="20">
+                                            <Path
+                                                Width="{Binding OpenVideo.Width}"
+                                                Height="{Binding OpenVideo.Height}"
+                                                Data="{Binding OpenVideo.Data}"
+                                                Fill="{Binding OpenVideo.Fill}"
+                                                Stretch="Uniform" />
+                                        </ContentControl>
+                                    </Button>
+
+                                    <Button
+                                        Grid.Column="2"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding ElementName=DownloadedList,Path=((vmdm:ViewDownloadFinishedViewModel)DataContext).RemoveVideoCommand}"
+                                        CommandParameter="{Binding }"
+                                        Theme="{StaticResource ImageBtnStyle}"
+                                        ToolTip.Tip="{DynamicResource DeleteDownload}">
+                                        <ContentControl Width="20" Height="20">
+                                            <Path
+                                                Width="{Binding RemoveVideo.Width}"
+                                                Height="{Binding RemoveVideo.Height}"
+                                                Data="{Binding RemoveVideo.Data}"
+                                                Fill="{Binding RemoveVideo.Fill}"
+                                                Stretch="Uniform" />
+                                        </ContentControl>
+                                    </Button>
+                                </Grid>
+
+                            </Grid>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </ControlTheme>
+    </UserControl.Resources>
+    <Grid>
+        <Grid RowDefinitions="*,1,50">
+
+            <ListBox
+                Name="DownloadedList"
+                Grid.Row="0"
+                BorderThickness="0"
+                ItemContainerTheme="{StaticResource DownloadedStyle}"
+                ItemsSource="{Binding DownloadedList}">
+                <ListBox.Theme>
+                    <ControlTheme TargetType="ListBox">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBox">
+                                    <Border
+                                        x:Name="Bd"
+                                        Padding="0"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}">
+                                        <ScrollViewer
+                                            Focusable="False"
+                                            HorizontalScrollBarVisibility="Hidden"
+                                            VerticalScrollBarVisibility="Auto">
+                                            <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+                                        </ScrollViewer>
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </ControlTheme>
+                </ListBox.Theme>
+            </ListBox>
+
+            <TextBlock Grid.Row="1" Background="{DynamicResource BrushBorderTranslucent}" />
+
+            <Grid Grid.Row="2" ColumnDefinitions="*,130,110">
+
+                <StackPanel
+                    Grid.Column="0"
+                    Margin="10,0,0,0"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal">
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="14"
+                        Text="{DynamicResource TotalDownloaded1}" />
+                    <TextBlock
+                        Margin="3,0"
+                        VerticalAlignment="Center"
+                        FontSize="14"
+                        Foreground="{DynamicResource BrushPrimary}"
+                        Text="{Binding DownloadedList.Count}" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="14"
+                        Text="{DynamicResource TotalDownloaded2}" />
+                </StackPanel>
+
+                <ComboBox
+                    Name="NameFinishedSort"
+                    Grid.Column="1"
+                    Width="120"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    SelectedIndex="{Binding FinishedSortBy}">
+                    <Interaction.Behaviors>
+                        <EventTriggerBehavior EventName="SelectionChanged">
+                            <InvokeCommandAction Command="{Binding FinishedSortCommand}"
+                                                 CommandParameter="{Binding ElementName=NameFinishedSort, Path=SelectedIndex}" />
+                        </EventTriggerBehavior>
+                    </Interaction.Behaviors>
+                    <ComboBoxItem Content="{DynamicResource DownloadedSortByTimeAsc}" />
+                    <ComboBoxItem Content="{DynamicResource DownloadedSortByTimeDesc}" />
+                    <ComboBoxItem Content="{DynamicResource DownloadedSortByOrder}" />
+                </ComboBox>
+
+                <Button
+                    Grid.Column="2"
+                    Width="100"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    Command="{Binding ClearAllDownloadedCommand}"
+                    Content="{DynamicResource ClearAllDownloaded}"
+                    FontSize="12"
+                    Theme="{StaticResource BtnBorderStyle}" />
+            </Grid>
+        </Grid>
+        <!--  TODO 没有数据时显示图片或文字  -->
+        <Image
+            Width="256"
+            Height="256"
+            Source="/Resources/nodata02.png" IsVisible="{Binding !DownloadedList.Count}">
+            <!--<Interaction.Behaviors>
+                <DataTriggerBehavior Binding="{Binding DownloadedList}" Value="{x:Null}">
+                    <ChangePropertyAction PropertyName="IsVisible" Value="True" />
+                </DataTriggerBehavior>
+                <DataTriggerBehavior Binding="{Binding DownloadedList.Count}" Value="0">
+                    <ChangePropertyAction PropertyName="IsVisible" Value="True" />
+                </DataTriggerBehavior>
+                <DataTriggerBehavior
+                    Binding="{Binding DownloadedList.Count, Converter={StaticResource CountConverter}}" Value="true">
+                    <ChangePropertyAction PropertyName="IsVisible" Value="False" />
+                </DataTriggerBehavior>
+            </Interaction.Behaviors>-->
+        </Image>
+    </Grid>
+</UserControl>

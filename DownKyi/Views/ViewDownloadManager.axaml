@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignWidth="840"
+             d:DesignHeight="620"
+             x:Class="DownKyi.Views.ViewDownloadManager"
+             xmlns:prism="http://prismlibrary.com/"
+             xmlns:vm="clr-namespace:DownKyi.ViewModels"
+             x:DataType="vm:ViewDownloadManagerViewModel"
+             prism:ViewModelLocator.AutoWireViewModel="True">
+    <Grid RowDefinitions="50,1,*">
+
+        <Grid Grid.Row="0" ColumnDefinitions="200,*,100">
+
+            <Button
+                Grid.Column="0"
+                Margin="10,5,0,5"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Center"
+                Command="{Binding BackSpaceCommand}"
+                Theme="{StaticResource ImageBtnStyle}">
+                <StackPanel Orientation="Horizontal">
+                    <ContentControl Width="24" Height="24">
+                        <Path
+                            Theme="{StaticResource NavigationIcon.ArrowBack}"
+                            Width="24"
+                            Height="24"
+                            Fill="{DynamicResource ColorTextDark}" />
+                    </ContentControl>
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="16"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource DownloadManager}" />
+                </StackPanel>
+            </Button>
+        </Grid>
+        <TextBlock Grid.Row="1" Background="{DynamicResource BrushBorder}" />
+        <Grid Grid.Row="2" ColumnDefinitions="200,*">
+
+            <ListBox
+                Name="NameLeftTabHeaders"
+                Grid.Column="0"
+                BorderThickness="0"
+                ItemsSource="{Binding TabHeaders}"
+                SelectedIndex="{Binding SelectTabId}"
+                ItemContainerTheme="{StaticResource LeftTabHeaderItemStyle}"
+                Theme="{StaticResource LeftTabHeaderStyle}">
+                <Interaction.Behaviors>
+                    <EventTriggerBehavior EventName="SelectionChanged">
+                        <InvokeCommandAction Command="{Binding LeftTabHeadersCommand}"
+                                             CommandParameter="{Binding ElementName=NameLeftTabHeaders, Path=SelectedItem}" />
+                    </EventTriggerBehavior>
+                </Interaction.Behaviors>
+            </ListBox>
+            <!--  右侧内容区  -->
+            <ContentControl Grid.Column="1" prism:RegionManager.RegionName="DownloadManagerContentRegion" />
+        </Grid>
+    </Grid>
+</UserControl>

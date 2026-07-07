@@ -1,17 +1,4 @@
-* text=auto eol=lf
+﻿* text=auto eol=lf
 
-# Windows scripts
+# Windows
 *.bat text eol=crlf
-
-# Published application binaries
-*.dll binary
-*.exe binary
-*.pdb binary
-*.so binary
-*.dylib binary
-*.db binary
-*.gz binary
-*.png binary
-*.jpg binary
-*.jpeg binary
-*.ico binary

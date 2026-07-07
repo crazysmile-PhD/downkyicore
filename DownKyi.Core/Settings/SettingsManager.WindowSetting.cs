@@ -1,0 +1,28 @@
+using DownKyi.Core.Settings.Models;
+
+namespace DownKyi.Core.Settings;
+
+public partial class SettingsManager
+{
+    private readonly WindowSettings _windowSettings = new();
+
+    public WindowSettings GetWindowSettings()
+    {
+        if (_appSettings.WindowSettings == null)
+        {
+            // 第一次获取，先设置默认值
+            SettingWindowSettings(_windowSettings);
+            return _windowSettings;
+        }
+
+        return _appSettings.WindowSettings;
+    }
+
+    public bool SettingWindowSettings(WindowSettings windowSettings)
+    {
+        return SetProperty(
+            _appSettings.WindowSettings,
+            windowSettings,
+            v => _appSettings.WindowSettings = v);
+    }
+}

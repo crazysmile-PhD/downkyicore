@@ -1,0 +1,82 @@
+name: "🐛 Bug Report"
+description: "报告 downkyiCore 的功能异常或错误"
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **⚠️ 提交前必读：**
+        1. 已搜索现有 Issues
+        2. 已尝试下方"常见问题自查"
+
+  - type: dropdown
+    id: searched
+    attributes:
+      label: "🔎 是否已搜索类似问题？"
+      options:
+        - "是，未找到相同问题"
+        - "否，但我需要帮助"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: version_check
+    attributes:
+      label: "✅ 版本确认"
+      options:
+        - label: "已更新至最新版本，问题依然存在"
+          required: true
+
+  - type: textarea
+    id: issue_info
+    attributes:
+      label: "🚨 问题描述"
+      description: "简要描述问题现象及复现步骤"
+      placeholder: "解析 BV1xxxxx 时提示下载失败，复现：粘贴BV号→解析→点击下载即报错"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: os_info
+    attributes:
+      label: "💻 操作系统"
+      options:
+        - label: "Windows"
+        - label: "Linux"
+        - label: "macOS"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: tried
+    attributes:
+      label: "⚠️ 已尝试的解决方案"
+      options:
+        - label: "切换网络/热点"
+        - label: "更换解析模式（API/网页）"
+        - label: "更换下载器（Aria2/内建）"
+        - label: "检查存储权限"
+
+  - type: checkboxes
+    id: login_status
+    attributes:
+      label: "🔑 账号状态确认（如涉及高清视频问题）"
+      options:
+        - label: "已确认已登录B站账号"
+        - label: "已确认已开通大会员（如需下载1080P以上视频）"
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: "📎 日志与BV号"
+      description: "如有特定视频问题，请提供BV号及错误日志"
+      placeholder: "BV号：BV1xxxxx\n日志：粘贴报错内容"
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 常见问题速查
+        🔧 **二维码登录失败** → 检查网络  
+        🔧 **解析/下载失败** → 切换解析模式或下载器  
+        🔧 **1080P以上无法下载** → 确认已登录且开通大会员

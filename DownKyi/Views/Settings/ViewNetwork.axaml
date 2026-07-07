@@ -1,0 +1,568 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             x:Class="DownKyi.Views.Settings.ViewNetwork"
+             xmlns:vms="clr-namespace:DownKyi.ViewModels.Settings"
+             xmlns:settings="clr-namespace:DownKyi.Core.Settings;assembly=DownKyi.Core"
+             x:DataType="vms:ViewNetworkViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="800"
+             d:DesignHeight="1200">
+    <ScrollViewer>
+        <StackPanel Margin="50,0" Orientation="Vertical">
+            <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                <TextBlock
+                    FontSize="18"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    Text="{DynamicResource Network}" />
+            </StackPanel>
+
+            <CheckBox
+                Name="NameUseSsl"
+                Margin="0,20,0,0"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Command="{Binding UseSslCommand}"
+                Content="{DynamicResource UseSSL}"
+                FontSize="12"
+                Foreground="{DynamicResource BrushTextDark}"
+                IsChecked="{Binding UseSsl, Mode=TwoWay}" />
+
+            <HeaderedContentControl
+                Margin="0,20,0,0"
+                Padding="10,5"
+                HorizontalAlignment="Left"
+                FontSize="12"
+                Background="LightGray"
+                Foreground="{DynamicResource BrushTextDark}"
+                Header="{StaticResource NetworkProxySetting}">
+                <StackPanel Margin="10">
+                    <RadioButton
+                        IsChecked="{Binding NetworkProxy,Converter={x:Static ObjectConverters.Equal},ConverterParameter={x:Static settings:NetworkProxy.None}}"
+                        Command="{Binding NetworkProxyCommand}"
+                        CommandParameter="{x:Static settings:NetworkProxy.None}"
+                        Content="{StaticResource NetworkProxyNone}"
+                        GroupName="proxy"
+                        Margin="0,5,0,0" />
+                    <RadioButton
+                        IsChecked="{Binding NetworkProxy,Converter={x:Static ObjectConverters.Equal},ConverterParameter={x:Static settings:NetworkProxy.System}}"
+                        Command="{Binding NetworkProxyCommand}"
+                        CommandParameter="{x:Static settings:NetworkProxy.System}"
+                        Content="{StaticResource NetworkProxySystem}"
+                        GroupName="proxy"
+                        Margin="0,5,0,0" />
+                    <RadioButton
+                        IsChecked="{Binding NetworkProxy,Converter={x:Static ObjectConverters.Equal},ConverterParameter={x:Static settings:NetworkProxy.Custom}}"
+                        Command="{Binding NetworkProxyCommand}"
+                        CommandParameter="{x:Static settings:NetworkProxy.Custom}"
+                        Content="{StaticResource NetworkProxyCustom}"
+                        GroupName="proxy"
+                        Margin="0,5,0,0" />
+                    <StackPanel
+                        IsVisible="{Binding NetworkProxy,Converter={x:Static ObjectConverters.Equal},ConverterParameter={x:Static settings:NetworkProxy.Custom}}"
+                        Margin="0,5,0,0"
+                        Orientation="Horizontal"
+                        ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}">
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="12"
+                                Foreground="{DynamicResource BrushTextDark}"
+                                Text="{DynamicResource HttpProxy}" />
+                            <TextBox
+                                Name="CustomNetworkProxy"
+                                Width="220"
+                                VerticalContentAlignment="Center"
+                                Text="{Binding CustomNetworkProxy}">
+                                <TextBox.KeyBindings>
+                                    <KeyBinding
+                                        Command="{Binding CustomNetworkProxyCommand}"
+                                        CommandParameter="{Binding #CustomNetworkProxy.Text}"
+                                        Gesture="Enter" />
+                                </TextBox.KeyBindings>
+                            </TextBox>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </HeaderedContentControl>
+
+
+            <TextBlock
+                Margin="0,20,0,0"
+                FontSize="12"
+                Foreground="{DynamicResource BrushTextDark}"
+                Text="{DynamicResource UserAgent}" />
+
+            <TextBox
+                Name="NameUserAgent"
+                Margin="0,10,0,0"
+                HorizontalAlignment="Stretch"
+                Text="{Binding UserAgent}">
+                <TextBox.KeyBindings>
+                    <KeyBinding
+                        Command="{Binding UserAgentCommand}"
+                        CommandParameter="{Binding #NameUserAgent.Text}"
+                        Gesture="Enter" />
+                </TextBox.KeyBindings>
+            </TextBox>
+
+            <StackPanel Margin="0,20,0,0" Orientation="Vertical">
+                <TextBlock
+                    FontSize="12"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    Text="{DynamicResource SelectDownloader}" />
+
+                <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                    <RadioButton
+                        Command="{Binding SelectDownloaderCommand}"
+                        CommandParameter="Builtin"
+                        Content="{DynamicResource BuiltinDownloader}"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        IsChecked="{Binding Builtin}" />
+                    <RadioButton
+                        Margin="20,0,0,0"
+                        Command="{Binding SelectDownloaderCommand}"
+                        CommandParameter="Aria2c"
+                        Content="{DynamicResource Aria2cDownloader}"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        IsChecked="{Binding Aria2C}" />
+                    <RadioButton
+                        Margin="20,0,0,0"
+                        Command="{Binding SelectDownloaderCommand}"
+                        CommandParameter="CustomAria2c"
+                        Content="{DynamicResource CustomAria2cDownloader}"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        IsChecked="{Binding CustomAria2C}" />
+                </StackPanel>
+            </StackPanel>
+            <TextBlock
+                Height="1"
+                Margin="0,20,0,0"
+                Background="{DynamicResource BrushBorder}" />
+
+            <StackPanel x:Name="NameBuiltin" IsVisible="{Binding Builtin}">
+                <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                    <TextBlock
+                        Width="100"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource MaxCurrentDownloads}" />
+                    <ComboBox
+                        Name="NameMaxCurrentDownloads"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        ItemsSource="{Binding MaxCurrentDownloads}"
+                        SelectedValue="{Binding SelectedMaxCurrentDownload,Mode=TwoWay}">
+                        <Interaction.Behaviors>
+                            <EventTriggerBehavior EventName="SelectionChanged">
+                                <InvokeCommandAction Command="{Binding MaxCurrentDownloadsCommand}"
+                                                     CommandParameter="{Binding ElementName=NameMaxCurrentDownloads, Path=SelectedValue}" />
+                            </EventTriggerBehavior>
+                        </Interaction.Behaviors>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                    <TextBlock
+                        Width="100"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource Split}" />
+                    <ComboBox
+                        Name="NameSplits"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        ItemsSource="{Binding Splits}"
+                        SelectedValue="{Binding SelectedSplit}">
+                        <Interaction.Behaviors>
+                            <EventTriggerBehavior EventName="SelectionChanged">
+                                <InvokeCommandAction Command="{Binding SplitsCommand}"
+                                                     CommandParameter="{Binding ElementName=NameSplits, Path=SelectedValue}" />
+                            </EventTriggerBehavior>
+                        </Interaction.Behaviors>
+                    </ComboBox>
+                </StackPanel>
+
+                <CheckBox
+                    Name="NameIsHttpProxy"
+                    Margin="0,20,0,0"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    Command="{Binding IsHttpProxyCommand}"
+                    Content="{DynamicResource IsHttpProxy}"
+                    FontSize="12"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    IsChecked="{Binding IsHttpProxy, Mode=TwoWay}" />
+
+                <StackPanel
+                    Name="NameHttpProxyPanel"
+                    IsVisible="{Binding IsHttpProxy}"
+                    Margin="0,20,0,0"
+                    Orientation="Horizontal"
+                    ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}">
+
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Foreground="{DynamicResource BrushTextDark}"
+                            Text="{DynamicResource HttpProxy}" />
+                        <TextBox
+                            Name="NameHttpProxy"
+                            Width="200"
+                            VerticalContentAlignment="Center"
+                            Text="{Binding HttpProxy}">
+                            <TextBox.KeyBindings>
+                                <KeyBinding
+                                    Command="{Binding HttpProxyCommand}"
+                                    CommandParameter="{Binding #NameHttpProxy.Text}"
+                                    Gesture="Enter" />
+                            </TextBox.KeyBindings>
+                        </TextBox>
+                    </StackPanel>
+                    <StackPanel Margin="30,0,0,0" Orientation="Horizontal">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Foreground="{DynamicResource BrushTextDark}"
+                            Text="{DynamicResource HttpProxyPort}" />
+                        <TextBox
+                            Name="NameHttpProxyPort"
+                            Width="100"
+                            VerticalContentAlignment="Center"
+                            Text="{Binding HttpProxyPort}">
+                            <TextBox.KeyBindings>
+                                <KeyBinding
+                                    Command="{Binding HttpProxyPortCommand}"
+                                    CommandParameter="{Binding #NameHttpProxyPort.Text}"
+                                    Gesture="Enter" />
+                            </TextBox.KeyBindings>
+                        </TextBox>
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel x:Name="NameAria" IsVisible="{Binding Aria2C}">
+                <StackPanel
+                    Margin="0,20,0,0"
+                    Orientation="Horizontal"
+                    ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}">
+                    <TextBlock
+                        Width="100"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource AriaServerPort}" />
+                    <TextBox
+                        Name="NameAriaListenPort"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        Text="{Binding AriaListenPort}">
+                        <TextBox.KeyBindings>
+                            <KeyBinding
+                                Command="{Binding AriaListenPortCommand}"
+                                CommandParameter="{Binding #NameAriaListenPort.Text}"
+                                Gesture="Enter" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                </StackPanel>
+
+                <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                    <TextBlock
+                        Width="100"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource AriaLogLevel}" />
+                    <ComboBox
+                        Name="NameAriaLogLevels"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        ItemsSource="{Binding AriaLogLevels}"
+                        SelectedValue="{Binding SelectedAriaLogLevel}">
+                        <Interaction.Behaviors>
+                            <EventTriggerBehavior EventName="SelectionChanged">
+                                <InvokeCommandAction Command="{Binding AriaLogLevelsCommand}"
+                                                     CommandParameter="{Binding ElementName=NameAriaLogLevels, Path=SelectedValue}" />
+                            </EventTriggerBehavior>
+                        </Interaction.Behaviors>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                    <TextBlock
+                        Width="100"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource AriaMaxConcurrentDownloads}" />
+                    <ComboBox
+                        Name="NameAriaMaxConcurrentDownloads"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        ItemsSource="{Binding AriaMaxConcurrentDownloads}"
+                        SelectedValue="{Binding SelectedAriaMaxConcurrentDownload}">
+                        <Interaction.Behaviors>
+                            <EventTriggerBehavior EventName="SelectionChanged">
+                                <InvokeCommandAction Command="{Binding AriaMaxConcurrentDownloadsCommand}"
+                                                     CommandParameter="{Binding ElementName=NameAriaMaxConcurrentDownloads, Path=SelectedValue}" />
+                            </EventTriggerBehavior>
+                        </Interaction.Behaviors>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                    <TextBlock
+                        Width="100"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource AriaSplit}" />
+                    <ComboBox
+                        Name="NameAriaSplits"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        ItemsSource="{Binding AriaSplits}"
+                        SelectedValue="{Binding SelectedAriaSplit}">
+                        <Interaction.Behaviors>
+                            <EventTriggerBehavior EventName="SelectionChanged">
+                                <InvokeCommandAction Command="{Binding AriaSplitsCommand}"
+                                                     CommandParameter="{Binding ElementName=NameAriaSplits, Path=SelectedValue}" />
+                            </EventTriggerBehavior>
+                        </Interaction.Behaviors>
+                    </ComboBox>
+                </StackPanel>
+
+                <HeaderedContentControl
+                    Margin="0,20,0,0"
+                    Padding="10,5"
+                    HorizontalAlignment="Left"
+                    FontSize="12"
+                    Background="LightGray"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    Header="{DynamicResource AriaDownloadLimit}">
+
+                    <StackPanel Margin="10">
+                        <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                            <TextBlock
+                                Width="300"
+                                VerticalAlignment="Center"
+                                FontSize="12"
+                                Foreground="{DynamicResource BrushTextDark}"
+                                Text="{DynamicResource AriaMaxOverallDownloadLimit}" />
+                            <TextBox
+                                Name="NameAriaMaxOverallDownloadLimit"
+                                Width="100"
+                                VerticalContentAlignment="Center"
+                                Text="{Binding AriaMaxOverallDownloadLimit}"
+                                ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}">
+                                <TextBox.KeyBindings>
+                                    <KeyBinding
+                                        Command="{Binding AriaMaxOverallDownloadLimitCommand}"
+                                        CommandParameter="{Binding #NameAriaMaxOverallDownloadLimit.Text}"
+                                        Gesture="Enter" />
+                                </TextBox.KeyBindings>
+                            </TextBox>
+                        </StackPanel>
+                        <StackPanel Margin="0,10,0,5" Orientation="Horizontal">
+                            <TextBlock
+                                Width="300"
+                                VerticalAlignment="Center"
+                                FontSize="12"
+                                Foreground="{DynamicResource BrushTextDark}"
+                                Text="{DynamicResource AriaMaxDownloadLimit}" />
+                            <TextBox
+                                Name="NameAriaMaxDownloadLimit"
+                                Width="100"
+                                VerticalContentAlignment="Center"
+                                Text="{Binding AriaMaxDownloadLimit}"
+                                ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}">
+                                <TextBox.KeyBindings>
+                                    <KeyBinding
+                                        Command="{Binding AriaMaxDownloadLimitCommand}"
+                                        CommandParameter="{Binding #NameAriaMaxDownloadLimit.Text}"
+                                        Gesture="Enter" />
+                                </TextBox.KeyBindings>
+                            </TextBox>
+                        </StackPanel>
+                    </StackPanel>
+                </HeaderedContentControl>
+
+                <CheckBox
+                    Name="NameIsAriaHttpProxy"
+                    Margin="0,20,0,0"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    Command="{Binding IsAriaHttpProxyCommand}"
+                    Content="{DynamicResource IsHttpProxy}"
+                    FontSize="12"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    IsChecked="{Binding IsAriaHttpProxy, Mode=TwoWay}" />
+
+                <StackPanel
+                    Name="NameAriaHttpProxyPanel"
+                    Margin="0,20,0,0"
+                    Orientation="Horizontal"
+                    ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}"
+                    IsVisible="{Binding ElementName=NameIsAriaHttpProxy,Path=IsChecked}">
+                    <!--<StackPanel.Style>
+                        <Style TargetType="{x:Type StackPanel}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ElementName=nameIsAriaHttpProxy, Path=IsChecked}"
+                                             Value="false">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding ElementName=nameIsAriaHttpProxy, Path=IsChecked}"
+                                             Value="true">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>-->
+
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Foreground="{DynamicResource BrushTextDark}"
+                            Text="{DynamicResource HttpProxy}" />
+                        <TextBox
+                            Name="NameAriaHttpProxy"
+                            Width="200"
+                            VerticalContentAlignment="Center"
+                            Text="{Binding AriaHttpProxy}">
+                            <TextBox.KeyBindings>
+                                <KeyBinding
+                                    Command="{Binding AriaHttpProxyCommand}"
+                                    CommandParameter="{Binding #NameAriaHttpProxy.Text}"
+                                    Gesture="Enter" />
+                            </TextBox.KeyBindings>
+                        </TextBox>
+                    </StackPanel>
+                    <StackPanel Margin="30,0,0,0" Orientation="Horizontal">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Foreground="{DynamicResource BrushTextDark}"
+                            Text="{DynamicResource HttpProxyPort}" />
+                        <TextBox
+                            Name="NameAriaHttpProxyPort"
+                            Width="100"
+                            VerticalContentAlignment="Center"
+                            Text="{Binding AriaHttpProxyPort}">
+                            <TextBox.KeyBindings>
+                                <KeyBinding
+                                    Command="{Binding AriaHttpProxyPortCommand}"
+                                    CommandParameter="{Binding #NameAriaHttpProxyPort.Text}"
+                                    Gesture="Enter" />
+                            </TextBox.KeyBindings>
+                        </TextBox>
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                    <TextBlock
+                        Width="100"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource AriaFileAllocation}" />
+                    <ComboBox
+                        Name="NameAriaFileAllocations"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        ItemsSource="{Binding AriaFileAllocations}"
+                        SelectedValue="{Binding SelectedAriaFileAllocation}">
+                        <Interaction.Behaviors>
+                            <EventTriggerBehavior EventName="SelectionChanged">
+                                <InvokeCommandAction Command="{Binding AriaFileAllocationsCommand}"
+                                                     CommandParameter="{Binding ElementName=NameAriaFileAllocations, Path=SelectedValue}" />
+                            </EventTriggerBehavior>
+                        </Interaction.Behaviors>
+                    </ComboBox>
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel x:Name="NameCustomAria" IsVisible="{Binding CustomAria2C}">
+                <StackPanel
+                    Margin="0,20,0,0"
+                    Orientation="Horizontal"
+                    ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}">
+                    <TextBlock
+                        Width="100"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource AriaServerHost}" />
+                    <TextBox
+                        Name="NameAriaHost"
+                        Width="300"
+                        VerticalContentAlignment="Center"
+                        Text="{Binding AriaHost}">
+                        <TextBox.KeyBindings>
+                            <KeyBinding
+                                Command="{Binding AriaHostCommand}"
+                                CommandParameter="{Binding #NameAriaHost.Text}"
+                                Gesture="Enter" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                </StackPanel>
+                <StackPanel
+                    Margin="0,20,0,0"
+                    Orientation="Horizontal"
+                    ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}">
+                    <TextBlock
+                        Width="100"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource AriaServerPort}" />
+                    <TextBox
+                        Name="NameAriaPort"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        Text="{Binding AriaListenPort}">
+                        <TextBox.KeyBindings>
+                            <KeyBinding
+                                Command="{Binding AriaListenPortCommand}"
+                                CommandParameter="{Binding #NameAriaPort.Text}"
+                                Gesture="Enter" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                </StackPanel>
+                <StackPanel
+                    Margin="0,20,0,0"
+                    Orientation="Horizontal"
+                    ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}">
+                    <TextBlock
+                        Width="100"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource AriaServerToken}" />
+                    <TextBox
+                        Name="NameAriaToken"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        Text="{Binding AriaToken}">
+                        <TextBox.KeyBindings>
+                            <KeyBinding
+                                Command="{Binding AriaTokenCommand}"
+                                CommandParameter="{Binding #NameAriaToken.Text}"
+                                Gesture="Enter" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Margin="10" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

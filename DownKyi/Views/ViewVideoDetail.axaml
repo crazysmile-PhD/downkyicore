@@ -1,0 +1,552 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignWidth="840"
+             d:DesignHeight="620"
+             x:Class="DownKyi.Views.ViewVideoDetail"
+             xmlns:vm="clr-namespace:DownKyi.ViewModels"
+             xmlns:vmp="clr-namespace:DownKyi.ViewModels.PageViewModels"
+             xmlns:custom="clr-namespace:DownKyi.CustomControl"
+             xmlns:behavior="clr-namespace:DownKyi.CustomAction"
+             xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
+             x:DataType="vm:ViewVideoDetailViewModel">
+
+    <UserControl.Resources>
+        <ControlTheme TargetType="TextBlock" x:Key="DataGridCellTextBlockTheme">
+            <Setter Property="Margin" Value="{DynamicResource DataGridTextColumnCellTextBlockMargin}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource ColorTextDark}"></Setter>
+        </ControlTheme>
+    </UserControl.Resources>
+    <Grid RowDefinitions="50,10,*">
+
+        <Grid Grid.Row="0" ColumnDefinitions="40,*,50">
+
+            <Button
+                Grid.Column="0"
+                Width="24"
+                Height="24"
+                Margin="10,5"
+                VerticalAlignment="Center"
+                Command="{Binding BackSpaceCommand}"
+                Theme="{StaticResource ImageBtnStyle}">
+                <ContentControl>
+                    <Path
+                        Theme="{StaticResource NavigationIcon.ArrowBack}"
+                        Width="24"
+                        Height="24"
+                        Fill="{DynamicResource ColorTextDark}"
+                        Stretch="None" />
+                </ContentControl>
+            </Button>
+            <Border Grid.Column="1" Height="32" Margin="0,5,0,5" BorderBrush="{DynamicResource BrushPrimary}"
+                    BorderThickness="1" CornerRadius="16">
+                <TextBox
+                    Margin="16,0,30,0"
+                    VerticalContentAlignment="Center"
+                    BorderThickness="0"
+                    FontSize="12"
+                    Text="{Binding InputText,UpdateSourceTrigger=PropertyChanged,Mode=TwoWay}">
+                    <TextBox.KeyBindings>
+                        <KeyBinding Command="{Binding InputCommand}" Gesture="Enter" />
+                    </TextBox.KeyBindings>
+                </TextBox>
+            </Border>
+
+            <custom:Loading Grid.Column="1"
+                            Width="24"
+                            Height="24"
+                            Margin="5"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Foreground="Gray"
+                            IsActive="{Binding Loading}"
+                            IsVisible="{Binding LoadingVisibility}" />
+
+            <Button
+                Grid.Column="2"
+                Width="24"
+                Height="24"
+                Margin="10,5"
+                VerticalAlignment="Center"
+                Command="{Binding DownloadManagerCommand}"
+                Theme="{StaticResource ImageBtnStyle}">
+                <ContentControl>
+                    <Path
+                        Width="{Binding DownloadManage.Width}"
+                        Height="{Binding DownloadManage.Height}"
+                        Data="{Binding DownloadManage.Data}"
+                        Fill="{Binding DownloadManage.Fill}"
+                        Stretch="Uniform" />
+                </ContentControl>
+            </Button>
+        </Grid>
+
+        <TextBlock Grid.Row="1" Opacity="0.3">
+            <TextBlock.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,0.5">
+                    <GradientStop Offset="0" Color="#FF000000" />
+                    <GradientStop Offset="1" />
+                </LinearGradientBrush>
+            </TextBlock.Background>
+        </TextBlock>
+        <Grid Grid.Row="2" IsVisible="{Binding ContentVisibility}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="100*" MaxHeight="180" />
+                <RowDefinition Height="200*" />
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0" Margin="10,0">
+                <Image
+                    MinWidth="150"
+                    MaxWidth="300"
+                    VerticalAlignment="Top"
+                    DockPanel.Dock="Left"
+                    asyncImageLoader:ImageLoader.Source="{Binding VideoInfoView.CoverUrl}">
+                    <Image.ContextMenu>
+                        <ContextMenu>
+                            <!-- <MenuItem Command="{Binding CopyCoverCommand}" Header="{DynamicResource CopyCover}" /> -->
+                            <MenuItem Command="{Binding CopyCoverUrlCommand}" Header="{DynamicResource CopyCoverUrl}" />
+                        </ContextMenu>
+                    </Image.ContextMenu>
+                </Image>
+
+                <Grid
+                    Margin="10,0,0,0"
+                    VerticalAlignment="Stretch"
+                    DockPanel.Dock="Left" RowDefinitions="70,*">
+
+                    <Grid Grid.Row="0" ColumnDefinitions="*,120">
+                        <Grid Grid.Row="0" RowDefinitions="3*,2*,2*">
+                            <SelectableTextBlock
+                                Grid.Row="0"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                FontSize="16"
+                                FontWeight="Bold"
+                                Foreground="{DynamicResource BrushTextDark}"
+                                Text="{Binding VideoInfoView.Title}"
+                                TextTrimming="CharacterEllipsis" />
+                            <StackPanel
+                                Grid.Row="1"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal">
+                                <TextBlock
+                                    Margin="0,0,10,0"
+                                    Foreground="{DynamicResource BrushTextGrey}"
+                                    Text="{Binding VideoInfoView.VideoZone}" />
+                                <TextBlock Foreground="{DynamicResource BrushTextGrey}"
+                                           Text="{Binding VideoInfoView.CreateTime}" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="2" VerticalAlignment="Center" Orientation="Horizontal">
+                                <StackPanel Margin="0,0,10,0" Orientation="Horizontal">
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{Binding VideoInfoView.PlayNumber}" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{DynamicResource Play}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,10,0" Orientation="Horizontal">
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{Binding VideoInfoView.DanmakuNumber}" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{DynamicResource Danmaku}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,10,0" Orientation="Horizontal">
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{Binding VideoInfoView.LikeNumber}" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{DynamicResource Like}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,10,0" Orientation="Horizontal">
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{Binding VideoInfoView.CoinNumber}" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{DynamicResource Coin}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,10,0" Orientation="Horizontal">
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{Binding VideoInfoView.FavoriteNumber}" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{DynamicResource Favorite}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,10,0" Orientation="Horizontal">
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{Binding VideoInfoView.ShareNumber}" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{DynamicResource Share}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,10,0" Orientation="Horizontal">
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{Binding VideoInfoView.ReplyNumber}" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{DynamicResource Reply}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel
+                            Name="NameUp"
+                            Grid.Column="1"
+                            Cursor="Hand">
+                            <Interaction.Behaviors>
+                                <EventTriggerBehavior EventName="PointerReleased">
+                                    <InvokeCommandAction Command="{Binding UpperCommand}" />
+                                </EventTriggerBehavior>
+                            </Interaction.Behaviors>
+                            <Image
+                                Width="48"
+                                Height="48"
+                                asyncImageLoader:ImageLoader.Source="{Binding VideoInfoView.UpHeader}">
+                                <Image.Clip>
+                                    <EllipseGeometry
+                                        Center="24,24"
+                                        RadiusX="24"
+                                        RadiusY="24" />
+                                </Image.Clip>
+                            </Image>
+                            <TextBlock
+                                Margin="0,2,0,0"
+                                HorizontalAlignment="Center"
+                                FontSize="12"
+                                Foreground="{DynamicResource BrushTextDark}"
+                                Text="{Binding VideoInfoView.UpName}"
+                                TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer
+                        Grid.Row="1"
+                        Margin="0,5,0,0"
+                        VerticalScrollBarVisibility="Auto">
+                        <SelectableTextBlock
+                            Background="{x:Null}"
+                            FontSize="12"
+                            Foreground="{DynamicResource BrushTextDark}"
+                            Text="{Binding VideoInfoView.Description}"
+                            TextWrapping="WrapWithOverflow" />
+                    </ScrollViewer>
+                </Grid>
+            </DockPanel>
+
+            <Grid Grid.Row="1" Margin="10,10,10,10"
+                  RowDefinitions="Auto,5,*,40">
+                <ScrollViewer Grid.Row="0"
+                              MaxHeight="220"
+                              VerticalScrollBarVisibility="Auto">
+                    <ListBox
+                        x:Name="NameVideoSections"
+                        ItemContainerTheme="{StaticResource TagItemStyle}"
+                        ItemsSource="{Binding VideoSections, Mode=TwoWay}"
+                        Theme="{StaticResource TagStyle}"
+                        SelectionMode="Single">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <Interaction.Behaviors>
+                            <EventTriggerBehavior EventName="SelectionChanged">
+                                <InvokeCommandAction Command="{Binding VideoSectionsCommand}"
+                                                     CommandParameter="{Binding #NameVideoPages}" />
+                            </EventTriggerBehavior>
+                            <DataTriggerBehavior Binding="{Binding VideoSections.Count}" Value="0">
+                                <ChangePropertyAction PropertyName="Height" Value="0" />
+                            </DataTriggerBehavior>
+                            <DataTriggerBehavior Binding="{Binding VideoSections.Count}" Value="1">
+                                <ChangePropertyAction PropertyName="Height" Value="0" />
+                            </DataTriggerBehavior>
+                            <DataTriggerBehavior Binding="{Binding VideoSections.Count}"
+                                                 ComparisonCondition="GreaterThan" Value="1">
+                                <ChangePropertyAction PropertyName="Height" Value="Nan" />
+                            </DataTriggerBehavior>
+                        </Interaction.Behaviors>
+                    </ListBox>
+                </ScrollViewer>
+
+                <GridSplitter Grid.Row="1"
+                              ShowsPreview="True"
+                              behavior:GridSplitterExtensions.ResetGridBehavior="{Binding ResetGridBehavior}"
+                              ResizeDirection="Rows" />
+                <DataGrid
+                    x:Name="NameVideoPages"
+                    Grid.Row="2"
+                    VerticalAlignment="Stretch"
+                    BorderThickness="1"
+                    BorderBrush="Gray"
+                    CanUserResizeColumns="True"
+                    IsReadOnly="True"
+                    ItemsSource="{ReflectionBinding ElementName=NameVideoSections, Path=SelectedItem.VideoPages, Mode=TwoWay}"
+                    SelectionMode="Extended"
+                    SelectedItem="{Binding SelectedVideoPage, Mode=TwoWay}">
+                    <DataGrid.ColumnHeaderTheme>
+                        <ControlTheme TargetType="{x:Type DataGridColumnHeader}">
+                            <Setter Property="HorizontalContentAlignment" Value="Center" />
+                            <Setter Property="VerticalContentAlignment" Value="Center" />
+                            <Setter Property="Height" Value="30"></Setter>
+                            <Setter Property="Padding" Value="4" />
+                            <Setter Property="Background" Value="Transparent"></Setter>
+                            <Setter Property="Template">
+                                <ControlTemplate TargetType="{x:Type DataGridColumnHeader}">
+                                    <Border
+                                        x:Name="HeaderBorder"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <Grid
+                                                Margin="{TemplateBinding Padding}"
+                                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                ColumnDefinitions="*,Auto">
+                                                <ContentPresenter
+                                                    x:Name="HeaderContent"
+                                                    Content="{TemplateBinding Content}"
+                                                    ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                    RecognizesAccessKey="True" />
+
+                                                <Path Grid.Column="1" Name="SortIcon"
+                                                      Width="8"
+                                                      Margin="4,0,0,0"
+                                                      HorizontalAlignment="Left"
+                                                      VerticalAlignment="Center"
+                                                      Data="F1 M -5.215,6.099L 5.215,6.099L 0,0L -5.215,6.099 Z "
+                                                      Fill="{TemplateBinding Foreground}"
+                                                      IsVisible="False"
+                                                      Stretch="Uniform" />
+                                            </Grid>
+
+                                            <Canvas Grid.Column="1">
+                                                <Thumb x:Name="PART_HeaderGripper">
+                                                    <Thumb.Theme>
+                                                        <ControlTheme TargetType="{x:Type Thumb}">
+                                                            <Setter Property="Canvas.Right" Value="-9" />
+                                                            <Setter Property="Width" Value="18" />
+                                                            <Setter Property="Height"
+                                                                    Value="{Binding Bounds.Size.Height, RelativeSource={RelativeSource TemplatedParent}}" />
+                                                            <Setter Property="Padding" Value="0" />
+                                                            <Setter Property="Background" Value="White" />
+                                                            <Setter Property="Template">
+                                                                <Setter.Value>
+                                                                    <ControlTemplate TargetType="{x:Type Thumb}">
+                                                                        <Border Padding="{TemplateBinding Padding}"
+                                                                                Background="Transparent">
+                                                                            <Rectangle
+                                                                                Width="1"
+                                                                                HorizontalAlignment="Center"
+                                                                                Fill="{TemplateBinding Background}" />
+                                                                        </Border>
+                                                                    </ControlTemplate>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </ControlTheme>
+                                                    </Thumb.Theme>
+                                                </Thumb>
+                                            </Canvas>
+                                        </Grid>
+                                    </Border>
+
+                                </ControlTemplate>
+                            </Setter>
+
+                            <Style Selector="^:sortascending /template/ Path#SortIcon">
+                                <Setter Property="IsVisible" Value="True" />
+                            </Style>
+
+                            <Style Selector="^:sortdescending /template/ Path#SortIcon">
+                                <Setter Property="IsVisible" Value="True" />
+                                <Setter Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1" ScaleY="-1" />
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ControlTheme>
+                    </DataGrid.ColumnHeaderTheme>
+                    <Interaction.Behaviors>
+                        <EventTriggerBehavior EventName="SelectionChanged">
+                            <InvokeCommandAction Command="{Binding VideoPagesCommand}"
+                                                 CommandParameter="{Binding ElementName=NameVideoPages, Path=SelectedItems}" />
+                        </EventTriggerBehavior>
+                        <behavior:ScrollIntoViewBehavior />
+                    </Interaction.Behaviors>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn
+                            Width="50"
+                            Header="{DynamicResource Order}"
+                            Binding="{ReflectionBinding Order}" />
+                        <DataGridTextColumn
+                            Width="*"
+                            Binding="{ReflectionBinding Name}"
+                            Header="{DynamicResource Name}" />
+                        <DataGridTextColumn
+                            Width="100"
+                            Binding="{ReflectionBinding Duration}"
+                            Header="{DynamicResource Duration}" />
+                        <DataGridTemplateColumn
+                            Width="120"
+                            Header="{DynamicResource AudioQuality}">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate DataType="vmp:VideoPage">
+                                    <Grid>
+                                        <ComboBox
+                                            ItemsSource="{Binding AudioQualityFormatList,Mode=TwoWay}"
+                                            SelectedValue="{Binding AudioQualityFormat,Mode=TwoWay}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn
+                            Width="120"
+                            Header="{DynamicResource VideoQuality}">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate DataType="vmp:VideoPage">
+                                    <Grid>
+                                        <ComboBox
+                                            DisplayMemberBinding="{Binding QualityFormat}"
+                                            SelectedValueBinding="{Binding Quality}"
+                                            ItemsSource="{Binding VideoQualityList,Mode=OneWay}"
+                                            SelectedItem="{Binding VideoQuality,Mode=TwoWay}">
+                                            <Interaction.Behaviors>
+                                                <EventTriggerBehavior EventName="SelectionChanged">
+                                                    <InvokeCommandAction
+                                                        Command="{Binding VideoQualitySelectedCommand}" />
+                                                </EventTriggerBehavior>
+                                            </Interaction.Behaviors>
+                                        </ComboBox>
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn
+                            Width="120"
+                            Header="{DynamicResource VideoCodec}">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate DataType="vmp:VideoPage">
+                                    <Grid>
+                                        <ComboBox
+                                            ItemsSource="{Binding VideoQuality.VideoCodecList,Mode=TwoWay}"
+                                            SelectedValue="{Binding VideoQuality.SelectedVideoCodec,Mode=TwoWay}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+
+                    <DataGrid.RowTheme>
+                        <ControlTheme TargetType="DataGridRow"
+                                      BasedOn="{StaticResource {x:Type DataGridRow}}">
+                            <Style Selector="^ /template/ Rectangle#BackgroundRectangle">
+                                <Setter Property="IsVisible" Value="False" />
+                                <Setter Property="Fill" Value="{DynamicResource BrushDataGridHighlight}" />
+                            </Style>
+
+                            <Style Selector="^:pointerover /template/ Rectangle#BackgroundRectangle">
+                                <Setter Property="IsVisible" Value="True" />
+                                <Setter Property="Opacity" Value="0.3" />
+                            </Style>
+
+                            <Style Selector="^:selected /template/ Rectangle#BackgroundRectangle">
+                                <Setter Property="IsVisible" Value="True" />
+                                <Setter Property="Opacity" Value="1" />
+                            </Style>
+
+                        </ControlTheme>
+                    </DataGrid.RowTheme>
+
+
+                </DataGrid>
+
+                <Grid Grid.Row="3"
+                      Margin="0,10,0,0" ColumnDefinitions="60,80,140,*,100,100">
+                    <CheckBox
+                        Grid.Column="0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        Command="{Binding SelectAllCommand}"
+                        CommandParameter="{Binding ElementName=NameVideoPages,Path=$self}"
+                        Content="{DynamicResource SelectAll}"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        IsChecked="{Binding IsSelectAll, Mode=TwoWay}" />
+                    <Label
+                        Grid.Column="3"
+                        Margin="9,0,0,0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        Content="{DynamicResource Search}" />
+                    <TextBox
+                        Grid.Column="3"
+                        Width="200"
+                        Margin="48,0,0,0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        VerticalContentAlignment="Center"
+                        Watermark="{DynamicResource SearchVideoByName}"
+                        Text="{Binding Path=InputSearchText, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                        TextWrapping="Wrap">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Command="{Binding InputSearchCommand}" Gesture="Enter" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                    <Button
+                        Grid.Column="4"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Command="{Binding ParseAllVideoCommand}"
+                        Content="{DynamicResource ParseVideo}"
+                        FontSize="12"
+                        Theme="{StaticResource BtnStyle}"
+                        Foreground="{DynamicResource BrushText}" />
+                    <Button
+                        Grid.Column="5"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Command="{Binding AddToDownloadCommand}"
+                        Content="{DynamicResource DownloadSelected}"
+                        FontSize="12"
+                        Theme="{StaticResource BtnStyle}"
+                        Foreground="{DynamicResource BrushText}" />
+                </Grid>
+
+            </Grid>
+
+        </Grid>
+
+        <!--  没有数据提示  -->
+        <Image
+            Grid.Row="2"
+            Width="256"
+            Height="256"
+            Source="/Resources/no-data.png"
+            IsVisible="{Binding NoDataVisibility}" />
+
+    </Grid>
+</UserControl>

@@ -1,0 +1,222 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignWidth="840"
+             d:DesignHeight="620"
+             xmlns:prism="http://prismlibrary.com/"
+             xmlns:vm="clr-namespace:DownKyi.ViewModels"
+             xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
+             prism:ViewModelLocator.AutoWireViewModel="True"
+             x:DataType="vm:ViewIndexViewModel"
+             x:Class="DownKyi.Views.ViewIndex">
+    <Grid RowDefinitions="60,200,100,230,*,50">
+
+        <Grid Grid.Row="0" ColumnDefinitions="*,*,20">
+            <Grid Grid.Column="1"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Bottom"
+                  Cursor="Hand"
+                  IsVisible="{Binding LoginPanelVisibility}" ColumnDefinitions="*,*">
+                <Interaction.Behaviors>
+                    <EventTriggerBehavior EventName="PointerReleased">
+                        <InvokeCommandAction Command="{Binding LoginCommand}" />
+                    </EventTriggerBehavior>
+                </Interaction.Behaviors>
+                <Image
+                    Grid.Column="0"
+                    Width="36"
+                    Height="36"
+                    asyncImageLoader:ImageLoader.Source="{Binding Header}">
+                    <Image.Clip>
+                        <!--  设置图像如何显示  -->
+                        <EllipseGeometry
+                            Center="18,18"
+                            RadiusX="18"
+                            RadiusY="18" />
+                    </Image.Clip>
+                </Image>
+                <Ellipse
+                    Grid.Column="0"
+                    Width="38"
+                    Height="38"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Stroke="{DynamicResource BrushImageBorder}"
+                    StrokeThickness="2" />
+                <TextBlock
+                    Grid.Column="1"
+                    Margin="5,0,0,0"
+                    VerticalAlignment="Center"
+                    FontSize="14"
+                    Foreground="{DynamicResource BrushPrimary}"
+                    Text="{DynamicResource Login}"
+                    IsVisible="{Binding UserName,Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+            </Grid>
+        </Grid>
+
+        <ContentControl
+            Grid.Row="1"
+            Margin="0,30,0,0"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom">
+            <Path
+                Width="{Binding TextLogo.Width}"
+                Height="{Binding TextLogo.Height}"
+                Data="{Binding TextLogo.Data}"
+                Fill="{Binding TextLogo.Fill}"
+                Stretch="UniformToFill" />
+        </ContentControl>
+        <Grid Grid.Row="2" ColumnDefinitions="150*,600*,150*">
+            <Border
+                Grid.Column="1"
+                Height="40"
+                BorderBrush="{DynamicResource BrushPrimary}"
+                BorderThickness="2"
+                CornerRadius="20">
+                <TextBox
+                    x:Name="NameInputUrl"
+                    Height="35"
+                    Margin="20,0,40,0"
+                    VerticalContentAlignment="Center"
+                    BorderThickness="0"
+                    FontSize="16"
+                    Watermark="{DynamicResource IndexHintText}"
+                    Text="{Binding InputText,Mode=TwoWay}">
+                    <TextBox.KeyBindings>
+                        <KeyBinding Command="{Binding InputCommand}" Gesture="Enter" />
+                    </TextBox.KeyBindings>
+                </TextBox>
+            </Border>
+            <Button
+                Grid.Column="1"
+                Width="20"
+                Height="20"
+                Margin="0,0,15,0"
+                Command="{Binding InputCommand}"
+                HorizontalAlignment="Right"
+                Theme="{StaticResource ImageBtnStyle}">
+                <Path
+                    Width="{Binding GeneralSearch.Width}"
+                    Height="{Binding GeneralSearch.Height}"
+                    Data="{Binding GeneralSearch.Data}"
+                    Fill="{Binding GeneralSearch.Fill}"
+                    Stretch="UniformToFill" />
+            </Button>
+
+        </Grid>
+
+        <Grid Grid.Row="3" ColumnDefinitions="150*,650*,150*">
+
+            <Grid Grid.Column="1" RowDefinitions="*,*" ColumnDefinitions="*,*,*">
+
+                <StackPanel
+                    Grid.Row="0"
+                    Grid.Column="0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Cursor="Hand"
+                    Orientation="Vertical">
+                    <Interaction.Behaviors>
+                        <EventTriggerBehavior EventName="PointerReleased">
+                            <InvokeCommandAction Command="{Binding SettingsCommand}" />
+                        </EventTriggerBehavior>
+                    </Interaction.Behaviors>
+                    <Border
+                        Width="64"
+                        Height="64"
+                        Margin="0,0,0,5"
+                        Background="{DynamicResource BrushImageBackground}"
+                        CornerRadius="32">
+                        <ContentControl
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                            <Path
+                                Width="{Binding Settings.Width}"
+                                Height="{Binding Settings.Height}"
+                                Data="{Binding Settings.Data}"
+                                Fill="{Binding Settings.Fill}"
+                                Stretch="UniformToFill" />
+                        </ContentControl>
+                    </Border>
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontSize="14"
+                        Foreground="{DynamicResource BrushPrimary}"
+                        Text="{DynamicResource Settings}" />
+                </StackPanel>
+                <StackPanel
+                    Grid.Row="0"
+                    Grid.Column="1"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Cursor="Hand"
+                    Orientation="Vertical">
+                    <Interaction.Behaviors>
+                        <EventTriggerBehavior EventName="PointerReleased">
+                            <InvokeCommandAction Command="{Binding DownloadManagerCommand}" />
+                        </EventTriggerBehavior>
+                    </Interaction.Behaviors>
+                    <Border
+                        Width="64"
+                        Height="64"
+                        Margin="0,0,0,5"
+                        Background="{DynamicResource BrushImageBackground}"
+                        CornerRadius="32">
+                        <ContentControl
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                            <Path
+                                Width="{Binding DownloadManager.Width}"
+                                Height="{Binding DownloadManager.Height}"
+                                Data="{Binding DownloadManager.Data}"
+                                Fill="{Binding DownloadManager.Fill}"
+                                Stretch="UniformToFill" />
+                        </ContentControl>
+                    </Border>
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontSize="14"
+                        Foreground="{DynamicResource BrushPrimary}"
+                        Text="{DynamicResource DownloadManager}" />
+                </StackPanel>
+                <StackPanel
+                    Grid.Row="0"
+                    Grid.Column="2"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Cursor="Hand"
+                    Orientation="Vertical">
+                    <Interaction.Behaviors>
+                        <EventTriggerBehavior EventName="PointerReleased">
+                            <InvokeCommandAction Command="{Binding ToolboxCommand}" />
+                        </EventTriggerBehavior>
+                    </Interaction.Behaviors>
+                    <Border
+                        Width="64"
+                        Height="64"
+                        Margin="0,0,0,5"
+                        Background="{DynamicResource BrushImageBackground}"
+                        CornerRadius="32">
+                        <ContentControl
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                            <Path
+                                Width="{Binding Toolbox.Width}"
+                                Height="{Binding Toolbox.Height}"
+                                Data="{Binding Toolbox.Data}"
+                                Fill="{Binding Toolbox.Fill}"
+                                Stretch="UniformToFill" />
+                        </ContentControl>
+                    </Border>
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontSize="14"
+                        Foreground="{DynamicResource BrushPrimary}"
+                        Text="{DynamicResource Toolbox}" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>
