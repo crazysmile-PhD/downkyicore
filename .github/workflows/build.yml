@@ -16,7 +16,7 @@ jobs:
       release_body: ${{ steps.git-cliff.outputs.content }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Generate a changelog
@@ -39,19 +39,20 @@ jobs:
         trimmed: [ true, false ]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Install .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
       - name: Read Version Text
         id: version
-        uses: juliangruber/read-file-action@v1
-        with:
-          path: version.txt
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw version.txt).Trim()
+          "content=$version" >> $env:GITHUB_OUTPUT
       - name: Install Pupnet
         run: |
-          dotnet tool install -g KuiperZone.PupNet --version 1.8.0
+          dotnet tool install --tool-path .\.tools KuiperZone.PupNet --version 1.8.0
       - name: Get Deps
         run: |
           .\ffmpeg.ps1 ${{ matrix.cpu }}
@@ -60,22 +61,22 @@ jobs:
       - name: Package
         if: ${{ matrix.trimmed == false }}
         run: |
-          pupnet DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r win-${{ matrix.cpu }} -y
+          & "$env:GITHUB_WORKSPACE\.tools\pupnet.exe" DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r win-${{ matrix.cpu }} -y
         working-directory: ./script/pupnet
       - name: Package trimmed
         if: ${{ matrix.trimmed == true }}
         run: |
-          pupnet DownKyi.pupnet.trimmed.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r win-${{ matrix.cpu }} -y
+          & "$env:GITHUB_WORKSPACE\.tools\pupnet.exe" DownKyi.pupnet.trimmed.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r win-${{ matrix.cpu }} -y
           mv output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }} output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}-trimmed.${{ matrix.kind }}
         working-directory: ./script/pupnet
       - name: Upload build artifacts ${{ matrix.kind }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: ${{ matrix.trimmed == false }}
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
           path: script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
       - name: Upload build artifacts ${{ matrix.kind }} trimmed
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: ${{ matrix.trimmed == true }}
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}-trimmed.${{ matrix.kind }}
@@ -128,21 +129,20 @@ jobs:
             cpu: arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Install .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
       - name: Read Version Text
         id: version
-        uses: juliangruber/read-file-action@v1
-        with:
-          path: version.txt
+        run: |
+          echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
       - name: Install Pupnet
         run: |
-          dotnet tool install -g KuiperZone.PupNet --version 1.8.0
+          dotnet tool install --tool-path ./.tools KuiperZone.PupNet --version 1.8.0
           sudo apt-get update
-          sudo apt-get install libfuse2
+          sudo apt-get install -y libfuse2
       - name: Get Deps
         run: |
           chmod +x ffmpeg.sh
@@ -152,10 +152,10 @@ jobs:
         working-directory: ./script
       - name: Package
         run: |
-          pupnet DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r linux-${{ matrix.cpu }} -y
+          "$GITHUB_WORKSPACE/.tools/pupnet" DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r linux-${{ matrix.cpu }} -y
         working-directory: ./script/pupnet
       - name: Upload build artifacts ${{ matrix.kind }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
           path: script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}-1${{ matrix.package-tail }}.${{ matrix.kind }}
@@ -171,16 +171,19 @@ jobs:
           artifacts: script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
           body: ${{ needs.changelog.outputs.release_body }}
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-15
     needs: changelog
+    env:
+      HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
     strategy:
       matrix:
         cpu: [ x64, arm64 ]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Import certificate
-        uses: apple-actions/import-codesign-certs@v2
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        uses: apple-actions/import-codesign-certs@v7
         with:
           p12-file-base64: ${{ secrets.MACOS_CERTIFICATE }}
           p12-password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -190,14 +193,13 @@ jobs:
           export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=true
           brew install create-dmg tree
       - name: Install .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
       - name: Read Version Text
         id: version
-        uses: juliangruber/read-file-action@v1
-        with:
-          path: version.txt
+        run: |
+          echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
       - name: Get Deps
         run: |
           chmod +x aria2.sh
@@ -215,11 +217,13 @@ jobs:
           ./package.sh ${{ matrix.cpu }}
         working-directory: ./script/macos
       - name: Sign app
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         run: |
           chmod +x sign.sh
           ./sign.sh
         working-directory: ./script/macos
       - name: Notarize app
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         run: |
           ditto -c -k --sequesterRsrc --keepParent 哔哩下载姬.app 哔哩下载姬.zip
           xcrun notarytool submit 哔哩下载姬.zip --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.TEAM_ID }}" --password "${{ secrets.APP_SPECIFIC_PASSWORD }}" --wait
@@ -237,12 +241,13 @@ jobs:
           DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg 哔哩下载姬.app
         working-directory: ./script/macos
       - name: Notarize DMG
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         run: |
           xcrun notarytool submit DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.TEAM_ID }}" --password "${{ secrets.APP_SPECIFIC_PASSWORD }}" --wait
           xcrun stapler staple DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
         working-directory: ./script/macos
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
           path: script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
