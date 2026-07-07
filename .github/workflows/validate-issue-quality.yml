@@ -1,0 +1,268 @@
+name: Validate Issue Quality
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  issues: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate required bug report content
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || "";
+            const title = issue.title || "";
+            const labels = issue.labels.map(label => label.name);
+            const lowerLabels = labels.map(label => label.toLowerCase());
+
+            if (issue.pull_request) {
+              core.info("This is a pull request. Skip validation.");
+              return;
+            }
+
+            const isBug =
+              lowerLabels.includes("bug") ||
+              title.toLowerCase().includes("[bug]") ||
+              body.includes("### 🚨 問題類型");
+
+            if (!isBug) {
+              core.info("Not a bug report. Skip validation.");
+              return;
+            }
+
+            const invalidValues = [
+              "無",
+              "无",
+              "沒有",
+              "没有",
+              "不知道",
+              "不清楚",
+              "如題",
+              "如题",
+              "none",
+              "null",
+              "n/a",
+              "na",
+              "-"
+            ];
+
+            function normalize(text) {
+              return (text || "")
+                .replace(/\r/g, "")
+                .replace(/\s+/g, "")
+                .toLowerCase();
+            }
+
+            function escapeRegex(text) {
+              return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            }
+
+            function getSection(label) {
+              const regex = new RegExp(
+                `### ${escapeRegex(label)}\\s*\\n([\\s\\S]*?)(?=\\n### |$)`,
+                "i"
+              );
+
+              const match = body.match(regex);
+              return match ? match[1].trim() : "";
+            }
+
+            function hasAttachment(text) {
+              return /https:\/\/github\.com\/user-attachments\/files\//i.test(text) ||
+                     /https:\/\/github\.com\/user-attachments\/assets\//i.test(text) ||
+                     /\[[^\]]+\]\(https:\/\/github\.com\/user-attachments\//i.test(text);
+            }
+
+            function hasCodeBlock(text) {
+              return /```[\s\S]*?```/.test(text);
+            }
+
+            const uploadedFilesSection = getSection("📎 上傳日誌 / 截圖 / 錄影");
+
+            function looksLikeLog(text) {
+              const raw = text || "";
+              const compact = normalize(raw);
+
+              if (hasAttachment(raw) || hasAttachment(uploadedFilesSection)) {
+                return true;
+              }
+
+              if (!raw) {
+                return false;
+              }
+
+              if (invalidValues.includes(compact)) {
+                return false;
+              }
+
+              const hasLogSignals =
+                /\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(raw) ||
+                /\d{2}:\d{2}:\d{2}/.test(raw) ||
+                /\b(error|exception|failed|fail|warn|warning|stacktrace|trace|http|request|response|timeout|denied|unauthorized|forbidden|crash|fatal)\b/i.test(raw) ||
+                /System\./.test(raw) ||
+                /\[.*?\]/.test(raw);
+
+              if (hasCodeBlock(raw) && raw.length >= 80) {
+                return true;
+              }
+
+              if (raw.length >= 120 && hasLogSignals) {
+                return true;
+              }
+
+              return false;
+            }
+
+            function validateSection(problems, label, minLength, options = {}) {
+              const text = getSection(label);
+              const compact = normalize(text);
+
+              if (!text) {
+                problems.push(`${label}：未填寫`);
+                return;
+              }
+
+              if (invalidValues.includes(compact)) {
+                problems.push(`${label}：內容無效，不能只填「無 / 不知道 / 如題」`);
+                return;
+              }
+
+              if (compact.length < minLength) {
+                problems.push(`${label}：內容過短，需要更完整描述`);
+                return;
+              }
+
+              if (options.mustLookLikeLog && !looksLikeLog(text)) {
+                problems.push(`${label}：不像有效日誌，請貼上錯誤前後日誌，或上傳 log / txt / zip`);
+              }
+            }
+
+            async function ensureLabel(name, color, description) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name
+                });
+              } catch (error) {
+                if (error.status === 404) {
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name,
+                    color,
+                    description
+                  });
+                } else {
+                  throw error;
+                }
+              }
+            }
+
+            const problems = [];
+
+            validateSection(problems, "📦 downkyiCore 版本", 3);
+            validateSection(problems, "🎬 BV 號 / AV 號 / 影片連結", 5);
+            validateSection(problems, "🚨 問題摘要", 15);
+            validateSection(problems, "🔁 重現步驟", 30);
+            validateSection(problems, "✅ 預期行為", 10);
+            validateSection(problems, "❌ 實際行為", 15);
+            validateSection(problems, "🧨 錯誤訊息", 5);
+            validateSection(problems, "📄 日誌內容", 50, { mustLookLikeLog: true });
+            validateSection(problems, "🛠️ 已嘗試的解決方式", 15);
+            validateSection(problems, "📊 發生頻率", 10);
+
+            if (problems.length === 0) {
+              core.info("Issue passed validation.");
+
+              if (lowerLabels.includes("missing-info")) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  name: "missing-info"
+                }).catch(() => {});
+              }
+
+              return;
+            }
+
+            await ensureLabel(
+              "missing-info",
+              "d73a4a",
+              "Issue is missing required diagnostic information"
+            );
+
+            const marker = "<!-- issue-quality-validator -->";
+
+            const commentBody = [
+              marker,
+              "此 Bug 回報缺少必要診斷資訊，已自動關閉。",
+              "",
+              "請補齊以下項目後再重新開啟：",
+              "",
+              ...problems.map(problem => `- ${problem}`),
+              "",
+              "最低要求：",
+              "",
+              "- 必須提供完整版本號",
+              "- 必須提供可重現步驟",
+              "- 必須提供實際錯誤訊息",
+              "- 必須提供錯誤前後日誌，或上傳 log / txt / zip",
+              "- 不接受只填「無」、「不知道」、「如題」、「沒有」",
+              "",
+              "補齊後重新開啟 Issue，系統會再次檢查。"
+            ].join("\n");
+
+            if (!lowerLabels.includes("missing-info")) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ["missing-info"]
+              });
+            }
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              per_page: 100
+            });
+
+            const existingComment = comments.data.find(comment =>
+              comment.user &&
+              comment.user.type === "Bot" &&
+              comment.body &&
+              comment.body.includes(marker)
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: commentBody
+              });
+            }
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: "closed"
+            });
