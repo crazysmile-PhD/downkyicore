@@ -1,346 +1,203 @@
-name: "🐛 Bug Report"
-description: "回報 downkyiCore 的功能異常、錯誤、崩潰或下載問題"
-title: "[Bug] "
-labels: ["bug", "needs-triage"]
+name: Validate Issue Quality
 
-body:
-  - type: markdown
-    attributes:
-      value: |
-        ## ⚠️ 提交前必讀
+on:
+  issues:
+    types: [opened, edited, reopened]
 
-        請完整填寫下列資訊。  
-        缺少版本、重現步驟、BV 號或日誌的 Issue，將可能被直接關閉。
+permissions:
+  issues: write
 
-  - type: checkboxes
-    id: pre_check
-    attributes:
-      label: "✅ 提交前確認"
-      description: "請先確認你已完成基本排查。"
-      options:
-        - label: "我已搜尋現有 Issues，確認沒有相同或高度相似的問題"
-          required: true
-        - label: "我已確認自己使用的是最新版本，或已在下方說明無法更新的原因"
-          required: true
-        - label: "我已閱讀下方常見問題速查，仍然無法解決"
-          required: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
 
-  - type: dropdown
-    id: issue_type
-    attributes:
-      label: "🚨 問題類型"
-      description: "請選擇最接近的問題類型。"
-      options:
-        - "解析失敗"
-        - "下載失敗"
-        - "程式崩潰 / 閃退"
-        - "登入 / Cookie / QR Code 問題"
-        - "畫質 / 大會員 / 1080P 以上下載問題"
-        - "Aria2 / 內建下載器問題"
-        - "檔名 / 路徑 / 權限問題"
-        - "更新 / 安裝 / 啟動問題"
-        - "UI 顯示異常"
-        - "其他功能異常"
-    validations:
-      required: true
+    steps:
+      - name: Validate required bug report content
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || "";
+            const title = issue.title || "";
+            const labels = issue.labels.map(label => label.name);
 
-  - type: input
-    id: app_version
-    attributes:
-      label: "📦 downkyiCore 版本"
-      description: "請填寫完整版本號。不要只寫「最新版」。"
-      placeholder: "例如：v1.0.27"
-    validations:
-      required: true
+            // 只檢查 Bug Report，避免誤殺 feature request / question
+            const isBug =
+              labels.includes("bug") ||
+              title.toLowerCase().includes("[bug]") ||
+              body.includes("### 🚨 問題類型");
 
-  - type: dropdown
-    id: install_source
-    attributes:
-      label: "📥 取得方式"
-      description: "你是從哪裡取得 downkyiCore？"
-      options:
-        - "GitHub Releases 下載"
-        - "自行編譯"
-        - "第三方打包版本"
-        - "不確定"
-    validations:
-      required: true
+            if (!isBug) {
+              core.info("Not a bug report. Skip validation.");
+              return;
+            }
 
-  - type: dropdown
-    id: os
-    attributes:
-      label: "💻 作業系統"
-      description: "請選擇你的作業系統。"
-      options:
-        - "Windows 11"
-        - "Windows 10"
-        - "Linux"
-        - "macOS"
-        - "其他"
-    validations:
-      required: true
+            // 不處理 Pull Request
+            if (issue.pull_request) {
+              core.info("This is a pull request. Skip validation.");
+              return;
+            }
 
-  - type: input
-    id: os_version
-    attributes:
-      label: "🧩 作業系統詳細版本"
-      description: "請填寫系統版本、架構或發行版。"
-      placeholder: "例如：Windows 10 22H2 x64 / Ubuntu 24.04 x64 / macOS 15"
-    validations:
-      required: true
+            const invalidValues = [
+              "無",
+              "无",
+              "沒有",
+              "没有",
+              "不知道",
+              "不清楚",
+              "不確定",
+              "不确定",
+              "如題",
+              "如题",
+              "none",
+              "null",
+              "n/a",
+              "na",
+              "-"
+            ];
 
-  - type: dropdown
-    id: architecture
-    attributes:
-      label: "🖥️ 系統架構"
-      options:
-        - "x64"
-        - "arm64"
-        - "x86"
-        - "不確定"
-    validations:
-      required: true
+            function normalize(text) {
+              return (text || "")
+                .replace(/\r/g, "")
+                .replace(/\s+/g, "")
+                .toLowerCase();
+            }
 
-  - type: dropdown
-    id: login_status
-    attributes:
-      label: "🔑 B 站登入狀態"
-      description: "這會直接影響解析、畫質與權限判斷。"
-      options:
-        - "已登入"
-        - "未登入"
-        - "登入失敗"
-        - "不確定"
-    validations:
-      required: true
+            function escapeRegex(text) {
+              return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            }
 
-  - type: dropdown
-    id: vip_status
-    attributes:
-      label: "👑 大會員狀態"
-      description: "如果問題涉及 1080P 以上、番劇、付費內容，這項很重要。"
-      options:
-        - "已開通大會員"
-        - "未開通大會員"
-        - "不涉及大會員內容"
-        - "不確定"
-    validations:
-      required: true
+            function getSection(label) {
+              const regex = new RegExp(
+                `### ${escapeRegex(label)}\\s*\\n([\\s\\S]*?)(?=\\n### |$)`,
+                "i"
+              );
 
-  - type: dropdown
-    id: network
-    attributes:
-      label: "🌐 網路環境"
-      description: "請選擇問題發生時的網路環境。"
-      options:
-        - "家用網路"
-        - "公司 / 學校網路"
-        - "手機熱點"
-        - "VPN / Proxy"
-        - "海外網路"
-        - "其他"
-    validations:
-      required: true
+              const match = body.match(regex);
+              return match ? match[1].trim() : "";
+            }
 
-  - type: dropdown
-    id: parser_mode
-    attributes:
-      label: "🔍 解析模式"
-      description: "如果軟體內有解析模式選項，請選擇你使用的模式。"
-      options:
-        - "API 模式"
-        - "網頁模式"
-        - "自動模式"
-        - "不確定 / 沒有看到此選項"
-    validations:
-      required: true
+            function hasAttachment(text) {
+              return /https:\/\/github\.com\/user-attachments\/files\//i.test(text) ||
+                     /https:\/\/github\.com\/user-attachments\/assets\//i.test(text) ||
+                     /\[[^\]]+\]\(https:\/\/github\.com\/user-attachments\//i.test(text);
+            }
 
-  - type: dropdown
-    id: downloader
-    attributes:
-      label: "⬇️ 下載器"
-      description: "請選擇發生問題時使用的下載器。"
-      options:
-        - "內建下載器"
-        - "Aria2"
-        - "不確定"
-        - "不涉及下載"
-    validations:
-      required: true
+            function hasCodeBlock(text) {
+              return /```[\s\S]*?```/.test(text);
+            }
 
-  - type: input
-    id: bv_id
-    attributes:
-      label: "🎬 BV 號 / AV 號 / 影片連結"
-      description: "如果是特定影片問題，請提供完整 BV 號、AV 號或影片連結。若不是影片問題，請填寫「不涉及影片」。"
-      placeholder: "例如：BV1xxxxx / av123456 / https://www.bilibili.com/video/BVxxxxx"
-    validations:
-      required: true
+            function looksLikeLog(text) {
+              const raw = text || "";
+              const compact = normalize(raw);
 
-  - type: textarea
-    id: summary
-    attributes:
-      label: "🚨 問題摘要"
-      description: "用 1～3 句話描述問題。請不要只寫「不能用」。"
-      placeholder: |
-        例如：
-        解析 BV1xxxxx 時顯示下載失敗。
-        同一影片在瀏覽器可以播放，但 downkyiCore 無法解析。
-    validations:
-      required: true
+              if (!raw) return false;
+              if (invalidValues.includes(compact)) return false;
 
-  - type: textarea
-    id: reproduce_steps
-    attributes:
-      label: "🔁 重現步驟"
-      description: "請寫出可以讓維護者照著操作並重現問題的步驟。"
-      placeholder: |
-        1. 開啟 downkyiCore
-        2. 貼上 BV1xxxxx
-        3. 點擊解析
-        4. 選擇 1080P
-        5. 點擊下載
-        6. 出現錯誤訊息：xxxxx
-    validations:
-      required: true
+              const hasLogSignals =
+                /\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(raw) ||
+                /\d{2}:\d{2}:\d{2}/.test(raw) ||
+                /\b(error|exception|failed|fail|warn|stacktrace|trace|http|request|response|timeout|denied|unauthorized)\b/i.test(raw) ||
+                /System\./.test(raw) ||
+                /\[.*?\]/.test(raw);
 
-  - type: textarea
-    id: expected_behavior
-    attributes:
-      label: "✅ 預期行為"
-      description: "你原本預期程式應該怎麼運作？"
-      placeholder: |
-        例如：
-        應該成功解析影片資訊，並正常下載指定畫質。
-    validations:
-      required: true
+              if (hasAttachment(raw)) return true;
+              if (hasCodeBlock(raw) && raw.length >= 80) return true;
+              if (raw.length >= 120 && hasLogSignals) return true;
 
-  - type: textarea
-    id: actual_behavior
-    attributes:
-      label: "❌ 實際行為"
-      description: "實際發生了什麼？請包含錯誤訊息、卡住位置、是否閃退。"
-      placeholder: |
-        例如：
-        點擊解析後顯示「下載失敗」。
-        程式沒有閃退，但任務直接結束。
-        錯誤訊息為：xxxxx
-    validations:
-      required: true
+              return false;
+            }
 
-  - type: textarea
-    id: error_message
-    attributes:
-      label: "🧨 錯誤訊息"
-      description: "請貼上畫面上看到的完整錯誤訊息。若沒有錯誤訊息，請填寫「沒有顯示錯誤訊息」。"
-      placeholder: |
-        例如：
-        System.Net.Http.HttpRequestException: ...
-        或：
-        沒有顯示錯誤訊息
-      render: shell
-    validations:
-      required: true
+            function validateSection(problems, label, minLength, options = {}) {
+              const text = getSection(label);
+              const compact = normalize(text);
 
-  - type: textarea
-    id: logs
-    attributes:
-      label: "📄 日誌內容"
-      description: |
-        必填。請貼上完整日誌，至少包含錯誤發生前後 50 行。
-        不要只貼最後一行。
-        如果日誌太長，請在下方上傳 log / txt / zip 檔案，並在此欄簡述日誌檔名稱。
-      placeholder: |
-        請貼上日誌，例如：
+              if (!text) {
+                problems.push(`${label}：未填寫`);
+                return;
+              }
 
-        [2026-07-07 20:00:01] Start parse BV1xxxxx
-        [2026-07-07 20:00:03] Error: xxxxx
-        [2026-07-07 20:00:04] StackTrace: xxxxx
-      render: shell
-    validations:
-      required: true
+              if (invalidValues.includes(compact)) {
+                problems.push(`${label}：內容無效，不能只填「無 / 不知道 / 如題」`);
+                return;
+              }
 
-  - type: upload
-    id: log_files
-    attributes:
-      label: "📎 上傳日誌 / 截圖 / 錄影"
-      description: "請上傳 log、txt、zip、png、jpg 或 mp4。若沒有檔案可上傳，可略過。"
-    validations:
-      required: false
+              if (compact.length < minLength) {
+                problems.push(`${label}：內容過短，需要更完整描述`);
+                return;
+              }
 
-  - type: textarea
-    id: tried_solutions
-    attributes:
-      label: "🛠️ 已嘗試的解決方式"
-      description: "請列出你已經試過的方法，以及結果。"
-      placeholder: |
-        例如：
-        1. 切換手機熱點：無效
-        2. 更換解析模式：API 模式失敗，網頁模式也失敗
-        3. 更換下載器：Aria2 失敗，內建下載器也失敗
-        4. 重新登入 B 站：無效
-    validations:
-      required: true
+              if (options.mustLookLikeLog && !looksLikeLog(text)) {
+                problems.push(`${label}：不像有效日誌，請貼上錯誤前後日誌，或上傳 log / txt / zip`);
+              }
+            }
 
-  - type: textarea
-    id: frequency
-    attributes:
-      label: "📊 發生頻率"
-      description: "請說明這是偶發、每次都發生，還是只在特定影片發生。"
-      placeholder: |
-        例如：
-        每次解析這個 BV 都會失敗。
-        其他影片正常，只有這個影片失敗。
-        重新啟動後偶爾可以成功。
-    validations:
-      required: true
+            const problems = [];
 
-  - type: textarea
-    id: regression
-    attributes:
-      label: "🔄 是否為舊版本正常、新版本異常？"
-      description: "如果你知道哪個版本開始壞掉，請填寫。若不確定，請填寫「不確定」。"
-      placeholder: |
-        例如：
-        v1.0.26 正常，v1.0.27 開始失敗。
-        或：
-        不確定。
-    validations:
-      required: true
+            validateSection(problems, "📦 downkyiCore 版本", 3);
+            validateSection(problems, "🎬 BV 號 / AV 號 / 影片連結", 5);
+            validateSection(problems, "🚨 問題摘要", 15);
+            validateSection(problems, "🔁 重現步驟", 30);
+            validateSection(problems, "✅ 預期行為", 10);
+            validateSection(problems, "❌ 實際行為", 15);
+            validateSection(problems, "🧨 錯誤訊息", 5);
+            validateSection(problems, "📄 日誌內容", 50, { mustLookLikeLog: true });
+            validateSection(problems, "🛠️ 已嘗試的解決方式", 15);
+            validateSection(problems, "📊 發生頻率", 10);
 
-  - type: textarea
-    id: extra_context
-    attributes:
-      label: "📌 補充資訊"
-      description: "其他可能有用的資訊，例如設定檔、代理設定、特殊路徑、是否使用非中文系統等。若沒有，請填寫「無」。"
-      placeholder: |
-        例如：
-        下載路徑包含中文。
-        使用公司代理。
-        系統語言為英文。
-        或：
-        無。
-    validations:
-      required: true
+            if (problems.length === 0) {
+              core.info("Issue passed validation.");
 
-  - type: checkboxes
-    id: final_confirm
-    attributes:
-      label: "🧾 最終確認"
-      description: "未勾選將無法提交。"
-      options:
-        - label: "我已提供完整版本資訊、重現步驟、實際行為、錯誤訊息與日誌"
-          required: true
-        - label: "我理解缺少關鍵資訊的 Issue 可能會被關閉"
-          required: true
+              // 如果之前被標 missing-info，補齊後自動移除標籤
+              if (labels.includes("missing-info")) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  name: "missing-info"
+                }).catch(() => {});
+              }
 
-  - type: markdown
-    attributes:
-      value: |
-        ## 常見問題速查
+              return;
+            }
 
-        - 🔧 **QR Code 登入失敗**：先檢查網路、代理、系統時間。
-        - 🔧 **解析 / 下載失敗**：嘗試切換解析模式或下載器。
-        - 🔧 **1080P 以上無法下載**：確認已登入，且帳號有對應權限。
-        - 🔧 **特定影片失敗**：請提供 BV 號、完整日誌與錯誤訊息。
-        - 🔧 **程式閃退**：請提供崩潰前後日誌、系統版本與操作步驟。
+            const commentBody = [
+              "此 Bug 回報缺少必要診斷資訊，已自動關閉。",
+              "",
+              "請補齊以下項目後再重新開啟：",
+              "",
+              ...problems.map(problem => `- ${problem}`),
+              "",
+              "最低要求：",
+              "",
+              "- 必須提供完整版本號",
+              "- 必須提供可重現步驟",
+              "- 必須提供實際錯誤訊息",
+              "- 必須提供錯誤前後日誌，或上傳 log / txt / zip",
+              "- 不接受只填「無」、「不知道」、「如題」、「沒有」",
+              "",
+              "補齊後重新開啟 Issue，系統會再次檢查。"
+            ].join("\n");
+
+            if (!labels.includes("missing-info")) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ["missing-info"]
+              });
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: commentBody
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: "closed"
+            });
