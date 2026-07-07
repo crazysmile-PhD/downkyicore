@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System.Collections.Generic;
 
 namespace DownKyi.Core.Aria2cNet.Client.Entity
@@ -7,16 +7,16 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaGetFiles
     {
         [JsonProperty("id")]
-        public string Id { get; set; }
+        public string Id { get; set; } = string.Empty;
 
         [JsonProperty("jsonrpc")]
-        public string Jsonrpc { get; set; }
+        public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public List<AriaUri> Result { get; set; }
+        public List<AriaUri> Result { get; set; } = new();
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; }
+        public AriaError Error { get; set; } = new();
 
         public override string ToString()
         {
@@ -28,22 +28,22 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaGetFilesResult
     {
         [JsonProperty("completedLength")]
-        public string CompletedLength { get; set; }
+        public string CompletedLength { get; set; } = string.Empty;
 
         [JsonProperty("index")]
-        public string Index { get; set; }
+        public string Index { get; set; } = string.Empty;
 
         [JsonProperty("length")]
-        public string Length { get; set; }
+        public string Length { get; set; } = string.Empty;
 
         [JsonProperty("path")]
-        public string Path { get; set; }
+        public string Path { get; set; } = string.Empty;
 
         [JsonProperty("selected")]
-        public string Selected { get; set; }
+        public string Selected { get; set; } = string.Empty;
 
         [JsonProperty("uris")]
-        public List<AriaUri> Uris { get; set; }
+        public List<AriaUri> Uris { get; set; } = new();
 
         public override string ToString()
         {

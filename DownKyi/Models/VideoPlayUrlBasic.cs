@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,11 +8,11 @@ namespace DownKyi.Models
 {
     public class VideoPlayUrlBasic
     {
-        public List<string> BackupUrl { get; set; }
-        public string BaseUrl { get; set; }
+        public List<string> BackupUrl { get; set; } = new();
+        public string BaseUrl { get; set; } = string.Empty;
 
         public int Id { get; set; }
 
-        public string Codecs { get; set; }
+        public string Codecs { get; set; } = string.Empty;
     }
 }

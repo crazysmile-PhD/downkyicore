@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 
 namespace DownKyi.Core.Aria2cNet.Client.Entity;
 
@@ -11,7 +11,7 @@ public class AriaError
 {
     [JsonProperty("code")] public int Code { get; set; }
 
-    [JsonProperty("message")] public string Message { get; set; }
+    [JsonProperty("message")] public string Message { get; set; } = string.Empty;
 
     public override string ToString()
     {

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Logging;
@@ -10,7 +10,7 @@ namespace DownKyi.Core.Aria2cNet.Server
     public static class AriaServer
     {
         public static int ListenPort; // 服务器端口
-        private static Process Server;
+        private static Process? Server;
 
         /// <summary>
         /// 启动aria2c服务器
@@ -48,14 +48,12 @@ namespace DownKyi.Core.Aria2cNet.Server
 
                 if (!File.Exists(sessionFile))
                 {
-                    var stream = File.Create(sessionFile);
-                    stream.Close();
+                    using var stream = File.Create(sessionFile);
                 }
 
                 if (!File.Exists(logFile))
                 {
-                    var stream = File.Create(logFile);
-                    stream.Close();
+                    using var stream = File.Create(logFile);
                 }
                 else
                 {
@@ -134,28 +132,39 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// <returns></returns>
         public static async Task<bool> CloseServerAsync()
         {
-            await AriaClient.ShutdownAsync();
-            // 等待进程结束
-            await Task.Run(() =>
+            try
             {
-                if (Server == null)
-                {
-                    return;
-                }
+                await AriaClient.ShutdownAsync();
+                await WaitForExitOrKillAsync(TimeSpan.FromSeconds(30));
+                return true;
+            }
+            catch (Exception e)
+            {
+                Console.PrintLine("CloseServerAsync()发生异常: {0}", e);
+                LogManager.Error("AriaServer", e);
+                return false;
+            }
+        }
 
-                Server.WaitForExit(30000);
-                try
+        private static async Task WaitForExitOrKillAsync(TimeSpan timeout)
+        {
+            var server = Server;
+            if (server == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!server.HasExited)
                 {
-                    if (!Server.HasExited)
-                    {
-                        Server.Kill();
-                    }
+                    await server.WaitForExitAsync().WaitAsync(timeout);
                 }
-                catch (Exception)
-                {
-                }
-            });
-            return true;
+            }
+            catch (TimeoutException)
+            {
+                KillProcess(server, "aria2c did not exit before timeout.");
+            }
         }
 
         /// <summary>
@@ -172,8 +181,17 @@ namespace DownKyi.Core.Aria2cNet.Server
             //    Server = null; // 将Server指向null
             //});
             //return true;
-            await AriaClient.ForceShutdownAsync();
-            return true;
+            try
+            {
+                var result = await AriaClient.ForceShutdownAsync();
+                return result?.Result == "OK";
+            }
+            catch (Exception e)
+            {
+                Console.PrintLine("ForceCloseServerAsync()发生异常: {0}", e);
+                LogManager.Error("AriaServer", e);
+                return false;
+            }
         }
 
         /// <summary>
@@ -182,31 +200,23 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// <returns></returns>
         public static bool CloseServer()
         {
-            var task = AriaClient.ShutdownAsync();
-            if (task.Result != null && task.Result.Result != null && task.Result.Result == "OK")
+            try
             {
-                if (Server == null)
+                var result = AriaClient.ShutdownAsync().GetAwaiter().GetResult();
+                if (result?.Result != "OK")
                 {
-                    return true;
+                    return false;
                 }
 
-                // 等待进程结束
-                Server.WaitForExit(30000);
-                try
-                {
-                    if (!Server.HasExited)
-                    {
-                        Server.Kill();
-                    }
-                }
-                catch (Exception)
-                {
-                }
-
+                WaitForExitOrKillAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
                 return true;
             }
-
-            return false;
+            catch (Exception e)
+            {
+                Console.PrintLine("CloseServer()发生异常: {0}", e);
+                LogManager.Error("AriaServer", e);
+                return false;
+            }
         }
 
         /// <summary>
@@ -215,13 +225,17 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// <returns></returns>
         public static bool ForceCloseServer()
         {
-            var task = AriaClient.ForceShutdownAsync();
-            if (task.Result != null && task.Result.Result != null && task.Result.Result == "OK")
+            try
             {
-                return true;
+                var result = AriaClient.ForceShutdownAsync().GetAwaiter().GetResult();
+                return result?.Result == "OK";
             }
-
-            return false;
+            catch (Exception e)
+            {
+                Console.PrintLine("ForceCloseServer()发生异常: {0}", e);
+                LogManager.Error("AriaServer", e);
+                return false;
+            }
         }
 
         /// <summary>
@@ -246,6 +260,23 @@ namespace DownKyi.Core.Aria2cNet.Server
             }
 
             return true;
+        }
+
+        private static void KillProcess(Process process, string reason)
+        {
+            try
+            {
+                LogManager.Error("AriaServer", new TimeoutException(reason));
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                }
+            }
+            catch (Exception e)
+            {
+                Console.PrintLine("KillProcess()发生异常: {0}", e);
+                LogManager.Error("AriaServer", e);
+            }
         }
 
 

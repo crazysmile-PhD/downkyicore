@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -7,7 +7,7 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 public class SpaceChannelOrigin : BaseModel
 {
     [JsonProperty("data")]
-    public SpaceChannel Data { get; set; }
+    public SpaceChannel Data { get; set; } = new();
 }
 
 public class SpaceChannel : BaseModel
@@ -15,5 +15,5 @@ public class SpaceChannel : BaseModel
     [JsonProperty("count")]
     public int Count { get; set; }
     [JsonProperty("list")]
-    public List<SpaceChannelList> List { get; set; }
+    public List<SpaceChannelList> List { get; set; } = new();
 }

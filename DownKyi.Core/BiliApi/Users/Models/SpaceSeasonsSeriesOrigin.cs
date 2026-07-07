@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -9,20 +9,20 @@ public class SpaceSeasonsSeriesOrigin : BaseModel
     //[JsonProperty("code")]
     //public int Code { get; set; }
     //[JsonProperty("message")]
-    //public string Message { get; set; }
+    //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public SpaceSeasonsSeriesData Data { get; set; }
+    [JsonProperty("data")] public SpaceSeasonsSeriesData Data { get; set; } = new();
 }
 
 public class SpaceSeasonsSeriesData : BaseModel
 {
-    [JsonProperty("items_lists")] public SpaceSeasonsSeries ItemsLists { get; set; }
+    [JsonProperty("items_lists")] public SpaceSeasonsSeries ItemsLists { get; set; } = new();
 }
 
 public class SpaceSeasonsSeries : BaseModel
 {
-    [JsonProperty("page")] public SpaceSeasonsSeriesPage Page { get; set; }
-    [JsonProperty("seasons_list")] public List<SpaceSeasons> SeasonsList { get; set; }
-    [JsonProperty("series_list")] public List<SpaceSeries> SeriesList { get; set; }
+    [JsonProperty("page")] public SpaceSeasonsSeriesPage Page { get; set; } = new();
+    [JsonProperty("seasons_list")] public List<SpaceSeasons> SeasonsList { get; set; } = new();
+    [JsonProperty("series_list")] public List<SpaceSeries> SeriesList { get; set; } = new();
 }

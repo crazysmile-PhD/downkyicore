@@ -25,13 +25,13 @@ public class DownloadBase
     }
 
     // 此条下载项的id
-    public string Id { get; set; }
+    public string Id { get; set; } = string.Empty;
 
     // 需要下载的内容
     public Dictionary<string, bool> NeedDownloadContent { get; set; }
 
     // 视频的id
-    public string Bvid { get; set; }
+    public string Bvid { get; set; } = string.Empty;
 
     public long Avid { get; set; }
 
@@ -40,10 +40,10 @@ public class DownloadBase
     public long EpisodeId { get; set; }
 
     // 视频封面的url
-    [Description("视频封面的url")] public string CoverUrl { get; set; }
+    [Description("视频封面的url")] public string CoverUrl { get; set; } = string.Empty;
 
     // 视频page的封面的url
-    [Description("视频page的封面的url")] public string PageCoverUrl { get; set; }
+    [Description("视频page的封面的url")] public string PageCoverUrl { get; set; } = string.Empty;
 
     // 分区id
     [Description("分区id")] public int ZoneId { get; set; }
@@ -52,16 +52,16 @@ public class DownloadBase
     [Description("视频序号")] public int Order { get; set; }
 
     // 视频主标题
-    [Description("视频主标题")] public string MainTitle { get; set; }
+    [Description("视频主标题")] public string MainTitle { get; set; } = string.Empty;
 
     // 视频标题
-    [Description("视频标题")] public string Name { get; set; }
+    [Description("视频标题")] public string Name { get; set; } = string.Empty;
 
     // 时长
-    [Description("时长")] public string Duration { get; set; }
+    [Description("时长")] public string Duration { get; set; } = string.Empty;
 
     // 视频编码名称，AVC、HEVC
-    [Description("视频编码名称，AVC、HEVC")] public string VideoCodecName { get; set; }
+    [Description("视频编码名称，AVC、HEVC")] public string VideoCodecName { get; set; } = string.Empty;
 
     // 视频画质
     [Description("视频画质")] public Quality Resolution { get; set; }
@@ -71,7 +71,7 @@ public class DownloadBase
 
     // 文件路径，不包含扩展名，所有内容均以此路径下载
     [Description("文件路径，不包含扩展名，所有内容均以此路径下载")]
-    public string FilePath { get; set; }
+    public string FilePath { get; set; } = string.Empty;
 
     // 文件大小
     [Description("文件大小")] public string? FileSize { get; set; }

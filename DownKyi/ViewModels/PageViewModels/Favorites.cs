@@ -1,4 +1,4 @@
-﻿using Avalonia.Media.Imaging;
+using Avalonia.Media.Imaging;
 using DownKyi.Images;
 using DownKyi.Utils;
 using Prism.Mvvm;
@@ -7,7 +7,7 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 public class Favorites : BindableBase
 {
-    private string coverUrl;
+    private string coverUrl = string.Empty;
 
     public string CoverUrl
     {
@@ -18,7 +18,7 @@ public class Favorites : BindableBase
     public long UpperMid { get; set; }
 
 
-    private string title;
+    private string title = string.Empty;
 
     public string Title
     {
@@ -26,7 +26,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref title, value);
     }
 
-    private string createTime;
+    private string createTime = string.Empty;
 
     public string CreateTime
     {
@@ -34,7 +34,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref createTime, value);
     }
 
-    private string playNumber;
+    private string playNumber = string.Empty;
 
     public string PlayNumber
     {
@@ -42,7 +42,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref playNumber, value);
     }
 
-    private string likeNumber;
+    private string likeNumber = string.Empty;
 
     public string LikeNumber
     {
@@ -50,7 +50,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref likeNumber, value);
     }
 
-    private string favoriteNumber;
+    private string favoriteNumber = string.Empty;
 
     public string FavoriteNumber
     {
@@ -58,7 +58,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref favoriteNumber, value);
     }
 
-    private string shareNumber;
+    private string shareNumber = string.Empty;
 
     public string ShareNumber
     {
@@ -98,7 +98,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref share, value);
     }
 
-    private string description;
+    private string description = string.Empty;
 
     public string Description
     {
@@ -114,7 +114,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref mediaCount, value);
     }
 
-    private string upName;
+    private string upName = string.Empty;
 
     public string UpName
     {
@@ -122,7 +122,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref upName, value);
     }
 
-    private string upHeader;
+    private string upHeader = string.Empty;
 
     public string UpHeader
     {

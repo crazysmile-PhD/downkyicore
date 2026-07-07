@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.VideoStream.Models;
@@ -6,19 +6,19 @@ namespace DownKyi.Core.BiliApi.VideoStream.Models;
 public class PlayUrlDashVideo : BaseModel
 {
     [JsonProperty("id")] public int Id { get; set; }
-    [JsonProperty("base_url")] public string BaseUrl { get; set; }
+    [JsonProperty("base_url")] public string BaseUrl { get; set; } = string.Empty;
 
-    [JsonProperty("backup_url")] public List<string> BackupUrl { get; set; }
+    [JsonProperty("backup_url")] public List<string> BackupUrl { get; set; } = new();
 
     // bandwidth
-    [JsonProperty("mimeType")] public string MimeType { get; set; }
+    [JsonProperty("mimeType")] public string MimeType { get; set; } = string.Empty;
 
     // mime_type
-    [JsonProperty("codecs")] public string Codecs { get; set; }
+    [JsonProperty("codecs")] public string Codecs { get; set; } = string.Empty;
     [JsonProperty("width")] public int Width { get; set; }
     [JsonProperty("height")] public int Height { get; set; }
 
-    [JsonProperty("frameRate")] public string FrameRate { get; set; }
+    [JsonProperty("frameRate")] public string FrameRate { get; set; } = string.Empty;
 
     // frame_rate
     // sar

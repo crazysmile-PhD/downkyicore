@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Cheese.Models;
@@ -9,12 +9,12 @@ public class CheeseEpisodeListOrigin : BaseModel
     //[JsonProperty("code")]
     //public int Code { get; set; }
     //[JsonProperty("message")]
-    //public string Message { get; set; }
-    [JsonProperty("data")] public CheeseEpisodeList Data { get; set; }
+    //public string Message { get; set; } = string.Empty;
+    [JsonProperty("data")] public CheeseEpisodeList Data { get; set; } = new();
 }
 
 public class CheeseEpisodeList : BaseModel
 {
-    [JsonProperty("items")] public List<CheeseEpisode> Items { get; set; }
-    [JsonProperty("page")] public CheeseEpisodePage Page { get; set; }
+    [JsonProperty("items")] public List<CheeseEpisode> Items { get; set; } = new();
+    [JsonProperty("page")] public CheeseEpisodePage Page { get; set; } = new();
 }

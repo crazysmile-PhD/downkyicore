@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using DownKyi.Core.Logging;
 
 namespace DownKyi.Commands;
 
@@ -15,7 +16,7 @@ public class CancellableDownKyiAsyncDelegateCommand<T> : ICommand
     public event EventHandler? CanExecuteChanged;
 
     public CancellableDownKyiAsyncDelegateCommand(
-        Func<T, CancellationToken, Task> execute, 
+        Func<T, CancellationToken, Task> execute,
         Func<T, bool>? canExecute = null)
     {
         _execute = execute ?? throw new ArgumentNullException(nameof(execute));
@@ -49,7 +50,11 @@ public class CancellableDownKyiAsyncDelegateCommand<T> : ICommand
         }
         catch (OperationCanceledException)
         {
-            
+
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(nameof(CancellableDownKyiAsyncDelegateCommand<T>), e);
         }
         finally
         {

@@ -1,4 +1,4 @@
-﻿using Avalonia.Media.Imaging;
+using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Utils;
 using Prism.Commands;
@@ -17,7 +17,7 @@ public class ChannelMedia : BindableBase
     }
 
     public long Avid { get; set; }
-    public string Bvid { get; set; }
+    public string Bvid { get; set; } = string.Empty;
 
     #region 页面属性申明
 
@@ -29,7 +29,7 @@ public class ChannelMedia : BindableBase
         set => SetProperty(ref _isSelected, value);
     }
 
-    private string _cover;
+    private string _cover = string.Empty;
 
     public string Cover
     {
@@ -37,7 +37,7 @@ public class ChannelMedia : BindableBase
         set => SetProperty(ref _cover, value);
     }
 
-    private string _title;
+    private string _title = string.Empty;
 
     public string Title
     {
@@ -45,7 +45,7 @@ public class ChannelMedia : BindableBase
         set => SetProperty(ref _title, value);
     }
 
-    private string _duration;
+    private string _duration = string.Empty;
 
     public string Duration
     {
@@ -53,7 +53,7 @@ public class ChannelMedia : BindableBase
         set => SetProperty(ref _duration, value);
     }
 
-    private string _playNumber;
+    private string _playNumber = string.Empty;
 
     public string PlayNumber
     {
@@ -61,7 +61,7 @@ public class ChannelMedia : BindableBase
         set => SetProperty(ref _playNumber, value);
     }
 
-    private string _createTime;
+    private string _createTime = string.Empty;
 
     public string CreateTime
     {

@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.BiliApi.History.Models
+namespace DownKyi.Core.BiliApi.History.Models
 {
     public enum HistoryBusiness
     {

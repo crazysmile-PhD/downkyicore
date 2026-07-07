@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using DownKyi.Core.Logging;
 
 namespace DownKyi.Commands;
 
@@ -17,14 +18,14 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
         _execute = execute ?? throw new ArgumentNullException(nameof(execute));
         _canExecute = canExecute;
     }
-    
+
     public bool CanExecute(object? parameter)
     {
         if (parameter is null && typeof(T) == typeof(object))
         {
             return !_isExecuting && (_canExecute?.Invoke(default!) ?? true);
         }
-        
+
         if (parameter is not T typedParameter)
         {
             return false;
@@ -43,6 +44,10 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
             {
                 await _execute(default!);
             }
+            catch (Exception e)
+            {
+                LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
+            }
             finally
             {
                 _isExecuting = false;
@@ -50,18 +55,22 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
             }
             return;
         }
-        
+
         if (parameter is not T typedParameter)
         {
             return;
         }
-        
+
         _isExecuting = true;
         RaiseCanExecuteChanged();
 
         try
         {
             await _execute(typedParameter);
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
         }
         finally
         {
@@ -82,9 +91,9 @@ public class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
         : base(execute, canExecute)
     {
     }
-    
+
     public DownKyiAsyncDelegateCommand(Func<Task> execute, Func<bool>? canExecute = null)
-        : this(_ => execute(), 
+        : this(_ => execute(),
             canExecute != null ? _ => canExecute() : null)
     {
     }

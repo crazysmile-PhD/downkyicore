@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.BiliApi.Danmaku.Models;
+namespace DownKyi.Core.BiliApi.Danmaku.Models;
 
 public class BiliDanmaku
 {
@@ -7,13 +7,13 @@ public class BiliDanmaku
     public int Mode { get; set; } //弹幕类型
     public int Fontsize { get; set; } //文字大小
     public uint Color { get; set; } //弹幕颜色
-    public string MidHash { get; set; } //发送者UID的HASH
-    public string Content { get; set; } //弹幕内容
+    public string MidHash { get; set; } = string.Empty; //发送者UID的HASH
+    public string Content { get; set; } = string.Empty; //弹幕内容
     public long Ctime { get; set; } //发送时间
 
     public int Weight { get; set; } //权重
 
-    //public string Action { get; set; }    //动作？
+    //public string Action { get; set; } = string.Empty;    //动作？
     public int Pool { get; set; } //弹幕池
 
     public override string ToString()

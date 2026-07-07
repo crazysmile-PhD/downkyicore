@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.VideoStream.Models;
@@ -12,6 +12,6 @@ public class PlayUrlDurl : BaseModel
 
     // ahead
     // vhead
-    [JsonProperty("url")] public string Url { get; set; }
-    [JsonProperty("backup_url")] public List<string> BackupUrl { get; set; }
+    [JsonProperty("url")] public string Url { get; set; } = string.Empty;
+    [JsonProperty("backup_url")] public List<string> BackupUrl { get; set; } = new();
 }

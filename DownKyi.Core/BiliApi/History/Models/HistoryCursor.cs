@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.History.Models
@@ -10,7 +10,7 @@ namespace DownKyi.Core.BiliApi.History.Models
         [JsonProperty("view_at")]
         public long ViewAt { get; set; }
         [JsonProperty("business")]
-        public string Business { get; set; }
+        public string Business { get; set; } = string.Empty;
         [JsonProperty("ps")]
         public int Ps { get; set; }
     }

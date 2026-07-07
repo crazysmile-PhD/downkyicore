@@ -1,4 +1,4 @@
-﻿using Avalonia.Media.Imaging;
+using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Utils;
 using Prism.Commands;
@@ -17,7 +17,7 @@ public class FavoritesMedia : BindableBase
     }
 
     public long Avid { get; set; }
-    public string Bvid { get; set; }
+    public string Bvid { get; set; } = string.Empty;
     public long UpMid { get; set; }
 
     #region 页面属性申明
@@ -38,7 +38,7 @@ public class FavoritesMedia : BindableBase
         set => SetProperty(ref order, value);
     }
 
-    private string cover;
+    private string cover = string.Empty;
 
     public string Cover
     {
@@ -46,7 +46,7 @@ public class FavoritesMedia : BindableBase
         set => SetProperty(ref cover, value);
     }
 
-    private string title;
+    private string title = string.Empty;
 
     public string Title
     {
@@ -54,7 +54,7 @@ public class FavoritesMedia : BindableBase
         set => SetProperty(ref title, value);
     }
 
-    private string playNumber;
+    private string playNumber = string.Empty;
 
     public string PlayNumber
     {
@@ -62,7 +62,7 @@ public class FavoritesMedia : BindableBase
         set => SetProperty(ref playNumber, value);
     }
 
-    private string danmakuNumber;
+    private string danmakuNumber = string.Empty;
 
     public string DanmakuNumber
     {
@@ -70,7 +70,7 @@ public class FavoritesMedia : BindableBase
         set => SetProperty(ref danmakuNumber, value);
     }
 
-    private string favoriteNumber;
+    private string favoriteNumber = string.Empty;
 
     public string FavoriteNumber
     {
@@ -78,7 +78,7 @@ public class FavoritesMedia : BindableBase
         set => SetProperty(ref favoriteNumber, value);
     }
 
-    private string duration;
+    private string duration = string.Empty;
 
     public string Duration
     {
@@ -86,7 +86,7 @@ public class FavoritesMedia : BindableBase
         set => SetProperty(ref duration, value);
     }
 
-    private string upName;
+    private string upName = string.Empty;
 
     public string UpName
     {
@@ -94,7 +94,7 @@ public class FavoritesMedia : BindableBase
         set => SetProperty(ref upName, value);
     }
 
-    private string createTime;
+    private string createTime = string.Empty;
 
     public string CreateTime
     {
@@ -102,7 +102,7 @@ public class FavoritesMedia : BindableBase
         set => SetProperty(ref createTime, value);
     }
 
-    private string favTime;
+    private string favTime = string.Empty;
 
     public string FavTime
     {

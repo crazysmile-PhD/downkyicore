@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System.Collections.Generic;
 
 namespace DownKyi.Core.Aria2cNet.Client.Entity
@@ -7,16 +7,16 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaGetPeers
     {
         [JsonProperty("id")]
-        public string Id { get; set; }
+        public string Id { get; set; } = string.Empty;
 
         [JsonProperty("jsonrpc")]
-        public string Jsonrpc { get; set; }
+        public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public List<AriaPeer> Result { get; set; }
+        public List<AriaPeer> Result { get; set; } = new();
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; }
+        public AriaError Error { get; set; } = new();
 
         public override string ToString()
         {
@@ -28,31 +28,31 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaPeer
     {
         [JsonProperty("amChoking")]
-        public string AmChoking { get; set; }
+        public string AmChoking { get; set; } = string.Empty;
 
         [JsonProperty("bitfield")]
-        public string Bitfield { get; set; }
+        public string Bitfield { get; set; } = string.Empty;
 
         [JsonProperty("downloadSpeed")]
-        public string DownloadSpeed { get; set; }
+        public string DownloadSpeed { get; set; } = string.Empty;
 
         [JsonProperty("ip")]
-        public string Ip { get; set; }
+        public string Ip { get; set; } = string.Empty;
 
         [JsonProperty("peerChoking")]
-        public string PeerChoking { get; set; }
+        public string PeerChoking { get; set; } = string.Empty;
 
         [JsonProperty("peerId")]
-        public string PeerId { get; set; }
+        public string PeerId { get; set; } = string.Empty;
 
         [JsonProperty("port")]
-        public string Port { get; set; }
+        public string Port { get; set; } = string.Empty;
 
         [JsonProperty("seeder")]
-        public string Seeder { get; set; }
+        public string Seeder { get; set; } = string.Empty;
 
         [JsonProperty("uploadSpeed")]
-        public string UploadSpeed { get; set; }
+        public string UploadSpeed { get; set; } = string.Empty;
 
         public override string ToString()
         {

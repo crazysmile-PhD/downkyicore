@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Video.Models;
@@ -9,14 +9,14 @@ public class RegionDynamicOrigin : BaseModel
     //[JsonProperty("code")]
     //public int Code { get; set; }
     //[JsonProperty("message")]
-    //public string Message { get; set; }
+    //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public RegionDynamic Data { get; set; }
+    [JsonProperty("data")] public RegionDynamic Data { get; set; } = new();
 }
 
 public class RegionDynamic : BaseModel
 {
-    [JsonProperty("archives")] public List<DynamicVideoView> Archives { get; set; }
+    [JsonProperty("archives")] public List<DynamicVideoView> Archives { get; set; } = new();
     // page
 }

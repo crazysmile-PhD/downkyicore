@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Favorites.Models;
@@ -9,15 +9,15 @@ public class FavoritesMediaResourceOrigin : BaseModel
     //[JsonProperty("code")]
     //public int Code { get; set; }
     //[JsonProperty("message")]
-    //public string Message { get; set; }
+    //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public FavoritesMediaResource Data { get; set; }
+    [JsonProperty("data")] public FavoritesMediaResource Data { get; set; } = new();
 }
 
 public class FavoritesMediaResource : BaseModel
 {
-    [JsonProperty("info")] public FavoritesMetaInfo Info { get; set; }
-    [JsonProperty("medias")] public List<FavoritesMedia> Medias { get; set; }
+    [JsonProperty("info")] public FavoritesMetaInfo Info { get; set; } = new();
+    [JsonProperty("medias")] public List<FavoritesMedia> Medias { get; set; } = new();
     [JsonProperty("has_more")] public bool HasMore { get; set; }
 }

@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Bangumi.Models;
@@ -7,34 +7,34 @@ public class BangumiEpisode : BaseModel
 {
     [JsonProperty("aid")] public long Aid { get; set; }
 
-    [JsonProperty("badge")] public string Badge { get; set; }
+    [JsonProperty("badge")] public string Badge { get; set; } = string.Empty;
 
     // badge_info
     // badge_type
-    [JsonProperty("bvid")] public string Bvid { get; set; }
+    [JsonProperty("bvid")] public string Bvid { get; set; } = string.Empty;
     [JsonProperty("cid")] public long Cid { get; set; }
     [JsonProperty("ep_id")] public long EpisodeId { get; set; }
-    [JsonProperty("cover")] public string Cover { get; set; }
-    [JsonProperty("dimension")] public Dimension Dimension { get; set; }
+    [JsonProperty("cover")] public string Cover { get; set; } = string.Empty;
+    [JsonProperty("dimension")] public Dimension Dimension { get; set; } = new();
     [JsonProperty("duration")] public long Duration { get; set; }
-    [JsonProperty("from")] public string From { get; set; }
+    [JsonProperty("from")] public string From { get; set; } = string.Empty;
     [JsonProperty("id")] public long Id { get; set; }
-    [JsonProperty("link")] public string Link { get; set; }
-    [JsonProperty("long_title")] public string LongTitle { get; set; }
+    [JsonProperty("link")] public string Link { get; set; } = string.Empty;
+    [JsonProperty("long_title")] public string LongTitle { get; set; } = string.Empty;
 
     [JsonProperty("pub_time")] public long PubTime { get; set; }
 
     // pv
     // release_date
     // rights
-    [JsonProperty("share_copy")] public string ShareCopy { get; set; }
-    [JsonProperty("share_url")] public string ShareUrl { get; set; }
+    [JsonProperty("share_copy")] public string ShareCopy { get; set; } = string.Empty;
+    [JsonProperty("share_url")] public string ShareUrl { get; set; } = string.Empty;
 
-    [JsonProperty("short_link")] public string ShortLink { get; set; }
+    [JsonProperty("short_link")] public string ShortLink { get; set; } = string.Empty;
 
     // stat
     [JsonProperty("status")] public int Status { get; set; }
-    [JsonProperty("subtitle")] public string Subtitle { get; set; }
-    [JsonProperty("title")] public string Title { get; set; }
-    [JsonProperty("vid")] public string Vid { get; set; }
+    [JsonProperty("subtitle")] public string Subtitle { get; set; } = string.Empty;
+    [JsonProperty("title")] public string Title { get; set; } = string.Empty;
+    [JsonProperty("vid")] public string Vid { get; set; } = string.Empty;
 }

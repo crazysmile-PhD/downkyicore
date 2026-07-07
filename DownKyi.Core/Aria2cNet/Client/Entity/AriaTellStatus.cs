@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System.Collections.Generic;
 
 namespace DownKyi.Core.Aria2cNet.Client.Entity
@@ -7,16 +7,16 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaTellStatus
     {
         [JsonProperty("id")]
-        public string Id { get; set; }
+        public string Id { get; set; } = string.Empty;
 
         [JsonProperty("jsonrpc")]
-        public string Jsonrpc { get; set; }
+        public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public AriaTellStatusResult Result { get; set; }
+        public AriaTellStatusResult Result { get; set; } = new();
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; }
+        public AriaError Error { get; set; } = new();
 
         public override string ToString()
         {
@@ -28,16 +28,16 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaTellStatusList
     {
         [JsonProperty("id")]
-        public string Id { get; set; }
+        public string Id { get; set; } = string.Empty;
 
         [JsonProperty("jsonrpc")]
-        public string Jsonrpc { get; set; }
+        public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public List<AriaTellStatusResult> Result { get; set; }
+        public List<AriaTellStatusResult> Result { get; set; } = new();
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; }
+        public AriaError Error { get; set; } = new();
 
         public override string ToString()
         {
@@ -49,49 +49,49 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaTellStatusResult
     {
         [JsonProperty("bitfield")]
-        public string Bitfield { get; set; }
+        public string Bitfield { get; set; } = string.Empty;
 
         [JsonProperty("completedLength")]
-        public string CompletedLength { get; set; }
+        public string CompletedLength { get; set; } = string.Empty;
 
         [JsonProperty("connections")]
-        public string Connections { get; set; }
+        public string Connections { get; set; } = string.Empty;
 
         [JsonProperty("dir")]
-        public string Dir { get; set; }
+        public string Dir { get; set; } = string.Empty;
 
         [JsonProperty("downloadSpeed")]
-        public string DownloadSpeed { get; set; }
+        public string DownloadSpeed { get; set; } = string.Empty;
 
         [JsonProperty("errorCode")]
-        public string ErrorCode { get; set; }
+        public string ErrorCode { get; set; } = string.Empty;
 
         [JsonProperty("errorMessage")]
-        public string ErrorMessage { get; set; }
+        public string ErrorMessage { get; set; } = string.Empty;
 
         [JsonProperty("files")]
-        public List<AriaTellStatusResultFile> Files { get; set; }
+        public List<AriaTellStatusResultFile> Files { get; set; } = new();
 
         [JsonProperty("gid")]
-        public string Gid { get; set; }
+        public string Gid { get; set; } = string.Empty;
 
         [JsonProperty("numPieces")]
-        public string NumPieces { get; set; }
+        public string NumPieces { get; set; } = string.Empty;
 
         [JsonProperty("pieceLength")]
-        public string PieceLength { get; set; }
+        public string PieceLength { get; set; } = string.Empty;
 
         [JsonProperty("status")]
-        public string Status { get; set; }
+        public string Status { get; set; } = string.Empty;
 
         [JsonProperty("totalLength")]
-        public string TotalLength { get; set; }
+        public string TotalLength { get; set; } = string.Empty;
 
         [JsonProperty("uploadLength")]
-        public string UploadLength { get; set; }
+        public string UploadLength { get; set; } = string.Empty;
 
         [JsonProperty("uploadSpeed")]
-        public string UploadSpeed { get; set; }
+        public string UploadSpeed { get; set; } = string.Empty;
 
         public override string ToString()
         {
@@ -103,22 +103,22 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaTellStatusResultFile
     {
         [JsonProperty("completedLength")]
-        public string CompletedLength { get; set; }
+        public string CompletedLength { get; set; } = string.Empty;
 
         [JsonProperty("index")]
-        public string Index { get; set; }
+        public string Index { get; set; } = string.Empty;
 
         [JsonProperty("length")]
-        public string Length { get; set; }
+        public string Length { get; set; } = string.Empty;
 
         [JsonProperty("path")]
-        public string Path { get; set; }
+        public string Path { get; set; } = string.Empty;
 
         [JsonProperty("selected")]
-        public string Selected { get; set; }
+        public string Selected { get; set; } = string.Empty;
 
         [JsonProperty("uris")]
-        public List<AriaUri> Uris { get; set; }
+        public List<AriaUri> Uris { get; set; } = new();
 
         public override string ToString()
         {

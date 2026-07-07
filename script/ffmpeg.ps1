@@ -1,23 +1,39 @@
 param($arch)
+
+$ErrorActionPreference = "Stop"
+
 function Create-Dir($dir) {
     if (!(Test-Path -Path $dir)) {
-        New-Item $dir -ItemType "directory"
+        New-Item $dir -ItemType "directory" | Out-Null
+    }
+}
+
+function Get-Asset($tool, $rid) {
+    $manifestPath = Join-Path $PSScriptRoot "assets\external-assets.json"
+    $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
+    return $manifest.$tool.assets.$rid
+}
+
+function Verify-Asset($path, $expectedSha256) {
+    $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $expectedSha256) {
+        throw "Checksum mismatch for $path. Expected $expectedSha256, got $actual."
     }
 }
 
 Create-Dir ".\downloads"
-$url="";
-$dir="";
-if ($arch -eq "x86") {
-    $url="https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-i686-w64-mingw32_static.zip";
+
+$rid = "win-$arch"
+$asset = Get-Asset "ffmpeg" $rid
+if ($null -eq $asset) {
+    throw "Unsupported ffmpeg architecture: $arch"
 }
 
-if ($arch -eq "x64") {
-    $url="https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-x86_64-w64-mingw32_static.zip";
-}
+$archive = ".\downloads\ffmpeg-$arch.zip"
+Start-BitsTransfer -Source $asset.url -Destination $archive
+Verify-Asset $archive $asset.sha256
 
-Start-BitsTransfer -Source $url -Destination ".\downloads\ffmpeg-$arch.zip";
+$destDir = "..\DownKyi.Core\Binary\$rid\ffmpeg\"
+Create-Dir $destDir
 
-$destDir="..\DownKyi.Core\Binary\win-$arch\ffmpeg\";
-
-Expand-Archive -Path ".\downloads\ffmpeg-$arch.zip" -DestinationPath $destDir -Force
+Expand-Archive -Path $archive -DestinationPath $destDir -Force

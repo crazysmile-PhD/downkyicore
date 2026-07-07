@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Video.Models;
@@ -10,9 +10,9 @@ public class UgcSection : BaseModel
     [JsonProperty("id")]
     public long Id { get; set; }
     [JsonProperty("title")]
-    public string Title { get; set; }
+    public string Title { get; set; } = string.Empty;
     [JsonProperty("type")]
     public int Type { get; set; }
     [JsonProperty("episodes")]
-    public List<UgcEpisode> Episodes { get; set; }
+    public List<UgcEpisode> Episodes { get; set; } = new();
 }

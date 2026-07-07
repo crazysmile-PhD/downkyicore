@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Favorites.Models;
@@ -9,10 +9,10 @@ public class FavoritesMetaInfoOrigin : BaseModel
     //[JsonProperty("code")]
     //public int Code { get; set; }
     //[JsonProperty("message")]
-    //public string Message { get; set; }
+    //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public FavoritesMetaInfo Data { get; set; }
+    [JsonProperty("data")] public FavoritesMetaInfo Data { get; set; } = new();
 }
 
 public class FavoritesMetaInfo : BaseModel
@@ -23,16 +23,16 @@ public class FavoritesMetaInfo : BaseModel
     [JsonProperty("mid")] public long Mid { get; set; }
 
     // attr
-    [JsonProperty("title")] public string Title { get; set; }
-    [JsonProperty("cover")] public string Cover { get; set; }
+    [JsonProperty("title")] public string Title { get; set; } = string.Empty;
+    [JsonProperty("cover")] public string Cover { get; set; } = string.Empty;
 
-    [JsonProperty("upper")] public FavUpper Upper { get; set; }
+    [JsonProperty("upper")] public FavUpper Upper { get; set; } = new();
 
     // cover_type
-    [JsonProperty("cnt_info")] public FavStatus CntInfo { get; set; }
+    [JsonProperty("cnt_info")] public FavStatus CntInfo { get; set; } = new();
 
     // type
-    [JsonProperty("intro")] public string Intro { get; set; }
+    [JsonProperty("intro")] public string Intro { get; set; } = string.Empty;
     [JsonProperty("ctime")] public long Ctime { get; set; }
 
     [JsonProperty("mtime")] public long Mtime { get; set; }

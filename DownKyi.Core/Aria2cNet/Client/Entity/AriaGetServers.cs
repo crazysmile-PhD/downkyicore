@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System.Collections.Generic;
 
 namespace DownKyi.Core.Aria2cNet.Client.Entity
@@ -7,16 +7,16 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaGetServers
     {
         [JsonProperty("id")]
-        public string Id { get; set; }
+        public string Id { get; set; } = string.Empty;
 
         [JsonProperty("jsonrpc")]
-        public string Jsonrpc { get; set; }
+        public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public List<AriaGetServersResult> Result { get; set; }
+        public List<AriaGetServersResult> Result { get; set; } = new();
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; }
+        public AriaError Error { get; set; } = new();
 
         public override string ToString()
         {
@@ -28,10 +28,10 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaGetServersResult
     {
         [JsonProperty("index")]
-        public string Index { get; set; }
+        public string Index { get; set; } = string.Empty;
 
         [JsonProperty("servers")]
-        public List<AriaResultServer> Servers { get; set; }
+        public List<AriaResultServer> Servers { get; set; } = new();
 
         public override string ToString()
         {
@@ -43,13 +43,13 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaResultServer
     {
         [JsonProperty("currentUri")]
-        public string CurrentUri { get; set; }
+        public string CurrentUri { get; set; } = string.Empty;
 
         [JsonProperty("downloadSpeed")]
-        public string DownloadSpeed { get; set; }
+        public string DownloadSpeed { get; set; } = string.Empty;
 
         [JsonProperty("uri")]
-        public string Uri { get; set; }
+        public string Uri { get; set; } = string.Empty;
 
         public override string ToString()
         {

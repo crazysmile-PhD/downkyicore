@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 
 namespace DownKyi.Core.Aria2cNet.Client.Entity
 {
@@ -6,235 +6,235 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaOption
     {
         [JsonProperty("all-proxy")]
-        public string AllProxy { get; set; }
+        public string AllProxy { get; set; } = string.Empty;
 
         [JsonProperty("allow-overwrite")]
-        public string AllowOverwrite { get; set; }
+        public string AllowOverwrite { get; set; } = string.Empty;
 
         [JsonProperty("allow-piece-length-change")]
-        public string AllowPieceLengthChange { get; set; }
+        public string AllowPieceLengthChange { get; set; } = string.Empty;
 
         [JsonProperty("always-resume")]
-        public string AlwaysResume { get; set; }
+        public string AlwaysResume { get; set; } = string.Empty;
 
         [JsonProperty("async-dns")]
-        public string AsyncDns { get; set; }
+        public string AsyncDns { get; set; } = string.Empty;
 
         [JsonProperty("auto-file-renaming")]
-        public string AutoFileRenaming { get; set; }
+        public string AutoFileRenaming { get; set; } = string.Empty;
 
         [JsonProperty("bt-enable-hook-after-hash-check")]
-        public string BtEnableHookAfterHashCheck { get; set; }
+        public string BtEnableHookAfterHashCheck { get; set; } = string.Empty;
 
         [JsonProperty("bt-enable-lpd")]
-        public string BtEnableLpd { get; set; }
+        public string BtEnableLpd { get; set; } = string.Empty;
 
         [JsonProperty("bt-force-encryption")]
-        public string BtForceEncryption { get; set; }
+        public string BtForceEncryption { get; set; } = string.Empty;
 
         [JsonProperty("bt-hash-check-seed")]
-        public string BtHashCheckSeed { get; set; }
+        public string BtHashCheckSeed { get; set; } = string.Empty;
 
         [JsonProperty("bt-load-saved-metadata")]
-        public string BtLoadSavedMetadata { get; set; }
+        public string BtLoadSavedMetadata { get; set; } = string.Empty;
 
         [JsonProperty("bt-max-peers")]
-        public string BtMaxPeers { get; set; }
+        public string BtMaxPeers { get; set; } = string.Empty;
 
         [JsonProperty("bt-metadata-only")]
-        public string BtMetadataOnly { get; set; }
+        public string BtMetadataOnly { get; set; } = string.Empty;
 
         [JsonProperty("bt-min-crypto-level")]
-        public string BtMinCryptoLevel { get; set; }
+        public string BtMinCryptoLevel { get; set; } = string.Empty;
 
         [JsonProperty("bt-remove-unselected-file")]
-        public string BtRemoveUnselectedFile { get; set; }
+        public string BtRemoveUnselectedFile { get; set; } = string.Empty;
 
         [JsonProperty("bt-request-peer-speed-limit")]
-        public string BtRequestPeerSpeedLimit { get; set; }
+        public string BtRequestPeerSpeedLimit { get; set; } = string.Empty;
 
         [JsonProperty("bt-require-crypto")]
-        public string BtRequireCrypto { get; set; }
+        public string BtRequireCrypto { get; set; } = string.Empty;
 
         [JsonProperty("bt-save-metadata")]
-        public string BtSaveMetadata { get; set; }
+        public string BtSaveMetadata { get; set; } = string.Empty;
 
         [JsonProperty("bt-seed-unverified")]
-        public string BtSeedUnverified { get; set; }
+        public string BtSeedUnverified { get; set; } = string.Empty;
 
         [JsonProperty("bt-stop-timeout")]
-        public string BtStopTimeout { get; set; }
+        public string BtStopTimeout { get; set; } = string.Empty;
 
         [JsonProperty("bt-tracker-connect-timeout")]
-        public string BtTrackerConnectTimeout { get; set; }
+        public string BtTrackerConnectTimeout { get; set; } = string.Empty;
 
         [JsonProperty("bt-tracker-interval")]
-        public string BtTrackerInterval { get; set; }
+        public string BtTrackerInterval { get; set; } = string.Empty;
 
         [JsonProperty("bt-tracker-timeout")]
-        public string BtTrackerTimeout { get; set; }
+        public string BtTrackerTimeout { get; set; } = string.Empty;
 
         [JsonProperty("check-integrity")]
-        public string CheckIntegrity { get; set; }
+        public string CheckIntegrity { get; set; } = string.Empty;
 
         [JsonProperty("conditional-get")]
-        public string ConditionalGet { get; set; }
+        public string ConditionalGet { get; set; } = string.Empty;
 
         [JsonProperty("connect-timeout")]
-        public string ConnectTimeout { get; set; }
+        public string ConnectTimeout { get; set; } = string.Empty;
 
         [JsonProperty("content-disposition-default-utf8")]
-        public string ContentDispositionDefaultUtf8 { get; set; }
+        public string ContentDispositionDefaultUtf8 { get; set; } = string.Empty;
 
         [JsonProperty("continue")]
-        public string Continue { get; set; }
+        public string Continue { get; set; } = string.Empty;
 
         [JsonProperty("dir")]
-        public string Dir { get; set; }
+        public string Dir { get; set; } = string.Empty;
 
         [JsonProperty("dry-run")]
-        public string DryRun { get; set; }
+        public string DryRun { get; set; } = string.Empty;
 
         [JsonProperty("enable-http-keep-alive")]
-        public string EnableHttpKeepAlive { get; set; }
+        public string EnableHttpKeepAlive { get; set; } = string.Empty;
 
         [JsonProperty("enable-http-pipelining")]
-        public string EnableHttpPipelining { get; set; }
+        public string EnableHttpPipelining { get; set; } = string.Empty;
 
         [JsonProperty("enable-mmap")]
-        public string EnableMmap { get; set; }
+        public string EnableMmap { get; set; } = string.Empty;
 
         [JsonProperty("enable-peer-exchange")]
-        public string EnablePeerExchange { get; set; }
+        public string EnablePeerExchange { get; set; } = string.Empty;
 
         [JsonProperty("file-allocation")]
-        public string FileAllocation { get; set; }
+        public string FileAllocation { get; set; } = string.Empty;
 
         [JsonProperty("follow-metalink")]
-        public string FollowMetalink { get; set; }
+        public string FollowMetalink { get; set; } = string.Empty;
 
         [JsonProperty("follow-torrent")]
-        public string FollowTorrent { get; set; }
+        public string FollowTorrent { get; set; } = string.Empty;
 
         [JsonProperty("force-save")]
-        public string ForceSave { get; set; }
+        public string ForceSave { get; set; } = string.Empty;
 
         [JsonProperty("ftp-pasv")]
-        public string FtpPasv { get; set; }
+        public string FtpPasv { get; set; } = string.Empty;
 
         [JsonProperty("ftp-reuse-connection")]
-        public string FtpReuseConnection { get; set; }
+        public string FtpReuseConnection { get; set; } = string.Empty;
 
         [JsonProperty("ftp-type")]
-        public string FtpType { get; set; }
+        public string FtpType { get; set; } = string.Empty;
 
         [JsonProperty("hash-check-only")]
-        public string HashCheckOnly { get; set; }
+        public string HashCheckOnly { get; set; } = string.Empty;
 
         [JsonProperty("http-accept-gzip")]
-        public string HttpAcceptGzip { get; set; }
+        public string HttpAcceptGzip { get; set; } = string.Empty;
 
         [JsonProperty("http-auth-challenge")]
-        public string HttpAuthChallenge { get; set; }
+        public string HttpAuthChallenge { get; set; } = string.Empty;
 
         [JsonProperty("http-no-cache")]
-        public string HttpNoCache { get; set; }
+        public string HttpNoCache { get; set; } = string.Empty;
 
         [JsonProperty("lowest-speed-limit")]
-        public string LowestSpeedLimit { get; set; }
+        public string LowestSpeedLimit { get; set; } = string.Empty;
 
         [JsonProperty("max-connection-per-server")]
-        public string MaxConnectionPerServer { get; set; }
+        public string MaxConnectionPerServer { get; set; } = string.Empty;
 
         [JsonProperty("max-download-limit")]
-        public string MaxDownloadLimit { get; set; }
+        public string MaxDownloadLimit { get; set; } = string.Empty;
 
         [JsonProperty("max-file-not-found")]
-        public string MaxFileNotFound { get; set; }
+        public string MaxFileNotFound { get; set; } = string.Empty;
 
         [JsonProperty("max-mmap-limit")]
-        public string MaxMmapLimit { get; set; }
+        public string MaxMmapLimit { get; set; } = string.Empty;
 
         [JsonProperty("max-resume-failure-tries")]
-        public string MaxResumeFailureTries { get; set; }
+        public string MaxResumeFailureTries { get; set; } = string.Empty;
 
         [JsonProperty("max-tries")]
-        public string MaxTries { get; set; }
+        public string MaxTries { get; set; } = string.Empty;
 
         [JsonProperty("max-upload-limit")]
-        public string MaxUploadLimit { get; set; }
+        public string MaxUploadLimit { get; set; } = string.Empty;
 
         [JsonProperty("metalink-enable-unique-protocol")]
-        public string MetalinkEnableUniqueProtocol { get; set; }
+        public string MetalinkEnableUniqueProtocol { get; set; } = string.Empty;
 
         [JsonProperty("metalink-preferred-protocol")]
-        public string MetalinkPreferredProtocol { get; set; }
+        public string MetalinkPreferredProtocol { get; set; } = string.Empty;
 
         [JsonProperty("min-split-size")]
-        public string MinSplitSize { get; set; }
+        public string MinSplitSize { get; set; } = string.Empty;
 
         [JsonProperty("no-file-allocation-limit")]
-        public string NoFileAllocationLimit { get; set; }
+        public string NoFileAllocationLimit { get; set; } = string.Empty;
 
         [JsonProperty("no-netrc")]
-        public string NoNetrc { get; set; }
+        public string NoNetrc { get; set; } = string.Empty;
 
         [JsonProperty("out")]
-        public string Out { get; set; }
+        public string Out { get; set; } = string.Empty;
 
         [JsonProperty("parameterized-uri")]
-        public string ParameterizedUri { get; set; }
+        public string ParameterizedUri { get; set; } = string.Empty;
 
         [JsonProperty("pause-metadata")]
-        public string PauseMetadata { get; set; }
+        public string PauseMetadata { get; set; } = string.Empty;
 
         [JsonProperty("piece-length")]
-        public string PieceLength { get; set; }
+        public string PieceLength { get; set; } = string.Empty;
 
         [JsonProperty("proxy-method")]
-        public string ProxyMethod { get; set; }
+        public string ProxyMethod { get; set; } = string.Empty;
 
         [JsonProperty("realtime-chunk-checksum")]
-        public string RealtimeChunkChecksum { get; set; }
+        public string RealtimeChunkChecksum { get; set; } = string.Empty;
 
         [JsonProperty("remote-time")]
-        public string RemoteTime { get; set; }
+        public string RemoteTime { get; set; } = string.Empty;
 
         [JsonProperty("remove-control-file")]
-        public string RemoveControlFile { get; set; }
+        public string RemoveControlFile { get; set; } = string.Empty;
 
         [JsonProperty("retry-wait")]
-        public string RetryWait { get; set; }
+        public string RetryWait { get; set; } = string.Empty;
 
         [JsonProperty("reuse-uri")]
-        public string ReuseUri { get; set; }
+        public string ReuseUri { get; set; } = string.Empty;
 
         [JsonProperty("rpc-save-upload-metadata")]
-        public string RpcSaveUploadMetadata { get; set; }
+        public string RpcSaveUploadMetadata { get; set; } = string.Empty;
 
         [JsonProperty("save-not-found")]
-        public string SaveNotFound { get; set; }
+        public string SaveNotFound { get; set; } = string.Empty;
 
         [JsonProperty("seed-ratio")]
-        public string SeedRatio { get; set; }
+        public string SeedRatio { get; set; } = string.Empty;
 
         [JsonProperty("split")]
-        public string Split { get; set; }
+        public string Split { get; set; } = string.Empty;
 
         [JsonProperty("stream-piece-selector")]
-        public string StreamPieceSelector { get; set; }
+        public string StreamPieceSelector { get; set; } = string.Empty;
 
         [JsonProperty("timeout")]
-        public string Timeout { get; set; }
+        public string Timeout { get; set; } = string.Empty;
 
         [JsonProperty("uri-selector")]
-        public string UriSelector { get; set; }
+        public string UriSelector { get; set; } = string.Empty;
 
         [JsonProperty("use-head")]
-        public string UseHead { get; set; }
+        public string UseHead { get; set; } = string.Empty;
 
         [JsonProperty("user-agent")]
-        public string UserAgent { get; set; }
+        public string UserAgent { get; set; } = string.Empty;
 
         public override string ToString()
         {

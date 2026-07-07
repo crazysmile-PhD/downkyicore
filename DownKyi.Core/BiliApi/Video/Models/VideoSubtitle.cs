@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Video.Models;
@@ -6,28 +6,28 @@ namespace DownKyi.Core.BiliApi.Video.Models;
 public class VideoSubtitle : BaseModel
 {
     [JsonProperty("allow_submit")] public bool AllowSubmit { get; set; }
-    [JsonProperty("list")] public List<Subtitle> List { get; set; }
+    [JsonProperty("list")] public List<Subtitle> List { get; set; } = new();
 }
 
 public class Subtitle : BaseModel
 {
     [JsonProperty("id")] public long Id { get; set; }
-    [JsonProperty("lan")] public string Lan { get; set; }
-    [JsonProperty("lan_doc")] public string LanDoc { get; set; }
+    [JsonProperty("lan")] public string Lan { get; set; } = string.Empty;
+    [JsonProperty("lan_doc")] public string LanDoc { get; set; } = string.Empty;
     [JsonProperty("is_lock")] public bool IsLock { get; set; }
     [JsonProperty("author_mid")] public long AuthorMid { get; set; }
-    [JsonProperty("subtitle_url")] public string SubtitleUrl { get; set; }
-    [JsonProperty("author")] public SubtitleAuthor Author { get; set; }
+    [JsonProperty("subtitle_url")] public string SubtitleUrl { get; set; } = string.Empty;
+    [JsonProperty("author")] public SubtitleAuthor Author { get; set; } = new();
 }
 
 public class SubtitleAuthor : BaseModel
 {
     [JsonProperty("mid")] public long Mid { get; set; }
-    [JsonProperty("name")] public string Name { get; set; }
-    [JsonProperty("sex")] public string Sex { get; set; }
-    [JsonProperty("face")] public string Face { get; set; }
+    [JsonProperty("name")] public string Name { get; set; } = string.Empty;
+    [JsonProperty("sex")] public string Sex { get; set; } = string.Empty;
+    [JsonProperty("face")] public string Face { get; set; } = string.Empty;
 
-    [JsonProperty("sign")] public string Sign { get; set; }
+    [JsonProperty("sign")] public string Sign { get; set; } = string.Empty;
     //[JsonProperty("rank")]
     //public int Rank { get; set; }
     //[JsonProperty("birthday")]

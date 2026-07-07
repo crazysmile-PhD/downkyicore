@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -9,9 +9,9 @@ public class UserInfoForNavigationOrigin : BaseModel
 {
     //[JsonProperty("code")]
     //public int Code { get; set; }
-    [JsonProperty("data")] public UserInfoForNavigation Data { get; set; }
+    [JsonProperty("data")] public UserInfoForNavigation Data { get; set; } = new();
     //[JsonProperty("message")]
-    //public string Message { get; set; }
+    //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
 }
@@ -27,32 +27,32 @@ public class UserInfoForNavigation : BaseModel
     //public bool has_shop { get; set; }
     [JsonProperty("isLogin")] public bool IsLogin { get; set; }
 
-    //public NavDataLevelInfo level_info { get; set; }
+    //public NavDataLevelInfo level_info { get; set; } = new();
     [JsonProperty("mid")] public long Mid { get; set; }
 
     //public int mobile_verified { get; set; }
     [JsonProperty("money")] public float Money { get; set; }
 
     //public int moral { get; set; }
-    //public NavDataOfficial official { get; set; }
-    //public NavDataOfficialVerify officialVerify { get; set; }
-    //public NavDataPendant pendant { get; set; }
+    //public NavDataOfficial official { get; set; } = new();
+    //public NavDataOfficialVerify officialVerify { get; set; } = new();
+    //public NavDataPendant pendant { get; set; } = new();
     //public int scores { get; set; }
-    //public string shop_url { get; set; }
-    [JsonProperty("uname")] public string Name { get; set; }
+    //public string shop_url { get; set; } = string.Empty;
+    [JsonProperty("uname")] public string Name { get; set; } = string.Empty;
 
     //public long vipDueDate { get; set; }
     [JsonProperty("vipStatus")] public int VipStatus { get; set; }
 
     //public int vipType { get; set; }
     //public int vip_avatar_subscript { get; set; }
-    //public NavDataVipLabel vip_label { get; set; }
-    //public string vip_nickname_color { get; set; }
+    //public NavDataVipLabel vip_label { get; set; } = new();
+    //public string vip_nickname_color { get; set; } = string.Empty;
     //public int vip_pay_type { get; set; }
     //public int vip_theme_type { get; set; }
-    [JsonProperty("wallet")] public UserInfoWallet Wallet { get; set; }
+    [JsonProperty("wallet")] public UserInfoWallet Wallet { get; set; } = new();
 
-    [JsonProperty("wbi_img")] public Wbi Wbi { get; set; }
+    [JsonProperty("wbi_img")] public Wbi Wbi { get; set; } = new();
 }
 
 //public class NavDataLevelInfo
@@ -65,32 +65,32 @@ public class UserInfoForNavigation : BaseModel
 
 //public class NavDataOfficial
 //{
-//    public string desc { get; set; }
+//    public string desc { get; set; } = string.Empty;
 //    public int role { get; set; }
-//    public string title { get; set; }
+//    public string title { get; set; } = string.Empty;
 //    public int type { get; set; }
 //}
 
 //public class NavDataOfficialVerify
 //{
-//    public string desc { get; set; }
+//    public string desc { get; set; } = string.Empty;
 //    public int type { get; set; }
 //}
 
 //public class NavDataPendant
 //{
 //    public int expire { get; set; }
-//    public string image { get; set; }
-//    public string image_enhance { get; set; }
-//    public string name { get; set; }
+//    public string image { get; set; } = string.Empty;
+//    public string image_enhance { get; set; } = string.Empty;
+//    public string name { get; set; } = string.Empty;
 //    public int pid { get; set; }
 //}
 
 //public class NavDataVipLabel
 //{
-//    public string label_theme { get; set; }
-//    public string path { get; set; }
-//    public string text { get; set; }
+//    public string label_theme { get; set; } = string.Empty;
+//    public string path { get; set; } = string.Empty;
+//    public string text { get; set; } = string.Empty;
 //}
 
 [JsonObject]
@@ -105,6 +105,6 @@ public class UserInfoWallet : BaseModel
 [JsonObject]
 public class Wbi
 {
-    [JsonProperty("img_url")] public string ImgUrl { get; set; }
-    [JsonProperty("sub_url")] public string SubUrl { get; set; }
+    [JsonProperty("img_url")] public string ImgUrl { get; set; } = string.Empty;
+    [JsonProperty("sub_url")] public string SubUrl { get; set; } = string.Empty;
 }

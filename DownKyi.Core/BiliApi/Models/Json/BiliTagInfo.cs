@@ -6,13 +6,13 @@ public class BiliTagInfo
 {
     [JsonProperty("tag_id")]
     public long TagId { get; set; }
-    
+
     [JsonProperty("tag_name")]
-    public string TagName { get; set; }
+    public string TagName { get; set; } = string.Empty;
 }
 
 public class TagResult
 {
     [JsonProperty("data")]
-    public List<BiliTagInfo> Data { get; set; }
+    public List<BiliTagInfo> Data { get; set; } = new();
 }

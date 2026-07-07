@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
@@ -11,18 +12,18 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 public class VideoPage : BindableBase
 {
-    public PlayUrl PlayUrl { get; set; }
+    public PlayUrl? PlayUrl { get; set; }
 
     public long Avid { get; set; }
-    public string Bvid { get; set; }
+    public string Bvid { get; set; } = string.Empty;
     public long Cid { get; set; }
     public long EpisodeId { get; set; }
-    public VideoOwner Owner { get; set; }
-    public string PublishTime { get; set; }
+    public VideoOwner? Owner { get; set; }
+    public string PublishTime { get; set; } = string.Empty;
 
     public DateTime OriginalPublishTime { get; set; }
-    
-    public string FirstFrame { get; set; }
+
+    public string FirstFrame { get; set; } = string.Empty;
 
     public int Page { get; set; }
 
@@ -42,7 +43,7 @@ public class VideoPage : BindableBase
         set => SetProperty(ref order, value);
     }
 
-    private string name;
+    private string name = string.Empty;
 
     public string Name
     {
@@ -50,7 +51,7 @@ public class VideoPage : BindableBase
         set => SetProperty(ref name, value);
     }
 
-    private string duration;
+    private string duration = string.Empty;
 
     public string Duration
     {
@@ -58,7 +59,7 @@ public class VideoPage : BindableBase
         set => SetProperty(ref duration, value);
     }
 
-    private ObservableCollection<string> audioQualityFormatList;
+    private ObservableCollection<string> audioQualityFormatList = new();
 
     public ObservableCollection<string> AudioQualityFormatList
     {
@@ -66,7 +67,7 @@ public class VideoPage : BindableBase
         set => SetProperty(ref audioQualityFormatList, value);
     }
 
-    private string audioQualityFormat;
+    private string audioQualityFormat = string.Empty;
 
     public string AudioQualityFormat
     {
@@ -80,7 +81,7 @@ public class VideoPage : BindableBase
         }
     }
 
-    private List<VideoQuality> videoQualityList;
+    private List<VideoQuality> videoQualityList = new();
 
     public List<VideoQuality> VideoQualityList
     {
@@ -88,16 +89,48 @@ public class VideoPage : BindableBase
         set => SetProperty(ref videoQualityList, value);
     }
 
-    private VideoQuality videoQuality;
+    private VideoQuality videoQuality = new();
 
     public VideoQuality VideoQuality
     {
         get => videoQuality;
         set => SetProperty(ref videoQuality, value);
     }
-    
-    [JsonIgnore] 
-    public Lazy<List<string>?> LazyTags { get; set; }
+
+    [JsonIgnore]
+    public Lazy<List<string>?> LazyTags { get; set; } = new(() => null);
+
+    public VideoPage CloneForCache()
+    {
+        var qualityList = VideoQualityList.Select(quality => quality.CloneForCache()).ToList();
+        var selectedQuality = qualityList.FirstOrDefault(quality =>
+            quality.Quality == VideoQuality.Quality &&
+            quality.QualityFormat == VideoQuality.QualityFormat) ?? VideoQuality.CloneForCache();
+
+        return new VideoPage
+        {
+            PlayUrl = PlayUrl,
+            Avid = Avid,
+            Bvid = Bvid,
+            Cid = Cid,
+            EpisodeId = EpisodeId,
+            Owner = Owner,
+            PublishTime = PublishTime,
+            OriginalPublishTime = OriginalPublishTime,
+            FirstFrame = FirstFrame,
+            Page = Page,
+            IsSelected = IsSelected,
+            Order = Order,
+            Name = Name,
+            Duration = Duration,
+            AudioQualityFormatList = new ObservableCollection<string>(AudioQualityFormatList),
+            AudioQualityFormat = AudioQualityFormat,
+            VideoQualityList = qualityList,
+            VideoQuality = selectedQuality,
+            LazyTags = new Lazy<List<string>?>(() =>
+                LazyTags.IsValueCreated ? LazyTags.Value?.ToList() : null)
+        };
+    }
 
     #region
 

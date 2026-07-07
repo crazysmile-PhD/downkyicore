@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Prism.Mvvm;
 
@@ -6,7 +6,7 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 public class VideoInfoView : BindableBase
 {
-    private string _coverUrl;
+    private string _coverUrl = string.Empty;
 
     public string CoverUrl
     {
@@ -17,8 +17,8 @@ public class VideoInfoView : BindableBase
     public long UpperMid { get; set; }
     public int TypeId { get; set; }
 
-    private string _title;
-    
+    private string _title = string.Empty;
+
     public float? Score { get; set; }
 
     public string Title
@@ -27,7 +27,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _title, value);
     }
 
-    private string _videoZone;
+    private string _videoZone = string.Empty;
 
     public string VideoZone
     {
@@ -35,7 +35,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _videoZone, value);
     }
 
-    private string _createTime;
+    private string _createTime = string.Empty;
 
     public string CreateTime
     {
@@ -43,7 +43,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _createTime, value);
     }
 
-    private string _playNumber;
+    private string _playNumber = string.Empty;
 
     public string PlayNumber
     {
@@ -51,7 +51,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _playNumber, value);
     }
 
-    private string _danmakuNumber;
+    private string _danmakuNumber = string.Empty;
 
     public string DanmakuNumber
     {
@@ -59,7 +59,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _danmakuNumber, value);
     }
 
-    private string _likeNumber;
+    private string _likeNumber = string.Empty;
 
     public string LikeNumber
     {
@@ -67,7 +67,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _likeNumber, value);
     }
 
-    private string _coinNumber;
+    private string _coinNumber = string.Empty;
 
     public string CoinNumber
     {
@@ -75,7 +75,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _coinNumber, value);
     }
 
-    private string _favoriteNumber;
+    private string _favoriteNumber = string.Empty;
 
     public string FavoriteNumber
     {
@@ -83,7 +83,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _favoriteNumber, value);
     }
 
-    private string _shareNumber;
+    private string _shareNumber = string.Empty;
 
     public string ShareNumber
     {
@@ -91,7 +91,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _shareNumber, value);
     }
 
-    private string _replyNumber;
+    private string _replyNumber = string.Empty;
 
     public string ReplyNumber
     {
@@ -99,7 +99,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _replyNumber, value);
     }
 
-    private string _description;
+    private string _description = string.Empty;
 
     public string Description
     {
@@ -107,7 +107,7 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _description, value);
     }
 
-    private string _upName;
+    private string _upName = string.Empty;
 
     public string UpName
     {
@@ -115,12 +115,12 @@ public class VideoInfoView : BindableBase
         set => SetProperty(ref _upName, value);
     }
 
-    private string _upHeader;
+    private string _upHeader = string.Empty;
 
     public string UpHeader
     {
         get => _upHeader;
         set => SetProperty(ref _upHeader, value);
     }
-    
+
 }

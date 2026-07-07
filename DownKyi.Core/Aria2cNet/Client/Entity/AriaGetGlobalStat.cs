@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 
 namespace DownKyi.Core.Aria2cNet.Client.Entity
 {
@@ -20,16 +20,16 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaGetGlobalStat
     {
         [JsonProperty("id")]
-        public string Id { get; set; }
+        public string Id { get; set; } = string.Empty;
 
         [JsonProperty("jsonrpc")]
-        public string Jsonrpc { get; set; }
+        public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public AriaGetGlobalStatResult Result { get; set; }
+        public AriaGetGlobalStatResult Result { get; set; } = new();
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; }
+        public AriaError Error { get; set; } = new();
 
         public override string ToString()
         {
@@ -41,22 +41,22 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaGetGlobalStatResult
     {
         [JsonProperty("downloadSpeed")]
-        public string DownloadSpeed { get; set; }
+        public string DownloadSpeed { get; set; } = string.Empty;
 
         [JsonProperty("numActive")]
-        public string NumActive { get; set; }
+        public string NumActive { get; set; } = string.Empty;
 
         [JsonProperty("numStopped")]
-        public string NumStopped { get; set; }
+        public string NumStopped { get; set; } = string.Empty;
 
         [JsonProperty("numStoppedTotal")]
-        public string NumStoppedTotal { get; set; }
+        public string NumStoppedTotal { get; set; } = string.Empty;
 
         [JsonProperty("numWaiting")]
-        public string NumWaiting { get; set; }
+        public string NumWaiting { get; set; } = string.Empty;
 
         [JsonProperty("uploadSpeed")]
-        public string UploadSpeed { get; set; }
+        public string UploadSpeed { get; set; } = string.Empty;
 
         public override string ToString()
         {

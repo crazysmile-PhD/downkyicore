@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -6,7 +6,7 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/relation/stat?vmid={mid}
 public class UserRelationStatOrigin : BaseModel
 {
-    [JsonProperty("data")] public UserRelationStat Data { get; set; }
+    [JsonProperty("data")] public UserRelationStat Data { get; set; } = new();
 }
 
 public class UserRelationStat : BaseModel

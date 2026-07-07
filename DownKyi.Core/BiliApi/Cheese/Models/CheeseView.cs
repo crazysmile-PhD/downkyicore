@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Cheese.Models;
@@ -9,28 +9,28 @@ public class CheeseViewOrigin : BaseModel
     //[JsonProperty("code")]
     //public int Code { get; set; }
     //[JsonProperty("message")]
-    //public string Message { get; set; }
-    [JsonProperty("data")] public CheeseView Data { get; set; }
+    //public string Message { get; set; } = string.Empty;
+    [JsonProperty("data")] public CheeseView Data { get; set; } = new();
 }
 
 public class CheeseView : BaseModel
 {
     // active_market
     // activity_list
-    [JsonProperty("brief")] public CheeseBrief Brief { get; set; }
+    [JsonProperty("brief")] public CheeseBrief Brief { get; set; } = new();
 
     // cooperation
     // coupon
     // course_content
     // courses
-    [JsonProperty("cover")] public string Cover { get; set; }
+    [JsonProperty("cover")] public string Cover { get; set; } = string.Empty;
 
     // ep_catalogue
     // ep_count
     // episode_page
     // episode_sort
     // episode_tag
-    [JsonProperty("episodes")] public List<CheeseEpisode> Episodes { get; set; }
+    [JsonProperty("episodes")] public List<CheeseEpisode> Episodes { get; set; } = new();
 
     // faq
     // faq1
@@ -48,16 +48,16 @@ public class CheeseView : BaseModel
     // release_status
     [JsonProperty("season_id")] public long SeasonId { get; set; }
 
-    [JsonProperty("share_url")] public string ShareUrl { get; set; }
+    [JsonProperty("share_url")] public string ShareUrl { get; set; } = string.Empty;
 
     // short_link
-    [JsonProperty("stat")] public CheeseStat Stat { get; set; }
+    [JsonProperty("stat")] public CheeseStat Stat { get; set; } = new();
 
     // status
-    [JsonProperty("subtitle")] public string Subtitle { get; set; }
-    [JsonProperty("title")] public string Title { get; set; }
+    [JsonProperty("subtitle")] public string Subtitle { get; set; } = string.Empty;
+    [JsonProperty("title")] public string Title { get; set; } = string.Empty;
 
-    [JsonProperty("up_info")] public CheeseUpInfo UpInfo { get; set; }
+    [JsonProperty("up_info")] public CheeseUpInfo UpInfo { get; set; } = new();
     // update_status
     // user_status
 }

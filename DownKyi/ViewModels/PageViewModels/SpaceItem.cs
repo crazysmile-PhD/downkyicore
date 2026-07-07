@@ -1,4 +1,4 @@
-﻿using DownKyi.Images;
+using DownKyi.Images;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
@@ -21,7 +21,7 @@ public class SpaceItem : BindableBase
         set => SetProperty(ref image, value);
     }
 
-    private string title;
+    private string title = string.Empty;
 
     public string Title
     {
@@ -29,7 +29,7 @@ public class SpaceItem : BindableBase
         set => SetProperty(ref title, value);
     }
 
-    private string subtitle;
+    private string subtitle = string.Empty;
 
     public string Subtitle
     {

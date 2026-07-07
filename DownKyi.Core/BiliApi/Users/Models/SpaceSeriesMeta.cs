@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -9,14 +9,14 @@ public class SpaceSeriesMetaOrigin : BaseModel
     //[JsonProperty("code")]
     //public int Code { get; set; }
     //[JsonProperty("message")]
-    //public string Message { get; set; }
+    //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public SpaceSeriesMetaData Data { get; set; }
+    [JsonProperty("data")] public SpaceSeriesMetaData Data { get; set; } = new();
 }
 
 public class SpaceSeriesMetaData : BaseModel
 {
-    [JsonProperty("meta")] public SpaceSeriesMeta Meta { get; set; }
-    [JsonProperty("recent_aids")] public List<long> RecentAids { get; set; }
+    [JsonProperty("meta")] public SpaceSeriesMeta Meta { get; set; } = new();
+    [JsonProperty("recent_aids")] public List<long> RecentAids { get; set; } = new();
 }

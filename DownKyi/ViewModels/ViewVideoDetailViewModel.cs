@@ -5,9 +5,11 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using Avalonia.Controls;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
+using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.CustomAction;
@@ -18,7 +20,6 @@ using DownKyi.Services.Download;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.PageViewModels;
-using Newtonsoft.Json;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -33,7 +34,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     public const string Tag = "PageVideoDetail";
 
     // 保存输入字符串，避免被用户修改
-    private string _input;
+    private string _input = string.Empty;
 
     private IInfoService? _infoService;
 
@@ -47,7 +48,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
         set => SetProperty(ref _inputText, value);
     }
 
-    private string _inputSearchText;
+    private string _inputSearchText = string.Empty;
 
     public string InputSearchText
     {
@@ -72,7 +73,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
         set => SetProperty(ref _loadingVisibility, value);
     }
 
-    private VectorImage _downloadManage;
+    private VectorImage _downloadManage = ButtonIcon.Instance().DownloadManage;
 
     public VectorImage DownloadManage
     {
@@ -184,20 +185,20 @@ public class ViewVideoDetailViewModel : ViewModelBase
     }
 
     // 输入确认事件
-    private DelegateCommand? _inputCommand;
+    private DownKyiAsyncDelegateCommand? _inputCommand;
 
-    public DelegateCommand InputCommand => _inputCommand ??= new DelegateCommand(ExecuteInputCommand, CanExecuteInputCommand);
-
-
-    private DelegateCommand? _inputSearchCommand;
+    public ICommand InputCommand => _inputCommand ??= new DownKyiAsyncDelegateCommand(ExecuteInputCommandAsync, CanExecuteInputCommand);
 
 
-    public DelegateCommand InputSearchCommand => _inputSearchCommand ??= new DelegateCommand(ExecuteInputSearchCommand);
+    private DownKyiAsyncDelegateCommand? _inputSearchCommand;
+
+
+    public ICommand InputSearchCommand => _inputSearchCommand ??= new DownKyiAsyncDelegateCommand(ExecuteInputSearchCommandAsync);
 
     /// <summary>
     /// 搜索视频输入事件
     /// </summary>
-    private async void ExecuteInputSearchCommand()
+    private async Task ExecuteInputSearchCommandAsync()
     {
         await Task.Run(() =>
         {
@@ -230,7 +231,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// <summary>
     /// 处理输入事件
     /// </summary>
-    private async void ExecuteInputCommand()
+    private async Task ExecuteInputCommandAsync()
     {
         InitView();
         try
@@ -252,7 +253,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
                 // 是否自动解析视频
                 if (SettingsManager.GetInstance().GetIsAutoParseVideo() == AllowStatus.Yes)
                 {
-                    PropertyChangeAsync(ExecuteParseAllVideoCommand);
+                    PropertyChangeAsync(() => _ = ExecuteParseAllVideoCommandAsync());
                 }
             });
         }
@@ -285,7 +286,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// <summary>
     /// 复制封面事件
     /// </summary>
-    private async void ExecuteCopyCoverCommand()
+    private void ExecuteCopyCoverCommand()
     {
         // 复制封面图片到剪贴板
         // Clipboard.SetImage(VideoInfoView.Cover);
@@ -293,14 +294,14 @@ public class ViewVideoDetailViewModel : ViewModelBase
     }
 
     // 复制封面URL事件
-    private DelegateCommand? _copyCoverUrlCommand;
+    private DownKyiAsyncDelegateCommand? _copyCoverUrlCommand;
 
-    public DelegateCommand CopyCoverUrlCommand => _copyCoverUrlCommand ??= new DelegateCommand(ExecuteCopyCoverUrlCommand);
+    public ICommand CopyCoverUrlCommand => _copyCoverUrlCommand ??= new DownKyiAsyncDelegateCommand(ExecuteCopyCoverUrlCommandAsync);
 
     /// <summary>
     /// 复制封面URL事件
     /// </summary>
-    private async void ExecuteCopyCoverUrlCommand()
+    private async Task ExecuteCopyCoverUrlCommandAsync()
     {
         if (_videoInfoView?.CoverUrl == null) return;
         // 复制封面url到剪贴板
@@ -411,15 +412,15 @@ public class ViewVideoDetailViewModel : ViewModelBase
 
 
     // 解析视频流事件
-    private DelegateCommand<object>? _parseCommand;
+    private DownKyiAsyncDelegateCommand<object>? _parseCommand;
 
-    public DelegateCommand<object> ParseCommand => _parseCommand ??= new DelegateCommand<object>(ExecuteParseCommand, CanExecuteParseCommand);
+    public ICommand ParseCommand => _parseCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteParseCommandAsync, CanExecuteParseCommand);
 
     /// <summary>
     /// 解析视频流事件
     /// </summary>
     /// <param name="parameter"></param>
-    private async void ExecuteParseCommand(object parameter)
+    private async Task ExecuteParseCommandAsync(object? parameter)
     {
         if (parameter is not VideoPage videoPage)
         {
@@ -461,14 +462,14 @@ public class ViewVideoDetailViewModel : ViewModelBase
 
 
     // 解析所有视频流事件
-    private DelegateCommand? _parseAllVideoCommand;
+    private DownKyiAsyncDelegateCommand? _parseAllVideoCommand;
 
-    public DelegateCommand ParseAllVideoCommand => _parseAllVideoCommand ??= new DelegateCommand(ExecuteParseAllVideoCommand, CanExecuteParseAllVideoCommand);
+    public ICommand ParseAllVideoCommand => _parseAllVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteParseAllVideoCommandAsync, CanExecuteParseAllVideoCommand);
 
     /// <summary>
     /// 解析所有视频流事件
     /// </summary>
-    private async void ExecuteParseAllVideoCommand()
+    private async Task ExecuteParseAllVideoCommandAsync()
     {
         // 解析范围
         var parseScope = SettingsManager.GetInstance().GetParseScope();
@@ -572,25 +573,20 @@ public class ViewVideoDetailViewModel : ViewModelBase
         var isAutoDownloadAll = SettingsManager.GetInstance().GetIsAutoDownloadAll();
         if (parseScope != ParseScope.None && isAutoDownloadAll == AllowStatus.Yes)
         {
-            AddToDownload(true);
+            await AddToDownloadAsync(true);
         }
 
         LogManager.Debug(Tag, $"ParseScope: {parseScope:G}");
     }
 
     // 添加到下载列表事件
-    private DelegateCommand? _addToDownloadCommand;
+    private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DelegateCommand(ExecuteAddToDownloadCommand, CanExecuteAddToDownloadCommand);
+    public ICommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), CanExecuteAddToDownloadCommand);
 
     /// <summary>
     /// 添加到下载列表事件
     /// </summary>
-    private void ExecuteAddToDownloadCommand()
-    {
-        AddToDownload(false);
-    }
-
     private bool CanExecuteAddToDownloadCommand()
     {
         return LoadingVisibility != true;
@@ -695,7 +691,8 @@ public class ViewVideoDetailViewModel : ViewModelBase
         {
             LogManager.Debug(Tag, "videoSections is not exist.");
 
-            var pages = videoInfoService.GetVideoPages();
+            var pages = videoInfoService.GetVideoPages() ?? new List<VideoPage>();
+            var cachePages = pages.Select(page => page.CloneForCache()).ToList();
 
             PropertyChangeAsync(() =>
             {
@@ -711,7 +708,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
                     Id = 0,
                     Title = "default",
                     IsSelected = true,
-                    VideoPages = pages
+                    VideoPages = cachePages
                 });
 
                 // 自动定位到合集中对应的视频位置
@@ -720,9 +717,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
         }
         else
         {
-            //这里如果浅拷贝会导致用于查询的CaCheVideoSections数据变化，所以这样处理
-            var videoSectionsStr = JsonConvert.SerializeObject(videoSections);
-            var videoSectionsData = JsonConvert.DeserializeObject<List<VideoSection>>(videoSectionsStr);
+            var videoSectionsData = videoSections.Select(section => section.CloneForCache()).ToList();
             PropertyChangeAsync(() =>
             {
                 VideoSections.AddRange(videoSections);
@@ -747,8 +742,8 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// <summary>
     /// 自动定位到合集中对应的视频位置
     /// </summary>
-    private VideoPage selectedVideoPage;
-    public VideoPage SelectedVideoPage
+    private VideoPage? selectedVideoPage;
+    public VideoPage? SelectedVideoPage
     {
         get => selectedVideoPage;
         set => SetProperty(ref selectedVideoPage, value);
@@ -756,7 +751,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
 
     private void AutoLocateAndSelectVideoPosition()
     {
-        
+
         long avid = ParseEntrance.GetAvId(_input);
         string bvid = ParseEntrance.GetBvId(_input);
 
@@ -769,7 +764,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
                 section.IsSelected = true;
                 foreach (var page in section.VideoPages)
                 {
-                    
+
                     if (page.Avid == avid || page.Bvid == bvid)
                     {
                         // 选中对应的视频页面
@@ -787,7 +782,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// 添加到下载列表事件
     /// </summary>
     /// <param name="isAll">是否下载所有，包括未选中项</param>
-    private async void AddToDownload(bool isAll)
+    private async Task AddToDownloadAsync(bool isAll)
     {
         AddToDownloadService? addToDownloadService;
         // 视频
@@ -808,6 +803,12 @@ public class ViewVideoDetailViewModel : ViewModelBase
         }
         else
         {
+            return;
+        }
+
+        if (VideoInfoView == null)
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipAddDownloadingZero"));
             return;
         }
 
@@ -867,7 +868,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
             if (LoadingVisibility != true)
             {
                 InputText = input;
-                PropertyChangeAsync(ExecuteInputCommand);
+                PropertyChangeAsync(() => _ = ExecuteInputCommandAsync());
             }
         }
 

@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 using System.Collections.Generic;
 
@@ -10,11 +10,11 @@ namespace DownKyi.Core.BiliApi.History.Models
         //[JsonProperty("code")]
         //public int Code { get; set; }
         //[JsonProperty("message")]
-        //public string Message { get; set; }
+        //public string Message { get; set; } = string.Empty;
         //[JsonProperty("ttl")]
         //public int Ttl { get; set; }
         [JsonProperty("data")]
-        public ToViewData Data { get; set; }
+        public ToViewData Data { get; set; } = new();
     }
 
     public class ToViewData : BaseModel
@@ -22,6 +22,6 @@ namespace DownKyi.Core.BiliApi.History.Models
         [JsonProperty("count")]
         public int Count { get; set; }
         [JsonProperty("list")]
-        public List<ToViewList> List { get; set; }
+        public List<ToViewList> List { get; set; } = new();
     }
 }

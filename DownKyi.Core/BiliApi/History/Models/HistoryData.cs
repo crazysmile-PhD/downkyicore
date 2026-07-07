@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 using System.Collections.Generic;
 
@@ -10,19 +10,19 @@ namespace DownKyi.Core.BiliApi.History.Models
         //[JsonProperty("code")]
         //public int Code { get; set; }
         //[JsonProperty("message")]
-        //public string Message { get; set; }
+        //public string Message { get; set; } = string.Empty;
         //[JsonProperty("ttl")]
         //public int Ttl { get; set; }
         [JsonProperty("data")]
-        public HistoryData Data { get; set; }
+        public HistoryData Data { get; set; } = new();
     }
 
     public class HistoryData : BaseModel
     {
         [JsonProperty("cursor")]
-        public HistoryCursor Cursor { get; set; }
-        //public List<HistoryDataTab> tab { get; set; }
+        public HistoryCursor Cursor { get; set; } = new();
+        //public List<HistoryDataTab> tab { get; set; } = new();
         [JsonProperty("list")]
-        public List<HistoryList> List { get; set; }
+        public List<HistoryList> List { get; set; } = new();
     }
 }

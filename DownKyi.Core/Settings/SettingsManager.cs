@@ -12,6 +12,8 @@ namespace DownKyi.Core.Settings;
 
 public partial class SettingsManager
 {
+    private static readonly TimeSpan FlushDelay = TimeSpan.FromMilliseconds(750);
+
     private bool SetProperty<T>(T currentValue, T newValue, Action<T> setter)
     {
         if (!EqualityComparer<T>.Default.Equals(currentValue, newValue))
@@ -22,10 +24,10 @@ public partial class SettingsManager
         }
         return true;
     }
-    
+
     private static SettingsManager? _instance;
 
-    private static readonly object _settingsLock = new object();
+    private static readonly object _settingsLock = new();
     // 内存中保存一份配置
     private AppSettings _appSettings;
 
@@ -37,7 +39,7 @@ public partial class SettingsManager
 
     // 防抖写：延迟 500ms 后真正落盘
     private Timer? _flushTimer;
-    private volatile bool _dirty;
+    private bool _dirty;
 
     /// <summary>
     /// 获取 SettingsManager 实例（单例）
@@ -84,7 +86,7 @@ public partial class SettingsManager
                         // 迁移：以明文重新写入
                         var migrated = settings;
                         _appSettings = migrated;
-                        FlushNow();
+                        WriteSettingsFile(migrated);
                         return migrated;
                     }
                 }
@@ -124,15 +126,11 @@ public partial class SettingsManager
     /// </summary>
     private void ScheduleFlush()
     {
-        _dirty = true;
-        if (_flushTimer == null)
+        lock (_settingsLock)
         {
-            _flushTimer = new Timer(_ => FlushNow(), null, 500, Timeout.Infinite);
-        }
-        else
-        {
-            // 重置计时器
-            _flushTimer.Change(500, Timeout.Infinite);
+            _dirty = true;
+            _flushTimer ??= new Timer(static state => ((SettingsManager)state!).FlushNow(), this, Timeout.Infinite, Timeout.Infinite);
+            _flushTimer.Change(FlushDelay, Timeout.InfiniteTimeSpan);
         }
     }
 
@@ -141,7 +139,6 @@ public partial class SettingsManager
     /// </summary>
     private void FlushNow()
     {
-        if (!_dirty) return;
         lock (_settingsLock)
         {
             if (!_dirty) return;
@@ -163,9 +160,23 @@ public partial class SettingsManager
     /// </summary>
     public void Flush()
     {
-        _flushTimer?.Dispose();
-        _flushTimer = null;
-        FlushNow();
+        lock (_settingsLock)
+        {
+            _flushTimer?.Dispose();
+            _flushTimer = null;
+            if (!_dirty) return;
+
+            try
+            {
+                WriteSettingsFile(_appSettings);
+                _dirty = false;
+            }
+            catch (Exception e)
+            {
+                Console.PrintLine("Flush()发生异常: {0}", e);
+                LogManager.Error("SettingsManager", e);
+            }
+        }
     }
 
     private void WriteSettingsFile(AppSettings settings)
@@ -177,6 +188,40 @@ public partial class SettingsManager
         }
 
         var json = JsonConvert.SerializeObject(settings);
-        File.WriteAllText(_settingsName, json, Encoding.UTF8);
+        var tempFile = $"{_settingsName}.{Guid.NewGuid():N}.tmp";
+
+        try
+        {
+            using (var stream = new FileStream(tempFile, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var writer = new StreamWriter(stream, Encoding.UTF8))
+            {
+                writer.Write(json);
+                writer.Flush();
+                stream.Flush(flushToDisk: true);
+            }
+
+            if (File.Exists(_settingsName))
+            {
+                File.Replace(tempFile, _settingsName, null, ignoreMetadataErrors: true);
+            }
+            else
+            {
+                File.Move(tempFile, _settingsName);
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempFile))
+                {
+                    File.Delete(tempFile);
+                }
+            }
+            catch (Exception e)
+            {
+                LogManager.Error("SettingsManager", e);
+            }
+        }
     }
 }

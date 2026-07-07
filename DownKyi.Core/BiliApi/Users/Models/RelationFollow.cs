@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -7,12 +7,12 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/relation/followings?vmid={mid}&pn={pn}&ps={ps}&order_type={orderType}
 public class RelationFollowOrigin : BaseModel
 {
-    [JsonProperty("data")] public RelationFollow Data { get; set; }
+    [JsonProperty("data")] public RelationFollow Data { get; set; } = new();
 }
 
 public class RelationFollow : BaseModel
 {
-    [JsonProperty("list")] public List<RelationFollowInfo> List { get; set; }
+    [JsonProperty("list")] public List<RelationFollowInfo> List { get; set; } = new();
 
     //[JsonProperty("re_version")]
     //public long reVersion { get; set; }

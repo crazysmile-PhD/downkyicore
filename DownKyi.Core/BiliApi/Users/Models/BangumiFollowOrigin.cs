@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -6,12 +6,12 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/space/bangumi/follow/list?vmid={mid}&type={type:D}&pn={pn}&ps={ps}
 public class BangumiFollowOrigin : BaseModel
 {
-    [JsonProperty("data")] public BangumiFollowData Data { get; set; }
+    [JsonProperty("data")] public BangumiFollowData Data { get; set; } = new();
 }
 
 public class BangumiFollowData : BaseModel
 {
-    [JsonProperty("list")] public List<BangumiFollow> List { get; set; }
+    [JsonProperty("list")] public List<BangumiFollow> List { get; set; } = new();
     [JsonProperty("pn")] public int Pn { get; set; }
     [JsonProperty("ps")] public int Ps { get; set; }
     [JsonProperty("total")] public int Total { get; set; }

@@ -1,4 +1,4 @@
-﻿using Avalonia.Media.Imaging;
+using Avalonia.Media.Imaging;
 using DownKyi.Images;
 using DownKyi.Utils;
 using Prism.Commands;
@@ -17,16 +17,16 @@ public class HistoryMedia : BindableBase
     }
 
     // bvid
-    public string Bvid { get; set; }
+    public string Bvid { get; set; } = string.Empty;
 
     // 播放url
-    public string Url { get; set; }
+    public string Url { get; set; } = string.Empty;
 
     // UP主的mid
     public long UpMid { get; set; }
 
     // 类型
-    public string Business { get; set; }
+    public string Business { get; set; } = string.Empty;
 
     #region 页面属性申明
 
@@ -40,7 +40,7 @@ public class HistoryMedia : BindableBase
     }
 
     // 封面
-    private string _cover;
+    private string _cover = string.Empty;
 
     public string Cover
     {
@@ -49,7 +49,7 @@ public class HistoryMedia : BindableBase
     }
 
     // 视频标题
-    private string _title;
+    private string _title = string.Empty;
 
     public string Title
     {
@@ -58,7 +58,7 @@ public class HistoryMedia : BindableBase
     }
 
     // 分P的标题
-    private string _subTitle;
+    private string _subTitle = string.Empty;
 
     public string SubTitle
     {
@@ -76,7 +76,7 @@ public class HistoryMedia : BindableBase
     }
 
     // tag标签
-    private string _tagName;
+    private string _tagName = string.Empty;
 
     public string TagName
     {
@@ -85,7 +85,7 @@ public class HistoryMedia : BindableBase
     }
 
     // new_desc 剧集或分P描述
-    private string _partdesc;
+    private string _partdesc = string.Empty;
 
     public string Partdesc
     {
@@ -94,7 +94,7 @@ public class HistoryMedia : BindableBase
     }
 
     // 观看进度
-    private string _progress;
+    private string _progress = string.Empty;
 
     public string Progress
     {
@@ -112,7 +112,7 @@ public class HistoryMedia : BindableBase
     }
 
     // UP主的昵称
-    private string _upName;
+    private string _upName = string.Empty;
 
     public string UpName
     {
@@ -121,7 +121,7 @@ public class HistoryMedia : BindableBase
     }
 
     // UP主的头像
-    private string _upHeader;
+    private string _upHeader = string.Empty;
 
     public string UpHeader
     {

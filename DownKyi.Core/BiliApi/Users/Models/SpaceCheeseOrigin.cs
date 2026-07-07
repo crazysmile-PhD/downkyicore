@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -6,11 +6,11 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/pugv/app/web/season/page?mid={mid}&pn={pn}&ps={ps}
 public class SpaceCheeseOrigin : BaseModel
 {
-    [JsonProperty("data")] public SpaceCheeseData Data { get; set; }
+    [JsonProperty("data")] public SpaceCheeseData Data { get; set; } = new();
 }
 
 public class SpaceCheeseData : BaseModel
 {
-    [JsonProperty("items")] public List<SpaceCheese> Items { get; set; }
-    [JsonProperty("page")] public SpaceCheesePage Page { get; set; }
+    [JsonProperty("items")] public List<SpaceCheese> Items { get; set; } = new();
+    [JsonProperty("page")] public SpaceCheesePage Page { get; set; } = new();
 }

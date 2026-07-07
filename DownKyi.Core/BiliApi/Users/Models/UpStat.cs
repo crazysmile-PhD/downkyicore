@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -6,13 +6,13 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/space/upstat?mid={mid}
 public class UpStatOrigin : BaseModel
 {
-    [JsonProperty("data")] public UpStat Data { get; set; }
+    [JsonProperty("data")] public UpStat Data { get; set; } = new();
 }
 
 public class UpStat : BaseModel
 {
-    [JsonProperty("archive")] public UpStatArchive Archive { get; set; }
-    [JsonProperty("article")] public UpStatArchive Article { get; set; }
+    [JsonProperty("archive")] public UpStatArchive Archive { get; set; } = new();
+    [JsonProperty("article")] public UpStatArchive Article { get; set; } = new();
     [JsonProperty("likes")] public long Likes { get; set; }
 }
 

@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -9,20 +9,20 @@ public class MyInfoOrigin : BaseModel
     //[JsonProperty("code")]
     //public int Code { get; set; }
     //[JsonProperty("message")]
-    //public string Message { get; set; }
+    //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public MyInfo Data { get; set; }
+    [JsonProperty("data")] public MyInfo Data { get; set; } = new();
 }
 
 public class MyInfo : BaseModel
 {
     [JsonProperty("mid")] public long Mid { get; set; }
-    [JsonProperty("name")] public string Name { get; set; }
-    [JsonProperty("sex")] public string Sex { get; set; }
-    [JsonProperty("face")] public string Face { get; set; }
+    [JsonProperty("name")] public string Name { get; set; } = string.Empty;
+    [JsonProperty("sex")] public string Sex { get; set; } = string.Empty;
+    [JsonProperty("face")] public string Face { get; set; } = string.Empty;
 
-    [JsonProperty("sign")] public string Sign { get; set; }
+    [JsonProperty("sign")] public string Sign { get; set; } = string.Empty;
 
     // rank
     [JsonProperty("level")] public int Level { get; set; }
@@ -34,7 +34,7 @@ public class MyInfo : BaseModel
     [JsonProperty("tel_status")] public int TelStatus { get; set; }
     [JsonProperty("identification")] public int Identification { get; set; }
 
-    [JsonProperty("vip")] public UserInfoVip Vip { get; set; }
+    [JsonProperty("vip")] public UserInfoVip Vip { get; set; } = new();
 
     // pendant
     // nameplate
@@ -52,7 +52,7 @@ public class MyInfo : BaseModel
     // face_nft
     // face_nft_new
     // is_senior_member
-    [JsonProperty("level_exp")] public UserInfoLevelExp LevelExp { get; set; }
+    [JsonProperty("level_exp")] public UserInfoLevelExp LevelExp { get; set; } = new();
     [JsonProperty("coins")] public float Coins { get; set; }
     [JsonProperty("following")] public int Following { get; set; }
     [JsonProperty("follower")] public int Follower { get; set; }

@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.VideoStream.Models;
 

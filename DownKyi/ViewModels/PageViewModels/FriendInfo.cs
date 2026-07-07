@@ -1,4 +1,4 @@
-﻿using Avalonia.Media.Imaging;
+using Avalonia.Media.Imaging;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Events;
@@ -19,7 +19,7 @@ public class FriendInfo : BindableBase
 
     #region 页面属性申明
 
-    private string _header;
+    private string _header = string.Empty;
 
     public string Header
     {
@@ -27,7 +27,7 @@ public class FriendInfo : BindableBase
         set => SetProperty(ref _header, value);
     }
 
-    private string _name;
+    private string _name = string.Empty;
 
     public string Name
     {
@@ -35,7 +35,7 @@ public class FriendInfo : BindableBase
         set => SetProperty(ref _name, value);
     }
 
-    private string _sign;
+    private string _sign = string.Empty;
 
     public string Sign
     {

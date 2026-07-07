@@ -1,4 +1,4 @@
-﻿using Avalonia.Media.Imaging;
+using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Utils;
 using Prism.Commands;
@@ -34,7 +34,7 @@ public class BangumiFollowMedia : BindableBase
     }
 
     // 封面
-    private string cover;
+    private string cover = string.Empty;
 
     public string Cover
     {
@@ -43,7 +43,7 @@ public class BangumiFollowMedia : BindableBase
     }
 
     // 视频标题
-    private string title;
+    private string title = string.Empty;
 
     public string Title
     {
@@ -52,7 +52,7 @@ public class BangumiFollowMedia : BindableBase
     }
 
     // 视频类型名称
-    private string seasonTypeName;
+    private string seasonTypeName = string.Empty;
 
     public string SeasonTypeName
     {
@@ -61,7 +61,7 @@ public class BangumiFollowMedia : BindableBase
     }
 
     // 地区
-    private string area;
+    private string area = string.Empty;
 
     public string Area
     {
@@ -70,7 +70,7 @@ public class BangumiFollowMedia : BindableBase
     }
 
     // 标记是否会员
-    private string badge;
+    private string badge = string.Empty;
 
     public string Badge
     {
@@ -79,7 +79,7 @@ public class BangumiFollowMedia : BindableBase
     }
 
     // 简介
-    private string evaluate;
+    private string evaluate = string.Empty;
 
     public string Evaluate
     {
@@ -88,7 +88,7 @@ public class BangumiFollowMedia : BindableBase
     }
 
     // 视频更新进度
-    private string indexShow;
+    private string indexShow = string.Empty;
 
     public string IndexShow
     {
@@ -97,7 +97,7 @@ public class BangumiFollowMedia : BindableBase
     }
 
     // 观看进度
-    private string progress;
+    private string progress = string.Empty;
 
     public string Progress
     {

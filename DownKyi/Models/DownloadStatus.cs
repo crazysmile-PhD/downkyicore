@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Models;
+namespace DownKyi.Models;
 
 public enum DownloadStatus
 {

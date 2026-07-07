@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -11,6 +11,6 @@ public class SpacePublicationOrigin : BaseModel
 
 public class SpacePublication : BaseModel
 {
-    [JsonProperty("list")] public SpacePublicationList List { get; set; }
-    [JsonProperty("page")] public SpacePublicationPage Page { get; set; }
+    [JsonProperty("list")] public SpacePublicationList List { get; set; } = new();
+    [JsonProperty("page")] public SpacePublicationPage Page { get; set; } = new();
 }

@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Bangumi.Models;
@@ -9,28 +9,28 @@ public class BangumiMediaOrigin : BaseModel
     //[JsonProperty("code")]
     //public int Code { get; set; }
     //[JsonProperty("message")]
-    //public string Message { get; set; }
+    //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("result")] public BangumiMediaData Result { get; set; }
+    [JsonProperty("result")] public BangumiMediaData Result { get; set; } = new();
 }
 
 public class BangumiMediaData : BaseModel
 {
-    [JsonProperty("media")] public BangumiMedia Media { get; set; }
+    [JsonProperty("media")] public BangumiMedia Media { get; set; } = new();
 }
 
 public class BangumiMedia : BaseModel
 {
-    [JsonProperty("areas")] public List<BangumiArea> Areas { get; set; }
-    [JsonProperty("cover")] public string Cover { get; set; }
+    [JsonProperty("areas")] public List<BangumiArea> Areas { get; set; } = new();
+    [JsonProperty("cover")] public string Cover { get; set; } = string.Empty;
 
     [JsonProperty("media_id")] public long MediaId { get; set; }
 
     // new_ep
     // rating
     [JsonProperty("season_id")] public long SeasonId { get; set; }
-    [JsonProperty("share_url")] public string ShareUrl { get; set; }
-    [JsonProperty("title")] public string Title { get; set; }
-    [JsonProperty("type_name")] public string TypeName { get; set; }
+    [JsonProperty("share_url")] public string ShareUrl { get; set; } = string.Empty;
+    [JsonProperty("title")] public string Title { get; set; } = string.Empty;
+    [JsonProperty("type_name")] public string TypeName { get; set; } = string.Empty;
 }

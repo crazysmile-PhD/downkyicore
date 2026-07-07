@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.History.Models
@@ -12,9 +12,9 @@ namespace DownKyi.Core.BiliApi.History.Models
         // tname
         // copyright
         [JsonProperty("pic")]
-        public string Pic { get; set; }
+        public string Pic { get; set; } = string.Empty;
         [JsonProperty("title")]
-        public string Title { get; set; }
+        public string Title { get; set; } = string.Empty;
         // pubdate
         // ctime
         // desc
@@ -22,7 +22,7 @@ namespace DownKyi.Core.BiliApi.History.Models
         // duration
         // rights
         [JsonProperty("owner")]
-        public VideoOwner Owner { get; set; }
+        public VideoOwner Owner { get; set; } = new();
         // stat
         // dynamic
         // dimension
@@ -36,7 +36,7 @@ namespace DownKyi.Core.BiliApi.History.Models
         [JsonProperty("add_at")]
         public long AddAt { get; set; }
         [JsonProperty("bvid")]
-        public string Bvid { get; set; }
+        public string Bvid { get; set; } = string.Empty;
         // uri
         // viewed
     }

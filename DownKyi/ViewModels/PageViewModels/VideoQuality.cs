@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
@@ -13,7 +13,7 @@ public class VideoQuality : BindableBase
         set => SetProperty(ref _quality, value);
     }
 
-    private string _qualityFormat;
+    private string _qualityFormat = string.Empty;
 
     public string QualityFormat
     {
@@ -21,7 +21,7 @@ public class VideoQuality : BindableBase
         set => SetProperty(ref _qualityFormat, value);
     }
 
-    private List<string> _videoCodecList;
+    private List<string> _videoCodecList = new();
 
     public List<string> VideoCodecList
     {
@@ -29,7 +29,7 @@ public class VideoQuality : BindableBase
         set => SetProperty(ref _videoCodecList, value);
     }
 
-    private string _selectedVideoCodec;
+    private string _selectedVideoCodec = string.Empty;
 
     public string SelectedVideoCodec
     {
@@ -41,5 +41,16 @@ public class VideoQuality : BindableBase
                 SetProperty(ref _selectedVideoCodec, value);
             }
         }
+    }
+
+    public VideoQuality CloneForCache()
+    {
+        return new VideoQuality
+        {
+            Quality = Quality,
+            QualityFormat = QualityFormat,
+            VideoCodecList = new List<string>(VideoCodecList),
+            SelectedVideoCodec = SelectedVideoCodec
+        };
     }
 }

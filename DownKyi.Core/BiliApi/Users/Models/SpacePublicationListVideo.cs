@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -10,30 +10,30 @@ public class SpacePublicationListVideo : BaseModel
     [JsonProperty("typeid")] public int Typeid { get; set; }
     [JsonProperty("play")] public int Play { get; set; }
 
-    [JsonProperty("pic")] public string Pic { get; set; }
+    [JsonProperty("pic")] public string Pic { get; set; } = string.Empty;
 
     //[JsonProperty("subtitle")]
-    //public string Subtitle { get; set; }
+    //public string Subtitle { get; set; } = string.Empty;
     //[JsonProperty("description")]
-    //public string Description { get; set; }
+    //public string Description { get; set; } = string.Empty;
     //[JsonProperty("copyright")]
-    //public string Copyright { get; set; }
-    [JsonProperty("title")] public string Title { get; set; }
+    //public string Copyright { get; set; } = string.Empty;
+    [JsonProperty("title")] public string Title { get; set; } = string.Empty;
 
     //[JsonProperty("review")]
     //public int Review { get; set; }
     //[JsonProperty("author")]
-    //public string Author { get; set; }
+    //public string Author { get; set; } = string.Empty;
     [JsonProperty("mid")] public long Mid { get; set; }
     [JsonProperty("created")] public long Created { get; set; }
 
-    [JsonProperty("length")] public string Length { get; set; }
+    [JsonProperty("length")] public string Length { get; set; } = string.Empty;
 
     //[JsonProperty("video_review")]
     //public int VideoReview { get; set; }
     [JsonProperty("aid")] public long Aid { get; set; }
 
-    [JsonProperty("bvid")] public string Bvid { get; set; }
+    [JsonProperty("bvid")] public string Bvid { get; set; } = string.Empty;
     //[JsonProperty("hide_click")]
     //public bool HideClick { get; set; }
     //[JsonProperty("is_pay")]

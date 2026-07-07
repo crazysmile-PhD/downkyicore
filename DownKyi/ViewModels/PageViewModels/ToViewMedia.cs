@@ -1,4 +1,4 @@
-﻿using Avalonia.Media.Imaging;
+using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Utils;
 using Prism.Commands;
@@ -20,7 +20,7 @@ public class ToViewMedia : BindableBase
     public long Aid { get; set; }
 
     // bvid
-    public string Bvid { get; set; }
+    public string Bvid { get; set; } = string.Empty;
 
     // UP主的mid
     public long UpMid { get; set; }
@@ -37,7 +37,7 @@ public class ToViewMedia : BindableBase
     }
 
     // 封面
-    private string _cover;
+    private string _cover = string.Empty;
 
     public string Cover
     {
@@ -46,7 +46,7 @@ public class ToViewMedia : BindableBase
     }
 
     // 视频标题
-    private string _title;
+    private string _title = string.Empty;
 
     public string Title
     {
@@ -55,7 +55,7 @@ public class ToViewMedia : BindableBase
     }
 
     // UP主的昵称
-    private string _upName;
+    private string _upName = string.Empty;
 
     public string UpName
     {
@@ -64,7 +64,7 @@ public class ToViewMedia : BindableBase
     }
 
     // UP主的头像
-    private string _upHeader;
+    private string _upHeader = string.Empty;
 
     public string UpHeader
     {

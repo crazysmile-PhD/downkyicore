@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.BiliApi.Users.Models;
+namespace DownKyi.Core.BiliApi.Users.Models;
 
 public enum FollowingOrder
 {

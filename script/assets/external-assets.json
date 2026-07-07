@@ -1,0 +1,62 @@
+{
+  "aria2": {
+    "version": "1.37.0",
+    "repository": "https://github.com/yaobiao131/downkyi-aria2-static-build",
+    "assets": {
+      "win-x86": {
+        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-i686-w64-mingw32_static.zip",
+        "sha256": "97f1e0dd107abb6c1b1d702d736d9c7bcb7770ee5656e8e56bc220d983548d59"
+      },
+      "win-x64": {
+        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-x86_64-w64-mingw32_static.zip",
+        "sha256": "615cb5d8deeed115e3e6041ea46078dbd9695d5113fa7fd2bc22a3feb522fcb8"
+      },
+      "linux-x64": {
+        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-x86_64-linux-musl_static.zip",
+        "sha256": "37d9679f42b7d45b203b6497957c33693d07de3fb01f8009e55d83810f6a5faf"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-aarch64-linux-musl_static.zip",
+        "sha256": "aa0fd7aefb43125c9ea558ada538d1171f2b56866b2acb8d01b2915060f60d37"
+      },
+      "osx-x64": {
+        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-x86_64-apple-darwin_static.zip",
+        "sha256": "95bd7654ae68c9049893c64e83f22a472d1ad9ff8b6aebe1b047106fa5c6bfc2"
+      },
+      "osx-arm64": {
+        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-aarch64-apple-darwin_static.zip",
+        "sha256": "5431ba2e1b81318e07646d53373d2da8348f3fdea3331cef98f02764c105bfe1"
+      }
+    }
+  },
+  "ffmpeg": {
+    "version": "continuous",
+    "repository": "https://github.com/yaobiao131/downkyi-ffmpeg-build",
+    "assets": {
+      "win-x86": {
+        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-i686-w64-mingw32_static.zip",
+        "sha256": "969a75924bfaa642d54dafea771cc1cf77103915428b1eaeac061eda7f837471"
+      },
+      "win-x64": {
+        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-x86_64-w64-mingw32_static.zip",
+        "sha256": "563766d2f7a4fc16b69c1928966fa6867697bbed39aacf2db0decdf639ee66df"
+      },
+      "linux-x64": {
+        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-x86_64-linux-musl_static.zip",
+        "sha256": "fd6709e6c39aa6cdeb8f98b51c434122a4ae7dc36d5b94765c695e96c64647f2"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-aarch64-linux-musl_static.zip",
+        "sha256": "89b5d5f1dc7832dd07a4f171a236c089b55b087062232b6845c8ae31c4f16e23"
+      },
+      "osx-x64": {
+        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-x86_64-apple-darwin_static.zip",
+        "sha256": "ba7cd3da928d9028b01cecc0fca915021afea47e9090552579d8da2919e7bde4"
+      },
+      "osx-arm64": {
+        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-aarch64-apple-darwin_static.zip",
+        "sha256": "8fd7ea3126839dac99d8e631071ce8b08a1caa00d72171813b4e77aa1f68bb31"
+      }
+    }
+  }
+}

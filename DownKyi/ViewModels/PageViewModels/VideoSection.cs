@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
+using System.Linq;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
@@ -7,7 +8,7 @@ public class VideoSection : BindableBase
 {
     public long Id { get; set; }
 
-    private string _title;
+    private string _title = string.Empty;
 
     public string Title
     {
@@ -23,11 +24,22 @@ public class VideoSection : BindableBase
         set => SetProperty(ref _isSelected, value);
     }
 
-    private List<VideoPage> _videoPages;
+    private List<VideoPage> _videoPages = new();
 
     public List<VideoPage> VideoPages
     {
         get => _videoPages;
         set => SetProperty(ref _videoPages, value);
+    }
+
+    public VideoSection CloneForCache()
+    {
+        return new VideoSection
+        {
+            Id = Id,
+            Title = Title,
+            IsSelected = IsSelected,
+            VideoPages = VideoPages.Select(page => page.CloneForCache()).ToList()
+        };
     }
 }

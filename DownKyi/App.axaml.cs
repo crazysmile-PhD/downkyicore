@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -60,7 +63,7 @@ public partial class App : PrismApplication
     public override void Initialize()
     {
 #if !DEBUG
-        _mutex = new Mutex(true, "Global\\DownKyi", out var createdNew);
+        _mutex = new Mutex(true, BuildSingleInstanceMutexName(), out var createdNew);
         if (!createdNew)
         {
             Environment.Exit(0);
@@ -305,6 +308,15 @@ public partial class App : PrismApplication
     private void NativeMenuItem_OnClick(object? sender, EventArgs e)
     {
         AppLife?.Shutdown();
+    }
+
+    private static string BuildSingleInstanceMutexName()
+    {
+        var installPath = Path.GetFullPath(AppContext.BaseDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .ToUpperInvariant();
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(installPath)).AsSpan(0, 8));
+        return $@"Global\DownKyi-{RepoOwner}-{RepoName}-{hash}";
     }
 
     private sealed record DownloadStartupState(

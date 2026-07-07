@@ -6,45 +6,45 @@ namespace DownKyi.Models;
 
 [Serializable]
 [XmlRoot("movie")]
-public class MovieMetadata 
+public class MovieMetadata
 {
-        
+
     [XmlElement("title")]
-    public string Title { get; set; }
-    
+    public string Title { get; set; } = string.Empty;
+
     [XmlElement("plot")]
-    public string Plot { get; set; }
-    
+    public string Plot { get; set; } = string.Empty;
+
     [XmlElement("year")]
-    public string Year { get; set; }
-    
+    public string Year { get; set; } = string.Empty;
+
     [XmlElement("genre")]
-    public List<string> Genres { get; set; }
-    
+    public List<string> Genres { get; set; } = new();
+
     [XmlElement("tag")]
-    public List<string> Tags { get; set; }
-    
+    public List<string> Tags { get; set; } = new();
+
     [XmlElement("actor")]
-    public List<Actor> Actors { get; set; }
-    
+    public List<Actor> Actors { get; set; } = new();
+
     [XmlElement("uniqueid")]
     public  UniqueId BilibiliId { get; set; }
-    
+
     [XmlElement("premiered")]
-    public string Premiered { get; set; }
-    
+    public string Premiered { get; set; } = string.Empty;
+
     [XmlElement("rating")]
-    public List<Rating> Ratings { get; set; }
+    public List<Rating> Ratings { get; set; } = new();
 }
 
 [Serializable]
 public class UniqueId
 {
     [XmlAttribute("type")]
-    public string Type { get; set; }
+    public string Type { get; set; } = string.Empty;
 
     [XmlText]
-    public string Value { get; set; }
+    public string Value { get; set; } = string.Empty;
 
     public UniqueId() { }
 
@@ -61,11 +61,11 @@ public class UniqueId
 public class Actor
 {
     [XmlElement("name")]
-    public string Name { get; set; }
+    public string Name { get; set; } = string.Empty;
 
     [XmlElement("role")]
-    public string Role { get; set; }
-    
+    public string Role { get; set; } = string.Empty;
+
     public Actor() { }
     public Actor(string name, string role)
     {
@@ -78,18 +78,18 @@ public class Actor
 public class Rating
 {
     [XmlAttribute("name")]
-    public string Name { get; set; }  
-    
-    
+    public string Name { get; set; } = string.Empty;
+
+
     [XmlAttribute("max")]
-    public int Max { get; set; } 
-    
+    public int Max { get; set; }
+
     [XmlAttribute("default")]
-    public bool IsDefault { get; set; } 
-    
+    public bool IsDefault { get; set; }
+
     [XmlText]
     public float Value { get; set; }
-    
+
     public Rating() { }
 
     public Rating(string name, float value, int max = 10, bool isDefault = false)

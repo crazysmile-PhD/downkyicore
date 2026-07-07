@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users.Models;
@@ -7,11 +7,11 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 public class SpaceSettingsOrigin : BaseModel
 {
     [JsonProperty("status")] public bool Status { get; set; }
-    [JsonProperty("data")] public SpaceSettings Data { get; set; }
+    [JsonProperty("data")] public SpaceSettings Data { get; set; } = new();
 }
 
 public class SpaceSettings : BaseModel
 {
     // ...
-    [JsonProperty("toutu")] public SpaceSettingsToutu Toutu { get; set; }
+    [JsonProperty("toutu")] public SpaceSettingsToutu Toutu { get; set; } = new();
 }
