@@ -268,6 +268,12 @@
     <system:String x:Key="CurrentAppVersion">当前版本：</system:String>
     <system:String x:Key="CheckUpdate">检查更新</system:String>
     <system:String x:Key="Feedback">意见反馈</system:String>
+    <system:String x:Key="Diagnostics">诊断日志</system:String>
+    <system:String x:Key="OpenLogs">打开日志</system:String>
+    <system:String x:Key="ExportDiagnosticLog">导出诊断日志</system:String>
+    <system:String x:Key="DiagnosticLogTip">诊断日志会自动脱敏，只保留近期错误、崩溃和超时信息，方便反馈问题。</system:String>
+    <system:String x:Key="DiagnosticLogExported">已导出脱敏诊断日志~</system:String>
+    <system:String x:Key="DiagnosticLogExportFailed">导出诊断日志失败，请稍后重试~</system:String>
     <system:String x:Key="ReceiveBetaVersion">接收测试版更新</system:String>
     <system:String x:Key="AutoUpdateWhenLaunch">启动时检查更新</system:String>
     <system:String x:Key="TipSettingUpdated">设置已更新~</system:String>

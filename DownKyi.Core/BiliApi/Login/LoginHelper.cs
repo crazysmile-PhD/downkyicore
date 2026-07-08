@@ -18,6 +18,44 @@ public static class LoginHelper
     private static List<DownKyiCookie>? _cachedCookies;
     private static string? _cachedCookieString;
 
+    private static DownKyiCookie CloneCookie(DownKyiCookie cookie)
+    {
+        return new DownKyiCookie(cookie.Name, cookie.Value, cookie.Domain);
+    }
+
+    private static List<DownKyiCookie> CloneCookies(IEnumerable<DownKyiCookie> cookies)
+    {
+        return cookies.Select(CloneCookie).ToList();
+    }
+
+    public static string BuildCookieHeader(IEnumerable<DownKyiCookie> cookies)
+    {
+        var order = new List<string>();
+        var deduplicated = new Dictionary<string, DownKyiCookie>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var cookie in cookies)
+        {
+            if (string.IsNullOrWhiteSpace(cookie.Name))
+            {
+                continue;
+            }
+
+            var name = cookie.Name.Trim();
+            if (!deduplicated.ContainsKey(name))
+            {
+                order.Add(name);
+            }
+
+            deduplicated[name] = new DownKyiCookie(name, cookie.Value, cookie.Domain);
+        }
+
+        return string.Join("; ", order.Select(name =>
+        {
+            var cookie = deduplicated[name];
+            return $"{cookie.Name}={cookie.Value}";
+        }));
+    }
+
     /// <summary>
     /// 使缓存失效，在写操作完成后调用
     /// </summary>
@@ -104,7 +142,7 @@ public static class LoginHelper
         {
             if (_cachedCookies != null)
             {
-                return _cachedCookies;
+                return CloneCookies(_cachedCookies);
             }
         }
         finally
@@ -119,7 +157,7 @@ public static class LoginHelper
             // 双重检查：可能其他线程已完成加载
             if (_cachedCookies != null)
             {
-                return _cachedCookies;
+                return CloneCookies(_cachedCookies);
             }
 
             if (!File.Exists(LocalLoginInfo))
@@ -132,11 +170,13 @@ public static class LoginHelper
             {
                 // 直接读取文件，用 FileShare.Read 避免独占锁，无需临时文件
                 using var stream = new FileStream(LocalLoginInfo, FileMode.Open, FileAccess.Read, FileShare.Read);
-                cookies = ObjectHelper.ReadCookiesFromStream(stream)?.Select(cookie =>
-                {
-                    cookie.Value = HttpUtility.UrlEncode(cookie.Value);
-                    return cookie;
-                }).ToList();
+                cookies = ObjectHelper.ReadCookiesFromStream(stream)?
+                    .Where(cookie => !string.IsNullOrWhiteSpace(cookie.Name))
+                    .Select(cookie => new DownKyiCookie(
+                        cookie.Name.Trim(),
+                        HttpUtility.UrlEncode(cookie.Value),
+                        cookie.Domain))
+                    .ToList();
             }
             catch (Exception e)
             {
@@ -147,11 +187,9 @@ public static class LoginHelper
 
             _cachedCookies = cookies ?? new List<DownKyiCookie>();
             // 同步更新字符串缓存
-            _cachedCookieString = _cachedCookies.Count > 0
-                ? string.Join("; ", _cachedCookies.Select(item => $"{item.Name}={item.Value}"))
-                : "";
+            _cachedCookieString = BuildCookieHeader(_cachedCookies);
 
-            return _cachedCookies;
+            return CloneCookies(_cachedCookies);
         }
         finally
         {

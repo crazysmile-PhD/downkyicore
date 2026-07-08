@@ -66,6 +66,8 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             return null;
         }
 
+        EnsureDownloadIsActive(downloading);
+
         return DownloadVideo(downloading, new PlayUrlDashVideo
         {
             Id = downloadVideo.Id,
@@ -144,6 +146,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             // Gid最好能是每个文件单独存储，现在复用有可能会混
             // 不过好消息是下载是按固定顺序的，而且下载了两个音频会混流不过
             downloading.Downloading.Gid = null;
+            PersistDownloadingState(downloading);
         }
 
         // 启用https
@@ -179,6 +182,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             {
                 downloading.Downloading.DownloadedFiles.Add(key);
                 downloading.Downloading.Gid = null;
+                PersistDownloadingState(downloading);
                 return Path.Combine(path, fileName);
             }
             else
@@ -335,20 +339,29 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             RequestConfiguration = requestConfiguration,
             ParallelDownload = true,
             ParallelCount = 2,
-            MaximumMemoryBufferBytes = 1024 * 1024 * 50
+            MaximumMemoryBufferBytes = 1024 * 1024 * 50,
+            EnableAutoResumeDownload = true,
+            ClearPackageOnCompletionWithFailure = false,
+            FileExistPolicy = FileExistPolicy.IgnoreDownload
         };
         foreach (var url in urls)
         {
             var downloader = downloading.DownloadService;
+            var isFinished = false;
             var isComplete = false;
+            var targetFile = Path.Combine(path, localFileName);
             if (downloading.DownloadService == null)
             {
                 downloader = new Downloader.DownloadService(downloadOpt);
-                downloader.DownloadFileCompleted += (_, _) =>
+                downloader.DownloadFileCompleted += (_, args) =>
                 {
-                    if (!File.Exists(Path.Combine(path, localFileName))) return;
-                    isComplete = true;
+                    isComplete = !args.Cancelled && args.Error == null && File.Exists(targetFile);
+                    isFinished = true;
                     downloading.DownloadService = null;
+                    if (args.Error != null)
+                    {
+                        LogManager.Error("BuiltinDownloadService.DownloadFileCompleted", args.Error);
+                    }
                 };
                 downloader.DownloadProgressChanged += (_, args) =>
                 {
@@ -368,7 +381,14 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                     }
                 };
                 downloading.DownloadService = downloader;
-                downloader.DownloadFileTaskAsync(url, Path.Combine(path, localFileName)).ConfigureAwait(false);
+                _ = downloader.DownloadFileTaskAsync(url, targetFile, CancellationToken.GetValueOrDefault())
+                    .ContinueWith(task =>
+                    {
+                        if (task.Exception != null)
+                        {
+                            LogManager.Error("BuiltinDownloadService.DownloadFileTaskAsync", task.Exception);
+                        }
+                    }, TaskScheduler.Default);
             }
             else
             {
@@ -376,7 +396,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             }
 
             // 阻塞当前任务，监听暂停事件
-            while (!isComplete)
+            while (!isFinished)
             {
                 CancellationToken?.ThrowIfCancellationRequested();
                 switch (downloading.Downloading.DownloadStatus)
@@ -384,6 +404,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                     case DownloadStatus.Pause:
                         // 暂停下载
                         downloader?.Pause();
+                        downloading.DownloadService = null;
                         // 通知UI，并阻塞当前线程
                         Pause(downloading);
                         break;

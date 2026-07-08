@@ -36,6 +36,15 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         [JsonProperty("dir")]
         public string Dir { get; set; } = string.Empty;
 
+        [JsonProperty("continue")]
+        public string Continue { get; set; } = string.Empty;
+
+        [JsonProperty("allow-overwrite")]
+        public string AllowOverwrite { get; set; } = string.Empty;
+
+        [JsonProperty("auto-file-renaming")]
+        public string AutoFileRenaming { get; set; } = string.Empty;
+
         //[JsonProperty("header")]
         //public string Header { get; set; } = string.Empty;
 

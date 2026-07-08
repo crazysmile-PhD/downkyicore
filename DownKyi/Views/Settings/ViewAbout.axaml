@@ -73,6 +73,35 @@
                     FontSize="12"
                     Theme="{StaticResource BtnBorderStyle}" />
             </StackPanel>
+            <StackPanel Margin="0,20,0,0" Orientation="Vertical">
+                <TextBlock
+                    Margin="0,0,0,8"
+                    FontSize="14"
+                    FontWeight="Bold"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    Text="{DynamicResource Diagnostics}" />
+                <StackPanel Orientation="Horizontal">
+                    <Button
+                        Width="100"
+                        Command="{Binding OpenLogsCommand}"
+                        Content="{DynamicResource OpenLogs}"
+                        FontSize="12"
+                        Theme="{StaticResource BtnBorderStyle}" />
+                    <Button
+                        Width="120"
+                        Margin="20,0,0,0"
+                        Command="{Binding ExportDiagnosticLogCommand}"
+                        Content="{DynamicResource ExportDiagnosticLog}"
+                        FontSize="12"
+                        Theme="{StaticResource BtnBorderStyle}" />
+                </StackPanel>
+                <TextBlock
+                    Margin="0,8,0,0"
+                    FontSize="12"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    Text="{DynamicResource DiagnosticLogTip}"
+                    TextWrapping="WrapWithOverflow" />
+            </StackPanel>
             <CheckBox
                 Grid.Column="0"
                 Margin="0,20,0,0"

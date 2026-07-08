@@ -46,6 +46,27 @@ public abstract class DownloadService
 
     protected readonly DownloadStorageService DownloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
 
+    protected void EnsureDownloadIsActive(DownloadingItem downloading)
+    {
+        CancellationToken?.ThrowIfCancellationRequested();
+        if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause || !DownloadingList.Contains(downloading))
+        {
+            throw new OperationCanceledException("Task is paused or deleted");
+        }
+    }
+
+    protected void PersistDownloadingState(DownloadingItem downloading)
+    {
+        try
+        {
+            DownloadStorageService.UpdateDownloading(downloading);
+        }
+        catch (Exception e)
+        {
+            LogManager.Debug(Tag, $"Persist downloading state failed: {e.Message}");
+        }
+    }
+
     /// <summary>
     /// 初始化
     /// </summary>
@@ -181,7 +202,10 @@ public abstract class DownloadService
             WebClient.DownloadFile(coverUrl, fileName, cancellationToken: CancellationToken.GetValueOrDefault());
 
             // 记录本次下载的文件
-            downloading.Downloading.DownloadFiles.TryAdd(coverUrl, fileName);
+            if (downloading.Downloading.DownloadFiles.TryAdd(coverUrl, fileName))
+            {
+                PersistDownloadingState(downloading);
+            }
             return fileName;
         }
         catch (OperationCanceledException)
@@ -214,6 +238,7 @@ public abstract class DownloadService
         if (!downloading.Downloading.DownloadFiles.ContainsKey("danmaku"))
         {
             downloading.Downloading.DownloadFiles.Add("danmaku", assFile);
+            PersistDownloadingState(downloading);
         }
 
         var screenWidth = SettingsManager.GetInstance().GetDanmakuScreenWidth();
@@ -280,7 +305,10 @@ public abstract class DownloadService
                 File.WriteAllText(srtFile, subRip.SrtString);
 
                 // 记录本次下载的文件
-                downloading.Downloading.DownloadFiles.TryAdd("subtitle", srtFile);
+                if (downloading.Downloading.DownloadFiles.TryAdd("subtitle", srtFile))
+                {
+                    PersistDownloadingState(downloading);
+                }
 
                 srtFiles.Add(srtFile);
             }
@@ -472,6 +500,7 @@ public abstract class DownloadService
                     await _downloadSemaphore.WaitAsync(CancellationToken.Value);
                     //这里需要立刻设置状态，否则如果SingleDownload没有及时执行，会重复创建任务
                     downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
+                    PersistDownloadingState(downloading);
                     DownloadingTasks.Add(SingleDownload(downloading).ContinueWith(_ => _downloadSemaphore.Release()));
                 }
             }
@@ -836,6 +865,7 @@ public abstract class DownloadService
         {
             Console.PrintLine(Tag, e.ToString());
             LogManager.Debug(Tag, e.Message);
+            PersistDownloadingState(downloading);
         }
     }
 
@@ -854,6 +884,7 @@ public abstract class DownloadService
         downloading.Downloading.DownloadStatus = DownloadStatus.DownloadFailed;
         downloading.StartOrPause = ButtonIcon.Instance().Retry;
         downloading.StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
+        PersistDownloadingState(downloading);
     }
 
     /// <summary>
@@ -939,7 +970,7 @@ public abstract class DownloadService
                     break;
             }
 
-            item.Progress = 0;
+            item.SpeedDisplay = string.Empty;
 
             downloadStorageService.UpdateDownloading(item);
         }

@@ -12,11 +12,19 @@ namespace DownKyi.Core.Logging;
 public class LogManager
 {
     private const long MaxLogFileBytes = 1 * 1024 * 1024;
+    private const int MaxDiagnosticEntries = 300;
+    private const string Separator = "----------------------------------------------------------------------------------------------------------------------";
     private static readonly ConcurrentQueue<Tuple<string, string>> LogQueue = new();
     private static readonly CancellationTokenSource WriterCancellation = new();
     private static readonly object WriterLock = new();
     private static readonly object LogPathLock = new();
     private static readonly Task WriterTask;
+    private static readonly Regex CookieRegex = new("(?i)(cookie|set-cookie|SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5|sid|access_key|csrf|token|secret|password)\\s*[:=]\\s*[^\\s;,&\"']+", RegexOptions.Compiled);
+    private static readonly Regex QuerySecretRegex = new("(?i)([?&](?:SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5|sid|access_key|csrf|token|secret|password)=)[^&#\\s\"']+", RegexOptions.Compiled);
+    private static readonly Regex EmailRegex = new("(?i)[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}", RegexOptions.Compiled);
+    private static readonly Regex QuotedWindowsPathRegex = new("(?i)(?<=['\"])(?:[a-z]:\\\\|\\\\\\\\)[^\\r\\n\"']+(?=['\"])", RegexOptions.Compiled);
+    private static readonly Regex WindowsPathRegex = new("(?i)(?<![\\w])(?:[a-z]:\\\\|\\\\\\\\)[^\\r\\n\\s\"'<>|]+", RegexOptions.Compiled);
+    private static readonly Regex UnixUserPathRegex = new("(?<!:)\\b(?:/Users/|/home/|/var/folders/|/tmp/)[^\\r\\n\\s\"'<>|]+", RegexOptions.Compiled);
     private static string? CachedLogDate;
     private static string? CachedLogPath;
 
@@ -41,6 +49,11 @@ public class LogManager
     /// </summary>
     private static string LogDirectory => StorageManager.GetLogsDir();
 
+    public static string GetLogDirectory()
+    {
+        return LogDirectory;
+    }
+
     public static Task FlushAsync(TimeSpan timeout)
     {
         var flushTask = Task.Run(DrainQueue);
@@ -57,6 +70,43 @@ public class LogManager
         {
             System.Diagnostics.Debug.WriteLine(e);
         }
+    }
+
+    public static async Task<string> ExportDiagnosticLogAsync(CancellationToken cancellationToken = default)
+    {
+        await FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var diagnosticDirectory = Path.Combine(LogDirectory, "Diagnostics");
+        Directory.CreateDirectory(diagnosticDirectory);
+
+        var outputPath = Path.Combine(diagnosticDirectory, $"diagnostic-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+        var builder = new StringBuilder();
+
+        builder.AppendLine("DownKyi diagnostic log");
+        builder.AppendLine($"GeneratedAt: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        builder.AppendLine($"OS: {Sanitize(Environment.OSVersion.ToString())}");
+        builder.AppendLine($".NET: {Environment.Version}");
+        builder.AppendLine($"Architecture: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}");
+        builder.AppendLine($"PortableMode: {StorageManager.IsPortableMode()}");
+        builder.AppendLine("Paths: redacted");
+        builder.AppendLine();
+        builder.AppendLine("Recent useful entries");
+        builder.AppendLine(Separator);
+
+        foreach (var entry in ReadDiagnosticEntries(cancellationToken))
+        {
+            builder.AppendLine(Sanitize(entry.Trim()));
+            builder.AppendLine(Separator);
+        }
+
+        await File.WriteAllTextAsync(outputPath, builder.ToString(), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        return outputPath;
+    }
+
+    public static string SanitizeForDiagnostics(string? text)
+    {
+        return Sanitize(text ?? string.Empty);
     }
 
     /// <summary>
@@ -213,16 +263,17 @@ public class LogManager
     {
         var now = DateTime.Now;
         var sourceText = string.IsNullOrWhiteSpace(source) ? string.Empty : $"{source}  ";
-        var stack = exception == null ? string.Empty : $"{Environment.NewLine}{exception.StackTrace}";
+        var safeMessage = Sanitize(message);
+        var stack = exception == null ? string.Empty : $"{Environment.NewLine}{Sanitize(exception.StackTrace ?? string.Empty)}";
         var logText =
-            $"{now}   [{Environment.CurrentManagedThreadId}]   {level.ToString().ToUpperInvariant()}   {sourceText}{message}{stack}";
+            $"{now}   [{Environment.CurrentManagedThreadId}]   {level.ToString().ToUpperInvariant()}   {sourceText}{safeMessage}{stack}";
 
         LogQueue.Enqueue(new Tuple<string, string>(GetLogPath(), logText));
 
         Event?.Invoke(new LogInfo
         {
             LogLevel = level,
-            Message = message,
+            Message = safeMessage,
             Time = now,
             ThreadId = Environment.CurrentManagedThreadId,
             Source = source ?? string.Empty,
@@ -247,7 +298,7 @@ public class LogManager
                 }
 
                 batch.AppendLine(logItem.Item2);
-                batch.AppendLine("----------------------------------------------------------------------------------------------------------------------");
+                batch.AppendLine(Separator);
             }
 
             foreach (var item in batches)
@@ -317,5 +368,99 @@ public class LogManager
         {
             System.Diagnostics.Debug.WriteLine(e);
         }
+    }
+
+    private static IEnumerable<string> ReadDiagnosticEntries(CancellationToken cancellationToken)
+    {
+        var logFiles = Directory.Exists(LogDirectory)
+            ? Directory.GetFiles(LogDirectory, "*.log", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .Take(3)
+                .Reverse()
+                .ToList()
+            : new List<string>();
+
+        var entries = new Queue<string>();
+        foreach (var file in logFiles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var entry in ReadEntries(file))
+            {
+                if (!ShouldIncludeInDiagnostic(entry))
+                {
+                    continue;
+                }
+
+                entries.Enqueue(entry);
+                while (entries.Count > MaxDiagnosticEntries)
+                {
+                    entries.Dequeue();
+                }
+            }
+        }
+
+        return entries;
+    }
+
+    private static IEnumerable<string> ReadEntries(string file)
+    {
+        var builder = new StringBuilder();
+        foreach (var line in File.ReadLines(file, Encoding.UTF8))
+        {
+            if (line == Separator)
+            {
+                if (builder.Length > 0)
+                {
+                    yield return builder.ToString();
+                    builder.Clear();
+                }
+
+                continue;
+            }
+
+            builder.AppendLine(line);
+        }
+
+        if (builder.Length > 0)
+        {
+            yield return builder.ToString();
+        }
+    }
+
+    private static bool ShouldIncludeInDiagnostic(string entry)
+    {
+        return entry.Contains("ERROR", StringComparison.OrdinalIgnoreCase) ||
+               entry.Contains("FATAL", StringComparison.OrdinalIgnoreCase) ||
+               entry.Contains("CRASH", StringComparison.OrdinalIgnoreCase) ||
+               entry.Contains("EXCEPTION", StringComparison.OrdinalIgnoreCase) ||
+               entry.Contains("TIMEOUT", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Sanitize(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+
+        var sanitized = text;
+        sanitized = QuerySecretRegex.Replace(sanitized, "$1[redacted]");
+        sanitized = CookieRegex.Replace(sanitized, "$1=[redacted]");
+        sanitized = EmailRegex.Replace(sanitized, "[email]");
+        sanitized = QuotedWindowsPathRegex.Replace(sanitized, RedactPath);
+        sanitized = WindowsPathRegex.Replace(sanitized, RedactPath);
+        sanitized = UnixUserPathRegex.Replace(sanitized, RedactPath);
+        sanitized = Regex.Replace(sanitized, "(?i)(mid|uid|userid|user_id)\\s*[:=]\\s*\\d{4,}", "$1=[redacted]");
+        return sanitized;
+    }
+
+    private static string RedactPath(Match match)
+    {
+        var value = match.Value.TrimEnd();
+        var suffix = value.Length == match.Value.Length ? string.Empty : match.Value[value.Length..];
+        var fileName = Path.GetFileName(value);
+        return string.IsNullOrWhiteSpace(fileName)
+            ? $"[path]{suffix}"
+            : $"[path]{Path.DirectorySeparatorChar}{fileName}{suffix}";
     }
 }

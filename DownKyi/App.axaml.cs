@@ -87,6 +87,8 @@ public partial class App : PrismApplication
             AppLife = desktop;
         }
 
+        LogManager.Info(nameof(App), $"Application initialized. Version={new AppInfo().VersionName}; Portable={StorageManager.IsPortableMode()}");
+
         base.Initialize();
     }
 

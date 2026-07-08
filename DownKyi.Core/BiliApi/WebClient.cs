@@ -123,9 +123,10 @@ public static class WebClient
                     cookies.Add(new DownKyiCookie("buvid4", HttpUtility.UrlEncode(_bvuid4)));
                 }
 
-                if (cookies.Count > 0)
+                var cookieHeader = LoginHelper.BuildCookieHeader(cookies);
+                if (!string.IsNullOrEmpty(cookieHeader))
                 {
-                    request.Headers.Add("cookie", string.Join("; ", cookies.Select(item => $"{item.Name}={item.Value}")));
+                    request.Headers.Add("cookie", cookieHeader);
                 }
             }
 

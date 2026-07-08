@@ -150,18 +150,11 @@ namespace DownKyi.ViewModels.DownloadManager
             // 使用Clear()不能触发NotifyCollectionChangedAction.Remove事件
             // 因此遍历删除
             // DownloadingList中元素被删除后不能继续遍历
-            await Task.Run(() =>
+            var list = DownloadingList.ToList();
+            foreach (var item in list)
             {
-                var list = DownloadingList.ToList();
-                foreach (var item in list)
-                {
-                    App.PropertyChangeAsync(() =>
-                    {
-                        App.DownloadingList.Remove(item);
-                        _downloadStorageService.RemoveDownloading(item, true);
-                    });
-                }
-            });
+                await DeleteDownloadingItemAsync(item);
+            }
         }
 
 
@@ -186,8 +179,16 @@ namespace DownKyi.ViewModels.DownloadManager
                 return;
             }
 
+            await DeleteDownloadingItemAsync(downloadingItem);
+        }
+
+        private async Task DeleteDownloadingItemAsync(DownloadingItem downloadingItem)
+        {
+            downloadingItem.Downloading.DownloadStatus = DownloadStatus.Pause;
+            App.PropertyChangeAsync(() => App.DownloadingList.Remove(downloadingItem));
+            await DownloadTaskFileService.CancelActiveDownloadAsync(downloadingItem);
             _downloadStorageService.RemoveDownloading(downloadingItem, true);
-            App.DownloadingList.Remove(downloadingItem);
+            await DownloadTaskFileService.DeleteGeneratedFilesAsync(downloadingItem);
         }
 
         #endregion

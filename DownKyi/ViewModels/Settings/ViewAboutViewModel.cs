@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using DownKyi.Commands;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Events;
 using DownKyi.Models;
@@ -148,6 +149,38 @@ public class ViewAboutViewModel : ViewModelBase
     private async Task ExecuteFeedbackCommand()
     {
         await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/issues", EventAggregator);
+    }
+
+    // 打开日志目录事件
+    private DownKyiAsyncDelegateCommand? _openLogsCommand;
+
+    public DownKyiAsyncDelegateCommand OpenLogsCommand => _openLogsCommand ??= new DownKyiAsyncDelegateCommand(ExecuteOpenLogsCommand);
+
+    private async Task ExecuteOpenLogsCommand()
+    {
+        await LogManager.FlushAsync(TimeSpan.FromSeconds(2));
+        await PlatformHelper.OpenFolder(LogManager.GetLogDirectory(), EventAggregator);
+    }
+
+    // 导出脱敏诊断日志事件
+    private DownKyiAsyncDelegateCommand? _exportDiagnosticLogCommand;
+
+    public DownKyiAsyncDelegateCommand ExportDiagnosticLogCommand =>
+        _exportDiagnosticLogCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExportDiagnosticLogCommand);
+
+    private async Task ExecuteExportDiagnosticLogCommand()
+    {
+        try
+        {
+            var diagnosticLog = await LogManager.ExportDiagnosticLogAsync();
+            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("DiagnosticLogExported"));
+            await PlatformHelper.Open(diagnosticLog, EventAggregator);
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(Tag, e);
+            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("DiagnosticLogExportFailed"));
+        }
     }
 
     // 是否接收测试版更新事件

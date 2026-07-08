@@ -67,6 +67,8 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
             return null;
         }
 
+        EnsureDownloadIsActive(downloading);
+
         return DownloadVideo(downloading, new PlayUrlDashVideo
         {
             Id = downloadVideo.Id,
@@ -145,6 +147,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
             // Gid最好能是每个文件单独存储，现在复用有可能会混
             // 不过好消息是下载是按固定顺序的，而且下载了两个音频会混流不过
             downloading.Downloading.Gid = null;
+            PersistDownloadingState(downloading);
         }
 
         // 启用https
@@ -179,6 +182,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
             case DownloadResult.SUCCESS:
                 downloading.Downloading.DownloadedFiles.Add(key);
                 downloading.Downloading.Gid = null;
+                PersistDownloadingState(downloading);
                 return Path.Combine(path, fileName);
             case DownloadResult.FAILED:
             case DownloadResult.ABORT:
@@ -290,16 +294,17 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         CancellationToken?.ThrowIfCancellationRequested();
 
         downloading.DownloadStatusTitle = DictionaryResource.GetString("Pausing");
-        if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause)
-        {
-            throw new OperationCanceledException("Stop thread by pause");
-        }
 
         // 是否存在
         var isExist = IsExist(downloading);
         if (!isExist.Result)
         {
             throw new OperationCanceledException("Task is deleted");
+        }
+
+        if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause)
+        {
+            throw new OperationCanceledException("Stop thread by pause");
         }
     }
 
@@ -391,6 +396,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
                 if (status.Result.Error.Message.Contains("is not found"))
                 {
                     downloading.Downloading.Gid = null;
+                    PersistDownloadingState(downloading);
                 }
             }
         }
@@ -402,6 +408,9 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
                 //HttpProxy = $"http://{Settings.GetAriaHttpProxy()}:{Settings.GetAriaHttpProxyListenPort()}",
                 Dir = path,
                 Out = localFileName,
+                Continue = "true",
+                AllowOverwrite = "true",
+                AutoFileRenaming = "false",
                 //Header = $"cookie: {LoginHelper.GetLoginInfoCookiesString()}\nreferer: https://www.bilibili.com",
                 //UseHead = "true",
                 UserAgent = SettingsManager.GetInstance().GetUserAgent(),
@@ -423,6 +432,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
             // 保存gid
             string gid = ariaAddUri.Result.Result;
             downloading.Downloading.Gid = gid;
+            PersistDownloadingState(downloading);
         }
         else
         {
