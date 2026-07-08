@@ -74,10 +74,12 @@ public class ViewLoginViewModel : ViewModelBase
     /// <summary>
     /// 登录
     /// </summary>
-    private void Login()
+    private async Task LoginAsync()
     {
+        var cancellationToken = _tokenSource?.Token ?? CancellationToken.None;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var loginUrl = LoginQr.GetLoginUrl();
             if (loginUrl == null)
             {
@@ -100,7 +102,10 @@ public class ViewLoginViewModel : ViewModelBase
             Console.PrintLine(loginUrl.Data.Url + "\n");
             LogManager.Debug(Tag, loginUrl.Data.Url);
 
-            GetLoginStatus(loginUrl.Data.QrcodeKey);
+            await GetLoginStatusAsync(loginUrl.Data.QrcodeKey, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (Exception e)
         {
@@ -113,12 +118,11 @@ public class ViewLoginViewModel : ViewModelBase
     /// 循环查询登录状态
     /// </summary>
     /// <param name="oauthKey"></param>
-    private void GetLoginStatus(string oauthKey)
+    private async Task GetLoginStatusAsync(string oauthKey, CancellationToken cancellationToken)
     {
-        var cancellationToken = _tokenSource?.Token;
         while (true)
         {
-            Thread.Sleep(1000);
+            await Task.Delay(1000, cancellationToken);
             var loginStatus = LoginQr.GetLoginStatus(oauthKey);
             if (loginStatus == null)
             {
@@ -137,8 +141,10 @@ public class ViewLoginViewModel : ViewModelBase
                     _tokenSource?.Cancel();
 
                     // 创建新任务
-                    PropertyChangeAsync(() => { Task.Run(Login, (_tokenSource = new CancellationTokenSource()).Token); });
-                    break;
+                    _tokenSource?.Dispose();
+                    _tokenSource = new CancellationTokenSource();
+                    _ = Task.Run(LoginAsync, _tokenSource.Token);
+                    return;
                 case 86101:
                     // 未扫码
                     break;
@@ -175,13 +181,13 @@ public class ViewLoginViewModel : ViewModelBase
                     }
                     
                     // 取消任务
-                    Thread.Sleep(3000);
+                    await Task.Delay(3000, cancellationToken);
                     PropertyChange(ExecuteBackSpace);
-                    break;
+                    return;
             }
 
             // 判断是否该结束线程，若为true，跳出while循环
-            if (cancellationToken?.IsCancellationRequested != true) continue;
+            if (!cancellationToken.IsCancellationRequested) continue;
             Console.PrintLine("停止Login线程，跳出while循环");
             LogManager.Debug(Tag, "登录操作结束");
             break;
@@ -205,6 +211,6 @@ public class ViewLoginViewModel : ViewModelBase
 
         InitStatus();
 
-        Task.Run(Login, (_tokenSource = new CancellationTokenSource()).Token);
+        _ = Task.Run(LoginAsync, (_tokenSource = new CancellationTokenSource()).Token);
     }
 }

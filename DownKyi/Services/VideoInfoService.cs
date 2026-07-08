@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Avalonia.Threading;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
@@ -18,9 +19,11 @@ namespace DownKyi.Services;
 public class VideoInfoService : IInfoService
 {
     private readonly VideoView? _videoView;
+    private readonly CancellationToken _cancellationToken;
 
-    public VideoInfoService(string? input)
+    public VideoInfoService(string? input, CancellationToken cancellationToken = default)
     {
+        _cancellationToken = cancellationToken;
         if (input == null)
         {
             return;
@@ -29,13 +32,13 @@ public class VideoInfoService : IInfoService
         if (ParseEntrance.IsAvId(input) || ParseEntrance.IsAvUrl(input))
         {
             var avid = ParseEntrance.GetAvId(input);
-            _videoView = VideoInfo.VideoViewInfo(null, avid);
+            _videoView = VideoInfo.VideoViewInfo(null, avid, cancellationToken);
         }
 
         if (ParseEntrance.IsBvId(input) || ParseEntrance.IsBvUrl(input))
         {
             var bvid = ParseEntrance.GetBvId(input);
-            _videoView = VideoInfo.VideoViewInfo(bvid);
+            _videoView = VideoInfo.VideoViewInfo(bvid, cancellationToken: cancellationToken);
         }
     }
 
@@ -43,8 +46,9 @@ public class VideoInfoService : IInfoService
     /// 获取视频剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoPage>? GetVideoPages()
+    public List<VideoPage>? GetVideoPages(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_videoView?.Pages == null)
         {
             return null;
@@ -60,6 +64,7 @@ public class VideoInfoService : IInfoService
         var order = 0;
         foreach (var page in _videoView.Pages)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             order++;
 
             // 标题
@@ -95,7 +100,7 @@ public class VideoInfoService : IInfoService
                 Page = page.Page,
                 LazyTags = new Lazy<List<string>>(() =>
                 {
-                    return VideoInfo.GetBiliTagInfo(_videoView.Bvid, page.Cid)
+                    return VideoInfo.GetBiliTagInfo(_videoView.Bvid, page.Cid, _cancellationToken)
                         ?.Select(x => x.TagName)
                         .ToList() ?? new List<string>();
                 })
@@ -131,8 +136,9 @@ public class VideoInfoService : IInfoService
     /// 获取视频章节与剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoSection>? GetVideoSections(bool noUgc = false)
+    public List<VideoSection>? GetVideoSections(bool noUgc = false, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!(_videoView?.UgcSeason?.Sections?.Count > 0)) return null;
         var videoSections = new List<VideoSection>();
 
@@ -148,10 +154,12 @@ public class VideoInfoService : IInfoService
 
         foreach (var section in _videoView.UgcSeason.Sections)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var pages = new List<VideoPage>();
             var order = 0;
             foreach (var episode in section.Episodes)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (episode.Pages?.Count > 1)
                 {
                     var videoSection = CreateVideoSectionFromEpisode(section, episode, startTime, timeFormat);
@@ -190,7 +198,7 @@ public class VideoInfoService : IInfoService
             Id = 0,
             Title = "default",
             IsSelected = true,
-            VideoPages = GetVideoPages() ?? new List<VideoPage>()
+            VideoPages = GetVideoPages(_cancellationToken) ?? new List<VideoPage>()
         };
     }
 
@@ -223,7 +231,7 @@ public class VideoInfoService : IInfoService
                 OriginalPublishTime = dateTime,
                 LazyTags = new Lazy<List<string>>(() =>
                 {
-                    return VideoInfo.GetBiliTagInfo(episode.Bvid, p.Cid)
+                    return VideoInfo.GetBiliTagInfo(episode.Bvid, p.Cid, _cancellationToken)
                         ?.Select(x => x.TagName)
                         .ToList() ?? new List<string>();
                 })
@@ -249,7 +257,7 @@ public class VideoInfoService : IInfoService
             Page = episode.Page.Page,
             LazyTags = new Lazy<List<string>>(() =>
             {
-                return VideoInfo.GetBiliTagInfo(episode.Bvid, episode.Cid)
+                return VideoInfo.GetBiliTagInfo(episode.Bvid, episode.Cid, _cancellationToken)
                     ?.Select(x => x.TagName)
                     .ToList() ?? new List<string>();
             })
@@ -264,12 +272,13 @@ public class VideoInfoService : IInfoService
     /// 获取视频流的信息，从VideoPage返回
     /// </summary>
     /// <param name="page"></param>
-    public void GetVideoStream(VideoPage page)
+    public void GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var playUrl = SettingsManager.GetInstance().GetVideoParseType() switch
         {
-            0 => VideoStream.GetVideoPlayUrl(page.Avid, page.Bvid, page.Cid),
-            1 => VideoStream.GetVideoPlayUrlWebPage(page.Avid, page.Bvid, page.Cid, page.Page),
+            0 => VideoStream.GetVideoPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken),
+            1 => VideoStream.GetVideoPlayUrlWebPage(page.Avid, page.Bvid, page.Cid, page.Page, cancellationToken),
             _ => null
         };
 
@@ -280,8 +289,9 @@ public class VideoInfoService : IInfoService
     /// 获取视频信息
     /// </summary>
     /// <returns></returns>
-    public VideoInfoView? GetVideoView()
+    public VideoInfoView? GetVideoView(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var videoView = _videoView;
         if (videoView == null)
         {

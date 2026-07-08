@@ -69,16 +69,23 @@ public static class WebClient
         [JsonPropertyName("b_4")] public string? Bvuid4 { get; set; }
     }
 
-    private static void GetBuvid()
+    private static void GetBuvid(CancellationToken cancellationToken = default)
     {
         const string url = "https://api.bilibili.com/x/frontend/finger/spi";
-        var response = RequestWeb(url);
+        var response = RequestWeb(url, cancellationToken: cancellationToken);
         var spi = JsonSerializer.Deserialize<SpiOrigin>(response);
         _bvuid3 = spi?.Data?.Bvuid3;
         _bvuid4 = spi?.Data?.Bvuid4;
     }
 
-    public static string RequestWeb(string url, string? referer = null, string method = "GET", Dictionary<string, object?>? parameters = null, int retry = 2, bool json = false)
+    public static string RequestWeb(
+        string url,
+        string? referer = null,
+        string method = "GET",
+        Dictionary<string, object?>? parameters = null,
+        int retry = 2,
+        bool json = false,
+        CancellationToken cancellationToken = default)
     {
         if (retry <= 0)
         {
@@ -87,9 +94,10 @@ public static class WebClient
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrEmpty(_bvuid3) && url != "https://api.bilibili.com/x/frontend/finger/spi")
             {
-                GetBuvid();
+                GetBuvid(cancellationToken);
             }
 
             var request = new HttpRequestMessage(new HttpMethod(method), url);
@@ -139,35 +147,40 @@ public static class WebClient
                 request.RequestUri = new Uri(url);
             }
 
-            var response = HttpClient.Send(request);
+            var response = HttpClient.Send(request, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             using var reader = new StreamReader(response.Content.ReadAsStream());
             return reader.ReadToEnd();
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (HttpRequestException e)
         {
             Console.WriteLine("RequestWeb()发生HTTP请求异常: {0}", e);
             LogManager.Error(e);
-            return RequestWeb(url, referer, method, parameters, retry - 1);
+            return RequestWeb(url, referer, method, parameters, retry - 1, json, cancellationToken);
         }
         catch (Exception e)
         {
             Console.WriteLine("RequestWeb()发生其他异常: {0}", e);
             LogManager.Error(e);
-            return RequestWeb(url, referer, method, parameters, retry - 1);
+            return RequestWeb(url, referer, method, parameters, retry - 1, json, cancellationToken);
         }
     }
 
-    public static void DownloadFile(string url, string destFile, string? referer = null)
+    public static void DownloadFile(string url, string destFile, string? referer = null, CancellationToken cancellationToken = default)
     {
         using var fs = File.Create(destFile);
-        using var stream = RequestStream(url, referer);
-        stream.CopyTo(fs);
+        using var stream = RequestStream(url, referer, cancellationToken: cancellationToken);
+        stream.CopyToAsync(fs, cancellationToken).GetAwaiter().GetResult();
     }
 
-    public static Stream RequestStream(string url, string? referer = null, string method = "GET")
+    public static Stream RequestStream(string url, string? referer = null, string method = "GET", CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var request = new HttpRequestMessage(new HttpMethod(method), url);
 
         if (referer != null)
@@ -185,8 +198,8 @@ public static class WebClient
             }
         }
 
-        var response = HttpClient.Send(request);
+        var response = HttpClient.Send(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return response.Content.ReadAsStream();
+        return response.Content.ReadAsStream(cancellationToken);
     }
 }

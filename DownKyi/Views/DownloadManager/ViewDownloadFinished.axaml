@@ -152,6 +152,11 @@
                 BorderThickness="0"
                 ItemContainerTheme="{StaticResource DownloadedStyle}"
                 ItemsSource="{Binding DownloadedList}">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
                 <ListBox.Theme>
                     <ControlTheme TargetType="ListBox">
                         <Setter Property="Template">

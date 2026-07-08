@@ -17,7 +17,7 @@ public static class VideoStream
     /// <param name="bvid"></param>
     /// <param name="cid"></param>
     /// <returns></returns>
-    public static PlayerV2? PlayerV2(long avid, string? bvid, long cid)
+    public static PlayerV2? PlayerV2(long avid, string? bvid, long cid, CancellationToken cancellationToken = default)
     {
         var parameters = new Dictionary<string, object?>();
 
@@ -39,12 +39,16 @@ public static class VideoStream
         var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
         var url = $"https://api.bilibili.com/x/player/wbi/v2?{query}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
             var playUrl = JsonConvert.DeserializeObject<PlayerV2Origin>(response);
             return playUrl?.Data;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {
@@ -62,12 +66,12 @@ public static class VideoStream
     /// <param name="bvid"></param>
     /// <param name="cid"></param>
     /// <returns></returns>
-    public static List<SubRipText> GetSubtitle(long avid, string? bvid, long cid)
+    public static List<SubRipText> GetSubtitle(long avid, string? bvid, long cid, CancellationToken cancellationToken = default)
     {
         var subRipTexts = new List<SubRipText>();
 
         // 获取播放器信息
-        var player = PlayerV2(avid, bvid, cid);
+        var player = PlayerV2(avid, bvid, cid, cancellationToken);
         if (player == null)
         {
             return subRipTexts;
@@ -80,8 +84,9 @@ public static class VideoStream
 
         foreach (var subtitle in player.Subtitle.Subtitles)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             const string referer = "https://www.bilibili.com";
-            var response = WebClient.RequestWeb($"https:{subtitle.SubtitleUrl}", referer);
+            var response = WebClient.RequestWeb($"https:{subtitle.SubtitleUrl}", referer, cancellationToken: cancellationToken);
 
             try
             {
@@ -97,6 +102,10 @@ public static class VideoStream
                     LanDoc = subtitle.LanDoc,
                     SrtString = subtitleJson.ToSubRip()
                 });
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception e)
             {
@@ -116,7 +125,7 @@ public static class VideoStream
     /// <param name="cid"></param>
     /// <param name="quality"></param>
     /// <returns></returns>
-    public static PlayUrl? GetVideoPlayUrl(long avid, string bvid, long cid, int quality = 125)
+    public static PlayUrl? GetVideoPlayUrl(long avid, string bvid, long cid, int quality = 125, CancellationToken cancellationToken = default)
     {
         var parameters = new Dictionary<string, object?>
         {
@@ -143,7 +152,7 @@ public static class VideoStream
         var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
         var url = $"https://api.bilibili.com/x/player/wbi/playurl?{query}";
 
-        return GetPlayUrl(url);
+        return GetPlayUrl(url, cancellationToken);
     }
 
     /// <summary>
@@ -153,7 +162,7 @@ public static class VideoStream
     /// <param name="bvid"></param>
     /// <param name="p"></param>
     /// <returns></returns>
-    public static PlayUrl? GetVideoPlayUrlWebPage(long avid, string bvid, long cid, int p)
+    public static PlayUrl? GetVideoPlayUrlWebPage(long avid, string bvid, long cid, int p, CancellationToken cancellationToken = default)
     {
         var url = "https://www.bilibili.com/video";
         if (bvid == string.Empty)
@@ -165,10 +174,10 @@ public static class VideoStream
             url = $"{url}/av{avid}/?p={p}";
         }
 
-        var playUrl = GetPlayUrlWebPage(url);
+        var playUrl = GetPlayUrlWebPage(url, cancellationToken);
         if (playUrl == null)
         {
-            playUrl = GetVideoPlayUrl(avid, bvid, cid);
+            playUrl = GetVideoPlayUrl(avid, bvid, cid, cancellationToken: cancellationToken);
         }
 
         return playUrl;
@@ -182,7 +191,7 @@ public static class VideoStream
     // /// <param name="cid"></param>
     // /// <param name="quality"></param>
     // /// <returns></returns>
-    public static PlayUrl? GetBangumiPlayUrl(long avid, string bvid, long cid, int quality = 125)
+    public static PlayUrl? GetBangumiPlayUrl(long avid, string bvid, long cid, int quality = 125, CancellationToken cancellationToken = default)
     {
         var baseUrl = $"https://api.bilibili.com/pgc/player/web/playurl?cid={cid}&qn={quality}&fourk=1&fnver=0&fnval=4048";
         string url;
@@ -199,7 +208,7 @@ public static class VideoStream
             return null;
         }
 
-        return GetPlayUrl(url);
+        return GetPlayUrl(url, cancellationToken);
     }
 
     /// <summary>
@@ -210,7 +219,7 @@ public static class VideoStream
     /// <param name="cid"></param>
     /// <param name="quality"></param>
     /// <returns></returns>
-    public static PlayUrl? GetCheesePlayUrl(long avid, string bvid, long cid, long episodeId, int quality = 125)
+    public static PlayUrl? GetCheesePlayUrl(long avid, string bvid, long cid, long episodeId, int quality = 125, CancellationToken cancellationToken = default)
     {
         var baseUrl = $"https://api.bilibili.com/pugv/player/web/playurl?cid={cid}&qn={quality}&fourk=1&fnver=0&fnval=4048";
         string url;
@@ -233,7 +242,7 @@ public static class VideoStream
             url += $"&ep_id={episodeId}";
         }
 
-        return GetPlayUrl(url);
+        return GetPlayUrl(url, cancellationToken);
     }
 
     /// <summary>
@@ -241,10 +250,10 @@ public static class VideoStream
     /// </summary>
     /// <param name="url"></param>
     /// <returns></returns>
-    private static PlayUrl? GetPlayUrl(string url)
+    private static PlayUrl? GetPlayUrl(string url, CancellationToken cancellationToken = default)
     {
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
@@ -268,6 +277,10 @@ public static class VideoStream
                 return null;
             }
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception e)
         {
             Console.PrintLine("GetPlayUrl()发生异常: {0}", e);
@@ -281,10 +294,10 @@ public static class VideoStream
     /// </summary>
     /// <param name="url"></param>
     /// <returns></returns>
-    private static PlayUrl? GetPlayUrlWebPage(string url)
+    private static PlayUrl? GetPlayUrlWebPage(string url, CancellationToken cancellationToken = default)
     {
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
@@ -312,6 +325,10 @@ public static class VideoStream
             }
 
             return null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {

@@ -15,7 +15,7 @@ public static class VideoInfo
     /// <param name="bvid"></param>
     /// <param name="aid"></param>
     /// <returns></returns>
-    public static VideoView? VideoViewInfo(string? bvid = null, long aid = -1)
+    public static VideoView? VideoViewInfo(string? bvid = null, long aid = -1, CancellationToken cancellationToken = default)
     {
         // https://api.bilibili.com/x/web-interface/view/detail?bvid=BV1Sg411F7cb&aid=969147110&need_operation_card=1&web_rm_repeat=1&need_elec=1&out_referer=https%3A%2F%2Fspace.bilibili.com%2F42018135%2Ffavlist%3Ffid%3D94341835
 
@@ -35,12 +35,16 @@ public static class VideoInfo
         var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
         var url = $"https://api.bilibili.com/x/web-interface/wbi/view?{query}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
             var videoView = JsonConvert.DeserializeObject<VideoViewOrigin>(response);
             return videoView?.Data;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {
@@ -56,7 +60,7 @@ public static class VideoInfo
     /// <param name="bvid"></param>
     /// <param name="aid"></param>
     /// <returns></returns>
-    public static string? VideoDescription(string? bvid = null, long aid = -1)
+    public static string? VideoDescription(string? bvid = null, long aid = -1, CancellationToken cancellationToken = default)
     {
         const string baseUrl = "https://api.bilibili.com/x/web-interface/archive/desc";
         const string referer = "https://www.bilibili.com";
@@ -65,12 +69,16 @@ public static class VideoInfo
         else if (aid >= -1) { url = $"{baseUrl}?aid={aid}"; }
         else { return null; }
 
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
             var desc = JsonConvert.DeserializeObject<VideoDescription>(response);
             return desc?.Data;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {
@@ -86,7 +94,7 @@ public static class VideoInfo
     /// <param name="bvid"></param>
     /// <param name="aid"></param>
     /// <returns></returns>
-    public static List<VideoPage>? VideoPagelist(string? bvid = null, long aid = -1)
+    public static List<VideoPage>? VideoPagelist(string? bvid = null, long aid = -1, CancellationToken cancellationToken = default)
     {
         const string baseUrl = "https://api.bilibili.com/x/player/pagelist";
         const string referer = "https://www.bilibili.com";
@@ -95,12 +103,16 @@ public static class VideoInfo
         else if (aid > -1) { url = $"{baseUrl}?aid={aid}"; }
         else { return null; }
 
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
             var pagelist = JsonConvert.DeserializeObject<VideoPagelist>(response);
             return pagelist?.Data;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {
@@ -110,17 +122,21 @@ public static class VideoInfo
         }
     }
     
-    public static List<BiliTagInfo>? GetBiliTagInfo(string bvid,long? cid = null)
+    public static List<BiliTagInfo>? GetBiliTagInfo(string bvid,long? cid = null, CancellationToken cancellationToken = default)
     {
         const string referer = "https://www.bilibili.com";
         string cidStr = cid.HasValue ? $"&cid={cid}" : "";
         string api = $"https://api.bilibili.com/x/web-interface/view/detail/tag?bvid={bvid}{cidStr}";
-        var response = WebClient.RequestWeb(api, referer);
+        var response = WebClient.RequestWeb(api, referer, cancellationToken: cancellationToken);
 
         try
         {
             var rs = JsonConvert.DeserializeObject<TagResult>(response);
             return rs?.Data;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {

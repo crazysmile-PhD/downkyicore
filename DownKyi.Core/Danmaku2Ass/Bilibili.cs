@@ -88,10 +88,10 @@ public class Bilibili
         return this;
     }
 
-    public void Create(long avid, long cid, Config subtitleConfig, string assFile)
+    public void Create(long avid, long cid, Config subtitleConfig, string assFile, CancellationToken cancellationToken = default)
     {
         // 弹幕转换
-        var biliDanmakus = DanmakuProtobuf.GetAllDanmakuProto(avid, cid);
+        var biliDanmakus = DanmakuProtobuf.GetAllDanmakuProto(avid, cid, cancellationToken);
 
         // 按弹幕出现顺序排序
         biliDanmakus.Sort((x, y) => { return x.Progress.CompareTo(y.Progress); });
@@ -99,6 +99,7 @@ public class Bilibili
         var danmakus = new List<Danmaku>();
         foreach (var biliDanmaku in biliDanmakus)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var danmaku = new Danmaku
             {
                 // biliDanmaku.Progress单位是毫秒，所以除以1000，单位变为秒

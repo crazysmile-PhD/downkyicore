@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Avalonia.Threading;
 using DownKyi.Core.BiliApi.Bangumi;
 using DownKyi.Core.BiliApi.Bangumi.Models;
@@ -19,7 +20,7 @@ public class BangumiInfoService : IInfoService
 {
     private readonly BangumiSeason? _bangumiSeason;
 
-    public BangumiInfoService(string? input)
+    public BangumiInfoService(string? input, CancellationToken cancellationToken = default)
     {
         if (input == null)
         {
@@ -29,22 +30,22 @@ public class BangumiInfoService : IInfoService
         if (ParseEntrance.IsBangumiSeasonId(input) || ParseEntrance.IsBangumiSeasonUrl(input))
         {
             var seasonId = ParseEntrance.GetBangumiSeasonId(input);
-            _bangumiSeason = BangumiInfo.BangumiSeasonInfo(seasonId);
+            _bangumiSeason = BangumiInfo.BangumiSeasonInfo(seasonId, cancellationToken: cancellationToken);
         }
 
         if (ParseEntrance.IsBangumiEpisodeId(input) || ParseEntrance.IsBangumiEpisodeUrl(input))
         {
             var episodeId = ParseEntrance.GetBangumiEpisodeId(input);
-            _bangumiSeason = BangumiInfo.BangumiSeasonInfo(-1, episodeId);
+            _bangumiSeason = BangumiInfo.BangumiSeasonInfo(-1, episodeId, cancellationToken);
         }
 
         if (ParseEntrance.IsBangumiMediaId(input) || ParseEntrance.IsBangumiMediaUrl(input))
         {
             var mediaId = ParseEntrance.GetBangumiMediaId(input);
-            var bangumiMedia = BangumiInfo.BangumiMediaInfo(mediaId);
+            var bangumiMedia = BangumiInfo.BangumiMediaInfo(mediaId, cancellationToken);
             if (bangumiMedia != null)
             {
-                _bangumiSeason = BangumiInfo.BangumiSeasonInfo(bangumiMedia.SeasonId);
+                _bangumiSeason = BangumiInfo.BangumiSeasonInfo(bangumiMedia.SeasonId, cancellationToken: cancellationToken);
             }
         }
     }
@@ -53,8 +54,9 @@ public class BangumiInfoService : IInfoService
     /// 获取视频剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoPage> GetVideoPages()
+    public List<VideoPage> GetVideoPages(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var pages = new List<VideoPage>();
         if (_bangumiSeason == null)
         {
@@ -74,6 +76,7 @@ public class BangumiInfoService : IInfoService
         var order = 0;
         foreach (var episode in _bangumiSeason.Episodes)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             order++;
 
             // 标题
@@ -153,8 +156,9 @@ public class BangumiInfoService : IInfoService
     /// 获取视频章节与剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoSection>? GetVideoSections(bool noUgc = false)
+    public List<VideoSection>? GetVideoSections(bool noUgc = false, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_bangumiSeason == null)
         {
             return null;
@@ -167,7 +171,7 @@ public class BangumiInfoService : IInfoService
                 Id = _bangumiSeason.Positive.Id,
                 Title = _bangumiSeason.Positive.Title,
                 IsSelected = true,
-                VideoPages = GetVideoPages()
+                VideoPages = GetVideoPages(cancellationToken)
             }
         };
 
@@ -189,10 +193,12 @@ public class BangumiInfoService : IInfoService
 
         foreach (var section in _bangumiSeason.Section)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var pages = new List<VideoPage>();
             var order = 0;
             foreach (var episode in section.Episodes)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 order++;
 
                 // 标题
@@ -256,9 +262,10 @@ public class BangumiInfoService : IInfoService
     /// 获取视频流的信息，从VideoPage返回
     /// </summary>
     /// <param name="page"></param>
-    public void GetVideoStream(VideoPage page)
+    public void GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
     {
-        var playUrl = VideoStream.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid);
+        cancellationToken.ThrowIfCancellationRequested();
+        var playUrl = VideoStream.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken);
         Dispatcher.UIThread.Invoke(() => Utils.VideoPageInfo(playUrl, page));
     }
     
@@ -266,8 +273,9 @@ public class BangumiInfoService : IInfoService
     /// 获取视频信息
     /// </summary>
     /// <returns></returns>
-    public VideoInfoView? GetVideoView()
+    public VideoInfoView? GetVideoView(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_bangumiSeason == null)
         {
             return null;

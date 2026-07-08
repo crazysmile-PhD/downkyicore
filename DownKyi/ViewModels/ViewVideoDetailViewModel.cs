@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
@@ -37,6 +38,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     private string _input = string.Empty;
 
     private IInfoService? _infoService;
+    private CancellationTokenSource? _operationCancellation;
 
     #region 页面属性申明
 
@@ -89,15 +91,15 @@ public class ViewVideoDetailViewModel : ViewModelBase
         set => SetProperty(ref _videoInfoView, value);
     }
 
-    private ObservableCollection<VideoSection> _videoSections = new();
+    private RangeObservableCollection<VideoSection> _videoSections = new();
 
-    public ObservableCollection<VideoSection> VideoSections
+    public RangeObservableCollection<VideoSection> VideoSections
     {
         get => _videoSections;
         set => SetProperty(ref _videoSections, value);
     }
 
-    public ObservableCollection<VideoSection> CaCheVideoSections { get; set; }
+    public RangeObservableCollection<VideoSection> CaCheVideoSections { get; set; }
 
     private bool _isSelectAll;
 
@@ -140,8 +142,21 @@ public class ViewVideoDetailViewModel : ViewModelBase
         DownloadManage.Width = 24;
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-        VideoSections = new ObservableCollection<VideoSection>();
-        CaCheVideoSections = new ObservableCollection<VideoSection>();
+        VideoSections = new RangeObservableCollection<VideoSection>();
+        CaCheVideoSections = new RangeObservableCollection<VideoSection>();
+    }
+
+    private CancellationToken ResetOperationCancellation()
+    {
+        _operationCancellation?.Cancel();
+        _operationCancellation?.Dispose();
+        _operationCancellation = new CancellationTokenSource();
+        return _operationCancellation.Token;
+    }
+
+    private void CancelOperation()
+    {
+        _operationCancellation?.Cancel();
     }
 
     #region 命令申明
@@ -156,6 +171,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// </summary>
     protected internal override void ExecuteBackSpace()
     {
+        CancelOperation();
         var parameter = new NavigationParam
         {
             ViewName = ParentView,
@@ -233,11 +249,13 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteInputCommandAsync()
     {
+        var cancellationToken = ResetOperationCancellation();
         InitView();
         try
         {
             await Task.Run(() =>
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (string.IsNullOrEmpty(InputText))
                 {
                     return;
@@ -248,14 +266,18 @@ public class ViewVideoDetailViewModel : ViewModelBase
                 _input = InputText;
 
                 // 更新页面
-                UnityUpdateView(UpdateView, _input, true);
+                UnityUpdateView(UpdateView, _input, true, cancellationToken);
 
                 // 是否自动解析视频
                 if (SettingsManager.GetInstance().GetIsAutoParseVideo() == AllowStatus.Yes)
                 {
                     PropertyChangeAsync(() => _ = ExecuteParseAllVideoCommandAsync());
                 }
-            });
+            }, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            LoadingVisibility = false;
         }
         catch (Exception e)
         {
@@ -433,15 +455,21 @@ public class ViewVideoDetailViewModel : ViewModelBase
         }
 
         LoadingVisibility = true;
+        var cancellationToken = ResetOperationCancellation();
 
         try
         {
             await Task.Run(() =>
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 LogManager.Debug(Tag, $"Video Page: {videoPage.Cid}");
 
-                UnityUpdateView(ParseVideo, _input, videoPage, true);
-            });
+                UnityUpdateView(ParseVideo, _input, videoPage, true, cancellationToken);
+            }, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            LoadingVisibility = false;
         }
         catch (Exception e)
         {
@@ -513,11 +541,13 @@ public class ViewVideoDetailViewModel : ViewModelBase
 
     private async Task ExecuteParse(ParseScope parseScope)
     {
+        var cancellationToken = ResetOperationCancellation();
         try
         {
             LoadingVisibility = true;
             await Task.Run(() =>
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 LogManager.Debug(Tag, "Parse video");
 
                 switch (parseScope)
@@ -527,12 +557,14 @@ public class ViewVideoDetailViewModel : ViewModelBase
                     case ParseScope.SelectedItem:
                         foreach (var section in VideoSections)
                         {
+                            cancellationToken.ThrowIfCancellationRequested();
                             foreach (var page in section.VideoPages)
                             {
+                                cancellationToken.ThrowIfCancellationRequested();
                                 if (page.IsSelected)
                                 {
                                     // 执行解析任务
-                                    UnityUpdateView(ParseVideo, _input, page);
+                                    UnityUpdateView(ParseVideo, _input, page, cancellationToken: cancellationToken);
                                 }
                             }
                         }
@@ -541,12 +573,14 @@ public class ViewVideoDetailViewModel : ViewModelBase
                     case ParseScope.CurrentSection:
                         foreach (var section in VideoSections)
                         {
+                            cancellationToken.ThrowIfCancellationRequested();
                             if (section.IsSelected)
                             {
                                 foreach (var page in section.VideoPages)
                                 {
+                                    cancellationToken.ThrowIfCancellationRequested();
                                     // 执行解析任务
-                                    UnityUpdateView(ParseVideo, _input, page);
+                                    UnityUpdateView(ParseVideo, _input, page, cancellationToken: cancellationToken);
                                 }
                             }
                         }
@@ -555,10 +589,12 @@ public class ViewVideoDetailViewModel : ViewModelBase
                     case ParseScope.All:
                         foreach (var section in VideoSections)
                         {
+                            cancellationToken.ThrowIfCancellationRequested();
                             foreach (var page in section.VideoPages)
                             {
+                                cancellationToken.ThrowIfCancellationRequested();
                                 // 执行解析任务
-                                UnityUpdateView(ParseVideo, _input, page);
+                                UnityUpdateView(ParseVideo, _input, page, cancellationToken: cancellationToken);
                             }
                         }
 
@@ -566,7 +602,12 @@ public class ViewVideoDetailViewModel : ViewModelBase
                     default:
                         break;
                 }
-            });
+            }, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            LoadingVisibility = false;
+            return;
         }
         catch (Exception e)
         {
@@ -616,8 +657,8 @@ public class ViewVideoDetailViewModel : ViewModelBase
         LoadingVisibility = true;
         ContentVisibility = false;
         NoDataVisibility = false;
-        VideoSections.Clear();
-        CaCheVideoSections.Clear();
+        VideoSections.ReplaceRange(Array.Empty<VideoSection>());
+        CaCheVideoSections.ReplaceRange(Array.Empty<VideoSection>());
     }
 
 
@@ -628,50 +669,51 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// <param name="input"></param>
     /// <param name="page"></param>
     /// <param name="refresh"></param>
-    private void UnityUpdateView(Action<IInfoService> action, string input, bool refresh = false)
+    private void UnityUpdateView(Action<IInfoService, CancellationToken> action, string input, bool refresh = false, CancellationToken cancellationToken = default)
     {
-        var infoService = GetInfoService(input, refresh);
+        var infoService = GetInfoService(input, refresh, cancellationToken);
         if (infoService == null)
         {
             return;
         }
 
-        action(infoService);
+        action(infoService, cancellationToken);
     }
 
-    private void UnityUpdateView(Action<IInfoService, VideoPage> action, string input, VideoPage page, bool refresh = false)
+    private void UnityUpdateView(Action<IInfoService, VideoPage, CancellationToken> action, string input, VideoPage page, bool refresh = false, CancellationToken cancellationToken = default)
     {
-        var infoService = GetInfoService(input, refresh);
+        var infoService = GetInfoService(input, refresh, cancellationToken);
         if (infoService == null)
         {
             return;
         }
 
-        action(infoService, page);
+        action(infoService, page, cancellationToken);
     }
 
-    private IInfoService? GetInfoService(string input, bool refresh)
+    private IInfoService? GetInfoService(string input, bool refresh, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_infoService == null || refresh)
         {
             // 视频
             if (ParseEntrance.IsAvUrl(input) || ParseEntrance.IsBvUrl(input)
                                              || ParseEntrance.IsAvId(input) || ParseEntrance.IsBvId(input))
             {
-                _infoService = new VideoInfoService(input);
+                _infoService = new VideoInfoService(input, cancellationToken);
             }
 
             // 番剧（电影、电视剧）
             if (ParseEntrance.IsBangumiSeasonUrl(input) || ParseEntrance.IsBangumiEpisodeUrl(input) ||
                 ParseEntrance.IsBangumiMediaUrl(input))
             {
-                _infoService = new BangumiInfoService(input);
+                _infoService = new BangumiInfoService(input, cancellationToken);
             }
 
             // 课程
             if (ParseEntrance.IsCheeseSeasonUrl(input) || ParseEntrance.IsCheeseEpisodeUrl(input))
             {
-                _infoService = new CheeseInfoService(input);
+                _infoService = new CheeseInfoService(input, cancellationToken);
             }
         }
 
@@ -683,10 +725,10 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// </summary>
     /// <param name="videoInfoService"></param>
     /// <param name="param"></param>
-    private void UpdateView(IInfoService videoInfoService)
+    private void UpdateView(IInfoService videoInfoService, CancellationToken cancellationToken)
     {
         // 获取视频详情
-        VideoInfoView = videoInfoService.GetVideoView();
+        VideoInfoView = videoInfoService.GetVideoView(cancellationToken);
         if (VideoInfoView == null)
         {
             LogManager.Debug(Tag, "VideoInfoView is null.");
@@ -703,40 +745,42 @@ public class ViewVideoDetailViewModel : ViewModelBase
             NoDataVisibility = false;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         // 获取视频列表
-        var videoSections = videoInfoService.GetVideoSections(false);
-
-        // 清空以前的数据
-        PropertyChangeAsync(() =>
-        {
-            VideoSections.Clear();
-            CaCheVideoSections.Clear();
-        });
+        var videoSections = videoInfoService.GetVideoSections(false, cancellationToken);
 
         // 添加新数据
         if (videoSections == null)
         {
             LogManager.Debug(Tag, "videoSections is not exist.");
 
-            var pages = videoInfoService.GetVideoPages() ?? new List<VideoPage>();
+            var pages = videoInfoService.GetVideoPages(cancellationToken) ?? new List<VideoPage>();
             var cachePages = pages.Select(page => page.CloneForCache()).ToList();
-
-            PropertyChangeAsync(() =>
+            var defaultSections = new[]
             {
-                VideoSections.Add(new VideoSection
+                new VideoSection
                 {
                     Id = 0,
                     Title = "default",
                     IsSelected = true,
                     VideoPages = pages
-                });
-                CaCheVideoSections.Add(new VideoSection
+                }
+            };
+            var defaultCacheSections = new[]
+            {
+                new VideoSection
                 {
                     Id = 0,
                     Title = "default",
                     IsSelected = true,
                     VideoPages = cachePages
-                });
+                }
+            };
+
+            PropertyChangeAsync(() =>
+            {
+                VideoSections.ReplaceRange(defaultSections);
+                CaCheVideoSections.ReplaceRange(defaultCacheSections);
 
                 // 自动定位到合集中对应的视频位置
                 AutoLocateAndSelectVideoPosition();
@@ -747,8 +791,8 @@ public class ViewVideoDetailViewModel : ViewModelBase
             var videoSectionsData = videoSections.Select(section => section.CloneForCache()).ToList();
             PropertyChangeAsync(() =>
             {
-                VideoSections.AddRange(videoSections);
-                CaCheVideoSections.AddRange(videoSectionsData);
+                VideoSections.ReplaceRange(videoSections);
+                CaCheVideoSections.ReplaceRange(videoSectionsData);
 
                 // 自动定位到合集中对应的视频位置
                 AutoLocateAndSelectVideoPosition();
@@ -761,9 +805,9 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// </summary>
     /// <param name="videoInfoService"></param>
     /// <param name="videoPage"></param>
-    private void ParseVideo(IInfoService videoInfoService, VideoPage videoPage)
+    private void ParseVideo(IInfoService videoInfoService, VideoPage videoPage, CancellationToken cancellationToken)
     {
-        videoInfoService.GetVideoStream(videoPage);
+        videoInfoService.GetVideoStream(videoPage, cancellationToken);
     }
 
     /// <summary>

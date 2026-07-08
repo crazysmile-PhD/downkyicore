@@ -127,9 +127,9 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _downloadManage, value);
     }
 
-    private ObservableCollection<TabHeader> _tabHeaders = new();
+    private RangeObservableCollection<TabHeader> _tabHeaders = new();
 
-    public ObservableCollection<TabHeader> TabHeaders
+    public RangeObservableCollection<TabHeader> TabHeaders
     {
         get => _tabHeaders;
         set => SetProperty(ref _tabHeaders, value);
@@ -159,9 +159,9 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _pager, value);
     }
 
-    private ObservableCollection<FavoritesMedia> _medias = new();
+    private RangeObservableCollection<FavoritesMedia> _medias = new();
 
-    public ObservableCollection<FavoritesMedia> Medias
+    public RangeObservableCollection<FavoritesMedia> Medias
     {
         get => _medias;
         set => SetProperty(ref _medias, value);
@@ -201,8 +201,8 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         DownloadManage.Width = 24;
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-        TabHeaders = new ObservableCollection<TabHeader>();
-        Medias = new ObservableCollection<FavoritesMedia>();
+        TabHeaders = new RangeObservableCollection<TabHeader>();
+        Medias = new RangeObservableCollection<FavoritesMedia>();
 
         #endregion
     }
@@ -442,7 +442,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
             {
                 var cancellationToken = _tokenSource2.Token;
 
-                var medias = FavoritesResource.GetFavoritesMedia(tab.Id, current, VideoNumberInPage);
+                var medias = FavoritesResource.GetFavoritesMedia(tab.Id, current, VideoNumberInPage, cancellationToken);
                 if (medias == null || medias.Count == 0)
                 {
                     MediaContentVisibility = true;

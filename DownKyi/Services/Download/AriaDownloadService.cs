@@ -411,13 +411,25 @@ public class AriaDownloadService : DownloadService, IDownloadService
     private async Task CloseAriaServer()
     {
         // 暂停所有下载
-        var ariaPause = await AriaClient.PauseAllAsync();
+        try
+        {
+            var pauseTask = AriaClient.PauseAllAsync();
+            await Task.WhenAny(pauseTask, Task.Delay(TimeSpan.FromSeconds(2)));
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(Tag, e);
+        }
 #if DEBUG
-        Core.Utils.Debugging.Console.PrintLine(ariaPause.ToString());
+        Core.Utils.Debugging.Console.PrintLine("PauseAllAsync completed or timed out.");
 #endif
 
         // 关闭服务器
-        bool close = await AriaServer.CloseServerAsync();
+        bool close = await AriaServer.CloseServerAsync(TimeSpan.FromSeconds(3));
+        if (!close)
+        {
+            close = await AriaServer.ForceCloseServerAsync(TimeSpan.FromSeconds(2));
+        }
 #if DEBUG
         Core.Utils.Debugging.Console.PrintLine(close);
 #endif

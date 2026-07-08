@@ -13,7 +13,7 @@ public static class CheeseInfo
     /// <param name="seasonId"></param>
     /// <param name="episodeId"></param>
     /// <returns></returns>
-    public static CheeseView? CheeseViewInfo(long seasonId = -1, long episodeId = -1)
+    public static CheeseView? CheeseViewInfo(long seasonId = -1, long episodeId = -1, CancellationToken cancellationToken = default)
     {
         const string baseUrl = "https://api.bilibili.com/pugv/view/web/season";
         const string referer = "https://www.bilibili.com";
@@ -31,12 +31,16 @@ public static class CheeseInfo
             return null;
         }
 
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
             var cheese = JsonConvert.DeserializeObject<CheeseViewOrigin>(response);
             return cheese?.Data;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {
@@ -53,16 +57,20 @@ public static class CheeseInfo
     /// <param name="ps"></param>
     /// <param name="pn"></param>
     /// <returns></returns>
-    public static CheeseEpisodeList? CheeseEpisodeList(long seasonId, int ps = 50, int pn = 1)
+    public static CheeseEpisodeList? CheeseEpisodeList(long seasonId, int ps = 50, int pn = 1, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/pugv/view/web/ep/list?season_id={seasonId}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
             var cheese = JsonConvert.DeserializeObject<CheeseEpisodeListOrigin>(response);
             return cheese?.Data;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {

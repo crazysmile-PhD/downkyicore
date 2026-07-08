@@ -18,7 +18,7 @@ public class CheeseInfoService : IInfoService
 {
     private readonly CheeseView? _cheeseView;
 
-    public CheeseInfoService(string? input)
+    public CheeseInfoService(string? input, System.Threading.CancellationToken cancellationToken = default)
     {
         if (input == null)
         {
@@ -28,13 +28,13 @@ public class CheeseInfoService : IInfoService
         if (ParseEntrance.IsCheeseSeasonUrl(input))
         {
             var seasonId = ParseEntrance.GetCheeseSeasonId(input);
-            _cheeseView = CheeseInfo.CheeseViewInfo(seasonId);
+            _cheeseView = CheeseInfo.CheeseViewInfo(seasonId, cancellationToken: cancellationToken);
         }
 
         if (ParseEntrance.IsCheeseEpisodeUrl(input))
         {
             var episodeId = ParseEntrance.GetCheeseEpisodeId(input);
-            _cheeseView = CheeseInfo.CheeseViewInfo(-1, episodeId);
+            _cheeseView = CheeseInfo.CheeseViewInfo(-1, episodeId, cancellationToken);
         }
     }
 
@@ -42,8 +42,9 @@ public class CheeseInfoService : IInfoService
     /// 获取视频剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoPage> GetVideoPages()
+    public List<VideoPage> GetVideoPages(System.Threading.CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var pages = new List<VideoPage>();
         if (_cheeseView == null)
         {
@@ -63,6 +64,7 @@ public class CheeseInfoService : IInfoService
         var order = 0;
         foreach (var episode in _cheeseView.Episodes)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             order++;
             var name = episode.Title;
 
@@ -117,8 +119,9 @@ public class CheeseInfoService : IInfoService
     /// 获取视频章节与剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoSection>? GetVideoSections(bool noUgc = false)
+    public List<VideoSection>? GetVideoSections(bool noUgc = false, System.Threading.CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return null;
     }
 
@@ -126,9 +129,10 @@ public class CheeseInfoService : IInfoService
     /// 获取视频流的信息，从VideoPage返回
     /// </summary>
     /// <param name="page"></param>
-    public void GetVideoStream(VideoPage page)
+    public void GetVideoStream(VideoPage page, System.Threading.CancellationToken cancellationToken = default)
     {
-        var playUrl = VideoStream.GetCheesePlayUrl(page.Avid, page.Bvid, page.Cid, page.EpisodeId);
+        cancellationToken.ThrowIfCancellationRequested();
+        var playUrl = VideoStream.GetCheesePlayUrl(page.Avid, page.Bvid, page.Cid, page.EpisodeId, cancellationToken: cancellationToken);
         Dispatcher.UIThread.Invoke(() => { Utils.VideoPageInfo(playUrl, page); });
     }
 
@@ -136,8 +140,9 @@ public class CheeseInfoService : IInfoService
     /// 获取视频信息
     /// </summary>
     /// <returns></returns>
-    public VideoInfoView? GetVideoView()
+    public VideoInfoView? GetVideoView(System.Threading.CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_cheeseView == null)
         {
             return null;

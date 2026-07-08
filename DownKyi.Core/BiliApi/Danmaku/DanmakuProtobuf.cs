@@ -14,7 +14,7 @@ public static class DanmakuProtobuf
     /// <param name="cid">视频CID</param>
     /// <param name="segmentIndex">分包，每6分钟一包</param>
     /// <returns></returns>
-    private static List<BiliDanmaku>? GetDanmakuProto(long avid, long cid, int segmentIndex)
+    private static List<BiliDanmaku>? GetDanmakuProto(long avid, long cid, int segmentIndex, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid={cid}&pid={avid}&segment_index={segmentIndex}";
         const string referer = "https://www.bilibili.com";
@@ -22,7 +22,7 @@ public static class DanmakuProtobuf
         var danmakuList = new List<BiliDanmaku>();
         try
         {
-            using var input =  WebClient.RequestStream(url,referer);
+            using var input =  WebClient.RequestStream(url, referer, cancellationToken: cancellationToken);
             var danmakus = DmSegMobileReply.Parser.ParseFrom(input);
             if (danmakus?.Elems == null)
             {
@@ -44,6 +44,10 @@ public static class DanmakuProtobuf
                 Pool = dm.Pool
             }));
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception e)
         {
             Console.PrintLine("GetDanmakuProto()发生异常: {0}", e);
@@ -60,15 +64,16 @@ public static class DanmakuProtobuf
     /// <param name="avid">稿件avID</param>
     /// <param name="cid">视频CID</param>
     /// <returns></returns>
-    public static List<BiliDanmaku> GetAllDanmakuProto(long avid, long cid)
+    public static List<BiliDanmaku> GetAllDanmakuProto(long avid, long cid, CancellationToken cancellationToken = default)
     {
         var danmakuList = new List<BiliDanmaku>();
 
         var segmentIndex = 0;
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             segmentIndex += 1;
-            var danmakus = GetDanmakuProto(avid, cid, segmentIndex);
+            var danmakus = GetDanmakuProto(avid, cid, segmentIndex, cancellationToken);
             if (danmakus == null)
             {
                 break;

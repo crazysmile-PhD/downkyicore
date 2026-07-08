@@ -253,7 +253,7 @@ public class AddToDownloadService
         }
 
         // 视频计数
-        var i = 0;
+        var addedItems = new List<DownloadingItem>();
         // 添加到下载
         foreach (var section in _videoSections)
         {
@@ -301,7 +301,7 @@ public class AddToDownloadService
                 var isDownloading = false;
 
 
-                foreach (var item in App.DownloadingList)
+                foreach (var item in App.DownloadingList.Concat(addedItems))
                 {
                     if (item.DownloadBase == null)
                     {
@@ -530,64 +530,63 @@ public class AddToDownloadService
                         break;
                 }
 
-                // 添加到下载列表
-                App.PropertyChangeAsync(() =>
+                // 如果不存在，直接添加到下载列表
+                var downloadBase = new DownloadBase
                 {
-                    // 如果不存在，直接添加到下载列表
-                    var downloadBase = new DownloadBase
-                    {
-                        Bvid = page.Bvid,
-                        Avid = page.Avid,
-                        Cid = page.Cid,
-                        EpisodeId = page.EpisodeId,
-                        CoverUrl = _videoInfoView.CoverUrl,
-                        PageCoverUrl = page.FirstFrame,
-                        ZoneId = zoneId,
-                        FilePath = filePath,
-                        Order = page.Order,
-                        MainTitle = _videoInfoView.Title,
-                        Name = page.Name,
-                        Duration = page.Duration,
-                        VideoCodecName = videoQuality.SelectedVideoCodec,
-                        Resolution = new Quality { Name = videoQuality.QualityFormat, Id = videoQuality.Quality },
-                        AudioCodec = audioCodec,
-                        Page = page.Page
-                    };
-                    var downloading = new Downloading
-                    {
-                        PlayStreamType = playStreamType,
-                        DownloadStatus = DownloadStatus.NotStarted,
-                    };
+                    Bvid = page.Bvid,
+                    Avid = page.Avid,
+                    Cid = page.Cid,
+                    EpisodeId = page.EpisodeId,
+                    CoverUrl = _videoInfoView.CoverUrl,
+                    PageCoverUrl = page.FirstFrame,
+                    ZoneId = zoneId,
+                    FilePath = filePath,
+                    Order = page.Order,
+                    MainTitle = _videoInfoView.Title,
+                    Name = page.Name,
+                    Duration = page.Duration,
+                    VideoCodecName = videoQuality.SelectedVideoCodec,
+                    Resolution = new Quality { Name = videoQuality.QualityFormat, Id = videoQuality.Quality },
+                    AudioCodec = audioCodec,
+                    Page = page.Page
+                };
+                var downloading = new Downloading
+                {
+                    PlayStreamType = playStreamType,
+                    DownloadStatus = DownloadStatus.NotStarted,
+                };
 
-                    // 需要下载的内容
-                    downloadBase.NeedDownloadContent["downloadAudio"] = _downloadAudio;
-                    downloadBase.NeedDownloadContent["downloadVideo"] = _downloadVideo;
-                    downloadBase.NeedDownloadContent["downloadDanmaku"] = _downloadDanmaku;
-                    downloadBase.NeedDownloadContent["downloadSubtitle"] = _downloadSubtitle;
-                    downloadBase.NeedDownloadContent["downloadCover"] = _downloadCover;
+                // 需要下载的内容
+                downloadBase.NeedDownloadContent["downloadAudio"] = _downloadAudio;
+                downloadBase.NeedDownloadContent["downloadVideo"] = _downloadVideo;
+                downloadBase.NeedDownloadContent["downloadDanmaku"] = _downloadDanmaku;
+                downloadBase.NeedDownloadContent["downloadSubtitle"] = _downloadSubtitle;
+                downloadBase.NeedDownloadContent["downloadCover"] = _downloadCover;
 
-                    var downloadingItem = new DownloadingItem
-                    {
-                        DownloadBase = downloadBase,
-                        Downloading = downloading,
-                        PlayUrl = page.PlayUrl,
-                    };
+                var downloadingItem = new DownloadingItem
+                {
+                    DownloadBase = downloadBase,
+                    Downloading = downloading,
+                    PlayUrl = page.PlayUrl,
+                };
 
-                    if (SettingsManager.GetInstance().GetVideoContent()
-                            .GenerateMovieMetadata && _downloadVideo)
-                    {
-                        downloadingItem.Metadata = BuildMovieMetadata(page);
-                    }
+                if (SettingsManager.GetInstance().GetVideoContent()
+                        .GenerateMovieMetadata && _downloadVideo)
+                {
+                    downloadingItem.Metadata = BuildMovieMetadata(page);
+                }
 
-                    _downloadStorageService.AddDownloading(downloadingItem);
-                    App.DownloadingList.Add(downloadingItem);
-                    Thread.Sleep(10);
-                });
-                i++;
+                _downloadStorageService.AddDownloading(downloadingItem);
+                addedItems.Add(downloadingItem);
             }
         }
 
-        return i;
+        if (addedItems.Count > 0)
+        {
+            App.PropertyChangeAsync(() => App.DownloadingList.AddRange(addedItems));
+        }
+
+        return addedItems.Count;
     }
     
 

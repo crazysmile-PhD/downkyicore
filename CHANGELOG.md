@@ -1,5 +1,25 @@
 # 更新日志
 
+## [1.0.29] - 2026-07-08
+
+### Bug Fixes
+
+- 修复关闭主窗口后 aria2c 子进程可能继续驻留并锁住日志/资料目录的问题。
+- 退出流程增加 bounded shutdown 与 tracked aria2 fallback kill，避免主进程先退出、下载子进程残留。
+
+### Performance
+
+- 下载中、已完成下载、历史、收藏、公开收藏与视频详情列表改用批次集合更新/虚拟化，降低大量资料时的 UI 卡顿。
+- 下载记录加入流程改为批次更新 UI，移除逐笔 `Thread.Sleep` 节流。
+- 主窗口消息提示与登录轮询改为可取消的异步延迟，不再占用背景线程。
+
+### Refactor
+
+- 使用者资料预设迁移到 AppData，并保留 `DOWNKYI_PORTABLE`/portable marker 与 `DOWNKYI_DATA_DIR` 覆写模式。
+- 新增 Cache/Logs/Aria/Storage retention maintenance，长期使用时自动清理过期日志、缓存和临时文件。
+- 收藏、历史、影片详情、下载前置解析、字幕/弹幕/封面下载等网络路径补齐 `CancellationToken`。
+- protobuf 弹幕模型改为从 `dm.proto` 透过 `Grpc.Tools` 于 build 时产生，移除手工维护的巨大 `Dm.cs`，并新增 CI 检查。
+
 ## [1.0.28] - 2026-07-08
 
 ### Bug Fixes

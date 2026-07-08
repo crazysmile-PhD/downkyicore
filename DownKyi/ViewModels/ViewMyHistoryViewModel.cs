@@ -1,7 +1,9 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.History;
@@ -27,6 +29,9 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
     // 每页视频数量，暂时在此写死，以后在设置中增加选项
     private const int VideoNumberInPage = 30;
+    private CancellationTokenSource? _loadCancellation;
+    private bool _isLoadingPage;
+    private bool _hasMoreHistory = true;
 
     #region 页面属性申明
 
@@ -62,9 +67,9 @@ public class ViewMyHistoryViewModel : ViewModelBase
         set => SetProperty(ref _contentVisibility, value);
     }
 
-    private ObservableCollection<HistoryMedia> _medias = new();
+    private RangeObservableCollection<HistoryMedia> _medias = new();
 
-    public ObservableCollection<HistoryMedia> Medias
+    public RangeObservableCollection<HistoryMedia> Medias
     {
         get => _medias;
         set => SetProperty(ref _medias, value);
@@ -125,7 +130,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
         DownloadManage.Width = 24;
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-        Medias = new ObservableCollection<HistoryMedia>();
+        Medias = new RangeObservableCollection<HistoryMedia>();
 
         #endregion
     }
@@ -144,6 +149,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
     /// </summary>
     protected internal override void ExecuteBackSpace()
     {
+        _loadCancellation?.Cancel();
         InitView();
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
@@ -248,19 +254,8 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
     private async Task ExecuteLoadMoreCommand()
     {
-        if(NoDataVisibility) return;
-        LoadingVisibility = true;
-        var result = await Task.Run(() => History.GetHistory(_nextMax, _nextViewAt, VideoNumberInPage));
-        if (result?.List?.Count > 0)
-        {
-            Medias.AddRange(result.List.Select(x => Convert(x,EventAggregator))
-                .Where(v => v != null && !string.IsNullOrEmpty(v.Title))
-                .Cast<HistoryMedia>()
-                .ToList());
-            _nextMax = result.Cursor.Max;
-            _nextViewAt = result.Cursor.ViewAt;
-        }
-        LoadingVisibility = false;
+        if (NoDataVisibility || _isLoadingPage || !_hasMoreHistory) return;
+        await LoadHistoryPageAsync(reset: false, _loadCancellation?.Token ?? CancellationToken.None);
     }
     /// <summary>
     /// 添加所有视频到下载列表事件
@@ -332,31 +327,63 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
     private async Task UpdateHistoryMediaListAsync()
     {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = new CancellationTokenSource();
+
+        _nextMax = 0;
+        _nextViewAt = 0;
+        _hasMoreHistory = true;
+        await LoadHistoryPageAsync(reset: true, _loadCancellation.Token);
+    }
+
+    private async Task LoadHistoryPageAsync(bool reset, CancellationToken cancellationToken)
+    {
+        if (_isLoadingPage) return;
+        _isLoadingPage = true;
         LoadingVisibility = true;
         NoDataVisibility = false;
-        Medias.Clear();
 
-        await Task.Run(() =>
+        try
         {
-            var historyList = History.GetHistory(0, 0, VideoNumberInPage);
-            if (historyList?.List?.Count > 0)
+            var result = await Task.Run(() =>
+                History.GetHistory(_nextMax, _nextViewAt, VideoNumberInPage, cancellationToken: cancellationToken),
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var medias = result?.List?
+                .Select(x => Convert(x, EventAggregator))
+                .Where(v => v != null && !string.IsNullOrEmpty(v.Title))
+                .Cast<HistoryMedia>()
+                .ToList() ?? new List<HistoryMedia>();
+            _hasMoreHistory = medias.Count > 0;
+
+            if (reset)
             {
-                App.PropertyChangeAsync(() =>
-                {
-                    ContentVisibility = true;
-                    LoadingVisibility = false;
-                    NoDataVisibility = false;
-                });
+                Medias.ReplaceRange(medias);
             }
             else
             {
-               App.PropertyChangeAsync(() =>
-               {
-                   LoadingVisibility = false;
-                   NoDataVisibility = true;
-               });
+                Medias.AddRange(medias);
             }
-        });
+
+            if (result?.Cursor != null)
+            {
+                _nextMax = result.Cursor.Max;
+                _nextViewAt = result.Cursor.ViewAt;
+            }
+
+            ContentVisibility = Medias.Count > 0;
+            NoDataVisibility = Medias.Count == 0;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            LoadingVisibility = false;
+            _isLoadingPage = false;
+        }
     }
 
     /// <summary>
@@ -377,6 +404,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
         _nextMax = 0;
         _nextViewAt = 0;
+        _hasMoreHistory = true;
         Medias.Clear();
         IsSelectAll = false;
     }

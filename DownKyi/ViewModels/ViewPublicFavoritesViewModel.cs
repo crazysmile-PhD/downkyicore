@@ -60,9 +60,9 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _favorites, value);
     }
 
-    private ObservableCollection<FavoritesMedia> _favoritesMedias = new();
+    private RangeObservableCollection<FavoritesMedia> _favoritesMedias = new();
 
-    public ObservableCollection<FavoritesMedia> FavoritesMedias
+    public RangeObservableCollection<FavoritesMedia> FavoritesMedias
     {
         get => _favoritesMedias;
         set => SetProperty(ref _favoritesMedias, value);
@@ -152,7 +152,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
         DownloadManage.Width = 24;
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-        FavoritesMedias = new ObservableCollection<FavoritesMedia>();
+        FavoritesMedias = new RangeObservableCollection<FavoritesMedia>();
 
         #endregion
     }
@@ -352,7 +352,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     {
         LoadingVisibility = true;
 
-        var favorites = favoritesService.GetFavorites(favoritesId);
+        var favorites = favoritesService.GetFavorites(favoritesId, cancellationToken);
         if (favorites == null)
         {
             LogManager.Debug(Tag, "Favorites is null.");
@@ -370,7 +370,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
 
         MediaLoadingVisibility = true;
 
-        var medias = FavoritesResource.GetAllFavoritesMedia(favoritesId);
+        var medias = FavoritesResource.GetAllFavoritesMedia(favoritesId, cancellationToken);
         if (medias == null || medias.Count == 0)
         {
             MediaLoadingVisibility = false;

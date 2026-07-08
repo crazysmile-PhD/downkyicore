@@ -130,28 +130,43 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// 关闭aria2c服务器，异步方法
         /// </summary>
         /// <returns></returns>
-        public static async Task<bool> CloseServerAsync()
+        public static async Task<bool> CloseServerAsync(TimeSpan? timeout = null)
         {
+            var waitTimeout = timeout ?? TimeSpan.FromSeconds(5);
             try
             {
-                await AriaClient.ShutdownAsync();
-                await WaitForExitOrKillAsync(TimeSpan.FromSeconds(30));
-                return true;
+                var shutdown = AriaClient.ShutdownAsync();
+                var completed = await Task.WhenAny(shutdown, Task.Delay(waitTimeout));
+                if (completed != shutdown)
+                {
+                    KillTrackedServer("aria2 shutdown rpc timed out.");
+                    return false;
+                }
+
+                var result = await shutdown;
+                if (result?.Result != "OK")
+                {
+                    KillTrackedServer("aria2 shutdown rpc failed.");
+                    return false;
+                }
+
+                return await WaitForExitOrKillAsync(waitTimeout);
             }
             catch (Exception e)
             {
                 Console.PrintLine("CloseServerAsync()发生异常: {0}", e);
                 LogManager.Error("AriaServer", e);
+                KillTrackedServer("aria2 shutdown failed.");
                 return false;
             }
         }
 
-        private static async Task WaitForExitOrKillAsync(TimeSpan timeout)
+        private static async Task<bool> WaitForExitOrKillAsync(TimeSpan timeout)
         {
             var server = Server;
             if (server == null)
             {
-                return;
+                return true;
             }
 
             try
@@ -160,10 +175,15 @@ namespace DownKyi.Core.Aria2cNet.Server
                 {
                     await server.WaitForExitAsync().WaitAsync(timeout);
                 }
+
+                Server = null;
+                return true;
             }
             catch (TimeoutException)
             {
                 KillProcess(server, "aria2c did not exit before timeout.");
+                Server = null;
+                return false;
             }
         }
 
@@ -171,7 +191,7 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// 强制关闭aria2c服务器，异步方法
         /// </summary>
         /// <returns></returns>
-        public static async Task<bool> ForceCloseServerAsync()
+        public static async Task<bool> ForceCloseServerAsync(TimeSpan? timeout = null)
         {
             //await Task.Run(() =>
             //{
@@ -183,13 +203,29 @@ namespace DownKyi.Core.Aria2cNet.Server
             //return true;
             try
             {
-                var result = await AriaClient.ForceShutdownAsync();
-                return result?.Result == "OK";
+                var waitTimeout = timeout ?? TimeSpan.FromSeconds(3);
+                var shutdown = AriaClient.ForceShutdownAsync();
+                var completed = await Task.WhenAny(shutdown, Task.Delay(waitTimeout));
+                if (completed != shutdown)
+                {
+                    KillTrackedServer("aria2 force shutdown rpc timed out.");
+                    return false;
+                }
+
+                var result = await shutdown;
+                if (result?.Result != "OK")
+                {
+                    KillTrackedServer("aria2 force shutdown rpc failed.");
+                    return false;
+                }
+
+                return await WaitForExitOrKillAsync(waitTimeout);
             }
             catch (Exception e)
             {
                 Console.PrintLine("ForceCloseServerAsync()发生异常: {0}", e);
                 LogManager.Error("AriaServer", e);
+                KillTrackedServer("aria2 force shutdown failed.");
                 return false;
             }
         }
@@ -208,7 +244,7 @@ namespace DownKyi.Core.Aria2cNet.Server
                     return false;
                 }
 
-                WaitForExitOrKillAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
+                WaitForExitOrKillAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
                 return true;
             }
             catch (Exception e)
@@ -277,6 +313,19 @@ namespace DownKyi.Core.Aria2cNet.Server
                 Console.PrintLine("KillProcess()发生异常: {0}", e);
                 LogManager.Error("AriaServer", e);
             }
+        }
+
+        public static bool KillTrackedServer(string reason)
+        {
+            var server = Server;
+            if (server == null)
+            {
+                return true;
+            }
+
+            KillProcess(server, reason);
+            Server = null;
+            return true;
         }
 
 

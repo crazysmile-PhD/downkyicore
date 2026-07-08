@@ -282,14 +282,17 @@
                                              CommandParameter="{Binding ElementName=NameFavoritesMedias, Path=SelectedItem}" />
                     </EventTriggerBehavior>
                 </Interaction.Behaviors>
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
                 <ListBox.Template>
                     <ControlTemplate TargetType="{x:Type ListBox}">
                         <ScrollViewer
                             HorizontalScrollBarVisibility="Disabled"
                             VerticalScrollBarVisibility="Auto">
-                            <StackPanel Orientation="Vertical">
-                                <ItemsPresenter />
-                            </StackPanel>
+                            <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
                         </ScrollViewer>
                     </ControlTemplate>
                 </ListBox.Template>

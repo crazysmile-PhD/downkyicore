@@ -7,6 +7,7 @@ using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
+using DownKyi.ViewModels;
 using DownKyi.ViewModels.PageViewModels;
 using Prism.Events;
 using FavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
@@ -20,9 +21,9 @@ public class FavoritesService : IFavoritesService
     /// </summary>
     /// <param name="mediaId"></param>
     /// <returns></returns>
-    public Favorites? GetFavorites(long mediaId)
+    public Favorites? GetFavorites(long mediaId, CancellationToken cancellationToken = default)
     {
-        var favoritesMetaInfo = FavoritesInfo.GetFavoritesInfo(mediaId);
+        var favoritesMetaInfo = FavoritesInfo.GetFavoritesInfo(mediaId, cancellationToken);
         if (favoritesMetaInfo == null)
         {
             return null;
@@ -38,6 +39,7 @@ public class FavoritesService : IFavoritesService
         var favorites = new Favorites();
         App.PropertyChangeAsync(() =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
             favorites.CoverUrl = coverUrl;
 
             favorites.Title = favoritesMetaInfo.Title;
@@ -102,8 +104,11 @@ public class FavoritesService : IFavoritesService
         CancellationToken cancellationToken)
     {
         var order = 0;
+        var mappedMedias = new List<ViewModels.PageViewModels.FavoritesMedia>();
         foreach (var media in medias)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (media.Title == "已失效视频")
             {
                 continue;
@@ -125,38 +130,39 @@ public class FavoritesService : IFavoritesService
             var dateFavTime = startTime.AddSeconds(media.FavTime);
             var favTime = dateFavTime.ToString("yyyy-MM-dd");
 
-            App.PropertyChangeAsync(() =>
+            mappedMedias.Add(new ViewModels.PageViewModels.FavoritesMedia(eventAggregator)
             {
-                var newMedia = new ViewModels.PageViewModels.FavoritesMedia(eventAggregator)
-                {
-                    Avid = media.Id,
-                    Bvid = media.Bvid,
-                    Order = order,
-                    Cover = coverUrl,
-                    Title = media.Title,
-                    PlayNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Play) : "0",
-                    DanmakuNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Danmaku) : "0",
-                    FavoriteNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Collect) : "0",
-                    Duration = Format.FormatDuration2(media.Duration),
-                    UpName = media.Upper != null ? media.Upper.Name : string.Empty,
-                    UpMid = media.Upper != null ? media.Upper.Mid : -1,
-                    CreateTime = ctime,
-                    FavTime = favTime
-                };
-
-                if (!result.ToList().Exists(t => t.Avid == newMedia.Avid))
-                {
-                    result.Add(newMedia);
-                    Thread.Sleep(10);
-                }
+                Avid = media.Id,
+                Bvid = media.Bvid,
+                Order = order,
+                Cover = coverUrl,
+                Title = media.Title,
+                PlayNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Play) : "0",
+                DanmakuNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Danmaku) : "0",
+                FavoriteNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Collect) : "0",
+                Duration = Format.FormatDuration2(media.Duration),
+                UpName = media.Upper != null ? media.Upper.Name : string.Empty,
+                UpMid = media.Upper != null ? media.Upper.Mid : -1,
+                CreateTime = ctime,
+                FavTime = favTime
             });
-
-            // 判断是否该结束线程，若为true，跳出循环
-            if (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
         }
+
+        App.PropertyChangeAsync(() =>
+        {
+            var existingAvids = result.Select(item => item.Avid).ToHashSet();
+            var newItems = mappedMedias.Where(item => existingAvids.Add(item.Avid)).ToList();
+            if (result is RangeObservableCollection<ViewModels.PageViewModels.FavoritesMedia> range)
+            {
+                range.AddRange(newItems);
+                return;
+            }
+
+            foreach (var item in newItems)
+            {
+                result.Add(item);
+            }
+        });
     }
 
     /// <summary>
@@ -167,24 +173,32 @@ public class FavoritesService : IFavoritesService
     /// <param name="cancellationToken"></param>
     public void GetCreatedFavorites(long mid, ObservableCollection<TabHeader> tabHeaders, CancellationToken cancellationToken)
     {
-        var favorites = FavoritesInfo.GetAllCreatedFavorites(mid);
+        var favorites = FavoritesInfo.GetAllCreatedFavorites(mid, cancellationToken);
         if (favorites.Count == 0)
         {
             return;
         }
 
+        var headers = new List<TabHeader>();
         foreach (var item in favorites)
         {
-            //cancellationToken.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
+            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString() });
+        }
 
-            // 判断是否该结束线程，若为true，跳出循环
-            if (cancellationToken.IsCancellationRequested)
+        App.PropertyChangeAsync(() =>
+        {
+            if (tabHeaders is RangeObservableCollection<TabHeader> range)
             {
-                break;
+                range.AddRange(headers);
+                return;
             }
 
-            App.PropertyChangeAsync(() => { tabHeaders.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString() }); });
-        }
+            foreach (var header in headers)
+            {
+                tabHeaders.Add(header);
+            }
+        });
     }
 
     /// <summary>
@@ -195,21 +209,31 @@ public class FavoritesService : IFavoritesService
     /// <param name="cancellationToken"></param>
     public void GetCollectedFavorites(long mid, ObservableCollection<TabHeader> tabHeaders, CancellationToken cancellationToken)
     {
-        var favorites = FavoritesInfo.GetAllCollectedFavorites(mid);
+        var favorites = FavoritesInfo.GetAllCollectedFavorites(mid, cancellationToken);
         if (favorites.Count == 0)
         {
             return;
         }
 
+        var headers = new List<TabHeader>();
         foreach (var item in favorites)
         {
-            // 判断是否该结束线程，若为true，跳出循环
-            if (cancellationToken.IsCancellationRequested)
+            cancellationToken.ThrowIfCancellationRequested();
+            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString() });
+        }
+
+        App.PropertyChangeAsync(() =>
+        {
+            if (tabHeaders is RangeObservableCollection<TabHeader> range)
             {
-                break;
+                range.AddRange(headers);
+                return;
             }
 
-            App.PropertyChangeAsync(() => { tabHeaders.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString() }); });
-        }
+            foreach (var header in headers)
+            {
+                tabHeaders.Add(header);
+            }
+        });
     }
 }

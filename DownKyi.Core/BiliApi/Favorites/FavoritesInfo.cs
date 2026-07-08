@@ -11,11 +11,11 @@ public static class FavoritesInfo
     /// 获取收藏夹元数据
     /// </summary>
     /// <param name="mediaId"></param>
-    public static FavoritesMetaInfo? GetFavoritesInfo(long mediaId)
+    public static FavoritesMetaInfo? GetFavoritesInfo(long mediaId, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/v3/fav/folder/info?media_id={mediaId}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
@@ -37,11 +37,11 @@ public static class FavoritesInfo
     /// <param name="pn">页码</param>
     /// <param name="ps">每页项数</param>
     /// <returns></returns>
-    public static List<FavoritesMetaInfo>? GetCreatedFavorites(long mid, int pn, int ps)
+    public static List<FavoritesMetaInfo>? GetCreatedFavorites(long mid, int pn, int ps, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/v3/fav/folder/created/list?up_mid={mid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
@@ -62,7 +62,7 @@ public static class FavoritesInfo
     /// </summary>
     /// <param name="mid">目标用户UID</param>
     /// <returns></returns>
-    public static List<FavoritesMetaInfo> GetAllCreatedFavorites(long mid)
+    public static List<FavoritesMetaInfo> GetAllCreatedFavorites(long mid, CancellationToken cancellationToken = default)
     {
         var result = new List<FavoritesMetaInfo>();
 
@@ -72,7 +72,8 @@ public static class FavoritesInfo
             i++;
             const int ps = 50;
 
-            var data = GetCreatedFavorites(mid, i, ps);
+            cancellationToken.ThrowIfCancellationRequested();
+            var data = GetCreatedFavorites(mid, i, ps, cancellationToken);
             if (data == null || data.Count == 0)
             {
                 break;
@@ -91,11 +92,11 @@ public static class FavoritesInfo
     /// <param name="pn">页码</param>
     /// <param name="ps">每页项数</param>
     /// <returns></returns>
-    public static List<FavoritesMetaInfo>? GetCollectedFavorites(long mid, int pn, int ps)
+    public static List<FavoritesMetaInfo>? GetCollectedFavorites(long mid, int pn, int ps, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/v3/fav/folder/collected/list?up_mid={mid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
@@ -120,7 +121,7 @@ public static class FavoritesInfo
     /// </summary>
     /// <param name="mid">目标用户UID</param>
     /// <returns></returns>
-    public static List<FavoritesMetaInfo> GetAllCollectedFavorites(long mid)
+    public static List<FavoritesMetaInfo> GetAllCollectedFavorites(long mid, CancellationToken cancellationToken = default)
     {
         var result = new List<FavoritesMetaInfo>();
 
@@ -130,7 +131,8 @@ public static class FavoritesInfo
             i++;
             const int ps = 50;
 
-            var data = GetCollectedFavorites(mid, i, ps);
+            cancellationToken.ThrowIfCancellationRequested();
+            var data = GetCollectedFavorites(mid, i, ps, cancellationToken);
             if (data == null || data.Count == 0)
             {
                 break;

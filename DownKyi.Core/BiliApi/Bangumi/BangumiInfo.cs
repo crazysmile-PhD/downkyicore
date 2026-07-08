@@ -12,11 +12,11 @@ public static class BangumiInfo
     /// </summary>
     /// <param name="mediaId"></param>
     /// <returns></returns>
-    public static BangumiMedia? BangumiMediaInfo(long mediaId)
+    public static BangumiMedia? BangumiMediaInfo(long mediaId, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/pgc/review/user?media_id={mediaId}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
@@ -27,6 +27,10 @@ public static class BangumiInfo
             }
 
             return null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {
@@ -42,7 +46,7 @@ public static class BangumiInfo
     /// <param name="seasonId"></param>
     /// <param name="episodeId"></param>
     /// <returns></returns>
-    public static BangumiSeason? BangumiSeasonInfo(long seasonId = -1, long episodeId = -1)
+    public static BangumiSeason? BangumiSeasonInfo(long seasonId = -1, long episodeId = -1, CancellationToken cancellationToken = default)
     {
         const string baseUrl = "https://api.bilibili.com/pgc/view/web/season";
         const string referer = "https://www.bilibili.com";
@@ -60,12 +64,16 @@ public static class BangumiInfo
             return null;
         }
 
-        var response = WebClient.RequestWeb(url, referer);
+        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
 
         try
         {
             var bangumiSeason = JsonConvert.DeserializeObject<BangumiSeasonOrigin>(response);
             return bangumiSeason?.Result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {

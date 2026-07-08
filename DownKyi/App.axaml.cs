@@ -12,6 +12,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
@@ -184,7 +185,26 @@ public partial class App : PrismApplication
 
     private void StartDownloadBootstrap()
     {
+        RunStorageMaintenance();
         _downloadStartupTask ??= LoadDownloadStateAndStartServiceAsync(_startupCancellation.Token);
+    }
+
+    private void RunStorageMaintenance()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await StorageManager.RunMaintenanceAsync(_startupCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception e)
+            {
+                LogManager.Error(nameof(StorageManager), e);
+            }
+        });
     }
 
     private async Task LoadDownloadStateAndStartServiceAsync(CancellationToken cancellationToken)
@@ -289,7 +309,7 @@ public partial class App : PrismApplication
     {
         try
         {
-            if (!OnExitAsync().Wait(TimeSpan.FromSeconds(10)))
+            if (!OnExitAsync().Wait(TimeSpan.FromSeconds(15)))
             {
                 LogManager.Info(nameof(App), "Application exit cleanup timed out.");
             }
@@ -332,7 +352,12 @@ public partial class App : PrismApplication
         // 关闭下载服务
         if (_downloadService != null)
         {
-            await Task.WhenAny(_downloadService.EndAsync(), Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+            var downloadShutdown = _downloadService.EndAsync();
+            if (await Task.WhenAny(downloadShutdown, Task.Delay(TimeSpan.FromSeconds(12))).ConfigureAwait(false) != downloadShutdown)
+            {
+                LogManager.Info(nameof(App), "Download service cleanup timed out; killing tracked aria2 process.");
+                AriaServer.KillTrackedServer("application exit cleanup timed out.");
+            }
         }
 
         await LogManager.FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);

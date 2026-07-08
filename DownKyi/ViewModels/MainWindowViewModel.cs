@@ -35,6 +35,7 @@ public class MainWindowViewModel : BindableBase
 
     private bool _messageVisibility;
     private string? _oldMessage;
+    private CancellationTokenSource? _messageCancellation;
 
     public bool MessageVisibility
     {
@@ -106,19 +107,19 @@ public class MainWindowViewModel : BindableBase
         // 订阅消息发送事件
         _eventAggregator.GetEvent<MessageEvent>().Subscribe(message =>
         {
-            MessageVisibility = true;
-
-            _oldMessage = Message;
-            Message = message;
-            var sleep = 2000;
-            if (_oldMessage == Message)
+            Dispatcher.UIThread.Post(() =>
             {
-                sleep = 1500;
-            }
+                MessageVisibility = true;
 
-            Thread.Sleep(sleep);
+                _oldMessage = Message;
+                Message = message;
+                var delay = _oldMessage == Message ? 1500 : 2000;
 
-            MessageVisibility = false;
+                _messageCancellation?.Cancel();
+                _messageCancellation?.Dispose();
+                _messageCancellation = new CancellationTokenSource();
+                _ = HideMessageAfterDelayAsync(delay, _messageCancellation.Token);
+            });
         }, ThreadOption.BackgroundThread);
 
         #endregion
@@ -141,6 +142,29 @@ public class MainWindowViewModel : BindableBase
             };
             _regionManager.RequestNavigate("ContentRegion", ViewIndexViewModel.Tag, param);
         });
+    }
+
+    private static async Task DelayAsync(int milliseconds, CancellationToken cancellationToken)
+    {
+        await Task.Delay(milliseconds, cancellationToken);
+    }
+
+    private async Task HideMessageAfterDelayAsync(int milliseconds, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await DelayAsync(milliseconds, cancellationToken);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    MessageVisibility = false;
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     #region 剪贴板

@@ -391,7 +391,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                         break;
                 }
 
-                Thread.Sleep(100);
+                Task.Delay(100, CancellationToken.GetValueOrDefault()).GetAwaiter().GetResult();
             }
 
             return isComplete;

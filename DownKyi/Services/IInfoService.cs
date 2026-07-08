@@ -5,11 +5,11 @@ namespace DownKyi.Services;
 
 public interface IInfoService
 {
-    VideoInfoView? GetVideoView();
+    VideoInfoView? GetVideoView(System.Threading.CancellationToken cancellationToken = default);
 
-    List<VideoSection>? GetVideoSections(bool noUgc);
+    List<VideoSection>? GetVideoSections(bool noUgc, System.Threading.CancellationToken cancellationToken = default);
 
-    List<VideoPage>? GetVideoPages();
+    List<VideoPage>? GetVideoPages(System.Threading.CancellationToken cancellationToken = default);
 
-    void GetVideoStream(VideoPage page);
+    void GetVideoStream(VideoPage page, System.Threading.CancellationToken cancellationToken = default);
 }

@@ -178,11 +178,15 @@ public abstract class DownloadService
         try
         {
             if (string.IsNullOrWhiteSpace(coverUrl)) return null;
-            WebClient.DownloadFile(coverUrl, fileName);
+            WebClient.DownloadFile(coverUrl, fileName, cancellationToken: CancellationToken.GetValueOrDefault());
 
             // 记录本次下载的文件
             downloading.Downloading.DownloadFiles.TryAdd(coverUrl, fileName);
             return fileName;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {
@@ -245,7 +249,7 @@ public abstract class DownloadService
         bilibili.SetBottomFilter(SettingsManager.GetInstance().GetDanmakuBottomFilter() == AllowStatus.Yes);
         bilibili.SetScrollFilter(SettingsManager.GetInstance().GetDanmakuScrollFilter() == AllowStatus.Yes);
         var downloadBase = downloading.DownloadBase ?? throw new InvalidOperationException("DownloadBase is required to download danmaku.");
-        bilibili.Create(downloadBase.Avid, downloadBase.Cid, subtitleConfig, assFile);
+        bilibili.Create(downloadBase.Avid, downloadBase.Cid, subtitleConfig, assFile, CancellationToken.GetValueOrDefault());
 
         return assFile;
     }
@@ -263,7 +267,11 @@ public abstract class DownloadService
 
         var srtFiles = new List<string>();
 
-        var subRipTexts = VideoStream.GetSubtitle(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid);
+        var subRipTexts = VideoStream.GetSubtitle(
+            downloading.DownloadBase.Avid,
+            downloading.DownloadBase.Bvid,
+            downloading.DownloadBase.Cid,
+            CancellationToken.GetValueOrDefault());
         foreach (var subRip in subRipTexts)
         {
             var srtFile = $"{downloading.DownloadBase.FilePath}_{subRip.LanDoc}.srt";
@@ -409,19 +417,21 @@ public abstract class DownloadService
             case PlayStreamType.Video:
                 playUrl = downloading.PlayUrl ?? SettingsManager.GetInstance().GetVideoParseType() switch
                 {
-                    0 => VideoStream.GetVideoPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid),
+                    0 => VideoStream.GetVideoPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
+                        cancellationToken: CancellationToken.GetValueOrDefault()),
                     1 => VideoStream.GetVideoPlayUrlWebPage(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
-                        downloading.DownloadBase.Page),
+                        downloading.DownloadBase.Page, CancellationToken.GetValueOrDefault()),
                     _ => throw new ArgumentException("Invalid video parse type. Valid values are: 0 (WebAPI) or 1 (WebPage).")
                 };
                 break;
             case PlayStreamType.Bangumi:
-                playUrl = downloading.PlayUrl ?? VideoStream.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid);
+                playUrl = downloading.PlayUrl ?? VideoStream.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid,
+                    downloading.DownloadBase.Cid, cancellationToken: CancellationToken.GetValueOrDefault());
                 break;
             case PlayStreamType.Cheese:
                 playUrl = downloading.PlayUrl ?? VideoStream.GetCheesePlayUrl(downloading.DownloadBase.Avid,
                     downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
-                    downloading.DownloadBase.EpisodeId);
+                    downloading.DownloadBase.EpisodeId, cancellationToken: CancellationToken.GetValueOrDefault());
                 break;
             default:
                 break;

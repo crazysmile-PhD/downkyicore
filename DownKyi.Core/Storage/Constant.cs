@@ -5,32 +5,105 @@
 /// </summary>
 internal static class Constant
 {
-    // 根目录
-#if NET8_0_OR_GREATER //兼容8.0中断性变更https://learn.microsoft.com/zh-cn/dotnet/core/compatibility/core-libraries/8.0/getfolderpath-unix
-    private static string Root => OperatingSystem.IsWindows()
-        ? AppDomain.CurrentDomain.BaseDirectory
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DownKyi");
-#else
-    private static string Root
+    private const string AppDirectoryName = "DownKyi";
+    private static readonly string LegacyRoot = Path.GetFullPath(AppContext.BaseDirectory);
+    public static bool IsPortableMode { get; } = ResolvePortableMode();
+    public static string Root { get; } = ResolveRoot();
+
+    static Constant()
     {
-        get
+        if (!IsPortableMode && !PathsEqual(LegacyRoot, Root))
         {
-            if (OperatingSystem.IsWindows())
-            {
-                return AppDomain.CurrentDomain.BaseDirectory;
-            }
-
-            if (OperatingSystem.IsMacOS())
-            {
-                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library",
-                    "Application Support", "DownKyi");
-            }
-
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DownKyi");
+            MigrateLegacyData();
         }
     }
-#endif
-    // private static string Root { get; } = AppDomain.CurrentDomain.BaseDirectory;
+
+    private static string ResolveRoot()
+    {
+        var overrideRoot = Environment.GetEnvironmentVariable("DOWNKYI_DATA_DIR");
+        if (!string.IsNullOrWhiteSpace(overrideRoot))
+        {
+            return Path.GetFullPath(overrideRoot);
+        }
+
+        if (IsPortableMode)
+        {
+            return LegacyRoot;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppDirectoryName);
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Library",
+                "Application Support",
+                AppDirectoryName);
+        }
+
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppDirectoryName);
+    }
+
+    private static bool ResolvePortableMode()
+    {
+        var portable = Environment.GetEnvironmentVariable("DOWNKYI_PORTABLE");
+        if (!string.IsNullOrWhiteSpace(portable))
+        {
+            return portable.Equals("1", StringComparison.OrdinalIgnoreCase)
+                   || portable.Equals("true", StringComparison.OrdinalIgnoreCase)
+                   || portable.Equals("yes", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return File.Exists(Path.Combine(LegacyRoot, "portable"))
+               || File.Exists(Path.Combine(LegacyRoot, ".portable"))
+               || File.Exists(Path.Combine(LegacyRoot, "DownKyi.portable"));
+    }
+
+    private static void MigrateLegacyData()
+    {
+        foreach (var directoryName in new[] { "Aria", "Logs", "Storage", "Config", "Bilibili", "Cache" })
+        {
+            var source = Path.Combine(LegacyRoot, directoryName);
+            var target = Path.Combine(Root, directoryName);
+            CopyDirectoryIfMissing(source, target);
+        }
+    }
+
+    private static void CopyDirectoryIfMissing(string source, string target)
+    {
+        if (!Directory.Exists(source) || PathsEqual(source, target))
+        {
+            return;
+        }
+
+        foreach (var sourceFile in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(source, sourceFile);
+            var targetFile = Path.Combine(target, relativePath);
+            if (File.Exists(targetFile))
+            {
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(targetFile)!);
+            File.Copy(sourceFile, targetFile);
+        }
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        var comparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        return string.Equals(
+            Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            comparison);
+    }
 
     // Aria
     public static string Aria { get; } = Path.Combine(Root, "Aria");
