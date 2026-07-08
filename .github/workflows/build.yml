@@ -36,7 +36,6 @@ jobs:
       matrix:
         cpu: [ x64, x86 ]
         kind: [ zip ]
-        trimmed: [ true, false ]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -59,28 +58,14 @@ jobs:
           .\aria2.ps1 ${{ matrix.cpu }}
         working-directory: ./script
       - name: Package
-        if: ${{ matrix.trimmed == false }}
         run: |
           & "$env:GITHUB_WORKSPACE\.tools\pupnet.exe" DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r win-${{ matrix.cpu }} -y
         working-directory: ./script/pupnet
-      - name: Package trimmed
-        if: ${{ matrix.trimmed == true }}
-        run: |
-          & "$env:GITHUB_WORKSPACE\.tools\pupnet.exe" DownKyi.pupnet.trimmed.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r win-${{ matrix.cpu }} -y
-          mv output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }} output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}-trimmed.${{ matrix.kind }}
-        working-directory: ./script/pupnet
       - name: Upload build artifacts ${{ matrix.kind }}
         uses: actions/upload-artifact@v7
-        if: ${{ matrix.trimmed == false }}
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
           path: script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
-      - name: Upload build artifacts ${{ matrix.kind }} trimmed
-        uses: actions/upload-artifact@v7
-        if: ${{ matrix.trimmed == true }}
-        with:
-          name: DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}-trimmed.${{ matrix.kind }}
-          path: script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}-trimmed.${{ matrix.kind }}
   build-linux:
     runs-on: ubuntu-22.04
     needs: changelog
@@ -169,7 +154,7 @@ jobs:
       - name: Install Tool Via HomeBrew
         run: |
           export HOMEBREW_NO_AUTO_UPDATE=true
-          export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=true
+          brew untap aws/tap || true
           brew install create-dmg tree
       - name: Install .NET
         uses: actions/setup-dotnet@v5

@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
-using System.Xml.Serialization;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -333,21 +333,71 @@ public abstract class DownloadService
 
     protected void GenerateNfoFile(DownloadingItem downloading)
     {
-        if (downloading.Metadata == null) return;
-        var serializer = new XmlSerializer(typeof(MovieMetadata));
+        var metadata = downloading.Metadata;
+        if (metadata == null) return;
+
         var settings = new XmlWriterSettings { Indent = true };
         try
         {
             string filePath = $"{downloading.DownloadBase.FilePath}.nfo";
             using var writer = XmlWriter.Create(filePath, settings);
-#pragma warning disable IL2026
-            serializer.Serialize(writer, downloading.Metadata);
-#pragma warning restore IL2026
+            WriteMovieMetadata(writer, metadata);
         }
         catch (Exception e)
         {
             LogManager.Error($"{Tag}.GenerateNfoFile()", e);
         }
+    }
+
+    private static void WriteMovieMetadata(XmlWriter writer, MovieMetadata metadata)
+    {
+        writer.WriteStartDocument();
+        writer.WriteStartElement("movie");
+
+        writer.WriteElementString("title", metadata.Title);
+        writer.WriteElementString("plot", metadata.Plot);
+        writer.WriteElementString("year", metadata.Year);
+
+        foreach (var genre in metadata.Genres)
+        {
+            writer.WriteElementString("genre", genre);
+        }
+
+        foreach (var tag in metadata.Tags)
+        {
+            writer.WriteElementString("tag", tag);
+        }
+
+        foreach (var actor in metadata.Actors)
+        {
+            writer.WriteStartElement("actor");
+            writer.WriteElementString("name", actor.Name);
+            writer.WriteElementString("role", actor.Role);
+            writer.WriteEndElement();
+        }
+
+        if (metadata.BilibiliId != null)
+        {
+            writer.WriteStartElement("uniqueid");
+            writer.WriteAttributeString("type", metadata.BilibiliId.Type);
+            writer.WriteString(metadata.BilibiliId.Value);
+            writer.WriteEndElement();
+        }
+
+        writer.WriteElementString("premiered", metadata.Premiered);
+
+        foreach (var rating in metadata.Ratings)
+        {
+            writer.WriteStartElement("rating");
+            writer.WriteAttributeString("name", rating.Name);
+            writer.WriteAttributeString("max", rating.Max.ToString(CultureInfo.InvariantCulture));
+            writer.WriteAttributeString("default", rating.IsDefault.ToString().ToLowerInvariant());
+            writer.WriteString(rating.Value.ToString(CultureInfo.InvariantCulture));
+            writer.WriteEndElement();
+        }
+
+        writer.WriteEndElement();
+        writer.WriteEndDocument();
     }
 
 

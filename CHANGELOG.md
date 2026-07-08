@@ -1,5 +1,17 @@
 # 更新日志
 
+## [1.0.31] - 2026-07-08
+
+### Bug Fixes
+
+- 修复 Windows release pipeline 的 trimming annotations：下载记录 JSON 改用 source-generated `JsonSerializerContext`，NFO 输出改为显式 `XmlWriter`，避免反射序列化在裁剪场景下产生风险。
+- 修复 macOS release pipeline 的 Homebrew annotations：移除 `HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK`，并在 runner 上卸载未信任的 `aws/tap` 后再安装打包工具。
+
+### CI
+
+- 暂停发布不安全的 Windows `-trimmed` 包；当前 Avalonia / Prism / Xaml.Behaviors / Newtonsoft.Json 组合不适合 full trim，继续发布会造成大量 ILLink 警告并存在功能被裁剪的风险。
+- Windows release 现在只发布正常 self-contained zip，保留可用性与 CI 输出干净度。
+
 ## [1.0.30] - 2026-07-08
 
 ### Bug Fixes

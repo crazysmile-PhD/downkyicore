@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -23,7 +24,6 @@ public class DownloadStorageService : IDisposable
     private const string Tag = "DownloadStorageService";
     private readonly SqliteConnection _connection;
     private readonly object _lock = new();
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public DownloadStorageService()
     {
@@ -113,19 +113,30 @@ public class DownloadStorageService : IDisposable
     // ─── 辅助：JSON 序列化 / 反序列化 ────────────────────────────────────────
 
     private static string ToJson<T>(T value) =>
-        JsonSerializer.Serialize(value, JsonOptions);
+        JsonSerializer.Serialize(value, GetJsonTypeInfo<T>());
 
     private static T FromJson<T>(string? json, T fallback) where T : new()
     {
         if (string.IsNullOrWhiteSpace(json)) return fallback;
         try
         {
-            return JsonSerializer.Deserialize<T>(json, JsonOptions) ?? fallback;
+            return JsonSerializer.Deserialize(json, GetJsonTypeInfo<T>()) ?? fallback;
         }
         catch
         {
             return fallback;
         }
+    }
+
+    private static JsonTypeInfo<T> GetJsonTypeInfo<T>()
+    {
+        var typeInfo = DownloadStorageJsonContext.Default.GetTypeInfo(typeof(T));
+        if (typeInfo is JsonTypeInfo<T> typedTypeInfo)
+        {
+            return typedTypeInfo;
+        }
+
+        throw new InvalidOperationException($"Missing JSON metadata for {typeof(T).FullName}.");
     }
 
     // ─── DownloadBase 映射 ────────────────────────────────────────────────────
