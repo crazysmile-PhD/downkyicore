@@ -81,6 +81,7 @@ public partial class App : PrismApplication
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
             desktop.Exit += OnExit!;
             AppLife = desktop;
         }
@@ -286,7 +287,34 @@ public partial class App : PrismApplication
 
     private void OnExit(object sender, ControlledApplicationLifetimeExitEventArgs e)
     {
-        OnExitAsync().GetAwaiter().GetResult();
+        try
+        {
+            if (!OnExitAsync().Wait(TimeSpan.FromSeconds(10)))
+            {
+                LogManager.Info(nameof(App), "Application exit cleanup timed out.");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogManager.Error(nameof(App), ex);
+        }
+        finally
+        {
+            _startupCancellation.Dispose();
+#if !DEBUG
+            try
+            {
+                _mutex?.ReleaseMutex();
+            }
+            catch (ApplicationException)
+            {
+                // The process is exiting; only avoid masking the original shutdown path.
+            }
+
+            _mutex?.Dispose();
+            _mutex = null;
+#endif
+        }
     }
 
     private async Task OnExitAsync()
@@ -298,16 +326,16 @@ public partial class App : PrismApplication
 
         if (_downloadStartupTask != null)
         {
-            await Task.WhenAny(_downloadStartupTask, Task.Delay(TimeSpan.FromSeconds(5)));
+            await Task.WhenAny(_downloadStartupTask, Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(false);
         }
 
         // 关闭下载服务
         if (_downloadService != null)
         {
-            await _downloadService.EndAsync();
+            await Task.WhenAny(_downloadService.EndAsync(), Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
         }
 
-        await LogManager.FlushAsync(TimeSpan.FromSeconds(2));
+        await LogManager.FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
     }
 
     private void NativeMenuItem_OnClick(object? sender, EventArgs e)

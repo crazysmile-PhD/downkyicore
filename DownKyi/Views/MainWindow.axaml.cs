@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Threading;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
 
@@ -43,6 +45,11 @@ public partial class MainWindow : Window
         }
 
         SettingsManager.GetInstance().SettingWindowSettings(_windowSettings);
+
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            Dispatcher.UIThread.Post(() => desktop.Shutdown(), DispatcherPriority.Background);
+        }
     }
 
     // protected override void OnClosed(EventArgs e)
