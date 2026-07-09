@@ -13,6 +13,7 @@ public class NetworkSettings
     public string UserAgent { get; set; } = string.Empty;
 
     public Downloader Downloader { get; set; } = Downloader.NotSet;
+    public AllowStatus HighSpeedDownloadMode { get; set; } = AllowStatus.None;
 
     public NetworkProxy NetworkProxy { get; set; } = NetworkProxy.None;
     
@@ -37,6 +38,8 @@ public class NetworkSettings
 
     public AriaConfigLogLevel AriaLogLevel { get; set; } = AriaConfigLogLevel.NOT_SET;
     public int AriaSplit { get; set; } = -1;
+    public int AriaMaxConnectionPerServer { get; set; } = -1;
+    public int AriaMinSplitSize { get; set; } = -1;
     public int AriaMaxOverallDownloadLimit { get; set; } = -1;
     public int AriaMaxDownloadLimit { get; set; } = -1;
     public AriaConfigFileAllocation AriaFileAllocation { get; set; } = AriaConfigFileAllocation.NOT_SET;

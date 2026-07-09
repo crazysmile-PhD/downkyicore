@@ -30,32 +30,32 @@
     }
   },
   "ffmpeg": {
-    "version": "continuous",
-    "repository": "https://github.com/yaobiao131/downkyi-ffmpeg-build",
+    "version": "btbn-autobuild-2026-07-08-13-30_martin-riedl-2026-07",
+    "repository": "Windows/Linux: https://github.com/BtbN/FFmpeg-Builds; macOS: https://ffmpeg.martin-riedl.de",
     "assets": {
       "win-x86": {
         "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-i686-w64-mingw32_static.zip",
         "sha256": "969a75924bfaa642d54dafea771cc1cf77103915428b1eaeac061eda7f837471"
       },
       "win-x64": {
-        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-x86_64-w64-mingw32_static.zip",
-        "sha256": "563766d2f7a4fc16b69c1928966fa6867697bbed39aacf2db0decdf639ee66df"
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-08-13-30/ffmpeg-N-125505-gc57660fb18-win64-gpl.zip",
+        "sha256": "21e3aa721313ee09ae2e05fe4335935047d111c97a9ab78c093f36c74bfdd206"
       },
       "linux-x64": {
-        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-x86_64-linux-musl_static.zip",
-        "sha256": "fd6709e6c39aa6cdeb8f98b51c434122a4ae7dc36d5b94765c695e96c64647f2"
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-08-13-30/ffmpeg-N-125505-gc57660fb18-linux64-gpl.tar.xz",
+        "sha256": "d540a9b176456af5fae75a1aa4c388152e1b418fb4fa129fef83d98305f04f3c"
       },
       "linux-arm64": {
-        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-aarch64-linux-musl_static.zip",
-        "sha256": "89b5d5f1dc7832dd07a4f171a236c089b55b087062232b6845c8ae31c4f16e23"
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-08-13-30/ffmpeg-N-125505-gc57660fb18-linuxarm64-gpl.tar.xz",
+        "sha256": "e7f52bcc7a42fef23a104b75b87462ba3588aa168f937115471b5200eed7ccb2"
       },
       "osx-x64": {
-        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-x86_64-apple-darwin_static.zip",
-        "sha256": "ba7cd3da928d9028b01cecc0fca915021afea47e9090552579d8da2919e7bde4"
+        "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1767299902_N-122320-g38e89fe502/ffmpeg.zip",
+        "sha256": "6f0736d424b7426f8cbb7bba5c5448d94c976c138c669593b1f40ba534ed192f"
       },
       "osx-arm64": {
-        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-aarch64-apple-darwin_static.zip",
-        "sha256": "8fd7ea3126839dac99d8e631071ce8b08a1caa00d72171813b4e77aa1f68bb31"
+        "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783164229_N-125450-gfad2e0bc50/ffmpeg.zip",
+        "sha256": "b5ce8b77f8c0686e4f68a46f8e4d094fe7e6f4ded50bcfacd9944ad1efdf66e9"
       }
     }
   }

@@ -54,6 +54,15 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         [JsonProperty("user-agent")]
         public string UserAgent { get; set; } = string.Empty;
 
+        [JsonProperty("split")]
+        public string Split { get; set; } = string.Empty;
+
+        [JsonProperty("max-connection-per-server")]
+        public string MaxConnectionPerServer { get; set; } = string.Empty;
+
+        [JsonProperty("min-split-size")]
+        public string MinSplitSize { get; set; } = string.Empty;
+
         public override string ToString()
         {
             return JsonConvert.SerializeObject(this);

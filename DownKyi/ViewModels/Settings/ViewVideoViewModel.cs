@@ -21,6 +21,12 @@ public class ViewVideoViewModel : ViewModelBase
 {
     public const string Tag = "PageSettingsVideo";
 
+    public sealed class FfmpegHardwareAccelerationItem
+    {
+        public string Name { get; init; } = string.Empty;
+        public FfmpegHardwareAcceleration Value { get; init; }
+    }
+
     private bool _isOnNavigatedTo;
 
     #region 页面属性申明
@@ -103,6 +109,38 @@ public class ViewVideoViewModel : ViewModelBase
     {
         get => _isTranscodingAacToMp3;
         set => SetProperty(ref _isTranscodingAacToMp3, value);
+    }
+
+    private List<FfmpegHardwareAccelerationItem> _ffmpegHardwareAccelerations = new();
+
+    public List<FfmpegHardwareAccelerationItem> FfmpegHardwareAccelerations
+    {
+        get => _ffmpegHardwareAccelerations;
+        set => SetProperty(ref _ffmpegHardwareAccelerations, value);
+    }
+
+    private FfmpegHardwareAccelerationItem _selectedFfmpegHardwareAcceleration = null!;
+
+    public FfmpegHardwareAccelerationItem SelectedFfmpegHardwareAcceleration
+    {
+        get => _selectedFfmpegHardwareAcceleration;
+        set => SetProperty(ref _selectedFfmpegHardwareAcceleration, value);
+    }
+
+    private List<int> _ffmpegMaxParallelJobs = new();
+
+    public List<int> FfmpegMaxParallelJobs
+    {
+        get => _ffmpegMaxParallelJobs;
+        set => SetProperty(ref _ffmpegMaxParallelJobs, value);
+    }
+
+    private int _selectedFfmpegMaxParallelJob;
+
+    public int SelectedFfmpegMaxParallelJob
+    {
+        get => _selectedFfmpegMaxParallelJob;
+        set => SetProperty(ref _selectedFfmpegMaxParallelJob, value);
     }
 
     private bool _isUseDefaultDirectory;
@@ -302,6 +340,19 @@ public class ViewVideoViewModel : ViewModelBase
             },
         };
 
+        FfmpegHardwareAccelerations = new List<FfmpegHardwareAccelerationItem>
+        {
+            new() { Name = "自动检测", Value = FfmpegHardwareAcceleration.Auto },
+            new() { Name = "禁用硬件加速", Value = FfmpegHardwareAcceleration.Disabled },
+            new() { Name = "NVIDIA NVENC", Value = FfmpegHardwareAcceleration.NvidiaNvenc },
+            new() { Name = "Intel QSV", Value = FfmpegHardwareAcceleration.IntelQsv },
+            new() { Name = "AMD AMF", Value = FfmpegHardwareAcceleration.AmdAmf },
+            new() { Name = "Linux VAAPI", Value = FfmpegHardwareAcceleration.Vaapi },
+            new() { Name = "macOS VideoToolbox", Value = FfmpegHardwareAcceleration.VideoToolbox },
+        };
+
+        FfmpegMaxParallelJobs = new List<int> { 1, 2, 3, 4 };
+
         #endregion
     }
 
@@ -339,6 +390,13 @@ public class ViewVideoViewModel : ViewModelBase
         // 是否下载aac音频后转码为mp3
         var isTranscodingAacToMp3 = SettingsManager.GetInstance().GetIsTranscodingAacToMp3();
         IsTranscodingAacToMp3 = isTranscodingAacToMp3 == AllowStatus.Yes;
+
+        var ffmpegHardwareAcceleration = SettingsManager.GetInstance().GetFfmpegHardwareAcceleration();
+        SelectedFfmpegHardwareAcceleration = FfmpegHardwareAccelerations
+                                                 .FirstOrDefault(t => t.Value == ffmpegHardwareAcceleration) ??
+                                             FfmpegHardwareAccelerations.First();
+
+        SelectedFfmpegMaxParallelJob = SettingsManager.GetInstance().GetFfmpegMaxParallelJobs();
 
         // 是否使用默认下载目录
         var isUseSaveVideoRootPath = SettingsManager.GetInstance().GetIsUseSaveVideoRootPath();
@@ -498,6 +556,38 @@ public class ViewVideoViewModel : ViewModelBase
         var isTranscodingAacToMp3 = IsTranscodingAacToMp3 ? AllowStatus.Yes : AllowStatus.No;
 
         var isSucceed = SettingsManager.GetInstance().SetIsTranscodingAacToMp3(isTranscodingAacToMp3);
+        PublishTip(isSucceed);
+    }
+
+    private DelegateCommand<object>? _ffmpegHardwareAccelerationCommand;
+
+    public DelegateCommand<object> FfmpegHardwareAccelerationCommand =>
+        _ffmpegHardwareAccelerationCommand ??= new DelegateCommand<object>(ExecuteFfmpegHardwareAccelerationCommand);
+
+    private void ExecuteFfmpegHardwareAccelerationCommand(object parameter)
+    {
+        if (parameter is not FfmpegHardwareAccelerationItem acceleration)
+        {
+            return;
+        }
+
+        var isSucceed = SettingsManager.GetInstance().SetFfmpegHardwareAcceleration(acceleration.Value);
+        PublishTip(isSucceed);
+    }
+
+    private DelegateCommand<object>? _ffmpegMaxParallelJobsCommand;
+
+    public DelegateCommand<object> FfmpegMaxParallelJobsCommand =>
+        _ffmpegMaxParallelJobsCommand ??= new DelegateCommand<object>(ExecuteFfmpegMaxParallelJobsCommand);
+
+    private void ExecuteFfmpegMaxParallelJobsCommand(object parameter)
+    {
+        if (parameter is not int maxParallelJobs)
+        {
+            return;
+        }
+
+        var isSucceed = SettingsManager.GetInstance().SetFfmpegMaxParallelJobs(maxParallelJobs);
         PublishTip(isSucceed);
     }
 

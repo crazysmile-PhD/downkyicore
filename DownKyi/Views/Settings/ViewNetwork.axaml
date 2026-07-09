@@ -140,6 +140,17 @@
                         IsChecked="{Binding CustomAria2C}" />
                 </StackPanel>
             </StackPanel>
+            <CheckBox
+                Name="NameHighSpeedDownloadMode"
+                Margin="0,20,0,0"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Command="{Binding HighSpeedDownloadModeCommand}"
+                Content="{DynamicResource HighSpeedDownloadMode}"
+                FontSize="12"
+                Foreground="{DynamicResource BrushTextDark}"
+                IsChecked="{Binding HighSpeedDownloadMode, Mode=TwoWay}"
+                ToolTip.Tip="{DynamicResource HighSpeedDownloadModeTip}" />
             <TextBlock
                 Height="1"
                 Margin="0,20,0,0"
@@ -335,6 +346,50 @@
                             <EventTriggerBehavior EventName="SelectionChanged">
                                 <InvokeCommandAction Command="{Binding AriaSplitsCommand}"
                                                      CommandParameter="{Binding ElementName=NameAriaSplits, Path=SelectedValue}" />
+                            </EventTriggerBehavior>
+                        </Interaction.Behaviors>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                    <TextBlock
+                        Width="150"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource AriaMaxConnectionPerServer}" />
+                    <ComboBox
+                        Name="NameAriaMaxConnectionPerServers"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        ItemsSource="{Binding AriaMaxConnectionPerServers}"
+                        SelectedValue="{Binding SelectedAriaMaxConnectionPerServer}">
+                        <Interaction.Behaviors>
+                            <EventTriggerBehavior EventName="SelectionChanged">
+                                <InvokeCommandAction Command="{Binding AriaMaxConnectionPerServersCommand}"
+                                                     CommandParameter="{Binding ElementName=NameAriaMaxConnectionPerServers, Path=SelectedValue}" />
+                            </EventTriggerBehavior>
+                        </Interaction.Behaviors>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                    <TextBlock
+                        Width="150"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource AriaMinSplitSize}" />
+                    <ComboBox
+                        Name="NameAriaMinSplitSizes"
+                        Width="100"
+                        VerticalContentAlignment="Center"
+                        ItemsSource="{Binding AriaMinSplitSizes}"
+                        SelectedValue="{Binding SelectedAriaMinSplitSize}">
+                        <Interaction.Behaviors>
+                            <EventTriggerBehavior EventName="SelectionChanged">
+                                <InvokeCommandAction Command="{Binding AriaMinSplitSizesCommand}"
+                                                     CommandParameter="{Binding ElementName=NameAriaMinSplitSizes, Path=SelectedValue}" />
                             </EventTriggerBehavior>
                         </Interaction.Behaviors>
                     </ComboBox>

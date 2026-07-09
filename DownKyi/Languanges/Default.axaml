@@ -202,12 +202,16 @@
     <system:String x:Key="BuiltinDownloader">内建下载器</system:String>
     <system:String x:Key="Aria2cDownloader">Aria2下载器</system:String>
     <system:String x:Key="CustomAria2cDownloader">自定义Aria2下载器</system:String>
+    <system:String x:Key="HighSpeedDownloadMode">高速下载模式（套用推荐分片/连接参数）</system:String>
+    <system:String x:Key="HighSpeedDownloadModeTip">开启时会将内建线程数设为16，Aria最大线程数设为16，同服务器连接数设为16，最小分片设为1MB。</system:String>
     <system:String x:Key="AriaServerHost">Aria服务器地址：</system:String>
     <system:String x:Key="AriaServerPort">Aria服务器端口：</system:String>
     <system:String x:Key="AriaServerToken">Aria服务器Token：</system:String>
     <system:String x:Key="AriaLogLevel">Aria日志等级：</system:String>
     <system:String x:Key="AriaMaxConcurrentDownloads">Aria同时下载数：</system:String>
     <system:String x:Key="AriaSplit">Aria最大线程数：</system:String>
+    <system:String x:Key="AriaMaxConnectionPerServer">Aria同服务器连接数：</system:String>
+    <system:String x:Key="AriaMinSplitSize">Aria最小分片大小(MB)：</system:String>
     <system:String x:Key="AriaDownloadLimit">Aria下载速度限制(KB/s)</system:String>
     <system:String x:Key="AriaMaxOverallDownloadLimit">全局下载速度限制[0: 无限制]</system:String>
     <system:String x:Key="AriaMaxDownloadLimit">单任务下载速度限制[0: 无限制]</system:String>
@@ -224,6 +228,10 @@
     <system:String x:Key="VideoParseType">首选视频解析方式：</system:String>
     <system:String x:Key="IsTranscodingFlvToMp4">下载FLV视频后转码为mp4</system:String>
     <system:String x:Key="IsTranscodingAacToMp3">下载AAC音频后转码为mp3</system:String>
+    <system:String x:Key="FfmpegHardwareAcceleration">FFmpeg硬件加速：</system:String>
+    <system:String x:Key="FfmpegHardwareAccelerationTip">仅用于需要重新编码的步骤。普通音视频混流会优先无损复制，不会强制转码。</system:String>
+    <system:String x:Key="FfmpegMaxParallelJobs">FFmpeg最大并行任务：</system:String>
+    <system:String x:Key="FfmpegMaxParallelJobsTip">批量下载时限制同时运行的FFmpeg进程，避免CPU/内存占用过高导致崩溃。</system:String>
     <system:String x:Key="IsUseDefaultDirectory">使用默认下载目录</system:String>
     <system:String x:Key="GenerateVideoMetadata">生成视频元数据</system:String>
     <system:String x:Key="DefaultDirectory">默认下载目录：</system:String>

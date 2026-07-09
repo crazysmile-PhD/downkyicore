@@ -86,12 +86,31 @@ public static class VideoStream
         {
             cancellationToken.ThrowIfCancellationRequested();
             const string referer = "https://www.bilibili.com";
-            var response = WebClient.RequestWeb($"https:{subtitle.SubtitleUrl}", referer, cancellationToken: cancellationToken);
+            var subtitleUrl = NormalizeSubtitleUrl(subtitle.SubtitleUrl);
+            if (subtitleUrl == null)
+            {
+                LogManager.Debug(nameof(GetSubtitle), $"Skip empty subtitle url. lan={subtitle.Lan}, lan_doc={subtitle.LanDoc}");
+                continue;
+            }
+
+            var response = WebClient.RequestWeb(subtitleUrl, referer, cancellationToken: cancellationToken);
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                LogManager.Debug(nameof(GetSubtitle), $"Skip empty subtitle response. lan={subtitle.Lan}, lan_doc={subtitle.LanDoc}, type={subtitle.Type}");
+                continue;
+            }
 
             try
             {
                 var subtitleJson = JsonConvert.DeserializeObject<SubtitleJson>(response);
-                if (subtitleJson == null)
+                if (subtitleJson?.Body == null || subtitleJson.Body.Count == 0)
+                {
+                    LogManager.Debug(nameof(GetSubtitle), $"Skip subtitle with empty body. lan={subtitle.Lan}, lan_doc={subtitle.LanDoc}, type={subtitle.Type}");
+                    continue;
+                }
+
+                var srt = subtitleJson.ToSubRip();
+                if (string.IsNullOrWhiteSpace(srt))
                 {
                     continue;
                 }
@@ -100,7 +119,7 @@ public static class VideoStream
                 {
                     Lan = subtitle.Lan,
                     LanDoc = subtitle.LanDoc,
-                    SrtString = subtitleJson.ToSubRip()
+                    SrtString = srt
                 });
             }
             catch (OperationCanceledException)
@@ -115,6 +134,23 @@ public static class VideoStream
         }
 
         return subRipTexts;
+    }
+
+    private static string? NormalizeSubtitleUrl(string? subtitleUrl)
+    {
+        if (string.IsNullOrWhiteSpace(subtitleUrl))
+        {
+            return null;
+        }
+
+        if (Uri.TryCreate(subtitleUrl, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri.ToString();
+        }
+
+        return subtitleUrl.StartsWith("//", StringComparison.Ordinal)
+            ? $"https:{subtitleUrl}"
+            : $"https://{subtitleUrl.TrimStart('/')}";
     }
 
     /// <summary>

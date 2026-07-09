@@ -73,7 +73,8 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             Id = downloadVideo.Id,
             Codecs = downloadVideo.Codecs,
             BaseUrl = downloadVideo.BaseUrl,
-            BackupUrl = downloadVideo.BackupUrl
+            BackupUrl = downloadVideo.BackupUrl,
+            ExpectedSize = downloadVideo.ExpectedSize
         });
     }
 
@@ -127,9 +128,17 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
 
             // 还要检查一下文件有没有被人删掉，删掉的话重新下载
             // 如果下载视频之后音频文件被人删了。此时gid还是视频的，会下错文件
-            if (downloading.Downloading.DownloadedFiles.Contains(key) && File.Exists(Path.Combine(path, fileName)))
+            var cachedFile = Path.Combine(path, fileName);
+            if (downloading.Downloading.DownloadedFiles.Contains(key) &&
+                IsDownloadedMediaFileUsable(cachedFile, downloadVideo.ExpectedSize))
             {
-                return Path.Combine(path, fileName);
+                return cachedFile;
+            }
+
+            if (downloading.Downloading.DownloadedFiles.Remove(key))
+            {
+                DeleteInvalidDownloadedMediaFile(cachedFile);
+                PersistDownloadingState(downloading);
             }
         }
         else
@@ -177,18 +186,22 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
         // 开始下载
         try
         {
-            var downloadStatus = DownloadByBuiltin(downloading, urls, path, fileName);
+            var targetFile = Path.Combine(path, fileName);
+            var downloadStatus = DownloadByBuiltin(downloading, urls, path, fileName, downloadVideo.ExpectedSize);
             if (downloadStatus)
             {
-                downloading.Downloading.DownloadedFiles.Add(key);
-                downloading.Downloading.Gid = null;
-                PersistDownloadingState(downloading);
-                return Path.Combine(path, fileName);
+                if (IsDownloadedMediaFileUsable(targetFile, downloadVideo.ExpectedSize))
+                {
+                    downloading.Downloading.DownloadedFiles.Add(key);
+                    downloading.Downloading.Gid = null;
+                    PersistDownloadingState(downloading);
+                    return targetFile;
+                }
+
+                DeleteInvalidDownloadedMediaFile(targetFile);
             }
-            else
-            {
-                return NullMark;
-            }
+
+            return NullMark;
         }
         catch (FileNotFoundException e)
         {
@@ -313,7 +326,12 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// <param name="path"></param>
     /// <param name="localFileName"></param>
     /// <returns></returns>
-    private bool DownloadByBuiltin(DownloadingItem downloading, List<string> urls, string path, string localFileName)
+    private bool DownloadByBuiltin(
+        DownloadingItem downloading,
+        List<string> urls,
+        string path,
+        string localFileName,
+        long expectedBytes)
     {
         // path已斜杠结尾，去掉斜杠
         path = path.TrimEnd('/').TrimEnd('\\');
@@ -333,12 +351,13 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                 SettingsManager.GetInstance().GetHttpProxyListenPort());
         }
 
+        var split = SettingsManager.GetInstance().GetSplit();
         var downloadOpt = new DownloadConfiguration
         {
-            ChunkCount = SettingsManager.GetInstance().GetSplit(),
+            ChunkCount = split,
             RequestConfiguration = requestConfiguration,
             ParallelDownload = true,
-            ParallelCount = 2,
+            ParallelCount = split,
             MaximumMemoryBufferBytes = 1024 * 1024 * 50,
             EnableAutoResumeDownload = true,
             ClearPackageOnCompletionWithFailure = false,
@@ -350,12 +369,29 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             var isFinished = false;
             var isComplete = false;
             var targetFile = Path.Combine(path, localFileName);
+            var totalBytesToReceive = expectedBytes;
+            var receivedBytes = 0L;
             if (downloading.DownloadService == null)
             {
+                DownloadDiagnosticLogger.LogBuiltInTaskStart(Tag, localFileName, urls.Count, downloadOpt.ChunkCount,
+                    downloadOpt.ParallelCount);
                 downloader = new Downloader.DownloadService(downloadOpt);
+                downloader.DownloadStarted += (_, args) =>
+                {
+                    if (args.TotalBytesToReceive > 0)
+                    {
+                        totalBytesToReceive = (long)args.TotalBytesToReceive;
+                    }
+                };
                 downloader.DownloadFileCompleted += (_, args) =>
                 {
-                    isComplete = !args.Cancelled && args.Error == null && File.Exists(targetFile);
+                    isComplete = !args.Cancelled &&
+                                 args.Error == null &&
+                                 IsDownloadedMediaFileUsable(
+                                     targetFile,
+                                     expectedBytes,
+                                     receivedBytes,
+                                     totalBytesToReceive);
                     isFinished = true;
                     downloading.DownloadService = null;
                     if (args.Error != null)
@@ -365,6 +401,12 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                 };
                 downloader.DownloadProgressChanged += (_, args) =>
                 {
+                    receivedBytes = (long)Math.Max(0, args.ReceivedBytesSize);
+                    if (args.TotalBytesToReceive > 0)
+                    {
+                        totalBytesToReceive = (long)args.TotalBytesToReceive;
+                    }
+
                     // 下载进度百分比
                     downloading.Progress = (float)args.ProgressPercentage;
 
@@ -373,7 +415,9 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
 
                     // 下载速度
                     var speed = (long)args.BytesPerSecondSpeed;
-                    downloading.SpeedDisplay = Format.FormatSpeed(speed);
+                    downloading.SpeedDisplay = Format.FormatSpeedWithBandwidth(speed);
+                    DownloadDiagnosticLogger.LogSpeed(Tag, localFileName, args.ReceivedBytesSize,
+                        args.TotalBytesToReceive, speed);
                     // 最大下载速度
                     if (downloading.Downloading.MaxSpeed < speed)
                     {
@@ -415,7 +459,13 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                 Task.Delay(100, CancellationToken.GetValueOrDefault()).GetAwaiter().GetResult();
             }
 
-            return isComplete;
+            if (isComplete)
+            {
+                return true;
+            }
+
+            DeleteInvalidDownloadedMediaFile(targetFile);
+            LogManager.Info(Tag, "Built-in download attempt was incomplete; trying next backup URL if available.");
         }
 
         return false;

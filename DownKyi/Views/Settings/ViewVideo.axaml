@@ -115,6 +115,55 @@
                 Foreground="{DynamicResource BrushTextDark}"
                 IsChecked="{Binding IsTranscodingAacToMp3, Mode=TwoWay}" />
 
+            <StackPanel
+                Margin="0,20,0,0"
+                Orientation="Horizontal"
+                ToolTip.Tip="{DynamicResource FfmpegHardwareAccelerationTip}">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    Text="{DynamicResource FfmpegHardwareAcceleration}" />
+                <ComboBox
+                    Name="NameFfmpegHardwareAcceleration"
+                    Width="180"
+                    VerticalContentAlignment="Center"
+                    DisplayMemberBinding="{Binding Name}"
+                    ItemsSource="{Binding FfmpegHardwareAccelerations}"
+                    SelectedItem="{Binding SelectedFfmpegHardwareAcceleration}">
+                    <Interaction.Behaviors>
+                        <EventTriggerBehavior EventName="SelectionChanged">
+                            <InvokeCommandAction Command="{Binding FfmpegHardwareAccelerationCommand}"
+                                                 CommandParameter="{Binding ElementName=NameFfmpegHardwareAcceleration,Path=SelectedValue}" />
+                        </EventTriggerBehavior>
+                    </Interaction.Behaviors>
+                </ComboBox>
+            </StackPanel>
+
+            <StackPanel
+                Margin="0,20,0,0"
+                Orientation="Horizontal"
+                ToolTip.Tip="{DynamicResource FfmpegMaxParallelJobsTip}">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    Text="{DynamicResource FfmpegMaxParallelJobs}" />
+                <ComboBox
+                    Name="NameFfmpegMaxParallelJobs"
+                    Width="80"
+                    VerticalContentAlignment="Center"
+                    ItemsSource="{Binding FfmpegMaxParallelJobs}"
+                    SelectedValue="{Binding SelectedFfmpegMaxParallelJob}">
+                    <Interaction.Behaviors>
+                        <EventTriggerBehavior EventName="SelectionChanged">
+                            <InvokeCommandAction Command="{Binding FfmpegMaxParallelJobsCommand}"
+                                                 CommandParameter="{Binding ElementName=NameFfmpegMaxParallelJobs,Path=SelectedValue}" />
+                        </EventTriggerBehavior>
+                    </Interaction.Behaviors>
+                </ComboBox>
+            </StackPanel>
+
             <TextBlock
                 Height="1"
                 Margin="0,20,0,0"

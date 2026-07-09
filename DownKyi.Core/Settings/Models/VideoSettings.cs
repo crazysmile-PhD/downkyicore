@@ -13,6 +13,8 @@ public class VideoSettings
     public int VideoParseType { get; set; } // 视频解析类型
     public AllowStatus IsTranscodingFlvToMp4 { get; set; } = AllowStatus.None; // 是否将flv转为mp4
     public AllowStatus IsTranscodingAacToMp3 { get; set; } = AllowStatus.None; // 是否将aac转为mp3
+    public FfmpegHardwareAcceleration FfmpegHardwareAcceleration { get; set; } = FfmpegHardwareAcceleration.NotSet;
+    public int FfmpegMaxParallelJobs { get; set; } = -1;
     public string? SaveVideoRootPath { get; set; } // 视频保存路径
     public List<string>? HistoryVideoRootPaths { get; set; } // 历史视频保存路径
     public AllowStatus IsUseSaveVideoRootPath { get; set; } = AllowStatus.None; // 是否使用默认视频保存路径

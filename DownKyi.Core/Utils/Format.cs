@@ -96,6 +96,12 @@ public static class Format
         };
     }
 
+    public static string FormatSpeedWithBandwidth(double bytesPerSecond)
+    {
+        var mbps = Math.Max(0, bytesPerSecond) * 8 / 1000 / 1000;
+        return $"{FormatSpeed((float)bytesPerSecond)} ({mbps:F2} Mbps)";
+    }
+
     /// <summary>
     /// 格式化字节大小，可用于文件大小的显示
     /// </summary>

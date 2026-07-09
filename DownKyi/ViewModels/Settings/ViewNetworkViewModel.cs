@@ -65,6 +65,14 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _customAria2C, value);
     }
 
+    private bool _highSpeedDownloadMode;
+
+    public bool HighSpeedDownloadMode
+    {
+        get => _highSpeedDownloadMode;
+        set => SetProperty(ref _highSpeedDownloadMode, value);
+    }
+
     private List<int> _maxCurrentDownloads = new();
 
     public List<int> MaxCurrentDownloads
@@ -209,6 +217,38 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _selectedAriaSplit, value);
     }
 
+    private List<int> _ariaMaxConnectionPerServers = new();
+
+    public List<int> AriaMaxConnectionPerServers
+    {
+        get => _ariaMaxConnectionPerServers;
+        set => SetProperty(ref _ariaMaxConnectionPerServers, value);
+    }
+
+    private int _selectedAriaMaxConnectionPerServer;
+
+    public int SelectedAriaMaxConnectionPerServer
+    {
+        get => _selectedAriaMaxConnectionPerServer;
+        set => SetProperty(ref _selectedAriaMaxConnectionPerServer, value);
+    }
+
+    private List<int> _ariaMinSplitSizes = new();
+
+    public List<int> AriaMinSplitSizes
+    {
+        get => _ariaMinSplitSizes;
+        set => SetProperty(ref _ariaMinSplitSizes, value);
+    }
+
+    private int _selectedAriaMinSplitSize;
+
+    public int SelectedAriaMinSplitSize
+    {
+        get => _selectedAriaMinSplitSize;
+        set => SetProperty(ref _selectedAriaMinSplitSize, value);
+    }
+
     private int _ariaMaxOverallDownloadLimit;
 
     public int AriaMaxOverallDownloadLimit
@@ -281,7 +321,7 @@ public class ViewNetworkViewModel : ViewModelBase
 
         // builtin最大线程数
         Splits = new List<int>();
-        for (var i = 1; i <= 10; i++)
+        for (var i = 1; i <= 16; i++)
         {
             Splits.Add(i);
         }
@@ -305,10 +345,29 @@ public class ViewNetworkViewModel : ViewModelBase
 
         // Aria最大线程数
         AriaSplits = new List<int>();
-        for (var i = 1; i <= 10; i++)
+        for (var i = 1; i <= 16; i++)
         {
             AriaSplits.Add(i);
         }
+
+        // Aria per-server connections
+        AriaMaxConnectionPerServers = new List<int>();
+        for (var i = 1; i <= 16; i++)
+        {
+            AriaMaxConnectionPerServers.Add(i);
+        }
+
+        AriaMinSplitSizes = new List<int>
+        {
+            1,
+            2,
+            4,
+            8,
+            10,
+            16,
+            32,
+            64
+        };
 
         // Aria文件预分配
         AriaFileAllocations = new List<string>
@@ -359,6 +418,8 @@ public class ViewNetworkViewModel : ViewModelBase
 
         CustomNetworkProxy = SettingsManager.GetInstance().GetCustomProxy();
 
+        HighSpeedDownloadMode = SettingsManager.GetInstance().GetHighSpeedDownloadMode() == AllowStatus.Yes;
+
         // builtin同时下载数
         SelectedMaxCurrentDownload = SettingsManager.GetInstance().GetMaxCurrentDownloads();
 
@@ -393,6 +454,10 @@ public class ViewNetworkViewModel : ViewModelBase
 
         // Aria最大线程数
         SelectedAriaSplit = SettingsManager.GetInstance().GetAriaSplit();
+
+        SelectedAriaMaxConnectionPerServer = SettingsManager.GetInstance().GetAriaMaxConnectionPerServer();
+
+        SelectedAriaMinSplitSize = SettingsManager.GetInstance().GetAriaMinSplitSize();
 
         // Aria下载速度限制
         AriaMaxOverallDownloadLimit = SettingsManager.GetInstance().GetAriaMaxOverallDownloadLimit();
@@ -492,6 +557,34 @@ public class ViewNetworkViewModel : ViewModelBase
             //     Process.Start($"{dir}/DownKyi");
             // }
         }
+    }
+
+    private DelegateCommand? _highSpeedDownloadModeCommand;
+
+    public DelegateCommand HighSpeedDownloadModeCommand =>
+        _highSpeedDownloadModeCommand ??= new DelegateCommand(ExecuteHighSpeedDownloadModeCommand);
+
+    private void ExecuteHighSpeedDownloadModeCommand()
+    {
+        var settings = SettingsManager.GetInstance();
+        var highSpeedDownloadMode = HighSpeedDownloadMode ? AllowStatus.Yes : AllowStatus.No;
+        var isSucceed = settings.SetHighSpeedDownloadMode(highSpeedDownloadMode);
+
+        if (HighSpeedDownloadMode)
+        {
+            SelectedSplit = SettingsManager.HighSpeedBuiltInSplit;
+            SelectedAriaSplit = SettingsManager.HighSpeedAriaSplit;
+            SelectedAriaMaxConnectionPerServer = SettingsManager.HighSpeedAriaMaxConnectionPerServer;
+            SelectedAriaMinSplitSize = SettingsManager.HighSpeedAriaMinSplitSize;
+
+            isSucceed = isSucceed &&
+                        settings.SetSplit(SelectedSplit) &&
+                        settings.SetAriaSplit(SelectedAriaSplit) &&
+                        settings.SetAriaMaxConnectionPerServer(SelectedAriaMaxConnectionPerServer) &&
+                        settings.SetAriaMinSplitSize(SelectedAriaMinSplitSize);
+        }
+
+        PublishTip(isSucceed);
     }
 
     private DownKyiAsyncDelegateCommand<object>? _networkProxyCommand;
@@ -734,6 +827,35 @@ public class ViewNetworkViewModel : ViewModelBase
         SelectedAriaSplit = (int)parameter;
 
         var isSucceed = SettingsManager.GetInstance().SetAriaSplit(SelectedAriaSplit);
+        PublishTip(isSucceed);
+    }
+
+    private DelegateCommand<object?>? _ariaMaxConnectionPerServersCommand;
+
+    public DelegateCommand<object?> AriaMaxConnectionPerServersCommand => _ariaMaxConnectionPerServersCommand ??=
+        new DelegateCommand<object?>(ExecuteAriaMaxConnectionPerServersCommand);
+
+    private void ExecuteAriaMaxConnectionPerServersCommand(object? parameter)
+    {
+        if (parameter == null) return;
+        SelectedAriaMaxConnectionPerServer = (int)parameter;
+
+        var isSucceed = SettingsManager.GetInstance()
+            .SetAriaMaxConnectionPerServer(SelectedAriaMaxConnectionPerServer);
+        PublishTip(isSucceed);
+    }
+
+    private DelegateCommand<object?>? _ariaMinSplitSizesCommand;
+
+    public DelegateCommand<object?> AriaMinSplitSizesCommand => _ariaMinSplitSizesCommand ??=
+        new DelegateCommand<object?>(ExecuteAriaMinSplitSizesCommand);
+
+    private void ExecuteAriaMinSplitSizesCommand(object? parameter)
+    {
+        if (parameter == null) return;
+        SelectedAriaMinSplitSize = (int)parameter;
+
+        var isSucceed = SettingsManager.GetInstance().SetAriaMinSplitSize(SelectedAriaMinSplitSize);
         PublishTip(isSucceed);
     }
 
