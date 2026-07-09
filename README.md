@@ -96,6 +96,12 @@ flowchart TD
     J --> K
     K --> L["任务完成，写入 downloaded 表"]
 ```
+## 使用说明
+- 软件自带.NET10、ffmpeg、aria2运行环境、无需自行安装
+- 默认下载路径:
+  - Windows: 软件运行目录下的Media文件夹
+  - macOS: ~/Library/Application Support/DownKyi/Media
+  - linux: ~/.config/DownKyi/Media
 
 ## 诊断
 
