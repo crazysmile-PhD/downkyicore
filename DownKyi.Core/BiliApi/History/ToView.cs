@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.History.Models;
+using DownKyi.Core.BiliApi.History.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -18,20 +18,13 @@ namespace DownKyi.Core.BiliApi.History
         {
             const string url = "https://api.bilibili.com/x/v2/history/toview";
             const string referer = "https://www.bilibili.com";
-            var response = WebClient.RequestWeb(url, referer);
+            var toView = BiliApiRequest.RequestJson<ToViewOrigin>(
+                url,
+                referer,
+                nameof(GetToView),
+                "ToView");
 
-            try
-            {
-                var toView = JsonConvert.DeserializeObject<ToViewOrigin>(response);
-                if (toView == null || toView.Data == null) { return null; }
-                return toView.Data.List;
-            }
-            catch (Exception e)
-            {
-                Console.PrintLine("GetToView()发生异常: {0}", e);
-                LogManager.Error("ToView", e);
-                return null;
-            }
+            return toView?.Data?.List;
         }
     }
 }

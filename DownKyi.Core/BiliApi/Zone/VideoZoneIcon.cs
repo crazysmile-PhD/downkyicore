@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.BiliApi.Zone;
+namespace DownKyi.Core.BiliApi.Zone;
 
 /// <summary>
 /// 视频分区图标

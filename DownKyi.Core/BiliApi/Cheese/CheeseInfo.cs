@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Cheese.Models;
+using DownKyi.Core.BiliApi.Cheese.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -31,23 +31,14 @@ public static class CheeseInfo
             return null;
         }
 
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var cheese = BiliApiRequest.RequestJson<CheeseViewOrigin>(
+            url,
+            referer,
+            nameof(CheeseViewInfo),
+            "CheeseInfo",
+            cancellationToken);
 
-        try
-        {
-            var cheese = JsonConvert.DeserializeObject<CheeseViewOrigin>(response);
-            return cheese?.Data;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("CheeseViewInfo()发生异常: {0}", e);
-            LogManager.Error("CheeseInfo", e);
-            return null;
-        }
+        return cheese?.Data;
     }
 
     /// <summary>
@@ -61,22 +52,13 @@ public static class CheeseInfo
     {
         var url = $"https://api.bilibili.com/pugv/view/web/ep/list?season_id={seasonId}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var cheese = BiliApiRequest.RequestJson<CheeseEpisodeListOrigin>(
+            url,
+            referer,
+            nameof(CheeseEpisodeList),
+            "CheeseInfo",
+            cancellationToken);
 
-        try
-        {
-            var cheese = JsonConvert.DeserializeObject<CheeseEpisodeListOrigin>(response);
-            return cheese?.Data;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("CheeseEpisodeList()发生异常: {0}", e);
-            LogManager.Error("CheeseInfo", e);
-            return null;
-        }
+        return cheese?.Data;
     }
 }

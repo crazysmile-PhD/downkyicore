@@ -321,6 +321,6 @@ public partial class SettingsManager
             _appSettings.Danmaku.DanmakuLayoutAlgorithm,
             danmakuLayoutAlgorithm,
             v => _appSettings.Danmaku.DanmakuLayoutAlgorithm = v);
-        
+
     }
 }

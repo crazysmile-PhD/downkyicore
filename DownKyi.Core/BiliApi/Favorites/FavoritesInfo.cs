@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Favorites.Models;
+using DownKyi.Core.BiliApi.Favorites.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -15,19 +15,14 @@ public static class FavoritesInfo
     {
         var url = $"https://api.bilibili.com/x/v3/fav/folder/info?media_id={mediaId}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var info = BiliApiRequest.RequestJson<FavoritesMetaInfoOrigin>(
+            url,
+            referer,
+            nameof(GetFavoritesInfo),
+            "FavoritesInfo",
+            cancellationToken);
 
-        try
-        {
-            var info = JsonConvert.DeserializeObject<FavoritesMetaInfoOrigin>(response);
-            return info?.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetFavoritesInfo()发生异常: {0}", e);
-            LogManager.Error("FavoritesInfo", e);
-            return null;
-        }
+        return info?.Data;
     }
 
     /// <summary>
@@ -41,20 +36,14 @@ public static class FavoritesInfo
     {
         var url = $"https://api.bilibili.com/x/v3/fav/folder/created/list?up_mid={mid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var favorites = BiliApiRequest.RequestJson<FavoritesListOrigin>(
+            url,
+            referer,
+            nameof(GetCreatedFavorites),
+            "FavoritesInfo",
+            cancellationToken);
 
-        try
-        {
-            var favorites = JsonConvert.DeserializeObject<FavoritesListOrigin>(response);
-
-            return favorites?.Data.List;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetCreatedFavorites()发生异常: {0}", e);
-            LogManager.Error("FavoritesInfo", e);
-            return null;
-        }
+        return favorites?.Data.List;
     }
 
     /// <summary>
@@ -96,24 +85,14 @@ public static class FavoritesInfo
     {
         var url = $"https://api.bilibili.com/x/v3/fav/folder/collected/list?up_mid={mid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var favorites = BiliApiRequest.RequestJson<FavoritesListOrigin>(
+            url,
+            referer,
+            nameof(GetCollectedFavorites),
+            "FavoritesInfo",
+            cancellationToken);
 
-        try
-        {
-            var favorites = JsonConvert.DeserializeObject<FavoritesListOrigin>(response);
-            if (favorites == null || favorites.Data == null || favorites.Data.List == null)
-            {
-                return null;
-            }
-
-            return favorites.Data.List;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetCollectedFavorites()发生异常: {0}", e);
-            LogManager.Error("FavoritesInfo", e);
-            return null;
-        }
+        return favorites?.Data?.List;
     }
 
     /// <summary>

@@ -66,7 +66,7 @@ public class VideoFramePreview : Control
         get => _edgeThreshold;
         set => SetAndRaise(EdgeThresholdProperty, ref _edgeThreshold, value);
     }
-    
+
     public static readonly DirectProperty<VideoFramePreview, double> EdgeThresholdProperty =
         AvaloniaProperty.RegisterDirect<VideoFramePreview, double>(
             nameof(WatermarkRect),
@@ -390,11 +390,11 @@ public class VideoFramePreview : Control
     {
         var shrinkAmount = 2;
         var smallerRect = new Rect(
-            rect.X + shrinkAmount, 
-            rect.Y + shrinkAmount, 
-            rect.Width - 2 * shrinkAmount, 
+            rect.X + shrinkAmount,
+            rect.Y + shrinkAmount,
+            rect.Width - 2 * shrinkAmount,
             rect.Height - 2 * shrinkAmount);
-    
+
         context.DrawRectangle(brush, pen, smallerRect);
     }
 

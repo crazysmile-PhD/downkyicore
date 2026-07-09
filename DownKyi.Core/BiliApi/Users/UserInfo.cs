@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Sign;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
@@ -20,20 +20,13 @@ public static class UserInfo
     {
         const string url = "https://api.bilibili.com/x/web-interface/nav";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var userInfo = BiliApiRequest.RequestJson<UserInfoForNavigationOrigin>(
+            url,
+            referer,
+            nameof(GetUserInfoForNavigation),
+            "UserInfo");
 
-        try
-        {
-            var userInfo = JsonConvert.DeserializeObject<UserInfoForNavigationOrigin>(response);
-
-            return userInfo?.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetUserInfoForNavigation()发生异常: {0}", e);
-            LogManager.Error("UserInfo", e);
-            return null;
-        }
+        return userInfo?.Data;
     }
 
     /// <summary>
@@ -59,20 +52,13 @@ public static class UserInfo
         var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
         var url = $"https://api.bilibili.com/x/space/wbi/acc/info?{query}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var spaceInfo = BiliApiRequest.RequestJson<UserInfoForSpaceOrigin>(
+            url,
+            referer,
+            nameof(GetUserInfoForSpace),
+            "UserInfo");
 
-        try
-        {
-            var spaceInfo = JsonConvert.DeserializeObject<UserInfoForSpaceOrigin>(response);
-
-            return spaceInfo?.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetInfoForSpace()发生异常: {0}", e);
-            LogManager.Error("UserInfo", e);
-            return null;
-        }
+        return spaceInfo?.Data;
     }
 
     /// <summary>
@@ -83,19 +69,12 @@ public static class UserInfo
     {
         const string url = "https://api.bilibili.com/x/space/myinfo";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var myInfo = BiliApiRequest.RequestJson<MyInfoOrigin>(
+            url,
+            referer,
+            nameof(GetMyInfo),
+            "UserInfo");
 
-        try
-        {
-            var myInfo = JsonConvert.DeserializeObject<MyInfoOrigin>(response);
-
-            return myInfo?.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetMyInfo()发生异常: {0}", e);
-            LogManager.Error("UserInfo", e);
-            return null;
-        }
+        return myInfo?.Data;
     }
 }

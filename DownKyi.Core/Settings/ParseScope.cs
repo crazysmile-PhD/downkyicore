@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Settings;
+namespace DownKyi.Core.Settings;
 
 public enum ParseScope
 {

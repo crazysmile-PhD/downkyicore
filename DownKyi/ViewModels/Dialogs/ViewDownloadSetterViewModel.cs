@@ -9,8 +9,8 @@ using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Utils;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Dialogs;
+using Prism.Events;
 
 namespace DownKyi.ViewModels.Dialogs;
 
@@ -50,7 +50,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
 
 
     public ObservableCollection<string> DirectoryList { get; set; }
-    
+
 
     private string _directory = string.Empty;
 
@@ -377,7 +377,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         // 将Directory移动到第一项
         // 如果直接在ComboBox中选择的就需要
         // 否则选中项不会在下次出现在第一项
-        ListHelper.InsertUnique(DirectoryList, Directory, 0,ref _directory);
+        ListHelper.InsertUnique(DirectoryList, Directory, 0, ref _directory);
 
         // 将更新后的DirectoryList写入历史中
         SettingsManager.GetInstance().SetSaveVideoRootPath(Directory);

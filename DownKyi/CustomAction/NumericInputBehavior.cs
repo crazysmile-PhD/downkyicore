@@ -17,7 +17,7 @@ public class NumericInputBehavior : Behavior<TextBox>
         }
         base.OnAttached();
     }
-    
+
     protected override void OnDetaching()
     {
         if (AssociatedObject != null)
@@ -27,19 +27,19 @@ public class NumericInputBehavior : Behavior<TextBox>
         }
         base.OnDetaching();
     }
-    
+
     private void OnTextInput(object? sender, TextInputEventArgs e)
     {
-        if (string.IsNullOrEmpty(e.Text) || e.Text.All(char.IsControl)) 
+        if (string.IsNullOrEmpty(e.Text) || e.Text.All(char.IsControl))
             return;
 
         if (!char.IsDigit(e.Text[0]))
-            e.Handled = true; 
+            e.Handled = true;
     }
 
     private void OnTextChanging(object? sender, TextChangingEventArgs e)
     {
-        if (e.Source is TextBox t && 
+        if (e.Source is TextBox t &&
             !string.IsNullOrEmpty(t.Text) && !t.Text.All(char.IsDigit))
         {
             t.Text = new string(t.Text.Where(char.IsDigit).ToArray());

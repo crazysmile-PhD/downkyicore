@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using DownKyi.Core.Logging;
 using Microsoft.Data.Sqlite;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -43,8 +43,8 @@ public sealed class SqliteDatabase : IDisposable
             DefaultTimeout = 30
         }.ToString();
     }
-    
-    
+
+
     /// <summary>
     /// 执行非查询SQL语句
     /// </summary>
@@ -57,11 +57,11 @@ public sealed class SqliteDatabase : IDisposable
             using var connection = CreateConnection();
             using var transaction = connection.BeginTransaction();
             using var command = connection.CreateCommand();
-            
+
             command.CommandText = sql;
             command.Transaction = transaction;
             parametersAction?.Invoke(command.Parameters);
-            
+
             command.ExecuteNonQuery();
             transaction.Commit();
         }
@@ -84,10 +84,10 @@ public sealed class SqliteDatabase : IDisposable
         {
             using var connection = CreateConnection();
             using var command = connection.CreateCommand();
-            
+
             command.CommandText = sql;
             using var reader = command.ExecuteReader();
-            
+
             readAction(reader);
         }
         catch (SqliteException ex)

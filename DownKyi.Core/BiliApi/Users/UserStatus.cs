@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -19,24 +19,13 @@ public static class UserStatus
     {
         var url = $"https://api.bilibili.com/x/relation/stat?vmid={mid}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var userRelationStat = BiliApiRequest.RequestJson<UserRelationStatOrigin>(
+            url,
+            referer,
+            nameof(GetUserRelationStat),
+            "UserStatus");
 
-        try
-        {
-            var userRelationStat = JsonConvert.DeserializeObject<UserRelationStatOrigin>(response);
-            if (userRelationStat == null || userRelationStat.Data == null)
-            {
-                return null;
-            }
-
-            return userRelationStat.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetUserRelationStat()发生异常: {0}", e);
-            LogManager.Error("UserStatus", e);
-            return null;
-        }
+        return userRelationStat?.Data;
     }
 
     /// <summary>
@@ -50,23 +39,12 @@ public static class UserStatus
     {
         var url = $"https://api.bilibili.com/x/space/upstat?mid={mid}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var upStat = BiliApiRequest.RequestJson<UpStatOrigin>(
+            url,
+            referer,
+            nameof(GetUpStat),
+            "UserStatus");
 
-        try
-        {
-            var upStat = JsonConvert.DeserializeObject<UpStatOrigin>(response);
-            if (upStat == null || upStat.Data == null)
-            {
-                return null;
-            }
-
-            return upStat.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetUpStat()发生异常: {0}", e);
-            LogManager.Error("UserStatus", e);
-            return null;
-        }
+        return upStat?.Data;
     }
 }

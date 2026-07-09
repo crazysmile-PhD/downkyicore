@@ -99,7 +99,7 @@ namespace DownKyi.Core.Aria2cNet.Server
                     $"--max-concurrent-downloads={config.MaxConcurrentDownloads} " + // 最大同时下载数(任务数)
                     $"--max-connection-per-server={config.MaxConnectionPerServer} " + // 同服务器连接数
                     $"--split={config.Split} " + // 单文件最大线程数
-                    //$"--max-tries={config.MaxTries} retry-wait=3 " + // 尝试重连次数
+                                                 //$"--max-tries={config.MaxTries} retry-wait=3 " + // 尝试重连次数
                     $"--min-split-size={config.MinSplitSize}M " + // 最小文件分片大小, 下载线程数上限取决于能分出多少片, 对于小文件重要
                     $"--max-overall-download-limit={config.MaxOverallDownloadLimit} " + // 下载速度限制
                     $"--max-download-limit={config.MaxDownloadLimit} " + // 下载单文件速度限制

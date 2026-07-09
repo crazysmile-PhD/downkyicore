@@ -114,13 +114,14 @@ flowchart TD
 
 导出的诊断日志会过滤大量普通调试噪音，并自动遮蔽敏感信息。
 
-## 开发
+## 开发者入口
 
 需要 .NET 10 SDK。
 
 ```powershell
 dotnet restore
-dotnet build .\DownKyi\DownKyi.csproj -c Release
+dotnet build .\DownKyi.sln -c Release --no-restore --no-incremental
+dotnet test .\DownKyi.sln -c Release --no-restore --no-build
 ```
 
 本机运行：
@@ -128,6 +129,32 @@ dotnet build .\DownKyi\DownKyi.csproj -c Release
 ```powershell
 dotnet run --project .\DownKyi\DownKyi.csproj
 ```
+
+开发时建议同时跑：
+
+```powershell
+dotnet format .\DownKyi.sln --verify-no-changes --no-restore
+dotnet package list --project .\DownKyi.sln --vulnerable
+git diff --check
+```
+
+项目结构：
+
+- `DownKyi`: Avalonia UI、ViewModel、下载调度、日志导出和平台集成。
+- `DownKyi.Core`: B 站 API、存储、设置、FFmpeg/aria2 包装、字幕和弹幕处理。
+- `tests/DownKyi.Core.Tests`: Core 层网络与工具逻辑测试。
+- `tests/DownKyi.Tests`: UI 外围可抽取逻辑、下载流程与文件完整性测试。
+- `script`: release workflow 使用的 aria2、FFmpeg、PupNet 和平台打包脚本。
+- `docs/maintenance.md`: 依赖更新、外部 binary checksum、release tag 和回归 checklist。
+
+主要数据流：
+
+1. `SearchService` 识别输入入口。
+2. 对应 `*InfoService` 读取 B 站详情、分 P、番剧或课程信息。
+3. `VideoStream` 解析音视频、字幕和弹幕资源。
+4. `AddToDownloadService` 建立任务并写入 `DownloadStorageService`。
+5. `DownloadService` 选择 aria2 或内置下载器执行。
+6. FFmpeg 优先 stream copy，必要时尝试 GPU encoder，失败时回退 CPU。
 
 发布由 GitHub Actions 触发 tag 完成：
 
@@ -138,6 +165,10 @@ git push origin v1.0.x
 ```
 
 当前 Windows 发布包使用正常 self-contained zip。由于 Avalonia / Prism / Xaml.Behaviors / Newtonsoft.Json 组合并不适合 full trim，项目暂不发布 Windows `-trimmed` 包。
+
+外部 binary 由 `script/aria2.*` 与 `script/ffmpeg.*` 固定来源、版本和 checksum。更新时请同步维护脚本与 `docs/maintenance.md`，并确认发布包仍包含跨平台 fallback。
+
+历史注意事项：资源目录 `Languanges` 暂时保留旧拼写，避免破坏 Avalonia 资源路径与打包脚本；后续若要更名，应单独做 UI 资源整理 PR。
 
 ## 免责申明
 

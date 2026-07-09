@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Logging;
+namespace DownKyi.Core.Logging;
 
 /// <summary>
 /// 日志级别

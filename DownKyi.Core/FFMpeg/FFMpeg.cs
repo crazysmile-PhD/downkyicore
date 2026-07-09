@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.Logging;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using FFMpegCore;
 using FFMpegCore.Enums;
@@ -169,8 +169,8 @@ public class FFMpeg
         RunFfmpeg(arguments, "extract video", action);
     }
 
-    
-    public async Task<MemoryStream> ExtractVideoFrame(string inputPath,TimeSpan timestamp)
+
+    public async Task<MemoryStream> ExtractVideoFrame(string inputPath, TimeSpan timestamp)
     {
         var ms = new MemoryStream();
         await FFMpegArguments

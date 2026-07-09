@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.BiliApi.BiliUtils;
+namespace DownKyi.Core.BiliApi.BiliUtils;
 
 public static class DanmakuSender
 {

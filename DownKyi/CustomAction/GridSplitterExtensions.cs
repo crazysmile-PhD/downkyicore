@@ -26,13 +26,13 @@ public class GridSplitterExtensions
         if (obj is GridSplitter gridSplitter)
         {
             var oldBehavior = GetResetGridBehavior(gridSplitter);
-            
+
             if (oldBehavior != null)
             {
                 var behaviors = Interaction.GetBehaviors(gridSplitter);
                 behaviors.Remove(oldBehavior);
             }
-            
+
             if (behavior != null)
             {
                 var behaviors = Interaction.GetBehaviors(gridSplitter);

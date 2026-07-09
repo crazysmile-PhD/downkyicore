@@ -1,0 +1,36 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+
+jobs:
+  build-test-audit:
+    name: Build, test, format, audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore ./DownKyi.sln
+      - name: Build
+        run: dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental
+      - name: Test
+        run: dotnet test ./DownKyi.sln -c Release --no-restore --no-build
+      - name: Format check
+        run: dotnet format ./DownKyi.sln --verify-no-changes --no-restore
+      - name: Vulnerability audit
+        run: dotnet package list --project ./DownKyi.sln --vulnerable

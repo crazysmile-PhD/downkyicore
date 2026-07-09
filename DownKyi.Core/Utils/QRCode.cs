@@ -1,4 +1,4 @@
-﻿using Avalonia.Media.Imaging;
+using Avalonia.Media.Imaging;
 using QRCoder;
 
 namespace DownKyi.Core.Utils;

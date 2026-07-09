@@ -1,4 +1,4 @@
-﻿using System.Web;
+using System.Web;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;

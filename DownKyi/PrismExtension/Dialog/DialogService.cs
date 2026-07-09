@@ -4,8 +4,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using DownKyi.PrismExtension.Common;
-using Prism.Ioc;
 using Prism.Dialogs;
+using Prism.Ioc;
 
 namespace DownKyi.PrismExtension.Dialog;
 

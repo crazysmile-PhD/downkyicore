@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.Aria2cNet.Server;
+using DownKyi.Core.Aria2cNet.Server;
 
 namespace DownKyi.Core.Settings.Models;
 
@@ -16,7 +16,7 @@ public class NetworkSettings
     public AllowStatus HighSpeedDownloadMode { get; set; } = AllowStatus.None;
 
     public NetworkProxy NetworkProxy { get; set; } = NetworkProxy.None;
-    
+
     public string CustomNetworkProxy { get; set; } = string.Empty;
 
     #region built-in

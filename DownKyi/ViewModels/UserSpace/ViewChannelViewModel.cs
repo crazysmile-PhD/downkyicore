@@ -115,7 +115,7 @@ public class ViewChannelViewModel : ViewModelBase
             }
 
             // 当地时区
-            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);;
+            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); ;
             var dateCTime = startTime.AddSeconds(channel.Mtime);
             var mtime = dateCTime.ToString("yyyy-MM-dd");
 

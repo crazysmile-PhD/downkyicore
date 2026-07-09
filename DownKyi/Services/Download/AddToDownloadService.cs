@@ -18,8 +18,8 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
 using Prism.Dialogs;
+using Prism.Events;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.Services.Download;
@@ -311,7 +311,7 @@ public class AddToDownloadService
                     bool isSameVideo = item.DownloadBase.Cid == page.Cid &&
                                        item.Resolution.Id == videoQuality.Quality &&
                                        item.VideoCodecName == videoQuality.SelectedVideoCodec;
-                    
+
                     if (page.PlayUrl.Dash != null)
                     {
                         isSameVideo = isSameVideo && item.AudioCodec.Name == page.AudioQualityFormat;
@@ -343,7 +343,7 @@ public class AddToDownloadService
                     bool isSameVideo = item.DownloadBase.Cid == page.Cid &&
                                        item.Resolution.Id == videoQuality.Quality &&
                                        item.VideoCodecName == videoQuality.SelectedVideoCodec;
-                    
+
                     if (page.PlayUrl.Dash != null)
                     {
                         isSameVideo = isSameVideo && item.AudioCodec.Name == page.AudioQualityFormat;
@@ -357,37 +357,37 @@ public class AddToDownloadService
                         switch (repeatDownloadStrategy)
                         {
                             case RepeatDownloadStrategy.Ask:
-                            {
-                                var result = ButtonResult.Cancel;
-                                await Dispatcher.UIThread.Invoke(async () =>
                                 {
-                                    var param = new DialogParameters
+                                    var result = ButtonResult.Cancel;
+                                    await Dispatcher.UIThread.Invoke(async () =>
                                     {
+                                        var param = new DialogParameters
+                                        {
                                         { "message", $"{item.Name}已下载，是否重新下载" },
-                                    };
+                                        };
 
-                                    if (dialogService != null)
-                                    {
-                                        await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; });
-                                    }
-                                });
-
-                                if (result == ButtonResult.OK)
-                                {
-                                    App.PropertyChangeAsync(() =>
-                                    {
-                                        App.DownloadedList.Remove(item);
-                                        _downloadStorageService.RemoveDownloaded(item);
+                                        if (dialogService != null)
+                                        {
+                                            await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; });
+                                        }
                                     });
-                                    isDownloaded = false;
-                                }
-                                else
-                                {
-                                    isDownloaded = true;
-                                }
 
-                                break;
-                            }
+                                    if (result == ButtonResult.OK)
+                                    {
+                                        App.PropertyChangeAsync(() =>
+                                        {
+                                            App.DownloadedList.Remove(item);
+                                            _downloadStorageService.RemoveDownloaded(item);
+                                        });
+                                        isDownloaded = false;
+                                    }
+                                    else
+                                    {
+                                        isDownloaded = true;
+                                    }
+
+                                    break;
+                                }
                             case RepeatDownloadStrategy.ReDownload:
                                 isDownloaded = false;
                                 break;
@@ -588,7 +588,7 @@ public class AddToDownloadService
 
         return addedItems.Count;
     }
-    
+
 
     private MovieMetadata BuildMovieMetadata(VideoPage page)
     {

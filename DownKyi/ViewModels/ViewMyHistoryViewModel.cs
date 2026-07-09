@@ -141,8 +141,8 @@ public class ViewMyHistoryViewModel : ViewModelBase
     private DelegateCommand? _backSpaceCommand;
 
     public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
-    
- 
+
+
 
     /// <summary>
     /// 返回事件
@@ -245,9 +245,9 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
     public DownKyiAsyncDelegateCommand AddAllToDownloadCommand =>
         _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
-    
-    public DownKyiAsyncDelegateCommand LoadMoreCommand => new (ExecuteLoadMoreCommand);
-    
+
+    public DownKyiAsyncDelegateCommand LoadMoreCommand => new(ExecuteLoadMoreCommand);
+
     private long _nextMax = 0;
 
     private long _nextViewAt = 0;

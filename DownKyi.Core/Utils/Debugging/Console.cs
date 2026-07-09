@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Utils.Debugging;
+namespace DownKyi.Core.Utils.Debugging;
 
 public static class Console
 {

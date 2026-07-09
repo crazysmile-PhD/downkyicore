@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Settings.Models;
+namespace DownKyi.Core.Settings.Models;
 
 /// <summary>
 /// 基本

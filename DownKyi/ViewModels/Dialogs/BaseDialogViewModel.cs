@@ -3,8 +3,8 @@ using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Utils;
 using Prism.Commands;
-using Prism.Mvvm;
 using Prism.Dialogs;
+using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.Dialogs;
 

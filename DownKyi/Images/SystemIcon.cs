@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Images;
+namespace DownKyi.Images;
 
 public class SystemIcon
 {

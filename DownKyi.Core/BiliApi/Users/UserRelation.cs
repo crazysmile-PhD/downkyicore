@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -21,24 +21,13 @@ public static class UserRelation
     {
         var url = $"https://api.bilibili.com/x/relation/followers?vmid={mid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var relationFollower = BiliApiRequest.RequestJson<RelationFollowOrigin>(
+            url,
+            referer,
+            nameof(GetFollowers),
+            "UserRelation");
 
-        try
-        {
-            var relationFollower = JsonConvert.DeserializeObject<RelationFollowOrigin>(response);
-            if (relationFollower == null || relationFollower.Data == null)
-            {
-                return null;
-            }
-
-            return relationFollower.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetFollowers()发生异常: {0}", e);
-            LogManager.Error("UserRelation", e);
-            return null;
-        }
+        return relationFollower?.Data;
     }
 
     /// <summary>
@@ -86,24 +75,13 @@ public static class UserRelation
 
         var url = $"https://api.bilibili.com/x/relation/followings?vmid={mid}&pn={pn}&ps={ps}&order_type={orderType}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var relationFollower = BiliApiRequest.RequestJson<RelationFollowOrigin>(
+            url,
+            referer,
+            nameof(GetFollowings),
+            "UserRelation");
 
-        try
-        {
-            var relationFollower = JsonConvert.DeserializeObject<RelationFollowOrigin>(response);
-            if (relationFollower == null || relationFollower.Data == null)
-            {
-                return null;
-            }
-
-            return relationFollower.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetFollowings()发生异常: {0}", e);
-            LogManager.Error("UserRelation", e);
-            return null;
-        }
+        return relationFollower?.Data;
     }
 
     /// <summary>
@@ -144,24 +122,13 @@ public static class UserRelation
     {
         var url = $"https://api.bilibili.com/x/relation/whispers?pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var relationWhisper = BiliApiRequest.RequestJson<RelationWhisper>(
+            url,
+            referer,
+            nameof(GetWhispers),
+            "UserRelation");
 
-        try
-        {
-            var relationWhisper = JsonConvert.DeserializeObject<RelationWhisper>(response);
-            if (relationWhisper == null || relationWhisper.Data == null || relationWhisper.Data.List == null)
-            {
-                return null;
-            }
-
-            return relationWhisper.Data.List;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetWhispers()发生异常: {0}", e);
-            LogManager.Error("UserRelation", e);
-            return null;
-        }
+        return relationWhisper?.Data?.List;
     }
 
     /// <summary>
@@ -174,24 +141,13 @@ public static class UserRelation
     {
         var url = $"https://api.bilibili.com/x/relation/blacks?pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var relationBlack = BiliApiRequest.RequestJson<RelationBlack>(
+            url,
+            referer,
+            nameof(GetBlacks),
+            "UserRelation");
 
-        try
-        {
-            var relationBlack = JsonConvert.DeserializeObject<RelationBlack>(response);
-            if (relationBlack == null || relationBlack.Data == null)
-            {
-                return null;
-            }
-
-            return relationBlack.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetBlacks()发生异常: {0}", e);
-            LogManager.Error("UserRelation", e);
-            return null;
-        }
+        return relationBlack?.Data;
     }
 
     #region 关注分组相关，只能查询当前登录账户的信息
@@ -204,24 +160,13 @@ public static class UserRelation
     {
         const string url = $"https://api.bilibili.com/x/relation/tags";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var followingGroup = BiliApiRequest.RequestJson<FollowingGroupOrigin>(
+            url,
+            referer,
+            nameof(GetFollowingGroup),
+            "UserRelation");
 
-        try
-        {
-            var followingGroup = JsonConvert.DeserializeObject<FollowingGroupOrigin>(response);
-            if (followingGroup == null || followingGroup.Data == null)
-            {
-                return null;
-            }
-
-            return followingGroup.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetFollowingGroup()发生异常: {0}", e);
-            LogManager.Error("UserRelation", e);
-            return null;
-        }
+        return followingGroup?.Data;
     }
 
     /// <summary>
@@ -244,24 +189,13 @@ public static class UserRelation
         var url =
             $"https://api.bilibili.com/x/relation/tag?tagid={tagId}&pn={pn}&ps={ps}&order_type={orderType}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var content = BiliApiRequest.RequestJson<FollowingGroupContent>(
+            url,
+            referer,
+            nameof(GetFollowingGroupContent),
+            "UserRelation");
 
-        try
-        {
-            var content = JsonConvert.DeserializeObject<FollowingGroupContent>(response);
-            if (content == null || content.Data == null)
-            {
-                return null;
-            }
-
-            return content.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetFollowingGroupContent()发生异常: {0}", e);
-            LogManager.Error("UserRelation", e);
-            return null;
-        }
+        return content?.Data;
     }
 
     /// <summary>

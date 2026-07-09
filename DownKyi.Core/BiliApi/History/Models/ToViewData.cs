@@ -1,6 +1,6 @@
+using System.Collections.Generic;
 using DownKyi.Core.BiliApi.Models;
 using Newtonsoft.Json;
-using System.Collections.Generic;
 
 namespace DownKyi.Core.BiliApi.History.Models
 {

@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Utils;
+namespace DownKyi.Core.Utils;
 
 public static class Format
 {
@@ -136,6 +136,6 @@ public static class Format
              .Reverse()
              .ToArray();
 
-       return new string(cleanedName);
+        return new string(cleanedName);
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using DownKyi.Core.Aria2cNet.Client.Entity;
 using DownKyi.Core.Logging;
@@ -1076,9 +1076,9 @@ public static class AriaClient
         var aria = JsonConvert.DeserializeObject<T>(result);
         return aria ?? new T();
     }
-    
-    
-    private static readonly  HttpClient HttpClient = new ();
+
+
+    private static readonly HttpClient HttpClient = new();
     /// <summary>
     /// http请求
     /// </summary>
@@ -1095,20 +1095,20 @@ public static class AriaClient
         {
             var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Content = new StringContent(parameters, Encoding.UTF8, "application/json");
-        
+
             var response = HttpClient.Send(request);
             response.EnsureSuccessStatusCode();
-        
+
             using var reader = new StreamReader(response.Content.ReadAsStream(), Encoding.UTF8);
             return reader.ReadToEnd();
         }
         catch (HttpRequestException e) when (e.StatusCode != null)
         {
             if (e.Data["Response"] is not HttpResponseMessage response) { return null; }
-        
+
             using var reader = new StreamReader(response.Content.ReadAsStream(), Encoding.UTF8);
             var html = reader.ReadToEnd();
-            
+
             return html;
         }
         catch (HttpRequestException e)

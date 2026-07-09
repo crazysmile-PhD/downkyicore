@@ -8,9 +8,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
+using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
-using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.CustomAction;
@@ -18,13 +18,14 @@ using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Services;
 using DownKyi.Services.Download;
+using DownKyi.Services.Video;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.PageViewModels;
 using Prism.Commands;
+using Prism.Dialogs;
 using Prism.Events;
 using Prism.Navigation.Regions;
-using Prism.Dialogs;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
@@ -37,7 +38,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     // 保存输入字符串，避免被用户修改
     private string _input = string.Empty;
 
-    private IInfoService? _infoService;
+    private readonly VideoParseCoordinator _parseCoordinator = new();
     private CancellationTokenSource? _operationCancellation;
 
     #region 页面属性申明
@@ -364,22 +365,20 @@ public class ViewVideoDetailViewModel : ViewModelBase
             return;
         }
 
-        var selectedSection = VideoSections.FirstOrDefault(x => x.IsSelected);
+        var selectedSection = VideoSelectionState.GetSelectedSection(VideoSections);
         if (selectedSection?.VideoPages == null)
         {
             IsSelectAll = false;
             return;
         }
 
-        var selectedPages = selectedSection.VideoPages
-            .Where(x => x.IsSelected).ToList();
+        var selectedPages = VideoSelectionState.GetSelectedPages(selectedSection);
         foreach (var page in selectedPages)
         {
             grid.SelectedItems.Add(page);
         }
 
-        IsSelectAll = selectedSection.VideoPages.Count > 0 &&
-                      selectedPages.Count == selectedSection.VideoPages.Count;
+        IsSelectAll = VideoSelectionState.IsAllSelected(selectedSection, selectedPages.Count);
     }
 
     // 视频page选择事件
@@ -398,18 +397,15 @@ public class ViewVideoDetailViewModel : ViewModelBase
             return;
         }
 
-        var section = VideoSections.FirstOrDefault(item => item.IsSelected);
+        var section = VideoSelectionState.GetSelectedSection(VideoSections);
 
         if (section == null)
         {
             return;
         }
 
-        var avids = new HashSet<long>(parameter.Cast<VideoPage>().Select(x => x.Cid));
-        section.VideoPages.ToList().ForEach(videoPage =>
-            videoPage.IsSelected = avids.Contains(videoPage.Cid)
-        );
-        IsSelectAll = section.VideoPages.Count == videoPages.Count && section.VideoPages.Count != 0;
+        VideoSelectionState.ApplySelectedPages(section, parameter.Cast<VideoPage>());
+        IsSelectAll = VideoSelectionState.IsAllSelected(section, videoPages.Count);
     }
 
     // 全选事件
@@ -550,57 +546,12 @@ public class ViewVideoDetailViewModel : ViewModelBase
                 cancellationToken.ThrowIfCancellationRequested();
                 LogManager.Debug(Tag, "Parse video");
 
-                switch (parseScope)
+                var pages = VideoSelectionState.GetPagesForScope(VideoSections, parseScope);
+                foreach (var page in pages)
                 {
-                    case ParseScope.None:
-                        break;
-                    case ParseScope.SelectedItem:
-                        foreach (var section in VideoSections)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            foreach (var page in section.VideoPages)
-                            {
-                                cancellationToken.ThrowIfCancellationRequested();
-                                if (page.IsSelected)
-                                {
-                                    // 执行解析任务
-                                    UnityUpdateView(ParseVideo, _input, page, cancellationToken: cancellationToken);
-                                }
-                            }
-                        }
-
-                        break;
-                    case ParseScope.CurrentSection:
-                        foreach (var section in VideoSections)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            if (section.IsSelected)
-                            {
-                                foreach (var page in section.VideoPages)
-                                {
-                                    cancellationToken.ThrowIfCancellationRequested();
-                                    // 执行解析任务
-                                    UnityUpdateView(ParseVideo, _input, page, cancellationToken: cancellationToken);
-                                }
-                            }
-                        }
-
-                        break;
-                    case ParseScope.All:
-                        foreach (var section in VideoSections)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            foreach (var page in section.VideoPages)
-                            {
-                                cancellationToken.ThrowIfCancellationRequested();
-                                // 执行解析任务
-                                UnityUpdateView(ParseVideo, _input, page, cancellationToken: cancellationToken);
-                            }
-                        }
-
-                        break;
-                    default:
-                        break;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    // 执行解析任务
+                    UnityUpdateView(ParseVideo, _input, page, cancellationToken: cancellationToken);
                 }
             }, cancellationToken);
         }
@@ -659,6 +610,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
         NoDataVisibility = false;
         VideoSections.ReplaceRange(Array.Empty<VideoSection>());
         CaCheVideoSections.ReplaceRange(Array.Empty<VideoSection>());
+        _parseCoordinator.Reset();
     }
 
 
@@ -693,31 +645,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
 
     private IInfoService? GetInfoService(string input, bool refresh, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (_infoService == null || refresh)
-        {
-            // 视频
-            if (ParseEntrance.IsAvUrl(input) || ParseEntrance.IsBvUrl(input)
-                                             || ParseEntrance.IsAvId(input) || ParseEntrance.IsBvId(input))
-            {
-                _infoService = new VideoInfoService(input, cancellationToken);
-            }
-
-            // 番剧（电影、电视剧）
-            if (ParseEntrance.IsBangumiSeasonUrl(input) || ParseEntrance.IsBangumiEpisodeUrl(input) ||
-                ParseEntrance.IsBangumiMediaUrl(input))
-            {
-                _infoService = new BangumiInfoService(input, cancellationToken);
-            }
-
-            // 课程
-            if (ParseEntrance.IsCheeseSeasonUrl(input) || ParseEntrance.IsCheeseEpisodeUrl(input))
-            {
-                _infoService = new CheeseInfoService(input, cancellationToken);
-            }
-        }
-
-        return _infoService;
+        return _parseCoordinator.GetInfoService(input, refresh, cancellationToken);
     }
 
     /// <summary>
@@ -855,51 +783,39 @@ public class ViewVideoDetailViewModel : ViewModelBase
     /// <param name="isAll">是否下载所有，包括未选中项</param>
     private async Task AddToDownloadAsync(bool isAll)
     {
-        AddToDownloadService? addToDownloadService;
-        // 视频
-        if (ParseEntrance.IsAvUrl(_input) || ParseEntrance.IsBvUrl(_input))
-        {
-            addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
-        }
-        // 番剧（电影、电视剧）
-        else if (ParseEntrance.IsBangumiSeasonUrl(_input) || ParseEntrance.IsBangumiEpisodeUrl(_input) ||
-                 ParseEntrance.IsBangumiMediaUrl(_input))
-        {
-            addToDownloadService = new AddToDownloadService(PlayStreamType.Bangumi);
-        }
-        // 课程
-        else if (ParseEntrance.IsCheeseSeasonUrl(_input) || ParseEntrance.IsCheeseEpisodeUrl(_input))
-        {
-            addToDownloadService = new AddToDownloadService(PlayStreamType.Cheese);
-        }
-        else
+        var playStreamType = VideoInputResolver.ResolvePlayStreamType(_input);
+        if (playStreamType == null)
         {
             return;
         }
 
-        if (VideoInfoView == null)
+        var addToDownloadService = new AddToDownloadService(playStreamType.Value);
+        var videoInfoView = VideoInfoView;
+        if (videoInfoView == null)
         {
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipAddDownloadingZero"));
             return;
         }
 
-        // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var videoSections = VideoSections.ToList();
 
         // 视频计数
-        var i = 0;
-        await Task.Run(async () =>
-        {
-            // 传递video对象
-            addToDownloadService.GetVideo(VideoInfoView, VideoSections.ToList());
-            // 下载
-            i = await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory, isAll);
-        });
+        var addedCount = await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+            () => addToDownloadService.SetDirectory(DialogService),
+            directory => Task.Run(async () =>
+            {
+                // 传递video对象
+                addToDownloadService.GetVideo(videoInfoView, videoSections);
+                // 下载
+                return await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory, isAll);
+            }));
 
-        if (directory == null)
+        if (addedCount == null)
         {
             return;
         }
+
+        var i = addedCount.Value;
 
         // 通知用户添加到下载列表的结果
         if (i <= 0)

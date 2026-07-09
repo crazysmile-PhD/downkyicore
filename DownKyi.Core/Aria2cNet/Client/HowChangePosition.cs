@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Aria2cNet.Client;
+namespace DownKyi.Core.Aria2cNet.Client;
 
 /// <summary>
 /// changePosition函数的how参数

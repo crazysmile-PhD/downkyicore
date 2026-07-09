@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.FileName;
+namespace DownKyi.Core.FileName;
 
 public enum FileNamePart
 {

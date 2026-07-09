@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Avalonia.Threading;
 using DownKyi.Core.BiliApi.BiliUtils;

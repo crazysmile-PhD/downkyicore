@@ -10,9 +10,9 @@ using DownKyi.Events;
 using DownKyi.Services;
 using DownKyi.Utils;
 using Prism.Commands;
+using Prism.Dialogs;
 using Prism.Events;
 using Prism.Navigation.Regions;
-using Prism.Dialogs;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.Settings;
@@ -604,7 +604,7 @@ public class ViewNetworkViewModel : ViewModelBase
             (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         }
     }
-    
+
     // builtin的http代理的地址事件
     private DelegateCommand<string>? _customNetworkProxyCommand;
 
@@ -619,7 +619,7 @@ public class ViewNetworkViewModel : ViewModelBase
         var isSucceed = SettingsManager.GetInstance().SetCustomProxy(parameter);
         PublishTip(isSucceed);
     }
-    
+
 
     // builtin同时下载数事件
     private DownKyiAsyncDelegateCommand<object>? _maxCurrentDownloadsCommand;
@@ -633,10 +633,10 @@ public class ViewNetworkViewModel : ViewModelBase
     private async Task ExecuteMaxCurrentDownloadsCommand(object? parameter)
     {
         // SelectedMaxCurrentDownload = (int)parameter;
-        if(parameter == null) return;
+        if (parameter == null) return;
         var isSucceed = SettingsManager.GetInstance().SetMaxCurrentDownloads(SelectedMaxCurrentDownload);
         PublishTip(isSucceed);
-        
+
         var alertService = new AlertService(DialogService);
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot"));
         if (result == ButtonResult.OK)
@@ -675,7 +675,7 @@ public class ViewNetworkViewModel : ViewModelBase
         var isHttpProxy = IsHttpProxy ? AllowStatus.Yes : AllowStatus.No;
 
         var isSucceed = SettingsManager.GetInstance().SetIsHttpProxy(isHttpProxy);
-        
+
         PublishTip(isSucceed);
     }
 

@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Favorites.Models;
+using DownKyi.Core.BiliApi.Favorites.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 
@@ -17,24 +17,14 @@ public static class FavoritesResource
     {
         var url = $"https://api.bilibili.com/x/v3/fav/resource/list?media_id={mediaId}&pn={pn}&ps={ps}&platform=web";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var resource = BiliApiRequest.RequestJson<FavoritesMediaResourceOrigin>(
+            url,
+            referer,
+            nameof(GetFavoritesMedia),
+            "FavoritesResource",
+            cancellationToken);
 
-        try
-        {
-            var resource = JsonConvert.DeserializeObject<FavoritesMediaResourceOrigin>(response);
-            if (resource == null || resource.Data == null || resource.Data.Medias == null)
-            {
-                return null;
-            }
-
-            return resource.Data.Medias;
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine("GetFavoritesMedia()发生异常: {0}", e);
-            LogManager.Error("FavoritesResource", e);
-            return null;
-        }
+        return resource?.Data?.Medias;
     }
 
     /// <summary>
@@ -74,23 +64,13 @@ public static class FavoritesResource
     {
         var url = $"https://api.bilibili.com/x/v3/fav/resource/ids?media_id={mediaId}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var media = BiliApiRequest.RequestJson<FavoritesMediaIdOrigin>(
+            url,
+            referer,
+            nameof(GetFavoritesMediaId),
+            "FavoritesResource",
+            cancellationToken);
 
-        try
-        {
-            var media = JsonConvert.DeserializeObject<FavoritesMediaIdOrigin>(response);
-            if (media == null || media.Data == null)
-            {
-                return null;
-            }
-
-            return media.Data;
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine("GetFavoritesMediaId()发生异常: {0}", e);
-            LogManager.Error("FavoritesResource", e);
-            return null;
-        }
+        return media?.Data;
     }
 }

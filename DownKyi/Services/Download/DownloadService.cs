@@ -1,10 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
@@ -74,35 +73,13 @@ public abstract class DownloadService
         long receivedBytes = 0,
         long totalBytesToReceive = 0)
     {
-        if (string.IsNullOrWhiteSpace(file) || !File.Exists(file))
+        var result = DownloadFileIntegrity.Check(file, expectedBytes, receivedBytes, totalBytesToReceive);
+        if (!result.IsUsable)
         {
-            return false;
+            LogManager.Info(Tag, result.Reason ?? "Downloaded media file is not usable.");
         }
 
-        if (File.Exists($"{file}.aria2") || File.Exists($"{file}.download"))
-        {
-            LogManager.Info(Tag, "Downloaded media file still has an unfinished sidecar.");
-            return false;
-        }
-
-        var actualBytes = new FileInfo(file).Length;
-        var requiredBytes = expectedBytes > 0 ? expectedBytes : totalBytesToReceive;
-        if (actualBytes <= 0 ||
-            requiredBytes > 0 && actualBytes < requiredBytes ||
-            requiredBytes > 0 && receivedBytes > 0 && receivedBytes < requiredBytes)
-        {
-            LogManager.Info(Tag,
-                $"Downloaded media file is incomplete. expectedBytes={requiredBytes}; receivedBytes={receivedBytes}; actualBytes={actualBytes}");
-            return false;
-        }
-
-        if (LooksLikeErrorPayload(file))
-        {
-            LogManager.Info(Tag, "Downloaded media file looks like an error payload instead of media.");
-            return false;
-        }
-
-        return true;
+        return result.IsUsable;
     }
 
     protected void DeleteInvalidDownloadedMediaFile(string? file)
@@ -125,32 +102,6 @@ public abstract class DownloadService
             {
                 LogManager.Debug(Tag, $"Delete invalid media file failed: {e.Message}");
             }
-        }
-    }
-
-    private static bool LooksLikeErrorPayload(string file)
-    {
-        try
-        {
-            var buffer = new byte[256];
-            using var stream = File.OpenRead(file);
-            var read = stream.Read(buffer, 0, buffer.Length);
-            if (read <= 0)
-            {
-                return true;
-            }
-
-            var sample = Encoding.UTF8.GetString(buffer, 0, read)
-                .TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
-
-            return sample.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase) ||
-                   sample.StartsWith("<html", StringComparison.OrdinalIgnoreCase) ||
-                   sample.StartsWith("{\"code\"", StringComparison.OrdinalIgnoreCase) ||
-                   sample.StartsWith("{\"error\"", StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return false;
         }
     }
 
@@ -826,8 +777,8 @@ public abstract class DownloadService
                             foreach (var item in toRetry)
                             {
                                 downloading.PlayUrl.Durl = new List<PlayUrlDurl> { item.Value.Durl };
-                    var result = DownloadVideo(downloading);
-                    downloadStatus[item.Key] = new { item.Value.Durl, Result = result ?? NullMark };
+                                var result = DownloadVideo(downloading);
+                                downloadStatus[item.Key] = new { item.Value.Durl, Result = result ?? NullMark };
                             }
 
                             retryCount++;

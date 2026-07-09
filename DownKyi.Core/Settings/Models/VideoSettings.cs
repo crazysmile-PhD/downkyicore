@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.FileName;
+using DownKyi.Core.FileName;
 
 namespace DownKyi.Core.Settings.Models;
 

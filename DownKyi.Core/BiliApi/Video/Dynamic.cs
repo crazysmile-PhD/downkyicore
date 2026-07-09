@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Video.Models;
+using DownKyi.Core.BiliApi.Video.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -18,23 +18,12 @@ public static class Dynamic
     {
         var url = $"https://api.bilibili.com/x/web-interface/dynamic/region?rid={rid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var dynamic = BiliApiRequest.RequestJson<RegionDynamicOrigin>(
+            url,
+            referer,
+            nameof(RegionDynamicList),
+            "Dynamic");
 
-        try
-        {
-            var dynamic = JsonConvert.DeserializeObject<RegionDynamicOrigin>(response);
-            if (dynamic != null && dynamic.Data != null)
-            {
-                return dynamic.Data.Archives;
-            }
-
-            return null;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("RegionDynamicList()发生异常: {0}", e);
-            LogManager.Error("Dynamic", e);
-            return null;
-        }
+        return dynamic?.Data?.Archives;
     }
 }

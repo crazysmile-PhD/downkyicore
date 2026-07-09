@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Storage;
+namespace DownKyi.Core.Storage;
 
 /// <summary>
 /// 存储到本地时使用的一些常量

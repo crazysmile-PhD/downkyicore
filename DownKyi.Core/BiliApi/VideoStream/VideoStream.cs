@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using DownKyi.Core.BiliApi.Models.Json;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream.Models;
@@ -39,23 +39,14 @@ public static class VideoStream
         var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
         var url = $"https://api.bilibili.com/x/player/wbi/v2?{query}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var playUrl = BiliApiRequest.RequestJson<PlayerV2Origin>(
+            url,
+            referer,
+            nameof(PlayerV2),
+            "PlayerV2()",
+            cancellationToken);
 
-        try
-        {
-            var playUrl = JsonConvert.DeserializeObject<PlayerV2Origin>(response);
-            return playUrl?.Data;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("PlayerV2()发生异常: {0}", e);
-            LogManager.Error("PlayerV2()", e);
-            return null;
-        }
+        return playUrl?.Data;
     }
 
     /// <summary>
@@ -93,7 +84,12 @@ public static class VideoStream
                 continue;
             }
 
-            var response = WebClient.RequestWeb(subtitleUrl, referer, cancellationToken: cancellationToken);
+            var response = BiliApiRequest.RequestText(
+                subtitleUrl,
+                referer,
+                nameof(GetSubtitle),
+                "GetSubtitle()",
+                cancellationToken);
             if (string.IsNullOrWhiteSpace(response))
             {
                 LogManager.Debug(nameof(GetSubtitle), $"Skip empty subtitle response. lan={subtitle.Lan}, lan_doc={subtitle.LanDoc}, type={subtitle.Type}");
@@ -289,40 +285,29 @@ public static class VideoStream
     private static PlayUrl? GetPlayUrl(string url, CancellationToken cancellationToken = default)
     {
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var playUrl = BiliApiRequest.RequestJson<PlayUrlOrigin>(
+            url,
+            referer,
+            nameof(GetPlayUrl),
+            "GetPlayUrl()",
+            cancellationToken);
 
-        try
+        if (playUrl == null)
         {
-            var playUrl = JsonConvert.DeserializeObject<PlayUrlOrigin>(response);
-            if (playUrl == null)
-            {
-                return null;
-            }
-
-            if (playUrl.Data != null)
-            {
-                return playUrl.Data;
-            }
-
-            if (playUrl.Result != null)
-            {
-                return playUrl.Result;
-            }
-            else
-            {
-                return null;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetPlayUrl()发生异常: {0}", e);
-            LogManager.Error("GetPlayUrl()", e);
             return null;
         }
+
+        if (playUrl.Data != null)
+        {
+            return playUrl.Data;
+        }
+
+        if (playUrl.Result != null)
+        {
+            return playUrl.Result;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -333,7 +318,16 @@ public static class VideoStream
     private static PlayUrl? GetPlayUrlWebPage(string url, CancellationToken cancellationToken = default)
     {
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var response = BiliApiRequest.RequestText(
+            url,
+            referer,
+            nameof(GetPlayUrlWebPage),
+            "GetPlayUrlPc()",
+            cancellationToken);
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            return null;
+        }
 
         try
         {

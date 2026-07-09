@@ -17,7 +17,7 @@ public sealed class ClipboardListener : IDisposable
     private string? _lastClipboardContent;
 
     private readonly Window _mainWindow;
-    
+
     private bool _isTicking;
     public ClipboardListener(Window mainWindow)
     {
@@ -29,8 +29,8 @@ public sealed class ClipboardListener : IDisposable
         ThrowIfDisposed();
         _action = action;
         _timer = new DispatcherTimer(
-            TimeSpan.FromSeconds(1), 
-            DispatcherPriority.Background, 
+            TimeSpan.FromSeconds(1),
+            DispatcherPriority.Background,
             (_, _) => { _ = TickHandler(); });
         _timer.Start();
     }
@@ -64,7 +64,7 @@ public sealed class ClipboardListener : IDisposable
             lock (_countLocker)
             {
                 ChangedImpl -= value;
-                _count = Math.Max(0, _count - 1); 
+                _count = Math.Max(0, _count - 1);
                 if (_count == 0)
                 {
                     UnRegisterSystemEvent();
@@ -109,11 +109,11 @@ public sealed class ClipboardListener : IDisposable
 
     public void Dispose()
     {
-        lock (_countLocker) 
+        lock (_countLocker)
         {
             if (_disposed) return;
             _disposed = true;
-            
+
             UnRegisterSystemEvent();
             ChangedImpl = null;
         }
