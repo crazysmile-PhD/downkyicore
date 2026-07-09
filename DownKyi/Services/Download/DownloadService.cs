@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
@@ -64,6 +65,92 @@ public abstract class DownloadService
         catch (Exception e)
         {
             LogManager.Debug(Tag, $"Persist downloading state failed: {e.Message}");
+        }
+    }
+
+    protected bool IsDownloadedMediaFileUsable(
+        string? file,
+        long expectedBytes = 0,
+        long receivedBytes = 0,
+        long totalBytesToReceive = 0)
+    {
+        if (string.IsNullOrWhiteSpace(file) || !File.Exists(file))
+        {
+            return false;
+        }
+
+        if (File.Exists($"{file}.aria2") || File.Exists($"{file}.download"))
+        {
+            LogManager.Info(Tag, "Downloaded media file still has an unfinished sidecar.");
+            return false;
+        }
+
+        var actualBytes = new FileInfo(file).Length;
+        var requiredBytes = expectedBytes > 0 ? expectedBytes : totalBytesToReceive;
+        if (actualBytes <= 0 ||
+            requiredBytes > 0 && actualBytes < requiredBytes ||
+            requiredBytes > 0 && receivedBytes > 0 && receivedBytes < requiredBytes)
+        {
+            LogManager.Info(Tag,
+                $"Downloaded media file is incomplete. expectedBytes={requiredBytes}; receivedBytes={receivedBytes}; actualBytes={actualBytes}");
+            return false;
+        }
+
+        if (LooksLikeErrorPayload(file))
+        {
+            LogManager.Info(Tag, "Downloaded media file looks like an error payload instead of media.");
+            return false;
+        }
+
+        return true;
+    }
+
+    protected void DeleteInvalidDownloadedMediaFile(string? file)
+    {
+        if (string.IsNullOrWhiteSpace(file))
+        {
+            return;
+        }
+
+        foreach (var path in new[] { file, $"{file}.aria2", $"{file}.download" })
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception e)
+            {
+                LogManager.Debug(Tag, $"Delete invalid media file failed: {e.Message}");
+            }
+        }
+    }
+
+    private static bool LooksLikeErrorPayload(string file)
+    {
+        try
+        {
+            var buffer = new byte[256];
+            using var stream = File.OpenRead(file);
+            var read = stream.Read(buffer, 0, buffer.Length);
+            if (read <= 0)
+            {
+                return true;
+            }
+
+            var sample = Encoding.UTF8.GetString(buffer, 0, read)
+                .TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+
+            return sample.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase) ||
+                   sample.StartsWith("<html", StringComparison.OrdinalIgnoreCase) ||
+                   sample.StartsWith("{\"code\"", StringComparison.OrdinalIgnoreCase) ||
+                   sample.StartsWith("{\"error\"", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -178,7 +265,8 @@ public abstract class DownloadService
                 BackupUrl = durl.BackupUrl,
                 BaseUrl = durl.Url,
                 Codecs = downloading.PlayUrl.VideoCodecid.GetHashCode().ToString(),
-                Id = downloading.DownloadBase.Bvid.GetHashCode()
+                Id = downloading.DownloadBase.Bvid.GetHashCode(),
+                ExpectedSize = durl.Size
             };
         }
 
@@ -885,7 +973,7 @@ public abstract class DownloadService
                 // 下载完成后处理
                 var downloaded = new Downloaded
                 {
-                    MaxSpeedDisplay = Format.FormatSpeed(downloading.Downloading.MaxSpeed),
+                    MaxSpeedDisplay = Format.FormatSpeedWithBandwidth(downloading.Downloading.MaxSpeed),
                 };
                 // 设置完成时间
                 downloaded.SetFinishedTimestamp(new DateTimeOffset(DateTime.UtcNow).ToUnixTimeSeconds());

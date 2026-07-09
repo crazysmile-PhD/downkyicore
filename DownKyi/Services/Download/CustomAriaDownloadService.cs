@@ -74,7 +74,8 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
             Id = downloadVideo.Id,
             Codecs = downloadVideo.Codecs,
             BaseUrl = downloadVideo.BaseUrl,
-            BackupUrl = downloadVideo.BackupUrl
+            BackupUrl = downloadVideo.BackupUrl,
+            ExpectedSize = downloadVideo.ExpectedSize
         });
     }
 
@@ -128,9 +129,17 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
 
             // 还要检查一下文件有没有被人删掉，删掉的话重新下载
             // 如果下载视频之后音频文件被人删了。此时gid还是视频的，会下错文件
-            if (downloading.Downloading.DownloadedFiles.Contains(key) && File.Exists(Path.Combine(path, fileName)))
+            string cachedFile = Path.Combine(path, fileName);
+            if (downloading.Downloading.DownloadedFiles.Contains(key) &&
+                IsDownloadedMediaFileUsable(cachedFile, downloadVideo.ExpectedSize))
             {
-                return Path.Combine(path, fileName);
+                return cachedFile;
+            }
+
+            if (downloading.Downloading.DownloadedFiles.Remove(key))
+            {
+                DeleteInvalidDownloadedMediaFile(cachedFile);
+                PersistDownloadingState(downloading);
             }
         }
         else
@@ -177,13 +186,22 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
 
         // 开始下载
         DownloadResult downloadStatus = DownloadByAria(downloading, urls, path, fileName);
+        string targetFile = Path.Combine(path, fileName);
         switch (downloadStatus)
         {
             case DownloadResult.SUCCESS:
-                downloading.Downloading.DownloadedFiles.Add(key);
+                if (IsDownloadedMediaFileUsable(targetFile, downloadVideo.ExpectedSize))
+                {
+                    downloading.Downloading.DownloadedFiles.Add(key);
+                    downloading.Downloading.Gid = null;
+                    PersistDownloadingState(downloading);
+                    return targetFile;
+                }
+
                 downloading.Downloading.Gid = null;
                 PersistDownloadingState(downloading);
-                return Path.Combine(path, fileName);
+                DeleteInvalidDownloadedMediaFile(targetFile);
+                return NullMark;
             case DownloadResult.FAILED:
             case DownloadResult.ABORT:
             default:
@@ -414,6 +432,9 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
                 //Header = $"cookie: {LoginHelper.GetLoginInfoCookiesString()}\nreferer: https://www.bilibili.com",
                 //UseHead = "true",
                 UserAgent = SettingsManager.GetInstance().GetUserAgent(),
+                Split = SettingsManager.GetInstance().GetAriaSplit().ToString(),
+                MaxConnectionPerServer = SettingsManager.GetInstance().GetAriaMaxConnectionPerServer().ToString(),
+                MinSplitSize = $"{SettingsManager.GetInstance().GetAriaMinSplitSize()}M",
             };
 
             //// 如果设置了代理，则增加HttpProxy
@@ -438,6 +459,8 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         {
             Task<AriaPause> ariaUnpause = AriaClient.UnpauseAsync(downloading.Downloading.Gid);
         }
+
+        DownloadDiagnosticLogger.LogAriaTaskStart(Tag, downloading.Downloading.Gid, urls.Count);
 
         // 管理下载
         AriaManager ariaManager = new AriaManager();
@@ -498,7 +521,8 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         video.DownloadingFileSize = Format.FormatFileSize(completedLength) + "/" + Format.FormatFileSize(totalLength);
 
         // 下载速度
-        video.SpeedDisplay = Format.FormatSpeed(speed);
+        video.SpeedDisplay = Format.FormatSpeedWithBandwidth(speed);
+        DownloadDiagnosticLogger.LogSpeed(Tag, gid, completedLength, totalLength, speed);
 
         // 最大下载速度
         if (video.Downloading.MaxSpeed < speed)

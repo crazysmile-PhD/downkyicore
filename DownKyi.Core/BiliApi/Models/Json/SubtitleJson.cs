@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using System.Text;
 
 namespace DownKyi.Core.BiliApi.Models.Json;
 
@@ -17,16 +18,16 @@ public class SubtitleJson : BaseModel
     /// <returns></returns>
     public string ToSubRip()
     {
-        string subRip = string.Empty;
+        var subRip = new StringBuilder();
         for (int i = 0; i < Body.Count; i++)
         {
-            subRip += $"{i + 1}\n";
-            subRip += $"{Second2hms(Body[i].From)} --> {Second2hms(Body[i].To)}\n";
-            subRip += $"{Body[i].Content}\n";
-            subRip += "\n";
+            subRip.AppendLine((i + 1).ToString());
+            subRip.AppendLine($"{SecondsToSrtTime(Body[i].From)} --> {SecondsToSrtTime(Body[i].To)}");
+            subRip.AppendLine(Body[i].Content);
+            subRip.AppendLine();
         }
 
-        return subRip;
+        return subRip.ToString();
     }
 
     /// <summary>
@@ -34,11 +35,12 @@ public class SubtitleJson : BaseModel
     /// </summary>
     /// <param name="seconds"></param>
     /// <returns></returns>
-    private static string Second2hms(float seconds)
+    private static string SecondsToSrtTime(decimal seconds)
     {
         if (seconds < 0) return "00:00:00,000";
 
-        var span = TimeSpan.FromSeconds(seconds);
+        var totalMilliseconds = decimal.ToInt64(decimal.Round(seconds * 1000m, 0, MidpointRounding.AwayFromZero));
+        var span = TimeSpan.FromMilliseconds(totalMilliseconds);
         return $"{(int)span.TotalHours:D2}:{span.Minutes:D2}:{span.Seconds:D2},{span.Milliseconds:D3}";
     }
 }

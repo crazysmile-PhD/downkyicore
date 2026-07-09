@@ -6,6 +6,7 @@ arch=$2
 
 ffmpeg_save_path="../DownKyi.Core/Binary"
 download_dir="./downloads"
+manifest="./assets/external-assets.json"
 
 create_dir() {
   if [ ! -d "$1" ]; then
@@ -32,58 +33,95 @@ verify_asset() {
   fi
 }
 
+copy_license_files() {
+  local source_dir=$1
+  local destination=$2
+
+  while [[ "$source_dir" == "$extract_dir"* ]]; do
+    find "$source_dir" -maxdepth 1 -type f \( \
+      -iname 'LICENSE' -o -iname 'LICENSE.*' -o \
+      -iname 'COPYING' -o -iname 'COPYING.*' -o \
+      -iname 'README' -o -iname 'README.*' \
+    \) -exec cp {} "$destination/" \;
+    source_dir=$(dirname "$source_dir")
+  done
+}
+
+asset_value() {
+  local rid=$1
+  local key=$2
+  python3 - "$manifest" "$rid" "$key" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    manifest = json.load(f)
+
+print(manifest["ffmpeg"]["assets"][sys.argv[2]][sys.argv[3]])
+PY
+}
+
+extract_ffmpeg() {
+  local archive=$1
+  local destination=$2
+  local extract_dir="$download_dir/ffmpeg-extract-$os-$arch"
+
+  rm -rf "$extract_dir"
+  create_dir "$extract_dir"
+  case "$archive" in
+  *.tar.xz)
+    tar -xJf "$archive" -C "$extract_dir"
+    ;;
+  *.zip)
+    unzip -q -d "$extract_dir" -o "$archive"
+    ;;
+  *)
+    echo "Unsupported ffmpeg archive: $archive" >&2
+    exit 1
+    ;;
+  esac
+
+  local ffmpeg_bin
+  ffmpeg_bin=$(find "$extract_dir" -type f -name ffmpeg | head -n 1)
+  if [ -z "$ffmpeg_bin" ]; then
+    echo "ffmpeg binary not found in $archive" >&2
+    exit 1
+  fi
+
+  create_dir "$destination"
+  find "$destination" -maxdepth 1 -type f -delete
+  cp "$ffmpeg_bin" "$destination/ffmpeg"
+  copy_license_files "$(dirname "$ffmpeg_bin")" "$destination"
+  chmod +x "$destination/ffmpeg"
+}
+
 create_dir "$download_dir"
 
 download_ffmpeg_macos() {
-  local filename=""
-  local expected_sha256=""
-  case $arch in
-  x64)
-    filename=ffmpeg-x86_64-apple-darwin_static.zip
-    expected_sha256="ba7cd3da928d9028b01cecc0fca915021afea47e9090552579d8da2919e7bde4"
-    ;;
-  arm64)
-    filename=ffmpeg-aarch64-apple-darwin_static.zip
-    expected_sha256="8fd7ea3126839dac99d8e631071ce8b08a1caa00d72171813b4e77aa1f68bb31"
-    ;;
-  *)
-    echo "Unsupported macOS ffmpeg architecture: $arch" >&2
-    exit 1
-    ;;
-  esac
-  local url="https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/$filename"
+  local rid="osx-$arch"
+  local url
+  local expected_sha256
+  url=$(asset_value "$rid" "url")
+  expected_sha256=$(asset_value "$rid" "sha256")
   local archive="$download_dir/ffmpeg-mac-$arch.zip"
-  create_dir "$ffmpeg_save_path/osx-$arch/ffmpeg"
   curl -kL "$url" -o "$archive"
   verify_asset "$archive" "$expected_sha256"
-  unzip -d "$ffmpeg_save_path/osx-$arch/ffmpeg/" -o "$archive"
-  chmod +x "$ffmpeg_save_path/osx-$arch/ffmpeg/ffmpeg"
+  extract_ffmpeg "$archive" "$ffmpeg_save_path/$rid/ffmpeg"
 }
 
 download_ffmpeg_linux() {
-  local filename=""
-  local expected_sha256=""
-  case $arch in
-  x64)
-    filename=ffmpeg-x86_64-linux-musl_static.zip
-    expected_sha256="fd6709e6c39aa6cdeb8f98b51c434122a4ae7dc36d5b94765c695e96c64647f2"
-    ;;
-  arm64)
-    filename=ffmpeg-aarch64-linux-musl_static.zip
-    expected_sha256="89b5d5f1dc7832dd07a4f171a236c089b55b087062232b6845c8ae31c4f16e23"
-    ;;
-  *)
-    echo "Unsupported Linux ffmpeg architecture: $arch" >&2
-    exit 1
-    ;;
-  esac
-  local url="https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/$filename"
-  local archive="$download_dir/ffmpeg-linux-$arch.zip"
-  create_dir "$ffmpeg_save_path/linux-$arch/ffmpeg"
+  local rid="linux-$arch"
+  local url
+  local expected_sha256
+  url=$(asset_value "$rid" "url")
+  expected_sha256=$(asset_value "$rid" "sha256")
+  local archive="$download_dir/ffmpeg-linux-$arch.${url##*.}"
+  if [[ "$url" == *.tar.xz ]]; then
+    archive="$download_dir/ffmpeg-linux-$arch.tar.xz"
+  fi
   curl -kL "$url" -o "$archive"
   verify_asset "$archive" "$expected_sha256"
-  unzip -d "$ffmpeg_save_path/linux-$arch/ffmpeg/" -o "$archive"
-  chmod +x "$ffmpeg_save_path/linux-$arch/ffmpeg/ffmpeg"
+  extract_ffmpeg "$archive" "$ffmpeg_save_path/$rid/ffmpeg"
 }
 
 if [ "$os" == "mac" ]; then

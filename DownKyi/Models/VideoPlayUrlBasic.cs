@@ -14,5 +14,7 @@ namespace DownKyi.Models
         public int Id { get; set; }
 
         public string Codecs { get; set; } = string.Empty;
+
+        public long ExpectedSize { get; set; }
     }
 }

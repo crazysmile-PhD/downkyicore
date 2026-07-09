@@ -194,7 +194,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
         var parameter = new NavigationParam
         {
             ViewName = ViewDownloadManagerViewModel.Tag,
-            ParentViewName = Tag,
+            ParentViewName = string.IsNullOrWhiteSpace(ParentView) ? ViewIndexViewModel.Tag : ParentView,
             Parameter = null
         };
         EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);

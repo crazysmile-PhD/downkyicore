@@ -20,6 +20,8 @@ public class PlayUrlDashVideo : BaseModel
 
     [JsonProperty("frameRate")] public string FrameRate { get; set; } = string.Empty;
 
+    public long ExpectedSize { get; set; }
+
     // frame_rate
     // sar
     // startWithSap

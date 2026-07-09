@@ -22,8 +22,8 @@ public class LogManager
     private static readonly Regex CookieRegex = new("(?i)(cookie|set-cookie|SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5|sid|access_key|csrf|token|secret|password)\\s*[:=]\\s*[^\\s;,&\"']+", RegexOptions.Compiled);
     private static readonly Regex QuerySecretRegex = new("(?i)([?&](?:SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5|sid|access_key|csrf|token|secret|password)=)[^&#\\s\"']+", RegexOptions.Compiled);
     private static readonly Regex EmailRegex = new("(?i)[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}", RegexOptions.Compiled);
-    private static readonly Regex QuotedWindowsPathRegex = new("(?i)(?<=['\"])(?:[a-z]:\\\\|\\\\\\\\)[^\\r\\n\"']+(?=['\"])", RegexOptions.Compiled);
-    private static readonly Regex WindowsPathRegex = new("(?i)(?<![\\w])(?:[a-z]:\\\\|\\\\\\\\)[^\\r\\n\\s\"'<>|]+", RegexOptions.Compiled);
+    private static readonly Regex QuotedWindowsPathRegex = new("(?i)(?<=['\"])(?:[a-z]:[\\\\/]|\\\\\\\\)[^\\r\\n\"']+(?=['\"])", RegexOptions.Compiled);
+    private static readonly Regex WindowsPathRegex = new("(?i)(?<![\\w])(?:[a-z]:[\\\\/]|\\\\\\\\)[^\\r\\n\\s\"'<>|]+", RegexOptions.Compiled);
     private static readonly Regex UnixUserPathRegex = new("(?<!:)\\b(?:/Users/|/home/|/var/folders/|/tmp/)[^\\r\\n\\s\"'<>|]+", RegexOptions.Compiled);
     private static string? CachedLogDate;
     private static string? CachedLogPath;

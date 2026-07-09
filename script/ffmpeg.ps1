@@ -30,10 +30,37 @@ if ($null -eq $asset) {
 }
 
 $archive = ".\downloads\ffmpeg-$arch.zip"
+if (Test-Path -LiteralPath $archive) {
+    Remove-Item -LiteralPath $archive -Force
+}
 Start-BitsTransfer -Source $asset.url -Destination $archive
 Verify-Asset $archive $asset.sha256
 
 $destDir = "..\DownKyi.Core\Binary\$rid\ffmpeg\"
 Create-Dir $destDir
+Get-ChildItem -LiteralPath $destDir -File | Remove-Item -Force
 
-Expand-Archive -Path $archive -DestinationPath $destDir -Force
+$extractDir = ".\downloads\ffmpeg-$arch-extract"
+if (Test-Path -LiteralPath $extractDir) {
+    Remove-Item -LiteralPath $extractDir -Recurse -Force
+}
+Create-Dir $extractDir
+
+Expand-Archive -Path $archive -DestinationPath $extractDir -Force
+$ffmpeg = Get-ChildItem -LiteralPath $extractDir -Recurse -File -Filter "ffmpeg.exe" | Select-Object -First 1
+if ($null -eq $ffmpeg) {
+    throw "ffmpeg.exe not found in $archive"
+}
+
+Copy-Item -LiteralPath $ffmpeg.FullName -Destination (Join-Path $destDir "ffmpeg.exe") -Force
+
+$extractRoot = (Resolve-Path -LiteralPath $extractDir).Path
+$current = $ffmpeg.Directory
+while ($null -ne $current -and $current.FullName.StartsWith($extractRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    Get-ChildItem -LiteralPath $current.FullName -File |
+        Where-Object { $_.Name -match '^(LICENSE|COPYING|README)(\..*)?$' } |
+        ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destDir $_.Name) -Force
+        }
+    $current = $current.Parent
+}

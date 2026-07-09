@@ -11,6 +11,8 @@ public class FFMpeg
 {
     private const string Tag = "FFmpegHelper";
     private static readonly FFMpeg instance = new();
+    private static readonly object FfmpegJobLock = new();
+    private static int _runningFfmpegJobs;
 
     static FFMpeg()
     {
@@ -77,11 +79,11 @@ public class FFMpeg
             }
         }
 
-        LogManager.Debug(Tag, arguments.Arguments);
+        if (!RunFfmpeg(arguments, "merge media"))
+        {
+            return false;
+        }
 
-        arguments
-            .NotifyOnError(s => LogManager.Debug(Tag, s))
-            .ProcessSynchronously(false);
         try
         {
             if (audio != null)
@@ -115,16 +117,15 @@ public class FFMpeg
     /// <param name="action"></param>
     public void Delogo(string video, string destVideo, int x, int y, int width, int height, Action<string> action)
     {
-        FFMpegArguments
+        var arguments = FFMpegArguments
             .FromFileInput(video)
             .OutputToFile(
                 destVideo,
                 true,
                 option => option
-                    .WithCustomArgument($"-vf delogo=x={x}:y={y}:w={width}:h={height}:show=0 -hide_banner"))
-            .NotifyOnOutput(action.Invoke)
-            .NotifyOnError(action.Invoke)
-            .ProcessSynchronously(false);
+                    .WithCustomArgument($"-vf delogo=x={x}:y={y}:w={width}:h={height}:show=0 -hide_banner"));
+
+        RunFfmpeg(arguments, "delogo", action);
     }
 
     /// <summary>
@@ -135,7 +136,7 @@ public class FFMpeg
     /// <param name="action">输出信息</param>
     public void ExtractAudio(string video, string audio, Action<string> action)
     {
-        FFMpegArguments
+        var arguments = FFMpegArguments
             .FromFileInput(video)
             .OutputToFile(audio,
                 true,
@@ -143,10 +144,9 @@ public class FFMpeg
                     .WithCustomArgument("-hide_banner")
                     .WithAudioCodec("copy")
                     .DisableChannel(Channel.Video)
-            )
-            .NotifyOnOutput(action.Invoke)
-            .NotifyOnError(action.Invoke)
-            .ProcessSynchronously(false);
+            );
+
+        RunFfmpeg(arguments, "extract audio", action);
     }
 
     /// <summary>
@@ -157,17 +157,16 @@ public class FFMpeg
     /// <param name="action">输出信息</param>
     public void ExtractVideo(string video, string destVideo, Action<string> action)
     {
-         FFMpegArguments.FromFileInput(video)
+        var arguments = FFMpegArguments.FromFileInput(video)
             .OutputToFile(
                 destVideo,
                 true,
                 options => options
                     .WithCustomArgument("-hide_banner")
                     .WithVideoCodec("copy")
-                    .DisableChannel(Channel.Audio))
-            .NotifyOnOutput(action.Invoke)
-            .NotifyOnError(action.Invoke)
-            .ProcessSynchronously(false);
+                    .DisableChannel(Channel.Audio));
+
+        RunFfmpeg(arguments, "extract video", action);
     }
 
     
@@ -196,6 +195,7 @@ public class FFMpeg
     /// <returns>是否成功</returns>
     public bool ConcatVideos(List<string> inputFlvs, string outputVideo, Action<string> action)
     {
+        var listFile = string.Empty;
         try
         {
             if (inputFlvs == null || inputFlvs.Count == 0)
@@ -213,33 +213,192 @@ public class FFMpeg
                 }
             }
 
-            LogManager.Debug(Tag, $"开始合并 {inputFlvs.Count} 个视频到 {outputVideo}");
+            LogManager.Info(Tag,
+                $"Concat video started. segments={inputFlvs.Count}; hw={SettingsManager.GetInstance().GetFfmpegHardwareAcceleration()}; maxParallel={SettingsManager.GetInstance().GetFfmpegMaxParallelJobs()}");
 
+            listFile = Path.Combine(Path.GetTempPath(), $"flvlist_{Guid.NewGuid():N}.txt");
+            File.WriteAllLines(listFile, inputFlvs.Select(ToConcatFileLine));
 
-            var listFile = Path.Combine(Path.GetTempPath(), $"flvlist_{DateTime.Now:yyyyMMddHHmmss}.txt");
-            File.WriteAllLines(listFile, inputFlvs.Select(f => $"file '{f.Replace("'", "'\\''")}'"));
+            if (TryConcatWithStreamCopy(listFile, outputVideo, action))
+            {
+                LogManager.Info(Tag, "Concat video completed by stream copy.");
+                return true;
+            }
 
-            FFMpegArguments
-             .FromFileInput(listFile, false, options => options
-                 .WithCustomArgument("-f concat -safe 0"))
-             .OutputToFile(outputVideo, true, options => options
-                 .WithVideoCodec("libx264")  
-                 .WithAudioCodec("aac")   
-                 .WithCustomArgument("-movflags +faststart")
-                 .WithCustomArgument("-avoid_negative_ts make_zero")
-             )
-             .NotifyOnOutput(action.Invoke)
-             .NotifyOnError(action.Invoke)
-             .ProcessSynchronously(false);
+            DeleteOutput(outputVideo);
 
-            try { File.Delete(listFile); } catch {  }
-            LogManager.Debug(Tag, "视频合并完成");
-            return true;
+            var encoder = FfmpegHardwareEncoderDetector.Select(SettingsManager.GetInstance().GetFfmpegHardwareAcceleration());
+            if (encoder != null && TryConcatWithHardwareEncoder(listFile, outputVideo, encoder, action))
+            {
+                LogManager.Info(Tag, $"Concat video completed by {encoder.DisplayName}.");
+                return true;
+            }
+
+            DeleteOutput(outputVideo);
+            var cpuResult = TryConcatWithCpuEncoder(listFile, outputVideo, action);
+            LogManager.Info(Tag, $"Concat video completed by CPU encoder. success={cpuResult}");
+            return cpuResult;
         }
         catch (Exception ex)
         {
             LogManager.Error(Tag, ex);
             return false;
+        }
+        finally
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(listFile) && File.Exists(listFile))
+                {
+                    File.Delete(listFile);
+                }
+            }
+            catch (Exception e)
+            {
+                LogManager.Error(Tag, e);
+            }
+        }
+    }
+
+    private bool TryConcatWithStreamCopy(string listFile, string outputVideo, Action<string> action)
+    {
+        var arguments = BuildConcatInput(listFile)
+            .OutputToFile(outputVideo, true, options => options
+                .WithVideoCodec("copy")
+                .WithAudioCodec("copy")
+                .WithCustomArgument("-movflags +faststart")
+                .WithCustomArgument("-avoid_negative_ts make_zero"));
+
+        return RunFfmpeg(arguments, "concat stream copy", action) && IsValidOutput(outputVideo);
+    }
+
+    private bool TryConcatWithHardwareEncoder(
+        string listFile,
+        string outputVideo,
+        FfmpegHardwareEncoderProfile encoder,
+        Action<string> action)
+    {
+        var arguments = BuildConcatInput(listFile)
+            .OutputToFile(outputVideo, true, options => options
+                .WithAudioCodec("aac")
+                .WithCustomArgument(encoder.OutputArguments)
+                .WithCustomArgument("-movflags +faststart")
+                .WithCustomArgument("-avoid_negative_ts make_zero"));
+
+        var success = RunFfmpeg(arguments, $"concat hardware transcode ({encoder.DisplayName})", action) &&
+                      IsValidOutput(outputVideo);
+        if (!success)
+        {
+            LogManager.Info(Tag, $"Hardware encoder failed, falling back to CPU. encoder={encoder.DisplayName}");
+        }
+
+        return success;
+    }
+
+    private bool TryConcatWithCpuEncoder(string listFile, string outputVideo, Action<string> action)
+    {
+        var arguments = BuildConcatInput(listFile)
+            .OutputToFile(outputVideo, true, options => options
+                .WithVideoCodec("libx264")
+                .WithAudioCodec("aac")
+                .WithCustomArgument("-preset veryfast")
+                .WithCustomArgument("-crf 23")
+                .WithCustomArgument("-threads 2")
+                .WithCustomArgument("-movflags +faststart")
+                .WithCustomArgument("-avoid_negative_ts make_zero"));
+
+        return RunFfmpeg(arguments, "concat CPU transcode", action) && IsValidOutput(outputVideo);
+    }
+
+    private static FFMpegArguments BuildConcatInput(string listFile)
+    {
+        return FFMpegArguments.FromFileInput(listFile, false, options => options
+            .WithCustomArgument("-f concat -safe 0"));
+    }
+
+    private static string ToConcatFileLine(string file)
+    {
+        var normalizedPath = Path.GetFullPath(file).Replace('\\', '/');
+        return $"file '{normalizedPath.Replace("'", "'\\''")}'";
+    }
+
+    private static bool IsValidOutput(string outputVideo)
+    {
+        return File.Exists(outputVideo) && new FileInfo(outputVideo).Length > 0;
+    }
+
+    private static void DeleteOutput(string outputVideo)
+    {
+        try
+        {
+            if (File.Exists(outputVideo))
+            {
+                File.Delete(outputVideo);
+            }
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(Tag, e);
+        }
+    }
+
+    private static bool RunFfmpeg(FFMpegArgumentProcessor arguments, string operation, Action<string>? action = null)
+    {
+        using var _ = EnterFfmpegSlot(operation);
+        try
+        {
+            LogManager.Debug(Tag, arguments.Arguments);
+            var result = arguments
+                .NotifyOnOutput(s =>
+                {
+                    action?.Invoke(s);
+                    LogManager.Debug(Tag, s);
+                })
+                .NotifyOnError(s =>
+                {
+                    action?.Invoke(s);
+                    LogManager.Debug(Tag, s);
+                })
+                .ProcessSynchronously(false);
+
+            LogManager.Info(Tag, $"FFmpeg operation finished. operation={operation}; success={result}");
+            return result;
+        }
+        catch (Exception e)
+        {
+            LogManager.Error(Tag, e);
+            return false;
+        }
+    }
+
+    private static IDisposable EnterFfmpegSlot(string operation)
+    {
+        var maxParallel = SettingsManager.GetInstance().GetFfmpegMaxParallelJobs();
+        lock (FfmpegJobLock)
+        {
+            while (_runningFfmpegJobs >= maxParallel)
+            {
+                Monitor.Wait(FfmpegJobLock);
+                maxParallel = SettingsManager.GetInstance().GetFfmpegMaxParallelJobs();
+            }
+
+            _runningFfmpegJobs++;
+            LogManager.Info(Tag,
+                $"FFmpeg operation started. operation={operation}; running={_runningFfmpegJobs}; maxParallel={maxParallel}");
+        }
+
+        return new FfmpegSlot();
+    }
+
+    private sealed class FfmpegSlot : IDisposable
+    {
+        public void Dispose()
+        {
+            lock (FfmpegJobLock)
+            {
+                _runningFfmpegJobs = Math.Max(0, _runningFfmpegJobs - 1);
+                Monitor.PulseAll(FfmpegJobLock);
+            }
         }
     }
 }

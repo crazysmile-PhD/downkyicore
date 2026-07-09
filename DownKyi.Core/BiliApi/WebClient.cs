@@ -22,7 +22,7 @@ public static class WebClient
             PooledConnectionLifetime = TimeSpan.FromMinutes(10),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
             AutomaticDecompression = DecompressionMethods.All,
-            ConnectTimeout = TimeSpan.FromSeconds(3)
+            ConnectTimeout = TimeSpan.FromSeconds(8)
         };
         switch (SettingsManager.GetInstance().GetNetworkProxy())
         {
@@ -100,7 +100,8 @@ public static class WebClient
                 GetBuvid(cancellationToken);
             }
 
-            var request = new HttpRequestMessage(new HttpMethod(method), url);
+            var requestUrl = BuildRequestUrl(url, method, parameters);
+            using var request = new HttpRequestMessage(new HttpMethod(method), requestUrl);
 
             if (referer != null)
             {
@@ -141,17 +142,12 @@ public static class WebClient
                     request.Content = new FormUrlEncodedContent(parameters.Select(item => new KeyValuePair<string, string>(item.Key, item.Value?.ToString() ?? "")));
                 }
             }
-            else if (parameters != null)
-            {
-                var query = string.Join("&", parameters.Select(kvp => $"{kvp.Key}={kvp.Value}"));
-                url = $"{url}?{query}";
-                request.RequestUri = new Uri(url);
-            }
 
-            var response = HttpClient.Send(request, cancellationToken);
+            using var response = HttpClient.Send(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
 
-            using var reader = new StreamReader(response.Content.ReadAsStream());
+            using var stream = response.Content.ReadAsStream(cancellationToken);
+            using var reader = new StreamReader(stream);
             return reader.ReadToEnd();
         }
         catch (OperationCanceledException)
@@ -162,14 +158,44 @@ public static class WebClient
         {
             Console.WriteLine("RequestWeb()发生HTTP请求异常: {0}", e);
             LogManager.Error(e);
+            WaitBeforeRetry(retry, cancellationToken);
             return RequestWeb(url, referer, method, parameters, retry - 1, json, cancellationToken);
         }
         catch (Exception e)
         {
             Console.WriteLine("RequestWeb()发生其他异常: {0}", e);
             LogManager.Error(e);
+            WaitBeforeRetry(retry, cancellationToken);
             return RequestWeb(url, referer, method, parameters, retry - 1, json, cancellationToken);
         }
+    }
+
+    private static string BuildRequestUrl(string url, string method, Dictionary<string, object?>? parameters)
+    {
+        if (method == "POST" || parameters == null || parameters.Count == 0)
+        {
+            return url;
+        }
+
+        var query = string.Join("&", parameters.Select(kvp =>
+            $"{HttpUtility.UrlEncode(kvp.Key)}={HttpUtility.UrlEncode(kvp.Value?.ToString() ?? string.Empty)}"));
+
+        return url.Contains("?", StringComparison.Ordinal)
+            ? $"{url}&{query}"
+            : $"{url}?{query}";
+    }
+
+    private static void WaitBeforeRetry(int retry, CancellationToken cancellationToken)
+    {
+        if (retry <= 1)
+        {
+            return;
+        }
+
+        var delayMilliseconds = Math.Clamp((3 - retry + 1) * 250, 250, 2000);
+        var delay = TimeSpan.FromMilliseconds(delayMilliseconds);
+        cancellationToken.WaitHandle.WaitOne(delay);
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     public static void DownloadFile(string url, string destFile, string? referer = null, CancellationToken cancellationToken = default)
@@ -199,8 +225,68 @@ public static class WebClient
             }
         }
 
-        var response = HttpClient.Send(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        return response.Content.ReadAsStream(cancellationToken);
+        var response = HttpClient.Send(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        try
+        {
+            response.EnsureSuccessStatusCode();
+            return new ResponseStream(response.Content.ReadAsStream(cancellationToken), response, request);
+        }
+        catch
+        {
+            response.Dispose();
+            request.Dispose();
+            throw;
+        }
+    }
+
+    private sealed class ResponseStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly HttpResponseMessage _response;
+        private readonly HttpRequestMessage _request;
+
+        public ResponseStream(Stream inner, HttpResponseMessage response, HttpRequestMessage request)
+        {
+            _inner = inner;
+            _response = response;
+            _request = request;
+        }
+
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => _inner.CanSeek;
+        public override bool CanWrite => _inner.CanWrite;
+        public override long Length => _inner.Length;
+
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+
+        public override void Flush() => _inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
+        public override void SetLength(long value) => _inner.SetLength(value);
+        public override void Write(byte[] buffer, int offset, int count) => _inner.Write(buffer, offset, count);
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+                _response.Dispose();
+                _request.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await _inner.DisposeAsync().ConfigureAwait(false);
+            _response.Dispose();
+            _request.Dispose();
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }
