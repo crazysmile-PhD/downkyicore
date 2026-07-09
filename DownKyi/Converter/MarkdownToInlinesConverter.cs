@@ -24,14 +24,14 @@ public class MarkdownToInlinesConverter : IValueConverter
         text = string.Empty;
 
         if (!line.StartsWith("#")) return false;
-        
+
         level = line.TakeWhile(c => c == '#').Count();
         if (level == 0 || level > 6) return false;
-        
+
         text = line[level..].TrimStart();
         return true;
     }
-    
+
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is not string markdown) return null;
@@ -46,10 +46,10 @@ public class MarkdownToInlinesConverter : IValueConverter
                 inlines.Add(new LineBreak());
                 continue;
             }
-            
+
             if (line.TrimStart().StartsWith("<!--") && line.TrimEnd().EndsWith("-->")) continue;
 
-            
+
             if (TryParseHeader(line, out var headerLevel, out var headerText))
             {
                 var style = HeaderStyles[Math.Min(headerLevel, HeaderStyles.Count)];
@@ -72,7 +72,7 @@ public class MarkdownToInlinesConverter : IValueConverter
             }
             else if (line.StartsWith("- "))
             {
-                inlines.Add(new Run("• " + line.Substring(2)){FontSize = 14});
+                inlines.Add(new Run("• " + line.Substring(2)) { FontSize = 14 });
             }
             else
             {

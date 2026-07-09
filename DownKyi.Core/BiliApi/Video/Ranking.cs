@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Video.Models;
+using DownKyi.Core.BiliApi.Video.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -18,23 +18,12 @@ public static class Ranking
     {
         var url = $"https://api.bilibili.com/x/web-interface/ranking/region?rid={rid}&day={day}&ps={original}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var ranking = BiliApiRequest.RequestJson<RegionRanking>(
+            url,
+            referer,
+            nameof(RegionRankingList),
+            "Ranking");
 
-        try
-        {
-            var ranking = JsonConvert.DeserializeObject<RegionRanking>(response);
-            if (ranking != null)
-            {
-                return ranking.Data;
-            }
-
-            return null;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("RegionRankingList()发生异常: {0}", e);
-            LogManager.Error("Ranking", e);
-            return null;
-        }
+        return ranking?.Data;
     }
 }

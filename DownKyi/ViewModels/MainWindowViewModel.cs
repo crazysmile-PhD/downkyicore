@@ -13,10 +13,10 @@ using DownKyi.Services;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using Prism.Commands;
+using Prism.Dialogs;
 using Prism.Events;
 using Prism.Mvvm;
 using Prism.Navigation.Regions;
-using Prism.Dialogs;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels;
@@ -36,6 +36,7 @@ public class MainWindowViewModel : BindableBase
     private bool _messageVisibility;
     private string? _oldMessage;
     private CancellationTokenSource? _messageCancellation;
+    private CancellationTokenSource? _clipboardDebounceCancellation;
 
     public bool MessageVisibility
     {
@@ -55,16 +56,22 @@ public class MainWindowViewModel : BindableBase
 
     private DelegateCommand? _closingCommand;
 
-    public DelegateCommand ClosingCommand => _closingCommand ??= _closingCommand = new DelegateCommand(ExecuteClosingCommand);
+    public DelegateCommand ClosingCommand => _closingCommand ??= new DelegateCommand(ExecuteClosingCommand);
+
+    private DelegateCommand<PointerPressedEventArgs>? _pointerPressedCommand;
 
     public DelegateCommand<PointerPressedEventArgs> PointerPressedCommand =>
-        new(ExecutePointerPressed);
+        _pointerPressedCommand ??= new DelegateCommand<PointerPressedEventArgs>(ExecutePointerPressed);
 
     private void ExecuteClosingCommand()
     {
         if (_clipboardListener == null) return;
         _clipboardListener.Changed -= ClipboardListenerOnChanged;
         _clipboardListener.Dispose();
+        _clipboardDebounceCancellation?.Cancel();
+        _clipboardDebounceCancellation?.Dispose();
+        _messageCancellation?.Cancel();
+        _messageCancellation?.Dispose();
     }
 
     private void ExecutePointerPressed(PointerPressedEventArgs e)
@@ -129,7 +136,7 @@ public class MainWindowViewModel : BindableBase
         {
             if (Design.IsDesignMode)
             {
-               return;
+                return;
             }
             Upgrade();
             _ = CheckForUpdatesAsync();
@@ -169,41 +176,40 @@ public class MainWindowViewModel : BindableBase
 
     #region 剪贴板
 
-    private int _times;
-
     private void ClipboardListenerOnChanged(string obj)
     {
-        #region 执行第二遍时跳过
-
-        _times += 1;
-        var timer = new DispatcherTimer
-        {
-            Interval = new TimeSpan(0, 0, 0, 0, 300)
-        };
-        timer.Tick += (_, _) =>
-        {
-            timer.IsEnabled = false;
-            _times = 0;
-        };
-        timer.IsEnabled = true;
-
-        if (_times % 2 == 0)
-        {
-            timer.IsEnabled = false;
-            _times = 0;
-            return;
-        }
-
-        #endregion
-
         var isListenClipboard = SettingsManager.GetInstance().GetIsListenClipboard();
         if (isListenClipboard != AllowStatus.Yes)
         {
             return;
         }
 
+        _clipboardDebounceCancellation?.Cancel();
+        _clipboardDebounceCancellation?.Dispose();
+        _clipboardDebounceCancellation = new CancellationTokenSource();
+        _ = HandleClipboardChangedAsync(obj, _clipboardDebounceCancellation.Token);
+    }
+
+    private async Task HandleClipboardChangedAsync(string text, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(300, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
         var searchService = new SearchService();
-        Dispatcher.UIThread.InvokeAsync(() => { searchService.BiliInput(obj + AppConstant.ClipboardId, ViewIndexViewModel.Tag, _eventAggregator); });
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                searchService.BiliInput(text + AppConstant.ClipboardId, ViewIndexViewModel.Tag, _eventAggregator);
+            }
+        });
     }
 
     #endregion
@@ -212,20 +218,20 @@ public class MainWindowViewModel : BindableBase
     {
         _dialogService.ShowDialogAsync(ViewUpgradingDialogViewModel.Tag, new DialogParameters(), (result) => { });
     }
-    
+
     private async Task CheckForUpdatesAsync()
     {
         try
         {
             var isAutoUpdate = SettingsManager.GetInstance().GetAutoUpdateWhenLaunch() != AllowStatus.Yes;
-            if(isAutoUpdate) return;
-            var service = new VersionCheckerService(App.RepoOwner,App.RepoName,
+            if (isAutoUpdate) return;
+            var service = new VersionCheckerService(App.RepoOwner, App.RepoName,
                 SettingsManager.GetInstance().GetIsReceiveBetaVersion() == AllowStatus.Yes);
             var release = await service.GetLatestReleaseAsync(SettingsManager.GetInstance().GetSkipVersionOnLaunch());
             if (release != null && service.IsNewVersionAvailable(release.TagName))
             {
-                await _dialogService?.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new 
-                    DialogParameters { { "release", release },{"enableSkipVersion",true} })!;
+                await _dialogService?.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
+                    DialogParameters { { "release", release }, { "enableSkipVersion", true } })!;
             }
         }
         catch (Exception ex)

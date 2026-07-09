@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Utils;
+namespace DownKyi.Core.Utils;
 
 public class StringLogicalComparer<T> : IComparer<T>
 {

@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.BiliApi.Zone;
+namespace DownKyi.Core.BiliApi.Zone;
 
 public class VideoZone
 {

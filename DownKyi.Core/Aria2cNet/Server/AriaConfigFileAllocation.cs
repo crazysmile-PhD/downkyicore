@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Aria2cNet.Server;
+namespace DownKyi.Core.Aria2cNet.Server;
 
 /// <summary>
 /// 文件预分配

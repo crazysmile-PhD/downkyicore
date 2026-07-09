@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.BiliApi.Bangumi;
+namespace DownKyi.Core.BiliApi.Bangumi;
 
 public static class BangumiType
 {

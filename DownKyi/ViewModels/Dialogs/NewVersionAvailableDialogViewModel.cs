@@ -1,13 +1,13 @@
 using System.Collections.ObjectModel;
-using Avalonia.Controls.Documents;
-using DownKyi.Utils;
-using Prism.Commands;
-using Prism.Dialogs;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Controls.Documents;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Models;
+using DownKyi.Utils;
+using Prism.Commands;
+using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs
 {

@@ -36,10 +36,10 @@ public class ViewModelBase : BindableBase, INavigationAware
             ParentView = viewName;
         }
     }
-    
+
     protected internal virtual void ExecuteBackSpace()
     {
-      
+
     }
 
     public bool IsNavigationTarget(NavigationContext navigationContext)
@@ -85,5 +85,5 @@ public class ViewModelBase : BindableBase, INavigationAware
             LogManager.Error(operation, e);
         }
     }
-    
+
 }

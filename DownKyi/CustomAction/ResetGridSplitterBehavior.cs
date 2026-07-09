@@ -6,12 +6,13 @@ using Avalonia.Controls;
 using Avalonia.Xaml.Interactivity;
 
 namespace DownKyi.CustomAction;
+
 public class ResetGridSplitterBehavior : Behavior<GridSplitter>
 {
-    private Dictionary<int, GridLength> _originalColumnWidths = new ();
-    private Dictionary<int, GridLength> _originalRowHeights = new ();
+    private Dictionary<int, GridLength> _originalColumnWidths = new();
+    private Dictionary<int, GridLength> _originalRowHeights = new();
     private Grid? _parentGrid;
-  
+
     protected override void OnAttached()
     {
         base.OnAttached();
@@ -30,14 +31,14 @@ public class ResetGridSplitterBehavior : Behavior<GridSplitter>
                 _originalRowHeights[i] = _parentGrid.RowDefinitions[i].Height;
             }
         }
-     
+
     }
-    
+
     private void OnRefreshRequested(object sender, EventArgs e)
     {
         ResetGrid();
     }
-    
+
     public void ResetGrid()
     {
         if (_parentGrid != null)
@@ -60,5 +61,5 @@ public class ResetGridSplitterBehavior : Behavior<GridSplitter>
         ResetGrid();
     }
 
-    
+
 }

@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 
 namespace DownKyi.Core.Utils;
 
@@ -61,6 +61,6 @@ public static class ListHelper
     public static void InsertUnique<T>(Collection<T> list, T item, int index)
     {
         T defaultSelection = default!;
-        InsertUnique(list, item, index, ref defaultSelection); 
+        InsertUnique(list, item, index, ref defaultSelection);
     }
 }

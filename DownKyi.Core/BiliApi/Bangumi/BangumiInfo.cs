@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Bangumi.Models;
+using DownKyi.Core.BiliApi.Bangumi.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -16,28 +16,14 @@ public static class BangumiInfo
     {
         var url = $"https://api.bilibili.com/pgc/review/user?media_id={mediaId}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var media = BiliApiRequest.RequestJson<BangumiMediaOrigin>(
+            url,
+            referer,
+            nameof(BangumiMediaInfo),
+            "BangumiInfo",
+            cancellationToken);
 
-        try
-        {
-            var media = JsonConvert.DeserializeObject<BangumiMediaOrigin>(response);
-            if (media != null && media.Result != null)
-            {
-                return media.Result.Media;
-            }
-
-            return null;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("BangumiMediaInfo()发生异常: {0}", e);
-            LogManager.Error("BangumiInfo", e);
-            return null;
-        }
+        return media?.Result?.Media;
     }
 
     /// <summary>
@@ -64,22 +50,13 @@ public static class BangumiInfo
             return null;
         }
 
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var bangumiSeason = BiliApiRequest.RequestJson<BangumiSeasonOrigin>(
+            url,
+            referer,
+            nameof(BangumiSeasonInfo),
+            "BangumiInfo",
+            cancellationToken);
 
-        try
-        {
-            var bangumiSeason = JsonConvert.DeserializeObject<BangumiSeasonOrigin>(response);
-            return bangumiSeason?.Result;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("BangumiSeasonInfo()发生异常: {0}", e);
-            LogManager.Error("BangumiInfo", e);
-            return null;
-        }
+        return bangumiSeason?.Result;
     }
 }

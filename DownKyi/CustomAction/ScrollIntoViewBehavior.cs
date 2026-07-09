@@ -1,9 +1,9 @@
-using Avalonia.Controls;
-using Avalonia.Xaml.Interactivity;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Xaml.Interactivity;
 using DownKyi.Core.Logging;
 
 namespace DownKyi.CustomAction;

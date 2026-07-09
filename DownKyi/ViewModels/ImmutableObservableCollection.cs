@@ -8,7 +8,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 namespace DownKyi.ViewModels;
 
-public sealed class ImmutableObservableCollection<T> : IList<T>,IList, INotifyCollectionChanged, INotifyPropertyChanged
+public sealed class ImmutableObservableCollection<T> : IList<T>, IList, INotifyCollectionChanged, INotifyPropertyChanged
 {
     private ImmutableList<T> _items;
 
@@ -21,7 +21,7 @@ public sealed class ImmutableObservableCollection<T> : IList<T>,IList, INotifyCo
     {
         _items = ImmutableList<T>.Empty.AddRange(items);
     }
-    
+
     public T this[int index]
     {
         get => _items[index];
@@ -59,7 +59,7 @@ public sealed class ImmutableObservableCollection<T> : IList<T>,IList, INotifyCo
     }
 
     public bool IsFixedSize => false;
-    
+
     public void Add(T item)
     {
         CheckReentrancy();
@@ -88,12 +88,12 @@ public sealed class ImmutableObservableCollection<T> : IList<T>,IList, INotifyCo
         T obj;
         try
         {
-            obj = (T) value;
+            obj = (T)value;
         }
         catch (InvalidCastException ex)
         {
             throw new ArgumentException(
-                $"Value cannot be cast to type {typeof(T).Name}.", 
+                $"Value cannot be cast to type {typeof(T).Name}.",
                 nameof(value), ex);
         }
         this.Add(obj);
@@ -143,27 +143,27 @@ public sealed class ImmutableObservableCollection<T> : IList<T>,IList, INotifyCo
         get => this[index];
         set
         {
-            #nullable disable
+#nullable disable
             T obj;
             try
             {
-                obj = (T) value;
+                obj = (T)value;
             }
             catch (InvalidCastException ex)
             {
                 throw new ArgumentException(
-                    $"Value cannot be cast to type {typeof(T).Name}.", 
+                    $"Value cannot be cast to type {typeof(T).Name}.",
                     nameof(value), ex);
             }
             this[index] = obj;
-            #nullable restore
+#nullable restore
         }
     }
 
 
     public IEnumerator<T> GetEnumerator() => _items.GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => _items.GetEnumerator();
-    
+
     public event NotifyCollectionChangedEventHandler? CollectionChanged;
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -174,7 +174,7 @@ public sealed class ImmutableObservableCollection<T> : IList<T>,IList, INotifyCo
         NotifyCollectionChangedEventHandler? collectionChanged = this.CollectionChanged;
         if (collectionChanged == null)
             return;
-    
+
         ++this._blockReentrancyCount;
         try
         {
@@ -190,19 +190,19 @@ public sealed class ImmutableObservableCollection<T> : IList<T>,IList, INotifyCo
     private void CheckReentrancy()
     {
         if (this._blockReentrancyCount <= 0)
-            return; 
+            return;
         NotifyCollectionChangedEventHandler? collectionChanged = this.CollectionChanged;
         if (collectionChanged != null && !HasSingleTarget(collectionChanged))
         {
             throw new InvalidOperationException("ObservableCollectionReentrancyNotAllowed");
         }
     }
-    
+
     private bool HasSingleTarget(NotifyCollectionChangedEventHandler? handler)
     {
         if (handler == null)
             return true;
-        
+
         return handler.GetInvocationList().Length <= 1;
     }
 

@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.History.Models;
+using DownKyi.Core.BiliApi.History.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -48,20 +48,14 @@ namespace DownKyi.Core.BiliApi.History
 
             var url = $"https://api.bilibili.com/x/web-interface/history/cursor?max={startId}&view_at={startTime}&ps={ps}&business={businessStr}";
             const string referer = "https://www.bilibili.com";
-            var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+            var history = BiliApiRequest.RequestJson<HistoryOrigin>(
+                url,
+                referer,
+                nameof(GetHistory),
+                "History",
+                cancellationToken);
 
-            try
-            {
-                var history = JsonConvert.DeserializeObject<HistoryOrigin>(response);
-                if (history == null || history.Data == null) { return null; }
-                return history.Data;
-            }
-            catch (Exception e)
-            {
-                Console.PrintLine("GetHistory()发生异常: {0}", e);
-                LogManager.Error("History", e);
-                return null;
-            }
+            return history?.Data;
         }
 
     }

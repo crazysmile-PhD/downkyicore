@@ -68,7 +68,7 @@ public partial class SettingsManager
 
     public bool SetSkipVersionOnLaunch(string skipVersionOnLaunch)
     {
-        if (Version.TryParse(skipVersionOnLaunch,out var _))
+        if (Version.TryParse(skipVersionOnLaunch, out var _))
         {
             return SetProperty(
                 _appSettings.About.SkipVersionOnLaunch,
@@ -81,11 +81,11 @@ public partial class SettingsManager
 
     public string GetSkipVersionOnLaunch()
     {
-        if (Version.TryParse(_appSettings.About.SkipVersionOnLaunch,out var _))
+        if (Version.TryParse(_appSettings.About.SkipVersionOnLaunch, out var _))
         {
             return _appSettings.About.SkipVersionOnLaunch;
         }
         return string.Empty;
     }
-    
+
 }

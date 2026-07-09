@@ -1,6 +1,6 @@
-﻿using System.Text;
-using DownKyi.Core.Logging;
+using System.Text;
 using System.Web;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -24,9 +24,9 @@ public static class ObjectHelper
         var queryString = uri.Query;
         var query = HttpUtility.ParseQueryString(queryString);
         cookies = (from item in query.AllKeys.OfType<string>()
-            let value = query[item]
-            where item is not ("Expires" or "gourl")
-            select new DownKyiCookie(item, value, ".bilibili.com")).ToList();
+                   let value = query[item]
+                   where item is not ("Expires" or "gourl")
+                   select new DownKyiCookie(item, value, ".bilibili.com")).ToList();
         return cookies;
         // if (url is null or "")
         // {

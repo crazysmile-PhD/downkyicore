@@ -176,7 +176,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
             SqliteDatabase? dbHelper = null;
             bool connectionSuccessful = false;
             int attemptCount = 0;
-            AttemptConnection:
+        AttemptConnection:
             attemptCount++;
             if (attemptCount > 2)
             {

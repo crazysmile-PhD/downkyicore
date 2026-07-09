@@ -11,9 +11,9 @@ using DownKyi.Services;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using Prism.Commands;
+using Prism.Dialogs;
 using Prism.Events;
 using Prism.Navigation.Regions;
-using Prism.Dialogs;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.Settings;

@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using DownKyi.Core.Logging;
 using Console = DownKyi.Core.Utils.Debugging.Console;

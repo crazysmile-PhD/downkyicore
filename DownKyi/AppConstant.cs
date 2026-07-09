@@ -1,4 +1,4 @@
-﻿namespace DownKyi;
+namespace DownKyi;
 
 public class AppConstant
 {

@@ -1,11 +1,12 @@
-using Avalonia.Controls;
 using System.Windows.Input;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.Xaml.Interactivity;
 
 
 namespace DownKyi.CustomAction;
+
 public class InfiniteScrollBehavior : Behavior<ListBox>
 {
     private bool _isExecuting;
@@ -19,12 +20,12 @@ public class InfiniteScrollBehavior : Behavior<ListBox>
         get => GetValue(LoadMoreCommandProperty);
         set => SetValue(LoadMoreCommandProperty, value);
     }
-    
+
     protected override void OnAttached()
     {
         base.OnAttached();
         AssociatedObject?.AddHandler(
-            ScrollViewer.ScrollChangedEvent, 
+            ScrollViewer.ScrollChangedEvent,
             HandleScrollChanged);
     }
 
@@ -38,15 +39,15 @@ public class InfiniteScrollBehavior : Behavior<ListBox>
     {
         if (_isExecuting || LoadMoreCommand == null)
             return;
-        
+
         var scrollViewer = e.Source as ScrollViewer;
 
-        if (scrollViewer == null || 
+        if (scrollViewer == null ||
             scrollViewer.Offset.Y + scrollViewer.Viewport.Height < scrollViewer.Extent.Height - 50)
             return;
 
         _isExecuting = true;
-    
+
         try
         {
             if (LoadMoreCommand?.CanExecute(null) == true)
@@ -59,5 +60,5 @@ public class InfiniteScrollBehavior : Behavior<ListBox>
             _isExecuting = false;
         }
     }
-    
+
 }

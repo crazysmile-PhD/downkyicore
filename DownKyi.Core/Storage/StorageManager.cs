@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Storage;
+namespace DownKyi.Core.Storage;
 
 public static class StorageManager
 {

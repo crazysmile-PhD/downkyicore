@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -76,14 +76,14 @@ public class AriaDownloadService : DownloadService, IDownloadService
 
         EnsureDownloadIsActive(downloading);
 
-        return DownloadVideo(downloading,new PlayUrlDashVideo
+        return DownloadVideo(downloading, new PlayUrlDashVideo
         {
             Id = downloadVideo.Id,
             Codecs = downloadVideo.Codecs,
             BaseUrl = downloadVideo.BaseUrl,
             BackupUrl = downloadVideo.BackupUrl,
             ExpectedSize = downloadVideo.ExpectedSize
-        } );
+        });
     }
 
     private string? DownloadVideo(DownloadingItem downloading, PlayUrlDashVideo? downloadVideo)

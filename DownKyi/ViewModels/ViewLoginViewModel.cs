@@ -179,7 +179,7 @@ public class ViewLoginViewModel : ViewModelBase
                         LogManager.Error(e);
                         EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginFailed"));
                     }
-                    
+
                     // 取消任务
                     await Task.Delay(3000, cancellationToken);
                     PropertyChange(ExecuteBackSpace);

@@ -232,12 +232,14 @@ public class ViewFollowingViewModel : ViewModelBase
             {
                 TabHeaders.Add(new TabHeader
                 {
-                    Id = -1, Title = DictionaryResource.GetString("AllFollowing"),
+                    Id = -1,
+                    Title = DictionaryResource.GetString("AllFollowing"),
                     SubTitle = relationStat.Following.ToString()
                 });
                 TabHeaders.Add(new TabHeader
                 {
-                    Id = -2, Title = DictionaryResource.GetString("WhisperFollowing"),
+                    Id = -2,
+                    Title = DictionaryResource.GetString("WhisperFollowing"),
                     SubTitle = relationStat.Whisper.ToString()
                 });
             }
@@ -262,7 +264,8 @@ public class ViewFollowingViewModel : ViewModelBase
             {
                 TabHeaders.Add(new TabHeader
                 {
-                    Id = -1, Title = DictionaryResource.GetString("AllFollowing"),
+                    Id = -1,
+                    Title = DictionaryResource.GetString("AllFollowing"),
                     SubTitle = relationStat.Following.ToString()
                 });
             }

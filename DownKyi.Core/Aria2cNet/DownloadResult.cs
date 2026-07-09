@@ -1,4 +1,4 @@
-﻿namespace DownKyi.Core.Aria2cNet;
+namespace DownKyi.Core.Aria2cNet;
 
 /// <summary>
 /// 下载状态

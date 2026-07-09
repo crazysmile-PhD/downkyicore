@@ -144,7 +144,7 @@ public partial class SettingsManager
             quality,
             v => _appSettings.Video.AudioQuality = v);
     }
-    
+
     /// <summary>
     /// 获取首选视频解析方式
     /// </summary>
@@ -153,7 +153,7 @@ public partial class SettingsManager
     {
         return _appSettings.Video.VideoParseType;
     }
-    
+
     /// <summary>
     /// 设置首选视频解析方式
     /// </summary>
@@ -195,7 +195,7 @@ public partial class SettingsManager
             isTranscodingFlvToMp4,
             v => _appSettings.Video.IsTranscodingFlvToMp4 = v);
     }
-    
+
     /// <summary>
     /// 获取是否下载aac音频后转码为mp3
     /// </summary>
@@ -211,7 +211,7 @@ public partial class SettingsManager
 
         return _appSettings.Video.IsTranscodingAacToMp3;
     }
-    
+
     /// <summary>
     /// 设置是否下载aac音频后转码为mp3
     /// </summary>

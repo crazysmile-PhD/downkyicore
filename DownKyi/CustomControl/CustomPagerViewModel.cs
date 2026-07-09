@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using Avalonia.Controls;
 using Prism.Commands;
@@ -78,9 +78,9 @@ public class CustomPagerViewModel : INotifyPropertyChanged
             }
         }
     }
-    
-    
-    
+
+
+
 
     private int _current;
 
@@ -389,20 +389,20 @@ public class CustomPagerViewModel : INotifyPropertyChanged
 
         SetView();
     }
-    
+
     private DelegateCommand<object>? _jumpCommand;
 
     public DelegateCommand<object> JumpCommand => _jumpCommand ??= new DelegateCommand<object>(JumpExecuted);
-    
+
     private void JumpExecuted(object obj)
     {
-        if (obj is string s && int.TryParse(s,out var i))
+        if (obj is string s && int.TryParse(s, out var i))
         {
             Current = (i >= _count) ? _count : i;
             SetView();
         }
     }
-    
+
     /// <summary>
     /// 控制显示，暴力实现，以后重构
     /// </summary>

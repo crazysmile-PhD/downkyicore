@@ -1,4 +1,4 @@
-﻿using Bilibili.Community.Service.Dm.V1;
+using Bilibili.Community.Service.Dm.V1;
 using DownKyi.Core.BiliApi.Danmaku.Models;
 using DownKyi.Core.Storage;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -18,11 +18,11 @@ public static class DanmakuProtobuf
     {
         var url = $"https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid={cid}&pid={avid}&segment_index={segmentIndex}";
         const string referer = "https://www.bilibili.com";
-        
+
         var danmakuList = new List<BiliDanmaku>();
         try
         {
-            using var input =  WebClient.RequestStream(url, referer, cancellationToken: cancellationToken);
+            using var input = WebClient.RequestStream(url, referer, cancellationToken: cancellationToken);
             var danmakus = DmSegMobileReply.Parser.ParseFrom(input);
             if (danmakus?.Elems == null)
             {

@@ -431,7 +431,7 @@ public class ViewVideoViewModel : ViewModelBase
             Id = x,
             Title = DisplayFileNamePart(x),
         }));
-       
+
         // 文件命名中的时间格式
         SelectedFileNamePartTimeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
 
@@ -753,8 +753,8 @@ public class ViewVideoViewModel : ViewModelBase
 
         SetVideoContent();
     }
-    
-    
+
+
     // 封面选择事件
     private DelegateCommand? _downloadCoverCommand;
 

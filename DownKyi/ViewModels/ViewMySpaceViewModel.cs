@@ -482,21 +482,27 @@ public class ViewMySpaceViewModel : ViewModelBase
         PackageList.Clear();
         PackageList.Add(new SpaceItem
         {
-            IsEnabled = true, Image = NormalIcon.Instance().FavoriteOutline,
+            IsEnabled = true,
+            Image = NormalIcon.Instance().FavoriteOutline,
             Title = DictionaryResource.GetString("Favorites")
         });
         PackageList.Add(new SpaceItem
         {
-            IsEnabled = true, Image = NormalIcon.Instance().Subscription,
+            IsEnabled = true,
+            Image = NormalIcon.Instance().Subscription,
             Title = DictionaryResource.GetString("Subscription")
         });
         PackageList.Add(new SpaceItem
         {
-            IsEnabled = true, Image = NormalIcon.Instance().ToView, Title = DictionaryResource.GetString("ToView")
+            IsEnabled = true,
+            Image = NormalIcon.Instance().ToView,
+            Title = DictionaryResource.GetString("ToView")
         });
         PackageList.Add(new SpaceItem
         {
-            IsEnabled = true, Image = NormalIcon.Instance().History, Title = DictionaryResource.GetString("History")
+            IsEnabled = true,
+            Image = NormalIcon.Instance().History,
+            Title = DictionaryResource.GetString("History")
         });
         NormalIcon.Instance().FavoriteOutline.Fill = DictionaryResource.GetColor("ColorPrimary");
         NormalIcon.Instance().Subscription.Fill = DictionaryResource.GetColor("ColorPrimary");

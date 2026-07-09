@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using Avalonia.Data.Converters;
 
@@ -7,7 +7,7 @@ namespace DownKyi.Converter
     public class CountConverter : IValueConverter
     {
         public int Count { get; set; }
-        
+
 
         public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         {

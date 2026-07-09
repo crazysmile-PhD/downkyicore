@@ -9,7 +9,7 @@ public class UserInfoSettings : IEquatable<UserInfoSettings>
 
     public string ImgKey { get; set; } = string.Empty;
     public string SubKey { get; set; } = string.Empty;
-    
+
     public override int GetHashCode()
     {
         return GetHashCode(this);

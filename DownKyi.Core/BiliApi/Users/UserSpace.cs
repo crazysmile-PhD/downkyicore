@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Sign;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
@@ -22,19 +22,13 @@ public static class UserSpace
     {
         var url = $"https://space.bilibili.com/ajax/settings/getSettings?mid={mid}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var settings = BiliApiRequest.RequestJson<SpaceSettingsOrigin>(
+            url,
+            referer,
+            nameof(GetSpaceSettings),
+            "UserSpace");
 
-        try
-        {
-            var settings = JsonConvert.DeserializeObject<SpaceSettingsOrigin>(response);
-            return settings is not { Status: true } ? null : settings.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetSpaceSettings()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
-            return null;
-        }
+        return settings is not { Status: true } ? null : settings.Data;
     }
 
     #region 投稿
@@ -139,10 +133,10 @@ public static class UserSpace
         var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
         var url = $"https://api.bilibili.com/x/space/wbi/arc/search?{query}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
 
         try
         {
+            var response = WebClient.RequestWeb(url, referer);
             // 忽略play的值为“--”时的类型错误
             var settings = new JsonSerializerSettings
             {
@@ -157,6 +151,10 @@ public static class UserSpace
 
             var spacePublication = JsonConvert.DeserializeObject<SpacePublicationOrigin>(response, settings);
             return spacePublication?.Data?.List;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {
@@ -179,19 +177,13 @@ public static class UserSpace
     {
         var url = $"https://api.bilibili.com/x/space/channel/list?mid={mid}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var spaceChannel = BiliApiRequest.RequestJson<SpaceChannelOrigin>(
+            url,
+            referer,
+            nameof(GetChannelList),
+            "UserSpace");
 
-        try
-        {
-            var spaceChannel = JsonConvert.DeserializeObject<SpaceChannelOrigin>(response);
-            return spaceChannel?.Data.List;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetChannelList()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
-            return null;
-        }
+        return spaceChannel?.Data.List;
     }
 
     /// <summary>
@@ -234,19 +226,13 @@ public static class UserSpace
     {
         var url = $"https://api.bilibili.com/x/space/channel/video?mid={mid}&cid={cid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var spaceChannelVideo = BiliApiRequest.RequestJson<SpaceChannelVideoOrigin>(
+            url,
+            referer,
+            nameof(GetChannelVideoList),
+            "UserSpace");
 
-        try
-        {
-            var spaceChannelVideo = JsonConvert.DeserializeObject<SpaceChannelVideoOrigin>(response);
-            return spaceChannelVideo?.Data.List.Archives;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetChannelVideoList()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
-            return null;
-        }
+        return spaceChannelVideo?.Data.List.Archives;
     }
 
     #endregion
@@ -265,19 +251,13 @@ public static class UserSpace
         // https://api.bilibili.com/x/polymer/space/seasons_series_list?mid=49246269&page_num=1&page_size=18
         var url = $"https://api.bilibili.com/x/polymer/web-space/seasons_series_list?mid={mid}&page_num={pageNum}&page_size={pageSize}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var origin = BiliApiRequest.RequestJson<SpaceSeasonsSeriesOrigin>(
+            url,
+            referer,
+            nameof(GetSeasonsSeries),
+            "UserSpace");
 
-        try
-        {
-            var origin = JsonConvert.DeserializeObject<SpaceSeasonsSeriesOrigin>(response);
-            return origin?.Data.ItemsLists;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetSeasonsSeries()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
-            return null;
-        }
+        return origin?.Data.ItemsLists;
     }
 
     /// <summary>
@@ -292,19 +272,13 @@ public static class UserSpace
         // https://api.bilibili.com/x/polymer/space/seasons_archives_list?mid=23947287&season_id=665&sort_reverse=false&page_num=1&page_size=30
         var url = $"https://api.bilibili.com/x/polymer/web-space/seasons_archives_list?mid={mid}&season_id={seasonId}&page_num={pageNum}&page_size={pageSize}&sort_reverse=false";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var origin = BiliApiRequest.RequestJson<SpaceSeasonsDetailOrigin>(
+            url,
+            referer,
+            nameof(GetSeasonsDetail),
+            "UserSpace");
 
-        try
-        {
-            var origin = JsonConvert.DeserializeObject<SpaceSeasonsDetailOrigin>(response);
-            return origin?.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetSeasonsDetail()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
-            return null;
-        }
+        return origin?.Data;
     }
 
     /// <summary>
@@ -317,19 +291,13 @@ public static class UserSpace
         // https://api.bilibili.com/x/series/series?series_id=1253087
         var url = $"https://api.bilibili.com/x/series/series?series_id={seriesId}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var origin = BiliApiRequest.RequestJson<SpaceSeriesMetaOrigin>(
+            url,
+            referer,
+            nameof(GetSeriesMeta),
+            "UserSpace");
 
-        try
-        {
-            var origin = JsonConvert.DeserializeObject<SpaceSeriesMetaOrigin>(response);
-            return origin?.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetSeriesMeta()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
-            return null;
-        }
+        return origin?.Data;
     }
 
     /// <summary>
@@ -346,19 +314,13 @@ public static class UserSpace
 
         var url = $"https://api.bilibili.com/x/series/archives?mid={mid}&series_id={seriesId}&only_normal=true&sort=desc&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var origin = BiliApiRequest.RequestJson<SpaceSeriesDetailOrigin>(
+            url,
+            referer,
+            nameof(GetSeriesDetail),
+            "UserSpace");
 
-        try
-        {
-            var origin = JsonConvert.DeserializeObject<SpaceSeriesDetailOrigin>(response);
-            return origin?.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetSeriesDetail()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
-            return null;
-        }
+        return origin?.Data;
     }
 
     #endregion
@@ -376,19 +338,13 @@ public static class UserSpace
     {
         var url = $"https://api.bilibili.com/pugv/app/web/season/page?mid={mid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var cheese = BiliApiRequest.RequestJson<SpaceCheeseOrigin>(
+            url,
+            referer,
+            nameof(GetCheese),
+            "UserSpace");
 
-        try
-        {
-            var cheese = JsonConvert.DeserializeObject<SpaceCheeseOrigin>(response);
-            return cheese?.Data.Items;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetCheese()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
-            return null;
-        }
+        return cheese?.Data.Items;
     }
 
     /// <summary>
@@ -434,19 +390,13 @@ public static class UserSpace
     {
         var url = $"https://api.bilibili.com/x/space/bangumi/follow/list?vmid={mid}&type={type:D}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer);
+        var bangumiFollow = BiliApiRequest.RequestJson<BangumiFollowOrigin>(
+            url,
+            referer,
+            nameof(GetBangumiFollow),
+            "UserSpace");
 
-        try
-        {
-            var bangumiFollow = JsonConvert.DeserializeObject<BangumiFollowOrigin>(response);
-            return bangumiFollow?.Data;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetBangumiFollow()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
-            return null;
-        }
+        return bangumiFollow?.Data;
     }
 
     /// <summary>

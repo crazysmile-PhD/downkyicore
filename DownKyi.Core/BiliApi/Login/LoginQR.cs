@@ -1,4 +1,4 @@
-﻿using Avalonia.Media.Imaging;
+using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.Login.Models;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Utils;
@@ -16,17 +16,11 @@ public static class LoginQr
     public static LoginUrlOrigin? GetLoginUrl()
     {
         const string getLoginUrl = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
-        var response = WebClient.RequestWeb(getLoginUrl);
-        try
-        {
-            return JsonConvert.DeserializeObject<LoginUrlOrigin>(response);
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetLoginUrl()发生异常: {0}", e);
-            LogManager.Error("LoginQR", e);
-            return null;
-        }
+        return BiliApiRequest.RequestJson<LoginUrlOrigin>(
+            getLoginUrl,
+            null,
+            nameof(GetLoginUrl),
+            "LoginQR");
     }
 
     /// <summary>
@@ -38,18 +32,11 @@ public static class LoginQr
     {
         var url = $"https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key={qrcodeKey}";
 
-        var response = WebClient.RequestWeb(url);
-
-        try
-        {
-            return JsonConvert.DeserializeObject<LoginStatus>(response);
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetLoginInfo()发生异常: {0}", e);
-            LogManager.Error("LoginQR", e);
-            return null;
-        }
+        return BiliApiRequest.RequestJson<LoginStatus>(
+            url,
+            null,
+            nameof(GetLoginStatus),
+            "LoginQR");
     }
 
     /// <summary>

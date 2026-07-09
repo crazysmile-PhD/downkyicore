@@ -14,10 +14,10 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Models;
-using DownKyi.Utils;
-using DownKyi.ViewModels.DownloadManager;
 using DownKyi.PrismExtension.Dialog;
+using DownKyi.Utils;
 using DownKyi.ViewModels;
+using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
 

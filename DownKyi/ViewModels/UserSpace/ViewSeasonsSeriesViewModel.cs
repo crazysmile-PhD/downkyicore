@@ -184,7 +184,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
             }
 
             // 当地时区
-            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);;
+            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); ;
             var dateCTime = startTime.AddSeconds(item.Meta.Mtime);
             var mtime = dateCTime.ToString("yyyy-MM-dd");
 

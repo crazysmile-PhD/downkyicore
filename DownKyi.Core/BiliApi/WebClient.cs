@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Web;
@@ -14,6 +14,7 @@ public static class WebClient
     private static readonly HttpClient HttpClient;
     private static string? _bvuid3 = string.Empty;
     private static string? _bvuid4 = string.Empty;
+    internal static Func<HttpRequestMessage, CancellationToken, HttpResponseMessage>? SendOverrideForTests { get; set; }
 
     static WebClient()
     {
@@ -35,19 +36,19 @@ public static class WebClient
                 socketsHandler.Proxy = HttpClient.DefaultProxy;
                 break;
             case NetworkProxy.Custom:
-            {
-                try
                 {
-                    socketsHandler.UseProxy = true;
-                    socketsHandler.Proxy = new WebProxy(SettingsManager.GetInstance().GetCustomProxy());
+                    try
+                    {
+                        socketsHandler.UseProxy = true;
+                        socketsHandler.Proxy = new WebProxy(SettingsManager.GetInstance().GetCustomProxy());
+                    }
+                    catch (Exception e)
+                    {
+                        socketsHandler.UseProxy = false;
+                        socketsHandler.Proxy = null;
+                        LogManager.Error(nameof(WebClient), e);
+                    }
                 }
-                catch (Exception e)
-                {
-                    socketsHandler.UseProxy = false;
-                    socketsHandler.Proxy = null;
-                    Console.WriteLine(e);
-                }
-            } 
                 break;
         }
 
@@ -87,87 +88,144 @@ public static class WebClient
         bool json = false,
         CancellationToken cancellationToken = default)
     {
-        if (retry <= 0)
+        Exception? lastError = null;
+        var attempts = Math.Max(1, retry);
+        for (var attempt = 1; attempt <= attempts; attempt++)
         {
-            return "";
-        }
-
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (string.IsNullOrEmpty(_bvuid3) && url != "https://api.bilibili.com/x/frontend/finger/spi")
+            try
             {
-                GetBuvid(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (string.IsNullOrEmpty(_bvuid3) && url != "https://api.bilibili.com/x/frontend/finger/spi")
+                {
+                    GetBuvid(cancellationToken);
+                }
+
+                using var request = BuildRequest(url, referer, method, parameters, json);
+                using var response = SendRequest(request, cancellationToken);
+                response.EnsureSuccessStatusCode();
+
+                using var stream = response.Content.ReadAsStream(cancellationToken);
+                using var reader = new StreamReader(stream);
+                return reader.ReadToEnd();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (HttpRequestException e)
+            {
+                lastError = e;
+                LogManager.Error(nameof(RequestWeb), e);
+            }
+            catch (Exception e)
+            {
+                lastError = e;
+                LogManager.Error(nameof(RequestWeb), e);
             }
 
-            var requestUrl = BuildRequestUrl(url, method, parameters);
-            using var request = new HttpRequestMessage(new HttpMethod(method), requestUrl);
-
-            if (referer != null)
+            if (attempt < attempts)
             {
-                request.Headers.Referrer = new Uri(referer);
+                WaitBeforeRetry(attempt, cancellationToken);
+            }
+        }
+
+        throw new HttpRequestException(
+            $"Request failed after {attempts} attempts: {LogManager.SanitizeForDiagnostics(url)}",
+            lastError);
+    }
+
+    internal static void ResetBuvidForTests()
+    {
+        _bvuid3 = string.Empty;
+        _bvuid4 = string.Empty;
+    }
+
+    internal static void SetBuvidForTests(
+        string buvid3 = "test-buvid3",
+        string buvid4 = "test-buvid4")
+    {
+        _bvuid3 = buvid3;
+        _bvuid4 = buvid4;
+    }
+
+    internal static void ClearTestOverrides()
+    {
+        SendOverrideForTests = null;
+        ResetBuvidForTests();
+    }
+
+    internal static TimeSpan GetRetryDelayForTests(int attempt)
+    {
+        return GetRetryDelay(attempt);
+    }
+
+    internal static string BuildRequestUrlForTests(string url, string method, Dictionary<string, object?>? parameters)
+    {
+        return BuildRequestUrl(url, method, parameters);
+    }
+
+    private static HttpRequestMessage BuildRequest(
+        string url,
+        string? referer,
+        string method,
+        Dictionary<string, object?>? parameters,
+        bool json)
+    {
+        var requestUrl = BuildRequestUrl(url, method, parameters);
+        var request = new HttpRequestMessage(new HttpMethod(method), requestUrl);
+
+        if (referer != null)
+        {
+            request.Headers.Referrer = new Uri(referer);
+        }
+
+        if (!url.Contains("getLogin"))
+        {
+            request.Headers.Add("origin", "https://www.bilibili.com");
+
+            var cookies = LoginHelper.GetLoginInfoCookies();
+
+            if (!string.IsNullOrEmpty(_bvuid3))
+            {
+                cookies.Add(new DownKyiCookie("buvid3", HttpUtility.UrlEncode(_bvuid3)));
             }
 
-            if (!url.Contains("getLogin"))
+            if (!string.IsNullOrEmpty(_bvuid4))
             {
-                request.Headers.Add("origin", "https://www.bilibili.com");
-
-                var cookies = LoginHelper.GetLoginInfoCookies();
-
-                if (!string.IsNullOrEmpty(_bvuid3))
-                {
-                    cookies.Add(new DownKyiCookie("buvid3", HttpUtility.UrlEncode(_bvuid3)));
-                }
-
-                if (!string.IsNullOrEmpty(_bvuid4))
-                {
-                    cookies.Add(new DownKyiCookie("buvid4", HttpUtility.UrlEncode(_bvuid4)));
-                }
-
-                var cookieHeader = LoginHelper.BuildCookieHeader(cookies);
-                if (!string.IsNullOrEmpty(cookieHeader))
-                {
-                    request.Headers.Add("cookie", cookieHeader);
-                }
+                cookies.Add(new DownKyiCookie("buvid4", HttpUtility.UrlEncode(_bvuid4)));
             }
 
-            if (method == "POST" && parameters != null)
+            var cookieHeader = LoginHelper.BuildCookieHeader(cookies);
+            if (!string.IsNullOrEmpty(cookieHeader))
             {
-                if (json)
-                {
-                    request.Content = new StringContent(JsonSerializer.Serialize(parameters), System.Text.Encoding.UTF8, "application/json");
-                }
-                else
-                {
-                    request.Content = new FormUrlEncodedContent(parameters.Select(item => new KeyValuePair<string, string>(item.Key, item.Value?.ToString() ?? "")));
-                }
+                request.Headers.Add("cookie", cookieHeader);
             }
+        }
 
-            using var response = HttpClient.Send(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            response.EnsureSuccessStatusCode();
+        if (method == "POST" && parameters != null)
+        {
+            if (json)
+            {
+                request.Content = new StringContent(
+                    JsonSerializer.Serialize(parameters),
+                    System.Text.Encoding.UTF8,
+                    "application/json");
+            }
+            else
+            {
+                request.Content = new FormUrlEncodedContent(
+                    parameters.Select(item =>
+                        new KeyValuePair<string, string>(item.Key, item.Value?.ToString() ?? "")));
+            }
+        }
 
-            using var stream = response.Content.ReadAsStream(cancellationToken);
-            using var reader = new StreamReader(stream);
-            return reader.ReadToEnd();
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (HttpRequestException e)
-        {
-            Console.WriteLine("RequestWeb()发生HTTP请求异常: {0}", e);
-            LogManager.Error(e);
-            WaitBeforeRetry(retry, cancellationToken);
-            return RequestWeb(url, referer, method, parameters, retry - 1, json, cancellationToken);
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine("RequestWeb()发生其他异常: {0}", e);
-            LogManager.Error(e);
-            WaitBeforeRetry(retry, cancellationToken);
-            return RequestWeb(url, referer, method, parameters, retry - 1, json, cancellationToken);
-        }
+        return request;
+    }
+
+    private static HttpResponseMessage SendRequest(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        return SendOverrideForTests?.Invoke(request, cancellationToken)
+               ?? HttpClient.Send(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
     }
 
     private static string BuildRequestUrl(string url, string method, Dictionary<string, object?>? parameters)
@@ -185,17 +243,22 @@ public static class WebClient
             : $"{url}?{query}";
     }
 
-    private static void WaitBeforeRetry(int retry, CancellationToken cancellationToken)
+    private static void WaitBeforeRetry(int attempt, CancellationToken cancellationToken)
     {
-        if (retry <= 1)
+        var delay = GetRetryDelay(attempt);
+        if (delay <= TimeSpan.Zero)
         {
             return;
         }
 
-        var delayMilliseconds = Math.Clamp((3 - retry + 1) * 250, 250, 2000);
-        var delay = TimeSpan.FromMilliseconds(delayMilliseconds);
         cancellationToken.WaitHandle.WaitOne(delay);
         cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private static TimeSpan GetRetryDelay(int attempt)
+    {
+        var delayMilliseconds = Math.Clamp(attempt * 250, 250, 2000);
+        return TimeSpan.FromMilliseconds(delayMilliseconds);
     }
 
     public static void DownloadFile(string url, string destFile, string? referer = null, CancellationToken cancellationToken = default)

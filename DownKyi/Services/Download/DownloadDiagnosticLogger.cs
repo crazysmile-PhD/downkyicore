@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -87,6 +89,7 @@ internal static class DownloadDiagnosticLogger
             return "unknown";
         }
 
-        return value.Length <= 8 ? value : value[..8];
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash, 0, 6).ToLowerInvariant();
     }
 }

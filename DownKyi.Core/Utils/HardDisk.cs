@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.Logging;
+using DownKyi.Core.Logging;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.Utils;

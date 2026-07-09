@@ -62,7 +62,7 @@ public class ViewDelogoViewModel : ViewModelBase
         get => _logoWidth;
         set
         {
-            WatermarkArea = new Rect(_watermarkArea.X, _watermarkArea.Y, value, _watermarkArea.Height );
+            WatermarkArea = new Rect(_watermarkArea.X, _watermarkArea.Y, value, _watermarkArea.Height);
             SetProperty(ref _logoWidth, value);
         }
     }
@@ -74,7 +74,7 @@ public class ViewDelogoViewModel : ViewModelBase
         get => _logoHeight;
         set
         {
-            WatermarkArea = new Rect(_watermarkArea.X, _watermarkArea.Y, _watermarkArea.Width,value );
+            WatermarkArea = new Rect(_watermarkArea.X, _watermarkArea.Y, _watermarkArea.Width, value);
             SetProperty(ref _logoHeight, value);
         }
     }
@@ -86,7 +86,7 @@ public class ViewDelogoViewModel : ViewModelBase
         get => _logoX;
         set
         {
-            WatermarkArea = new Rect(value, _watermarkArea.Y, _watermarkArea.Width,_watermarkArea.Height );
+            WatermarkArea = new Rect(value, _watermarkArea.Y, _watermarkArea.Width, _watermarkArea.Height);
             SetProperty(ref _logoX, value);
         }
     }
@@ -98,7 +98,7 @@ public class ViewDelogoViewModel : ViewModelBase
         get => _logoY;
         set
         {
-            WatermarkArea = new Rect( _watermarkArea.X, value, _watermarkArea.Width,_watermarkArea.Height );
+            WatermarkArea = new Rect(_watermarkArea.X, value, _watermarkArea.Width, _watermarkArea.Height);
             SetProperty(ref _logoY, value);
         }
     }
@@ -112,7 +112,7 @@ public class ViewDelogoViewModel : ViewModelBase
     }
 
     private bool _updatingWatermarkArea;
-    
+
     private Rect _watermarkArea;
 
     public Rect WatermarkArea
@@ -133,8 +133,8 @@ public class ViewDelogoViewModel : ViewModelBase
 
 
     public List<SolidColorBrush> AvailableColors { get; }
-    
-    
+
+
     private SolidColorBrush _selectedColor = null!;
 
     public SolidColorBrush SelectedColor
@@ -150,9 +150,9 @@ public class ViewDelogoViewModel : ViewModelBase
         #region 属性初始化
 
         VideoPath = string.Empty;
-        
-        
-        AvailableColors =  new (){
+
+
+        AvailableColors = new(){
             new SolidColorBrush(Colors.Red),
             new SolidColorBrush(Colors.Green),
             new SolidColorBrush(Colors.Blue),
@@ -162,7 +162,7 @@ public class ViewDelogoViewModel : ViewModelBase
             new SolidColorBrush(Colors.Fuchsia),
         };
         SelectedColor = AvailableColors[0];
-        WatermarkArea = new Rect(20,20,100,100);
+        WatermarkArea = new Rect(20, 20, 100, 100);
         #endregion
     }
 
@@ -253,12 +253,12 @@ public class ViewDelogoViewModel : ViewModelBase
             _isDelogo = true;
             FFMpeg.Instance.Delogo
             (
-                VideoPath, 
+                VideoPath,
                 newFileName,
                 _logoX,
-                _logoY, 
+                _logoY,
                 _logoWidth,
-                _logoHeight, 
+                _logoHeight,
                 output => { Status += output + "\n"; });
             _isDelogo = false;
         });
@@ -279,7 +279,7 @@ public class ViewDelogoViewModel : ViewModelBase
         {
             return;
         }
-        
+
         var scrollViewer = output.GetVisualDescendants()
             .OfType<ScrollViewer>()
             .FirstOrDefault();

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -268,7 +268,7 @@ public class BangumiInfoService : IInfoService
         var playUrl = VideoStream.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken);
         Dispatcher.UIThread.Invoke(() => Utils.VideoPageInfo(playUrl, page));
     }
-    
+
     /// <summary>
     /// 获取视频信息
     /// </summary>
@@ -309,7 +309,7 @@ public class BangumiInfoService : IInfoService
             videoInfoView.TypeId = BangumiType.TypeId[_bangumiSeason.Type];
 
             videoInfoView.VideoZone = DictionaryResource.GetString(BangumiType.Type[_bangumiSeason.Type]);
-            
+
             videoInfoView.PlayNumber = Format.FormatNumber(_bangumiSeason.Stat.Views);
             videoInfoView.DanmakuNumber = Format.FormatNumber(_bangumiSeason.Stat.Danmakus);
             videoInfoView.LikeNumber = Format.FormatNumber(_bangumiSeason.Stat.Likes);

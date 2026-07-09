@@ -1,4 +1,4 @@
-﻿using DownKyi.Core.BiliApi.Models.Json;
+using DownKyi.Core.BiliApi.Models.Json;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Video.Models;
 using DownKyi.Core.Logging;
@@ -35,23 +35,14 @@ public static class VideoInfo
         var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
         var url = $"https://api.bilibili.com/x/web-interface/wbi/view?{query}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var videoView = BiliApiRequest.RequestJson<VideoViewOrigin>(
+            url,
+            referer,
+            nameof(VideoViewInfo),
+            "VideoInfo",
+            cancellationToken);
 
-        try
-        {
-            var videoView = JsonConvert.DeserializeObject<VideoViewOrigin>(response);
-            return videoView?.Data;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("VideoInfo()发生异常: {0}", e);
-            LogManager.Error("VideoInfo", e);
-            return null;
-        }
+        return videoView?.Data;
     }
 
     /// <summary>
@@ -69,23 +60,14 @@ public static class VideoInfo
         else if (aid >= -1) { url = $"{baseUrl}?aid={aid}"; }
         else { return null; }
 
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var desc = BiliApiRequest.RequestJson<VideoDescription>(
+            url,
+            referer,
+            nameof(VideoDescription),
+            "VideoInfo",
+            cancellationToken);
 
-        try
-        {
-            var desc = JsonConvert.DeserializeObject<VideoDescription>(response);
-            return desc?.Data;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("VideoDescription()发生异常: {0}", e);
-            LogManager.Error("VideoInfo", e);
-            return null;
-        }
+        return desc?.Data;
     }
 
     /// <summary>
@@ -103,47 +85,29 @@ public static class VideoInfo
         else if (aid > -1) { url = $"{baseUrl}?aid={aid}"; }
         else { return null; }
 
-        var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
+        var pagelist = BiliApiRequest.RequestJson<VideoPagelist>(
+            url,
+            referer,
+            nameof(VideoPagelist),
+            "VideoInfo",
+            cancellationToken);
 
-        try
-        {
-            var pagelist = JsonConvert.DeserializeObject<VideoPagelist>(response);
-            return pagelist?.Data;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("VideoPagelist()发生异常: {0}", e);
-            LogManager.Error("VideoInfo", e);
-            return null;
-        }
+        return pagelist?.Data;
     }
-    
-    public static List<BiliTagInfo>? GetBiliTagInfo(string bvid,long? cid = null, CancellationToken cancellationToken = default)
+
+    public static List<BiliTagInfo>? GetBiliTagInfo(string bvid, long? cid = null, CancellationToken cancellationToken = default)
     {
         const string referer = "https://www.bilibili.com";
         string cidStr = cid.HasValue ? $"&cid={cid}" : "";
         string api = $"https://api.bilibili.com/x/web-interface/view/detail/tag?bvid={bvid}{cidStr}";
-        var response = WebClient.RequestWeb(api, referer, cancellationToken: cancellationToken);
+        var result = BiliApiRequest.RequestJson<TagResult>(
+            api,
+            referer,
+            nameof(GetBiliTagInfo),
+            "GetBiliTagInfo()",
+            cancellationToken);
 
-        try
-        {
-            var rs = JsonConvert.DeserializeObject<TagResult>(response);
-            return rs?.Data;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("GetBiliTagInfo()发生异常: {0}", e);
-            LogManager.Error("GetBiliTagInfo()", e);
-            return null;
-        }
+        return result?.Data;
     }
 
 

@@ -1,5 +1,5 @@
-﻿using DownKyi.Core.Utils.Validator;
 using System.Text.RegularExpressions;
+using DownKyi.Core.Utils.Validator;
 
 namespace DownKyi.Core.BiliApi.BiliUtils;
 
