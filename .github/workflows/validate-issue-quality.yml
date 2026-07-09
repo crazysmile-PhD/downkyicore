@@ -19,8 +19,8 @@ jobs:
             const issue = context.payload.issue;
             const body = issue.body || "";
             const title = issue.title || "";
-            const labels = issue.labels.map(label => label.name);
-            const lowerLabels = labels.map(label => label.toLowerCase());
+            const labels = issue.labels || [];
+            const lowerLabels = labels.map(label => label.name.toLowerCase());
 
             if (issue.pull_request) {
               core.info("This is a pull request. Skip validation.");
@@ -37,29 +37,6 @@ jobs:
               return;
             }
 
-            const invalidValues = [
-              "無",
-              "无",
-              "沒有",
-              "没有",
-              "不知道",
-              "不清楚",
-              "如題",
-              "如题",
-              "none",
-              "null",
-              "n/a",
-              "na",
-              "-"
-            ];
-
-            function normalize(text) {
-              return (text || "")
-                .replace(/\r/g, "")
-                .replace(/\s+/g, "")
-                .toLowerCase();
-            }
-
             function escapeRegex(text) {
               return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             }
@@ -74,74 +51,8 @@ jobs:
               return match ? match[1].trim() : "";
             }
 
-            function hasAttachment(text) {
-              return /https:\/\/github\.com\/user-attachments\/files\//i.test(text) ||
-                     /https:\/\/github\.com\/user-attachments\/assets\//i.test(text) ||
-                     /\[[^\]]+\]\(https:\/\/github\.com\/user-attachments\//i.test(text);
-            }
-
-            function hasCodeBlock(text) {
-              return /```[\s\S]*?```/.test(text);
-            }
-
-            const uploadedFilesSection = getSection("📎 上傳日誌 / 截圖 / 錄影");
-
-            function looksLikeLog(text) {
-              const raw = text || "";
-              const compact = normalize(raw);
-
-              if (hasAttachment(raw) || hasAttachment(uploadedFilesSection)) {
-                return true;
-              }
-
-              if (!raw) {
-                return false;
-              }
-
-              if (invalidValues.includes(compact)) {
-                return false;
-              }
-
-              const hasLogSignals =
-                /\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(raw) ||
-                /\d{2}:\d{2}:\d{2}/.test(raw) ||
-                /\b(error|exception|failed|fail|warn|warning|stacktrace|trace|http|request|response|timeout|denied|unauthorized|forbidden|crash|fatal)\b/i.test(raw) ||
-                /System\./.test(raw) ||
-                /\[.*?\]/.test(raw);
-
-              if (hasCodeBlock(raw) && raw.length >= 80) {
-                return true;
-              }
-
-              if (raw.length >= 120 && hasLogSignals) {
-                return true;
-              }
-
-              return false;
-            }
-
-            function validateSection(problems, label, minLength, options = {}) {
-              const text = getSection(label);
-              const compact = normalize(text);
-
-              if (!text) {
-                problems.push(`${label}：未填寫`);
-                return;
-              }
-
-              if (invalidValues.includes(compact)) {
-                problems.push(`${label}：內容無效，不能只填「無 / 不知道 / 如題」`);
-                return;
-              }
-
-              if (compact.length < minLength) {
-                problems.push(`${label}：內容過短，需要更完整描述`);
-                return;
-              }
-
-              if (options.mustLookLikeLog && !looksLikeLog(text)) {
-                problems.push(`${label}：不像有效日誌，請貼上錯誤前後日誌，或上傳 log / txt / zip`);
-              }
+            function isFilled(text) {
+              return (text || "").trim().length > 0;
             }
 
             async function ensureLabel(name, color, description) {
@@ -166,29 +77,72 @@ jobs:
               }
             }
 
+            const requiredSections = [
+              "🚨 問題類型",
+              "📦 downkyiCore 版本",
+              "📥 取得方式",
+              "💻 作業系統",
+              "🧩 作業系統詳細版本",
+              "🖥️ 系統架構",
+              "🔑 B 站登入狀態",
+              "👑 大會員狀態",
+              "🌐 網路環境",
+              "🔍 解析模式",
+              "⬇️ 下載器",
+              "🎬 BV 號 / AV 號 / 影片連結",
+              "🚨 問題摘要",
+              "🔁 重現步驟",
+              "✅ 預期行為",
+              "❌ 實際行為",
+              "🧨 錯誤訊息",
+              "📄 日誌內容",
+              "🛠️ 已嘗試的解決方式",
+              "📊 發生頻率",
+              "🔄 是否為舊版本正常、新版本異常？"
+            ];
+
             const problems = [];
 
-            validateSection(problems, "📦 downkyiCore 版本", 3);
-            validateSection(problems, "🎬 BV 號 / AV 號 / 影片連結", 5);
-            validateSection(problems, "🚨 問題摘要", 15);
-            validateSection(problems, "🔁 重現步驟", 30);
-            validateSection(problems, "✅ 預期行為", 10);
-            validateSection(problems, "❌ 實際行為", 15);
-            validateSection(problems, "🧨 錯誤訊息", 5);
-            validateSection(problems, "📄 日誌內容", 50, { mustLookLikeLog: true });
-            validateSection(problems, "🛠️ 已嘗試的解決方式", 15);
-            validateSection(problems, "📊 發生頻率", 10);
+            for (const section of requiredSections) {
+              const text = getSection(section);
+
+              if (!isFilled(text)) {
+                problems.push(`${section}：未填寫`);
+              }
+            }
+
+            const marker = "<!-- issue-quality-validator -->";
+            const hadMissingInfo = lowerLabels.includes("missing-info");
 
             if (problems.length === 0) {
               core.info("Issue passed validation.");
 
-              if (lowerLabels.includes("missing-info")) {
+              if (hadMissingInfo) {
                 await github.rest.issues.removeLabel({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issue.number,
                   name: "missing-info"
                 }).catch(() => {});
+              }
+
+              if (issue.state === "closed" && hadMissingInfo) {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  state: "open"
+                });
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: [
+                    marker,
+                    "必要欄位已補齊，Issue 已自動重新開啟。"
+                  ].join("\n")
+                });
               }
 
               return;
@@ -200,28 +154,25 @@ jobs:
               "Issue is missing required diagnostic information"
             );
 
-            const marker = "<!-- issue-quality-validator -->";
-
             const commentBody = [
               marker,
-              "此 Bug 回報缺少必要診斷資訊，已自動關閉。",
+              "此 Bug 回報仍有必要欄位未填寫。",
               "",
-              "請補齊以下項目後再重新開啟：",
+              "請補齊以下欄位：",
               "",
               ...problems.map(problem => `- ${problem}`),
               "",
-              "最低要求：",
+              "規則：",
               "",
-              "- 必須提供完整版本號",
-              "- 必須提供可重現步驟",
-              "- 必須提供實際錯誤訊息",
-              "- 必須提供錯誤前後日誌，或上傳 log / txt / zip",
-              "- 不接受只填「無」、「不知道」、「如題」、「沒有」",
+              "- 只檢查欄位是否有填寫",
+              "- 不檢查字數",
+              "- 不檢查日誌格式",
+              "- 不禁止填寫「無 / 沒有 / 不知道」",
               "",
-              "補齊後重新開啟 Issue，系統會再次檢查。"
+              "補齊後系統會再次檢查；若所有必要欄位都有內容，missing-info 會被移除，必要時 Issue 會自動重新開啟。"
             ].join("\n");
 
-            if (!lowerLabels.includes("missing-info")) {
+            if (!hadMissingInfo) {
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -260,9 +211,18 @@ jobs:
               });
             }
 
-            await github.rest.issues.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issue.number,
-              state: "closed"
-            });
+            const shouldCloseIssue =
+              context.payload.action === "opened" ||
+              context.payload.action === "reopened";
+
+            if (shouldCloseIssue) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: "closed",
+                state_reason: "not_planned"
+              });
+            } else {
+              core.info("Issue still has empty fields after edit, but will not be closed again.");
+            }
