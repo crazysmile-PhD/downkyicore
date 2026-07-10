@@ -2,6 +2,12 @@
 
 本文件为 AI 编码代理在此代码库中高效工作提供所需的全部信息。
 
+## 强制架构入口
+
+> 在分析或修改 DownKyi 程式碼前，必須先閱讀 `ai-knowledge-graph.md`，確認受影響的節點、依賴關係、穩定契約、風險與對應測試。
+
+本仓库中的实际路径是 `docs/ai-knowledge-graph.md`。任何新增、删除、移动或重新导向模块责任与依赖关系的变更，都必须在同一个分支、commit 组和 Pull Request 中同步更新该文件。执行重构时还必须阅读 `docs/refactoring-live-plan.md`，遵守其中的分支分组与未完成工作清单。
+
 ---
 
 ## 目录
@@ -32,12 +38,14 @@
 - **Downloader** — 内置 HTTP 下载引擎
 - **Newtonsoft.Json** — 设置项与 API 响应的序列化
 
-解决方案包含两个项目：
+当前旧生产代码包含两个项目，此外还有四个测试项目与一个 benchmark 项目。PR 02 会新增目标分层项目：
 
 | 项目 | 类型 | 目标框架 |
 |---|---|---|
 | `DownKyi` | WinExe（Avalonia UI） | `net10.0` |
 | `DownKyi.Core` | 类库 | `net10.0` |
+| `tests/*` | xUnit v3 测试 | `net10.0` |
+| `benchmarks/DownKyi.Benchmarks` | BenchmarkDotNet | `net10.0` |
 
 目标运行时：`win-x64`、`win-x86`、`linux-x64`、`linux-arm64`、`osx-x64`、`osx-arm64`。
 
@@ -124,13 +132,30 @@ dotnet publish DownKyi/DownKyi.csproj \
 
 ## 测试
 
-**本仓库目前没有自动化测试。** 不存在测试项目，也没有 xUnit/NUnit/MSTest 引用。请勿执行 `dotnet test`，该命令会失败。
+本仓库使用 xUnit v3，并包含以下测试层：
 
-添加新功能时，请通过运行应用程序进行手动验证。
+- `tests/DownKyi.Core.Tests`：HTTP、aria2、FFmpeg 与 Core 行为。
+- `tests/DownKyi.Tests`：下载流程、储存相容性与应用服务。
+- `tests/DownKyi.Desktop.Tests`：Avalonia headless UI smoke tests。
+- `tests/DownKyi.Architecture.Tests`：项目依赖方向与循环引用。
+
+提交前至少依序执行：
+
+```bash
+dotnet restore ./DownKyi.sln
+dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental
+dotnet test ./DownKyi.sln -c Release --no-restore --no-build
+dotnet format ./DownKyi.sln --verify-no-changes --no-restore
+git diff --check
+```
+
+不要并行执行同一工作树的 `dotnet build` 与 `dotnet test`，两者可能同时写入 PDB 而产生假失败。测试必须通过 `DOWNKYI_DATA_DIR` 使用隔离目录，禁止读取真实 Cookie、设置或下载数据库。
 
 ---
 
 ## 架构
+
+`docs/ai-knowledge-graph.md` 是当前代码责任、调用关系、稳定契约、风险和测试入口的权威索引。下述 Prism 架构属于迁移中的旧实现；新代码必须遵守 `DownKyi.Desktop -> DownKyi.Application -> DownKyi.Domain`，以及 `DownKyi.Infrastructure -> Application/Domain` 的目标依赖方向。
 
 ### 依赖关系
 
@@ -302,33 +327,36 @@ App.PropertyChangeAsync(() => MyProperty = value);
 
 ### 命令处理器
 
-Prism 的 `DelegateCommand` 不直接支持 `async Task`。统一使用 `async void` 并在内部捕获所有异常：
+命令处理流程必须返回 `Task`，并通过现有异步命令或后续 CommunityToolkit AsyncRelayCommand 接线。除 UI 事件处理器外禁止新增 `async void`：
 
 ```csharp
-private DelegateCommand? _loadCommand;
-public DelegateCommand LoadCommand =>
-    _loadCommand ??= new DelegateCommand(ExecuteLoad);
+private DownKyiAsyncDelegateCommand? _loadCommand;
+public DownKyiAsyncDelegateCommand LoadCommand =>
+    _loadCommand ??= new DownKyiAsyncDelegateCommand(ExecuteLoadAsync);
 
-private async void ExecuteLoad()
+private async Task ExecuteLoadAsync()
 {
     try
     {
-        await Task.Run(() => DoWork());
+        await _useCase.ExecuteAsync(cancellationToken);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+        throw;
     }
     catch (Exception e)
     {
         LogManager.Error(Tag, e);
-        Console.PrintLine("ExecuteLoad发生异常: {0}", e);
     }
 }
 ```
 
 ### 后台工作
 
-长时间运行的工作通过 `Task.Run` 卸载，结果再调度回 UI 线程：
+ViewModel 不得使用 `Task.Run` 包装同步网络、数据库或业务流程。阻塞 API 必须在 Infrastructure 边界明确隔离；ViewModel 只 await 可取消的 Application use case：
 
 ```csharp
-var result = await Task.Run(() => SomeApiCall());
+var result = await _useCase.ExecuteAsync(cancellationToken);
 await Dispatcher.UIThread.InvokeAsync(() => MyCollection.Add(result));
 ```
 
@@ -349,38 +377,38 @@ finally { semaphore.Release(); }
 
 ### 标准模式
 
-所有 catch 块必须：
-1. 通过 `LogManager.Error(Tag, e)` 记录日志
-2. 通过 `Console.PrintLine("...发生异常: {0}", e)` 打印输出
-3. 对于用户可见的错误，可选择发布 UI 消息
+所有异常边界必须保留 stack trace，并通过统一 diagnostics 记录。禁止为了日志重复输出敏感路径、Cookie、Token 或完整 URL；禁止依赖 Console wrapper 作为错误契约。用户可见失败应转换为 typed UI state 或通知：
 
 ```csharp
 catch (Exception e)
 {
     LogManager.Error(Tag, e);
-    Console.PrintLine("SomeMethod发生异常: {0}", e);
-    // 用户可见错误时：
-    _eventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
+    return OperationResult.Failure(OperationError.Unexpected(e));
 }
 ```
 
-### 失败时返回 null
+### 失败契约
 
-API 和服务方法在失败时返回 `null` 而非抛出异常。调用方必须对结果进行 null 检查。
+新 Application 与 Infrastructure API 必须使用 typed result 或明确例外，不得把网络、JSON、数据库或外部程序错误伪装成 `null`、空字串或空集合。`OperationCanceledException` 必须保留取消语意。
 
 ### HTTP 重试
 
-`DownKyi.Core` 中的 `WebClient` 以递归方式重试失败的 HTTP 请求（API 调用默认 `retry = 2`，下载默认 `retry = 5`）。请勿在 `WebClient` 调用外部再添加重试循环。
+旧 `WebClient` 使用迭代式、可取消的有限重试；重试耗尽或 HTTP 200 空回应会抛出 `HttpRequestException`。后续 typed Bilibili client 必须区分可恢复错误、429 `Retry-After`、不可重试的 401/403/schema 错误与取消。
 
 ### 有意吞掉异常
 
-极少数情况下异常确实可以忽略时，使用空 catch 并附注释说明：
+禁止空 catch。仅在关闭、清理或释放等明确 best-effort 边界捕获可预期例外，并至少写入经过遮蔽的 diagnostics；取消必须重新抛出：
 
 ```csharp
-catch (Exception) { /* 已忽略 */ }
+catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+{
+    throw;
+}
+catch (IOException e)
+{
+    LogManager.Error(Tag, e);
+}
 ```
-
-禁止无注释地静默吞掉异常。
 
 ---
 

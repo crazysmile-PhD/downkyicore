@@ -379,17 +379,22 @@ outbound:
 contracts:
   - Incomplete, empty, HTML/JSON error, and sidecar files are not valid completed media.
   - Canceled/deleted downloads should clean partial files and aria2 metadata.
+  - Each multi-segment DURL has a unique key derived from stable segment order or index.
+  - DURL merge input is sorted by Order and success requires ffprobe stream, duration, and seek/decode validation.
+  - Multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; stream copy is not a valid first strategy.
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
   - Blocking waits in download lifecycle can freeze UI or prevent process exit.
   - Resume behavior depends on preserving partial files while delete behavior must remove them.
   - aria2 process cleanup is platform-sensitive.
+  - Reusing Id+codec or runtime GetHashCode values across DURL segments overwrites temporary files and can produce non-seekable MP4 output.
 tests:
   - test.download-file-integrity
   - test.fake-http-download
   - test.download-lifecycle
   - test.storage-resume
   - test.ui-smoke
+  - test.durl-seekability
 ```
 
 ### core.storage
@@ -509,8 +514,11 @@ outbound:
 contracts:
   - PR CI should block definite failures.
   - Nightly/release workflows should own heavy or noisy regression discovery.
+  - Local and CI builds must use the same AnalysisMode=All analyzer policy.
+  - Cleaned analyzer rules are promoted to errors and cannot regress.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
+  - Broad NoWarn, global suppressions, nullable disable, or analyzer exclusions hide new defects.
 tests:
   - github.actions
 ```
@@ -700,11 +708,32 @@ test.composition-root:
     - the real Host registers all main services without Prism global state
     - MainWindow and key ViewModels resolve from the real composition root
     - shutdown cancels workers and flushes storage, settings, and logs within a bounded timeout
+
+test.durl-seekability:
+  status: planned-for-pr-07-15
+  should_guard:
+    - DURL segment keys include stable order or index
+    - DURL input is sorted by Order
+    - multi-segment concat skips stream copy
+    - ffprobe confirms stream, duration, middle seek, and tail seek decoding
+    - invalid output is deleted and the task fails visibly
+
+test.system-performance:
+  status: planned-for-pr-30-32
+  should_guard:
+    - cold and warm shell startup time
+    - peak working set during unfinished-task restore
+    - SQLite writes per task-minute
+    - aggregate throughput at 1, 4, and 8 tasks
+    - UI progress notifications per second
+    - FFmpeg CPU/GPU concurrency and peak memory
+  metadata:
+    - runtime, OS, architecture, dataset size, backend, and commit SHA
 ```
 
 ## AI Edit Protocol
 
-1. Identify the affected node from this document.
+1. Read this document before analysis or edits, then identify the affected node.
 2. Read the listed entry files and test anchors.
 3. Preserve the node contracts unless the user explicitly asks to change behavior.
 4. If a contract changes, update this graph and add or update tests in the same PR.

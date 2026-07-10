@@ -2,11 +2,25 @@
 
 Status: active
 Last updated: 2026-07-10
-Current branch: `agent/architecture-behavior-baseline`
+Current group: PR 02
+Next branch: `refactor/pr-02-host-composition`
 
 This file contains only unfinished work. Completed items are removed in the same PR that finishes them; newly discovered debt is added immediately with an owning PR or phase.
 
+## Branch And Pull Request Policy
+
+- PR 02 uses only `refactor/pr-02-host-composition` and one Pull Request.
+- PR 03-06 uses only `refactor/pr-03-06-download-domain-store` and one Pull Request.
+- PR 07-15 uses only `refactor/pr-07-15-download-runtime` and one Pull Request.
+- PR 16-24 uses only `refactor/pr-16-24-media-ui-lifecycle` and one Pull Request.
+- PR 25-29 uses only `refactor/pr-25-29-remove-legacy` and one Pull Request.
+- PR 30-32 uses only `refactor/pr-30-32-release-hardening` and one Pull Request.
+- A group may contain multiple ordered commits, but it must not be split into smaller public PRs or combined with another numbered range.
+- The next group starts only after the previous group has completed its full scope and passed build, tests, data compatibility checks, documentation updates, and `git diff --check`.
+
 ## Active Next: PR 02 - Project Boundaries And Host Composition
+
+Branch: `refactor/pr-02-host-composition`
 
 - Create `src/DownKyi.Domain`, `src/DownKyi.Application`, `src/DownKyi.Infrastructure`, and `src/DownKyi.Desktop` without moving legacy resources prematurely.
 - Add `Microsoft.Extensions.Hosting` and one explicit composition root.
@@ -15,8 +29,18 @@ This file contains only unfinished work. Completed items are removed in the same
 - Extend architecture tests to enforce package and namespace restrictions for every new project.
 - Preserve existing database, settings, login, portable-mode, and aria2 session paths.
 - Document every temporary bridge with its deletion PR; no permanent legacy adapter is allowed.
+- Set repository defaults to `EnableNETAnalyzers=true`, `AnalysisMode=All`, `EnforceCodeStyleInBuild=true`, and transitional `CodeAnalysisTreatWarningsAsErrors=false`.
+- Capture the complete pre-fix CA diagnostic inventory by rule, count, project, file, category, and compatibility risk.
+- Remove all unapproved `NoWarn`, pragma disables, `SuppressMessage`, global suppressions, analyzer exclusions, nullable disables, and `none` / `silent` analyzer severities.
+- Fix analyzer findings in separate commits ordered by security/correctness, async/resource/threading, performance/allocation, public API/collection design, then naming/globalization/style.
+- Preserve the external-protocol hash exception only where a contract test proves it is required; document why it is not a password or trust primitive.
+- Promote each fully cleaned rule to `error` in `.editorconfig`; finish with zero unhandled CA warnings and default `CodeAnalysisTreatWarningsAsErrors=true`.
+- Make local and CI analyzer settings identical and add required Windows, Linux, and macOS build or smoke coverage.
+- Publish a before/after analyzer report and update maintenance, live plan, knowledge graph, and quality workflow in this same PR.
 
 ## PR 03-06 - Download Domain And SQLite Store
+
+Branch: `refactor/pr-03-06-download-domain-store`
 
 - Introduce immutable download IDs, media identity, plan, output, progress, failure, phase, and legal state transitions.
 - Separate pause, cancel, delete, failure, and retry semantics.
@@ -30,6 +54,8 @@ This file contains only unfinished work. Completed items are removed in the same
 
 ## PR 07-15 - Download, FFmpeg, Aria2, And HTTP Runtime
 
+Branch: `refactor/pr-07-15-download-runtime`
+
 - Build a bounded download orchestrator, fixed workers, per-task cancellation, global shutdown, staged pipeline, and atomic finalize.
 - Unify built-in, local aria2, and custom aria2 behind transfer backends; remove duplicate custom aria2 flow after takeover.
 - Preserve resume files on pause and remove media plus `.aria2` / `.download` sidecars on delete.
@@ -41,8 +67,16 @@ This file contains only unfinished work. Completed items are removed in the same
 - Replace `BiliApiRequest` catch-and-return-null behavior with typed failures visible to UI and diagnostics.
 - Add source-generated JSON contexts and fixed API contract samples for success, missing data, rejected code, HTML, and malformed JSON.
 - Make incomplete stream cleanup atomic; a Content-Length failure must not leave a file that can be mistaken for completed media.
+- Give every DURL segment a stable download key containing `DURL.Order` or an explicit segment index; never use `Bvid.GetHashCode()` or codec `GetHashCode()` as segment identity.
+- Sort all DURL inputs by `Order` before queueing or merging.
+- For multi-segment DURL output, skip stream copy and rebuild timestamps, keyframes, and MP4 indexes through hardware encoding with CPU `libx264 + aac` fallback.
+- Make concat return an explicit success result and validate output with ffprobe: video stream exists, duration is positive and close to summed segments, and middle/tail seeks decode successfully.
+- Delete invalid concat output and mark the download failed; callers must not accept `File.Exists(output)` as completion.
+- Add regression fixtures proving multi-segment temporary files are unique and merged MP4 output can seek near the middle and tail.
 
 ## PR 16-24 - Media Use Cases, ViewModels, And App Lifecycle
+
+Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
 - Move BV/AV/bangumi/course/collection resolution, parsing, selection, plan building, duplicate policy, and queueing into Application use cases.
 - Keep directory-picker cancellation as a normal no-op result with no database write or background task.
@@ -57,6 +91,8 @@ This file contains only unfinished work. Completed items are removed in the same
 
 ## PR 25-29 - Remove Prism And Legacy Architecture
 
+Branch: `refactor/pr-25-29-remove-legacy`
+
 - Replace Prism/DryIoc with Microsoft DI, a thin typed router, dialog coordinator, and explicit event streams.
 - Remove string navigation tags, EventAggregator, Prism commands, region navigation, and global container lookup.
 - Delete old download inheritance, `DownloadStorageService`, custom aria2 duplication, SettingsManager singleton, static App collections, console wrapper, dead utilities, old comments, and obsolete packages immediately after new owners pass migration tests.
@@ -64,7 +100,15 @@ This file contains only unfinished work. Completed items are removed in the same
 
 ## PR 30-32 - Profiling, UI, And Release Hardening
 
-- Add deterministic startup, working-set, SQLite-write, transfer-throughput, UI-notification, and FFmpeg-concurrency baselines.
+Branch: `refactor/pr-30-32-release-hardening`
+
+- Add deterministic cold/warm shell startup time baselines.
+- Measure peak working set while restoring unfinished tasks.
+- Measure SQLite progress writes per task-minute.
+- Measure aggregate transfer throughput with 1, 4, and 8 concurrent tasks.
+- Measure UI progress notifications per second.
+- Measure FFmpeg CPU/GPU concurrency and peak memory.
+- Every system baseline must record runtime, OS, architecture, dataset size, downloader backend, and commit SHA; never compare ad-hoc stopwatch values from different machines.
 - Investigate the current 1,488 B/request URL-building allocation only if traces show it is hot.
 - Optimize startup history loading, progress batching, worker limits, caches, and controlled collection parsing with benchmark or trace evidence.
 - Apply FluentUI/design tokens only after core ownership and lifecycle are stable; retain virtualization, high-DPI, keyboard, theme, and cross-platform checks.
