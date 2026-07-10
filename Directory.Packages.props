@@ -1,10 +1,10 @@
 <Project ToolsVersion="15.0">
   <ItemGroup>
-    <PackageVersion Include="Avalonia" Version="12.0.5" />
-    <PackageVersion Include="Avalonia.Controls.DataGrid" Version="12.0.1" />
-    <PackageVersion Include="Avalonia.Desktop" Version="12.0.5" />
-    <PackageVersion Include="Avalonia.Diagnostics" Version="11.3.18" />
-    <PackageVersion Include="Avalonia.Themes.Simple" Version="12.0.5" />
+    <PackageVersion Include="Avalonia" Version="12.1.0" />
+    <PackageVersion Include="Avalonia.Controls.DataGrid" Version="12.1.0" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.0" />
+    <PackageVersion Include="Avalonia.Themes.Simple" Version="12.1.0" />
+    <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
     <PackageVersion Include="System.Formats.Nrbf" Version="10.0.9" />
     <PackageVersion Include="Xaml.Behaviors" Version="12.0.5" />
     <PackageVersion Include="Downloader" Version="5.9.0" />

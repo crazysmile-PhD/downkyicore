@@ -1,4 +1,4 @@
-name: Quality
+name: Strict PR CI
 
 on:
   pull_request:
@@ -12,10 +12,11 @@ permissions:
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
   DOTNET_NOLOGO: '1'
+  SOLUTION_FILE: ./DownKyi.sln
 
 jobs:
-  build-test-audit:
-    name: Build, test, format, audit
+  format:
+    name: Format check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,12 +26,104 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Restore
-        run: dotnet restore ./DownKyi.sln
-      - name: Build
-        run: dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
+      - name: Verify formatting
+        run: dotnet format ${{ env.SOLUTION_FILE }} --verify-no-changes --no-restore --verbosity diagnostic
+
+  build-test:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
+      - name: Build with warnings as errors
+        run: >
+          dotnet build ${{ env.SOLUTION_FILE }}
+          -c Release
+          --no-restore
+          --no-incremental
+          -warnaserror
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
       - name: Test
-        run: dotnet test ./DownKyi.sln -c Release --no-restore --no-build
-      - name: Format check
-        run: dotnet format ./DownKyi.sln --verify-no-changes --no-restore
+        run: >
+          dotnet test ${{ env.SOLUTION_FILE }}
+          -c Release
+          --no-restore
+          --no-build
+          --logger "trx;LogFileName=test-results-${{ matrix.os }}.trx"
+          --results-directory TestResults
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.os }}
+          path: TestResults/*.trx
+          if-no-files-found: ignore
+
+  package-audit:
+    name: Package audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
       - name: Vulnerability audit
-        run: dotnet package list --project ./DownKyi.sln --vulnerable
+        shell: pwsh
+        run: |
+          dotnet package list --project $env:SOLUTION_FILE --vulnerable --include-transitive --format json > vulnerable-packages.json
+          $audit = Get-Content vulnerable-packages.json -Raw | ConvertFrom-Json
+          $vulnerable = @(
+            $audit.projects |
+              ForEach-Object { $_.frameworks } |
+              ForEach-Object { @($_.topLevelPackages) + @($_.transitivePackages) } |
+              Where-Object { $_ -and $_.vulnerabilities }
+          )
+          if ($vulnerable.Count -gt 0) {
+            $vulnerable | ConvertTo-Json -Depth 10
+            throw "Vulnerable NuGet packages found."
+          }
+      - name: Deprecated package report
+        shell: pwsh
+        run: |
+          dotnet package list --project $env:SOLUTION_FILE --deprecated --format json > deprecated-packages.json
+          $report = Get-Content deprecated-packages.json -Raw | ConvertFrom-Json
+          $deprecated = @(
+            $report.projects |
+              ForEach-Object { $_.frameworks } |
+              ForEach-Object { $_.topLevelPackages } |
+              Where-Object { $_ -and $_.deprecationReasons }
+          )
+          if ($deprecated.Count -gt 0) {
+            "Deprecated packages detected. This report is informational until the legacy dependency cleanup PR lands."
+            $deprecated | ConvertTo-Json -Depth 10
+          }
+      - name: Upload package audit reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-audit
+          path: |
+            vulnerable-packages.json
+            deprecated-packages.json
+          if-no-files-found: ignore

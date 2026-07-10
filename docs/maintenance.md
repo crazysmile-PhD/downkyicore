@@ -6,11 +6,25 @@ This document records the project maintenance routine for dependencies, external
 
 1. Update managed package versions only in `Directory.Packages.props`.
 2. Run `dotnet restore ./DownKyi.sln`.
-3. Run `dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental`.
+3. Run `dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental -warnaserror -p:TreatWarningsAsErrors=true -p:CodeAnalysisTreatWarningsAsErrors=true -p:EnableNETAnalyzers=true -p:EnforceCodeStyleInBuild=true`.
 4. Run `dotnet test ./DownKyi.sln -c Release --no-restore --no-build`.
-5. Run `dotnet package list --project ./DownKyi.sln --vulnerable`.
+5. Run `dotnet package list --project ./DownKyi.sln --vulnerable --include-transitive`.
+6. Run `dotnet package list --project ./DownKyi.sln --deprecated` and review the report.
 
 Avoid mixing package updates with large refactors unless the refactor is required by the dependency change.
+
+## CI Policy
+
+Pull requests are guarded by `.github/workflows/quality.yml`:
+
+- format check with `dotnet format --verify-no-changes --verbosity diagnostic`
+- Windows and Linux Release builds
+- warnings-as-errors for compiler and default .NET analyzers
+- unit tests with uploaded TRX reports
+- transitive vulnerable package audit
+- deprecated package report
+
+`AnalysisMode=AllEnabledByDefault` is intentionally not a PR-blocking gate yet. On 2026-07-10 it produced hundreds of existing API-design analyzer failures, including public-field, collection-type, naming, and historical crypto-signing warnings. Turn these rules on in focused cleanup PRs, then promote them to CI only after the baseline is clean.
 
 ## External Binaries
 
