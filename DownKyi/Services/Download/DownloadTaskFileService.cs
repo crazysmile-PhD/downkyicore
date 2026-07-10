@@ -65,28 +65,49 @@ public static class DownloadTaskFileService
     public static Task DeleteGeneratedFilesAsync(DownloadingItem downloading, CancellationToken cancellationToken = default)
     {
         var files = GetGeneratedFiles(downloading);
-        return Task.Run(() =>
+        return DeleteFilesAsync(files, cancellationToken);
+    }
+
+    internal static Task DeleteFilesAsync(
+        IEnumerable<string> files,
+        CancellationToken cancellationToken = default)
+    {
+        // File.Delete has no async API and can block on network drives or antivirus scans.
+        return Task.Run(() => DeleteFilesCoreAsync(files, cancellationToken), cancellationToken);
+    }
+
+    private static async Task DeleteFilesCoreAsync(
+        IEnumerable<string> files,
+        CancellationToken cancellationToken)
+    {
+        foreach (var file in files)
         {
-            foreach (var file in files)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                TryDeleteFile(file, cancellationToken);
-            }
-        }, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            await TryDeleteFileAsync(file, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public static IReadOnlyCollection<string> GetGeneratedFiles(DownloadingItem downloading)
+    {
+        return GetGeneratedFiles(
+            downloading.DownloadBase?.FilePath,
+            downloading.Downloading.DownloadFiles?.Values);
+    }
+
+    internal static IReadOnlyCollection<string> GetGeneratedFiles(
+        string? filePath,
+        IEnumerable<string>? downloadFiles)
     {
         var files = OperatingSystem.IsWindows()
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(StringComparer.Ordinal);
 
-        var basePath = NormalizePath(downloading.DownloadBase?.FilePath);
+        var basePath = NormalizePath(filePath);
         var directory = Path.GetDirectoryName(basePath);
 
         if (!string.IsNullOrWhiteSpace(directory))
         {
-            foreach (var fileName in downloading.Downloading.DownloadFiles?.Values ?? Enumerable.Empty<string>())
+            foreach (var fileName in downloadFiles ?? Enumerable.Empty<string>())
             {
                 AddWithTempFiles(files, ResolveDownloadFile(directory, fileName));
             }
@@ -170,7 +191,7 @@ public static class DownloadTaskFileService
             : path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
     }
 
-    private static void TryDeleteFile(string file, CancellationToken cancellationToken)
+    private static async Task TryDeleteFileAsync(string file, CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 5; attempt++)
         {
@@ -187,7 +208,7 @@ public static class DownloadTaskFileService
             catch (Exception e) when (attempt < 4)
             {
                 LogManager.Debug(Tag, $"Delete generated file retry {attempt + 1}: {e.Message}");
-                Thread.Sleep(200);
+                await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
             }
             catch (Exception e)
             {

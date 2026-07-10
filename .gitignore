@@ -5,6 +5,7 @@
 
 */**/obj
 */**/bin
+BenchmarkDotNet.Artifacts/
 
 DownKyi.Core/Binary/*
 

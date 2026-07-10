@@ -106,7 +106,14 @@ public static class WebClient
 
                 using var stream = response.Content.ReadAsStream(cancellationToken);
                 using var reader = new StreamReader(stream);
-                return reader.ReadToEnd();
+                var content = reader.ReadToEnd();
+                if (string.IsNullOrWhiteSpace(content))
+                {
+                    throw new HttpRequestException(
+                        $"Request returned an empty response: {LogManager.SanitizeForDiagnostics(url)}");
+                }
+
+                return content;
             }
             catch (OperationCanceledException)
             {
