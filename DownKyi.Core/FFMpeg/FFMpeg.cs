@@ -219,25 +219,44 @@ public class FFMpeg
             listFile = Path.Combine(Path.GetTempPath(), $"flvlist_{Guid.NewGuid():N}.txt");
             File.WriteAllLines(listFile, inputFlvs.Select(ToConcatFileLine));
 
-            if (TryConcatWithStreamCopy(listFile, outputVideo, action))
-            {
-                LogManager.Info(Tag, "Concat video completed by stream copy.");
-                return true;
-            }
-
-            DeleteOutput(outputVideo);
-
             var encoder = FfmpegHardwareEncoderDetector.Select(SettingsManager.GetInstance().GetFfmpegHardwareAcceleration());
-            if (encoder != null && TryConcatWithHardwareEncoder(listFile, outputVideo, encoder, action))
+            var processingPlan = FfmpegProcessingPlan.BuildConcatPlan(encoder);
+            for (var attempt = 0; attempt < processingPlan.Count; attempt++)
             {
-                LogManager.Info(Tag, $"Concat video completed by {encoder.DisplayName}.");
-                return true;
+                var strategy = processingPlan[attempt];
+                var success = strategy switch
+                {
+                    FfmpegConcatStrategy.StreamCopy => TryConcatWithStreamCopy(listFile, outputVideo, action),
+                    FfmpegConcatStrategy.HardwareEncoder =>
+                        TryConcatWithHardwareEncoder(listFile, outputVideo, encoder!, action),
+                    FfmpegConcatStrategy.CpuEncoder => TryConcatWithCpuEncoder(listFile, outputVideo, action),
+                    _ => false
+                };
+
+                if (strategy == FfmpegConcatStrategy.CpuEncoder)
+                {
+                    LogManager.Info(Tag, $"Concat video completed by CPU encoder. success={success}");
+                }
+                else if (success)
+                {
+                    var backend = strategy == FfmpegConcatStrategy.StreamCopy
+                        ? "stream copy"
+                        : encoder!.DisplayName;
+                    LogManager.Info(Tag, $"Concat video completed by {backend}.");
+                }
+
+                if (success)
+                {
+                    return true;
+                }
+
+                if (attempt < processingPlan.Count - 1)
+                {
+                    DeleteOutput(outputVideo);
+                }
             }
 
-            DeleteOutput(outputVideo);
-            var cpuResult = TryConcatWithCpuEncoder(listFile, outputVideo, action);
-            LogManager.Info(Tag, $"Concat video completed by CPU encoder. success={cpuResult}");
-            return cpuResult;
+            return false;
         }
         catch (Exception ex)
         {

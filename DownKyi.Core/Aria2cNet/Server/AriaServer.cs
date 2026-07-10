@@ -328,6 +328,16 @@ namespace DownKyi.Core.Aria2cNet.Server
             return true;
         }
 
+        internal static void SetTrackedServerForTests(Process? process)
+        {
+            Server = process;
+        }
+
+        internal static bool HasTrackedServerForTests()
+        {
+            return Server != null;
+        }
+
 
         private static void ExecuteProcess(string exe, string arg, string? workingDirectory,
             DataReceivedEventHandler output)

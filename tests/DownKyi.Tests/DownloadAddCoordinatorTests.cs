@@ -15,7 +15,8 @@ public sealed class DownloadAddCoordinatorTests
             {
                 addWasCalled = true;
                 return Task.FromResult(1);
-            });
+            },
+            TestContext.Current.CancellationToken);
 
         Assert.Null(result);
         Assert.False(addWasCalled);
@@ -32,7 +33,8 @@ public sealed class DownloadAddCoordinatorTests
             {
                 receivedDirectory = directory;
                 return Task.FromResult(2);
-            });
+            },
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result);
         Assert.Equal("D:\\Downloads", receivedDirectory);

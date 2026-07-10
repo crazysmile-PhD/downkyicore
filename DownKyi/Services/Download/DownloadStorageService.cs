@@ -26,8 +26,12 @@ public class DownloadStorageService : IDisposable
     private readonly object _lock = new();
 
     public DownloadStorageService()
+        : this(StorageManager.GetDbPath())
     {
-        var dbPath = StorageManager.GetDbPath();
+    }
+
+    internal DownloadStorageService(string dbPath)
+    {
         var connString = new SqliteConnectionStringBuilder
         {
             DataSource = dbPath,

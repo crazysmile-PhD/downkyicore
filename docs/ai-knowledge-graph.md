@@ -79,6 +79,9 @@ flowchart TD
     FFmpeg["external.ffmpeg\nffmpeg process"]
     Logs["core.logging\nLogManager + diagnostic export"]
     Tests["test.suites\ntests/*"]
+    ArchitectureTests["test.architecture-boundaries\nDownKyi.Architecture.Tests"]
+    UiSmoke["test.ui-smoke\nDownKyi.Desktop.Tests"]
+    Benchmarks["test.performance-baseline\nDownKyi.Benchmarks"]
     CI["workflow.strict-pr-ci\n.github/workflows/quality.yml"]
 
     Program -->|calls| App
@@ -103,7 +106,12 @@ flowchart TD
     Tests -->|guards| WebClient
     Tests -->|guards| DownloadAdd
     Tests -->|guards| DownloadService
+    ArchitectureTests -->|guards dependency direction| App
+    UiSmoke -->|guards XAML construction| MainWindow
+    Benchmarks -->|measures| WebClient
     CI -->|guards| Tests
+    CI -->|guards| ArchitectureTests
+    CI -->|guards| UiSmoke
 ```
 
 ## Canonical Nodes
@@ -311,6 +319,7 @@ outbound:
 contracts:
   - Retry is iterative, not recursive.
   - Retry exhaustion throws HttpRequestException.
+  - HTTP 200 with an empty body is a failed request, not a valid payload.
   - Cancellation is never swallowed by retry.
   - Sanitized URLs are used in diagnostics.
 hazards:
@@ -370,15 +379,22 @@ outbound:
 contracts:
   - Incomplete, empty, HTML/JSON error, and sidecar files are not valid completed media.
   - Canceled/deleted downloads should clean partial files and aria2 metadata.
+  - Each multi-segment DURL has a unique key derived from stable segment order or index.
+  - DURL merge input is sorted by Order and success requires ffprobe stream, duration, and seek/decode validation.
+  - Multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; stream copy is not a valid first strategy.
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
   - Blocking waits in download lifecycle can freeze UI or prevent process exit.
   - Resume behavior depends on preserving partial files while delete behavior must remove them.
   - aria2 process cleanup is platform-sensitive.
+  - Reusing Id+codec or runtime GetHashCode values across DURL segments overwrites temporary files and can produce non-seekable MP4 output.
 tests:
   - test.download-file-integrity
   - test.fake-http-download
+  - test.download-lifecycle
+  - test.storage-resume
   - test.ui-smoke
+  - test.durl-seekability
 ```
 
 ### core.storage
@@ -405,6 +421,7 @@ hazards:
   - Mixing user data with program files complicates updates and permissions.
 tests:
   - test.storage-contracts
+  - test.storage-resume
 ```
 
 ### core.logging
@@ -497,8 +514,11 @@ outbound:
 contracts:
   - PR CI should block definite failures.
   - Nightly/release workflows should own heavy or noisy regression discovery.
+  - Local and CI builds must use the same AnalysisMode=All analyzer policy.
+  - Cleaned analyzer rules are promoted to errors and cannot regress.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
+  - Broad NoWarn, global suppressions, nullable disable, or analyzer exclusions hide new defects.
 tests:
   - github.actions
 ```
@@ -581,8 +601,15 @@ Rule: a file is not complete just because the network library reported completio
 test.web-client:
   paths:
     - tests/DownKyi.Core.Tests/WebClientTests.cs
+    - tests/DownKyi.Core.Tests/WebClientLoopbackTests.cs
+    - tests/DownKyi.Core.Tests/Infrastructure/LoopbackHttpServer.cs
   guards:
     - retry exhaustion throws HttpRequestException
+    - empty HTTP 200 responses retry and fail visibly
+    - HTTP 403, 429, and 500 fail visibly
+    - malformed JSON and HTML are not accepted as JSON
+    - Content-Length mismatch is detected while streaming
+    - slow-response cancellation is not retried
     - cancellation is not retried or swallowed
     - query parameter URL building stays stable
 
@@ -598,6 +625,56 @@ test.download-file-integrity:
     - tests/DownKyi.Tests/DownloadFileIntegrityTests.cs
   guards:
     - empty files, error payloads, sidecars, and short files are rejected
+
+test.download-lifecycle:
+  paths:
+    - tests/DownKyi.Tests/DownloadTaskFileServiceTests.cs
+  guards:
+    - generated file discovery includes media, assets, and resume sidecars
+    - deleting a task removes partial files and resume sidecars
+    - cancellation before deletion preserves resume data
+
+test.storage-resume:
+  paths:
+    - tests/DownKyi.Tests/DownloadStorageResumeTests.cs
+  guards:
+    - gid, partial file map, downloaded assets, paused state, and progress survive reopen
+
+test.ffmpeg-command-selection:
+  paths:
+    - tests/DownKyi.Core.Tests/FfmpegProcessingPlanTests.cs
+  guards:
+    - stream copy runs before hardware encoding
+    - CPU fallback remains last and is never removed when hardware is unavailable
+
+test.process-cleanup:
+  paths:
+    - tests/DownKyi.Core.Tests/AriaServerProcessTests.cs
+  guards:
+    - tracked aria2-compatible process is terminated and released
+
+test.architecture-boundaries:
+  paths:
+    - tests/DownKyi.Architecture.Tests/ProjectDependencyTests.cs
+  guards:
+    - production project references remain acyclic
+    - target Domain/Application/Infrastructure/Desktop dependency direction is enforced
+    - Domain cannot reference UI, SQLite, JSON, or FFmpeg framework packages
+
+test.ui-smoke:
+  paths:
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+  guards:
+    - Avalonia headless platform initializes
+    - MainWindow XAML and its ViewModel binding can be constructed
+    - production AppBuilder can be created
+
+test.performance-baseline:
+  paths:
+    - benchmarks/DownKyi.Benchmarks
+    - docs/performance-baseline.md
+  guards:
+    - request preparation and JSON allocation baselines are reproducible
 
 test.video-input-resolver:
   paths:
@@ -625,32 +702,38 @@ test.json-contracts:
     - code != 0 is visible
     - empty string and HTML error pages fail as JSON
 
-test.fake-http-download:
+test.composition-root:
   status: planned
   should_guard:
-    - empty response
-    - interrupted response
-    - Content-Length mismatch
-    - HTTP 403/429/500
-    - slow response and cancellation
+    - the real Host registers all main services without Prism global state
+    - MainWindow and key ViewModels resolve from the real composition root
+    - shutdown cancels workers and flushes storage, settings, and logs within a bounded timeout
 
-test.ui-smoke:
-  status: planned
+test.durl-seekability:
+  status: planned-for-pr-07-15
   should_guard:
-    - AppBuilder initializes
-    - Prism container registers main services
-    - MainWindow and key ViewModels can be constructed
+    - DURL segment keys include stable order or index
+    - DURL input is sorted by Order
+    - multi-segment concat skips stream copy
+    - ffprobe confirms stream, duration, middle seek, and tail seek decoding
+    - invalid output is deleted and the task fails visibly
 
-test.process-cleanup:
-  status: planned
+test.system-performance:
+  status: planned-for-pr-30-32
   should_guard:
-    - aria2 exits on app shutdown
-    - delete task removes partial files and sidecars
+    - cold and warm shell startup time
+    - peak working set during unfinished-task restore
+    - SQLite writes per task-minute
+    - aggregate throughput at 1, 4, and 8 tasks
+    - UI progress notifications per second
+    - FFmpeg CPU/GPU concurrency and peak memory
+  metadata:
+    - runtime, OS, architecture, dataset size, backend, and commit SHA
 ```
 
 ## AI Edit Protocol
 
-1. Identify the affected node from this document.
+1. Read this document before analysis or edits, then identify the affected node.
 2. Read the listed entry files and test anchors.
 3. Preserve the node contracts unless the user explicitly asks to change behavior.
 4. If a contract changes, update this graph and add or update tests in the same PR.

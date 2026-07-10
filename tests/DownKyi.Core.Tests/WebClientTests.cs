@@ -3,6 +3,7 @@ using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 
 namespace DownKyi.Core.Tests;
 
+[Collection(WebClientTestCollection.Name)]
 public sealed class WebClientTests : IDisposable
 {
     public WebClientTests()
@@ -21,7 +22,10 @@ public sealed class WebClientTests : IDisposable
         };
 
         var exception = Assert.Throws<HttpRequestException>(() =>
-            BiliWebClient.RequestWeb("https://example.com/getLogin", retry: 1));
+            BiliWebClient.RequestWeb(
+                "https://example.com/getLogin",
+                retry: 1,
+                cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(1, calls);
         Assert.Contains("Request failed after 1 attempts", exception.Message);
@@ -64,7 +68,10 @@ public sealed class WebClientTests : IDisposable
         };
 
         Assert.Throws<OperationCanceledException>(() =>
-            BiliWebClient.RequestWeb("https://example.com/getLogin", retry: 3));
+            BiliWebClient.RequestWeb(
+                "https://example.com/getLogin",
+                retry: 3,
+                cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(1, calls);
     }
