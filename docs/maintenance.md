@@ -6,7 +6,7 @@ This document records the project maintenance routine for dependencies, external
 
 1. Update managed package versions only in `Directory.Packages.props`.
 2. Run `dotnet restore ./DownKyi.sln`.
-3. Run `dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental -warnaserror -p:TreatWarningsAsErrors=true -p:CodeAnalysisTreatWarningsAsErrors=true -p:EnableNETAnalyzers=true -p:EnforceCodeStyleInBuild=true`.
+3. Run `dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental -p:TreatWarningsAsErrors=true -p:CodeAnalysisTreatWarningsAsErrors=false -p:EnableNETAnalyzers=true -p:AnalysisMode=All -p:EnforceCodeStyleInBuild=true` while the analyzer cleanup is active.
 4. Run `dotnet test ./DownKyi.sln -c Release --no-restore --no-build`.
 5. Run `dotnet package list --project ./DownKyi.sln --vulnerable --include-transitive`.
 6. Run `dotnet package list --project ./DownKyi.sln --deprecated` and review the report.
@@ -18,13 +18,22 @@ Avoid mixing package updates with large refactors unless the refactor is require
 Pull requests are guarded by `.github/workflows/quality.yml`:
 
 - format check with `dotnet format --verify-no-changes --verbosity diagnostic`
-- Windows and Linux Release builds
-- warnings-as-errors for compiler and default .NET analyzers
+- Windows, Linux, and macOS Release builds
+- compiler warnings as errors, with every `AnalysisMode=All` CA diagnostic visible during the cleanup transition
 - unit tests with uploaded TRX reports
 - transitive vulnerable package audit
 - deprecated package report
 
-`AnalysisMode=AllEnabledByDefault` is intentionally not a PR-blocking gate yet. On 2026-07-10 it produced hundreds of existing API-design analyzer failures, including public-field, collection-type, naming, and historical crypto-signing warnings. Turn these rules on in focused cleanup PRs, then promote them to CI only after the baseline is clean.
+The repository always uses the supported `AnalysisMode=All` value. The pre-fix baseline is 1,654 unique diagnostics across 71 CA rules; see `docs/analyzer-baseline.md` and `docs/analyzer-baseline.csv`. `CodeAnalysisTreatWarningsAsErrors=false` is temporary, while compiler warnings still block CI. Promote a rule to `error` in `.editorconfig` only after every occurrence is fixed and verified. Set `CodeAnalysisTreatWarningsAsErrors=true` only after all unhandled CA diagnostics reach zero on every required platform.
+
+## Analyzer Policy
+
+- Do not add project-wide `NoWarn`, analyzer exclusions, `#nullable disable`, `GlobalSuppressions.cs`, or `.editorconfig` severities of `none` or `silent`.
+- Do not add `#pragma warning disable` or `SuppressMessage` merely to make a build pass.
+- A minimal external-protocol suppression is allowed only when the protocol requires the algorithm, a contract test proves the requirement, and the code documents why it is not used for passwords or trust decisions.
+- Fix diagnostics in this order: security/correctness; async/cancellation/disposal/threading; performance/allocation; public API/collections; naming/globalization/style.
+- Before changing fields, properties, collections, or names, inspect JSON/XML serialization, SQLite persistence, Avalonia bindings, reflection, and external protocol contracts.
+- Regenerate an inventory from clean-build logs with `script/analyzer-inventory.ps1`; its CSV is the authoritative file-and-line detail, while the Markdown file is the review summary.
 
 ## External Binaries
 

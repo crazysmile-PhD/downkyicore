@@ -29,10 +29,8 @@ Branch: `refactor/pr-02-host-composition`
 - Extend architecture tests to enforce package and namespace restrictions for every new project.
 - Preserve existing database, settings, login, portable-mode, and aria2 session paths.
 - Document every temporary bridge with its deletion PR; no permanent legacy adapter is allowed.
-- Set repository defaults to `EnableNETAnalyzers=true`, `AnalysisMode=All`, `EnforceCodeStyleInBuild=true`, and transitional `CodeAnalysisTreatWarningsAsErrors=false`.
-- Capture the complete pre-fix CA diagnostic inventory by rule, count, project, file, category, and compatibility risk.
 - Remove all unapproved `NoWarn`, pragma disables, `SuppressMessage`, global suppressions, analyzer exclusions, nullable disables, and `none` / `silent` analyzer severities.
-- Fix analyzer findings in separate commits ordered by security/correctness, async/resource/threading, performance/allocation, public API/collection design, then naming/globalization/style.
+- Fix the 1,654 baseline diagnostics across 71 CA rules in separate commits ordered by security/correctness, async/resource/threading, performance/allocation, public API/collection design, then naming/globalization/style.
 - Preserve the external-protocol hash exception only where a contract test proves it is required; document why it is not a password or trust primitive.
 - Promote each fully cleaned rule to `error` in `.editorconfig`; finish with zero unhandled CA warnings and default `CodeAnalysisTreatWarningsAsErrors=true`.
 - Make local and CI analyzer settings identical and add required Windows, Linux, and macOS build or smoke coverage.

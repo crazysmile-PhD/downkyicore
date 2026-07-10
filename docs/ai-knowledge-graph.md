@@ -83,6 +83,7 @@ flowchart TD
     UiSmoke["test.ui-smoke\nDownKyi.Desktop.Tests"]
     Benchmarks["test.performance-baseline\nDownKyi.Benchmarks"]
     CI["workflow.strict-pr-ci\n.github/workflows/quality.yml"]
+    AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
 
     Program -->|calls| App
     App -->|injects| MainWindow
@@ -112,6 +113,7 @@ flowchart TD
     CI -->|guards| Tests
     CI -->|guards| ArchitectureTests
     CI -->|guards| UiSmoke
+    AnalyzerInventory -->|documents diagnostics| CI
 ```
 
 ## Canonical Nodes
@@ -515,12 +517,43 @@ contracts:
   - PR CI should block definite failures.
   - Nightly/release workflows should own heavy or noisy regression discovery.
   - Local and CI builds must use the same AnalysisMode=All analyzer policy.
+  - Windows, Linux, and macOS builds expose the same analyzer diagnostics.
+  - Compiler warnings block PRs during cleanup; CA warnings become blocking rule-by-rule and globally after the baseline reaches zero.
   - Cleaned analyzer rules are promoted to errors and cannot regress.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
   - Broad NoWarn, global suppressions, nullable disable, or analyzer exclusions hide new defects.
 tests:
   - github.actions
+```
+
+### workflow.analyzer-inventory
+
+```yaml
+id: workflow.analyzer-inventory
+type: workflow
+paths:
+  - Directory.Build.props
+  - .editorconfig
+  - script/analyzer-inventory.ps1
+  - docs/analyzer-baseline.md
+  - docs/analyzer-baseline.csv
+responsibility: Converts clean Release build diagnostics and SARIF rule metadata into a deduplicated, reviewable analyzer baseline.
+inbound:
+  - workflow.strict-pr-ci
+outbound:
+  - doc.analyzer-baseline
+contracts:
+  - Repository builds default to EnableNETAnalyzers=true, AnalysisMode=All, and EnforceCodeStyleInBuild=true.
+  - Diagnostic identity includes rule, project, file, location, and message so repeated MSBuild summaries do not inflate counts.
+  - The CSV retains every affected project, file, line, category, and compatibility-review flag.
+  - Compatibility flags are review hints and never authorize mechanical API or schema changes.
+hazards:
+  - Reusing one SARIF path across projects loses rule metadata because later projects overwrite earlier output.
+  - Comparing raw MSBuild warning totals without deduplication overstates the baseline.
+tests:
+  - clean Release build with AnalysisMode=All
+  - git diff --check
 ```
 
 ## Important Call Flows
