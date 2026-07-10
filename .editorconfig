@@ -12,6 +12,12 @@ dotnet_sort_system_directives_first = true
 dotnet_separate_import_directive_groups = false
 csharp_using_directive_placement = outside_namespace:suggestion
 
+# Security rules cleaned in PR 02. Minimal source suppressions are documented in docs/maintenance.md.
+dotnet_diagnostic.CA2100.severity = error
+dotnet_diagnostic.CA5351.severity = error
+dotnet_diagnostic.CA5373.severity = error
+dotnet_diagnostic.CA5401.severity = error
+
 [*.{csproj,props,targets,axaml,json,yml,yaml}]
 indent_style = space
 indent_size = 2

@@ -35,6 +35,17 @@ The repository always uses the supported `AnalysisMode=All` value. The pre-fix b
 - Before changing fields, properties, collections, or names, inspect JSON/XML serialization, SQLite persistence, Avalonia bindings, reflection, and external protocol contracts.
 - Regenerate an inventory from clean-build logs with `script/analyzer-inventory.ps1`; its CSV is the authoritative file-and-line detail, while the Markdown file is the review summary.
 
+### Approved Minimal Suppressions
+
+Only the following source-local suppressions are approved. Any other suppression requires the same contract evidence and an update to this section.
+
+| Rule | Location | Reason | Guard | Removal owner |
+| --- | --- | --- | --- | --- |
+| `CA5351` | `DownKyi.Core/BiliApi/Sign/WbiSign.cs` | Bilibili WBI defines `w_rid` as MD5 of the canonical query plus mixin key. It is an external request-signing format, not password storage or a local trust decision. | `WbiSignTests.EncodeWbiMatchesProtocolVector` | Remove only if Bilibili replaces WBI. |
+| `CA5351` | `DownKyi.Core/Utils/Encryptor/LegacySettingsDecryptor.cs` | Read-only migration of settings written by DownKyi 1.0.20 and earlier. It cannot encrypt new data; successful reads are immediately rewritten through the current JSON settings writer. | `LegacySettingsDecryptorTests.DecryptReadsLegacySettingsFixture` | PR 25-29 removes it after the supported migration window is explicitly closed. |
+
+Both suppressions cover only the algorithm construction or one-shot hash call. Expanding their scope, reusing them for credentials/integrity, or adding another weak-crypto caller is prohibited.
+
 ## External Binaries
 
 Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.

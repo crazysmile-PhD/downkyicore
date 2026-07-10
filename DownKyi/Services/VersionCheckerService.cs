@@ -1,10 +1,10 @@
 using System;
 using System.Linq;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
 using DownKyi.Core.Logging;
 using DownKyi.Models;
-using Newtonsoft.Json;
 
 namespace DownKyi.Services
 {
@@ -29,12 +29,11 @@ namespace DownKyi.Services
             client.Timeout = TimeSpan.FromSeconds(3);
             try
             {
-#pragma warning disable IL2026
                 if (_includePrereleases)
                 {
                     var releasesUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases";
                     var releasesJson = await client.GetStringAsync(releasesUrl);
-                    var releases = JsonConvert.DeserializeObject<GitHubRelease[]>(releasesJson);
+                    var releases = JsonSerializer.Deserialize(releasesJson, GitHubJsonContext.Default.GitHubReleaseArray);
 
                     return string.IsNullOrEmpty(excludedVersion)
                         ? releases?.FirstOrDefault()
@@ -44,12 +43,11 @@ namespace DownKyi.Services
                 {
                     var latestReleaseUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases/latest";
                     var latestReleaseJson = await client.GetStringAsync(latestReleaseUrl);
-                    var release = JsonConvert.DeserializeObject<GitHubRelease>(latestReleaseJson);
+                    var release = JsonSerializer.Deserialize(latestReleaseJson, GitHubJsonContext.Default.GitHubRelease);
 
                     return string.IsNullOrEmpty(excludedVersion) ||
                            release?.TagName.TrimStart('v') != excludedVersion ? release : null;
                 }
-#pragma warning restore IL2026
             }
             catch (Exception e)
             {

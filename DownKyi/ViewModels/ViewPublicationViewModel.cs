@@ -1,4 +1,3 @@
-#nullable disable
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -30,7 +29,7 @@ namespace DownKyi.ViewModels
     {
         public const string Tag = "PagePublication";
 
-        private CancellationTokenSource _tokenSource;
+        private CancellationTokenSource? _tokenSource;
 
         private long _mid = -1;
 
@@ -149,17 +148,18 @@ namespace DownKyi.ViewModels
             LoadingVisibility = false;
             NoDataVisibility = false;
 
-            ArrowBack = NavigationIcon.Instance().ArrowBack;
-            ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
+            _arrowBack = NavigationIcon.Instance().ArrowBack;
+            _arrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
             // 下载管理按钮
-            DownloadManage = ButtonIcon.Instance().DownloadManage;
-            DownloadManage.Height = 24;
-            DownloadManage.Width = 24;
-            DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
+            _downloadManage = ButtonIcon.Instance().DownloadManage;
+            _downloadManage.Height = 24;
+            _downloadManage.Width = 24;
+            _downloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-            TabHeaders = new ObservableCollection<TabHeader>();
-            Medias = new ObservableCollection<PublicationMedia>();
+            _tabHeaders = new ObservableCollection<TabHeader>();
+            _medias = new ObservableCollection<PublicationMedia>();
+            _pager = new CustomPagerViewModel(1, 1);
 
             #endregion
         }
@@ -167,7 +167,7 @@ namespace DownKyi.ViewModels
         #region 命令申明
 
         // 返回事件
-        private DelegateCommand _backSpaceCommand;
+        private DelegateCommand? _backSpaceCommand;
 
         public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
 
@@ -192,7 +192,7 @@ namespace DownKyi.ViewModels
         }
 
         // 前往下载管理页面
-        private DelegateCommand _downloadManagerCommand;
+        private DelegateCommand? _downloadManagerCommand;
 
         public DelegateCommand DownloadManagerCommand => _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
 
@@ -211,7 +211,7 @@ namespace DownKyi.ViewModels
         }
 
         // 左侧tab点击事件
-        private DelegateCommand<object> _leftTabHeadersCommand;
+        private DelegateCommand<object>? _leftTabHeadersCommand;
 
         public DelegateCommand<object> LeftTabHeadersCommand =>
             _leftTabHeadersCommand ??= new DelegateCommand<object>(ExecuteLeftTabHeadersCommand, CanExecuteLeftTabHeadersCommand);
@@ -245,7 +245,7 @@ namespace DownKyi.ViewModels
         }
 
         // 全选按钮点击事件
-        private DelegateCommand<object> _selectAllCommand;
+        private DelegateCommand<object>? _selectAllCommand;
 
         public DelegateCommand<object> SelectAllCommand => _selectAllCommand ??= new DelegateCommand<object>(ExecuteSelectAllCommand);
 
@@ -272,7 +272,7 @@ namespace DownKyi.ViewModels
         }
 
         // 列表选择事件
-        private DelegateCommand<object> _mediasCommand;
+        private DelegateCommand<object>? _mediasCommand;
 
         public DelegateCommand<object> MediasCommand => _mediasCommand ??= new DelegateCommand<object>(ExecuteMediasCommand);
 
@@ -291,7 +291,7 @@ namespace DownKyi.ViewModels
         }
 
         // 添加选中项到下载列表事件
-        private DownKyiAsyncDelegateCommand _addToDownloadCommand;
+        private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
         public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
 
@@ -299,7 +299,7 @@ namespace DownKyi.ViewModels
         /// 添加选中项到下载列表事件
         /// </summary>
         // 添加所有视频到下载列表事件
-        private DownKyiAsyncDelegateCommand _addAllToDownloadCommand;
+        private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
         public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
 
@@ -517,6 +517,12 @@ namespace DownKyi.ViewModels
 
             // 初始选中项
             var selectTab = TabHeaders.FirstOrDefault(item => item.Id == tid);
+            if (selectTab == null)
+            {
+                NoDataVisibility = true;
+                return;
+            }
+
             SelectTabId = TabHeaders.IndexOf(selectTab);
 
             // 页面选择

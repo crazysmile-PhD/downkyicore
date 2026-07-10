@@ -111,7 +111,6 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
         }
     }
 
-#pragma warning disable SYSLIB5005
     private async Task Upgrade1_0_20To1_0_21()
     {
         var noMigrate = false;
@@ -204,7 +203,9 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
 
                 try
                 {
-                    dbHelper.ExecuteQuery("SELECT name FROM sqlite_master WHERE type='table'", reader =>
+                    dbHelper.ExecuteQuery(
+                        command => command.CommandText = "SELECT name FROM sqlite_master WHERE type='table'",
+                        reader =>
                     {
                         int tableCount = 0;
                         while (reader.Read())
@@ -221,8 +222,10 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                     }
 
                     bool hasRequiredTables = false;
-                    dbHelper.ExecuteQuery(@"SELECT COUNT(*) as count FROM sqlite_master 
-                                  WHERE type='table' AND name IN ('downloaded', 'download_base')", reader =>
+                    dbHelper.ExecuteQuery(
+                        command => command.CommandText = @"SELECT COUNT(*) as count FROM sqlite_master
+                                  WHERE type='table' AND name IN ('downloaded', 'download_base')",
+                        reader =>
                     {
                         if (reader.Read())
                         {
@@ -278,9 +281,11 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
             var totalCount = 0;
             try
             {
-                dbHelper.ExecuteQuery(@"SELECT d.id, d.data as downloaded_data, db.data as download_base_data
+                dbHelper.ExecuteQuery(
+                    command => command.CommandText = @"SELECT d.id, d.data as downloaded_data, db.data as download_base_data
                                   FROM downloaded d
-                                  JOIN download_base db ON d.id = db.id", reader =>
+                                  JOIN download_base db ON d.id = db.id",
+                    reader =>
                 {
                     while (reader.Read())
                     {
@@ -460,8 +465,6 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
             Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
         }
     }
-#pragma warning restore SYSLIB5005
-
     private class DownloadedWithData
     {
         public Downloaded Downloaded { get; set; } = new();

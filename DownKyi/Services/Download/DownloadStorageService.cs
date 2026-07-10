@@ -240,9 +240,14 @@ VALUES
                 EnableForeignKeys();
                 using var cmd = _connection.CreateCommand();
                 // 外键 ON DELETE CASCADE：删除 download_base 会级联删除 downloading/downloaded
-                cmd.CommandText = cascadeRemove
-                    ? "DELETE FROM download_base WHERE id = @id"
-                    : "DELETE FROM downloading WHERE id = @id";
+                if (cascadeRemove)
+                {
+                    cmd.CommandText = "DELETE FROM download_base WHERE id = @id";
+                }
+                else
+                {
+                    cmd.CommandText = "DELETE FROM downloading WHERE id = @id";
+                }
                 cmd.Parameters.AddWithValue("@id", id);
                 cmd.ExecuteNonQuery();
             }

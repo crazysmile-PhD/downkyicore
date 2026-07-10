@@ -25,14 +25,14 @@ public class DiskCachedWebImageLoader : BaseWebImageLoader
     /// <inheritdoc />
     protected override Task<Bitmap?> LoadFromGlobalCache(string url)
     {
-        var path = Path.Combine(_cacheFolder, CreateMd5(url));
+        var path = Path.Combine(_cacheFolder, CreateCacheKey(url));
 
         return File.Exists(path) ? Task.FromResult<Bitmap?>(new Bitmap(path)) : Task.FromResult<Bitmap?>(null);
     }
 
 #if NETSTANDARD2_1
         protected override async Task SaveToGlobalCache(string url, byte[] imageBytes) {
-            var path = Path.Combine(_cacheFolder, CreateMd5(url));
+            var path = Path.Combine(_cacheFolder, CreateCacheKey(url));
 
             Directory.CreateDirectory(_cacheFolder);
             await File.WriteAllBytesAsync(path, imageBytes).ConfigureAwait(false);
@@ -40,21 +40,16 @@ public class DiskCachedWebImageLoader : BaseWebImageLoader
 #else
     protected override Task SaveToGlobalCache(string url, byte[] imageBytes)
     {
-        var path = Path.Combine(_cacheFolder, CreateMd5(url));
+        var path = Path.Combine(_cacheFolder, CreateCacheKey(url));
         Directory.CreateDirectory(_cacheFolder);
         File.WriteAllBytes(path, imageBytes);
         return Task.CompletedTask;
     }
 #endif
 
-    protected static string CreateMd5(string input)
+    protected static string CreateCacheKey(string input)
     {
-        // Use input string to calculate MD5 hash
-        using var md5 = MD5.Create();
-        var inputBytes = Encoding.ASCII.GetBytes(input);
-        var hashBytes = md5.ComputeHash(inputBytes);
-
-        // Convert the byte array to hexadecimal string
-        return BitConverter.ToString(hashBytes).Replace("-", "");
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        return Convert.ToHexString(hashBytes);
     }
 }

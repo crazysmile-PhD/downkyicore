@@ -72,6 +72,7 @@ flowchart TD
     InfoServices["service.info-services\nVideo/Bangumi/Cheese services"]
     BiliApi["core.bili-api\nDownKyi.Core/BiliApi"]
     WebClient["core.web-client\nDownKyi.Core/BiliApi/WebClient.cs"]
+    LegacySettings["core.legacy-settings-migration\nLegacySettingsDecryptor.cs"]
     DownloadAdd["service.download-add\nAddToDownloadService + DownloadAddCoordinator"]
     DownloadService["service.download-runtime\nDownloadService and implementations"]
     Storage["core.storage\nDownloadStorageService + StorageManager"]
@@ -94,6 +95,7 @@ flowchart TD
     Parser -->|calls| InfoServices
     InfoServices -->|calls| BiliApi
     BiliApi -->|calls| WebClient
+    App -->|reads old settings only| LegacySettings
     VideoVm -->|calls| DownloadAdd
     DownloadAdd -->|persists| Storage
     DownloadAdd -->|queues| DownloadService
@@ -297,12 +299,14 @@ outbound:
 contracts:
   - API failures should be visible at the API boundary; do not turn errors into valid empty payloads.
   - OperationCanceledException must be rethrown.
+  - WBI request signatures must match the fixed protocol vector; MD5 is limited to that external format.
 hazards:
   - Bilibili schema changes can deserialize into null and fail later in UI/download flows.
   - Logging full URLs can leak tokens, cookies, and personal query data.
 tests:
   - test.web-client
   - test.json-contracts
+  - test.wbi-signature
 ```
 
 ### core.web-client
@@ -449,6 +453,32 @@ hazards:
   - Console logging bypasses sanitization policy.
 tests:
   - test.diagnostic-log-redaction
+```
+
+### core.legacy-settings-migration
+
+```yaml
+id: core.legacy-settings-migration
+type: core
+paths:
+  - DownKyi.Core/Utils/Encryptor/LegacySettingsDecryptor.cs
+  - DownKyi.Core/Settings/SettingsManager.cs
+responsibility: Reads the historical DES settings format once so existing settings can be rewritten as current JSON.
+inbound:
+  - app.application
+outbound:
+  - core.settings
+contracts:
+  - This path is read-only and cannot encrypt new settings.
+  - Invalid legacy payloads fail visibly to SettingsManager and never masquerade as valid JSON.
+  - Successful migration uses the existing atomic settings writer and preserves user values.
+hazards:
+  - DES is cryptographically broken and must never be reused for credentials, integrity, or new storage.
+  - Deleting the reader before the migration support window closes loses old user settings.
+tests:
+  - test.legacy-settings-migration
+deletion_owner:
+  - PR 25-29 after an explicit migration-window decision
 ```
 
 ### external.ffmpeg
@@ -672,6 +702,18 @@ test.storage-resume:
     - tests/DownKyi.Tests/DownloadStorageResumeTests.cs
   guards:
     - gid, partial file map, downloaded assets, paused state, and progress survive reopen
+
+test.wbi-signature:
+  paths:
+    - tests/DownKyi.Core.Tests/WbiSignTests.cs
+  guards:
+    - fixed Bilibili WBI keys, timestamp, and parameters produce the expected w_rid
+
+test.legacy-settings-migration:
+  paths:
+    - tests/DownKyi.Core.Tests/LegacySettingsDecryptorTests.cs
+  guards:
+    - a fixed pre-1.0.21 DES settings fixture still decrypts exactly
 
 test.ffmpeg-command-selection:
   paths:

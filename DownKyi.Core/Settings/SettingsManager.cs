@@ -79,7 +79,7 @@ public partial class SettingsManager
                 // 尝试旧版加密格式
                 try
                 {
-                    string decryptedJson = Encryptor.DecryptString(jsonWordTemplate, password);
+                    string decryptedJson = LegacySettingsDecryptor.Decrypt(jsonWordTemplate, password);
                     var settings = JsonConvert.DeserializeObject<AppSettings>(decryptedJson);
                     if (settings != null)
                     {
