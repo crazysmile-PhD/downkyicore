@@ -64,12 +64,14 @@ namespace DownKyi.Services
 
         public bool IsNewVersionAvailable(string latestVersion)
         {
-            string v = new AppInfo().VersionName;
-#if DEBUG
-            v = v.Replace("-debug", string.Empty);
-#endif
-            var current = new Version(v.TrimStart('v'));
-            var latest = new Version(latestVersion.TrimStart('v'));
+            var currentVersion = AppInfo.NormalizeVersionName(new AppInfo().VersionName);
+            var latestReleaseVersion = AppInfo.NormalizeVersionName(latestVersion);
+            if (!Version.TryParse(currentVersion, out var current) ||
+                !Version.TryParse(latestReleaseVersion, out var latest))
+            {
+                return false;
+            }
+
             return latest > current;
         }
 
