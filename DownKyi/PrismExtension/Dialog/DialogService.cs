@@ -34,7 +34,7 @@ public class DialogService : Prism.Dialogs.DialogService, IDialogService
         var dialogWindow = CreateDialogWindow(windowName);
         var dialogCallback = callback == null ? DialogCallback.Empty : new DialogCallback().OnClose(callback);
         ConfigureDialogWindowEvents(dialogWindow, dialogCallback);
-        ConfigureDialogWindowContent(name, dialogWindow, parameters);
+        ConfigureDialogWindowContent(name, dialogWindow, (IDialogParameters)parameters);
 
         return ShowDialogWindow(dialogWindow, isModal, parentWindow);
     }

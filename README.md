@@ -146,6 +146,7 @@ git diff --check
 - `tests/DownKyi.Tests`: UI 外围可抽取逻辑、下载流程与文件完整性测试。
 - `script`: release workflow 使用的 aria2、FFmpeg、PupNet 和平台打包脚本。
 - `docs/maintenance.md`: 依赖更新、外部 binary checksum、release tag 和回归 checklist。
+- `docs/ai-knowledge-graph.md`: 给 AI/维护者使用的代码结构、模块职责和调用关系索引。
 
 主要数据流：
 
