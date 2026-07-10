@@ -11,7 +11,7 @@
                         <Grid
                             Width="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type ListBox}}, Path=Bounds.Width}"
                             Height="70">
-                            <Grid ColumnDefinitions="70,*,320,80,30">
+                            <Grid ColumnDefinitions="70,*,2*,80,30">
 
                                 <Image
                                     Grid.Column="0"
@@ -71,7 +71,7 @@
                                 <!--  进度条  -->
                                 <Grid Grid.Column="2" RowDefinitions="*,*">
 
-                                    <Grid Grid.Row="0" VerticalAlignment="Bottom" ColumnDefinitions="100,*">
+                                    <Grid Grid.Row="0" VerticalAlignment="Bottom" ColumnDefinitions="Auto,*">
 
                                         <StackPanel Grid.Column="0" Orientation="Horizontal">
                                             <TextBlock
@@ -96,6 +96,7 @@
 
                                         <TextBlock
                                             Grid.Column="1"
+                                            Margin="8,0,0,0"
                                             HorizontalAlignment="Right"
                                             FontSize="12"
                                             Foreground="{DynamicResource BrushTextGrey2}">
