@@ -148,7 +148,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         FolderIcon.Fill = DictionaryResource.GetColor("ColorPrimary");
 
         // 下载内容
-        var videoContent = SettingsManager.GetInstance().GetVideoContent();
+        var videoContent = SettingsManager.Instance.GetVideoContent();
 
         DownloadAudio = videoContent.DownloadAudio;
         DownloadVideo = videoContent.DownloadVideo;
@@ -166,8 +166,8 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         }
 
         // 历史下载目录
-        DirectoryList = new ObservableCollection<string>(SettingsManager.GetInstance().GetHistoryVideoRootPaths());
-        var directory = SettingsManager.GetInstance().GetSaveVideoRootPath();
+        DirectoryList = new ObservableCollection<string>(SettingsManager.Instance.GetHistoryVideoRootPaths());
+        var directory = SettingsManager.Instance.GetSaveVideoRootPath();
         if (!DirectoryList.Contains(directory))
         {
             ListHelper.InsertUnique(DirectoryList, directory, 0);
@@ -176,7 +176,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         Directory = directory;
 
         // 是否使用默认下载目录
-        IsDefaultDownloadDirectory = SettingsManager.GetInstance().GetIsUseSaveVideoRootPath() == AllowStatus.Yes;
+        IsDefaultDownloadDirectory = SettingsManager.Instance.GetIsUseSaveVideoRootPath() == AllowStatus.Yes;
 
         #endregion
     }
@@ -372,7 +372,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         }
 
         // 设此文件夹为默认下载文件夹
-        SettingsManager.GetInstance().SetIsUseSaveVideoRootPath(IsDefaultDownloadDirectory ? AllowStatus.Yes : AllowStatus.No);
+        SettingsManager.Instance.SetIsUseSaveVideoRootPath(IsDefaultDownloadDirectory ? AllowStatus.Yes : AllowStatus.No);
 
         // 将Directory移动到第一项
         // 如果直接在ComboBox中选择的就需要
@@ -380,8 +380,8 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         ListHelper.InsertUnique(DirectoryList, Directory, 0, ref _directory);
 
         // 将更新后的DirectoryList写入历史中
-        SettingsManager.GetInstance().SetSaveVideoRootPath(Directory);
-        SettingsManager.GetInstance().SetHistoryVideoRootPaths(DirectoryList.ToList());
+        SettingsManager.Instance.SetSaveVideoRootPath(Directory);
+        SettingsManager.Instance.SetHistoryVideoRootPaths(DirectoryList.ToList());
 
         // 返回数据
         IDialogParameters parameters = new DialogParameters
@@ -413,7 +413,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
             DownloadCover = DownloadCover
         };
 
-        SettingsManager.GetInstance().SetVideoContent(videoContent);
+        SettingsManager.Instance.SetVideoContent(videoContent);
     }
 
     /// <summary>

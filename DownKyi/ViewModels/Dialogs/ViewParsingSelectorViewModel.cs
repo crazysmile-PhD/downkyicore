@@ -28,7 +28,7 @@ public class ViewParsingSelectorViewModel : BaseDialogViewModel
         Title = DictionaryResource.GetString("ParsingSelector");
 
         // 解析范围
-        var parseScope = SettingsManager.GetInstance().GetParseScope();
+        var parseScope = SettingsManager.Instance.GetParseScope();
         IsParseDefault = parseScope != ParseScope.None;
 
         #endregion
@@ -104,6 +104,6 @@ public class ViewParsingSelectorViewModel : BaseDialogViewModel
     /// <param name="parseScope"></param>
     private void SetParseScopeSetting(ParseScope parseScope)
     {
-        SettingsManager.GetInstance().SetParseScope(IsParseDefault ? parseScope : ParseScope.None);
+        SettingsManager.Instance.SetParseScope(IsParseDefault ? parseScope : ParseScope.None);
     }
 }

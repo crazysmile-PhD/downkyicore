@@ -145,11 +145,7 @@ public partial class SettingsManager
     /// <summary>
     /// 获取首选视频解析方式
     /// </summary>
-    /// <returns></returns>
-    public int GetVideoParseType()
-    {
-        return _appSettings.Video.VideoParseType;
-    }
+    public int VideoParseType => _appSettings.Video.VideoParseType;
 
     /// <summary>
     /// 设置首选视频解析方式

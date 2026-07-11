@@ -270,7 +270,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
                 UnityUpdateView(UpdateView, _input, true, cancellationToken);
 
                 // 是否自动解析视频
-                if (SettingsManager.GetInstance().GetIsAutoParseVideo() == AllowStatus.Yes)
+                if (SettingsManager.Instance.GetIsAutoParseVideo() == AllowStatus.Yes)
                 {
                     PropertyChangeAsync(() => _ = ExecuteParseAllVideoCommandAsync());
                 }
@@ -503,7 +503,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     private async Task ExecuteParseAllVideoCommandAsync()
     {
         // 解析范围
-        var parseScope = SettingsManager.GetInstance().GetParseScope();
+        var parseScope = SettingsManager.Instance.GetParseScope();
 
         // 是否选择了解析范围
         if (parseScope == ParseScope.None)
@@ -575,7 +575,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
         LoadingVisibility = false;
 
         // 解析后是否自动下载解析视频
-        var isAutoDownloadAll = SettingsManager.GetInstance().GetIsAutoDownloadAll();
+        var isAutoDownloadAll = SettingsManager.Instance.GetIsAutoDownloadAll();
         if (parseScope != ParseScope.None && isAutoDownloadAll == AllowStatus.Yes)
         {
             await AddToDownloadAsync(true).ConfigureAwait(true);

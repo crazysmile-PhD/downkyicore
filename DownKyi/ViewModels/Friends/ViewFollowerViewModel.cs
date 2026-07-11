@@ -154,7 +154,7 @@ public class ViewFollowerViewModel : ViewModelBase
         }
         else
         {
-            var userInfo = SettingsManager.GetInstance().GetUserInfo();
+            var userInfo = SettingsManager.Instance.GetUserInfo();
             if (userInfo != null && userInfo.Mid == _mid)
             {
                 Pager.Count = (int)Math.Ceiling((double)data.Total / NumberInPage);

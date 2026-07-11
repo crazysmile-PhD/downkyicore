@@ -24,7 +24,7 @@ public sealed class DanmakuAndZoneContractTests
     [InlineData(-1, 0, 0)]
     public void ResolutionLookupReturnsExpectedDimensions(int quality, int expectedWidth, int expectedHeight)
     {
-        var resolution = DanmakuBilibili.GetInstance().GetResolution(quality);
+        var resolution = DanmakuBilibili.Instance.GetResolution(quality);
 
         Assert.Equal(expectedWidth, resolution["width"]);
         Assert.Equal(expectedHeight, resolution["height"]);

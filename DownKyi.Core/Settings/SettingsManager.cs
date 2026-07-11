@@ -45,10 +45,7 @@ public partial class SettingsManager
     /// <summary>
     /// 获取 SettingsManager 实例（单例）
     /// </summary>
-    public static SettingsManager GetInstance()
-    {
-        return _instance ??= new SettingsManager();
-    }
+    public static SettingsManager Instance => _instance ??= new SettingsManager();
 
     /// <summary>
     /// 隐藏构造函数，必须使用单例模式

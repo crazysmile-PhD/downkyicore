@@ -40,15 +40,17 @@ public class Bilibili
     /// <summary>
     /// 获取Bilibili实例
     /// </summary>
-    /// <returns></returns>
-    public static Bilibili GetInstance()
+    public static Bilibili Instance
     {
-        if (instance == null)
+        get
         {
-            instance = new Bilibili();
-        }
+            if (instance == null)
+            {
+                instance = new Bilibili();
+            }
 
-        return instance;
+            return instance;
+        }
     }
 
     /// <summary>

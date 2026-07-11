@@ -140,7 +140,7 @@ public class BangumiInfoService : IInfoService
             }
 
             // 文件命名中的时间格式
-            var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
+            var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(episode.PubTime);
@@ -237,7 +237,7 @@ public class BangumiInfoService : IInfoService
                 }
 
                 // 文件命名中的时间格式
-                var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
+                var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
                 // 视频发布时间
                 var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
                 var dateTime = startTime.AddSeconds(episode.PubTime);

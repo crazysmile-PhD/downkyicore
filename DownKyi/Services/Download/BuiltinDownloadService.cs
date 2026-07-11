@@ -152,7 +152,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
         }
 
         // 启用https
-        var useSsl = SettingsManager.GetInstance().GetUseSsl();
+        var useSsl = SettingsManager.Instance.GetUseSsl();
         if (useSsl == AllowStatus.Yes)
         {
             for (var i = 0; i < urls.Count; i++)
@@ -335,17 +335,17 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             {
                 { "cookie", LoginHelper.GetLoginInfoCookiesString() }
             },
-            UserAgent = SettingsManager.GetInstance().GetUserAgent(),
+            UserAgent = SettingsManager.Instance.GetUserAgent(),
             Referer = "https://www.bilibili.com",
         };
 
-        if (SettingsManager.GetInstance().GetIsHttpProxy() == AllowStatus.Yes)
+        if (SettingsManager.Instance.GetIsHttpProxy() == AllowStatus.Yes)
         {
-            requestConfiguration.Proxy = new WebProxy(SettingsManager.GetInstance().GetHttpProxy(),
-                SettingsManager.GetInstance().GetHttpProxyListenPort());
+            requestConfiguration.Proxy = new WebProxy(SettingsManager.Instance.GetHttpProxy(),
+                SettingsManager.Instance.GetHttpProxyListenPort());
         }
 
-        var split = SettingsManager.GetInstance().GetSplit();
+        var split = SettingsManager.Instance.GetSplit();
         var downloadOpt = new DownloadConfiguration
         {
             ChunkCount = split,

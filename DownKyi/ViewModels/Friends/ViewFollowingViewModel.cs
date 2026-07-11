@@ -222,7 +222,7 @@ public class ViewFollowingViewModel : ViewModelBase
     {
         TabHeaders.Clear();
 
-        var userInfo = SettingsManager.GetInstance().GetUserInfo();
+        var userInfo = SettingsManager.Instance.GetUserInfo();
         if (userInfo != null && userInfo.Mid == _mid)
         {
             // 用户的关系状态数

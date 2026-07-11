@@ -14,7 +14,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _windowSettings = SettingsManager.GetInstance().GetWindowSettings().Clone();
+        _windowSettings = SettingsManager.Instance.GetWindowSettings().Clone();
         ApplyWindowSettings();
     }
 
@@ -44,7 +44,7 @@ public partial class MainWindow : Window
             _windowSettings.Y = Position.Y;
         }
 
-        SettingsManager.GetInstance().SettingWindowSettings(_windowSettings);
+        SettingsManager.Instance.SettingWindowSettings(_windowSettings);
 
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -62,6 +62,6 @@ public partial class MainWindow : Window
     //     _windowSettings.X = Position.X;
     //     _windowSettings.Y = Position.Y;
     //
-    //     SettingsManager.GetInstance().SettingWindowSettings(_windowSettings);
+    //     SettingsManager.Instance.SettingWindowSettings(_windowSettings);
     // }
 }

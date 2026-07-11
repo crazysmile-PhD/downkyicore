@@ -18,7 +18,7 @@ public static class NavigateToView
     /// <param name="mid"></param>
     public static void NavigateToViewUserSpace(IEventAggregator eventAggregator, string parentViewName, long mid)
     {
-        var userInfo = SettingsManager.GetInstance().GetUserInfo();
+        var userInfo = SettingsManager.Instance.GetUserInfo();
         if (userInfo != null && userInfo.Mid == mid)
         {
             NavigationView(eventAggregator, ViewMySpaceViewModel.Tag, parentViewName, mid);

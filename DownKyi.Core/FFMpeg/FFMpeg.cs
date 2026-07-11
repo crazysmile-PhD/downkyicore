@@ -58,7 +58,7 @@ public class FFMpeg
         }
         else
         {
-            if (SettingsManager.GetInstance().GetIsTranscodingAacToMp3() == AllowStatus.Yes)
+            if (SettingsManager.Instance.GetIsTranscodingAacToMp3() == AllowStatus.Yes)
             {
                 arguments = FFMpegArguments.FromFileInput(audioPath!).OutputToFile(
                     destVideo,
@@ -212,12 +212,12 @@ public class FFMpeg
             }
 
             LogManager.Info(Tag,
-                $"Concat video started. segments={inputFlvs.Count}; hw={SettingsManager.GetInstance().GetFfmpegHardwareAcceleration()}; maxParallel={SettingsManager.GetInstance().GetFfmpegMaxParallelJobs()}");
+                $"Concat video started. segments={inputFlvs.Count}; hw={SettingsManager.Instance.GetFfmpegHardwareAcceleration()}; maxParallel={SettingsManager.Instance.GetFfmpegMaxParallelJobs()}");
 
             listFile = Path.Combine(Path.GetTempPath(), $"flvlist_{Guid.NewGuid():N}.txt");
             File.WriteAllLines(listFile, inputFlvs.Select(ToConcatFileLine));
 
-            var encoder = FfmpegHardwareEncoderDetector.Select(SettingsManager.GetInstance().GetFfmpegHardwareAcceleration());
+            var encoder = FfmpegHardwareEncoderDetector.Select(SettingsManager.Instance.GetFfmpegHardwareAcceleration());
             var processingPlan = FfmpegProcessingPlan.BuildConcatPlan(encoder);
             for (var attempt = 0; attempt < processingPlan.Count; attempt++)
             {
@@ -413,13 +413,13 @@ public class FFMpeg
 
     private FfmpegSlot EnterFfmpegSlot(string operation)
     {
-        var maxParallel = SettingsManager.GetInstance().GetFfmpegMaxParallelJobs();
+        var maxParallel = SettingsManager.Instance.GetFfmpegMaxParallelJobs();
         lock (_ffmpegJobLock)
         {
             while (_runningFfmpegJobs >= maxParallel)
             {
                 Monitor.Wait(_ffmpegJobLock);
-                maxParallel = SettingsManager.GetInstance().GetFfmpegMaxParallelJobs();
+                maxParallel = SettingsManager.Instance.GetFfmpegMaxParallelJobs();
             }
 
             _runningFfmpegJobs++;

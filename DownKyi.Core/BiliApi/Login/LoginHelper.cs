@@ -259,7 +259,7 @@ public static class LoginHelper
             // 注销后使缓存立即失效
             InvalidateCache();
 
-            SettingsManager.GetInstance().SetUserInfo(new UserInfoSettings
+            SettingsManager.Instance.SetUserInfo(new UserInfoSettings
             {
                 Mid = -1,
                 Name = "",

@@ -47,12 +47,7 @@ public static class LogManager
     /// <summary>
     /// 日志存放目录，windows默认日志放在当前应用程序运行目录下的Logs文件夹中,macOS、linux存放于applicationData目录下
     /// </summary>
-    private static string LogDirectory => StorageManager.GetLogsDir();
-
-    public static string GetLogDirectory()
-    {
-        return LogDirectory;
-    }
+    public static string LogDirectory => StorageManager.GetLogsDir();
 
     public static Task FlushAsync(TimeSpan timeout)
     {

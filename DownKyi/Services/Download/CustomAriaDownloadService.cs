@@ -153,7 +153,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         }
 
         // 启用https
-        AllowStatus useSSL = SettingsManager.GetInstance().GetUseSsl();
+        AllowStatus useSSL = SettingsManager.Instance.GetUseSsl();
         if (useSSL == AllowStatus.Yes)
         {
             for (int i = 0; i < urls.Count; i++)
@@ -284,11 +284,11 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
     {
         cancellationToken.ThrowIfCancellationRequested();
         // 设置aria token
-        AriaClient.SetToken(SettingsManager.GetInstance().GetAriaToken());
+        AriaClient.SetToken(SettingsManager.Instance.GetAriaToken());
         // 设置aria host
-        AriaClient.SetHost(SettingsManager.GetInstance().GetAriaHost());
+        AriaClient.SetHost(SettingsManager.Instance.GetAriaHost());
         // 设置aria listenPort
-        AriaClient.SetListenPort(SettingsManager.GetInstance().GetAriaListenPort());
+        AriaClient.SetListenPort(SettingsManager.Instance.GetAriaListenPort());
 
         // 启动基本服务
         BaseStart();
@@ -426,16 +426,16 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
                 AutoFileRenaming = "false",
                 //Header = $"cookie: {LoginHelper.GetLoginInfoCookiesString()}\nreferer: https://www.bilibili.com",
                 //UseHead = "true",
-                UserAgent = SettingsManager.GetInstance().GetUserAgent(),
-                Split = SettingsManager.GetInstance().GetAriaSplit().ToString(),
-                MaxConnectionPerServer = SettingsManager.GetInstance().GetAriaMaxConnectionPerServer().ToString(),
-                MinSplitSize = $"{SettingsManager.GetInstance().GetAriaMinSplitSize()}M",
+                UserAgent = SettingsManager.Instance.GetUserAgent(),
+                Split = SettingsManager.Instance.GetAriaSplit().ToString(),
+                MaxConnectionPerServer = SettingsManager.Instance.GetAriaMaxConnectionPerServer().ToString(),
+                MinSplitSize = $"{SettingsManager.Instance.GetAriaMinSplitSize()}M",
             };
 
             //// 如果设置了代理，则增加HttpProxy
-            //if (SettingsManager.GetInstance().IsAriaHttpProxy() == AllowStatus.YES)
+            //if (SettingsManager.Instance.IsAriaHttpProxy() == AllowStatus.YES)
             //{
-            //    option.HttpProxy = $"http://{SettingsManager.GetInstance().GetAriaHttpProxy()}:{SettingsManager.GetInstance().GetAriaHttpProxyListenPort()}";
+            //    option.HttpProxy = $"http://{SettingsManager.Instance.GetAriaHttpProxy()}:{SettingsManager.Instance.GetAriaHttpProxyListenPort()}";
             //}
 
             // 添加一个下载

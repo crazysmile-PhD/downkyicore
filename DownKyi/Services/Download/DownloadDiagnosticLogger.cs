@@ -30,7 +30,7 @@ internal static class DownloadDiagnosticLogger
 
     public static void LogAriaTaskStart(string source, string? gid, int urlCount)
     {
-        var settings = SettingsManager.GetInstance();
+        var settings = SettingsManager.Instance;
         LogManager.Info(source,
             "Aria task started " +
             $"task={ShortId(gid)}; " +
@@ -74,7 +74,7 @@ internal static class DownloadDiagnosticLogger
 
     private static bool IsHighSpeedEnabled()
     {
-        return SettingsManager.GetInstance().GetHighSpeedDownloadMode() == AllowStatus.Yes;
+        return SettingsManager.Instance.GetHighSpeedDownloadMode() == AllowStatus.Yes;
     }
 
     private static string FormatLimit(long bytesPerSecond)

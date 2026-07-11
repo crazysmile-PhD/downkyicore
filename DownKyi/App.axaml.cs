@@ -170,7 +170,7 @@ public partial class App : PrismApplication, IDisposable
 
     protected override void OnInitialized()
     {
-        ThemeHelper.SetTheme(SettingsManager.GetInstance().GetThemeMode());
+        ThemeHelper.SetTheme(SettingsManager.Instance.GetThemeMode());
         // var regionManager = Container.Resolve<IRegionManager>();
         // regionManager.RegisterViewWithRegion("ContentRegion", typeof(ViewIndex));
         // regionManager.RegisterViewWithRegion("DownloadManagerContentRegion", typeof(ViewDownloading));
@@ -256,7 +256,7 @@ public partial class App : PrismApplication, IDisposable
     private IDownloadService? CreateDownloadService()
     {
         var dialogService = Container.Resolve<IDialogService>();
-        return SettingsManager.GetInstance().GetDownloader() switch
+        return SettingsManager.Instance.GetDownloader() switch
         {
             Core.Settings.Downloader.BuiltIn => new BuiltinDownloadService(DownloadingList, DownloadedList, dialogService),
             Core.Settings.Downloader.Aria => new AriaDownloadService(DownloadingList, DownloadedList, dialogService),
@@ -334,7 +334,7 @@ public partial class App : PrismApplication, IDisposable
         await _startupCancellation.CancelAsync().ConfigureAwait(false);
 
         // 强制落盘设置（防止防抖延迟期间退出导致配置丢失）
-        SettingsManager.GetInstance().Flush();
+        SettingsManager.Instance.Flush();
 
         if (_downloadStartupTask != null)
         {

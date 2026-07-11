@@ -148,7 +148,7 @@ public class ViewIndexViewModel : ViewModelBase
         else
         {
             // 进入用户空间
-            var userInfo = SettingsManager.GetInstance().GetUserInfo();
+            var userInfo = SettingsManager.Instance.GetUserInfo();
             if (userInfo != null && userInfo.Mid != -1)
             {
                 NavigateToView.NavigationView(EventAggregator, ViewMySpaceViewModel.Tag, Tag, userInfo.Mid);
@@ -231,7 +231,7 @@ public class ViewIndexViewModel : ViewModelBase
             userInfo = UserInfo.GetUserInfoForNavigation();
             if (userInfo != null)
             {
-                SettingsManager.GetInstance().SetUserInfo(new UserInfoSettings
+                SettingsManager.Instance.SetUserInfo(new UserInfoSettings
                 {
                     Mid = userInfo.Mid,
                     Name = userInfo.Name,
@@ -243,7 +243,7 @@ public class ViewIndexViewModel : ViewModelBase
             }
             else
             {
-                SettingsManager.GetInstance().SetUserInfo(new UserInfoSettings
+                SettingsManager.Instance.SetUserInfo(new UserInfoSettings
                 {
                     Mid = -1,
                     Name = "",

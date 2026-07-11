@@ -298,9 +298,9 @@ public abstract class DownloadService : IDisposable
             PersistDownloadingState(downloading);
         }
 
-        var screenWidth = SettingsManager.GetInstance().GetDanmakuScreenWidth();
-        var screenHeight = SettingsManager.GetInstance().GetDanmakuScreenHeight();
-        //if (SettingsManager.GetInstance().IsCustomDanmakuResolution() != AllowStatus.YES)
+        var screenWidth = SettingsManager.Instance.GetDanmakuScreenWidth();
+        var screenHeight = SettingsManager.Instance.GetDanmakuScreenHeight();
+        //if (SettingsManager.Instance.IsCustomDanmakuResolution() != AllowStatus.YES)
         //{
         //    if (downloadingEntity.Width > 0 && downloadingEntity.Height > 0)
         //    {
@@ -315,21 +315,21 @@ public abstract class DownloadService : IDisposable
             Title = title,
             ScreenWidth = screenWidth,
             ScreenHeight = screenHeight,
-            FontName = SettingsManager.GetInstance().GetDanmakuFontName(),
-            BaseFontSize = SettingsManager.GetInstance().GetDanmakuFontSize(),
-            LineCount = SettingsManager.GetInstance().GetDanmakuLineCount(),
+            FontName = SettingsManager.Instance.GetDanmakuFontName(),
+            BaseFontSize = SettingsManager.Instance.GetDanmakuFontSize(),
+            LineCount = SettingsManager.Instance.GetDanmakuLineCount(),
             LayoutAlgorithm =
-                SettingsManager.GetInstance().GetDanmakuLayoutAlgorithm().ToString("G").ToLower(), // async/sync
+                SettingsManager.Instance.GetDanmakuLayoutAlgorithm().ToString("G").ToLower(), // async/sync
             TuneDuration = 0,
             DropOffset = 0,
             BottomMargin = 0,
             CustomOffset = 0
         };
 
-        var bilibili = Core.Danmaku2Ass.Bilibili.GetInstance();
-        bilibili.SetTopFilter(SettingsManager.GetInstance().GetDanmakuTopFilter() == AllowStatus.Yes);
-        bilibili.SetBottomFilter(SettingsManager.GetInstance().GetDanmakuBottomFilter() == AllowStatus.Yes);
-        bilibili.SetScrollFilter(SettingsManager.GetInstance().GetDanmakuScrollFilter() == AllowStatus.Yes);
+        var bilibili = Core.Danmaku2Ass.Bilibili.Instance;
+        bilibili.SetTopFilter(SettingsManager.Instance.GetDanmakuTopFilter() == AllowStatus.Yes);
+        bilibili.SetBottomFilter(SettingsManager.Instance.GetDanmakuBottomFilter() == AllowStatus.Yes);
+        bilibili.SetScrollFilter(SettingsManager.Instance.GetDanmakuScrollFilter() == AllowStatus.Yes);
         var downloadBase = downloading.DownloadBase ?? throw new InvalidOperationException("DownloadBase is required to download danmaku.");
         bilibili.Create(downloadBase.Avid, downloadBase.Cid, subtitleConfig, assFile, CancellationToken.GetValueOrDefault());
 
@@ -495,7 +495,7 @@ public abstract class DownloadService : IDisposable
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
         if (videoUid == null)
         {
-            finalFile = SettingsManager.GetInstance().GetIsTranscodingAacToMp3() == AllowStatus.Yes
+            finalFile = SettingsManager.Instance.GetIsTranscodingAacToMp3() == AllowStatus.Yes
                 ? $"{downloading.DownloadBase.FilePath}.mp3"
                 : downloading.AudioCodec.Id == 30251
                     ? $"{downloading.DownloadBase.FilePath}.flac"
@@ -571,7 +571,7 @@ public abstract class DownloadService : IDisposable
         switch (downloading.Downloading.PlayStreamType)
         {
             case PlayStreamType.Video:
-                playUrl = downloading.PlayUrl ?? SettingsManager.GetInstance().GetVideoParseType() switch
+                playUrl = downloading.PlayUrl ?? SettingsManager.Instance.VideoParseType switch
                 {
                     0 => VideoStream.GetVideoPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         cancellationToken: CancellationToken.GetValueOrDefault()),
@@ -602,7 +602,7 @@ public abstract class DownloadService : IDisposable
         downloading.PlayUrl = playUrl;
     }
 
-    private readonly SemaphoreSlim _downloadSemaphore = new(SettingsManager.GetInstance()
+    private readonly SemaphoreSlim _downloadSemaphore = new(SettingsManager.Instance
         .GetMaxCurrentDownloads());
 
     /// <summary>
@@ -879,7 +879,7 @@ public abstract class DownloadService : IDisposable
 
 
                 //nfo
-                if (SettingsManager.GetInstance()
+                if (SettingsManager.Instance
                     .GetVideoContent().GenerateMovieMetadata)
                 {
                     GenerateNfoFile(downloading);
@@ -1005,7 +1005,7 @@ public abstract class DownloadService : IDisposable
                     DownloadingList.Remove(downloading);
 
                     // 下载完成列表排序
-                    var finishedSort = SettingsManager.GetInstance().GetDownloadFinishedSort();
+                    var finishedSort = SettingsManager.Instance.GetDownloadFinishedSort();
                     App.SortDownloadedList(finishedSort);
                 });
                 // _notifyIcon.ShowBalloonTip(DictionaryResource.GetString("DownloadSuccess"), $"{downloadedItem.DownloadBase.Name}", BalloonIcon.Info);
@@ -1062,7 +1062,7 @@ public abstract class DownloadService : IDisposable
     /// </summary>
     private static void AfterDownload()
     {
-        var operation = SettingsManager.GetInstance().GetAfterDownloadOperation();
+        var operation = SettingsManager.Instance.GetAfterDownloadOperation();
         switch (operation)
         {
             case AfterDownloadOperation.None:

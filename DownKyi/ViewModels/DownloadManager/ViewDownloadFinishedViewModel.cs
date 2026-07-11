@@ -54,7 +54,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
         DownloadedList = App.DownloadedList;
         _downloadStorageService = downloadStorageService;
 
-        var finishedSort = SettingsManager.GetInstance().GetDownloadFinishedSort();
+        var finishedSort = SettingsManager.Instance.GetDownloadFinishedSort();
         FinishedSortBy = finishedSort switch
         {
             DownloadFinishedSort.DownloadAsc => 0,
@@ -87,22 +87,22 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
             case 0:
                 App.SortDownloadedList(DownloadFinishedSort.DownloadAsc);
                 // 更新设置
-                SettingsManager.GetInstance().SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
+                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
             case 1:
                 App.SortDownloadedList(DownloadFinishedSort.DownloadDesc);
                 // 更新设置
-                SettingsManager.GetInstance().SetDownloadFinishedSort(DownloadFinishedSort.DownloadDesc);
+                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadDesc);
                 break;
             case 2:
                 App.SortDownloadedList(DownloadFinishedSort.Number);
                 // 更新设置
-                SettingsManager.GetInstance().SetDownloadFinishedSort(DownloadFinishedSort.Number);
+                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.Number);
                 break;
             default:
                 App.SortDownloadedList(DownloadFinishedSort.DownloadAsc);
                 // 更新设置
-                SettingsManager.GetInstance().SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
+                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
         }
     }

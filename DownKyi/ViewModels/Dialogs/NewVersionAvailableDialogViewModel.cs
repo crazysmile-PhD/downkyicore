@@ -32,7 +32,7 @@ namespace DownKyi.ViewModels.Dialogs
 
         private void ExecuteSkipCurrentVersionCommand()
         {
-            SettingsManager.GetInstance().SetSkipVersionOnLaunch(NewVersion);
+            SettingsManager.Instance.SetSkipVersionOnLaunch(NewVersion);
             RaiseRequestClose(new DialogResult());
         }
 

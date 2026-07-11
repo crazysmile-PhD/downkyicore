@@ -28,10 +28,10 @@ internal static class Utils
         page.PlayUrl = playUrl;
 
         // 获取设置
-        var userInfo = SettingsManager.GetInstance().GetUserInfo();
-        var defaultQuality = SettingsManager.GetInstance().GetQuality();
-        var videoCodecs = SettingsManager.GetInstance().GetVideoCodecs();
-        var defaultAudioQuality = SettingsManager.GetInstance().GetAudioQuality();
+        var userInfo = SettingsManager.Instance.GetUserInfo();
+        var defaultQuality = SettingsManager.Instance.GetQuality();
+        var videoCodecs = SettingsManager.Instance.GetVideoCodecs();
+        var defaultAudioQuality = SettingsManager.Instance.GetAudioQuality();
 
         // 未登录时，最高仅720P
         if (userInfo.Mid == -1)

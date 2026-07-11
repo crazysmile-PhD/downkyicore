@@ -83,11 +83,11 @@ public class ViewAboutViewModel : ViewModelBase
         _isOnNavigatedTo = true;
 
         // 是否接收测试版更新
-        var isReceiveBetaVersion = SettingsManager.GetInstance().GetIsReceiveBetaVersion();
+        var isReceiveBetaVersion = SettingsManager.Instance.GetIsReceiveBetaVersion();
         IsReceiveBetaVersion = isReceiveBetaVersion == AllowStatus.Yes;
 
         // 是否在启动时自动检查更新
-        var isAutoUpdateWhenLaunch = SettingsManager.GetInstance().GetAutoUpdateWhenLaunch();
+        var isAutoUpdateWhenLaunch = SettingsManager.Instance.GetAutoUpdateWhenLaunch();
         AutoUpdateWhenLaunch = isAutoUpdateWhenLaunch == AllowStatus.Yes;
 
         _isOnNavigatedTo = false;
@@ -160,7 +160,7 @@ public class ViewAboutViewModel : ViewModelBase
     private async Task ExecuteOpenLogsCommand()
     {
         await LogManager.FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
-        await PlatformHelper.OpenFolder(LogManager.GetLogDirectory(), EventAggregator).ConfigureAwait(true);
+        await PlatformHelper.OpenFolder(LogManager.LogDirectory, EventAggregator).ConfigureAwait(true);
     }
 
     // 导出脱敏诊断日志事件
@@ -197,7 +197,7 @@ public class ViewAboutViewModel : ViewModelBase
     {
         var isReceiveBetaVersion = IsReceiveBetaVersion ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.GetInstance().SetIsReceiveBetaVersion(isReceiveBetaVersion);
+        var isSucceed = SettingsManager.Instance.SetIsReceiveBetaVersion(isReceiveBetaVersion);
         PublishTip(isSucceed);
     }
 
@@ -213,7 +213,7 @@ public class ViewAboutViewModel : ViewModelBase
     {
         var isAutoUpdateWhenLaunch = AutoUpdateWhenLaunch ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.GetInstance().SetAutoUpdateWhenLaunch(isAutoUpdateWhenLaunch);
+        var isSucceed = SettingsManager.Instance.SetAutoUpdateWhenLaunch(isAutoUpdateWhenLaunch);
         PublishTip(isSucceed);
     }
 

@@ -207,7 +207,7 @@ public sealed class MainWindowViewModel : BindableBase, IDisposable
 
     private void ClipboardListenerOnChanged(string obj)
     {
-        var isListenClipboard = SettingsManager.GetInstance().GetIsListenClipboard();
+        var isListenClipboard = SettingsManager.Instance.GetIsListenClipboard();
         if (isListenClipboard != AllowStatus.Yes)
         {
             return;
@@ -252,11 +252,11 @@ public sealed class MainWindowViewModel : BindableBase, IDisposable
     {
         try
         {
-            var isAutoUpdate = SettingsManager.GetInstance().GetAutoUpdateWhenLaunch() != AllowStatus.Yes;
+            var isAutoUpdate = SettingsManager.Instance.GetAutoUpdateWhenLaunch() != AllowStatus.Yes;
             if (isAutoUpdate) return;
             var service = new VersionCheckerService(App.RepoOwner, App.RepoName,
-                SettingsManager.GetInstance().GetIsReceiveBetaVersion() == AllowStatus.Yes);
-            var release = await service.GetLatestReleaseAsync(SettingsManager.GetInstance().GetSkipVersionOnLaunch()).ConfigureAwait(true);
+                SettingsManager.Instance.GetIsReceiveBetaVersion() == AllowStatus.Yes);
+            var release = await service.GetLatestReleaseAsync(SettingsManager.Instance.GetSkipVersionOnLaunch()).ConfigureAwait(true);
             if (release != null && service.IsNewVersionAvailable(release.TagName))
             {
                 await _dialogService.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
