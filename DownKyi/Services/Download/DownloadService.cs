@@ -121,7 +121,7 @@ public abstract class DownloadService : IDisposable
     /// <param name="downloadedList"></param>
     /// <param name="dialogService"></param>
     /// <returns></returns>
-    public DownloadService(ImmutableObservableCollection<DownloadingItem> downloadingList, ImmutableObservableCollection<DownloadedItem> downloadedList, IDialogService? dialogService)
+    protected DownloadService(ImmutableObservableCollection<DownloadingItem> downloadingList, ImmutableObservableCollection<DownloadedItem> downloadedList, IDialogService? dialogService)
     {
         DownloadingList = downloadingList;
         DownloadedList = downloadedList;

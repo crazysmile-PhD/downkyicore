@@ -6,8 +6,12 @@ using Avalonia.Xaml.Interactivity;
 
 namespace DownKyi.CustomAction;
 
-public class GridSplitterExtensions
+public sealed class GridSplitterExtensions
 {
+    private GridSplitterExtensions()
+    {
+    }
+
     public static readonly AttachedProperty<ResetGridSplitterBehavior?> ResetGridBehaviorProperty =
         AvaloniaProperty.RegisterAttached<GridSplitterExtensions, GridSplitter, ResetGridSplitterBehavior?>(
             "ResetGridBehavior", coerce: OnResetGridBehaviorChanged);

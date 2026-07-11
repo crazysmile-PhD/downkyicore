@@ -11,7 +11,7 @@ namespace DownKyi.Core.Aria2cNet.Server
 {
     public static class AriaServer
     {
-        public static int ListenPort; // 服务器端口
+        public static int ListenPort { get; private set; } // 服务器端口
         private static Process? Server;
 
         /// <summary>

@@ -8,8 +8,6 @@ namespace DownKyi.Utils;
 
 public static class NavigateToView
 {
-    public static string Tag = "NavigateToView";
-
     /// <summary>
     /// 导航到用户空间，
     /// 如果传入的mid与本地登录的mid一致，
@@ -42,7 +40,6 @@ public static class NavigateToView
     {
         ArgumentNullException.ThrowIfNull(eventAggregator);
 
-        // LogManager.Debug(Tag, $"NavigationView: {viewName}, Parameter: {param}");
         var parameter = new NavigationParam
         {
             ViewName = viewName,

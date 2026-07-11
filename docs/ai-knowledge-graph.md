@@ -582,7 +582,8 @@ contracts:
   - Diagnostic identity includes rule, project, file, location, and message so repeated MSBuild summaries do not inflate counts.
   - The CSV retains every affected project, file, line, category, and compatibility-review flag.
   - Compatibility flags are review hints and never authorize mechanical API or schema changes.
-  - The current checkpoint is 931 unique diagnostics across 29 rules; all 43 rules already cleared from the baseline are blocking errors.
+  - Every assembly explicitly declares `CLSCompliant(false)` through `Directory.Build.props`; `CA1014` is enforced without claiming unverified CLS compatibility.
+  - The current checkpoint is 914 unique diagnostics across 24 rules; all 48 rules already cleared from the baseline are blocking errors.
 hazards:
   - Reusing one SARIF path across projects loses rule metadata because later projects overwrite earlier output.
   - Comparing raw MSBuild warning totals without deduplication overstates the baseline.
@@ -742,6 +743,12 @@ test.null-contracts:
   guards:
     - externally visible non-null inputs fail immediately with ArgumentNullException
     - URL, parser, download-file, collection, navigation, and UI callback entry points do not defer null failures
+
+test.enum-values:
+  paths:
+    - tests/DownKyi.Core.Tests/EnumValueContractTests.cs
+  guards:
+    - analyzer-required None members remain zero without shifting persisted, settings, or protocol enum values
 
 test.architecture-boundaries:
   paths:

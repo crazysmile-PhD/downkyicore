@@ -26,7 +26,7 @@ Pull requests are guarded by `.github/workflows/quality.yml`:
 
 The repository always uses the supported `AnalysisMode=All` value. The pre-fix baseline is 1,654 unique diagnostics across 71 CA rules; see `docs/analyzer-baseline.md` and `docs/analyzer-baseline.csv`. `CodeAnalysisTreatWarningsAsErrors=false` is temporary, while compiler warnings still block CI. Promote a rule to `error` in `.editorconfig` only after every occurrence is fixed and verified. Set `CodeAnalysisTreatWarningsAsErrors=true` only after all unhandled CA diagnostics reach zero on every required platform.
 
-Current PR 02 checkpoint: 931 unique diagnostics across 29 rules remain. The 43 rules already at zero are enforced as errors: `CA1001`, `CA1031`, `CA1032`, `CA1058`, `CA1062`, `CA1063`, `CA1309`, `CA1508`, `CA1513`, `CA1802`, `CA1805`, `CA1810`, `CA1813`, `CA1816`, `CA1819`, `CA1820`, `CA1822`, `CA1823`, `CA1829`, `CA1845`, `CA1847`, `CA1849`, `CA1850`, `CA1854`, `CA1859`, `CA1861`, `CA1862`, `CA1864`, `CA1866`, `CA1872`, `CA2000`, `CA2007`, `CA2008`, `CA2025`, `CA2100`, `CA2201`, `CA2213`, `CA2214`, `CA2234`, `CA2263`, `CA5351`, `CA5373`, and `CA5401`. This checkpoint was produced by a clean Release build and 79 passing tests; it is progress evidence, not the final cross-platform zero-warning gate.
+Current PR 02 checkpoint: 914 unique diagnostics across 24 rules remain. The 48 rules already at zero are enforced as errors: `CA1001`, `CA1008`, `CA1012`, `CA1014`, `CA1031`, `CA1032`, `CA1052`, `CA1058`, `CA1062`, `CA1063`, `CA1309`, `CA1508`, `CA1513`, `CA1802`, `CA1805`, `CA1810`, `CA1813`, `CA1816`, `CA1819`, `CA1820`, `CA1822`, `CA1823`, `CA1829`, `CA1845`, `CA1847`, `CA1849`, `CA1850`, `CA1854`, `CA1859`, `CA1861`, `CA1862`, `CA1864`, `CA1866`, `CA1872`, `CA2000`, `CA2007`, `CA2008`, `CA2025`, `CA2100`, `CA2201`, `CA2211`, `CA2213`, `CA2214`, `CA2234`, `CA2263`, `CA5351`, `CA5373`, and `CA5401`. This checkpoint was produced by a clean Release build and 80 passing tests; it is progress evidence, not the final cross-platform zero-warning gate.
 
 ## Analyzer Policy
 
@@ -39,6 +39,7 @@ Current PR 02 checkpoint: 931 unique diagnostics across 29 rules remain. The 43 
 - UI-layer awaits that must continue on Avalonia state use `ConfigureAwait(true)`; reusable Core and background infrastructure use `ConfigureAwait(false)`. xUnit test bodies retain the test scheduler with `ConfigureAwait(true)`.
 - Fire-and-forget entry points must observe faulted tasks and log the base exception. Do not restore a general `catch (Exception)` sink.
 - Types that own cancellation sources, processes, HTTP resources, streams, bitmaps, or download services must release them through an explicit `IDisposable` or `IAsyncDisposable` owner.
+- Assemblies explicitly declare `CLSCompliant(false)` in `Directory.Build.props`; this satisfies `CA1014` by documenting the current cross-language contract and must not be changed to `true` without first auditing every public API for CLS compliance.
 
 ### Approved Minimal Suppressions
 

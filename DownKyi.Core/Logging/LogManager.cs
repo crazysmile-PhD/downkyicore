@@ -9,7 +9,7 @@ namespace DownKyi.Core.Logging;
 /// <summary>
 /// 日志组件
 /// </summary>
-public class LogManager
+public static class LogManager
 {
     private const long MaxLogFileBytes = 1 * 1024 * 1024;
     private const int MaxDiagnosticEntries = 300;

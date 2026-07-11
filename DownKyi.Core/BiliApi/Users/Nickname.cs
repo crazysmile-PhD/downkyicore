@@ -8,7 +8,7 @@ namespace DownKyi.Core.BiliApi.Users;
 /// <summary>
 /// 用户昵称
 /// </summary>
-public class Nickname
+public static class Nickname
 {
     /// <summary>
     /// 检查昵称

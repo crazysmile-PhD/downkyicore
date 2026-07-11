@@ -2,6 +2,8 @@ namespace DownKyi.Core.FileName;
 
 public enum FileNamePart
 {
+    None = 0,
+
     // Video
     Order = 1,
     Section,
