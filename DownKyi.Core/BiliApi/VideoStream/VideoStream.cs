@@ -196,16 +196,7 @@ public static class VideoStream
     /// <returns></returns>
     public static PlayUrl? GetVideoPlayUrlWebPage(long avid, string bvid, long cid, int p, CancellationToken cancellationToken = default)
     {
-        var url = "https://www.bilibili.com/video";
-        if (bvid == string.Empty)
-        {
-            url = $"{url}/{bvid}/?p={p}";
-        }
-        else if (avid > -1)
-        {
-            url = $"{url}/av{avid}/?p={p}";
-        }
-
+        var url = BuildVideoPlayPageUrl(avid, bvid, p);
         var playUrl = GetPlayUrlWebPage(url, cancellationToken);
         if (playUrl == null)
         {
@@ -213,6 +204,22 @@ public static class VideoStream
         }
 
         return playUrl;
+    }
+
+    internal static string BuildVideoPlayPageUrl(long avid, string bvid, int p)
+    {
+        const string baseUrl = "https://www.bilibili.com/video";
+        if (!string.IsNullOrEmpty(bvid))
+        {
+            return $"{baseUrl}/{bvid}/?p={p}";
+        }
+
+        if (avid > -1)
+        {
+            return $"{baseUrl}/av{avid}/?p={p}";
+        }
+
+        return baseUrl;
     }
 
     // /// <summary>

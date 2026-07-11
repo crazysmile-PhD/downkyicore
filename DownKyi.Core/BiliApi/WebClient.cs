@@ -11,19 +11,19 @@ namespace DownKyi.Core.BiliApi;
 
 public static class WebClient
 {
-    private static readonly HttpClient HttpClient;
-    private static readonly SocketsHttpHandler SocketsHandler;
+    private static readonly SocketsHttpHandler SocketsHandler = CreateSocketsHandler();
+    private static readonly HttpClient HttpClient = CreateHttpClient(SocketsHandler);
     private static int _resourcesDisposed;
     private static string? _bvuid3 = string.Empty;
     private static string? _bvuid4 = string.Empty;
     internal static Func<HttpRequestMessage, CancellationToken, HttpResponseMessage>? SendOverrideForTests { get; set; }
 
-    static WebClient()
+    private static HttpClient CreateHttpClient(SocketsHttpHandler socketsHandler)
     {
-        SocketsHandler = CreateSocketsHandler();
-        HttpClient = new HttpClient(SocketsHandler, disposeHandler: false);
-        HttpClient.DefaultRequestHeaders.Add("User-Agent", SettingsManager.GetInstance().GetUserAgent());
-        HttpClient.DefaultRequestHeaders.Add("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
+        var httpClient = new HttpClient(socketsHandler, disposeHandler: false);
+        httpClient.DefaultRequestHeaders.Add("User-Agent", SettingsManager.GetInstance().GetUserAgent());
+        httpClient.DefaultRequestHeaders.Add("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
+        return httpClient;
     }
 
     public static void DisposeSharedResources()
@@ -269,7 +269,7 @@ public static class WebClient
         var query = string.Join("&", parameters.Select(kvp =>
             $"{HttpUtility.UrlEncode(kvp.Key)}={HttpUtility.UrlEncode(kvp.Value?.ToString() ?? string.Empty)}"));
 
-        return url.Contains("?", StringComparison.Ordinal)
+        return url.Contains('?')
             ? $"{url}&{query}"
             : $"{url}?{query}";
     }
@@ -383,4 +383,5 @@ public static class WebClient
             await base.DisposeAsync().ConfigureAwait(false);
         }
     }
+
 }

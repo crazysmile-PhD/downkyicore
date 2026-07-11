@@ -5,6 +5,7 @@ namespace DownKyi.Core.Danmaku2Ass;
 /// </summary>
 public class Studio
 {
+    private readonly System.Text.Encoding _outputEncoding;
     public Config Config;
     public List<Danmaku> Danmakus;
 
@@ -13,9 +14,18 @@ public class Studio
     public int DropedCount;
 
     public Studio(Config config, List<Danmaku> danmakus)
+        : this(config, danmakus, new System.Text.UTF8Encoding(false))
     {
+    }
+
+    internal Studio(Config config, List<Danmaku> danmakus, System.Text.Encoding outputEncoding)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(danmakus);
+        ArgumentNullException.ThrowIfNull(outputEncoding);
         Config = config;
         Danmakus = danmakus;
+        _outputEncoding = outputEncoding;
     }
 
     public void StartHandle()
@@ -65,7 +75,7 @@ public class Studio
     {
         try
         {
-            File.WriteAllText(fileName, text);
+            File.WriteAllText(fileName, text, _outputEncoding);
         }
         catch (IOException)
         {

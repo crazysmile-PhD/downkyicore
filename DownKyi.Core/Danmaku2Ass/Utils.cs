@@ -109,7 +109,7 @@ internal static class Utils
     public static string Int2bgr(int integer)
     {
         var rgb = Int2rgb(integer);
-        var bgr = rgb.Substring(4, 2) + rgb.Substring(2, 2) + rgb.Substring(0, 2);
+        var bgr = string.Concat(rgb.AsSpan(4, 2), rgb.AsSpan(2, 2), rgb.AsSpan(0, 2));
         return bgr;
     }
 

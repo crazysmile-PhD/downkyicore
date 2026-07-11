@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using DownKyi.Core.Aria2cNet.Client;
@@ -123,7 +123,7 @@ namespace DownKyi.Core.Aria2cNet.Server
                     "",
                     null, (s, e) =>
                     {
-                        if (string.IsNullOrEmpty(e.Data) || e.Data.Replace(" ", "") == "")
+                        if (string.IsNullOrWhiteSpace(e.Data))
                         {
                             return;
                         }

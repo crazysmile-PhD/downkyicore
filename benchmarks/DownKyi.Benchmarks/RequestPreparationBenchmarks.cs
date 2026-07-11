@@ -29,6 +29,7 @@ public class RequestPreparationBenchmarks
         ["fnval"] = 4048,
         ["fourk"] = 1
     };
+    private readonly JsonSerializerOptions _jsonOptions = new();
 
     [Benchmark]
     public string BuildRequestUrl()
@@ -42,7 +43,7 @@ public class RequestPreparationBenchmarks
     [Benchmark]
     public ApiEnvelope? DeserializeApiEnvelope()
     {
-        return JsonSerializer.Deserialize<ApiEnvelope>(SampleJson);
+        return JsonSerializer.Deserialize<ApiEnvelope>(SampleJson, _jsonOptions);
     }
 
     public sealed record ApiEnvelope(int Code, string Message, ApiData Data);

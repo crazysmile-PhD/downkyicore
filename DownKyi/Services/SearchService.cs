@@ -7,6 +7,13 @@ namespace DownKyi.Services;
 
 public class SearchService
 {
+    private readonly IEventAggregator? _defaultEventAggregator;
+
+    public SearchService(IEventAggregator? defaultEventAggregator = null)
+    {
+        _defaultEventAggregator = defaultEventAggregator;
+    }
+
     /// <summary>
     /// 解析支持的输入，
     /// 支持的格式有：<para/>
@@ -24,8 +31,9 @@ public class SearchService
     /// <param name="parentViewName"></param>
     /// <param name="eventAggregator"></param>
     /// <returns></returns>
-    public bool BiliInput(string input, string parentViewName, IEventAggregator eventAggregator)
+    public bool BiliInput(string input, string parentViewName, IEventAggregator? eventAggregator = null)
     {
+        eventAggregator = ResolveEventAggregator(eventAggregator);
         // 移除剪贴板id
         var justId = input.Replace(AppConstant.ClipboardId, "");
 
@@ -108,8 +116,15 @@ public class SearchService
     /// <param name="key"></param>
     /// <param name="parentViewName"></param>
     /// <param name="eventAggregator"></param>
-    public void SearchKey(string key, string parentViewName, IEventAggregator eventAggregator)
+    public void SearchKey(string key, string parentViewName, IEventAggregator? eventAggregator = null)
     {
+        eventAggregator = ResolveEventAggregator(eventAggregator);
         // TODO
+    }
+
+    private IEventAggregator ResolveEventAggregator(IEventAggregator? eventAggregator)
+    {
+        return eventAggregator ?? _defaultEventAggregator
+            ?? throw new System.InvalidOperationException("Search navigation requires an event aggregator.");
     }
 }

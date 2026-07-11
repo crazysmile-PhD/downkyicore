@@ -116,7 +116,7 @@ public class BaseWebImageLoader : IAsyncImageLoader
     {
         try
         {
-            var uri = url.StartsWith("/")
+            var uri = url.StartsWith('/')
                 ? new Uri(url, UriKind.Relative)
                 : new Uri(url, UriKind.RelativeOrAbsolute);
 
@@ -206,4 +206,5 @@ public class BaseWebImageLoader : IAsyncImageLoader
     {
         if (disposing && _shouldDisposeHttpClient) HttpClient.Dispose();
     }
+
 }

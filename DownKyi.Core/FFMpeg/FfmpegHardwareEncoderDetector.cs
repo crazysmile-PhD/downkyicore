@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -15,6 +15,7 @@ internal sealed record FfmpegHardwareEncoderProfile(
 internal static class FfmpegHardwareEncoderDetector
 {
     private const string Tag = "FfmpegHardwareEncoderDetector";
+    private static readonly char[] EncoderLineSeparators = { '\r', '\n' };
     private static readonly Lazy<HashSet<string>> AvailableEncoders = new(LoadAvailableEncoders);
 
     public static FfmpegHardwareEncoderProfile? Select(FfmpegHardwareAcceleration mode)
@@ -63,7 +64,7 @@ internal static class FfmpegHardwareEncoderDetector
         }
     }
 
-    private static IEnumerable<FfmpegHardwareEncoderProfile> GetManualCandidates(FfmpegHardwareAcceleration mode)
+    private static FfmpegHardwareEncoderProfile[] GetManualCandidates(FfmpegHardwareAcceleration mode)
     {
         return mode switch
         {
@@ -126,7 +127,7 @@ internal static class FfmpegHardwareEncoderDetector
         var output = RunFfmpeg("-hide_banner -encoders");
         var encoders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        foreach (var line in output.Split(EncoderLineSeparators, StringSplitOptions.RemoveEmptyEntries))
         {
             var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length >= 2)

@@ -121,11 +121,11 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
             downloading.Downloading.DownloadedFiles = new List<string>();
         }
 
-        if (downloading.Downloading.DownloadFiles.ContainsKey(key))
+        if (downloading.Downloading.DownloadFiles.TryGetValue(key, out var existingFileName))
         {
             // 如果存在，表示下载过，
             // 则继续使用上次下载的文件名
-            fileName = downloading.Downloading.DownloadFiles[key];
+            fileName = existingFileName;
 
             // 还要检查一下文件有没有被人删掉，删掉的话重新下载
             // 如果下载视频之后音频文件被人删了。此时gid还是视频的，会下错文件
@@ -142,17 +142,8 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
                 PersistDownloadingState(downloading);
             }
         }
-        else
+        else if (downloading.Downloading.DownloadFiles.TryAdd(key, fileName))
         {
-            // 记录本次下载的文件
-            try
-            {
-                downloading.Downloading.DownloadFiles.Add(key, fileName);
-            }
-            catch (ArgumentException)
-            {
-            }
-
             // Gid最好能是每个文件单独存储，现在复用有可能会混
             // 不过好消息是下载是按固定顺序的，而且下载了两个音频会混流不过
             downloading.Downloading.Gid = null;

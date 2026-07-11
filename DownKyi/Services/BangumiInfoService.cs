@@ -202,7 +202,7 @@ public class BangumiInfoService : IInfoService
                 order++;
 
                 // 标题
-                var name = episode.LongTitle != null && episode.LongTitle != "" ? $"{episode.Title} {episode.LongTitle}" : episode.Title;
+                var name = !string.IsNullOrEmpty(episode.LongTitle) ? $"{episode.Title} {episode.LongTitle}" : episode.Title;
                 var page = new VideoPage
                 {
                     Avid = episode.Aid,

@@ -14,13 +14,16 @@ namespace DownKyi.CustomControl.AsyncImageLoader;
 
 public static class ImageBrushLoader
 {
-    private static readonly ParametrizedLogger? Logger;
-    public static IAsyncImageLoader AsyncImageLoader { get; set; } = new DiskCachedWebImageLoader(Path.Combine(StorageManager.GetCache(), "Images"));
+    private static readonly ParametrizedLogger? Logger =
+        Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);
+    public static readonly AttachedProperty<string?> SourceProperty =
+        AvaloniaProperty.RegisterAttached<ImageBrush, string?>("Source", typeof(ImageLoader));
+    public static IAsyncImageLoader AsyncImageLoader { get; set; } = CreateDefaultLoader();
 
-    static ImageBrushLoader()
+    private static DiskCachedWebImageLoader CreateDefaultLoader()
     {
         SourceProperty.Changed.AddClassHandler<ImageBrush>(OnSourceChanged);
-        Logger = Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);
+        return new DiskCachedWebImageLoader(Path.Combine(StorageManager.GetCache(), "Images"));
     }
 
     private static void OnSourceChanged(ImageBrush imageBrush, AvaloniaPropertyChangedEventArgs args)
@@ -75,8 +78,6 @@ public static class ImageBrushLoader
 
         SetIsLoading(imageBrush, false);
     }
-
-    public static readonly AttachedProperty<string?> SourceProperty = AvaloniaProperty.RegisterAttached<ImageBrush, string?>("Source", typeof(ImageLoader));
 
     public static string? GetSource(ImageBrush element)
     {

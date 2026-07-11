@@ -16,7 +16,8 @@ namespace DownKyi.CustomControl.AsyncImageLoader;
 
 public static class ImageLoader
 {
-    private static readonly ParametrizedLogger? Logger;
+    private static readonly ParametrizedLogger? Logger =
+        Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, AsyncImageLoaderLogArea);
 
     public const string AsyncImageLoaderLogArea = "AsyncImageLoader";
 
@@ -26,13 +27,13 @@ public static class ImageLoader
     public static readonly AttachedProperty<bool> IsLoadingProperty =
         AvaloniaProperty.RegisterAttached<Image, bool>("IsLoading", typeof(ImageLoader));
 
-    static ImageLoader()
+    public static IAsyncImageLoader AsyncImageLoader { get; set; } = CreateDefaultLoader();
+
+    private static DiskCachedWebImageLoader CreateDefaultLoader()
     {
         SourceProperty.Changed.AddClassHandler<Image>(OnSourceChanged);
-        Logger = Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, AsyncImageLoaderLogArea);
+        return new DiskCachedWebImageLoader(Path.Combine(StorageManager.GetCache(), "Images"));
     }
-
-    public static IAsyncImageLoader AsyncImageLoader { get; set; } = new DiskCachedWebImageLoader(Path.Combine(StorageManager.GetCache(), "Images"));
 
     private static readonly ConcurrentDictionary<Image, CancellationTokenSource> PendingOperations = new();
 

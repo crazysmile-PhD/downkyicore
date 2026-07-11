@@ -378,7 +378,7 @@ public class LogManager
         }
     }
 
-    private static IEnumerable<string> ReadDiagnosticEntries(CancellationToken cancellationToken)
+    private static Queue<string> ReadDiagnosticEntries(CancellationToken cancellationToken)
     {
         var logFiles = Directory.Exists(LogDirectory)
             ? Directory.GetFiles(LogDirectory, "*.log", SearchOption.TopDirectoryOnly)

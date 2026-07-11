@@ -4,6 +4,7 @@ namespace DownKyi.Tests;
 
 public sealed class DownloadTaskFileServiceTests : IDisposable
 {
+    private static readonly string[] GeneratedFileNames = { "video-stream.mp4", "audio-stream.aac" };
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(),
         "downkyi-file-lifecycle-tests",
@@ -17,7 +18,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
 
         var files = DownloadTaskFileService.GetGeneratedFiles(
             basePath,
-            new[] { "video-stream.mp4", "audio-stream.aac" });
+            GeneratedFileNames);
 
         Assert.Contains(Path.GetFullPath(Path.Combine(_directory, "video-stream.mp4.aria2")), files);
         Assert.Contains(Path.GetFullPath(Path.Combine(_directory, "audio-stream.aac.download")), files);

@@ -35,6 +35,28 @@ dotnet_diagnostic.CA2025.severity = error
 dotnet_diagnostic.CA2213.severity = error
 dotnet_diagnostic.CA2214.severity = error
 
+# Performance and allocation rules cleaned in PR 02.
+dotnet_diagnostic.CA1802.severity = error
+dotnet_diagnostic.CA1805.severity = error
+dotnet_diagnostic.CA1810.severity = error
+dotnet_diagnostic.CA1813.severity = error
+dotnet_diagnostic.CA1819.severity = error
+dotnet_diagnostic.CA1820.severity = error
+dotnet_diagnostic.CA1822.severity = error
+dotnet_diagnostic.CA1823.severity = error
+dotnet_diagnostic.CA1829.severity = error
+dotnet_diagnostic.CA1845.severity = error
+dotnet_diagnostic.CA1847.severity = error
+dotnet_diagnostic.CA1854.severity = error
+dotnet_diagnostic.CA1859.severity = error
+dotnet_diagnostic.CA1861.severity = error
+dotnet_diagnostic.CA1862.severity = error
+dotnet_diagnostic.CA1864.severity = error
+dotnet_diagnostic.CA1866.severity = error
+
+# Globalization rule cleared while removing case-normalization allocations.
+dotnet_diagnostic.CA1309.severity = error
+
 [*.{csproj,props,targets,axaml,json,yml,yaml}]
 indent_style = space
 indent_size = 2

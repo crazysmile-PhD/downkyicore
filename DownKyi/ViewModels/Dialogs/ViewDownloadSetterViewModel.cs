@@ -420,7 +420,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
     /// 设置下载路径
     /// </summary>
     /// <returns></returns>
-    private async Task<string?> SetDirectory()
+    private static async Task<string?> SetDirectory()
     {
         // 下载目录
         // 弹出选择下载目录的窗口

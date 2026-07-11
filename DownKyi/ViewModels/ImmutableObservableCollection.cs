@@ -171,7 +171,7 @@ public sealed class ImmutableObservableCollection<T> : IList<T>, IList, INotifyC
         }
     }
 
-    private bool HasSingleTarget(NotifyCollectionChangedEventHandler? handler)
+    private static bool HasSingleTarget(NotifyCollectionChangedEventHandler? handler)
     {
         if (handler == null)
             return true;

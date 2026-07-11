@@ -51,7 +51,7 @@ namespace DownKyi.ViewModels.Dialogs
             set => SetProperty(ref _markdownText, value);
         }
 
-        private bool _enableSkipVersionOnLaunch = false;
+        private bool _enableSkipVersionOnLaunch;
 
 
         private string _newVersion = string.Empty;

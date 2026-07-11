@@ -12,7 +12,7 @@ namespace DownKyi.Core.Aria2cNet.Client;
 /// </summary>
 public static class AriaClient
 {
-    private static readonly string JSONRPC = "2.0";
+    private const string JSONRPC = "2.0";
     private const string LOCAL_HOST = "http://localhost";
     private const string TOKEN = "downkyi";
     private const int LISTEN_PORT = 35076;

@@ -34,7 +34,7 @@ public class ViewDelogoViewModel : ViewModelBase
     public const string Tag = "PageToolboxDelogo";
 
     // 是否正在执行去水印任务
-    private bool _isDelogo = false;
+    private bool _isDelogo;
 
     private IImage _source = null!;
 

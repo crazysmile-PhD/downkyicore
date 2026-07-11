@@ -502,6 +502,7 @@ contracts:
   - Stream copy is preferred when possible.
   - Hardware encode failure must fall back to CPU for success rate.
   - Release packages must include cross-platform ffmpeg binaries with checksums.
+  - FFmpeg concurrency state belongs to the singleton runtime instance; every operation, including frame extraction, must enter and release the same bounded slot gate.
 hazards:
   - GPU encoder flags differ across OS/GPU/driver.
   - Full transcode can spike CPU and memory during batch downloads.
@@ -581,7 +582,7 @@ contracts:
   - Diagnostic identity includes rule, project, file, location, and message so repeated MSBuild summaries do not inflate counts.
   - The CSV retains every affected project, file, line, category, and compatibility-review flag.
   - Compatibility flags are review hints and never authorize mechanical API or schema changes.
-  - The current checkpoint is 1,191 unique diagnostics across 52 rules; all 19 rules already cleared from the baseline are blocking errors.
+  - The current checkpoint is 1,062 unique diagnostics across 35 rules; all 37 rules already cleared from the baseline are blocking errors.
 hazards:
   - Reusing one SARIF path across projects loses rule metadata because later projects overwrite earlier output.
   - Comparing raw MSBuild warning totals without deduplication overstates the baseline.
@@ -774,9 +775,14 @@ These nodes are intentionally documented even when coverage is still missing. Ad
 
 ```yaml
 test.json-contracts:
-  status: planned
+  status: partial
+  paths:
+    - tests/DownKyi.Core.Tests/BiliApiModelContractTests.cs
+    - tests/DownKyi.Core.Tests/DanmakuAndZoneContractTests.cs
   should_guard:
-    - sample Bilibili JSON deserializes
+    - sample Bilibili JSON arrays deserialize into mutable model collections without changing wire format
+    - BVID web-page URL construction prefers BVID and falls back to AID only when BVID is empty
+    - zone icon fallback, quality dimensions, and injected subtitle output encoding remain deterministic
     - missing data does not become NullReference later
     - code != 0 is visible
     - empty string and HTML error pages fail as JSON

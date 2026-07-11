@@ -47,7 +47,7 @@ public abstract class DownloadService : IDisposable
     protected const int Retry = 5;
     protected const string NullMark = "<null>";
 
-    protected DownloadStorageService DownloadStorageService =>
+    private static DownloadStorageService DownloadStorageService =>
         (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
 
     protected void EnsureDownloadIsActive(DownloadingItem downloading)
@@ -127,7 +127,7 @@ public abstract class DownloadService : IDisposable
         DialogService = dialogService;
     }
 
-    protected PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
+    protected static PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
     {
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
@@ -139,7 +139,7 @@ public abstract class DownloadService : IDisposable
         downloading.SpeedDisplay = string.Empty;
 
         // 如果没有Dash，返回null
-        if (downloading.PlayUrl == null || downloading.PlayUrl.Dash == null)
+        if (downloading.PlayUrl?.Dash == null)
         {
             return null;
         }
@@ -179,7 +179,7 @@ public abstract class DownloadService : IDisposable
         return downloadAudio;
     }
 
-    protected VideoPlayUrlBasic? BaseDownloadVideo(DownloadingItem downloading)
+    protected static VideoPlayUrlBasic? BaseDownloadVideo(DownloadingItem downloading)
     {
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
@@ -284,9 +284,8 @@ public abstract class DownloadService : IDisposable
         var assFile = $"{downloading.DownloadBase?.FilePath}.ass";
 
         // 记录本次下载的文件
-        if (!downloading.Downloading.DownloadFiles.ContainsKey("danmaku"))
+        if (downloading.Downloading.DownloadFiles.TryAdd("danmaku", assFile))
         {
-            downloading.Downloading.DownloadFiles.Add("danmaku", assFile);
             PersistDownloadingState(downloading);
         }
 
@@ -463,7 +462,7 @@ public abstract class DownloadService : IDisposable
     }
 
 
-    protected string? BaseMixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
+    protected static string? BaseMixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("MixedFlow");
@@ -506,7 +505,7 @@ public abstract class DownloadService : IDisposable
     }
 
 
-    private string ConcatVideos(DownloadingItem downloading, List<string> videoUids)
+    private static string ConcatVideos(DownloadingItem downloading, List<string> videoUids)
     {
         downloading.DownloadStatusTitle = DictionaryResource.GetString("ConcatVideos");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingVideo");
@@ -1026,7 +1025,7 @@ public abstract class DownloadService : IDisposable
     /// </summary>
     /// <param name="coverUrl"></param>
     /// <returns></returns>
-    protected string GetImageExtension(string? coverUrl)
+    private static string GetImageExtension(string? coverUrl)
     {
         if (coverUrl == null)
         {
@@ -1042,7 +1041,7 @@ public abstract class DownloadService : IDisposable
     /// <summary>
     /// 下载完成后的操作
     /// </summary>
-    protected void AfterDownload()
+    private static void AfterDownload()
     {
         var operation = SettingsManager.GetInstance().GetAfterDownloadOperation();
         switch (operation)
@@ -1162,6 +1161,5 @@ public abstract class DownloadService : IDisposable
     public abstract string? MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid);
 
     protected abstract void Pause(DownloadingItem downloading);
-
     #endregion
 }

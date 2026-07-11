@@ -173,7 +173,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
     public DownKyiAsyncDelegateCommand<DownloadedItem> OpenFolderCommand => _openFolderCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteOpenFolderCommand);
 
 
-    private static readonly IReadOnlyDictionary<string, string[]> FileSuffixMap = new Dictionary<string, string[]>
+    private static readonly Dictionary<string, string[]> FileSuffixMap = new()
     {
         { "downloadVideo", new[] { ".mp4", ".flv" } },
         { "downloadAudio", new[] { ".aac", ".mp3" } },

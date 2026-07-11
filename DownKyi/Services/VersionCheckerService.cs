@@ -13,12 +13,14 @@ namespace DownKyi.Services
         private readonly string _repoOwner;
         private readonly string _repoName;
         private readonly bool _includePrereleases;
+        private readonly string _currentVersion;
 
         public VersionCheckerService(string repoOwner, string repoName, bool includePrereleases = false)
         {
             _repoOwner = repoOwner;
             _repoName = repoName;
             _includePrereleases = includePrereleases;
+            _currentVersion = AppInfo.NormalizeVersionName(new AppInfo().VersionName);
         }
 
 
@@ -70,9 +72,8 @@ namespace DownKyi.Services
 
         public bool IsNewVersionAvailable(string latestVersion)
         {
-            var currentVersion = AppInfo.NormalizeVersionName(new AppInfo().VersionName);
             var latestReleaseVersion = AppInfo.NormalizeVersionName(latestVersion);
-            if (!Version.TryParse(currentVersion, out var current) ||
+            if (!Version.TryParse(_currentVersion, out var current) ||
                 !Version.TryParse(latestReleaseVersion, out var latest))
             {
                 return false;

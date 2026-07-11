@@ -432,7 +432,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
             {
                 // 查询、保存封面
                 var coverUrl = bangumiFollow.Cover;
-                if (!coverUrl.ToLower().StartsWith("http"))
+                if (!coverUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
                     coverUrl = $"https:{bangumiFollow.Cover}";
                 }
@@ -453,7 +453,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
 
                 // 观看进度
                 string progress;
-                if (bangumiFollow.Progress == null || bangumiFollow.Progress == "")
+                if (string.IsNullOrEmpty(bangumiFollow.Progress))
                 {
                     progress = DictionaryResource.GetString("BangumiNotWatched");
                 }

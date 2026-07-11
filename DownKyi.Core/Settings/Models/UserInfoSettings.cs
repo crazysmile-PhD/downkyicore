@@ -12,11 +12,17 @@ public class UserInfoSettings : IEquatable<UserInfoSettings>
 
     public override int GetHashCode()
     {
-        return GetHashCode(this);
+        return HashCode.Combine(Mid, Name, IsLogin, IsVip, ImgKey, SubKey);
     }
 
     public int GetHashCode(UserInfoSettings obj)
     {
+        ArgumentNullException.ThrowIfNull(obj);
+        if (ReferenceEquals(this, obj))
+        {
+            return GetHashCode();
+        }
+
         return HashCode.Combine(obj.Mid, obj.Name, obj.IsLogin, obj.IsVip, obj.ImgKey, obj.SubKey);
     }
 

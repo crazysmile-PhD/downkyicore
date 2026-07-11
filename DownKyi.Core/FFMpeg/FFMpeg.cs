@@ -1,10 +1,10 @@
+using System.ComponentModel;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using FFMpegCore;
 using FFMpegCore.Enums;
 using FFMpegCore.Helpers;
 using FFMpegCore.Pipes;
-using System.ComponentModel;
 
 namespace DownKyi.Core.FFMpeg;
 
@@ -12,12 +12,8 @@ public class FFMpeg
 {
     private const string Tag = "FFmpegHelper";
     private static readonly FFMpeg instance = new();
-    private static readonly object FfmpegJobLock = new();
-    private static int _runningFfmpegJobs;
-
-    static FFMpeg()
-    {
-    }
+    private readonly object _ffmpegJobLock = new();
+    private int _runningFfmpegJobs;
 
     private FFMpeg()
     {
@@ -173,6 +169,7 @@ public class FFMpeg
 
     public async Task<MemoryStream> ExtractVideoFrame(string inputPath, TimeSpan timestamp)
     {
+        using var _ = EnterFfmpegSlot("extract video frame");
         var ms = new MemoryStream();
         await FFMpegArguments
             .FromFileInput(inputPath, false, options => options.Seek(timestamp))
@@ -380,7 +377,7 @@ public class FFMpeg
         }
     }
 
-    private static bool RunFfmpeg(FFMpegArgumentProcessor arguments, string operation, Action<string>? action = null)
+    private bool RunFfmpeg(FFMpegArgumentProcessor arguments, string operation, Action<string>? action = null)
     {
         using var _ = EnterFfmpegSlot(operation);
         try
@@ -414,14 +411,14 @@ public class FFMpeg
         }
     }
 
-    private static IDisposable EnterFfmpegSlot(string operation)
+    private FfmpegSlot EnterFfmpegSlot(string operation)
     {
         var maxParallel = SettingsManager.GetInstance().GetFfmpegMaxParallelJobs();
-        lock (FfmpegJobLock)
+        lock (_ffmpegJobLock)
         {
             while (_runningFfmpegJobs >= maxParallel)
             {
-                Monitor.Wait(FfmpegJobLock);
+                Monitor.Wait(_ffmpegJobLock);
                 maxParallel = SettingsManager.GetInstance().GetFfmpegMaxParallelJobs();
             }
 
@@ -430,17 +427,30 @@ public class FFMpeg
                 $"FFmpeg operation started. operation={operation}; running={_runningFfmpegJobs}; maxParallel={maxParallel}");
         }
 
-        return new FfmpegSlot();
+        return new FfmpegSlot(this);
     }
 
     private sealed class FfmpegSlot : IDisposable
     {
+        private FFMpeg? _owner;
+
+        public FfmpegSlot(FFMpeg owner)
+        {
+            _owner = owner;
+        }
+
         public void Dispose()
         {
-            lock (FfmpegJobLock)
+            var owner = Interlocked.Exchange(ref _owner, null);
+            if (owner == null)
             {
-                _runningFfmpegJobs = Math.Max(0, _runningFfmpegJobs - 1);
-                Monitor.PulseAll(FfmpegJobLock);
+                return;
+            }
+
+            lock (owner._ffmpegJobLock)
+            {
+                owner._runningFfmpegJobs = Math.Max(0, owner._runningFfmpegJobs - 1);
+                Monitor.PulseAll(owner._ffmpegJobLock);
             }
         }
     }

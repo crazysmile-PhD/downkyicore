@@ -14,15 +14,17 @@ public static class BvId
     private const string Data = "FcwAPNKTMug3GV5Lj7EJnHpWsx4tb8haYeviqBz6rkCy12mUSDQX9RdoZf";
 
     // 为了提高BvToAv的性能，预先构建字符到索引的映射
-    private static readonly Dictionary<char, int> DataMap;
+    private static readonly Dictionary<char, int> DataMap = CreateDataMap();
 
-    static BvId()
+    private static Dictionary<char, int> CreateDataMap()
     {
-        DataMap = new Dictionary<char, int>();
+        var dataMap = new Dictionary<char, int>();
         for (var i = 0; i < Data.Length; i++)
         {
-            DataMap[Data[i]] = i;
+            dataMap[Data[i]] = i;
         }
+
+        return dataMap;
     }
 
     /// <summary>

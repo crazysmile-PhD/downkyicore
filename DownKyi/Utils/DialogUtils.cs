@@ -10,6 +10,10 @@ namespace DownKyi.Utils;
 public static class DialogUtils
 {
     private static readonly string DefaultDirectory = AppDomain.CurrentDomain.BaseDirectory;
+    private static readonly FilePickerFileType[] VideoFileTypes =
+    {
+        new("select") { Patterns = new[] { "*.mp4" }, MimeTypes = new[] { "video/mp4" } }
+    };
 
     /// <summary>
     /// 弹出选择文件夹弹窗
@@ -41,7 +45,7 @@ public static class DialogUtils
             Title = "选择视频",
             SuggestedStartLocation = await provider.TryGetFolderFromPathAsync(new Uri(DefaultDirectory)).ConfigureAwait(true),
             AllowMultiple = false,
-            FileTypeFilter = new FilePickerFileType[] { new("select") { Patterns = new[] { "*.mp4" }, MimeTypes = new[] { "video/mp4" } } }
+            FileTypeFilter = VideoFileTypes
         }).ConfigureAwait(true);
 
         // 选择文件
@@ -62,7 +66,7 @@ public static class DialogUtils
                 Title = "选择视频",
                 SuggestedStartLocation = await provider.TryGetFolderFromPathAsync(new Uri(DefaultDirectory)).ConfigureAwait(true),
                 AllowMultiple = true,
-                FileTypeFilter = new FilePickerFileType[] { new("select") { Patterns = new[] { "*.mp4" } } }
+                FileTypeFilter = VideoFileTypes
             }
         ).ConfigureAwait(true);
 

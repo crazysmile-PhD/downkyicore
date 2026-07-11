@@ -390,12 +390,12 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsUserId(string input)
     {
-        if (input.ToLower().StartsWith("uid:"))
+        if (input.StartsWith("uid:", StringComparison.OrdinalIgnoreCase))
         {
             return Regex.IsMatch(input.Remove(0, 4), @"^\d+$");
         }
 
-        if (input.ToLower().StartsWith("uid"))
+        if (input.StartsWith("uid", StringComparison.OrdinalIgnoreCase))
         {
             return Regex.IsMatch(input.Remove(0, 3), @"^\d+$");
         }
@@ -432,12 +432,12 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetUserId(string input)
     {
-        if (input.ToLower().StartsWith("uid:"))
+        if (input.StartsWith("uid:", StringComparison.OrdinalIgnoreCase))
         {
             return Number.GetInt(input.Remove(0, 4));
         }
 
-        if (input.ToLower().StartsWith("uid"))
+        if (input.StartsWith("uid", StringComparison.OrdinalIgnoreCase))
         {
             return Number.GetInt(input.Remove(0, 3));
         }
@@ -493,7 +493,7 @@ public static class ParseEntrance
     {
         var strList = url.Split('?');
 
-        return strList[0].EndsWith("/") ? strList[0].TrimEnd('/') : strList[0];
+        return strList[0].EndsWith('/') ? strList[0].TrimEnd('/') : strList[0];
     }
 
     /// <summary>
@@ -514,7 +514,7 @@ public static class ParseEntrance
     private static string GetBangumiId(string input)
     {
         var id = GetId(input, BangumiUrl);
-        return id != "" ? id : GetId(input, BangumiMediaUrl);
+        return !string.IsNullOrEmpty(id) ? id : GetId(input, BangumiMediaUrl);
     }
 
     /// <summary>
@@ -535,7 +535,7 @@ public static class ParseEntrance
     /// <returns></returns>
     private static bool IsIntId(string input, string prefix)
     {
-        return input.ToLower().StartsWith(prefix) && Regex.IsMatch(input.Remove(0, 2), @"^\d+$");
+        return input.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && Regex.IsMatch(input.Remove(0, 2), @"^\d+$");
     }
 
     /// <summary>

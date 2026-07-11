@@ -196,7 +196,7 @@ public class AddToDownloadService
             }).ConfigureAwait(true);
         }
 
-        if (directory == string.Empty)
+        if (string.IsNullOrEmpty(directory))
         {
             return null;
         }

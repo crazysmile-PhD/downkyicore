@@ -88,7 +88,7 @@ public class DialogService : Prism.Dialogs.DialogService, IDialogService
         MvvmHelpers.ViewAndViewModelAction<IDialogAware>(viewModel, d => d.OnDialogOpened(parameters));
     }
 
-    private void ConfigureDialogWindowProperties(IDialogWindow window, Control dialogContent,
+    private static void ConfigureDialogWindowProperties(IDialogWindow window, Control dialogContent,
         IDialogAware viewModel)
     {
 

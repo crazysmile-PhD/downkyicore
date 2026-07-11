@@ -92,7 +92,7 @@ public class BaseDialogViewModel : BindableBase, IDialogAware
     /// 鼠标进入系统按钮时的图标样式
     /// </summary>
     /// <param name="icon">图标</param>
-    private void SetEnterStyle(VectorImage icon)
+    private static void SetEnterStyle(VectorImage icon)
     {
         icon.Fill = DictionaryResource.GetColor("ColorSystemBtnTint");
     }
@@ -101,7 +101,7 @@ public class BaseDialogViewModel : BindableBase, IDialogAware
     /// 鼠标离开系统按钮时的图标样式
     /// </summary>
     /// <param name="icon">图标</param>
-    private void SetLeaveStyle(VectorImage icon)
+    private static void SetLeaveStyle(VectorImage icon)
     {
         icon.Fill = DictionaryResource.GetColor("ColorSystemBtnTintDark");
     }

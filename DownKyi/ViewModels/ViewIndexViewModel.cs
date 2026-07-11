@@ -222,7 +222,7 @@ public class ViewIndexViewModel : ViewModelBase
     }
 
 
-    private async Task<UserInfoForNavigation?> GetUserInfo()
+    private static async Task<UserInfoForNavigation?> GetUserInfo()
     {
         UserInfoForNavigation? userInfo = null;
         await Task.Run(() =>

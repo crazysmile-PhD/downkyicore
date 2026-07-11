@@ -15,9 +15,6 @@ public partial class SettingsManager
     // 设置优先下载音质
     private const int AudioQuality = 30280;
 
-    // 设置首选视频解析方式
-    private const int VideoParseType = 0;
-
     // 是否下载flv视频后转码为mp4
     private const AllowStatus IsTranscodingFlvToMp4 = AllowStatus.Yes;
 
@@ -377,8 +374,7 @@ public partial class SettingsManager
     /// <returns></returns>
     public string GetFileNamePartTimeFormat()
     {
-        if (_appSettings.Video.FileNamePartTimeFormat == null ||
-            _appSettings.Video.FileNamePartTimeFormat == string.Empty)
+        if (string.IsNullOrEmpty(_appSettings.Video.FileNamePartTimeFormat))
         {
             // 第一次获取，先设置默认值
             SetFileNamePartTimeFormat(FileNamePartTimeFormat);

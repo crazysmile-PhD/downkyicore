@@ -24,6 +24,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
 {
     public const string Tag = "PagePublicFavorites";
 
+    private readonly IFavoritesService _favoritesService;
     private CancellationTokenSource? _tokenSource;
 
     #region 页面属性申明
@@ -127,10 +128,18 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
 
     #endregion
 
-    public ViewPublicFavoritesViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(
-        eventAggregator)
+    public ViewPublicFavoritesViewModel(IEventAggregator eventAggregator, IDialogService dialogService)
+        : this(eventAggregator, dialogService, new FavoritesService())
+    {
+    }
+
+    internal ViewPublicFavoritesViewModel(
+        IEventAggregator eventAggregator,
+        IDialogService dialogService,
+        IFavoritesService favoritesService) : base(eventAggregator)
     {
         DialogService = dialogService;
+        _favoritesService = favoritesService;
 
         #region 属性初始化
 
@@ -348,11 +357,11 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     /// <summary>
     /// 更新页面
     /// </summary>
-    private void UpdateView(IFavoritesService favoritesService, long favoritesId, CancellationToken cancellationToken)
+    private void UpdateView(long favoritesId, CancellationToken cancellationToken)
     {
         LoadingVisibility = true;
 
-        var favorites = favoritesService.GetFavorites(favoritesId, cancellationToken);
+        var favorites = _favoritesService.GetFavorites(favoritesId, cancellationToken);
         if (favorites == null)
         {
             LogManager.Debug(Tag, "Favorites is null.");
@@ -383,7 +392,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
             MediaNoDataVisibility = false;
         }
 
-        favoritesService.GetFavoritesMediaList(medias, FavoritesMedias, EventAggregator, cancellationToken);
+        _favoritesService.GetFavoritesMediaList(medias, FavoritesMedias, EventAggregator, cancellationToken);
     }
 
     /// <summary>
@@ -411,7 +420,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
             var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
             await Task.Run(() =>
             {
-                UpdateView(new FavoritesService(), parameter, cancellationToken);
+                UpdateView(parameter, cancellationToken);
             }, cancellationToken).ConfigureAwait(true);
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException

@@ -17,6 +17,7 @@ public class ViewModelBase : BindableBase, INavigationAware, IDisposable
     protected IDialogService? DialogService;
     protected IRegionNavigationJournal? Journal;
     protected string ParentView = string.Empty;
+    protected virtual Dispatcher UiDispatcher => Dispatcher.UIThread;
 
     public ViewModelBase(IEventAggregator eventAggregator)
     {
@@ -59,7 +60,7 @@ public class ViewModelBase : BindableBase, INavigationAware, IDisposable
     /// <param name="callback"></param>
     protected void PropertyChangeAsync(Action callback)
     {
-        Dispatcher.UIThread.InvokeAsync(callback);
+        UiDispatcher.InvokeAsync(callback);
     }
 
     /// <summary>
@@ -68,12 +69,12 @@ public class ViewModelBase : BindableBase, INavigationAware, IDisposable
     /// <param name="callback"></param>
     protected void PropertyChange(Action callback)
     {
-        Dispatcher.UIThread.Invoke(callback);
+        UiDispatcher.Invoke(callback);
     }
 
     protected void RunFireAndForget(Task task, string operation)
     {
-        _ = RunFireAndForgetAsync(task, operation);
+        _ = RunFireAndForgetAsync(task, $"{GetType().Name}.{operation}");
     }
 
     private static async Task RunFireAndForgetAsync(Task task, string operation)

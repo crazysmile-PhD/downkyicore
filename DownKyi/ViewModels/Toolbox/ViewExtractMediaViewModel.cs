@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -29,9 +30,9 @@ public class ViewExtractMediaViewModel : ViewModelBase
         set => SetProperty(ref _videoPathsStr, value);
     }
 
-    private string[] _videoPaths = null!;
+    private IReadOnlyList<string> _videoPaths = Array.Empty<string>();
 
-    public string[] VideoPaths
+    public IReadOnlyList<string> VideoPaths
     {
         get => _videoPaths;
         set
@@ -97,7 +98,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
             return;
         }
 
-        if (VideoPaths.Length <= 0)
+        if (VideoPaths.Count <= 0)
         {
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipNoSelectedVideo"));
             return;
@@ -136,7 +137,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
             return;
         }
 
-        if (VideoPaths.Length <= 0)
+        if (VideoPaths.Count <= 0)
         {
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipNoSeletedVideo"));
             return;

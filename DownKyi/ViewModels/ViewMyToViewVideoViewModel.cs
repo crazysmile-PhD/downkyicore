@@ -312,7 +312,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
             {
                 // 查询、保存封面
                 var coverUrl = toView.Pic;
-                if (!coverUrl.ToLower().StartsWith("http"))
+                if (!coverUrl.StartsWith("http", System.StringComparison.OrdinalIgnoreCase))
                 {
                     coverUrl = $"https:{toView.Pic}";
                 }

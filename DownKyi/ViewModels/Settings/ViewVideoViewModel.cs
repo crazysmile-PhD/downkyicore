@@ -987,7 +987,7 @@ public class ViewVideoViewModel : ViewModelBase
     /// </summary>
     /// <param name="item"></param>
     /// <returns></returns>
-    private string DisplayFileNamePart(FileNamePart item)
+    private static string DisplayFileNamePart(FileNamePart item)
     {
         var display = item switch
         {

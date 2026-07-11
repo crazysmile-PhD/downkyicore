@@ -76,7 +76,7 @@ public class VideoInfoService : IInfoService
             else
             {
                 //name = page.part;
-                if (page.Part == "")
+                if (string.IsNullOrEmpty(page.Part))
                 {
                     // 如果page.part为空字符串
                     name = $"{_videoView.Title}-P{order}";

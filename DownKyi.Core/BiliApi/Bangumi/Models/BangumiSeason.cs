@@ -42,7 +42,7 @@ public class BangumiSeason : BaseModel
     [JsonProperty("rating")] public BangumiRating? Rating { get; set; }
 
 
-    [JsonProperty("styles")] public string[] Styles { get; set; } = Array.Empty<string>();
+    [JsonProperty("styles")] public IList<string> Styles { get; } = new List<string>();
 
     // record
     // rights

@@ -126,7 +126,7 @@ namespace DownKyi.Core.Settings
         /// <returns></returns>
         public string GetUserAgent()
         {
-            if (_appSettings.Network.UserAgent == string.Empty)
+            if (string.IsNullOrEmpty(_appSettings.Network.UserAgent))
             {
                 // 第一次获取，先设置默认值
                 SetUserAgent(UserAgent);
@@ -666,5 +666,6 @@ namespace DownKyi.Core.Settings
                 ariaHttpProxyListenPort,
                 v => _appSettings.Network.AriaHttpProxyListenPort = v);
         }
+
     }
 }

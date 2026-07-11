@@ -367,8 +367,10 @@ public class ScrollDisplay : Display
     /// <returns></returns>
     protected override int SetDuration()
     {
-        var methodName = Config.LayoutAlgorithm.Substring(0, 1).ToUpper() + Config.LayoutAlgorithm.Substring(1);
-        methodName += "Duration";
+        var methodName = string.Concat(
+            Config.LayoutAlgorithm.AsSpan(0, 1).ToString().ToUpper(),
+            Config.LayoutAlgorithm.AsSpan(1),
+            "Duration");
         var method = typeof(ScrollDisplay).GetMethod(methodName);
         if (method != null)
         {

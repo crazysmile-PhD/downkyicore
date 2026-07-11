@@ -218,7 +218,7 @@ internal static class Utils
             if (videoQualityExist == null)
             {
                 var videoCodecList = new List<string>();
-                if (codecName != string.Empty)
+                if (!string.IsNullOrEmpty(codecName))
                 {
                     ListHelper.AddUnique(videoCodecList, codecName);
                 }
@@ -233,12 +233,11 @@ internal static class Utils
             }
             else
             {
-                if (!videoQualityList[videoQualityList.IndexOf(videoQualityExist)].VideoCodecList
-                        .Exists(t => t.Equals(codecName)))
+                if (!videoQualityExist.VideoCodecList.Exists(t => t.Equals(codecName, System.StringComparison.Ordinal)))
                 {
-                    if (codecName != string.Empty)
+                    if (!string.IsNullOrEmpty(codecName))
                     {
-                        videoQualityList[videoQualityList.IndexOf(videoQualityExist)].VideoCodecList.Add(codecName);
+                        videoQualityExist.VideoCodecList.Add(codecName);
                     }
                 }
             }
@@ -278,11 +277,9 @@ internal static class Utils
                 // 上面的foreach不会选中HEVC编码，
                 // 而杜比视界只有HEVC编码，
                 // 因此这里再判断并设置一次
-                if (videoQualityList[videoQualityList.IndexOf(selectedVideoQuality)].SelectedVideoCodec == null &&
-                    videoQualityList[videoQualityList.IndexOf(selectedVideoQuality)].VideoCodecList.Count() > 0)
+                if (selectedVideoQuality.SelectedVideoCodec == null && selectedVideoQuality.VideoCodecList.Count > 0)
                 {
-                    videoQualityList[videoQualityList.IndexOf(selectedVideoQuality)].SelectedVideoCodec =
-                        videoQualityList[videoQualityList.IndexOf(selectedVideoQuality)].VideoCodecList[0];
+                    selectedVideoQuality.SelectedVideoCodec = selectedVideoQuality.VideoCodecList[0];
                 }
             }
         }

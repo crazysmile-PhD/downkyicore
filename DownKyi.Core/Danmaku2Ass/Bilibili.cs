@@ -5,6 +5,7 @@ namespace DownKyi.Core.Danmaku2Ass;
 public class Bilibili
 {
     private static Bilibili instance = null!;
+    private readonly Dictionary<int, VideoResolution> _resolutions;
 
     private readonly Dictionary<string, bool> config = new Dictionary<string, bool>
     {
@@ -53,7 +54,21 @@ public class Bilibili
     /// <summary>
     /// 隐藏Bilibili()方法，必须使用单例模式
     /// </summary>
-    private Bilibili() { }
+    private Bilibili()
+    {
+        _resolutions = new Dictionary<int, VideoResolution>
+        {
+            [6] = new(426, 240),
+            [16] = new(640, 360),
+            [32] = new(854, 480),
+            [64] = new(1280, 720),
+            [74] = new(1280, 720),
+            [80] = new(1920, 1080),
+            [112] = new(1920, 1080),
+            [116] = new(1920, 1080),
+            [120] = new(3840, 2160)
+        };
+    }
 
     /// <summary>
     /// 是否屏蔽顶部弹幕
@@ -127,42 +142,13 @@ public class Bilibili
 
     public Dictionary<string, int> GetResolution(int quality)
     {
-        var resolution = new Dictionary<string, int>
+        var resolution = _resolutions.GetValueOrDefault(quality);
+        return new Dictionary<string, int>
         {
-            { "width", 0 },
-            { "height", 0 }
+            ["width"] = resolution.Width,
+            ["height"] = resolution.Height
         };
-
-        switch (quality)
-        {
-            // 240P 极速（仅mp4方式）
-            case 6:
-                break;
-            // 360P 流畅
-            case 16:
-                break;
-            // 480P 清晰
-            case 32:
-                break;
-            // 720P 高清（登录）
-            case 64:
-                break;
-            // 	720P60 高清（大会员）
-            case 74:
-                break;
-            // 1080P 高清（登录）
-            case 80:
-                break;
-            // 1080P+ 高清（大会员）
-            case 112:
-                break;
-            // 1080P60 高清（大会员）
-            case 116:
-                break;
-            // 4K 超清（大会员）（需要fourk=1）
-            case 120:
-                break;
-        }
-        return resolution;
     }
+
+    private readonly record struct VideoResolution(int Width, int Height);
 }

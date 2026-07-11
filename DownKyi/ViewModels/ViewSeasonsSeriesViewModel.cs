@@ -32,7 +32,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
     private long mid = -1;
     private long id = -1;
-    private int type = 0;
+    private int type;
 
     // 每页视频数量，暂时在此写死，以后在设置中增加选项
     private const int VideoNumberInPage = 30;
@@ -472,7 +472,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
                 // 查询、保存封面
                 var coverUrl = video.Pic;
-                if (!coverUrl.ToLower().StartsWith("http"))
+                if (!coverUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
                     coverUrl = $"https:{video.Pic}";
                 }
@@ -556,7 +556,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
                 // 查询、保存封面
                 var coverUrl = video.Pic;
-                if (!coverUrl.ToLower().StartsWith("http"))
+                if (!coverUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
                     coverUrl = $"https:{video.Pic}";
                 }

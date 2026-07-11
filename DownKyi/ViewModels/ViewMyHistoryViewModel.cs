@@ -248,9 +248,9 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
     public DownKyiAsyncDelegateCommand LoadMoreCommand => new(ExecuteLoadMoreCommand);
 
-    private long _nextMax = 0;
+    private long _nextMax;
 
-    private long _nextViewAt = 0;
+    private long _nextViewAt;
 
     private async Task ExecuteLoadMoreCommand()
     {
