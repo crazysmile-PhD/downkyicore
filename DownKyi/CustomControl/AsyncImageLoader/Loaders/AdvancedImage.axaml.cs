@@ -368,11 +368,11 @@ public class AdvancedImage : ContentControl
             : base.ArrangeOverride(finalSize);
     }
 
-    public sealed class ImageWrapper : IImage
+    private sealed class ImageWrapper : IImage
     {
         public IImage ImageImplementation { get; }
 
-        internal ImageWrapper(IImage imageImplementation)
+        public ImageWrapper(IImage imageImplementation)
         {
             ImageImplementation = imageImplementation;
         }

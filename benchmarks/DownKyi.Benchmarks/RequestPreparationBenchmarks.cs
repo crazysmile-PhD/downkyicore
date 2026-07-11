@@ -41,12 +41,8 @@ public class RequestPreparationBenchmarks
     }
 
     [Benchmark]
-    public ApiEnvelope? DeserializeApiEnvelope()
+    public JsonElement DeserializeApiEnvelope()
     {
-        return JsonSerializer.Deserialize<ApiEnvelope>(SampleJson, _jsonOptions);
+        return JsonSerializer.Deserialize<JsonElement>(SampleJson, _jsonOptions);
     }
-
-    public sealed record ApiEnvelope(int Code, string Message, ApiData Data);
-
-    public sealed record ApiData(string Bvid, long Cid, string Title);
 }
