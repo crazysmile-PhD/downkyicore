@@ -25,7 +25,7 @@ public sealed class BiliApiModelContractTests
     [Fact]
     public void VideoPlayPageUrlPrefersBvid()
     {
-        var url = VideoStream.BuildVideoPlayPageUrl(170001, "BV17x411w7KC", 2);
+        var url = VideoStreamApi.BuildVideoPlayPageUrl(170001, "BV17x411w7KC", 2);
 
         Assert.Equal("https://www.bilibili.com/video/BV17x411w7KC/?p=2", url);
     }
@@ -33,7 +33,7 @@ public sealed class BiliApiModelContractTests
     [Fact]
     public void VideoPlayPageUrlFallsBackToAvid()
     {
-        var url = VideoStream.BuildVideoPlayPageUrl(170001, string.Empty, 3);
+        var url = VideoStreamApi.BuildVideoPlayPageUrl(170001, string.Empty, 3);
 
         Assert.Equal("https://www.bilibili.com/video/av170001/?p=3", url);
     }

@@ -278,8 +278,8 @@ public class VideoInfoService : IInfoService
         cancellationToken.ThrowIfCancellationRequested();
         var playUrl = SettingsManager.Instance.VideoParseType switch
         {
-            0 => VideoStream.GetVideoPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken),
-            1 => VideoStream.GetVideoPlayUrlWebPage(page.Avid, page.Bvid, page.Cid, page.Page, cancellationToken),
+            0 => VideoStreamApi.GetVideoPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken),
+            1 => VideoStreamApi.GetVideoPlayUrlWebPage(page.Avid, page.Bvid, page.Cid, page.Page, cancellationToken),
             _ => null
         };
 

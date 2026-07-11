@@ -133,7 +133,7 @@ public class CheeseInfoService : IInfoService
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var playUrl = VideoStream.GetCheesePlayUrl(page.Avid, page.Bvid, page.Cid, page.EpisodeId, cancellationToken: cancellationToken);
+        var playUrl = VideoStreamApi.GetCheesePlayUrl(page.Avid, page.Bvid, page.Cid, page.EpisodeId, cancellationToken: cancellationToken);
         Dispatcher.UIThread.Invoke(() => { Utils.VideoPageInfo(playUrl, page); });
     }
 

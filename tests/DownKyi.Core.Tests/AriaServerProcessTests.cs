@@ -3,7 +3,7 @@ using DownKyi.Core.Aria2cNet.Server;
 
 namespace DownKyi.Core.Tests;
 
-[Collection(ProcessTestCollection.Name)]
+[Collection(ProcessTestGroup.Name)]
 public sealed class AriaServerProcessTests
 {
     [Fact]
@@ -48,7 +48,7 @@ public sealed class AriaServerProcessTests
 }
 
 [CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class ProcessTestCollection
+public sealed class ProcessTestGroup
 {
     public const string Name = "External process tests";
 }

@@ -266,7 +266,7 @@ public class BangumiInfoService : IInfoService
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var playUrl = VideoStream.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken);
+        var playUrl = VideoStreamApi.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken);
         Dispatcher.UIThread.Invoke(() => Utils.VideoPageInfo(playUrl, page));
     }
 

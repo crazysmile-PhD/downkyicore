@@ -8,7 +8,7 @@ using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.VideoStream;
 
-public static class VideoStream
+public static class VideoStreamApi
 {
     /// <summary>
     /// 获取播放器信息（web端）

@@ -351,7 +351,7 @@ public abstract class DownloadService : IDisposable
 
         var srtFiles = new List<string>();
 
-        var subRipTexts = VideoStream.GetSubtitle(
+        var subRipTexts = VideoStreamApi.GetSubtitle(
             downloading.DownloadBase.Avid,
             downloading.DownloadBase.Bvid,
             downloading.DownloadBase.Cid,
@@ -573,19 +573,19 @@ public abstract class DownloadService : IDisposable
             case PlayStreamType.Video:
                 playUrl = downloading.PlayUrl ?? SettingsManager.Instance.VideoParseType switch
                 {
-                    0 => VideoStream.GetVideoPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
+                    0 => VideoStreamApi.GetVideoPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         cancellationToken: CancellationToken.GetValueOrDefault()),
-                    1 => VideoStream.GetVideoPlayUrlWebPage(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
+                    1 => VideoStreamApi.GetVideoPlayUrlWebPage(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         downloading.DownloadBase.Page, CancellationToken.GetValueOrDefault()),
                     _ => throw new ArgumentException("Invalid video parse type. Valid values are: 0 (WebAPI) or 1 (WebPage).")
                 };
                 break;
             case PlayStreamType.Bangumi:
-                playUrl = downloading.PlayUrl ?? VideoStream.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid,
+                playUrl = downloading.PlayUrl ?? VideoStreamApi.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid,
                     downloading.DownloadBase.Cid, cancellationToken: CancellationToken.GetValueOrDefault());
                 break;
             case PlayStreamType.Cheese:
-                playUrl = downloading.PlayUrl ?? VideoStream.GetCheesePlayUrl(downloading.DownloadBase.Avid,
+                playUrl = downloading.PlayUrl ?? VideoStreamApi.GetCheesePlayUrl(downloading.DownloadBase.Avid,
                     downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                     downloading.DownloadBase.EpisodeId, cancellationToken: CancellationToken.GetValueOrDefault());
                 break;
