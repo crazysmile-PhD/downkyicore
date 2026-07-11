@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -70,6 +71,8 @@ namespace DownKyi.ViewModels.Dialogs
 
         public override void OnDialogOpened(IDialogParameters parameters)
         {
+            ArgumentNullException.ThrowIfNull(parameters);
+
             var release = parameters.GetValue<GitHubRelease>("release");
             EnableSkipVersionOnLaunch = parameters.GetValue<bool>("enableSkipVersion");
             MarkdownText = release.Body;

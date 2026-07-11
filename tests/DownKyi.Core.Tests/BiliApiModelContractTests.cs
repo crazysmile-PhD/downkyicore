@@ -1,4 +1,5 @@
 using DownKyi.Core.BiliApi.Bangumi.Models;
+using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
 using Newtonsoft.Json;
 
@@ -33,5 +34,11 @@ public sealed class BiliApiModelContractTests
         var url = VideoStream.BuildVideoPlayPageUrl(170001, string.Empty, 3);
 
         Assert.Equal("https://www.bilibili.com/video/av170001/?p=3", url);
+    }
+
+    [Fact]
+    public void ParseEntranceRejectsNullInput()
+    {
+        Assert.Throws<ArgumentNullException>(() => ParseEntrance.IsAvId(null!));
     }
 }

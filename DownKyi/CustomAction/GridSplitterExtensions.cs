@@ -1,3 +1,4 @@
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -13,11 +14,13 @@ public class GridSplitterExtensions
 
     public static ResetGridSplitterBehavior? GetResetGridBehavior(GridSplitter obj)
     {
+        ArgumentNullException.ThrowIfNull(obj);
         return obj.GetValue(ResetGridBehaviorProperty);
     }
 
     public static void SetResetGridBehavior(GridSplitter obj, ResetGridSplitterBehavior? value)
     {
+        ArgumentNullException.ThrowIfNull(obj);
         obj.SetValue(ResetGridBehaviorProperty, value);
     }
 

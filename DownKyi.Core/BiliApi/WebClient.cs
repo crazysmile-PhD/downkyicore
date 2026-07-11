@@ -107,6 +107,8 @@ public static class WebClient
         bool json = false,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+
         Exception? lastError = null;
         var attempts = Math.Max(1, retry);
         for (var attempt = 1; attempt <= attempts; attempt++)
@@ -301,6 +303,8 @@ public static class WebClient
 
     public static Stream RequestStream(string url, string? referer = null, string method = "GET", CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+
         cancellationToken.ThrowIfCancellationRequested();
         var request = new HttpRequestMessage(new HttpMethod(method), url);
 

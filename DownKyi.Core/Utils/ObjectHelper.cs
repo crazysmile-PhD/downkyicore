@@ -5,8 +5,8 @@ using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 using JsonSerializer = System.Text.Json.JsonSerializer;
-using SystemTextJsonException = System.Text.Json.JsonException;
 using NewtonsoftJsonException = Newtonsoft.Json.JsonException;
+using SystemTextJsonException = System.Text.Json.JsonException;
 
 namespace DownKyi.Core.Utils;
 
@@ -128,6 +128,8 @@ public static class ObjectHelper
     /// <returns></returns>
     public static List<DownKyiCookie>? ReadCookiesFromStream(Stream stream)
     {
+        ArgumentNullException.ThrowIfNull(stream);
+
         try
         {
             if (stream.CanSeek)

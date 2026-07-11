@@ -131,6 +131,7 @@ public class CheeseInfoService : IInfoService
     /// <param name="page"></param>
     public void GetVideoStream(VideoPage page, System.Threading.CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
         var playUrl = VideoStream.GetCheesePlayUrl(page.Avid, page.Bvid, page.Cid, page.EpisodeId, cancellationToken: cancellationToken);
         Dispatcher.UIThread.Invoke(() => { Utils.VideoPageInfo(playUrl, page); });

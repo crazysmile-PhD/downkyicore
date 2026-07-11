@@ -145,6 +145,7 @@ public class VideoFramePreview : Control
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
+        ArgumentNullException.ThrowIfNull(e);
         base.OnPointerPressed(e);
 
         if (!IsWatermarkInteractive || !WatermarkRect.HasValue || _transformedWatermarkRect == null)
@@ -163,6 +164,7 @@ public class VideoFramePreview : Control
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
+        ArgumentNullException.ThrowIfNull(e);
         base.OnPointerMoved(e);
 
         if (!IsWatermarkInteractive || !WatermarkRect.HasValue || _transformedWatermarkRect == null)
@@ -314,6 +316,7 @@ public class VideoFramePreview : Control
 
     public override void Render(DrawingContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
         base.Render(context);
 
         var bounds = new Rect(0, 0, Bounds.Width, Bounds.Height);

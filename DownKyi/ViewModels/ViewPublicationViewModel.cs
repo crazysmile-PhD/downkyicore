@@ -501,6 +501,7 @@ namespace DownKyi.ViewModels
         /// <param name="navigationContext"></param>
         public override void OnNavigatedTo(NavigationContext navigationContext)
         {
+            ArgumentNullException.ThrowIfNull(navigationContext);
             base.OnNavigatedTo(navigationContext);
 
             // 根据传入参数不同执行不同任务

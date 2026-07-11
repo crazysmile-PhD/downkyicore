@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using DownKyi.Events;
@@ -147,6 +148,7 @@ namespace DownKyi.ViewModels
         /// <param name="navigationContext"></param>
         public override void OnNavigatedTo(NavigationContext navigationContext)
         {
+            ArgumentNullException.ThrowIfNull(navigationContext);
             base.OnNavigatedTo(navigationContext);
 
             ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");

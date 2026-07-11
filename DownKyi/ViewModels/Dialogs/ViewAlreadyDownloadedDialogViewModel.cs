@@ -1,3 +1,4 @@
+using System;
 using DownKyi.Images;
 using Prism.Commands;
 using Prism.Dialogs;
@@ -61,6 +62,7 @@ public class ViewAlreadyDownloadedDialogViewModel : BaseDialogViewModel
 
     public override void OnDialogOpened(IDialogParameters parameters)
     {
+        ArgumentNullException.ThrowIfNull(parameters);
         Message = parameters.GetValue<string>("message");
     }
 }

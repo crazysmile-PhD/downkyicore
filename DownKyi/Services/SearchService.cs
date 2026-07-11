@@ -1,3 +1,4 @@
+using System;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
@@ -33,6 +34,8 @@ public class SearchService
     /// <returns></returns>
     public bool BiliInput(string input, string parentViewName, IEventAggregator? eventAggregator = null)
     {
+        ArgumentNullException.ThrowIfNull(input);
+
         eventAggregator = ResolveEventAggregator(eventAggregator);
         // 移除剪贴板id
         var justId = input.Replace(AppConstant.ClipboardId, "");

@@ -1,3 +1,4 @@
+using System;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Images;
 using DownKyi.Models;
@@ -35,6 +36,7 @@ namespace DownKyi.ViewModels.DownloadManager
             get => _downloading;
             set
             {
+                ArgumentNullException.ThrowIfNull(value);
                 _downloading = value;
 
                 switch (value.DownloadStatus)
@@ -143,6 +145,7 @@ namespace DownKyi.ViewModels.DownloadManager
             get => _startOrPause;
             set
             {
+                ArgumentNullException.ThrowIfNull(value);
                 SetProperty(ref _startOrPause, value);
 
                 OperationTip = value.Equals(ButtonIcon.Instance().Start) ? DictionaryResource.GetString("StartDownload")

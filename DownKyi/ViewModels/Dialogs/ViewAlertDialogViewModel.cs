@@ -1,3 +1,4 @@
+using System;
 using DownKyi.Images;
 using Prism.Commands;
 using Prism.Dialogs;
@@ -70,6 +71,7 @@ public class ViewAlertDialogViewModel : BaseDialogViewModel
 
     public override void OnDialogOpened(IDialogParameters parameters)
     {
+        ArgumentNullException.ThrowIfNull(parameters);
         base.OnDialogOpened(parameters);
 
         Image = parameters.GetValue<VectorImage>("image");

@@ -32,6 +32,8 @@ public class ViewModelBase : BindableBase, INavigationAware, IDisposable
 
     public virtual void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
+
         Journal = navigationContext.NavigationService.Journal;
         var viewName = navigationContext.Parameters.GetValue<string>("Parent");
         if (viewName != null)
@@ -74,6 +76,7 @@ public class ViewModelBase : BindableBase, INavigationAware, IDisposable
 
     protected void RunFireAndForget(Task task, string operation)
     {
+        ArgumentNullException.ThrowIfNull(task);
         _ = RunFireAndForgetAsync(task, $"{GetType().Name}.{operation}");
     }
 

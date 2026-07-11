@@ -60,6 +60,8 @@ public static class BvId
     /// <returns>av号 (aid)</returns>
     public static long Bv2Av(string bvid)
     {
+        ArgumentException.ThrowIfNullOrEmpty(bvid);
+
         var bvidArr = bvid.ToCharArray();
 
         (bvidArr[3], bvidArr[9]) = (bvidArr[9], bvidArr[3]);

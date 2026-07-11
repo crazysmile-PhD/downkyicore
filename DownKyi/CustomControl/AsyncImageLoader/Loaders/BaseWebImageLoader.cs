@@ -114,6 +114,8 @@ public class BaseWebImageLoader : IAsyncImageLoader
     /// <returns>Bitmap</returns>
     protected virtual Bitmap? LoadFromInternal(string url)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+
         try
         {
             var uri = url.StartsWith('/')

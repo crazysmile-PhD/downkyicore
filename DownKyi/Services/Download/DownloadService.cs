@@ -52,6 +52,7 @@ public abstract class DownloadService : IDisposable
 
     protected void EnsureDownloadIsActive(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
         CancellationToken?.ThrowIfCancellationRequested();
         if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause || !DownloadingList.Contains(downloading))
         {
@@ -129,6 +130,8 @@ public abstract class DownloadService : IDisposable
 
     protected static PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingAudio");
@@ -181,6 +184,8 @@ public abstract class DownloadService : IDisposable
 
     protected static VideoPlayUrlBasic? BaseDownloadVideo(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingVideo");
@@ -226,6 +231,8 @@ public abstract class DownloadService : IDisposable
 
     protected string? BaseDownloadCover(DownloadingItem downloading, string? coverUrl, string fileName)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingCover");
@@ -272,6 +279,8 @@ public abstract class DownloadService : IDisposable
 
     protected string BaseDownloadDanmaku(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingDanmaku");
@@ -330,6 +339,8 @@ public abstract class DownloadService : IDisposable
 
     protected List<string> BaseDownloadSubtitle(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingSubtitle");
@@ -386,6 +397,8 @@ public abstract class DownloadService : IDisposable
 
     protected void GenerateNfoFile(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         var metadata = downloading.Metadata;
         if (metadata == null) return;
 
@@ -464,6 +477,8 @@ public abstract class DownloadService : IDisposable
 
     protected static string? BaseMixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("MixedFlow");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingVideo");
@@ -530,6 +545,8 @@ public abstract class DownloadService : IDisposable
 
     protected void BaseParse(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("Parsing");
         downloading.DownloadContent = string.Empty;
@@ -1008,6 +1025,8 @@ public abstract class DownloadService : IDisposable
     /// <param name="downloading"></param>
     protected void DownloadFailed(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         downloading.DownloadStatusTitle = DictionaryResource.GetString("DownloadFailed");
         downloading.DownloadContent = string.Empty;
         downloading.DownloadingFileSize = string.Empty;

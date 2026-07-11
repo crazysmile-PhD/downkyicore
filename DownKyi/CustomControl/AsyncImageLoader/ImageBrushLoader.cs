@@ -81,11 +81,13 @@ public static class ImageBrushLoader
 
     public static string? GetSource(ImageBrush element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(SourceProperty);
     }
 
     public static void SetSource(ImageBrush element, string? value)
     {
+        ArgumentNullException.ThrowIfNull(element);
         element.SetValue(SourceProperty, value);
     }
 
@@ -93,6 +95,7 @@ public static class ImageBrushLoader
 
     public static bool GetIsLoading(ImageBrush element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(IsLoadingProperty);
     }
 
@@ -105,11 +108,13 @@ public static class ImageBrushLoader
 
     public static int GetWidth(ImageBrush element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(WidthProperty);
     }
 
     public static void SetWidth(ImageBrush element, int value)
     {
+        ArgumentNullException.ThrowIfNull(element);
         element.SetValue(WidthProperty, value);
     }
 
@@ -117,11 +122,13 @@ public static class ImageBrushLoader
 
     public static int GetHeight(ImageBrush element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(HeightProperty);
     }
 
     public static void SetHeight(ImageBrush element, int value)
     {
+        ArgumentNullException.ThrowIfNull(element);
         element.SetValue(HeightProperty, value);
     }
 }

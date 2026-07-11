@@ -59,6 +59,12 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
         Assert.True(File.Exists(file));
     }
 
+    [Fact]
+    public void GetGeneratedFilesRejectsNullTask()
+    {
+        Assert.Throws<ArgumentNullException>(() => DownloadTaskFileService.GetGeneratedFiles(null!));
+    }
+
     private string CreateFile(string name, string contents)
     {
         var file = Path.Combine(_directory, name);

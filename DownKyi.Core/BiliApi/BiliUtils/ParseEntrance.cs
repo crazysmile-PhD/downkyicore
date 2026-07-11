@@ -42,6 +42,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsAvId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return IsIntId(input, "av");
     }
 
@@ -63,6 +64,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetAvId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (IsAvId(input))
         {
             return Number.GetInt(input.Remove(0, 2));
@@ -84,6 +86,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsBvId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return input.StartsWith("BV") && input.Length == 12;
     }
 
@@ -130,6 +133,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsBangumiSeasonId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return IsIntId(input, "ss");
     }
 
@@ -151,6 +155,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetBangumiSeasonId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (IsBangumiSeasonId(input))
         {
             return Number.GetInt(input.Remove(0, 2));
@@ -171,6 +176,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsBangumiEpisodeId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return IsIntId(input, "ep");
     }
 
@@ -192,6 +198,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetBangumiEpisodeId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (IsBangumiEpisodeId(input))
         {
             return Number.GetInt(input.Remove(0, 2));
@@ -212,6 +219,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsBangumiMediaId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return IsIntId(input, "md");
     }
 
@@ -233,6 +241,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetBangumiMediaId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (IsBangumiMediaId(input))
         {
             return Number.GetInt(input.Remove(0, 2));
@@ -303,6 +312,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsFavoritesId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return IsIntId(input, "ml");
     }
 
@@ -356,6 +366,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetFavoritesId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (IsFavoritesId(input))
         {
             return Number.GetInt(input.Remove(0, 2));
@@ -390,6 +401,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsUserId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (input.StartsWith("uid:", StringComparison.OrdinalIgnoreCase))
         {
             return Regex.IsMatch(input.Remove(0, 4), @"^\d+$");
@@ -410,6 +422,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsUserUrl(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (!IsUrl(input))
         {
             return false;
@@ -432,6 +445,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetUserId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (input.StartsWith("uid:", StringComparison.OrdinalIgnoreCase))
         {
             return Number.GetInt(input.Remove(0, 4));

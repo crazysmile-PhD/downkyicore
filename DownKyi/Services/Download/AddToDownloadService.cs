@@ -140,6 +140,8 @@ public class AddToDownloadService
     /// <param name="videoInfoService"></param>
     public void ParseVideo(IInfoService videoInfoService)
     {
+        ArgumentNullException.ThrowIfNull(videoInfoService);
+
         if (_videoSections == null)
         {
             return;
@@ -237,6 +239,8 @@ public class AddToDownloadService
     /// <returns>添加的数量</returns>
     public async Task<int> AddToDownload(IEventAggregator eventAggregator, IDialogService? dialogService, string? directory, bool isAll = false)
     {
+        ArgumentNullException.ThrowIfNull(eventAggregator);
+
         if (string.IsNullOrEmpty(directory))
         {
             return -1;

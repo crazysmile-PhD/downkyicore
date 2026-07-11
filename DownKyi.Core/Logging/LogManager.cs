@@ -134,6 +134,7 @@ public class LogManager
     /// </summary>
     public static void Info(Type source, string info)
     {
+        ArgumentNullException.ThrowIfNull(source);
         Write(LogLevel.Info, source.FullName, info);
     }
 
@@ -161,6 +162,7 @@ public class LogManager
     [Conditional("DEBUG")]
     public static void Debug(Type source, string debug)
     {
+        ArgumentNullException.ThrowIfNull(source);
         Write(LogLevel.Debug, source.FullName, debug);
     }
 
@@ -169,6 +171,7 @@ public class LogManager
     /// </summary>
     public static void Error(Exception error)
     {
+        ArgumentNullException.ThrowIfNull(error);
         Write(LogLevel.Error, error.Source, error.Message, error);
     }
 
@@ -177,6 +180,8 @@ public class LogManager
     /// </summary>
     public static void Error(Type source, Exception error)
     {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(error);
         Write(LogLevel.Error, source.FullName, error.Message, error);
     }
 
@@ -185,6 +190,7 @@ public class LogManager
     /// </summary>
     public static void Error(Type source, string error)
     {
+        ArgumentNullException.ThrowIfNull(source);
         Write(LogLevel.Error, source.FullName, error);
     }
 
@@ -193,6 +199,7 @@ public class LogManager
     /// </summary>
     public static void Error(string source, Exception error)
     {
+        ArgumentNullException.ThrowIfNull(error);
         Write(LogLevel.Error, source, error.Message, error);
     }
 
@@ -209,6 +216,7 @@ public class LogManager
     /// </summary>
     public static void Fatal(Exception fatal)
     {
+        ArgumentNullException.ThrowIfNull(fatal);
         Write(LogLevel.Fatal, fatal.Source, fatal.Message, fatal);
     }
 
@@ -217,6 +225,8 @@ public class LogManager
     /// </summary>
     public static void Fatal(Type source, Exception fatal)
     {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(fatal);
         Write(LogLevel.Fatal, source.FullName, fatal.Message, fatal);
     }
 
@@ -225,6 +235,7 @@ public class LogManager
     /// </summary>
     public static void Fatal(Type source, string fatal)
     {
+        ArgumentNullException.ThrowIfNull(source);
         Write(LogLevel.Fatal, source.FullName, fatal);
     }
 
@@ -233,6 +244,7 @@ public class LogManager
     /// </summary>
     public static void Fatal(string source, Exception fatal)
     {
+        ArgumentNullException.ThrowIfNull(fatal);
         Write(LogLevel.Fatal, source, fatal.Message, fatal);
     }
 

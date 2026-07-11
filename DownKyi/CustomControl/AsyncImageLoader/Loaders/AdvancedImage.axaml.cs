@@ -98,8 +98,14 @@ public class AdvancedImage : ContentControl
     /// </summary>
     /// <param name="serviceProvider">The XAML service provider.</param>
     public AdvancedImage(IServiceProvider serviceProvider)
-        : this((serviceProvider.GetService(typeof(IUriContext)) as IUriContext)?.BaseUri)
+        : this(GetBaseUri(serviceProvider))
     {
+    }
+
+    private static Uri? GetBaseUri(IServiceProvider serviceProvider)
+    {
+        ArgumentNullException.ThrowIfNull(serviceProvider);
+        return (serviceProvider.GetService(typeof(IUriContext)) as IUriContext)?.BaseUri;
     }
 
     /// <summary>
@@ -167,6 +173,8 @@ public class AdvancedImage : ContentControl
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
+        ArgumentNullException.ThrowIfNull(change);
+
         if (change.Property == SourceProperty)
             UpdateImage(change.GetNewValue<string>(), Loader);
         else if (change.Property == LoaderProperty && ShouldLoaderChangeTriggerUpdate)
@@ -312,6 +320,8 @@ public class AdvancedImage : ContentControl
     /// <param name="context">The drawing context.</param>
     public override void Render(DrawingContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
         var source = CurrentImage;
 
         if (source != null && Bounds is { Width: > 0, Height: > 0 })

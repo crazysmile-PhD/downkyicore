@@ -22,6 +22,8 @@ public static class DownloadTaskFileService
 
     public static async Task CancelActiveDownloadAsync(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         downloading.Downloading.DownloadStatus = DownloadStatus.Pause;
 
         try
@@ -94,6 +96,8 @@ public static class DownloadTaskFileService
 
     public static IReadOnlyCollection<string> GetGeneratedFiles(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         return GetGeneratedFiles(
             downloading.DownloadBase?.FilePath,
             downloading.Downloading.DownloadFiles?.Values);

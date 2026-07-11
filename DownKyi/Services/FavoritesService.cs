@@ -103,6 +103,8 @@ public class FavoritesService : IFavoritesService
     public void GetFavoritesMediaList(List<FavoritesMedia> medias, ObservableCollection<ViewModels.PageViewModels.FavoritesMedia> result, IEventAggregator eventAggregator,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(medias);
+
         var order = 0;
         var mappedMedias = new List<ViewModels.PageViewModels.FavoritesMedia>();
         foreach (var media in medias)

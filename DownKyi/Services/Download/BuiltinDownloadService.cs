@@ -42,6 +42,8 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// <returns></returns>
     public override string? DownloadAudio(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         var downloadAudio = BaseDownloadAudio(downloading);
 
         return DownloadVideo(downloading, downloadAudio);
@@ -281,6 +283,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// <exception cref="OperationCanceledException"></exception>
     protected override void Pause(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
         CancellationToken?.ThrowIfCancellationRequested();
 
         downloading.DownloadStatusTitle = DictionaryResource.GetString("Pausing");

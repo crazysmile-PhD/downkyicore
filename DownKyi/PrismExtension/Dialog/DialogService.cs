@@ -48,6 +48,8 @@ public class DialogService : Prism.Dialogs.DialogService, IDialogService
 
     protected virtual Task ShowDialogWindow(IDialogWindow dialogWindow, bool isModal, Window? owner = null)
     {
+        ArgumentNullException.ThrowIfNull(dialogWindow);
+
         if (isModal &&
             Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime deskLifetime)
         {
@@ -74,6 +76,8 @@ public class DialogService : Prism.Dialogs.DialogService, IDialogService
     protected virtual void ConfigureDialogWindowContent(string dialogName, IDialogWindow window,
         IDialogParameters parameters)
     {
+        ArgumentNullException.ThrowIfNull(window);
+
         var content = _containerExtension.Resolve<object>(dialogName);
         if (content is not Control dialogContent)
             throw new NullReferenceException("A dialog's content must be a Control");

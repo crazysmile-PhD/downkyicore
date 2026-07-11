@@ -274,6 +274,7 @@ public class VideoInfoService : IInfoService
     /// <param name="page"></param>
     public void GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
         var playUrl = SettingsManager.GetInstance().GetVideoParseType() switch
         {

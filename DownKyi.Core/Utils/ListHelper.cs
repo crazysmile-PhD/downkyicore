@@ -12,6 +12,8 @@ public static class ListHelper
     /// <param name="item"></param>
     public static void AddUnique<T>(ObservableCollection<T> list, T item)
     {
+        ArgumentNullException.ThrowIfNull(list);
+
         if (!list.Contains(item))
         {
             list.Add(item);
@@ -26,6 +28,8 @@ public static class ListHelper
     /// <param name="item"></param>
     public static void AddUnique<T>(List<T> list, T item)
     {
+        ArgumentNullException.ThrowIfNull(list);
+
         if (!list.Exists(t => EqualityComparer<T>.Default.Equals(t, item)))
         {
             list.Add(item);
@@ -42,6 +46,8 @@ public static class ListHelper
     /// <param name="currentSelection"></param>
     public static void InsertUnique<T>(Collection<T> list, T item, int index, ref T currentSelection)
     {
+        ArgumentNullException.ThrowIfNull(list);
+
         if (!list.Contains(item))
         {
             list.Insert(index, item);

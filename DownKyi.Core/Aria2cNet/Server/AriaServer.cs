@@ -22,6 +22,9 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// <returns></returns>
         public static async Task<bool> StartServerAsync(AriaConfig config, Action<string> action)
         {
+            ArgumentNullException.ThrowIfNull(config);
+            ArgumentNullException.ThrowIfNull(action);
+
             // aria端口
             ListenPort = config.ListenPort;
             // aria目录

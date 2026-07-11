@@ -308,6 +308,7 @@ public class ViewIndexViewModel : ViewModelBase
 
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         DownloadManager = ButtonIcon.Instance().DownloadManage;

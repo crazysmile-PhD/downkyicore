@@ -55,6 +55,9 @@ public abstract class Display
     /// <returns></returns>
     public static Display Factory(Config config, Danmaku danmaku)
     {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(danmaku);
+
         var dict = new Dictionary<string, Display>
         {
             { "scroll", new ScrollDisplay(config, danmaku) },

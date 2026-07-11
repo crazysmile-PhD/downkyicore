@@ -618,6 +618,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");

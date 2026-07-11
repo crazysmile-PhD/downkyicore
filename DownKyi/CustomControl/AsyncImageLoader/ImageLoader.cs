@@ -111,16 +111,19 @@ public static class ImageLoader
 
     public static string? GetSource(Image element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(SourceProperty);
     }
 
     public static void SetSource(Image element, string? value)
     {
+        ArgumentNullException.ThrowIfNull(element);
         element.SetValue(SourceProperty, value);
     }
 
     public static bool GetIsLoading(Image element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(IsLoadingProperty);
     }
 
@@ -133,11 +136,13 @@ public static class ImageLoader
 
     public static int GetWidth(Image element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(WidthProperty);
     }
 
     public static void SetWidth(Image element, int value)
     {
+        ArgumentNullException.ThrowIfNull(element);
         element.SetValue(WidthProperty, value);
     }
 
@@ -145,11 +150,13 @@ public static class ImageLoader
 
     public static int GetHeight(Image element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(HeightProperty);
     }
 
     public static void SetHeight(Image element, int value)
     {
+        ArgumentNullException.ThrowIfNull(element);
         element.SetValue(HeightProperty, value);
     }
 }

@@ -438,6 +438,8 @@ VALUES (@id, @max_speed_display, @finished_timestamp, @finished_time)";
     /// </summary>
     public void AddDownloadedBatch(IEnumerable<Downloaded> items)
     {
+        ArgumentNullException.ThrowIfNull(items);
+
         lock (_lock)
         {
             using var tx = _connection.BeginTransaction();

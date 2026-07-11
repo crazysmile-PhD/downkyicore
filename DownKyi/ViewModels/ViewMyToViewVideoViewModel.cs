@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -380,6 +381,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");

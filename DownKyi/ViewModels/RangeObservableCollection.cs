@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -32,6 +33,8 @@ public sealed class RangeObservableCollection<T> : ObservableCollection<T>
 
     public void ReplaceRange(IEnumerable<T> items)
     {
+        ArgumentNullException.ThrowIfNull(items);
+
         CheckReentrancy();
         Items.Clear();
         foreach (var item in items)

@@ -401,6 +401,7 @@ public class ViewFollowingViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         // 传入mid

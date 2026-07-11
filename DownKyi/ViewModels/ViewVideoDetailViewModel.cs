@@ -837,6 +837,8 @@ public class ViewVideoDetailViewModel : ViewModelBase
 
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
+
         DownloadManage = ButtonIcon.Instance().DownloadManage;
         DownloadManage.Height = 24;
         DownloadManage.Width = 24;

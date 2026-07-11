@@ -582,7 +582,7 @@ contracts:
   - Diagnostic identity includes rule, project, file, location, and message so repeated MSBuild summaries do not inflate counts.
   - The CSV retains every affected project, file, line, category, and compatibility-review flag.
   - Compatibility flags are review hints and never authorize mechanical API or schema changes.
-  - The current checkpoint is 1,062 unique diagnostics across 35 rules; all 37 rules already cleared from the baseline are blocking errors.
+  - The current checkpoint is 943 unique diagnostics across 34 rules; all 38 rules already cleared from the baseline are blocking errors.
 hazards:
   - Reusing one SARIF path across projects loses rule metadata because later projects overwrite earlier output.
   - Comparing raw MSBuild warning totals without deduplication overstates the baseline.
@@ -732,6 +732,16 @@ test.process-cleanup:
     - tests/DownKyi.Core.Tests/AriaServerProcessTests.cs
   guards:
     - tracked aria2-compatible process is terminated and released
+
+test.null-contracts:
+  paths:
+    - tests/DownKyi.Core.Tests/BiliApiModelContractTests.cs
+    - tests/DownKyi.Core.Tests/WebClientTests.cs
+    - tests/DownKyi.Tests/DownloadTaskFileServiceTests.cs
+    - tests/DownKyi.Tests/RangeObservableCollectionTests.cs
+  guards:
+    - externally visible non-null inputs fail immediately with ArgumentNullException
+    - URL, parser, download-file, collection, navigation, and UI callback entry points do not defer null failures
 
 test.architecture-boundaries:
   paths:

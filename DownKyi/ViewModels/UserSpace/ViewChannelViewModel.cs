@@ -92,6 +92,7 @@ public class ViewChannelViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public async override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         Channels.Clear();

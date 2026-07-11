@@ -30,6 +30,8 @@ public static class LoginHelper
 
     public static string BuildCookieHeader(IEnumerable<DownKyiCookie> cookies)
     {
+        ArgumentNullException.ThrowIfNull(cookies);
+
         var order = new List<string>();
         var deduplicated = new Dictionary<string, DownKyiCookie>(StringComparer.OrdinalIgnoreCase);
 

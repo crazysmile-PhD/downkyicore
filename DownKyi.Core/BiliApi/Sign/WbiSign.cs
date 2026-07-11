@@ -38,6 +38,8 @@ public static class WbiSign
     /// <returns></returns>
     public static string ParametersToQuery(Dictionary<string, string> parameters)
     {
+        ArgumentNullException.ThrowIfNull(parameters);
+
         var keys = parameters.Keys.ToList();
         var queryList = (from item in keys let value = parameters[item] select $"{item}={value}").ToList();
 

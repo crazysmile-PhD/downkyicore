@@ -91,6 +91,15 @@ public sealed class WebClientTests : IDisposable
         Assert.Equal("https://example.com/api?existing=true&keyword=a+b&empty=", url);
     }
 
+    [Fact]
+    public void RequestWebRejectsNullUrl()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            BiliWebClient.RequestWeb(
+                null!,
+                cancellationToken: TestContext.Current.CancellationToken));
+    }
+
     public void Dispose()
     {
         BiliWebClient.ClearTestOverrides();

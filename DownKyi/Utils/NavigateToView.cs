@@ -1,3 +1,4 @@
+using System;
 using DownKyi.Core.Settings;
 using DownKyi.Events;
 using DownKyi.ViewModels;
@@ -39,6 +40,8 @@ public static class NavigateToView
     /// <param name="param"></param>
     public static void NavigationView(IEventAggregator eventAggregator, string viewName, string parentViewName, object? param)
     {
+        ArgumentNullException.ThrowIfNull(eventAggregator);
+
         // LogManager.Debug(Tag, $"NavigationView: {viewName}, Parameter: {param}");
         var parameter = new NavigationParam
         {
