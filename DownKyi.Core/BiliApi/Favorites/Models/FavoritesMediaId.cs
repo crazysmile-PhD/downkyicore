@@ -19,6 +19,6 @@ public class FavoritesMediaId : BaseModel
 {
     [JsonProperty("id")] public long Id { get; set; }
     [JsonProperty("type")] public int Type { get; set; }
-    [JsonProperty("bv_id")] public string BvId { get; set; } = string.Empty;
+    [JsonProperty("bv_id")] public string LegacyBvid { get; set; } = string.Empty;
     [JsonProperty("bvid")] public string Bvid { get; set; } = string.Empty;
 }

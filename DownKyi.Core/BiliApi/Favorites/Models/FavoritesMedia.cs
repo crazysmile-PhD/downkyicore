@@ -21,7 +21,7 @@ public class FavoritesMedia : BaseModel
     [JsonProperty("ctime")] public long Ctime { get; set; }
     [JsonProperty("pubtime")] public long Pubtime { get; set; }
     [JsonProperty("fav_time")] public long FavTime { get; set; }
-    [JsonProperty("bv_id")] public string BvId { get; set; } = string.Empty;
+    [JsonProperty("bv_id")] public string LegacyBvid { get; set; } = string.Empty;
 
     [JsonProperty("bvid")] public string Bvid { get; set; } = string.Empty;
     // season

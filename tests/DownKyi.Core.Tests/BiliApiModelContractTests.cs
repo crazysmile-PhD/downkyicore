@@ -1,5 +1,6 @@
 using DownKyi.Core.BiliApi.Bangumi.Models;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Core.BiliApi.Favorites.Models;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
@@ -9,6 +10,20 @@ namespace DownKyi.Core.Tests;
 
 public sealed class BiliApiModelContractTests
 {
+    [Fact]
+    public void FavoritesBvidFieldsRemainDistinct()
+    {
+        const string json = """{"bv_id":"legacy","bvid":"current"}""";
+
+        var media = JsonConvert.DeserializeObject<FavoritesMedia>(json);
+        var mediaId = JsonConvert.DeserializeObject<FavoritesMediaId>(json);
+
+        Assert.Equal("legacy", media?.LegacyBvid);
+        Assert.Equal("current", media?.Bvid);
+        Assert.Equal("legacy", mediaId?.LegacyBvid);
+        Assert.Equal("current", mediaId?.Bvid);
+    }
+
     private static readonly string[] ExpectedStyles = { "sci-fi", "adventure" };
 
     [Fact]
