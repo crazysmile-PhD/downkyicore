@@ -1,3 +1,4 @@
+using System.Xml;
 using System.Xml.Serialization;
 using DownKyi.Models;
 
@@ -11,7 +12,7 @@ public sealed class NfoModelContractTests
         var metadata = new MovieMetadata
         {
             Title = "Episode 1",
-            BilibiliId = new UniqueId("bilibili", "BV1example")
+            BilibiliId = new DownKyi.Models.UniqueId("bilibili", "BV1example")
         };
         metadata.Genres.Add("Technology");
         metadata.Tags.Add("Space");
@@ -21,8 +22,13 @@ public sealed class NfoModelContractTests
         var serializer = new XmlSerializer(typeof(MovieMetadata));
         using var writer = new StringWriter();
         serializer.Serialize(writer, metadata);
-        using var reader = new StringReader(writer.ToString());
-        var restored = Assert.IsType<MovieMetadata>(serializer.Deserialize(reader));
+        using var textReader = new StringReader(writer.ToString());
+        using var xmlReader = XmlReader.Create(textReader, new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null
+        });
+        var restored = Assert.IsType<MovieMetadata>(serializer.Deserialize(xmlReader));
 
         Assert.Equal("Technology", Assert.Single(restored.Genres));
         Assert.Equal("Space", Assert.Single(restored.Tags));

@@ -15,6 +15,7 @@ csharp_using_directive_placement = outside_namespace:suggestion
 # Security rules cleaned in PR 02. Minimal source suppressions are documented in docs/maintenance.md.
 dotnet_diagnostic.CA2100.severity = error
 dotnet_diagnostic.CA5351.severity = error
+dotnet_diagnostic.CA5369.severity = error
 dotnet_diagnostic.CA5373.severity = error
 dotnet_diagnostic.CA5401.severity = error
 
