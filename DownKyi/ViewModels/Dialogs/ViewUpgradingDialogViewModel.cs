@@ -182,7 +182,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                 dbHelper?.Dispose();
                 await SetImportantMessage("数据库连接尝试次数超限，放弃迁移").ConfigureAwait(true);
                 await HandleFailedDatabase(oldDbPath).ConfigureAwait(true);
-                Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
+                Dispatcher.UIThread.Invoke(() => CloseDialog(new DialogResult()));
                 return;
             }
 
@@ -251,7 +251,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                     await SetImportantMessage($"发生未知错误: {ex.Message}").ConfigureAwait(true);
                     dbHelper?.Dispose();
                     await HandleFailedDatabase(oldDbPath).ConfigureAwait(true);
-                    Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
+                    Dispatcher.UIThread.Invoke(() => CloseDialog(new DialogResult()));
                     return;
                 }
 
@@ -260,7 +260,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                     await SetImportantMessage("无法建立有效的数据库连接").ConfigureAwait(true);
                     dbHelper?.Dispose();
                     await HandleFailedDatabase(oldDbPath).ConfigureAwait(true);
-                    Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
+                    Dispatcher.UIThread.Invoke(() => CloseDialog(new DialogResult()));
                     return;
                 }
             }
@@ -275,7 +275,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                 await SetImportantMessage($"发生未知错误: {ex.Message}").ConfigureAwait(true);
                 dbHelper?.Dispose();
                 await HandleFailedDatabase(oldDbPath).ConfigureAwait(true);
-                Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
+                Dispatcher.UIThread.Invoke(() => CloseDialog(new DialogResult()));
                 return;
             }
 
@@ -455,7 +455,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                 SetMessage($"数据迁移过程中出错: {e.Message}");
                 dbHelper?.Dispose();
                 await HandleFailedDatabase(oldDbPath).ConfigureAwait(true);
-                Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
+                Dispatcher.UIThread.Invoke(() => CloseDialog(new DialogResult()));
             }
         }
         else
@@ -465,7 +465,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
 
         if (noMigrate)
         {
-            Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
+            Dispatcher.UIThread.Invoke(() => CloseDialog(new DialogResult()));
         }
     }
     private class DownloadedWithData

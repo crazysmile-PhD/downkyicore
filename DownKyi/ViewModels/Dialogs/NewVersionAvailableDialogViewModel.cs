@@ -27,13 +27,13 @@ namespace DownKyi.ViewModels.Dialogs
         {
             const ButtonResult result = ButtonResult.OK;
             await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases/tag/{TagName}").ConfigureAwait(true);
-            RaiseRequestClose(new DialogResult(result));
+            CloseDialog(new DialogResult(result));
         }
 
         private void ExecuteSkipCurrentVersionCommand()
         {
             SettingsManager.Instance.SetSkipVersionOnLaunch(NewVersion);
-            RaiseRequestClose(new DialogResult());
+            CloseDialog(new DialogResult());
         }
 
         private string _tagName = string.Empty;

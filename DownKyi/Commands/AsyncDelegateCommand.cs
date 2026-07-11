@@ -45,7 +45,7 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
         if (parameter is null && typeof(T) == typeof(object))
         {
             _isExecuting = true;
-            RaiseCanExecuteChanged();
+            OnCanExecuteChanged();
 
             try
             {
@@ -69,7 +69,7 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
             finally
             {
                 _isExecuting = false;
-                RaiseCanExecuteChanged();
+                OnCanExecuteChanged();
             }
             return;
         }
@@ -80,7 +80,7 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
         }
 
         _isExecuting = true;
-        RaiseCanExecuteChanged();
+        OnCanExecuteChanged();
 
         try
         {
@@ -104,11 +104,11 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
         finally
         {
             _isExecuting = false;
-            RaiseCanExecuteChanged();
+            OnCanExecuteChanged();
         }
     }
 
-    protected void RaiseCanExecuteChanged()
+    protected void OnCanExecuteChanged()
     {
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }

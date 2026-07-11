@@ -53,7 +53,7 @@ public class ViewParsingSelectorViewModel : BaseDialogViewModel
             { "parseScope", ParseScope.SelectedItem }
         };
 
-        RaiseRequestClose(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
     }
 
     // 解析当前页视频事件
@@ -73,7 +73,7 @@ public class ViewParsingSelectorViewModel : BaseDialogViewModel
             { "parseScope", ParseScope.CurrentSection }
         };
 
-        RaiseRequestClose(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
     }
 
     // 解析所有视频事件
@@ -93,7 +93,7 @@ public class ViewParsingSelectorViewModel : BaseDialogViewModel
             { "parseScope", ParseScope.All }
         };
 
-        RaiseRequestClose(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
     }
 
     #endregion

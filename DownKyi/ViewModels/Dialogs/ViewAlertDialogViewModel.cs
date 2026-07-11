@@ -62,7 +62,7 @@ public class ViewAlertDialogViewModel : BaseDialogViewModel
     private void ExecuteAllowCommand()
     {
         ButtonResult result = ButtonResult.OK;
-        RaiseRequestClose(new DialogResult(result));
+        CloseDialog(new DialogResult(result));
     }
 
     #endregion

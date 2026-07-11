@@ -83,7 +83,7 @@ public class BaseDialogViewModel : BindableBase, IDialogAware
     /// </summary>
     private void ExecuteCloseCommand()
     {
-        RaiseRequestClose(new DialogResult(ButtonResult.Cancel));
+        CloseDialog(new DialogResult(ButtonResult.Cancel));
     }
 
     #endregion
@@ -109,7 +109,7 @@ public class BaseDialogViewModel : BindableBase, IDialogAware
     #region 接口实现
 
     //触发窗体关闭事件
-    public virtual void RaiseRequestClose(IDialogResult dialogResult)
+    protected void CloseDialog(IDialogResult dialogResult)
     {
         RequestClose.Invoke(dialogResult);
     }

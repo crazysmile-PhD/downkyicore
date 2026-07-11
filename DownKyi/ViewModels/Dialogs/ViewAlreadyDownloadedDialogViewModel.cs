@@ -43,7 +43,7 @@ public class ViewAlreadyDownloadedDialogViewModel : BaseDialogViewModel
 
     private void ExecuteYesCommand()
     {
-        RaiseRequestClose(new DialogResult(ButtonResult.OK));
+        CloseDialog(new DialogResult(ButtonResult.OK));
     }
 
     // 关闭窗口事件
@@ -55,7 +55,7 @@ public class ViewAlreadyDownloadedDialogViewModel : BaseDialogViewModel
     /// </summary>
     private void ExecuteCloseCommand()
     {
-        RaiseRequestClose(new DialogResult(ButtonResult.Cancel));
+        CloseDialog(new DialogResult(ButtonResult.Cancel));
     }
 
     #endregion

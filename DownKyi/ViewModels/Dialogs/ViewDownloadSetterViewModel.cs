@@ -394,7 +394,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
             { "downloadCover", DownloadCover }
         };
 
-        RaiseRequestClose(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
     }
 
     #endregion
