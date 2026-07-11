@@ -523,12 +523,6 @@ public class ViewUserSpaceViewModel : ViewModelBase
                 Count = Format.FormatNumber(upStat.Likes)
             });
 
-            long archiveView = 0;
-            if (upStat?.Archive != null)
-            {
-                archiveView = upStat.Archive.View;
-            }
-
             TabRightBanners.Add(new TabRightBanner
             {
                 Id = 3,
@@ -536,14 +530,8 @@ public class ViewUserSpaceViewModel : ViewModelBase
                 LabelColor = DictionaryResource.GetColor("ColorTextGrey"),
                 CountColor = DictionaryResource.GetColor("ColorTextDark"),
                 Label = DictionaryResource.GetString("ArchiveViewCount"),
-                Count = Format.FormatNumber(archiveView)
+                Count = Format.FormatNumber(upStat.Archive.View)
             });
-
-            long articleView = 0;
-            if (upStat?.Article != null)
-            {
-                articleView = upStat.Article.View;
-            }
 
             TabRightBanners.Add(new TabRightBanner
             {
@@ -552,7 +540,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
                 LabelColor = DictionaryResource.GetColor("ColorTextGrey"),
                 CountColor = DictionaryResource.GetColor("ColorTextDark"),
                 Label = DictionaryResource.GetString("ArticleViewCount"),
-                Count = Format.FormatNumber(articleView)
+                Count = Format.FormatNumber(upStat.Article.View)
             });
         }
     }

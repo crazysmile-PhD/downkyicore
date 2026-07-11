@@ -22,7 +22,7 @@ public static class DialogUtils
     public static async Task<string?> SetDownloadDirectory()
     {
         if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop || desktop.MainWindow?.StorageProvider is not { } provider)
-            throw new NullReferenceException("Missing StorageProvider instance.");
+            throw new InvalidOperationException("Missing StorageProvider instance.");
         var folders = await provider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "选择文件夹",
@@ -39,7 +39,7 @@ public static class DialogUtils
     public static async Task<string?> SelectVideoFile()
     {
         if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop || desktop.MainWindow?.StorageProvider is not { } provider)
-            throw new NullReferenceException("Missing StorageProvider instance.");
+            throw new InvalidOperationException("Missing StorageProvider instance.");
         var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "选择视频",
@@ -59,7 +59,7 @@ public static class DialogUtils
     public static async Task<string[]?> SelectMultiVideoFile()
     {
         if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop || desktop.MainWindow?.StorageProvider is not { } provider)
-            throw new NullReferenceException("Missing StorageProvider instance.");
+            throw new InvalidOperationException("Missing StorageProvider instance.");
         var files = await provider.OpenFilePickerAsync(
             new FilePickerOpenOptions
             {

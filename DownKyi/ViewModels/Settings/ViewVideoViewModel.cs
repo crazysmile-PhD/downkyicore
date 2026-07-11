@@ -315,7 +315,7 @@ public class ViewVideoViewModel : ViewModelBase
         };
 
         OptionalFields = new ObservableCollection<DisplayFileNamePart>();
-        foreach (FileNamePart item in Enum.GetValues(typeof(FileNamePart)))
+        foreach (var item in Enum.GetValues<FileNamePart>())
         {
             var display = DisplayFileNamePart(item);
             OptionalFields.Add(new DisplayFileNamePart { Id = item, Title = display });

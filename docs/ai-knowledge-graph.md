@@ -582,7 +582,7 @@ contracts:
   - Diagnostic identity includes rule, project, file, location, and message so repeated MSBuild summaries do not inflate counts.
   - The CSV retains every affected project, file, line, category, and compatibility-review flag.
   - Compatibility flags are review hints and never authorize mechanical API or schema changes.
-  - The current checkpoint is 943 unique diagnostics across 34 rules; all 38 rules already cleared from the baseline are blocking errors.
+  - The current checkpoint is 931 unique diagnostics across 29 rules; all 43 rules already cleared from the baseline are blocking errors.
 hazards:
   - Reusing one SARIF path across projects loses rule metadata because later projects overwrite earlier output.
   - Comparing raw MSBuild warning totals without deduplication overstates the baseline.

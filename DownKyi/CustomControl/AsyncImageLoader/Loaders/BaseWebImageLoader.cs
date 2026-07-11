@@ -160,7 +160,7 @@ public class BaseWebImageLoader : IAsyncImageLoader
     {
         try
         {
-            return await HttpClient.GetByteArrayAsync(url).ConfigureAwait(false);
+            return await HttpClient.GetByteArrayAsync(new Uri(url, UriKind.Absolute)).ConfigureAwait(false);
         }
         catch (HttpRequestException e)
         {

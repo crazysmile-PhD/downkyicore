@@ -80,12 +80,12 @@ public class DialogService : Prism.Dialogs.DialogService, IDialogService
 
         var content = _containerExtension.Resolve<object>(dialogName);
         if (content is not Control dialogContent)
-            throw new NullReferenceException("A dialog's content must be a Control");
+            throw new InvalidOperationException("A dialog's content must be a Control");
 
         MvvmHelpers.AutowireViewModel(dialogContent);
 
         if (dialogContent.DataContext is not IDialogAware viewModel)
-            throw new NullReferenceException("A dialog's ViewModel must implement the IDialogAware interface");
+            throw new InvalidOperationException("A dialog's ViewModel must implement the IDialogAware interface");
 
         ConfigureDialogWindowProperties(window, dialogContent, viewModel);
 

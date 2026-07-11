@@ -34,7 +34,7 @@ namespace DownKyi.Services
                 if (_includePrereleases)
                 {
                     var releasesUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases";
-                    var releasesJson = await client.GetStringAsync(releasesUrl).ConfigureAwait(true);
+                    var releasesJson = await client.GetStringAsync(new Uri(releasesUrl)).ConfigureAwait(true);
                     var releases = JsonSerializer.Deserialize(releasesJson, GitHubJsonContext.Default.GitHubReleaseArray);
 
                     return string.IsNullOrEmpty(excludedVersion)
@@ -44,7 +44,7 @@ namespace DownKyi.Services
                 else
                 {
                     var latestReleaseUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases/latest";
-                    var latestReleaseJson = await client.GetStringAsync(latestReleaseUrl).ConfigureAwait(true);
+                    var latestReleaseJson = await client.GetStringAsync(new Uri(latestReleaseUrl)).ConfigureAwait(true);
                     var release = JsonSerializer.Deserialize(latestReleaseJson, GitHubJsonContext.Default.GitHubRelease);
 
                     return string.IsNullOrEmpty(excludedVersion) ||

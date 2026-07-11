@@ -104,7 +104,7 @@ public sealed class ClipboardListener : IDisposable
 
     private void ThrowIfDisposed()
     {
-        if (_disposed) throw new ObjectDisposedException(nameof(ClipboardListener));
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
     public void Dispose()
