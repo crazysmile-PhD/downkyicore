@@ -12,7 +12,7 @@ public sealed class WebClientTests : IDisposable
     }
 
     [Fact]
-    public void RequestWeb_ThrowsClearHttpRequestException_WhenRetriesAreExhausted()
+    public void RequestWebThrowsClearHttpRequestExceptionWhenRetriesAreExhausted()
     {
         var calls = 0;
         BiliWebClient.SendOverrideForTests = (_, _) =>
@@ -33,7 +33,7 @@ public sealed class WebClientTests : IDisposable
     }
 
     [Fact]
-    public void RequestWeb_DoesNotRetry_WhenCancellationIsAlreadyRequested()
+    public void RequestWebDoesNotRetryWhenCancellationIsAlreadyRequested()
     {
         var calls = 0;
         using var cancellationTokenSource = new CancellationTokenSource();
@@ -58,7 +58,7 @@ public sealed class WebClientTests : IDisposable
     }
 
     [Fact]
-    public void RequestWeb_DoesNotRetry_WhenSendIsCanceled()
+    public void RequestWebDoesNotRetryWhenSendIsCanceled()
     {
         var calls = 0;
         BiliWebClient.SendOverrideForTests = (_, _) =>
@@ -77,7 +77,7 @@ public sealed class WebClientTests : IDisposable
     }
 
     [Fact]
-    public void BuildRequestUrl_AppendsEncodedQueryParameters()
+    public void BuildRequestUrlAppendsEncodedQueryParameters()
     {
         var url = BiliWebClient.BuildRequestUrlForTests(
             "https://example.com/api?existing=true",

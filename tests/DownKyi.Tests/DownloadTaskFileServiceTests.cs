@@ -11,7 +11,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void GetGeneratedFiles_IncludesMediaAssetsAndResumeSidecars()
+    public void GetGeneratedFilesIncludesMediaAssetsAndResumeSidecars()
     {
         Directory.CreateDirectory(_directory);
         var basePath = Path.Combine(_directory, "episode-01");
@@ -28,7 +28,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteFilesAsync_RemovesPartialFilesAndResumeSidecars()
+    public async Task DeleteFilesAsyncRemovesPartialFilesAndResumeSidecars()
     {
         Directory.CreateDirectory(_directory);
         var files = new[]
@@ -46,7 +46,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteFilesAsync_DoesNotDeleteWhenAlreadyCanceled()
+    public async Task DeleteFilesAsyncDoesNotDeleteWhenAlreadyCanceled()
     {
         Directory.CreateDirectory(_directory);
         var file = CreateFile("video.mp4.aria2", "resume metadata");

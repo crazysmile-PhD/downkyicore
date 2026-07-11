@@ -14,7 +14,7 @@ public sealed class DownloadStorageResumeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void AddDownloading_PreservesResumeIdentityFilesAndPausedStateAcrossReopen()
+    public void AddDownloadingPreservesResumeIdentityFilesAndPausedStateAcrossReopen()
     {
         Directory.CreateDirectory(_directory);
         var database = Path.Combine(_directory, "download.db");

@@ -7,7 +7,7 @@ public sealed class ProjectDependencyTests
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
-    public void ProductionProjectReferences_AreAcyclic()
+    public void ProductionProjectReferencesAreAcyclic()
     {
         var graph = LoadProductionProjectGraph();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -20,7 +20,7 @@ public sealed class ProjectDependencyTests
     }
 
     [Fact]
-    public void TargetArchitectureProjects_RespectDependencyDirection()
+    public void TargetArchitectureProjectsRespectDependencyDirection()
     {
         var graph = LoadProductionProjectGraph();
         var allowedDependencies = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
@@ -61,7 +61,7 @@ public sealed class ProjectDependencyTests
     }
 
     [Fact]
-    public void DomainProject_DoesNotReferenceFrameworkOrInfrastructurePackages()
+    public void DomainProjectDoesNotReferenceFrameworkOrInfrastructurePackages()
     {
         var domainProject = Directory
             .EnumerateFiles(RepositoryRoot, "DownKyi.Domain.csproj", SearchOption.AllDirectories)

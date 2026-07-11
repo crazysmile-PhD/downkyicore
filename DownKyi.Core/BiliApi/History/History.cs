@@ -38,7 +38,7 @@ namespace DownKyi.Core.BiliApi.History
                 case HistoryBusiness.LIVE:
                     businessStr = "live";
                     break;
-                case HistoryBusiness.ARTICLE_LIST:
+                case HistoryBusiness.ArticleList:
                     businessStr = "article-list";
                     break;
                 case HistoryBusiness.ARTICLE:

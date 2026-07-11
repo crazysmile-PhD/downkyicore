@@ -6,7 +6,7 @@ namespace DownKyi.Core.Tests;
 public sealed class FfmpegProcessingPlanTests
 {
     [Fact]
-    public void BuildConcatPlan_UsesStreamCopyThenHardwareThenCpuFallback()
+    public void BuildConcatPlanUsesStreamCopyThenHardwareThenCpuFallback()
     {
         var encoder = new FfmpegHardwareEncoderProfile(
             FfmpegHardwareAcceleration.NvidiaNvenc,
@@ -27,7 +27,7 @@ public sealed class FfmpegProcessingPlanTests
     }
 
     [Fact]
-    public void BuildConcatPlan_SkipsHardwareButKeepsCpuFallbackWhenUnavailable()
+    public void BuildConcatPlanSkipsHardwareButKeepsCpuFallbackWhenUnavailable()
     {
         var plan = FfmpegProcessingPlan.BuildConcatPlan(hardwareEncoder: null);
 

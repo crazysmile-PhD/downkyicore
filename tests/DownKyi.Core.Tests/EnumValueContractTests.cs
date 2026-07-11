@@ -1,5 +1,6 @@
 using DownKyi.Core.Aria2cNet;
 using DownKyi.Core.Aria2cNet.Client;
+using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi.History.Models;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -14,11 +15,17 @@ public sealed class EnumValueContractTests
     public void NoneMembersDoNotShiftPersistedOrProtocolValues()
     {
         Assert.Equal(0, (int)HowChangePosition.None);
-        Assert.Equal(1, (int)HowChangePosition.POS_SET);
+        Assert.Equal(1, (int)HowChangePosition.PosSet);
+        Assert.Equal("POS_SET", AriaClient.GetChangePositionValue(HowChangePosition.PosSet));
+        Assert.Equal("POS_CUR", AriaClient.GetChangePositionValue(HowChangePosition.PosCurrent));
+        Assert.Equal("POS_END", AriaClient.GetChangePositionValue(HowChangePosition.PosEnd));
+        Assert.Equal(0, (int)AriaConfigLogLevel.NotSet);
+        Assert.Equal(0, (int)AriaConfigFileAllocation.NotSet);
         Assert.Equal(0, (int)DownloadResult.None);
         Assert.Equal(1, (int)DownloadResult.SUCCESS);
         Assert.Equal(0, (int)HistoryBusiness.None);
         Assert.Equal(1, (int)HistoryBusiness.ARCHIVE);
+        Assert.Equal(4, (int)HistoryBusiness.ArticleList);
         Assert.Equal(0, (int)BangumiType.None);
         Assert.Equal(1, (int)BangumiType.ANIME);
         Assert.Equal(0, (int)FollowingOrder.None);

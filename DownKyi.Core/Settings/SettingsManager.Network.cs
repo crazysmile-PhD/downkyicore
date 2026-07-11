@@ -441,7 +441,7 @@ namespace DownKyi.Core.Settings
         /// <returns></returns>
         public AriaConfigLogLevel GetAriaLogLevel()
         {
-            if (_appSettings.Network.AriaLogLevel == AriaConfigLogLevel.NOT_SET)
+            if (_appSettings.Network.AriaLogLevel == AriaConfigLogLevel.NotSet)
             {
                 // 第一次获取，先设置默认值
                 SetAriaLogLevel(AriaLogLevel);
@@ -557,7 +557,7 @@ namespace DownKyi.Core.Settings
         /// <returns></returns>
         public AriaConfigFileAllocation GetAriaFileAllocation()
         {
-            if (_appSettings.Network.AriaFileAllocation == AriaConfigFileAllocation.NOT_SET)
+            if (_appSettings.Network.AriaFileAllocation == AriaConfigFileAllocation.NotSet)
             {
                 // 第一次获取，先设置默认值
                 SetAriaFileAllocation(AriaFileAllocation);

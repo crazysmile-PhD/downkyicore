@@ -13,7 +13,7 @@ namespace DownKyi.Desktop.Tests;
 public sealed class UiSmokeTests
 {
     [Fact]
-    public void AppBuilderAndMainWindow_CanInitializeOnHeadlessPlatform()
+    public void AppBuilderAndMainWindowCanInitializeOnHeadlessPlatform()
     {
         var builder = AppBuilder
             .Configure<SmokeTestApplication>()

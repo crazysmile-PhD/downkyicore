@@ -5,7 +5,7 @@ namespace DownKyi.Core.Aria2cNet.Server;
 /// </summary>
 public enum AriaConfigLogLevel
 {
-    NOT_SET = 0,
+    NotSet = 0,
     DEBUG = 1,
     INFO,
     NOTICE,

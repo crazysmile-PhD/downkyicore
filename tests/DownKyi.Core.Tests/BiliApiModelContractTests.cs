@@ -12,7 +12,7 @@ public sealed class BiliApiModelContractTests
     private static readonly string[] ExpectedStyles = { "sci-fi", "adventure" };
 
     [Fact]
-    public void BangumiStyles_DeserializesJsonArray()
+    public void BangumiStylesDeserializesJsonArray()
     {
         var season = JsonConvert.DeserializeObject<BangumiSeason>("""
             { "styles": ["sci-fi", "adventure"] }
@@ -23,7 +23,7 @@ public sealed class BiliApiModelContractTests
     }
 
     [Fact]
-    public void VideoPlayPageUrl_PrefersBvid()
+    public void VideoPlayPageUrlPrefersBvid()
     {
         var url = VideoStream.BuildVideoPlayPageUrl(170001, "BV17x411w7KC", 2);
 
@@ -31,7 +31,7 @@ public sealed class BiliApiModelContractTests
     }
 
     [Fact]
-    public void VideoPlayPageUrl_FallsBackToAvid()
+    public void VideoPlayPageUrlFallsBackToAvid()
     {
         var url = VideoStream.BuildVideoPlayPageUrl(170001, string.Empty, 3);
 

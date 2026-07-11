@@ -7,7 +7,7 @@ namespace DownKyi.Core.Tests;
 public sealed class AriaServerProcessTests
 {
     [Fact]
-    public async Task KillTrackedServer_TerminatesAndReleasesTrackedProcess()
+    public async Task KillTrackedServerTerminatesAndReleasesTrackedProcess()
     {
         using var process = StartLongRunningProcess();
         AriaServer.SetTrackedServerForTests(process);

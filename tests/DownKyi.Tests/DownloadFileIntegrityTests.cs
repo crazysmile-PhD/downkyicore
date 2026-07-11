@@ -13,7 +13,7 @@ public sealed class DownloadFileIntegrityTests : IDisposable
     }
 
     [Fact]
-    public void IsUsable_RejectsEmptyFile()
+    public void IsUsableRejectsEmptyFile()
     {
         var file = CreateFile("empty.mp4", Array.Empty<byte>());
 
@@ -25,7 +25,7 @@ public sealed class DownloadFileIntegrityTests : IDisposable
     [InlineData("<html><body>blocked</body></html>")]
     [InlineData("{\"code\":-403,\"message\":\"forbidden\"}")]
     [InlineData("{\"error\":\"forbidden\"}")]
-    public void IsUsable_RejectsErrorPayloads(string payload)
+    public void IsUsableRejectsErrorPayloads(string payload)
     {
         var file = CreateFile("error.mp4", payload);
 
@@ -35,7 +35,7 @@ public sealed class DownloadFileIntegrityTests : IDisposable
     [Theory]
     [InlineData(".aria2")]
     [InlineData(".download")]
-    public void IsUsable_RejectsUnfinishedSidecars(string sidecarExtension)
+    public void IsUsableRejectsUnfinishedSidecars(string sidecarExtension)
     {
         var file = CreateFile("video.mp4", new byte[] { 0, 1, 2, 3 });
         File.WriteAllText($"{file}{sidecarExtension}", "unfinished");
@@ -44,7 +44,7 @@ public sealed class DownloadFileIntegrityTests : IDisposable
     }
 
     [Fact]
-    public void IsUsable_RejectsIncompleteExpectedLength()
+    public void IsUsableRejectsIncompleteExpectedLength()
     {
         var file = CreateFile("short.mp4", new byte[] { 0, 1, 2, 3 });
 
@@ -52,7 +52,7 @@ public sealed class DownloadFileIntegrityTests : IDisposable
     }
 
     [Fact]
-    public void IsUsable_AcceptsNonEmptyMediaLikeFile()
+    public void IsUsableAcceptsNonEmptyMediaLikeFile()
     {
         var file = CreateFile("video.mp4", new byte[] { 0, 1, 2, 3 });
 

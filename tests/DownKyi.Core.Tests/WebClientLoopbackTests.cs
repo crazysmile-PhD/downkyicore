@@ -16,7 +16,7 @@ public sealed class WebClientLoopbackTests : IDisposable
     [InlineData(HttpStatusCode.Forbidden)]
     [InlineData(HttpStatusCode.TooManyRequests)]
     [InlineData(HttpStatusCode.InternalServerError)]
-    public async Task RequestWeb_ThrowsForHttpFailures(HttpStatusCode statusCode)
+    public async Task RequestWebThrowsForHttpFailures(HttpStatusCode statusCode)
     {
         var server = new LoopbackHttpServer(_ => new LoopbackResponse(statusCode));
         await using var serverLifetime = server.ConfigureAwait(false);
@@ -31,7 +31,7 @@ public sealed class WebClientLoopbackTests : IDisposable
     }
 
     [Fact]
-    public async Task RequestWeb_RetriesAndRejectsEmptyResponses()
+    public async Task RequestWebRetriesAndRejectsEmptyResponses()
     {
         var server = new LoopbackHttpServer(_ => new LoopbackResponse(HttpStatusCode.OK));
         await using var serverLifetime = server.ConfigureAwait(false);
@@ -48,7 +48,7 @@ public sealed class WebClientLoopbackTests : IDisposable
     }
 
     [Fact]
-    public async Task RequestWeb_ReturnsValidJsonResponse()
+    public async Task RequestWebReturnsValidJsonResponse()
     {
         const string json = "{\"code\":0,\"data\":{}}";
         var server = new LoopbackHttpServer(_ =>
@@ -64,7 +64,7 @@ public sealed class WebClientLoopbackTests : IDisposable
     }
 
     [Fact]
-    public async Task RequestWeb_DoesNotRetryCanceledSlowResponse()
+    public async Task RequestWebDoesNotRetryCanceledSlowResponse()
     {
         var server = new LoopbackHttpServer(_ =>
             new LoopbackResponse(
@@ -86,7 +86,7 @@ public sealed class WebClientLoopbackTests : IDisposable
     [Theory]
     [InlineData("<!DOCTYPE html><html><body>upstream error</body></html>")]
     [InlineData("{not-json")]
-    public async Task RequestJson_RejectsNonJsonPayloads(string body)
+    public async Task RequestJsonRejectsNonJsonPayloads(string body)
     {
         var server = new LoopbackHttpServer(_ =>
             new LoopbackResponse(HttpStatusCode.OK, body));
@@ -103,7 +103,7 @@ public sealed class WebClientLoopbackTests : IDisposable
     }
 
     [Fact]
-    public async Task RequestStream_ThrowsWhenContentLengthDoesNotMatchBody()
+    public async Task RequestStreamThrowsWhenContentLengthDoesNotMatchBody()
     {
         var server = new LoopbackHttpServer(_ =>
             new LoopbackResponse(

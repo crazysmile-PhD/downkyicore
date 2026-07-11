@@ -596,7 +596,7 @@ public static class AriaClient
             "token:" + token,
             gid,
             pos,
-            how.ToString("G")
+            GetChangePositionValue(how)
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -606,6 +606,18 @@ public static class AriaClient
             Params = ariaParams
         };
         return await GetRpcResponseAsync<AriaChangePosition>(ariaSend).ConfigureAwait(false);
+    }
+
+    internal static string GetChangePositionValue(HowChangePosition how)
+    {
+        return how switch
+        {
+            HowChangePosition.None => nameof(HowChangePosition.None),
+            HowChangePosition.PosSet => "POS_SET",
+            HowChangePosition.PosCurrent => "POS_CUR",
+            HowChangePosition.PosEnd => "POS_END",
+            _ => throw new ArgumentOutOfRangeException(nameof(how), how, "Unknown aria2 change-position mode.")
+        };
     }
 
     /// <summary>

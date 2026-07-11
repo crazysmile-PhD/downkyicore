@@ -34,7 +34,7 @@ public class VersionCheckerServiceTests
     [InlineData("1.0.32-debug", "1.0.32")]
     [InlineData("1.0.32+abcdef", "1.0.32")]
     [InlineData("v1.0.32-beta.1", "1.0.32")]
-    public void NormalizeVersionName_ReturnsComparableSemverCore(string input, string expected)
+    public void NormalizeVersionNameReturnsComparableSemverCore(string input, string expected)
     {
         Assert.Equal(expected, AppInfo.NormalizeVersionName(input));
     }
@@ -43,13 +43,13 @@ public class VersionCheckerServiceTests
     [InlineData("v1.0.32", 10032)]
     [InlineData("1.2.3-debug", 10203)]
     [InlineData("not-a-version", 0)]
-    public void VersionNameToCode_UsesNormalizedVersion(string input, int expected)
+    public void VersionNameToCodeUsesNormalizedVersion(string input, int expected)
     {
         Assert.Equal(expected, AppInfo.VersionNameToCode(input));
     }
 
     [Fact]
-    public void IsNewVersionAvailable_ReturnsFalseForCurrentVersion()
+    public void IsNewVersionAvailableReturnsFalseForCurrentVersion()
     {
         var service = new VersionCheckerService("owner", "repo");
         var currentVersion = new AppInfo().VersionName;
@@ -58,7 +58,7 @@ public class VersionCheckerServiceTests
     }
 
     [Fact]
-    public void IsNewVersionAvailable_ReturnsTrueForGreaterVersion()
+    public void IsNewVersionAvailableReturnsTrueForGreaterVersion()
     {
         var service = new VersionCheckerService("owner", "repo");
 

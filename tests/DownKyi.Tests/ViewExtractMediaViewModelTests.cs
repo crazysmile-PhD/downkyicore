@@ -6,7 +6,7 @@ namespace DownKyi.Tests;
 public sealed class ViewExtractMediaViewModelTests
 {
     [Fact]
-    public void VideoPaths_PreservesBindingNameAndDisplayText()
+    public void VideoPathsPreservesBindingNameAndDisplayText()
     {
         using var viewModel = new ViewExtractMediaViewModel(new EventAggregator())
         {

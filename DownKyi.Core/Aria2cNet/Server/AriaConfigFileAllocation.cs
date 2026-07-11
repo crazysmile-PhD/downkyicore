@@ -5,7 +5,7 @@ namespace DownKyi.Core.Aria2cNet.Server;
 /// </summary>
 public enum AriaConfigFileAllocation
 {
-    NOT_SET = 0,
+    NotSet = 0,
     NONE = 1, // 没有预分配
     PREALLOC, // 预分配，默认
     FALLOC // NTFS建议使用

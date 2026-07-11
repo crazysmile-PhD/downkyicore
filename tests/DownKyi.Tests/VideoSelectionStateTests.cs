@@ -7,7 +7,7 @@ namespace DownKyi.Tests;
 public sealed class VideoSelectionStateTests
 {
     [Fact]
-    public void GetPagesForScope_ReturnsOnlySelectedPages_ForSelectedItemScope()
+    public void GetPagesForScopeReturnsOnlySelectedPagesForSelectedItemScope()
     {
         var sections = CreateSections();
 
@@ -17,7 +17,7 @@ public sealed class VideoSelectionStateTests
     }
 
     [Fact]
-    public void GetPagesForScope_ReturnsSelectedSectionPages_ForCurrentSectionScope()
+    public void GetPagesForScopeReturnsSelectedSectionPagesForCurrentSectionScope()
     {
         var sections = CreateSections();
 
@@ -27,7 +27,7 @@ public sealed class VideoSelectionStateTests
     }
 
     [Fact]
-    public void GetPagesForScope_ReturnsAllPages_ForAllScope()
+    public void GetPagesForScopeReturnsAllPagesForAllScope()
     {
         var sections = CreateSections();
 
@@ -37,7 +37,7 @@ public sealed class VideoSelectionStateTests
     }
 
     [Fact]
-    public void ApplySelectedPages_UpdatesSectionSelectionByCid()
+    public void ApplySelectedPagesUpdatesSectionSelectionByCid()
     {
         var section = CreateSections()[0];
 
