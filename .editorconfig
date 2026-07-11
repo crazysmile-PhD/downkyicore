@@ -78,6 +78,7 @@ dotnet_diagnostic.CA1866.severity = error
 # Globalization rule cleared while removing case-normalization allocations.
 dotnet_diagnostic.CA1309.severity = error
 dotnet_diagnostic.CA1507.severity = error
+dotnet_diagnostic.CA1720.severity = error
 
 [*.{csproj,props,targets,axaml,json,yml,yaml}]
 indent_style = space

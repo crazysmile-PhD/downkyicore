@@ -5,7 +5,7 @@ namespace DownKyi.ViewModels.UserSpace;
 
 public class TabLeftBanner : BindableBase
 {
-    public object Object { get; set; } = new();
+    public object NavigationData { get; set; } = new();
 
     public int Id { get; set; }
 

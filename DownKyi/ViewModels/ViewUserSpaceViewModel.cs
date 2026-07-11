@@ -243,7 +243,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
 
         var param = new NavigationParameters
         {
-            { "object", banner.Object },
+            { "object", banner.NavigationData },
             { "mid", mid },
         };
 
@@ -438,7 +438,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         {
             TabLeftBanners.Add(new TabLeftBanner
             {
-                Object = publicationTypes,
+                NavigationData = publicationTypes,
                 Id = 0,
                 Icon = NormalIcon.Instance().VideoUp,
                 IconColor = "#FF02B5DA",
@@ -457,7 +457,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         //{
         //    TabLeftBanners.Add(new TabLeftBanner
         //    {
-        //        Object = channelList,
+        //        NavigationData = channelList,
         //        Id = 1,
         //        Icon = NormalIcon.Instance().Channel,
         //        IconColor = "#FF23C9ED",
@@ -472,7 +472,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         {
             TabLeftBanners.Add(new TabLeftBanner
             {
-                Object = seasonsSeries,
+                NavigationData = seasonsSeries,
                 Id = 2,
                 Icon = NormalIcon.Instance().Channel,
                 IconColor = "#FF23C9ED",
