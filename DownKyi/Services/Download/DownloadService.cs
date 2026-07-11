@@ -169,9 +169,9 @@ public abstract class DownloadService : IDisposable
         }
 
         if (downloading.AudioCodec.Id == 30250 &&
-            downloading.PlayUrl.Dash.Dolby?.Audio?.FirstOrDefault() is { } dolbyAudio)
+            downloading.PlayUrl.Dash.Dolby?.Audio is { Count: > 0 } dolbyAudio)
         {
-            downloadAudio = dolbyAudio;
+            downloadAudio = dolbyAudio[0];
         }
 
         if (downloading.AudioCodec.Id == 30251 && downloading.PlayUrl.Dash.Flac?.Audio is { } flacAudio)
@@ -215,7 +215,7 @@ public abstract class DownloadService : IDisposable
 
         if (downloading?.PlayUrl?.Durl?.Count > 0)
         {
-            var durl = downloading.PlayUrl.Durl.First();
+            var durl = downloading.PlayUrl.Durl[0];
             return new VideoPlayUrlBasic
             {
                 BackupUrl = durl.BackupUrl,

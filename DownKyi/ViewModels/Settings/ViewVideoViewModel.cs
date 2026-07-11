@@ -358,19 +358,19 @@ public class ViewVideoViewModel : ViewModelBase
         // 优先下载的视频编码
         var videoCodecs = SettingsManager.GetInstance().GetVideoCodecs();
         //SelectedVideoCodec = GetVideoCodecsString(videoCodecs);
-        SelectedVideoCodec = VideoCodecs.FirstOrDefault(t => t.Id == videoCodecs) ?? VideoCodecs.First();
+        SelectedVideoCodec = VideoCodecs.FirstOrDefault(t => t.Id == videoCodecs) ?? VideoCodecs[0];
 
         // 优先下载画质
         var quality = SettingsManager.GetInstance().GetQuality();
-        SelectedVideoQuality = VideoQualityList.FirstOrDefault(t => t.Id == quality) ?? VideoQualityList.First();
+        SelectedVideoQuality = VideoQualityList.FirstOrDefault(t => t.Id == quality) ?? VideoQualityList[0];
 
         // 优先下载音质
         var audioQuality = SettingsManager.GetInstance().GetAudioQuality();
-        SelectedAudioQuality = AudioQualityList.FirstOrDefault(t => t.Id == audioQuality) ?? AudioQualityList.First();
+        SelectedAudioQuality = AudioQualityList.FirstOrDefault(t => t.Id == audioQuality) ?? AudioQualityList[0];
 
         // 首选视频解析方式
         var videoParseType = SettingsManager.GetInstance().GetVideoParseType();
-        SelectedVideoParseType = VideoParseTypeList.FirstOrDefault(t => t.Id == videoParseType) ?? VideoParseTypeList.First();
+        SelectedVideoParseType = VideoParseTypeList.FirstOrDefault(t => t.Id == videoParseType) ?? VideoParseTypeList[0];
 
         // 是否下载flv视频后转码为mp4
         var isTranscodingFlvToMp4 = SettingsManager.GetInstance().GetIsTranscodingFlvToMp4();
@@ -383,7 +383,7 @@ public class ViewVideoViewModel : ViewModelBase
         var ffmpegHardwareAcceleration = SettingsManager.GetInstance().GetFfmpegHardwareAcceleration();
         SelectedFfmpegHardwareAcceleration = FfmpegHardwareAccelerations
                                                  .FirstOrDefault(t => t.Value == ffmpegHardwareAcceleration) ??
-                                             FfmpegHardwareAccelerations.First();
+                                             FfmpegHardwareAccelerations[0];
 
         SelectedFfmpegMaxParallelJob = SettingsManager.GetInstance().GetFfmpegMaxParallelJobs();
 
@@ -426,7 +426,7 @@ public class ViewVideoViewModel : ViewModelBase
 
         // 文件命名中的序号格式
         var orderFormat = SettingsManager.GetInstance().GetOrderFormat();
-        OrderFormatDisplay = OrderFormatList.FirstOrDefault(t => t.OrderFormat == orderFormat) ?? OrderFormatList.First();
+        OrderFormatDisplay = OrderFormatList.FirstOrDefault(t => t.OrderFormat == orderFormat) ?? OrderFormatList[0];
 
         _isOnNavigatedTo = false;
     }

@@ -195,7 +195,7 @@ public class ViewBasicViewModel : ViewModelBase
 
         // 解析范围
         var parseScope = SettingsManager.GetInstance().GetParseScope();
-        SelectedParseScope = ParseScopes.FirstOrDefault(t => t.ParseScope == parseScope) ?? ParseScopes.First();
+        SelectedParseScope = ParseScopes.FirstOrDefault(t => t.ParseScope == parseScope) ?? ParseScopes[0];
 
         // 解析后是否自动下载解析视频
         var isAutoDownloadAll = SettingsManager.GetInstance().GetIsAutoDownloadAll();
@@ -203,7 +203,7 @@ public class ViewBasicViewModel : ViewModelBase
 
         // 重复下载策略
         var repeatDownloadStrategy = SettingsManager.GetInstance().GetRepeatDownloadStrategy();
-        SelectedRepeatDownloadStrategy = RepeatDownloadStrategy.FirstOrDefault(t => t.RepeatDownloadStrategy == repeatDownloadStrategy) ?? RepeatDownloadStrategy.First();
+        SelectedRepeatDownloadStrategy = RepeatDownloadStrategy.FirstOrDefault(t => t.RepeatDownloadStrategy == repeatDownloadStrategy) ?? RepeatDownloadStrategy[0];
 
         // 重复下载文件自动添加数字后缀
         var repeatFileAutoAddNumberSuffix = SettingsManager.GetInstance().IsRepeatFileAutoAddNumberSuffix();
