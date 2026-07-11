@@ -465,7 +465,7 @@ public abstract class DownloadService : IDisposable
             writer.WriteStartElement("rating");
             writer.WriteAttributeString("name", rating.Name);
             writer.WriteAttributeString("max", rating.Max.ToString(CultureInfo.InvariantCulture));
-            writer.WriteAttributeString("default", rating.IsDefault.ToString().ToLowerInvariant());
+            writer.WriteAttributeString("default", rating.IsDefault ? "true" : "false");
             writer.WriteString(rating.Value.ToString(CultureInfo.InvariantCulture));
             writer.WriteEndElement();
         }

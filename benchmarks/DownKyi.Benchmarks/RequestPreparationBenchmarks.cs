@@ -32,7 +32,7 @@ public class RequestPreparationBenchmarks
     private readonly JsonSerializerOptions _jsonOptions = new();
 
     [Benchmark]
-    public string BuildRequestUrl()
+    public string BuildRequestAddress()
     {
         return BiliWebClient.BuildRequestUrlForTests(
             "https://api.bilibili.com/x/player/wbi/playurl?platform=html5",

@@ -90,6 +90,6 @@ internal static class DownloadDiagnosticLogger
         }
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(hash, 0, 6).ToLowerInvariant();
+        return Convert.ToHexString(hash, 0, 6);
     }
 }

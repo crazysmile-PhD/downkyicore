@@ -95,7 +95,6 @@ public class FFMpeg
         }
         catch (IOException e)
         {
-            Console.WriteLine("MergeVideo()发生IO异常: {0}", e);
             LogManager.Error(Tag, e);
         }
 

@@ -45,6 +45,7 @@ dotnet_diagnostic.CA1012.severity = error
 dotnet_diagnostic.CA1014.severity = error
 dotnet_diagnostic.CA1024.severity = error
 dotnet_diagnostic.CA1030.severity = error
+dotnet_diagnostic.CA1055.severity = error
 dotnet_diagnostic.CA1051.severity = error
 dotnet_diagnostic.CA1052.severity = error
 dotnet_diagnostic.CA1508.severity = error
@@ -77,6 +78,8 @@ dotnet_diagnostic.CA1866.severity = error
 
 # Globalization rule cleared while removing case-normalization allocations.
 dotnet_diagnostic.CA1309.severity = error
+dotnet_diagnostic.CA1303.severity = error
+dotnet_diagnostic.CA1308.severity = error
 dotnet_diagnostic.CA1507.severity = error
 dotnet_diagnostic.CA1707.severity = error
 dotnet_diagnostic.CA1708.severity = error
