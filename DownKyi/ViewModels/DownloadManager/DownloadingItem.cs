@@ -23,7 +23,7 @@ namespace DownKyi.ViewModels.DownloadManager
             Delete.Fill = DictionaryResource.GetColor("ColorPrimary");
         }
 
-        public DownloadService? DownloadService;
+        public DownloadService? DownloadService { get; set; }
 
         // model数据
         private Downloading _downloading = null!;

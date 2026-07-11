@@ -7,21 +7,21 @@ namespace DownKyi.Core.Danmaku2Ass;
 /// </summary>
 public abstract class Display
 {
-    public Config Config = null!;
-    public Danmaku Danmaku = null!;
-    public int LineIndex;
+    public Config Config { get; protected set; } = null!;
+    public Danmaku Danmaku { get; protected set; } = null!;
+    public int LineIndex { get; protected set; }
 
-    public int FontSize;
-    public bool IsScaled;
-    public int MaxLength;
-    public int Width;
-    public int Height;
+    public int FontSize { get; protected set; }
+    public bool IsScaled { get; protected set; }
+    public int MaxLength { get; protected set; }
+    public int Width { get; protected set; }
+    public int Height { get; protected set; }
 
-    public Tuple<int, int> Horizontal = null!;
-    public Tuple<int, int> Vertical = null!;
+    public Tuple<int, int> Horizontal { get; protected set; } = null!;
+    public Tuple<int, int> Vertical { get; protected set; } = null!;
 
-    public int Duration;
-    public int Leave;
+    public int Duration { get; protected set; }
+    public int Leave { get; protected set; }
 
     protected Display()
     {
@@ -248,8 +248,8 @@ public class BottomDisplay : Display
 /// </summary>
 public class ScrollDisplay : Display
 {
-    public int Distance;
-    public int Speed;
+    public int Distance { get; private set; }
+    public int Speed { get; private set; }
 
     public ScrollDisplay(Config config, Danmaku danmaku) : base(config, danmaku)
     {

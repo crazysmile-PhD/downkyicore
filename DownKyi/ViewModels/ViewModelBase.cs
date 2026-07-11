@@ -13,10 +13,10 @@ namespace DownKyi.ViewModels;
 public class ViewModelBase : BindableBase, INavigationAware, IDisposable
 {
     private bool _disposed;
-    protected readonly IEventAggregator EventAggregator;
-    protected IDialogService? DialogService;
-    protected IRegionNavigationJournal? Journal;
-    protected string ParentView = string.Empty;
+    protected IEventAggregator EventAggregator { get; }
+    protected IDialogService? DialogService { get; set; }
+    protected IRegionNavigationJournal? Journal { get; set; }
+    protected string ParentView { get; set; } = string.Empty;
     protected virtual Dispatcher UiDispatcher => Dispatcher.UIThread;
 
     public ViewModelBase(IEventAggregator eventAggregator)

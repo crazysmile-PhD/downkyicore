@@ -9,7 +9,7 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 public class BangumiFollowMedia : BindableBase
 {
-    protected readonly IEventAggregator EventAggregator;
+    protected IEventAggregator EventAggregator { get; }
 
     public BangumiFollowMedia(IEventAggregator eventAggregator)
     {

@@ -1,5 +1,6 @@
 using DownKyi.Core.BiliApi.Bangumi.Models;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
@@ -75,5 +76,18 @@ public sealed class BiliApiModelContractTests
         Assert.Equal(80, Assert.Single(playUrl.Dash.Video).Id);
         Assert.Equal(30280, Assert.Single(playUrl.Dash.Audio).Id);
         Assert.Equal(80, Assert.Single(playUrl.SupportFormats).Quality);
+    }
+
+    [Fact]
+    public void SpaceSeriesPagePropertiesPreserveWireNames()
+    {
+        var page = JsonConvert.DeserializeObject<SpaceSeasonsSeriesPage>("""
+            { "page_num": 2, "page_size": 20, "total": 42 }
+            """);
+
+        Assert.NotNull(page);
+        Assert.Equal(2, page.PageNum);
+        Assert.Equal(20, page.PageSize);
+        Assert.Equal(42, page.Total);
     }
 }

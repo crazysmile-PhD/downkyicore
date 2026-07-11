@@ -583,7 +583,7 @@ contracts:
   - The CSV retains every affected project, file, line, category, and compatibility-review flag.
   - Compatibility flags are review hints and never authorize mechanical API or schema changes.
   - Every assembly explicitly declares `CLSCompliant(false)` through `Directory.Build.props`; `CA1014` is enforced without claiming unverified CLS compatibility.
-  - The current checkpoint is 589 unique diagnostics across 23 rules; all 51 rules already cleared from the baseline are blocking errors.
+  - The current checkpoint is 520 unique diagnostics across 22 rules; all 52 rules already cleared from the baseline are blocking errors.
 hazards:
   - Reusing one SARIF path across projects loses rule metadata because later projects overwrite earlier output.
   - Comparing raw MSBuild warning totals without deduplication overstates the baseline.

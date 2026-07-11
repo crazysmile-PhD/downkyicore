@@ -9,11 +9,11 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 public class ChannelMedia : BindableBase
 {
-    protected readonly IEventAggregator eventAggregator;
+    protected IEventAggregator EventAggregator { get; }
 
     public ChannelMedia(IEventAggregator eventAggregator)
     {
-        this.eventAggregator = eventAggregator;
+        EventAggregator = eventAggregator;
     }
 
     public long Avid { get; set; }
@@ -89,7 +89,7 @@ public class ChannelMedia : BindableBase
             return;
         }
 
-        NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, tag,
+        NavigateToView.NavigationView(EventAggregator, ViewVideoDetailViewModel.Tag, tag,
             $"{ParseEntrance.VideoUrl}{Bvid}");
         //string url = "https://www.bilibili.com/video/" + tag;
         //System.Diagnostics.Process.Start(url);

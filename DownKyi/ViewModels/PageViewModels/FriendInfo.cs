@@ -8,7 +8,7 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 public class FriendInfo : BindableBase
 {
-    protected readonly IEventAggregator EventAggregator;
+    protected IEventAggregator EventAggregator { get; }
 
     public FriendInfo(IEventAggregator eventAggregator)
     {

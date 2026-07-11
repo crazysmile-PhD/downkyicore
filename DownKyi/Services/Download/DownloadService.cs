@@ -32,16 +32,16 @@ namespace DownKyi.Services.Download;
 public abstract class DownloadService : IDisposable
 {
     private bool _disposed;
-    protected string Tag = "DownloadService";
+    protected string Tag { get; set; } = "DownloadService";
 
     // protected TaskbarIcon _notifyIcon;
-    protected readonly IDialogService? DialogService;
-    protected readonly ImmutableObservableCollection<DownloadingItem> DownloadingList;
-    protected readonly ImmutableObservableCollection<DownloadedItem> DownloadedList;
+    protected IDialogService? DialogService { get; }
+    protected ImmutableObservableCollection<DownloadingItem> DownloadingList { get; }
+    protected ImmutableObservableCollection<DownloadedItem> DownloadedList { get; }
 
-    protected Task? WorkTask;
-    protected CancellationTokenSource? TokenSource;
-    protected CancellationToken? CancellationToken;
+    protected Task? WorkTask { get; set; }
+    protected CancellationTokenSource? TokenSource { get; set; }
+    protected CancellationToken? CancellationToken { get; set; }
     private readonly List<Task> _downloadingTasks = new();
 
     protected const int Retry = 5;

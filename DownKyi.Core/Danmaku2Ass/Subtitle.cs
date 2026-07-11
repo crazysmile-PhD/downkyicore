@@ -5,23 +5,23 @@ namespace DownKyi.Core.Danmaku2Ass;
 /// </summary>
 public class Subtitle
 {
-    public Danmaku Danmaku;
-    public Display Display;
-    public float Offset;
+    public Danmaku Danmaku { get; }
+    public Display Display { get; }
+    public float Offset { get; }
 
-    public float Start;
-    public float End;
-    public string Color;
-    public Dictionary<string, int> Position;
-    public string StartMarkup;
-    public string EndMarkup;
-    public string ColorMarkup;
-    public string BorderMarkup;
-    public string FontSizeMarkup;
-    public string StyleMarkup;
-    public string LayerMarkup;
-    public string ContentMarkup;
-    public string Text;
+    public float Start { get; }
+    public float End { get; }
+    public string Color { get; }
+    public Dictionary<string, int> Position { get; }
+    public string StartMarkup { get; }
+    public string EndMarkup { get; }
+    public string ColorMarkup { get; }
+    public string BorderMarkup { get; }
+    public string FontSizeMarkup { get; }
+    public string StyleMarkup { get; }
+    public string LayerMarkup { get; }
+    public string ContentMarkup { get; }
+    public string Text { get; }
 
     public Subtitle(Danmaku danmaku, Display display, float offset = 0)
     {

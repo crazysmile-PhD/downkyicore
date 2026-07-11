@@ -23,7 +23,13 @@ public class ViewFollowerViewModel : ViewModelBase
     // 每页数量，暂时在此写死，以后在设置中增加选项
     private const int NumberInPage = 20;
 
-    public bool IsEnabled = true;
+    private bool _isEnabled = true;
+
+    public bool IsEnabled
+    {
+        get => _isEnabled;
+        set => SetProperty(ref _isEnabled, value);
+    }
 
     #region 页面属性申明
 

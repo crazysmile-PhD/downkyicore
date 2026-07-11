@@ -53,7 +53,7 @@ public partial class App : PrismApplication, IDisposable
     public static ImmutableObservableCollection<DownloadedItem> DownloadedList { get; private set; } = new();
     public new static App Current => (App)Application.Current!;
     public new MainWindow MainWindow => Container.Resolve<MainWindow>();
-    public IClassicDesktopStyleApplicationLifetime? AppLife;
+    public IClassicDesktopStyleApplicationLifetime? AppLife { get; private set; }
 #if !DEBUG
     private static Mutex? _mutex;
 #endif

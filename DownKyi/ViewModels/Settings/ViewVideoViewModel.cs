@@ -208,7 +208,7 @@ public class ViewVideoViewModel : ViewModelBase
     }
 
 
-    public bool _generateMovieMetadata;
+    private bool _generateMovieMetadata;
 
     public bool GenerateMovieMetadata
     {

@@ -9,7 +9,7 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 public class PublicationMedia : BindableBase
 {
-    protected readonly IEventAggregator EventAggregator;
+    protected IEventAggregator EventAggregator { get; }
 
     public PublicationMedia(IEventAggregator eventAggregator)
     {

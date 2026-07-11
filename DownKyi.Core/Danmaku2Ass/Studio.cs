@@ -9,9 +9,9 @@ public class Studio
     public Config Config { get; }
     public IReadOnlyList<Danmaku> Danmakus { get; }
 
-    public Creater Creater = null!;
-    public int KeepedCount;
-    public int DropedCount;
+    public Creater Creater { get; private set; } = null!;
+    public int KeepedCount { get; private set; }
+    public int DropedCount { get; private set; }
 
     public Studio(Config config, IReadOnlyList<Danmaku> danmakus)
         : this(config, danmakus, new System.Text.UTF8Encoding(false))

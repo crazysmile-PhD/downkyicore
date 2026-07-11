@@ -9,7 +9,7 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 public class HistoryMedia : BindableBase
 {
-    protected readonly IEventAggregator EventAggregator;
+    protected IEventAggregator EventAggregator { get; }
 
     public HistoryMedia(IEventAggregator eventAggregator)
     {
