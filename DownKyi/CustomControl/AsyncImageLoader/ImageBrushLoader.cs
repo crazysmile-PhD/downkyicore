@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Logging;
@@ -48,15 +49,23 @@ public static class ImageBrushLoader
                     var scale = await Dispatcher.UIThread.InvokeAsync(() => App.Current.MainWindow.DesktopScaling);
                     var actualWidth = Convert.ToInt32(width * scale);
                     var actualHeight = Convert.ToInt32(height * scale);
-                    bitmap = (await AsyncImageLoader.ProvideImageAsync(newValue))?.CreateScaledBitmap(new PixelSize(actualWidth, actualHeight));
+                    bitmap = (await AsyncImageLoader.ProvideImageAsync(newValue).ConfigureAwait(true))?.CreateScaledBitmap(new PixelSize(actualWidth, actualHeight));
                 }
                 else
                 {
-                    bitmap = await AsyncImageLoader.ProvideImageAsync(newValue);
+                    bitmap = await AsyncImageLoader.ProvideImageAsync(newValue).ConfigureAwait(true);
                 }
             }
         }
-        catch (Exception e)
+        catch (HttpRequestException e)
+        {
+            Logger?.Log("ImageBrushLoader", "ImageBrushLoader image resolution failed: {0}", e);
+        }
+        catch (IOException e)
+        {
+            Logger?.Log("ImageBrushLoader", "ImageBrushLoader image resolution failed: {0}", e);
+        }
+        catch (InvalidOperationException e)
         {
             Logger?.Log("ImageBrushLoader", "ImageBrushLoader image resolution failed: {0}", e);
         }

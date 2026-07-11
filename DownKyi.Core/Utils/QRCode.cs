@@ -18,11 +18,11 @@ public static class QrCode
     /// <returns>位图</returns>
     public static Bitmap EncodeQrCode(string msg, int version, int pixel, string? iconPath, int iconSize, int iconBorder, bool whiteEdge)
     {
-        var codeGenerator = new QRCodeGenerator();
+        using var codeGenerator = new QRCodeGenerator();
 
-        var codeData = codeGenerator.CreateQrCode(msg, QRCodeGenerator.ECCLevel.H /* 这里设置容错率的一个级别 */, true, false, QRCodeGenerator.EciMode.Utf8, version);
+        using var codeData = codeGenerator.CreateQrCode(msg, QRCodeGenerator.ECCLevel.H /* 这里设置容错率的一个级别 */, true, false, QRCodeGenerator.EciMode.Utf8, version);
 
-        var qrCode = new BitmapByteQRCode(codeData);
+        using var qrCode = new BitmapByteQRCode(codeData);
         var qrCodeAsBitmapByteArr = qrCode.GetGraphic(20);
 
         // Bitmap icon;

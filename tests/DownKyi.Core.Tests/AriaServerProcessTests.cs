@@ -17,7 +17,7 @@ public sealed class AriaServerProcessTests
             Assert.True(AriaServer.KillTrackedServer("test cleanup"));
             await process
                 .WaitForExitAsync(TestContext.Current.CancellationToken)
-                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken).ConfigureAwait(true);
 
             Assert.True(process.HasExited);
             Assert.False(AriaServer.HasTrackedServerForTests());

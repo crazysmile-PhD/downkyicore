@@ -25,7 +25,7 @@ namespace DownKyi.ViewModels.Dialogs
         private async Task ExecuteAllowCommand()
         {
             const ButtonResult result = ButtonResult.OK;
-            await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases/tag/{TagName}");
+            await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases/tag/{TagName}").ConfigureAwait(true);
             RaiseRequestClose(new DialogResult(result));
         }
 

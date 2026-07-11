@@ -5,7 +5,7 @@ namespace DownKyi.Core.Danmaku2Ass;
 /// <summary>
 /// 显示方式
 /// </summary>
-public class Display
+public abstract class Display
 {
     public Config Config = null!;
     public Danmaku Danmaku = null!;
@@ -27,7 +27,7 @@ public class Display
     {
     }
 
-    public Display(Config config, Danmaku danmaku)
+    protected Display(Config config, Danmaku danmaku)
     {
         Config = config;
         Danmaku = danmaku;
@@ -39,9 +39,12 @@ public class Display
         Width = SetWidth();
         Height = SetHeight();
 
+    }
+
+    protected void InitializeLayout()
+    {
         Horizontal = SetHorizontal();
         Vertical = SetVertical();
-
         Duration = SetDuration();
         Leave = SetLeave();
     }
@@ -198,7 +201,7 @@ public class TopDisplay : Display
 {
     public TopDisplay(Config config, Danmaku danmaku) : base(config, danmaku)
     {
-        //Console.WriteLine("TopDisplay constructor.");
+        InitializeLayout();
     }
 
     /// <summary>
@@ -220,7 +223,7 @@ public class BottomDisplay : Display
 {
     public BottomDisplay(Config config, Danmaku danmaku) : base(config, danmaku)
     {
-        //Console.WriteLine("BottomDisplay constructor.");
+        InitializeLayout();
     }
 
     /// <summary>
@@ -245,20 +248,8 @@ public class ScrollDisplay : Display
     public int Distance;
     public int Speed;
 
-    public ScrollDisplay(Config config, Danmaku danmaku) : base()
+    public ScrollDisplay(Config config, Danmaku danmaku) : base(config, danmaku)
     {
-        //Console.WriteLine("ScrollDisplay constructor.");
-
-        Config = config;
-        Danmaku = danmaku;
-        LineIndex = 0;
-
-        IsScaled = SetIsScaled();
-        FontSize = SetFontSize();
-        MaxLength = SetMaxLength();
-        Width = SetWidth();
-        Height = SetHeight();
-
         Horizontal = SetHorizontal();
         Vertical = SetVertical();
 

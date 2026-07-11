@@ -4,6 +4,7 @@ using FFMpegCore;
 using FFMpegCore.Enums;
 using FFMpegCore.Helpers;
 using FFMpegCore.Pipes;
+using System.ComponentModel;
 
 namespace DownKyi.Core.FFMpeg;
 
@@ -181,7 +182,7 @@ public class FFMpeg
                 .WithVideoCodec("mjpeg")
             )
             .NotifyOnError(x => Console.WriteLine(x))
-            .ProcessAsynchronously(false);
+            .ProcessAsynchronously(false).ConfigureAwait(false);
         ms.Position = 0;
         return ms;
     }
@@ -258,7 +259,17 @@ public class FFMpeg
 
             return false;
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            LogManager.Error(Tag, ex);
+            return false;
+        }
+        catch (IOException ex)
+        {
+            LogManager.Error(Tag, ex);
+            return false;
+        }
+        catch (UnauthorizedAccessException ex)
         {
             LogManager.Error(Tag, ex);
             return false;
@@ -272,7 +283,11 @@ public class FFMpeg
                     File.Delete(listFile);
                 }
             }
-            catch (Exception e)
+            catch (IOException e)
+            {
+                LogManager.Error(Tag, e);
+            }
+            catch (UnauthorizedAccessException e)
             {
                 LogManager.Error(Tag, e);
             }
@@ -355,7 +370,11 @@ public class FFMpeg
                 File.Delete(outputVideo);
             }
         }
-        catch (Exception e)
+        catch (IOException e)
+        {
+            LogManager.Error(Tag, e);
+        }
+        catch (UnauthorizedAccessException e)
         {
             LogManager.Error(Tag, e);
         }
@@ -383,7 +402,12 @@ public class FFMpeg
             LogManager.Info(Tag, $"FFmpeg operation finished. operation={operation}; success={result}");
             return result;
         }
-        catch (Exception e)
+        catch (InvalidOperationException e)
+        {
+            LogManager.Error(Tag, e);
+            return false;
+        }
+        catch (Win32Exception e)
         {
             LogManager.Error(Tag, e);
             return false;

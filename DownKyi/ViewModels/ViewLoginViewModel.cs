@@ -74,9 +74,8 @@ public class ViewLoginViewModel : ViewModelBase
     /// <summary>
     /// 登录
     /// </summary>
-    private async Task LoginAsync()
+    private async Task LoginAsync(CancellationToken cancellationToken)
     {
-        var cancellationToken = _tokenSource?.Token ?? CancellationToken.None;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -102,12 +101,13 @@ public class ViewLoginViewModel : ViewModelBase
             Console.PrintLine(loginUrl.Data.Url + "\n");
             LogManager.Debug(Tag, loginUrl.Data.Url);
 
-            await GetLoginStatusAsync(loginUrl.Data.QrcodeKey, cancellationToken);
+            await GetLoginStatusAsync(loginUrl.Data.QrcodeKey, cancellationToken).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
         {
             Console.PrintLine("Login()发生异常: {0}", e);
             LogManager.Error(Tag, e);
@@ -122,7 +122,7 @@ public class ViewLoginViewModel : ViewModelBase
     {
         while (true)
         {
-            await Task.Delay(1000, cancellationToken);
+            await Task.Delay(1000, cancellationToken).ConfigureAwait(true);
             var loginStatus = LoginQr.GetLoginStatus(oauthKey);
             if (loginStatus == null)
             {
@@ -137,13 +137,7 @@ public class ViewLoginViewModel : ViewModelBase
                     EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginTimeOut"));
                     LogManager.Info(Tag, DictionaryResource.GetString("LoginTimeOut"));
 
-                    // 取消任务
-                    _tokenSource?.Cancel();
-
-                    // 创建新任务
-                    _tokenSource?.Dispose();
-                    _tokenSource = new CancellationTokenSource();
-                    _ = Task.Run(LoginAsync, _tokenSource.Token);
+                    await RestartLoginAsync().ConfigureAwait(true);
                     return;
                 case 86101:
                     // 未扫码
@@ -173,7 +167,8 @@ public class ViewLoginViewModel : ViewModelBase
                             LogManager.Error(Tag, DictionaryResource.GetString("LoginFailed"));
                         }
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
+                        or InvalidOperationException or ArgumentException or Newtonsoft.Json.JsonException)
                     {
                         Console.PrintLine("PageLogin 保存登录信息发生异常: {0}", e);
                         LogManager.Error(e);
@@ -181,7 +176,7 @@ public class ViewLoginViewModel : ViewModelBase
                     }
 
                     // 取消任务
-                    await Task.Delay(3000, cancellationToken);
+                    await Task.Delay(3000, cancellationToken).ConfigureAwait(true);
                     PropertyChange(ExecuteBackSpace);
                     return;
             }
@@ -192,6 +187,21 @@ public class ViewLoginViewModel : ViewModelBase
             LogManager.Debug(Tag, "登录操作结束");
             break;
         }
+    }
+
+    private async Task RestartLoginAsync()
+    {
+        var replacement = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _tokenSource, replacement);
+        if (previous != null)
+        {
+            await previous.CancelAsync().ConfigureAwait(true);
+            previous.Dispose();
+        }
+
+        RunFireAndForget(
+            Task.Run(() => LoginAsync(replacement.Token), replacement.Token),
+            $"{Tag}.LoginAsync");
     }
 
 
@@ -211,6 +221,20 @@ public class ViewLoginViewModel : ViewModelBase
 
         InitStatus();
 
-        _ = Task.Run(LoginAsync, (_tokenSource = new CancellationTokenSource()).Token);
+        RunFireAndForget(RestartLoginAsync(), $"{Tag}.RestartLoginAsync");
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _tokenSource?.Cancel();
+            _tokenSource?.Dispose();
+            _tokenSource = null;
+            LoginQrCode?.Dispose();
+            LoginQrCode = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

@@ -270,10 +270,10 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
     private async Task EndTask()
     {
         // 停止基本任务
-        await BaseEndTask();
+        await BaseEndTask().ConfigureAwait(true);
 
         // 关闭Aria服务器
-        await CloseAriaServer();
+        await CloseAriaServer().ConfigureAwait(true);
     }
 
     /// <summary>
@@ -347,13 +347,13 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
                 return false;
             }
 
-            await AriaClient.UnpauseAsync(gid);
+            await AriaClient.UnpauseAsync(gid).ConfigureAwait(true);
             // 移除下载项
-            var ariaRemove = await AriaClient.RemoveAsync(gid);
+            var ariaRemove = await AriaClient.RemoveAsync(gid).ConfigureAwait(true);
             if (ariaRemove == null || ariaRemove.Result == gid)
             {
                 // 从内存中删除下载项
-                await AriaClient.RemoveDownloadResultAsync(gid);
+                await AriaClient.RemoveDownloadResultAsync(gid).ConfigureAwait(true);
             }
 
             return false;
@@ -369,9 +369,10 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         try
         {
             var pauseTask = AriaClient.PauseAllAsync();
-            await Task.WhenAny(pauseTask, Task.Delay(TimeSpan.FromSeconds(2)));
+            await Task.WhenAny(pauseTask, Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(true);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or IOException or InvalidOperationException
+            or Newtonsoft.Json.JsonException)
         {
             LogManager.Error(Tag, e);
         }
@@ -380,10 +381,10 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
 #endif
 
         // 关闭服务器
-        bool close = await AriaServer.CloseServerAsync(TimeSpan.FromSeconds(3));
+        bool close = await AriaServer.CloseServerAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
         if (!close)
         {
-            close = await AriaServer.ForceCloseServerAsync(TimeSpan.FromSeconds(2));
+            close = await AriaServer.ForceCloseServerAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
         }
 #if DEBUG
         Core.Utils.Debugging.Console.PrintLine(close);

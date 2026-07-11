@@ -397,7 +397,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
                 // 没有数据
                 isNoData = true;
             }
-        });
+        }).ConfigureAwait(true);
 
         // 是否获取到数据
         if (isNoData)
@@ -433,7 +433,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
 
         // 投稿视频
         List<SpacePublicationListTypeVideoZone>? publicationTypes = null;
-        await Task.Run(() => { publicationTypes = Core.BiliApi.Users.UserSpace.GetPublicationType(mid); });
+        await Task.Run(() => { publicationTypes = Core.BiliApi.Users.UserSpace.GetPublicationType(mid); }).ConfigureAwait(true);
         if (publicationTypes is { Count: > 0 })
         {
             TabLeftBanners.Add(new TabLeftBanner
@@ -467,7 +467,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
 
         // 合集和列表
         SpaceSeasonsSeries? seasonsSeries = null;
-        await Task.Run(() => { seasonsSeries = Core.BiliApi.Users.UserSpace.GetSeasonsSeries(mid, 1, 20); });
+        await Task.Run(() => { seasonsSeries = Core.BiliApi.Users.UserSpace.GetSeasonsSeries(mid, 1, 20); }).ConfigureAwait(true);
         if (seasonsSeries is { Page.Total: > 0 })
         {
             TabLeftBanners.Add(new TabLeftBanner
@@ -485,7 +485,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
 
         // 关系状态数
         UserRelationStat? relationStat = null;
-        await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(mid); });
+        await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(mid); }).ConfigureAwait(true);
         if (relationStat != null)
         {
             TabRightBanners.Add(new TabRightBanner
@@ -510,7 +510,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
 
         // UP主状态数，需要任意用户登录，否则不会返回任何数据
         UpStat? upStat = null;
-        await Task.Run(() => { upStat = UserStatus.GetUpStat(mid); });
+        await Task.Run(() => { upStat = UserStatus.GetUpStat(mid); }).ConfigureAwait(true);
         if (upStat is { Archive: not null, Article: not null })
         {
             TabRightBanners.Add(new TabRightBanner

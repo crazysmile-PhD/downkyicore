@@ -1,6 +1,7 @@
 using Bilibili.Community.Service.Dm.V1;
 using DownKyi.Core.BiliApi.Danmaku.Models;
 using DownKyi.Core.Storage;
+using Google.Protobuf;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.Danmaku;
@@ -48,10 +49,20 @@ public static class DanmakuProtobuf
         {
             throw;
         }
-        catch (Exception e)
+        catch (InvalidProtocolBufferException e)
         {
             Console.PrintLine("GetDanmakuProto()发生异常: {0}", e);
             //Logging.LogManager.Error(e);
+            return null;
+        }
+        catch (HttpRequestException e)
+        {
+            Console.PrintLine("GetDanmakuProto()发生HTTP异常: {0}", e);
+            return null;
+        }
+        catch (IOException e)
+        {
+            Console.PrintLine("GetDanmakuProto()发生IO异常: {0}", e);
             return null;
         }
 

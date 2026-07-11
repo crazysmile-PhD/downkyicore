@@ -32,7 +32,7 @@ namespace DownKyi.Services
                 if (_includePrereleases)
                 {
                     var releasesUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases";
-                    var releasesJson = await client.GetStringAsync(releasesUrl);
+                    var releasesJson = await client.GetStringAsync(releasesUrl).ConfigureAwait(true);
                     var releases = JsonSerializer.Deserialize(releasesJson, GitHubJsonContext.Default.GitHubReleaseArray);
 
                     return string.IsNullOrEmpty(excludedVersion)
@@ -42,14 +42,22 @@ namespace DownKyi.Services
                 else
                 {
                     var latestReleaseUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases/latest";
-                    var latestReleaseJson = await client.GetStringAsync(latestReleaseUrl);
+                    var latestReleaseJson = await client.GetStringAsync(latestReleaseUrl).ConfigureAwait(true);
                     var release = JsonSerializer.Deserialize(latestReleaseJson, GitHubJsonContext.Default.GitHubRelease);
 
                     return string.IsNullOrEmpty(excludedVersion) ||
                            release?.TagName.TrimStart('v') != excludedVersion ? release : null;
                 }
             }
-            catch (Exception e)
+            catch (HttpRequestException e)
+            {
+                LogManager.Error(nameof(VersionCheckerService), e);
+            }
+            catch (TaskCanceledException e)
+            {
+                LogManager.Error(nameof(VersionCheckerService), e);
+            }
+            catch (JsonException e)
             {
                 LogManager.Error(nameof(VersionCheckerService), e);
             }

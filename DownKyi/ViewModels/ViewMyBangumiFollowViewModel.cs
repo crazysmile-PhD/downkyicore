@@ -28,7 +28,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
 {
     public const string Tag = "PageMyBangumiFollow";
 
-    private CancellationTokenSource _tokenSource = null!;
+    private CancellationTokenSource? _tokenSource;
 
     private long _mid = -1;
 
@@ -339,7 +339,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Bangumi);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -365,9 +365,9 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(service);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -411,11 +411,10 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
 
         var tab = TabHeaders[SelectTabId];
         var type = (BangumiType)tab.Id;
+        var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
 
         await Task.Run(() =>
         {
-            var cancellationToken = _tokenSource.Token;
-
             var bangumiFollows = Core.BiliApi.Users.UserSpace.GetBangumiFollow(_mid, type, current, VideoNumberInPage);
             if (bangumiFollows?.List == null || bangumiFollows.List.Count == 0)
             {
@@ -491,7 +490,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
                     break;
                 }
             }
-        }, (_tokenSource = new CancellationTokenSource()).Token);
+        }, cancellationToken).ConfigureAwait(true);
 
         IsEnabled = true;
     }
@@ -543,5 +542,17 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
         Pager.CurrentChanged += OnCurrentChanged_Pager;
         Pager.CountChanged += OnCountChanged_Pager;
         Pager.Current = 1;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _tokenSource?.Cancel();
+            _tokenSource?.Dispose();
+            _tokenSource = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

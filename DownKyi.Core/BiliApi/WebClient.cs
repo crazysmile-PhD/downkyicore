@@ -12,11 +12,32 @@ namespace DownKyi.Core.BiliApi;
 public static class WebClient
 {
     private static readonly HttpClient HttpClient;
+    private static readonly SocketsHttpHandler SocketsHandler;
+    private static int _resourcesDisposed;
     private static string? _bvuid3 = string.Empty;
     private static string? _bvuid4 = string.Empty;
     internal static Func<HttpRequestMessage, CancellationToken, HttpResponseMessage>? SendOverrideForTests { get; set; }
 
     static WebClient()
+    {
+        SocketsHandler = CreateSocketsHandler();
+        HttpClient = new HttpClient(SocketsHandler, disposeHandler: false);
+        HttpClient.DefaultRequestHeaders.Add("User-Agent", SettingsManager.GetInstance().GetUserAgent());
+        HttpClient.DefaultRequestHeaders.Add("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
+    }
+
+    public static void DisposeSharedResources()
+    {
+        if (Interlocked.Exchange(ref _resourcesDisposed, 1) != 0)
+        {
+            return;
+        }
+
+        HttpClient.Dispose();
+        SocketsHandler.Dispose();
+    }
+
+    private static SocketsHttpHandler CreateSocketsHandler()
     {
         var socketsHandler = new SocketsHttpHandler
         {
@@ -42,7 +63,7 @@ public static class WebClient
                         socketsHandler.UseProxy = true;
                         socketsHandler.Proxy = new WebProxy(SettingsManager.GetInstance().GetCustomProxy());
                     }
-                    catch (Exception e)
+                    catch (UriFormatException e)
                     {
                         socketsHandler.UseProxy = false;
                         socketsHandler.Proxy = null;
@@ -52,9 +73,7 @@ public static class WebClient
                 break;
         }
 
-        HttpClient = new HttpClient(socketsHandler);
-        HttpClient.DefaultRequestHeaders.Add("User-Agent", SettingsManager.GetInstance().GetUserAgent());
-        HttpClient.DefaultRequestHeaders.Add("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
+        return socketsHandler;
     }
 
     internal class SpiOrigin
@@ -124,7 +143,12 @@ public static class WebClient
                 lastError = e;
                 LogManager.Error(nameof(RequestWeb), e);
             }
-            catch (Exception e)
+            catch (IOException e)
+            {
+                lastError = e;
+                LogManager.Error(nameof(RequestWeb), e);
+            }
+            catch (InvalidOperationException e)
             {
                 lastError = e;
                 LogManager.Error(nameof(RequestWeb), e);
@@ -272,7 +296,7 @@ public static class WebClient
     {
         using var fs = File.Create(destFile);
         using var stream = RequestStream(url, referer, cancellationToken: cancellationToken);
-        stream.CopyToAsync(fs, cancellationToken).GetAwaiter().GetResult();
+        stream.CopyTo(fs);
     }
 
     public static Stream RequestStream(string url, string? referer = null, string method = "GET", CancellationToken cancellationToken = default)

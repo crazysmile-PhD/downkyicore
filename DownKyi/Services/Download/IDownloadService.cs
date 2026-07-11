@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -5,7 +6,7 @@ using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
 
-public interface IDownloadService
+public interface IDownloadService : IDisposable
 {
     void Parse(DownloadingItem downloading);
     string? DownloadAudio(DownloadingItem downloading);

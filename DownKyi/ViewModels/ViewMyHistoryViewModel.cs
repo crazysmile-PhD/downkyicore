@@ -255,7 +255,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
     private async Task ExecuteLoadMoreCommand()
     {
         if (NoDataVisibility || _isLoadingPage || !_hasMoreHistory) return;
-        await LoadHistoryPageAsync(reset: false, _loadCancellation?.Token ?? CancellationToken.None);
+        await LoadHistoryPageAsync(reset: false, _loadCancellation?.Token ?? CancellationToken.None).ConfigureAwait(true);
     }
     /// <summary>
     /// 添加所有视频到下载列表事件
@@ -272,7 +272,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -310,9 +310,9 @@ public class ViewMyHistoryViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(service);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -327,14 +327,17 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
     private async Task UpdateHistoryMediaListAsync()
     {
-        _loadCancellation?.Cancel();
+        if (_loadCancellation != null)
+        {
+            await _loadCancellation.CancelAsync().ConfigureAwait(true);
+        }
         _loadCancellation?.Dispose();
         _loadCancellation = new CancellationTokenSource();
 
         _nextMax = 0;
         _nextViewAt = 0;
         _hasMoreHistory = true;
-        await LoadHistoryPageAsync(reset: true, _loadCancellation.Token);
+        await LoadHistoryPageAsync(reset: true, _loadCancellation.Token).ConfigureAwait(true);
     }
 
     private async Task LoadHistoryPageAsync(bool reset, CancellationToken cancellationToken)
@@ -348,7 +351,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
         {
             var result = await Task.Run(() =>
                 History.GetHistory(_nextMax, _nextViewAt, VideoNumberInPage, cancellationToken: cancellationToken),
-                cancellationToken);
+                cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
 
             var medias = result?.List?
@@ -504,5 +507,17 @@ public class ViewMyHistoryViewModel : ViewModelBase
             PartdescVisibility = !string.IsNullOrEmpty(history.NewDesc),
             UpAndTagVisibility = history.History.Business == "archive"
         };
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _loadCancellation?.Cancel();
+            _loadCancellation?.Dispose();
+            _loadCancellation = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

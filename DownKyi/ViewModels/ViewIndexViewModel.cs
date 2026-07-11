@@ -251,7 +251,7 @@ public class ViewIndexViewModel : ViewModelBase
                     IsVip = false,
                 });
             }
-        });
+        }).ConfigureAwait(true);
         return userInfo;
     }
 
@@ -265,14 +265,14 @@ public class ViewIndexViewModel : ViewModelBase
             if (isBackgroud)
             {
                 // 获取用户信息
-                await GetUserInfo();
+                await GetUserInfo().ConfigureAwait(true);
                 return;
             }
 
             LoginPanelVisibility = false;
 
             // 获取用户信息
-            var userInfo = await GetUserInfo();
+            var userInfo = await GetUserInfo().ConfigureAwait(true);
 
             // 检查本地是否存在login文件，没有则说明未登录
             if (!File.Exists(StorageManager.GetLogin()))
@@ -297,7 +297,9 @@ public class ViewIndexViewModel : ViewModelBase
                 UserName = null;
             }
         }
-        catch (Exception e)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
+            or FormatException or System.Security.Cryptography.CryptographicException
+            or Newtonsoft.Json.JsonException)
         {
             Console.PrintLine("UpdateUserInfo()发生异常: {0}", e);
             LogManager.Error(Tag, e);

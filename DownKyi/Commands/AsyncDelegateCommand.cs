@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using DownKyi.Core.Logging;
@@ -47,9 +49,20 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
 
             try
             {
-                await _execute(default!);
+                await _execute(default!).ConfigureAwait(true);
             }
-            catch (Exception e)
+            catch (OperationCanceledException)
+            {
+            }
+            catch (InvalidOperationException e)
+            {
+                LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
+            }
+            catch (HttpRequestException e)
+            {
+                LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
+            }
+            catch (IOException e)
             {
                 LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
             }
@@ -71,9 +84,20 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
 
         try
         {
-            await _execute(typedParameter);
+            await _execute(typedParameter).ConfigureAwait(true);
         }
-        catch (Exception e)
+        catch (OperationCanceledException)
+        {
+        }
+        catch (InvalidOperationException e)
+        {
+            LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
+        }
+        catch (HttpRequestException e)
+        {
+            LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
+        }
+        catch (IOException e)
         {
             LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
         }

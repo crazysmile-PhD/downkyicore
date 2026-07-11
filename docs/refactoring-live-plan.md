@@ -29,7 +29,7 @@ Branch: `refactor/pr-02-host-composition`
 - Extend architecture tests to enforce package and namespace restrictions for every new project.
 - Preserve existing database, settings, login, portable-mode, and aria2 session paths.
 - Document every temporary bridge with its deletion PR; no permanent legacy adapter is allowed.
-- Fix the 1,654 baseline diagnostics across 71 CA rules in separate commits ordered by security/correctness, async/resource/threading, performance/allocation, public API/collection design, then naming/globalization/style.
+- Fix the remaining 1,191 diagnostics across 52 CA rules in separate commits ordered by performance/allocation, public API/collection design, then naming/globalization/style; 19 security, async, disposal, exception, and lifecycle rules are already at zero and enforced as errors.
 - Preserve the external-protocol hash exception only where a contract test proves it is required; document why it is not a password or trust primitive.
 - Promote each fully cleaned rule to `error` in `.editorconfig`; finish with zero unhandled CA warnings and default `CodeAnalysisTreatWarningsAsErrors=true`.
 - Make local and CI analyzer settings identical and add required Windows, Linux, and macOS build or smoke coverage.

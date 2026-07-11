@@ -318,7 +318,7 @@ namespace DownKyi.ViewModels
             var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
             // 选择文件夹
-            var directory = await addToDownloadService.SetDirectory(DialogService);
+            var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
             // 视频计数
             var i = 0;
@@ -335,9 +335,9 @@ namespace DownKyi.ViewModels
                     addToDownloadService.GetVideo();
                     addToDownloadService.ParseVideo(videoInfoService);
                     // 下载
-                    i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                    i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
                 }
-            });
+            }).ConfigureAwait(true);
 
             if (directory == null)
             {
@@ -390,7 +390,10 @@ namespace DownKyi.ViewModels
 
         private async Task UpdatePublication(int current)
         {
-            _tokenSource?.Cancel();
+            if (_tokenSource != null)
+            {
+                await _tokenSource.CancelAsync().ConfigureAwait(true);
+            }
             // 是否正在获取数据
             // 在所有的退出分支中都需要设为true
             IsEnabled = false;
@@ -398,72 +401,80 @@ namespace DownKyi.ViewModels
             var cancellationToken = _tokenSource.Token;
 
             var tab = TabHeaders[SelectTabId];
-            await Task.Run(() =>
+            try
             {
-                var publications = Core.BiliApi.Users.UserSpace.GetPublication(_mid, current, VideoNumberInPage, tab.Id);
-                if (publications == null)
+                await Task.Run(() =>
                 {
-                    // 没有数据，UI提示
-                    LoadingVisibility = false;
-                    NoDataVisibility = true;
-                    return;
-                }
-
-                var videos = publications.Vlist;
-                if (videos == null)
-                {
-                    // 没有数据，UI提示
-                    LoadingVisibility = false;
-                    NoDataVisibility = true;
-                    return;
-                }
-
-                foreach (var video in videos)
-                {
-                    // 查询、保存封面
-                    var coverUrl = video.Pic;
-
-                    // 播放数
-                    var play = string.Empty;
-                    if (video.Play > 0)
+                    var publications = Core.BiliApi.Users.UserSpace.GetPublication(_mid, current, VideoNumberInPage, tab.Id);
+                    if (publications == null)
                     {
-                        play = Format.FormatNumber(video.Play);
-                    }
-                    else
-                    {
-                        play = "--";
-                    }
-
-                    var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
-                    var dateCTime = startTime.AddSeconds(video.Created);
-                    var ctime = dateCTime.ToString("yyyy-MM-dd");
-                    App.PropertyChangeAsync(() =>
-                    {
-                        var media = new PublicationMedia(EventAggregator)
-                        {
-                            Avid = video.Aid,
-                            Bvid = video.Bvid,
-                            Cover = _defaultPic,
-                            Duration = video.Length,
-                            Title = video.Title,
-                            PlayNumber = play,
-                            CreateTime = ctime,
-                            CoverUrl = coverUrl
-                        };
-                        _medias.Add(media);
-
+                        // 没有数据，UI提示
                         LoadingVisibility = false;
-                        NoDataVisibility = false;
-                    });
-
-                    if (cancellationToken.IsCancellationRequested)
-                    {
+                        NoDataVisibility = true;
                         return;
                     }
-                }
 
+                    var videos = publications.Vlist;
+                    if (videos == null)
+                    {
+                        // 没有数据，UI提示
+                        LoadingVisibility = false;
+                        NoDataVisibility = true;
+                        return;
+                    }
+
+                    foreach (var video in videos)
+                    {
+                        // 查询、保存封面
+                        var coverUrl = video.Pic;
+
+                        // 播放数
+                        var play = string.Empty;
+                        if (video.Play > 0)
+                        {
+                            play = Format.FormatNumber(video.Play);
+                        }
+                        else
+                        {
+                            play = "--";
+                        }
+
+                        var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
+                        var dateCTime = startTime.AddSeconds(video.Created);
+                        var ctime = dateCTime.ToString("yyyy-MM-dd");
+                        App.PropertyChangeAsync(() =>
+                        {
+                            var media = new PublicationMedia(EventAggregator)
+                            {
+                                Avid = video.Aid,
+                                Bvid = video.Bvid,
+                                Cover = _defaultPic,
+                                Duration = video.Length,
+                                Title = video.Title,
+                                PlayNumber = play,
+                                CreateTime = ctime,
+                                CoverUrl = coverUrl
+                            };
+                            _medias.Add(media);
+
+                            LoadingVisibility = false;
+                            NoDataVisibility = false;
+                        });
+
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            return;
+                        }
+                    }
+                }, cancellationToken).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            finally
+            {
                 IsEnabled = true;
-            }, cancellationToken).ContinueWith(t => { });
+            }
         }
 
         /// <summary>
@@ -531,6 +542,19 @@ namespace DownKyi.ViewModels
             Pager.CurrentChanged += OnCurrentChanged_Pager;
             Pager.CountChanged += OnCountChanged_Pager;
             Pager.Current = 1;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && !IsDisposed)
+            {
+                _tokenSource?.Cancel();
+                _tokenSource?.Dispose();
+                _tokenSource = null;
+                _defaultPic.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
     }
 }

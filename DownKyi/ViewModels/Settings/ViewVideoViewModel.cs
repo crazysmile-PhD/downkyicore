@@ -617,7 +617,7 @@ public class ViewVideoViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteChangeSaveVideoDirectoryCommand()
     {
-        var directory = await DialogUtils.SetDownloadDirectory();
+        var directory = await DialogUtils.SetDownloadDirectory().ConfigureAwait(true);
         if (string.IsNullOrEmpty(directory))
         {
             return;

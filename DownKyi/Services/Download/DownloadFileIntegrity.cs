@@ -70,7 +70,11 @@ internal static class DownloadFileIntegrity
                    sample.StartsWith("{\"code\"", StringComparison.OrdinalIgnoreCase) ||
                    sample.StartsWith("{\"error\"", StringComparison.OrdinalIgnoreCase);
         }
-        catch
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
         {
             return false;
         }

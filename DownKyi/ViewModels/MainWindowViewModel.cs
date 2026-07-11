@@ -21,8 +21,9 @@ using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels;
 
-public class MainWindowViewModel : BindableBase
+public sealed class MainWindowViewModel : BindableBase, IDisposable
 {
+    private bool _disposed;
     private readonly IEventAggregator _eventAggregator;
 
     private readonly IRegionManager _regionManager;
@@ -65,13 +66,41 @@ public class MainWindowViewModel : BindableBase
 
     private void ExecuteClosingCommand()
     {
-        if (_clipboardListener == null) return;
-        _clipboardListener.Changed -= ClipboardListenerOnChanged;
-        _clipboardListener.Dispose();
+        Dispose();
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    private void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (!disposing)
+        {
+            return;
+        }
+
+        if (_clipboardListener != null)
+        {
+            _clipboardListener.Changed -= ClipboardListenerOnChanged;
+            _clipboardListener.Dispose();
+            _clipboardListener = null;
+        }
+
         _clipboardDebounceCancellation?.Cancel();
         _clipboardDebounceCancellation?.Dispose();
+        _clipboardDebounceCancellation = null;
         _messageCancellation?.Cancel();
         _messageCancellation?.Dispose();
+        _messageCancellation = null;
     }
 
     private void ExecutePointerPressed(PointerPressedEventArgs e)
@@ -153,14 +182,14 @@ public class MainWindowViewModel : BindableBase
 
     private static async Task DelayAsync(int milliseconds, CancellationToken cancellationToken)
     {
-        await Task.Delay(milliseconds, cancellationToken);
+        await Task.Delay(milliseconds, cancellationToken).ConfigureAwait(true);
     }
 
     private async Task HideMessageAfterDelayAsync(int milliseconds, CancellationToken cancellationToken)
     {
         try
         {
-            await DelayAsync(milliseconds, cancellationToken);
+            await DelayAsync(milliseconds, cancellationToken).ConfigureAwait(true);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (!cancellationToken.IsCancellationRequested)
@@ -194,7 +223,7 @@ public class MainWindowViewModel : BindableBase
     {
         try
         {
-            await Task.Delay(300, cancellationToken);
+            await Task.Delay(300, cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
         }
         catch (OperationCanceledException)
@@ -227,14 +256,15 @@ public class MainWindowViewModel : BindableBase
             if (isAutoUpdate) return;
             var service = new VersionCheckerService(App.RepoOwner, App.RepoName,
                 SettingsManager.GetInstance().GetIsReceiveBetaVersion() == AllowStatus.Yes);
-            var release = await service.GetLatestReleaseAsync(SettingsManager.GetInstance().GetSkipVersionOnLaunch());
+            var release = await service.GetLatestReleaseAsync(SettingsManager.GetInstance().GetSkipVersionOnLaunch()).ConfigureAwait(true);
             if (release != null && service.IsNewVersionAvailable(release.TagName))
             {
-                await _dialogService?.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
-                    DialogParameters { { "release", release }, { "enableSkipVersion", true } })!;
+                await _dialogService.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
+                    DialogParameters { { "release", release }, { "enableSkipVersion", true } }).ConfigureAwait(true);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or InvalidOperationException
+            or System.Text.Json.JsonException)
         {
             LogManager.Error(nameof(MainWindowViewModel), ex);
         }

@@ -85,7 +85,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
     private async Task SetImportantMessage(string message, int delayMs = 1500)
     {
         Dispatcher.UIThread.Invoke(() => Message = message);
-        await Task.Delay(delayMs);
+        await Task.Delay(delayMs).ConfigureAwait(true);
     }
 
     public override void OnDialogOpened(IDialogParameters parameters)
@@ -102,12 +102,12 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
     {
         try
         {
-            await Task.Run(Upgrade1_0_20To1_0_21);
+            await Task.Run(Upgrade1_0_20To1_0_21).ConfigureAwait(true);
         }
-        catch (Exception e)
+        catch (Exception e) when (IsMigrationException(e))
         {
             LogManager.Error(nameof(ViewUpgradingDialogViewModel), e);
-            await SetImportantMessage("数据迁移失败，请查看日志", 0);
+            await SetImportantMessage("数据迁移失败，请查看日志", 0).ConfigureAwait(true);
         }
     }
 
@@ -120,7 +120,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
             using Stream stream = File.Open(loginInfoPath, FileMode.Open);
             if (NrbfDecoder.StartsWithPayloadHeader(stream))
             {
-                await SetImportantMessage("正在迁移登录信息");
+                await SetImportantMessage("正在迁移登录信息").ConfigureAwait(true);
                 var cookies = new List<DownKyiCookie>();
                 var cookieRecord = NrbfDecoder.DecodeClassRecord(stream);
                 if (cookieRecord.TypeNameMatches(typeof(CookieContainer)))
@@ -150,7 +150,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                 }
 
                 LoginHelper.SaveLoginInfoCookies(cookies);
-                await SetImportantMessage("登录信息迁移完成");
+                await SetImportantMessage("登录信息迁移完成").ConfigureAwait(true);
             }
         }
         else
@@ -169,7 +169,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
 
         if (oldDbPath != null)
         {
-            await SetImportantMessage("正在迁移下载信息");
+            await SetImportantMessage("正在迁移下载信息").ConfigureAwait(true);
 
 
             SqliteDatabase? dbHelper = null;
@@ -180,8 +180,8 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
             if (attemptCount > 2)
             {
                 dbHelper?.Dispose();
-                await SetImportantMessage("数据库连接尝试次数超限，放弃迁移");
-                await HandleFailedDatabase(oldDbPath);
+                await SetImportantMessage("数据库连接尝试次数超限，放弃迁移").ConfigureAwait(true);
+                await HandleFailedDatabase(oldDbPath).ConfigureAwait(true);
                 Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
                 return;
             }
@@ -196,7 +196,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                 else
                 {
                     dbHelper = new SqliteDatabase(oldDbPath);
-                    await SetImportantMessage("尝试备用连接方式");
+                    await SetImportantMessage("尝试备用连接方式").ConfigureAwait(true);
                 }
 
                 bool tablesExist = false;
@@ -242,37 +242,39 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                 }
                 catch (SqliteException)
                 {
-                    await SetImportantMessage($"数据库连接尝试 {attemptCount} 失败");
+                    await SetImportantMessage($"数据库连接尝试 {attemptCount} 失败").ConfigureAwait(true);
                     goto AttemptConnection;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                    or InvalidOperationException or ArgumentException)
                 {
-                    await SetImportantMessage($"发生未知错误: {ex.Message}");
+                    await SetImportantMessage($"发生未知错误: {ex.Message}").ConfigureAwait(true);
                     dbHelper?.Dispose();
-                    await HandleFailedDatabase(oldDbPath);
+                    await HandleFailedDatabase(oldDbPath).ConfigureAwait(true);
                     Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
                     return;
                 }
 
                 if (!connectionSuccessful)
                 {
-                    await SetImportantMessage("无法建立有效的数据库连接");
+                    await SetImportantMessage("无法建立有效的数据库连接").ConfigureAwait(true);
                     dbHelper?.Dispose();
-                    await HandleFailedDatabase(oldDbPath);
+                    await HandleFailedDatabase(oldDbPath).ConfigureAwait(true);
                     Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
                     return;
                 }
             }
             catch (SqliteException ex)
             {
-                await SetImportantMessage($"数据库连接尝试 {attemptCount} 失败: {ex.Message}");
+                await SetImportantMessage($"数据库连接尝试 {attemptCount} 失败: {ex.Message}").ConfigureAwait(true);
                 goto AttemptConnection;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                or InvalidOperationException or ArgumentException)
             {
-                await SetImportantMessage($"发生未知错误: {ex.Message}");
+                await SetImportantMessage($"发生未知错误: {ex.Message}").ConfigureAwait(true);
                 dbHelper?.Dispose();
-                await HandleFailedDatabase(oldDbPath);
+                await HandleFailedDatabase(oldDbPath).ConfigureAwait(true);
                 Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
                 return;
             }
@@ -321,7 +323,7 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
 
                             totalCount++;
                         }
-                        catch (Exception e)
+                        catch (Exception e) when (IsLegacyRecordException(e))
                         {
                             SetMessage(e.Message);
                         }
@@ -431,7 +433,8 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                             });
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (IsLegacyRecordException(ex)
+                        || ex is SqliteException)
                     {
                         Console.WriteLine(ex.ToString());
                     }
@@ -447,11 +450,11 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
                     App.Current.RefreshDownloadedList();
                 });
             }
-            catch (Exception e)
+            catch (Exception e) when (IsMigrationException(e))
             {
                 SetMessage($"数据迁移过程中出错: {e.Message}");
                 dbHelper?.Dispose();
-                await HandleFailedDatabase(oldDbPath);
+                await HandleFailedDatabase(oldDbPath).ConfigureAwait(true);
                 Dispatcher.UIThread.Invoke(() => RaiseRequestClose(new DialogResult()));
             }
         }
@@ -488,20 +491,33 @@ public class ViewUpgradingDialogViewModel : BaseDialogViewModel
             string backupPath = Path.Combine(backupDir, $"{fileName}_failed_{timestamp}{extension}");
 
             File.Move(dbPath, backupPath);
-            await SetImportantMessage($"原数据库已备份至: {Path.GetFileName(backupPath)}");
+            await SetImportantMessage($"原数据库已备份至: {Path.GetFileName(backupPath)}").ConfigureAwait(true);
         }
-        catch (Exception)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             try
             {
                 string newPath = dbPath + $".corrupted_{DateTime.Now:yyyyMMdd_HHmmss}";
                 File.Move(dbPath, newPath);
-                await SetImportantMessage($"数据库已重命名为: {Path.GetFileName(newPath)},3000");
+                await SetImportantMessage($"数据库已重命名为: {Path.GetFileName(newPath)},3000").ConfigureAwait(true);
             }
-            catch
+            catch (Exception fallbackException) when (fallbackException is IOException or UnauthorizedAccessException)
             {
-                await SetImportantMessage("无法处理数据库文件，请手动删除", 3000);
+                await SetImportantMessage("无法处理数据库文件，请手动删除", 3000).ConfigureAwait(true);
             }
         }
+    }
+
+    private static bool IsMigrationException(Exception exception)
+    {
+        return exception is SqliteException or IOException or UnauthorizedAccessException
+            or InvalidOperationException || IsLegacyRecordException(exception);
+    }
+
+    private static bool IsLegacyRecordException(Exception exception)
+    {
+        return exception is InvalidDataException or InvalidCastException or FormatException
+            or ArgumentException or KeyNotFoundException or NotSupportedException
+            or System.Runtime.Serialization.SerializationException;
     }
 }

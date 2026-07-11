@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -200,7 +201,10 @@ public class AdvancedImage : ContentControl
 
         try
         {
-            oldCancellationToken?.Cancel();
+            if (oldCancellationToken != null)
+            {
+                await oldCancellationToken.CancelAsync().ConfigureAwait(true);
+            }
         }
         catch (ObjectDisposedException)
         {
@@ -209,6 +213,8 @@ public class AdvancedImage : ContentControl
         if (source is null && CurrentImage is not ImageWrapper)
         {
             // User provided image himself
+            Interlocked.CompareExchange(ref _updateCancellationToken, null, cancellationTokenSource);
+            cancellationTokenSource.Dispose();
             return;
         }
 
@@ -216,51 +222,80 @@ public class AdvancedImage : ContentControl
         CurrentImage = null;
 
 
-        var bitmap = await Task.Run(async () =>
+        Bitmap? bitmap;
+        var wasCancelled = false;
+        try
         {
-            try
+            bitmap = await Task.Run(async () =>
             {
-                if (source == null)
-                    return null;
-
-                // A small delay allows to cancel early if the image goes out of screen too fast (eg. scrolling)
-                // The Bitmap constructor is expensive and cannot be cancelled
-                await Task.Delay(10, cancellationTokenSource.Token);
-
-                // Hack to support relative URI
-                // TODO: Refactor IAsyncImageLoader to support BaseUri 
                 try
                 {
-                    var uri = new Uri(source, UriKind.RelativeOrAbsolute);
-                    if (AssetLoader.Exists(uri, _baseUri))
-                        return new Bitmap(AssetLoader.Open(uri, _baseUri));
+                    if (source == null)
+                        return null;
+
+                    // A small delay allows to cancel early if the image goes out of screen too fast (eg. scrolling)
+                    // The Bitmap constructor is expensive and cannot be cancelled
+                    await Task.Delay(10, cancellationTokenSource.Token).ConfigureAwait(true);
+
+                    // Hack to support relative URI
+                    // TODO: Refactor IAsyncImageLoader to support BaseUri
+                    try
+                    {
+                        var uri = new Uri(source, UriKind.RelativeOrAbsolute);
+                        if (AssetLoader.Exists(uri, _baseUri))
+                            return new Bitmap(AssetLoader.Open(uri, _baseUri));
+                    }
+                    catch (UriFormatException)
+                    {
+                        // The loader below may still support the source format.
+                    }
+                    catch (IOException)
+                    {
+                        // The loader below may still resolve a remote source.
+                    }
+
+                    loader ??= ImageLoader.AsyncImageLoader;
+                    return await loader.ProvideImageAsync(source).ConfigureAwait(true);
                 }
-                catch (Exception)
+                catch (TaskCanceledException)
                 {
-                    // ignored
+                    return null;
                 }
+                catch (IOException e)
+                {
+                    _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
+                    return null;
+                }
+                catch (UnauthorizedAccessException e)
+                {
+                    _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
+                    return null;
+                }
+                catch (InvalidOperationException e)
+                {
+                    _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
+                    return null;
+                }
+                catch (ArgumentException e)
+                {
+                    _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
 
-                loader ??= ImageLoader.AsyncImageLoader;
-                return await loader.ProvideImageAsync(source);
-            }
-            catch (TaskCanceledException)
-            {
-                return null;
-            }
-            catch (Exception e)
-            {
-                _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
+                    return null;
+                }
+            }, CancellationToken.None).ConfigureAwait(true);
+            wasCancelled = cancellationTokenSource.IsCancellationRequested;
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _updateCancellationToken, null, cancellationTokenSource);
+            cancellationTokenSource.Dispose();
+        }
 
-                return null;
-            }
-            finally
-            {
-                cancellationTokenSource.Dispose();
-            }
-        }, CancellationToken.None);
-
-        if (cancellationTokenSource.IsCancellationRequested)
+        if (wasCancelled)
+        {
+            bitmap?.Dispose();
             return;
+        }
         CurrentImage = bitmap is null ? null : new ImageWrapper(bitmap);
         IsLoading = false;
     }

@@ -23,29 +23,19 @@ public class DiskCachedWebImageLoader : BaseWebImageLoader
     }
 
     /// <inheritdoc />
-    protected override Task<Bitmap?> LoadFromGlobalCache(string url)
+    protected override Bitmap? LoadFromGlobalCache(string url)
     {
         var path = Path.Combine(_cacheFolder, CreateCacheKey(url));
 
-        return File.Exists(path) ? Task.FromResult<Bitmap?>(new Bitmap(path)) : Task.FromResult<Bitmap?>(null);
+        return File.Exists(path) ? new Bitmap(path) : null;
     }
 
-#if NETSTANDARD2_1
-        protected override async Task SaveToGlobalCache(string url, byte[] imageBytes) {
-            var path = Path.Combine(_cacheFolder, CreateCacheKey(url));
-
-            Directory.CreateDirectory(_cacheFolder);
-            await File.WriteAllBytesAsync(path, imageBytes).ConfigureAwait(false);
-        }
-#else
-    protected override Task SaveToGlobalCache(string url, byte[] imageBytes)
+    protected override async Task SaveToGlobalCache(string url, byte[] imageBytes)
     {
         var path = Path.Combine(_cacheFolder, CreateCacheKey(url));
         Directory.CreateDirectory(_cacheFolder);
-        File.WriteAllBytes(path, imageBytes);
-        return Task.CompletedTask;
+        await File.WriteAllBytesAsync(path, imageBytes).ConfigureAwait(false);
     }
-#endif
 
     protected static string CreateCacheKey(string input)
     {

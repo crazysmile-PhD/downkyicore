@@ -26,6 +26,8 @@ Pull requests are guarded by `.github/workflows/quality.yml`:
 
 The repository always uses the supported `AnalysisMode=All` value. The pre-fix baseline is 1,654 unique diagnostics across 71 CA rules; see `docs/analyzer-baseline.md` and `docs/analyzer-baseline.csv`. `CodeAnalysisTreatWarningsAsErrors=false` is temporary, while compiler warnings still block CI. Promote a rule to `error` in `.editorconfig` only after every occurrence is fixed and verified. Set `CodeAnalysisTreatWarningsAsErrors=true` only after all unhandled CA diagnostics reach zero on every required platform.
 
+Current PR 02 checkpoint: 1,191 unique diagnostics across 52 rules remain. The 19 rules already at zero are enforced as errors: `CA1001`, `CA1031`, `CA1032`, `CA1058`, `CA1063`, `CA1816`, `CA1849`, `CA1850`, `CA1872`, `CA2000`, `CA2007`, `CA2008`, `CA2025`, `CA2100`, `CA2213`, `CA2214`, `CA5351`, `CA5373`, and `CA5401`. This checkpoint was produced by a clean Release build and 64 passing tests; it is progress evidence, not the final cross-platform zero-warning gate.
+
 ## Analyzer Policy
 
 - Do not add project-wide `NoWarn`, analyzer exclusions, `#nullable disable`, `GlobalSuppressions.cs`, or `.editorconfig` severities of `none` or `silent`.
@@ -34,6 +36,9 @@ The repository always uses the supported `AnalysisMode=All` value. The pre-fix b
 - Fix diagnostics in this order: security/correctness; async/cancellation/disposal/threading; performance/allocation; public API/collections; naming/globalization/style.
 - Before changing fields, properties, collections, or names, inspect JSON/XML serialization, SQLite persistence, Avalonia bindings, reflection, and external protocol contracts.
 - Regenerate an inventory from clean-build logs with `script/analyzer-inventory.ps1`; its CSV is the authoritative file-and-line detail, while the Markdown file is the review summary.
+- UI-layer awaits that must continue on Avalonia state use `ConfigureAwait(true)`; reusable Core and background infrastructure use `ConfigureAwait(false)`. xUnit test bodies retain the test scheduler with `ConfigureAwait(true)`.
+- Fire-and-forget entry points must observe faulted tasks and log the base exception. Do not restore a general `catch (Exception)` sink.
+- Types that own cancellation sources, processes, HTTP resources, streams, bitmaps, or download services must release them through an explicit `IDisposable` or `IAsyncDisposable` owner.
 
 ### Approved Minimal Suppressions
 

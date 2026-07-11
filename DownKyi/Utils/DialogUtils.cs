@@ -22,9 +22,9 @@ public static class DialogUtils
         var folders = await provider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "选择文件夹",
-            SuggestedStartLocation = await provider.TryGetFolderFromPathAsync(new Uri(DefaultDirectory)),
+            SuggestedStartLocation = await provider.TryGetFolderFromPathAsync(new Uri(DefaultDirectory)).ConfigureAwait(true),
             AllowMultiple = false
-        });
+        }).ConfigureAwait(true);
         return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
     }
 
@@ -39,10 +39,10 @@ public static class DialogUtils
         var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "选择视频",
-            SuggestedStartLocation = await provider.TryGetFolderFromPathAsync(new Uri(DefaultDirectory)),
+            SuggestedStartLocation = await provider.TryGetFolderFromPathAsync(new Uri(DefaultDirectory)).ConfigureAwait(true),
             AllowMultiple = false,
             FileTypeFilter = new FilePickerFileType[] { new("select") { Patterns = new[] { "*.mp4" }, MimeTypes = new[] { "video/mp4" } } }
-        });
+        }).ConfigureAwait(true);
 
         // 选择文件
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
@@ -60,11 +60,11 @@ public static class DialogUtils
             new FilePickerOpenOptions
             {
                 Title = "选择视频",
-                SuggestedStartLocation = await provider.TryGetFolderFromPathAsync(new Uri(DefaultDirectory)),
+                SuggestedStartLocation = await provider.TryGetFolderFromPathAsync(new Uri(DefaultDirectory)).ConfigureAwait(true),
                 AllowMultiple = true,
                 FileTypeFilter = new FilePickerFileType[] { new("select") { Patterns = new[] { "*.mp4" } } }
             }
-        );
+        ).ConfigureAwait(true);
 
         // 选择文件
         return files

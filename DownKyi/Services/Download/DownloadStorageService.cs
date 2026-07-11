@@ -19,7 +19,7 @@ namespace DownKyi.Services.Download;
 /// 使用原生 SQLite（Microsoft.Data.Sqlite）替代 FreeSql 的下载存储服务。
 /// 单例生命周期，内部维持长连接，读写操作通过 lock 保证线程安全。
 /// </summary>
-public class DownloadStorageService : IDisposable
+public sealed class DownloadStorageService : IDisposable
 {
     private const string Tag = "DownloadStorageService";
     private readonly SqliteConnection _connection;
@@ -126,7 +126,7 @@ public class DownloadStorageService : IDisposable
         {
             return JsonSerializer.Deserialize(json, GetJsonTypeInfo<T>()) ?? fallback;
         }
-        catch
+        catch (JsonException)
         {
             return fallback;
         }
@@ -214,11 +214,12 @@ VALUES
 
                 tx.Commit();
             }
-            catch (Exception e)
+            catch (SqliteException e)
             {
                 tx.Rollback();
                 LogManager.Error(Tag, e);
                 Console.PrintLine("AddDownloading发生异常: {0}", e);
+                throw;
             }
         }
     }
@@ -251,10 +252,11 @@ VALUES
                 cmd.Parameters.AddWithValue("@id", id);
                 cmd.ExecuteNonQuery();
             }
-            catch (Exception e)
+            catch (SqliteException e)
             {
                 LogManager.Error(Tag, e);
                 Console.PrintLine("RemoveDownloading发生异常: {0}", e);
+                throw;
             }
         }
     }
@@ -323,10 +325,11 @@ ORDER BY db.main_title COLLATE NOCASE, db.""order"" ASC";
                     result.Add(new DownloadingItem { Downloading = downloading, DownloadBase = downloadBase });
                 }
             }
-            catch (Exception e)
+            catch (SqliteException e)
             {
                 LogManager.Error(Tag, e);
                 Console.PrintLine("GetDownloading发生异常: {0}", e);
+                throw;
             }
         }
 
@@ -376,11 +379,12 @@ WHERE id = @id";
 
                 tx.Commit();
             }
-            catch (Exception e)
+            catch (SqliteException e)
             {
                 tx.Rollback();
                 LogManager.Error(Tag, e);
                 Console.PrintLine("UpdateDownloading发生异常: {0}", e);
+                throw;
             }
         }
     }
@@ -419,11 +423,12 @@ VALUES (@id, @max_speed_display, @finished_timestamp, @finished_time)";
 
                 tx.Commit();
             }
-            catch (Exception e)
+            catch (SqliteException e)
             {
                 tx.Rollback();
                 LogManager.Error(Tag, e);
                 Console.PrintLine("AddDownloaded发生异常: {0}", e);
+                throw;
             }
         }
     }
@@ -454,11 +459,12 @@ VALUES (@id, @max_speed_display, @finished_timestamp, @finished_time)";
 
                 tx.Commit();
             }
-            catch (Exception e)
+            catch (SqliteException e)
             {
                 tx.Rollback();
                 LogManager.Error(Tag, e);
                 Console.PrintLine("AddDownloadedBatch发生异常: {0}", e);
+                throw;
             }
         }
     }
@@ -481,10 +487,11 @@ VALUES (@id, @max_speed_display, @finished_timestamp, @finished_time)";
                 cmd.Parameters.AddWithValue("@id", id);
                 cmd.ExecuteNonQuery();
             }
-            catch (Exception e)
+            catch (SqliteException e)
             {
                 LogManager.Error(Tag, e);
                 Console.PrintLine("RemoveDownloaded发生异常: {0}", e);
+                throw;
             }
         }
     }
@@ -529,10 +536,11 @@ ORDER BY d.finished_timestamp DESC";
                     result.Add(new DownloadedItem { Downloaded = downloaded, DownloadBase = downloadBase });
                 }
             }
-            catch (Exception e)
+            catch (SqliteException e)
             {
                 LogManager.Error(Tag, e);
                 Console.PrintLine("GetDownloaded发生异常: {0}", e);
+                throw;
             }
         }
 
@@ -574,11 +582,12 @@ WHERE id = @id";
 
                 tx.Commit();
             }
-            catch (Exception e)
+            catch (SqliteException e)
             {
                 tx.Rollback();
                 LogManager.Error(Tag, e);
                 Console.PrintLine("UpdateDownloaded发生异常: {0}", e);
+                throw;
             }
         }
     }
@@ -611,11 +620,12 @@ WHERE id IN (SELECT id FROM downloaded)
 
                 tx.Commit();
             }
-            catch (Exception e)
+            catch (SqliteException e)
             {
                 tx.Rollback();
                 LogManager.Error(Tag, e);
                 Console.PrintLine("ClearDownloaded发生异常: {0}", e);
+                throw;
             }
         }
     }
@@ -716,5 +726,6 @@ WHERE id = @id";
     {
         _connection.Close();
         _connection.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

@@ -29,8 +29,8 @@ public class ViewMyFavoritesViewModel : ViewModelBase
 
     //private readonly IDialogService dialogService;
 
-    private CancellationTokenSource _tokenSource1 = null!;
-    private CancellationTokenSource _tokenSource2 = null!;
+    private CancellationTokenSource? _tokenSource1;
+    private CancellationTokenSource? _tokenSource2;
 
     private long _mid = -1;
 
@@ -364,7 +364,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -390,9 +390,9 @@ public class ViewMyFavoritesViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(videoInfoService);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -437,11 +437,10 @@ public class ViewMyFavoritesViewModel : ViewModelBase
             IsEnabled = false;
 
             var tab = TabHeaders[SelectTabId];
+            var cancellationToken = ReplaceCancellationSource(ref _tokenSource2);
 
             await Task.Run(() =>
             {
-                var cancellationToken = _tokenSource2.Token;
-
                 var medias = FavoritesResource.GetFavoritesMedia(tab.Id, current, VideoNumberInPage, cancellationToken);
                 if (medias == null || medias.Count == 0)
                 {
@@ -457,9 +456,10 @@ public class ViewMyFavoritesViewModel : ViewModelBase
 
                 var service = new FavoritesService();
                 service.GetFavoritesMediaList(medias, Medias, EventAggregator, cancellationToken);
-            }, (_tokenSource2 = new CancellationTokenSource()).Token);
+            }, cancellationToken).ConfigureAwait(true);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
         {
             LogManager.Error(nameof(ViewMyFavoritesViewModel), e);
         }
@@ -515,15 +515,14 @@ public class ViewMyFavoritesViewModel : ViewModelBase
             }
 
             InitView();
+            var cancellationToken = ReplaceCancellationSource(ref _tokenSource1);
 
             await Task.Run(() =>
             {
-                var cancellationToken = _tokenSource1.Token;
-
                 var service = new FavoritesService();
                 service.GetCreatedFavorites(_mid, TabHeaders, cancellationToken);
                 service.GetCollectedFavorites(_mid, TabHeaders, cancellationToken);
-            }, (_tokenSource1 = new CancellationTokenSource()).Token);
+            }, cancellationToken).ConfigureAwait(true);
 
             if (TabHeaders.Count == 0)
             {
@@ -548,9 +547,25 @@ public class ViewMyFavoritesViewModel : ViewModelBase
             Pager.CountChanged += OnCountChanged_Pager;
             Pager.Current = 1;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
         {
             LogManager.Error(nameof(ViewMyFavoritesViewModel), e);
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _tokenSource1?.Cancel();
+            _tokenSource1?.Dispose();
+            _tokenSource1 = null;
+            _tokenSource2?.Cancel();
+            _tokenSource2?.Dispose();
+            _tokenSource2 = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

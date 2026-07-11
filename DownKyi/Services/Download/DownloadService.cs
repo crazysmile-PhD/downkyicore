@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
@@ -23,12 +24,14 @@ using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Data.Sqlite;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Services.Download;
 
-public abstract class DownloadService
+public abstract class DownloadService : IDisposable
 {
+    private bool _disposed;
     protected string Tag = "DownloadService";
 
     // protected TaskbarIcon _notifyIcon;
@@ -44,7 +47,8 @@ public abstract class DownloadService
     protected const int Retry = 5;
     protected const string NullMark = "<null>";
 
-    protected readonly DownloadStorageService DownloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
+    protected DownloadStorageService DownloadStorageService =>
+        (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
 
     protected void EnsureDownloadIsActive(DownloadingItem downloading)
     {
@@ -61,7 +65,7 @@ public abstract class DownloadService
         {
             DownloadStorageService.UpdateDownloading(downloading);
         }
-        catch (Exception e)
+        catch (SqliteException e)
         {
             LogManager.Debug(Tag, $"Persist downloading state failed: {e.Message}");
         }
@@ -98,9 +102,13 @@ public abstract class DownloadService
                     File.Delete(path);
                 }
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 LogManager.Debug(Tag, $"Delete invalid media file failed: {e.Message}");
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                LogManager.Debug(Tag, $"Delete invalid media file was denied: {e.Message}");
             }
         }
     }
@@ -157,23 +165,15 @@ public abstract class DownloadService
             }
         }
 
-        // 避免Dolby==null及其它未知情况，直接使用异常捕获
-        try
+        if (downloading.AudioCodec.Id == 30250 &&
+            downloading.PlayUrl.Dash.Dolby?.Audio?.FirstOrDefault() is { } dolbyAudio)
         {
-            // Dolby Atmos
-            if (downloading.AudioCodec.Id == 30250)
-            {
-                downloadAudio = downloading.PlayUrl.Dash.Dolby.Audio[0];
-            }
-
-            // Hi-Res无损
-            if (downloading.AudioCodec.Id == 30251)
-            {
-                downloadAudio = downloading.PlayUrl.Dash.Flac.Audio;
-            }
+            downloadAudio = dolbyAudio;
         }
-        catch (Exception)
+
+        if (downloading.AudioCodec.Id == 30251 && downloading.PlayUrl.Dash.Flac?.Audio is { } flacAudio)
         {
+            downloadAudio = flacAudio;
         }
 
         return downloadAudio;
@@ -251,9 +251,19 @@ public abstract class DownloadService
         {
             throw;
         }
-        catch (Exception e)
+        catch (HttpRequestException e)
         {
             Console.PrintLine($"{Tag}.DownloadCover()发生异常: {0}", e);
+            LogManager.Error($"{Tag}.DownloadCover()", e);
+        }
+        catch (IOException e)
+        {
+            Console.PrintLine($"{Tag}.DownloadCover()发生IO异常: {0}", e);
+            LogManager.Error($"{Tag}.DownloadCover()", e);
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            Console.PrintLine($"{Tag}.DownloadCover()没有写入权限: {0}", e);
             LogManager.Error($"{Tag}.DownloadCover()", e);
         }
 
@@ -351,9 +361,14 @@ public abstract class DownloadService
 
                 srtFiles.Add(srtFile);
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 Console.PrintLine($"{Tag}.DownloadSubtitle()发生异常: {0}", e);
+                LogManager.Error($"{Tag}.DownloadSubtitle()", e);
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Console.PrintLine($"{Tag}.DownloadSubtitle()没有写入权限: {0}", e);
                 LogManager.Error($"{Tag}.DownloadSubtitle()", e);
             }
         }
@@ -382,7 +397,15 @@ public abstract class DownloadService
             using var writer = XmlWriter.Create(filePath, settings);
             WriteMovieMetadata(writer, metadata);
         }
-        catch (Exception e)
+        catch (IOException e)
+        {
+            LogManager.Error($"{Tag}.GenerateNfoFile()", e);
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            LogManager.Error($"{Tag}.GenerateNfoFile()", e);
+        }
+        catch (XmlException e)
         {
             LogManager.Error($"{Tag}.GenerateNfoFile()", e);
         }
@@ -586,22 +609,22 @@ public abstract class DownloadService
                     if (downloading.Downloading.DownloadStatus is not (DownloadStatus.NotStarted or DownloadStatus.WaitForDownload))
                         continue;
 
-                    await _downloadSemaphore.WaitAsync(CancellationToken.Value);
+                    await _downloadSemaphore.WaitAsync(CancellationToken.Value).ConfigureAwait(true);
                     //这里需要立刻设置状态，否则如果SingleDownload没有及时执行，会重复创建任务
                     downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
                     PersistDownloadingState(downloading);
-                    DownloadingTasks.Add(SingleDownload(downloading).ContinueWith(_ => _downloadSemaphore.Release()));
+                    DownloadingTasks.Add(RunSingleDownloadAsync(downloading));
                 }
+            }
+            catch (ObjectDisposedException e)
+            {
+                Console.PrintLine($"{Tag}.DoWork()资源已释放: {0}", e);
+                LogManager.Error($"{Tag}.DoWork() ObjectDisposedException", e);
             }
             catch (InvalidOperationException e)
             {
                 Console.PrintLine($"{Tag}.DoWork()发生InvalidOperationException异常: {0}", e);
                 LogManager.Error($"{Tag}.DoWork() InvalidOperationException", e);
-            }
-            catch (Exception e)
-            {
-                Console.PrintLine($"{Tag}.DoWork()发生异常: {0}", e);
-                LogManager.Error($"{Tag}.DoWork()", e);
             }
 
             // 判断是否该结束线程，若为true，跳出while循环
@@ -621,14 +644,26 @@ public abstract class DownloadService
             lastDownloadingCount = DownloadingList.Count;
 
             // 降低CPU占用
-            await Task.Delay(500);
+            await Task.Delay(500).ConfigureAwait(true);
         }
 
-        await Task.WhenAny(Task.WhenAll(DownloadingTasks), Task.Delay(30000));
+        await Task.WhenAny(Task.WhenAll(DownloadingTasks), Task.Delay(30000)).ConfigureAwait(true);
         foreach (var tsk in DownloadingTasks.FindAll((m) => !m.IsCompleted))
         {
             Console.PrintLine($"{Tag}.DoWork() 任务结束超时");
             LogManager.Debug($"{Tag}.DoWork()", "任务结束超时");
+        }
+    }
+
+    private async Task RunSingleDownloadAsync(DownloadingItem downloading)
+    {
+        try
+        {
+            await SingleDownload(downloading).ConfigureAwait(true);
+        }
+        finally
+        {
+            _downloadSemaphore.Release();
         }
     }
 
@@ -652,13 +687,23 @@ public abstract class DownloadService
             {
                 Directory.CreateDirectory(path);
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 Console.PrintLine(Tag, e.ToString());
                 LogManager.Debug(Tag, e.Message);
 
                 var alertService = new AlertService(DialogService);
-                await alertService.ShowError($"{path}{DictionaryResource.GetString("DirectoryError")}");
+                await alertService.ShowError($"{path}{DictionaryResource.GetString("DirectoryError")}").ConfigureAwait(true);
+
+                return;
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Console.PrintLine(Tag, e.ToString());
+                LogManager.Debug(Tag, e.Message);
+
+                var alertService = new AlertService(DialogService);
+                await alertService.ShowError($"{path}{DictionaryResource.GetString("DirectoryError")}").ConfigureAwait(true);
 
                 return;
             }
@@ -782,7 +827,7 @@ public abstract class DownloadService
                             }
 
                             retryCount++;
-                            await Task.Delay(1000);
+                            await Task.Delay(1000).ConfigureAwait(true);
                         }
 
                         if (downloadStatus.Values.Any(x => x.Result == NullMark))
@@ -948,7 +993,7 @@ public abstract class DownloadService
                     App.SortDownloadedList(finishedSort);
                 });
                 // _notifyIcon.ShowBalloonTip(DictionaryResource.GetString("DownloadSuccess"), $"{downloadedItem.DownloadBase.Name}", BalloonIcon.Info);
-            });
+            }).ConfigureAwait(true);
         }
         catch (OperationCanceledException e)
         {
@@ -1030,9 +1075,12 @@ public abstract class DownloadService
     protected async Task BaseEndTask()
     {
         // 结束任务
-        TokenSource?.Cancel();
+        if (TokenSource != null)
+        {
+            await TokenSource.CancelAsync().ConfigureAwait(true);
+        }
 
-        if (WorkTask != null) await WorkTask;
+        if (WorkTask != null) await WorkTask.ConfigureAwait(true);
 
         //先简单等待一下
 
@@ -1063,6 +1111,31 @@ public abstract class DownloadService
 
             downloadStorageService.UpdateDownloading(item);
         }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (!disposing)
+        {
+            return;
+        }
+
+        TokenSource?.Cancel();
+        TokenSource?.Dispose();
+        TokenSource = null;
+        _downloadSemaphore.Dispose();
     }
 
     /// <summary>

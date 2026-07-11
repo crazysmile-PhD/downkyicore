@@ -67,7 +67,10 @@ public class Studio
         {
             File.WriteAllText(fileName, text);
         }
-        catch (Exception)
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
         {
         }
     }

@@ -50,9 +50,15 @@ public static class LoginQr
             var loginUrl = GetLoginUrl()?.Data?.Url;
             return GetLoginQrCode(loginUrl);
         }
-        catch (Exception e)
+        catch (ArgumentException e)
         {
             Console.PrintLine("GetLoginQrCode()发生异常: {0}", e);
+            LogManager.Error("LoginQR", e);
+            return null;
+        }
+        catch (InvalidOperationException e)
+        {
+            Console.PrintLine("GetLoginQrCode()状态无效: {0}", e);
             LogManager.Error("LoginQR", e);
             return null;
         }

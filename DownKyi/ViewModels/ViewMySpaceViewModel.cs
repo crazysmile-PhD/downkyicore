@@ -22,7 +22,7 @@ public class ViewMySpaceViewModel : ViewModelBase
 {
     public const string Tag = "PageMySpace";
 
-    private CancellationTokenSource _tokenSource = null!;
+    private CancellationTokenSource? _tokenSource;
 
     // mid
     private long _mid = -1;
@@ -529,11 +529,10 @@ public class ViewMySpaceViewModel : ViewModelBase
         string? headerUri = null;
         Uri? sexUri = null;
         Uri? levelUri = null;
+        var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
 
         await Task.Run(() =>
         {
-            var cancellationToken = _tokenSource.Token;
-
             // 背景图片
             var spaceSettings = Core.BiliApi.Users.UserSpace.GetSpaceSettings(_mid);
             toutuUri = spaceSettings != null ? $"https://i0.hdslb.com/{spaceSettings.Toutu.Limg}" : "avares://DownKyi/Resources/backgound/9-绿荫秘境.png";
@@ -614,7 +613,7 @@ public class ViewMySpaceViewModel : ViewModelBase
             {
                 isCancel = true;
             }
-        }, (_tokenSource = new CancellationTokenSource()).Token);
+        }, cancellationToken).ConfigureAwait(true);
 
         // 是否该结束线程
         if (isCancel)
@@ -680,7 +679,7 @@ public class ViewMySpaceViewModel : ViewModelBase
             StatusList[2].Subtitle = relationStat.Follower.ToString();
             // 黑名单数
             StatusList[3].Subtitle = relationStat.Black.ToString();
-        });
+        }).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -702,5 +701,17 @@ public class ViewMySpaceViewModel : ViewModelBase
 
         InitView();
         RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync));
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _tokenSource?.Cancel();
+            _tokenSource?.Dispose();
+            _tokenSource = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

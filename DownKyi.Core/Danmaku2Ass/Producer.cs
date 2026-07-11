@@ -58,14 +58,8 @@ public class Producer
         string[] orders = { "top_filter", "bottom_filter", "scroll_filter" };
         foreach (var name in orders)
         {
-            Filter filter;
-            try
+            if (!Filters.TryGetValue(name, out var filter))
             {
-                filter = Filters[name];
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("ApplyFilter()发生异常: {0}", e);
                 continue;
             }
 

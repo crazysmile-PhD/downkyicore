@@ -45,7 +45,7 @@ public class ScrollIntoViewBehavior : Behavior<DataGrid>
             }
 
             // 等待UI更新完成
-            await Task.Delay(100);
+            await Task.Delay(100).ConfigureAwait(true);
 
             // 使用UI线程异步执行滚动操作
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
@@ -54,7 +54,11 @@ public class ScrollIntoViewBehavior : Behavior<DataGrid>
                 dataGrid.ScrollIntoView(selectedItem, null);
             });
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            LogManager.Error(nameof(ScrollIntoViewBehavior), ex);
+        }
+        catch (ArgumentException ex)
         {
             LogManager.Error(nameof(ScrollIntoViewBehavior), ex);
         }

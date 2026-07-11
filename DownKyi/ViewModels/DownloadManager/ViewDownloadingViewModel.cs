@@ -141,7 +141,7 @@ namespace DownKyi.ViewModels.DownloadManager
         private async Task ExecuteDeleteAllDownloadingCommand()
         {
             var alertService = new AlertService(DialogService);
-            var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"));
+            var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete")).ConfigureAwait(true);
             if (result != ButtonResult.OK)
             {
                 return;
@@ -153,7 +153,7 @@ namespace DownKyi.ViewModels.DownloadManager
             var list = DownloadingList.ToList();
             foreach (var item in list)
             {
-                await DeleteDownloadingItemAsync(item);
+                await DeleteDownloadingItemAsync(item).ConfigureAwait(true);
             }
         }
 
@@ -173,22 +173,22 @@ namespace DownKyi.ViewModels.DownloadManager
             }
 
             var alertService = new AlertService(DialogService);
-            var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2);
+            var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2).ConfigureAwait(true);
             if (result != ButtonResult.OK)
             {
                 return;
             }
 
-            await DeleteDownloadingItemAsync(downloadingItem);
+            await DeleteDownloadingItemAsync(downloadingItem).ConfigureAwait(true);
         }
 
         private async Task DeleteDownloadingItemAsync(DownloadingItem downloadingItem)
         {
             downloadingItem.Downloading.DownloadStatus = DownloadStatus.Pause;
             App.PropertyChangeAsync(() => App.DownloadingList.Remove(downloadingItem));
-            await DownloadTaskFileService.CancelActiveDownloadAsync(downloadingItem);
+            await DownloadTaskFileService.CancelActiveDownloadAsync(downloadingItem).ConfigureAwait(true);
             _downloadStorageService.RemoveDownloading(downloadingItem, true);
-            await DownloadTaskFileService.DeleteGeneratedFilesAsync(downloadingItem);
+            await DownloadTaskFileService.DeleteGeneratedFilesAsync(downloadingItem).ConfigureAwait(true);
         }
 
         #endregion

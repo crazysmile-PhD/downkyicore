@@ -18,7 +18,8 @@ public sealed class WebClientLoopbackTests : IDisposable
     [InlineData(HttpStatusCode.InternalServerError)]
     public async Task RequestWeb_ThrowsForHttpFailures(HttpStatusCode statusCode)
     {
-        await using var server = new LoopbackHttpServer(_ => new LoopbackResponse(statusCode));
+        var server = new LoopbackHttpServer(_ => new LoopbackResponse(statusCode));
+        await using var serverLifetime = server.ConfigureAwait(false);
 
         Assert.Throws<HttpRequestException>(() =>
             BiliWebClient.RequestWeb(
@@ -32,7 +33,8 @@ public sealed class WebClientLoopbackTests : IDisposable
     [Fact]
     public async Task RequestWeb_RetriesAndRejectsEmptyResponses()
     {
-        await using var server = new LoopbackHttpServer(_ => new LoopbackResponse(HttpStatusCode.OK));
+        var server = new LoopbackHttpServer(_ => new LoopbackResponse(HttpStatusCode.OK));
+        await using var serverLifetime = server.ConfigureAwait(false);
 
         var exception = Assert.Throws<HttpRequestException>(() =>
             BiliWebClient.RequestWeb(
@@ -49,8 +51,9 @@ public sealed class WebClientLoopbackTests : IDisposable
     public async Task RequestWeb_ReturnsValidJsonResponse()
     {
         const string json = "{\"code\":0,\"data\":{}}";
-        await using var server = new LoopbackHttpServer(_ =>
+        var server = new LoopbackHttpServer(_ =>
             new LoopbackResponse(HttpStatusCode.OK, json));
+        await using var serverLifetime = server.ConfigureAwait(false);
 
         var response = BiliWebClient.RequestWeb(
             server.Url.ToString(),
@@ -63,11 +66,12 @@ public sealed class WebClientLoopbackTests : IDisposable
     [Fact]
     public async Task RequestWeb_DoesNotRetryCanceledSlowResponse()
     {
-        await using var server = new LoopbackHttpServer(_ =>
+        var server = new LoopbackHttpServer(_ =>
             new LoopbackResponse(
                 HttpStatusCode.OK,
                 "{\"code\":0}",
                 DelayBeforeResponse: TimeSpan.FromSeconds(5)));
+        await using var serverLifetime = server.ConfigureAwait(false);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
 
         Assert.ThrowsAny<OperationCanceledException>(() =>
@@ -84,8 +88,9 @@ public sealed class WebClientLoopbackTests : IDisposable
     [InlineData("{not-json")]
     public async Task RequestJson_RejectsNonJsonPayloads(string body)
     {
-        await using var server = new LoopbackHttpServer(_ =>
+        var server = new LoopbackHttpServer(_ =>
             new LoopbackResponse(HttpStatusCode.OK, body));
+        await using var serverLifetime = server.ConfigureAwait(false);
 
         var result = DownKyi.Core.BiliApi.BiliApiRequest.RequestJson<Dictionary<string, object>>(
             server.Url.ToString(),
@@ -100,18 +105,20 @@ public sealed class WebClientLoopbackTests : IDisposable
     [Fact]
     public async Task RequestStream_ThrowsWhenContentLengthDoesNotMatchBody()
     {
-        await using var server = new LoopbackHttpServer(_ =>
+        var server = new LoopbackHttpServer(_ =>
             new LoopbackResponse(
                 HttpStatusCode.OK,
                 "partial",
                 ContentLength: 128));
+        await using var serverLifetime = server.ConfigureAwait(false);
 
-        await using var response = BiliWebClient.RequestStream(
+        var response = BiliWebClient.RequestStream(
             server.Url.ToString(),
             cancellationToken: TestContext.Current.CancellationToken);
+        await using var responseLifetime = response.ConfigureAwait(false);
 
         await Assert.ThrowsAnyAsync<IOException>(async () =>
-            await response.CopyToAsync(Stream.Null, TestContext.Current.CancellationToken));
+            await response.CopyToAsync(Stream.Null, TestContext.Current.CancellationToken).ConfigureAwait(true)).ConfigureAwait(true);
     }
 
     public void Dispose()

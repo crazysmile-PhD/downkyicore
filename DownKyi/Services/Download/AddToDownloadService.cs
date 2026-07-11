@@ -193,7 +193,7 @@ public class AddToDownloadService
                 _downloadDanmaku = result.Parameters.GetValue<bool>("downloadDanmaku");
                 _downloadSubtitle = result.Parameters.GetValue<bool>("downloadSubtitle");
                 _downloadCover = result.Parameters.GetValue<bool>("downloadCover");
-            });
+            }).ConfigureAwait(true);
         }
 
         if (directory == string.Empty)
@@ -205,7 +205,7 @@ public class AddToDownloadService
         if (!Directory.Exists(Directory.GetDirectoryRoot(directory)))
         {
             var alert = new AlertService(dialogService);
-            await alert.ShowError(DictionaryResource.GetString("DriveNotFound"));
+            await alert.ShowError(DictionaryResource.GetString("DriveNotFound")).ConfigureAwait(true);
 
             directory = string.Empty;
         }
@@ -368,9 +368,9 @@ public class AddToDownloadService
 
                                         if (dialogService != null)
                                         {
-                                            await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; });
+                                            await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; }).ConfigureAwait(true);
                                         }
-                                    });
+                                    }).ConfigureAwait(true);
 
                                     if (result == ButtonResult.OK)
                                     {

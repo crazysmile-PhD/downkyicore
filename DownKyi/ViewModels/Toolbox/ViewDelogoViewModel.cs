@@ -183,14 +183,15 @@ public class ViewDelogoViewModel : ViewModelBase
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
-        VideoPath = await DialogUtils.SelectVideoFile();
+        VideoPath = await DialogUtils.SelectVideoFile().ConfigureAwait(true);
         if (!string.IsNullOrEmpty(VideoPath))
         {
             try
             {
-                Source = new Bitmap(await FFMpeg.Instance.ExtractVideoFrame(VideoPath, TimeSpan.FromSeconds(1)));
+                Source = new Bitmap(await FFMpeg.Instance.ExtractVideoFrame(VideoPath, TimeSpan.FromSeconds(1)).ConfigureAwait(true));
             }
-            catch (Exception e)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                or InvalidOperationException or System.ComponentModel.Win32Exception)
             {
                 LogManager.Error(nameof(ViewDelogoViewModel), e);
             }
@@ -261,7 +262,7 @@ public class ViewDelogoViewModel : ViewModelBase
                 _logoHeight,
                 output => { Status += output + "\n"; });
             _isDelogo = false;
-        });
+        }).ConfigureAwait(true);
     }
 
     // Status改变事件

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -167,14 +168,22 @@ internal static class FfmpegHardwareEncoderDetector
                 {
                     process.Kill(entireProcessTree: true);
                 }
-                catch
+                catch (InvalidOperationException)
+                {
+                }
+                catch (Win32Exception)
                 {
                 }
             }
 
             return output + Environment.NewLine + error;
         }
-        catch (Exception e)
+        catch (Win32Exception e)
+        {
+            LogManager.Error(Tag, e);
+            return string.Empty;
+        }
+        catch (InvalidOperationException e)
         {
             LogManager.Error(Tag, e);
             return string.Empty;

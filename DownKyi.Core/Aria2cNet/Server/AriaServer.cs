@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.ComponentModel;
+using System.Net.Http;
 using System.Text;
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Logging;
@@ -66,9 +68,19 @@ namespace DownKyi.Core.Aria2cNet.Server
                             stream.SetLength(0);
                         }
                     }
-                    catch (Exception e)
+                    catch (IOException e)
                     {
-                        Console.PrintLine("StartServerAsync()发生其他异常: {0}", e);
+                        Console.PrintLine("StartServerAsync()发生IO异常: {0}", e);
+                        LogManager.Error("AriaServer", e);
+                    }
+                    catch (UnauthorizedAccessException e)
+                    {
+                        Console.PrintLine("StartServerAsync()没有文件权限: {0}", e);
+                        LogManager.Error("AriaServer", e);
+                    }
+                    catch (InvalidOperationException e)
+                    {
+                        Console.PrintLine("StartServerAsync()进程状态无效: {0}", e);
                         LogManager.Error("AriaServer", e);
                     }
                 }
@@ -121,7 +133,7 @@ namespace DownKyi.Core.Aria2cNet.Server
 
                         action.Invoke(e.Data);
                     });
-            });
+            }).ConfigureAwait(false);
 
             return true;
         }
@@ -136,27 +148,41 @@ namespace DownKyi.Core.Aria2cNet.Server
             try
             {
                 var shutdown = AriaClient.ShutdownAsync();
-                var completed = await Task.WhenAny(shutdown, Task.Delay(waitTimeout));
+                var completed = await Task.WhenAny(shutdown, Task.Delay(waitTimeout)).ConfigureAwait(false);
                 if (completed != shutdown)
                 {
                     KillTrackedServer("aria2 shutdown rpc timed out.");
                     return false;
                 }
 
-                var result = await shutdown;
+                var result = await shutdown.ConfigureAwait(false);
                 if (result?.Result != "OK")
                 {
                     KillTrackedServer("aria2 shutdown rpc failed.");
                     return false;
                 }
 
-                return await WaitForExitOrKillAsync(waitTimeout);
+                return await WaitForExitOrKillAsync(waitTimeout).ConfigureAwait(false);
             }
-            catch (Exception e)
+            catch (HttpRequestException e)
             {
                 Console.PrintLine("CloseServerAsync()发生异常: {0}", e);
                 LogManager.Error("AriaServer", e);
                 KillTrackedServer("aria2 shutdown failed.");
+                return false;
+            }
+            catch (InvalidOperationException e)
+            {
+                Console.PrintLine("CloseServerAsync()进程状态无效: {0}", e);
+                LogManager.Error("AriaServer", e);
+                KillTrackedServer("aria2 shutdown failed.");
+                return false;
+            }
+            catch (Newtonsoft.Json.JsonException e)
+            {
+                Console.PrintLine("CloseServerAsync()响应格式无效: {0}", e);
+                LogManager.Error("AriaServer", e);
+                KillTrackedServer("aria2 shutdown response was invalid.");
                 return false;
             }
         }
@@ -173,7 +199,7 @@ namespace DownKyi.Core.Aria2cNet.Server
             {
                 if (!server.HasExited)
                 {
-                    await server.WaitForExitAsync().WaitAsync(timeout);
+                    await server.WaitForExitAsync().WaitAsync(timeout).ConfigureAwait(false);
                 }
 
                 Server = null;
@@ -205,27 +231,41 @@ namespace DownKyi.Core.Aria2cNet.Server
             {
                 var waitTimeout = timeout ?? TimeSpan.FromSeconds(3);
                 var shutdown = AriaClient.ForceShutdownAsync();
-                var completed = await Task.WhenAny(shutdown, Task.Delay(waitTimeout));
+                var completed = await Task.WhenAny(shutdown, Task.Delay(waitTimeout)).ConfigureAwait(false);
                 if (completed != shutdown)
                 {
                     KillTrackedServer("aria2 force shutdown rpc timed out.");
                     return false;
                 }
 
-                var result = await shutdown;
+                var result = await shutdown.ConfigureAwait(false);
                 if (result?.Result != "OK")
                 {
                     KillTrackedServer("aria2 force shutdown rpc failed.");
                     return false;
                 }
 
-                return await WaitForExitOrKillAsync(waitTimeout);
+                return await WaitForExitOrKillAsync(waitTimeout).ConfigureAwait(false);
             }
-            catch (Exception e)
+            catch (HttpRequestException e)
             {
                 Console.PrintLine("ForceCloseServerAsync()发生异常: {0}", e);
                 LogManager.Error("AriaServer", e);
                 KillTrackedServer("aria2 force shutdown failed.");
+                return false;
+            }
+            catch (InvalidOperationException e)
+            {
+                Console.PrintLine("ForceCloseServerAsync()进程状态无效: {0}", e);
+                LogManager.Error("AriaServer", e);
+                KillTrackedServer("aria2 force shutdown failed.");
+                return false;
+            }
+            catch (Newtonsoft.Json.JsonException e)
+            {
+                Console.PrintLine("ForceCloseServerAsync()响应格式无效: {0}", e);
+                LogManager.Error("AriaServer", e);
+                KillTrackedServer("aria2 force shutdown response was invalid.");
                 return false;
             }
         }
@@ -247,9 +287,15 @@ namespace DownKyi.Core.Aria2cNet.Server
                 WaitForExitOrKillAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
                 return true;
             }
-            catch (Exception e)
+            catch (InvalidOperationException e)
             {
                 Console.PrintLine("CloseServer()发生异常: {0}", e);
+                LogManager.Error("AriaServer", e);
+                return false;
+            }
+            catch (Newtonsoft.Json.JsonException e)
+            {
+                Console.PrintLine("CloseServer()响应格式无效: {0}", e);
                 LogManager.Error("AriaServer", e);
                 return false;
             }
@@ -266,9 +312,15 @@ namespace DownKyi.Core.Aria2cNet.Server
                 var result = AriaClient.ForceShutdownAsync().GetAwaiter().GetResult();
                 return result?.Result == "OK";
             }
-            catch (Exception e)
+            catch (InvalidOperationException e)
             {
                 Console.PrintLine("ForceCloseServer()发生异常: {0}", e);
+                LogManager.Error("AriaServer", e);
+                return false;
+            }
+            catch (Newtonsoft.Json.JsonException e)
+            {
+                Console.PrintLine("ForceCloseServer()响应格式无效: {0}", e);
                 LogManager.Error("AriaServer", e);
                 return false;
             }
@@ -288,9 +340,14 @@ namespace DownKyi.Core.Aria2cNet.Server
                 {
                     process.Kill();
                 }
-                catch (Exception e)
+                catch (InvalidOperationException e)
                 {
                     Console.PrintLine("KillServer()发生异常: {0}", e);
+                    LogManager.Error("AriaServer", e);
+                }
+                catch (Win32Exception e)
+                {
+                    Console.PrintLine("KillServer()进程终止失败: {0}", e);
                     LogManager.Error("AriaServer", e);
                 }
             }
@@ -308,9 +365,14 @@ namespace DownKyi.Core.Aria2cNet.Server
                     process.Kill();
                 }
             }
-            catch (Exception e)
+            catch (InvalidOperationException e)
             {
                 Console.PrintLine("KillProcess()发生异常: {0}", e);
+                LogManager.Error("AriaServer", e);
+            }
+            catch (Win32Exception e)
+            {
+                Console.PrintLine("KillProcess()进程终止失败: {0}", e);
                 LogManager.Error("AriaServer", e);
             }
         }

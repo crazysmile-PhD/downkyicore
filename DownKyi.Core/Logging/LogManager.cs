@@ -66,7 +66,11 @@ public class LogManager
         {
             FlushAsync(timeout).GetAwaiter().GetResult();
         }
-        catch (Exception e)
+        catch (TimeoutException e)
+        {
+            System.Diagnostics.Debug.WriteLine(e);
+        }
+        catch (OperationCanceledException e)
         {
             System.Diagnostics.Debug.WriteLine(e);
         }
@@ -364,7 +368,11 @@ public class LogManager
             Directory.CreateDirectory(Path.GetDirectoryName(logPath) ?? AppDomain.CurrentDomain.BaseDirectory);
             File.AppendAllText(logPath, logContent, Encoding.UTF8);
         }
-        catch (Exception e)
+        catch (IOException e)
+        {
+            System.Diagnostics.Debug.WriteLine(e);
+        }
+        catch (UnauthorizedAccessException e)
         {
             System.Diagnostics.Debug.WriteLine(e);
         }

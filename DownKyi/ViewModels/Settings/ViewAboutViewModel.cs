@@ -105,7 +105,7 @@ public class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteAppNameCommand()
     {
-        await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases", EventAggregator);
+        await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases", EventAggregator).ConfigureAwait(true);
     }
 
     // 检查更新事件
@@ -120,7 +120,7 @@ public class ViewAboutViewModel : ViewModelBase
     private async Task ExecuteCheckUpdateCommand()
     {
         var service = new VersionCheckerService(App.RepoOwner, App.RepoName, _isReceiveBetaVersion);
-        var release = await service.GetLatestReleaseAsync();
+        var release = await service.GetLatestReleaseAsync().ConfigureAwait(true);
         if (GitHubRelease.IsNullOrEmpty(release))
         {
             EventAggregator.GetEvent<MessageEvent>().Publish("检查失败，请稍后重试~");
@@ -129,8 +129,9 @@ public class ViewAboutViewModel : ViewModelBase
 
         if (service.IsNewVersionAvailable(release!.TagName))
         {
-            await DialogService?.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
-                DialogParameters { { "release", release } })!;
+            var dialogService = DialogService ?? throw new InvalidOperationException("Dialog service is not available.");
+            await dialogService.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
+                DialogParameters { { "release", release } }).ConfigureAwait(true);
         }
         else
         {
@@ -148,7 +149,7 @@ public class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteFeedbackCommand()
     {
-        await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/issues", EventAggregator);
+        await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/issues", EventAggregator).ConfigureAwait(true);
     }
 
     // 打开日志目录事件
@@ -158,8 +159,8 @@ public class ViewAboutViewModel : ViewModelBase
 
     private async Task ExecuteOpenLogsCommand()
     {
-        await LogManager.FlushAsync(TimeSpan.FromSeconds(2));
-        await PlatformHelper.OpenFolder(LogManager.GetLogDirectory(), EventAggregator);
+        await LogManager.FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
+        await PlatformHelper.OpenFolder(LogManager.GetLogDirectory(), EventAggregator).ConfigureAwait(true);
     }
 
     // 导出脱敏诊断日志事件
@@ -172,11 +173,12 @@ public class ViewAboutViewModel : ViewModelBase
     {
         try
         {
-            var diagnosticLog = await LogManager.ExportDiagnosticLogAsync();
+            var diagnosticLog = await LogManager.ExportDiagnosticLogAsync().ConfigureAwait(true);
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("DiagnosticLogExported"));
-            await PlatformHelper.Open(diagnosticLog, EventAggregator);
+            await PlatformHelper.Open(diagnosticLog, EventAggregator).ConfigureAwait(true);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
+            or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             LogManager.Error(Tag, e);
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("DiagnosticLogExportFailed"));
@@ -225,7 +227,7 @@ public class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteProtobufLicenseCommand()
     {
-        await PlatformHelper.OpenUrl("https://github.com/protocolbuffers/protobuf/blob/master/LICENSE");
+        await PlatformHelper.OpenUrl("https://github.com/protocolbuffers/protobuf/blob/master/LICENSE").ConfigureAwait(true);
     }
 
     // Newtonsoft.Json许可证查看事件
@@ -238,7 +240,7 @@ public class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteNewtonsoftLicenseCommand()
     {
-        await PlatformHelper.OpenUrl("https://licenses.nuget.org/MIT");
+        await PlatformHelper.OpenUrl("https://licenses.nuget.org/MIT").ConfigureAwait(true);
     }
 
     // Prism.DryIoc许可证查看事件
@@ -251,7 +253,7 @@ public class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecutePrismLicenseCommand()
     {
-        await PlatformHelper.OpenUrl("https://www.nuget.org/packages/Prism.DryIoc/8.1.97/license");
+        await PlatformHelper.OpenUrl("https://www.nuget.org/packages/Prism.DryIoc/8.1.97/license").ConfigureAwait(true);
     }
 
     // QRCoder许可证查看事件
@@ -264,7 +266,7 @@ public class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteQRCoderLicenseCommand()
     {
-        await PlatformHelper.OpenUrl("https://licenses.nuget.org/MIT");
+        await PlatformHelper.OpenUrl("https://licenses.nuget.org/MIT").ConfigureAwait(true);
     }
 
     // System.Data.SQLite.Core许可证查看事件
@@ -277,7 +279,7 @@ public class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteSQLiteLicenseCommand()
     {
-        await PlatformHelper.OpenUrl("https://www.sqlite.org/copyright.html");
+        await PlatformHelper.OpenUrl("https://www.sqlite.org/copyright.html").ConfigureAwait(true);
     }
 
     // Aria2c许可证查看事件
@@ -290,7 +292,7 @@ public class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteAriaLicenseCommand()
     {
-        await PlatformHelper.Open("aria2_COPYING.txt");
+        await PlatformHelper.Open("aria2_COPYING.txt").ConfigureAwait(true);
     }
 
     // FFmpeg许可证查看事件
@@ -303,7 +305,7 @@ public class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteFFmpegLicenseCommand()
     {
-        await PlatformHelper.Open("FFmpeg_LICENSE.txt");
+        await PlatformHelper.Open("FFmpeg_LICENSE.txt").ConfigureAwait(true);
     }
 
     #endregion

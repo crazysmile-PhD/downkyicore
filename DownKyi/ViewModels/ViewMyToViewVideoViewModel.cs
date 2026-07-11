@@ -23,7 +23,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
 {
     public const string Tag = "PageMyToView";
 
-    private CancellationTokenSource _tokenSource = null!;
+    private CancellationTokenSource? _tokenSource;
 
     #region 页面属性申明
 
@@ -248,7 +248,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -276,9 +276,9 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(videoInfoService);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -296,11 +296,10 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
         LoadingVisibility = true;
         NoDataVisibility = false;
         Medias.Clear();
+        var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
 
         await Task.Run(() =>
         {
-            CancellationToken cancellationToken = _tokenSource.Token;
-
             var toViewList = ToView.GetToView();
             if (toViewList == null || toViewList.Count == 0)
             {
@@ -357,7 +356,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
                     break;
                 }
             }
-        }, (_tokenSource = new CancellationTokenSource()).Token);
+        }, cancellationToken).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -406,5 +405,17 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
         InitView();
 
         RunFireAndForget(UpdateToViewMediaListAsync(), nameof(UpdateToViewMediaListAsync));
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _tokenSource?.Cancel();
+            _tokenSource?.Dispose();
+            _tokenSource = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

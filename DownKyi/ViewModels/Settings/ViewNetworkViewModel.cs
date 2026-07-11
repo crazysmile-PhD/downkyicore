@@ -546,7 +546,7 @@ public class ViewNetworkViewModel : ViewModelBase
         PublishTip(isSucceed);
 
         var alertService = new AlertService(DialogService);
-        var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot"));
+        var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
             (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
@@ -598,7 +598,7 @@ public class ViewNetworkViewModel : ViewModelBase
         var isSucceed = SettingsManager.GetInstance().SetNetworkProxy(networkProxy);
         PublishTip(isSucceed);
         var alertService = new AlertService(DialogService);
-        var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot"));
+        var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
             (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
@@ -638,7 +638,7 @@ public class ViewNetworkViewModel : ViewModelBase
         PublishTip(isSucceed);
 
         var alertService = new AlertService(DialogService);
-        var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot"));
+        var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
             (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
@@ -805,7 +805,7 @@ public class ViewNetworkViewModel : ViewModelBase
         var isSucceed = SettingsManager.GetInstance().SetMaxCurrentDownloads(SelectedAriaMaxConcurrentDownload);
         PublishTip(isSucceed);
         var alertService = new AlertService(DialogService);
-        var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot"));
+        var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
             (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();

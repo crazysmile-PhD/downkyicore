@@ -13,7 +13,7 @@ public static class ClipboardManager
     {
         if (Clipboard != null)
         {
-            await Clipboard.SetTextAsync(text);
+            await Clipboard.SetTextAsync(text).ConfigureAwait(true);
         }
     }
 }

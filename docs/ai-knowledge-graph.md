@@ -160,9 +160,12 @@ contracts:
   - UI shell should appear before heavy download state and service startup finish.
   - Download startup and shutdown must be cancellation-aware.
   - Global downloading/downloaded lists are shared UI state and must be mutated on the UI thread.
+  - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
+  - UI continuations use the Avalonia context; background and Core continuations do not depend on it.
 hazards:
   - Any synchronous database, aria2, or file scan here directly hurts startup time.
   - Exit cleanup can leave aria2 running if cancellation and timeout paths drift.
+  - Controlled lifetime exit still synchronously waits up to 15 seconds; PR 16-24 owns replacement with bounded Host shutdown.
 tests:
   - test.ui-smoke
 ```
@@ -385,9 +388,9 @@ outbound:
 contracts:
   - Incomplete, empty, HTML/JSON error, and sidecar files are not valid completed media.
   - Canceled/deleted downloads should clean partial files and aria2 metadata.
-  - Each multi-segment DURL has a unique key derived from stable segment order or index.
-  - DURL merge input is sorted by Order and success requires ffprobe stream, duration, and seek/decode validation.
-  - Multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; stream copy is not a valid first strategy.
+  - Target in PR 07-15: each multi-segment DURL has a unique key derived from stable segment order or index.
+  - Target in PR 07-15: DURL merge input is sorted by Order and success requires ffprobe stream, duration, and seek/decode validation.
+  - Target in PR 07-15: multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; stream copy is not a valid first strategy.
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
   - Blocking waits in download lifecycle can freeze UI or prevent process exit.
@@ -578,6 +581,7 @@ contracts:
   - Diagnostic identity includes rule, project, file, location, and message so repeated MSBuild summaries do not inflate counts.
   - The CSV retains every affected project, file, line, category, and compatibility-review flag.
   - Compatibility flags are review hints and never authorize mechanical API or schema changes.
+  - The current checkpoint is 1,191 unique diagnostics across 52 rules; all 19 rules already cleared from the baseline are blocking errors.
 hazards:
   - Reusing one SARIF path across projects loses rule metadata because later projects overwrite earlier output.
   - Comparing raw MSBuild warning totals without deduplication overstates the baseline.

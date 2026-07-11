@@ -39,11 +39,13 @@ using Prism.DryIoc;
 using Prism.Ioc;
 using ViewSeasonsSeries = DownKyi.Views.ViewSeasonsSeries;
 using ViewSeasonsSeriesViewModel = DownKyi.ViewModels.ViewSeasonsSeriesViewModel;
+using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 
 namespace DownKyi;
 
-public partial class App : PrismApplication
+public partial class App : PrismApplication, IDisposable
 {
+    private bool _disposed;
     public const string RepoOwner = "crazysmile-PhD";
     public const string RepoName = "downkyicore";
 
@@ -197,12 +199,12 @@ public partial class App : PrismApplication
         {
             try
             {
-                await StorageManager.RunMaintenanceAsync(_startupCancellation.Token);
+                await StorageManager.RunMaintenanceAsync(_startupCancellation.Token).ConfigureAwait(true);
             }
             catch (OperationCanceledException)
             {
             }
-            catch (Exception e)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 LogManager.Error(nameof(StorageManager), e);
             }
@@ -214,7 +216,7 @@ public partial class App : PrismApplication
         try
         {
             var downloadStorageService = Container.Resolve<DownloadStorageService>();
-            var downloadState = await LoadDownloadStateAsync(downloadStorageService, cancellationToken);
+            var downloadState = await LoadDownloadStateAsync(downloadStorageService, cancellationToken).ConfigureAwait(true);
 
             cancellationToken.ThrowIfCancellationRequested();
             DownloadingList.AddRange(downloadState.DownloadingItems);
@@ -223,14 +225,15 @@ public partial class App : PrismApplication
             _downloadService = CreateDownloadService();
             if (_downloadService != null)
             {
-                await _downloadService.StartAsync(cancellationToken);
+                await _downloadService.StartAsync(cancellationToken).ConfigureAwait(true);
             }
         }
         catch (OperationCanceledException)
         {
             // App 正在关闭时允许取消。
         }
-        catch (Exception e)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
+            or Microsoft.Data.Sqlite.SqliteException)
         {
             LogManager.Error(nameof(App), e);
         }
@@ -243,11 +246,11 @@ public partial class App : PrismApplication
         var downloadingItemsTask = downloadStorageService.GetDownloadingAsync(cancellationToken);
         var downloadedItemsTask = downloadStorageService.GetDownloadedAsync(cancellationToken);
 
-        await Task.WhenAll(downloadingItemsTask, downloadedItemsTask);
+        await Task.WhenAll(downloadingItemsTask, downloadedItemsTask).ConfigureAwait(true);
 
         return new DownloadStartupState(
-            downloadingItemsTask.Result,
-            downloadedItemsTask.Result);
+            await downloadingItemsTask.ConfigureAwait(true),
+            await downloadedItemsTask.ConfigureAwait(true));
     }
 
     private IDownloadService? CreateDownloadService()
@@ -316,32 +319,19 @@ public partial class App : PrismApplication
                 LogManager.Info(nameof(App), "Application exit cleanup timed out.");
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is AggregateException or ObjectDisposedException)
         {
             LogManager.Error(nameof(App), ex);
         }
         finally
         {
-            _startupCancellation.Dispose();
-#if !DEBUG
-            try
-            {
-                _mutex?.ReleaseMutex();
-            }
-            catch (ApplicationException)
-            {
-                // The process is exiting; only avoid masking the original shutdown path.
-            }
-
-            _mutex?.Dispose();
-            _mutex = null;
-#endif
+            Dispose();
         }
     }
 
     private async Task OnExitAsync()
     {
-        _startupCancellation.Cancel();
+        await _startupCancellation.CancelAsync().ConfigureAwait(false);
 
         // 强制落盘设置（防止防抖延迟期间退出导致配置丢失）
         SettingsManager.GetInstance().Flush();
@@ -363,6 +353,44 @@ public partial class App : PrismApplication
         }
 
         await LogManager.FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (!disposing)
+        {
+            return;
+        }
+
+        _downloadService?.Dispose();
+        _downloadService = null;
+        BiliWebClient.DisposeSharedResources();
+        _startupCancellation.Dispose();
+#if !DEBUG
+        try
+        {
+            _mutex?.ReleaseMutex();
+        }
+        catch (ApplicationException)
+        {
+            // The process is exiting; only avoid masking the original shutdown path.
+        }
+
+        _mutex?.Dispose();
+        _mutex = null;
+#endif
     }
 
     private void NativeMenuItem_OnClick(object? sender, EventArgs e)

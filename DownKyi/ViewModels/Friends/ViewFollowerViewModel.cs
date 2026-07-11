@@ -138,7 +138,7 @@ public class ViewFollowerViewModel : ViewModelBase
             }
 
             LoadContent(contents);
-        });
+        }).ConfigureAwait(true);
 
         if (data == null || contents == null)
         {

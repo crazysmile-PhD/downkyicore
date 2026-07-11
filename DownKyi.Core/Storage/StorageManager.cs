@@ -216,7 +216,11 @@ public static class StorageManager
                     Directory.Delete(childDirectory);
                 }
             }
-            catch
+            catch (IOException)
+            {
+                // Best-effort maintenance.
+            }
+            catch (UnauthorizedAccessException)
             {
                 // Best-effort maintenance.
             }
@@ -229,7 +233,11 @@ public static class StorageManager
         {
             File.Delete(path);
         }
-        catch
+        catch (IOException)
+        {
+            // Best-effort maintenance.
+        }
+        catch (UnauthorizedAccessException)
         {
             // Best-effort maintenance.
         }

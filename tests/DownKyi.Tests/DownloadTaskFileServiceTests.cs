@@ -50,7 +50,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
         Directory.CreateDirectory(_directory);
         var file = CreateFile("video.mp4.aria2", "resume metadata");
         using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             DownloadTaskFileService.DeleteFilesAsync(new[] { file }, cancellation.Token));

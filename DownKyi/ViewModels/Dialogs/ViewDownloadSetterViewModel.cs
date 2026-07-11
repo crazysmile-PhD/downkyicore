@@ -193,7 +193,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
     /// </summary>
     private async Task ExecuteBrowseCommand()
     {
-        var directory = await SetDirectory();
+        var directory = await SetDirectory().ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -424,7 +424,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
     {
         // 下载目录
         // 弹出选择下载目录的窗口
-        return await DialogUtils.SetDownloadDirectory();
+        return await DialogUtils.SetDownloadDirectory().ConfigureAwait(true);
         // if (path == null || path == string.Empty)
         // {
         //     return null;

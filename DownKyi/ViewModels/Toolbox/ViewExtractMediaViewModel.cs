@@ -78,7 +78,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
             return;
         }
 
-        VideoPaths = await DialogUtils.SelectMultiVideoFile() ?? Array.Empty<string>();
+        VideoPaths = await DialogUtils.SelectMultiVideoFile().ConfigureAwait(true) ?? Array.Empty<string>();
     }
 
     // 提取音频事件
@@ -117,7 +117,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
             }
 
             _isExtracting = false;
-        });
+        }).ConfigureAwait(true);
     }
 
     // 提取视频事件
@@ -156,7 +156,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
             }
 
             _isExtracting = false;
-        });
+        }).ConfigureAwait(true);
     }
 
     // Status改变事件

@@ -5,6 +5,8 @@ using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 using JsonSerializer = System.Text.Json.JsonSerializer;
+using SystemTextJsonException = System.Text.Json.JsonException;
+using NewtonsoftJsonException = Newtonsoft.Json.JsonException;
 
 namespace DownKyi.Core.Utils;
 
@@ -105,9 +107,15 @@ public static class ObjectHelper
             LogManager.Error(e);
             return null;
         }
-        catch (Exception e)
+        catch (SystemTextJsonException e)
         {
             Console.PrintLine("ReadObjectFromDisk()发生异常: {0}", e);
+            LogManager.Error(e);
+            return null;
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            Console.PrintLine("ReadObjectFromDisk()没有读取权限: {0}", e);
             LogManager.Error(e);
             return null;
         }
@@ -138,9 +146,15 @@ public static class ObjectHelper
             LogManager.Error(e);
             return null;
         }
-        catch (Exception e)
+        catch (NewtonsoftJsonException e)
         {
             Console.PrintLine("ReadCookiesFromStream()发生异常: {0}", e);
+            LogManager.Error(e);
+            return null;
+        }
+        catch (ObjectDisposedException e)
+        {
+            Console.PrintLine("ReadCookiesFromStream()流已关闭: {0}", e);
             LogManager.Error(e);
             return null;
         }
@@ -170,9 +184,15 @@ public static class ObjectHelper
             LogManager.Error(e);
             return false;
         }
-        catch (Exception e)
+        catch (SystemTextJsonException e)
         {
             Console.PrintLine("WriteObjectToDisk()发生异常: {0}", e);
+            LogManager.Error(e);
+            return false;
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            Console.PrintLine("WriteObjectToDisk()没有写入权限: {0}", e);
             LogManager.Error(e);
             return false;
         }

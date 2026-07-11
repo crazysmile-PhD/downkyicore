@@ -27,7 +27,12 @@ public static class HardDisk
                 }
             }
         }
-        catch (Exception e)
+        catch (IOException e)
+        {
+            Console.PrintLine("GetHardDiskSpace()发生IO异常: {0}", e);
+            LogManager.Error("HardDisk", e);
+        }
+        catch (UnauthorizedAccessException e)
         {
             Console.PrintLine("GetHardDiskSpace()发生异常: {0}", e);
             LogManager.Error("HardDisk", e);
@@ -57,7 +62,12 @@ public static class HardDisk
                 }
             }
         }
-        catch (Exception e)
+        catch (IOException e)
+        {
+            Console.PrintLine("GetHardDiskFreeSpace()发生IO异常: {0}", e);
+            LogManager.Error("HardDisk", e);
+        }
+        catch (UnauthorizedAccessException e)
         {
             Console.PrintLine("GetHardDiskFreeSpace()发生异常: {0}", e);
             LogManager.Error("HardDisk", e);
@@ -74,7 +84,17 @@ public static class HardDisk
             // hardDiskName = $"{path}:\\";
             freeSpace = driveInfo.TotalFreeSpace;
         }
-        catch (Exception e)
+        catch (DriveNotFoundException e)
+        {
+            Console.PrintLine("GetHardDiskFreeSpace()找不到磁盘: {0}", e);
+            LogManager.Error("HardDisk", e);
+        }
+        catch (IOException e)
+        {
+            Console.PrintLine("GetHardDiskFreeSpace()发生IO异常: {0}", e);
+            LogManager.Error("HardDisk", e);
+        }
+        catch (UnauthorizedAccessException e)
         {
             Console.PrintLine("GetHardDiskFreeSpace()发生异常: {0}", e);
             LogManager.Error("HardDisk", e);

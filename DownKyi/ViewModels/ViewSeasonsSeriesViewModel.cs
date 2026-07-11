@@ -28,7 +28,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 {
     public const string Tag = "PageSeasonsSeries";
 
-    private CancellationTokenSource tokenSource = null!;
+    private CancellationTokenSource? tokenSource;
 
     private long mid = -1;
     private long id = -1;
@@ -274,7 +274,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -302,9 +302,9 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(videoInfoService);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -450,11 +450,10 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         // 是否正在获取数据
         // 在所有的退出分支中都需要设为true
         IsEnabled = false;
+        var cancellationToken = ReplaceCancellationSource(ref tokenSource);
 
         await Task.Run(() =>
         {
-            var cancellationToken = tokenSource.Token;
-
             var seasons = Core.BiliApi.Users.UserSpace.GetSeasonsDetail(mid, id, current, VideoNumberInPage);
             if (seasons == null || seasons.Meta.Total == 0)
             {
@@ -524,7 +523,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
                     break;
                 }
             }
-        }, (tokenSource = new CancellationTokenSource()).Token);
+        }, cancellationToken).ConfigureAwait(true);
 
         IsEnabled = true;
     }
@@ -534,11 +533,10 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         // 是否正在获取数据
         // 在所有的退出分支中都需要设为true
         IsEnabled = false;
+        var cancellationToken = ReplaceCancellationSource(ref tokenSource);
 
         await Task.Run(() =>
         {
-            var cancellationToken = tokenSource.Token;
-
             var meta = Core.BiliApi.Users.UserSpace.GetSeriesMeta(id);
             var series = Core.BiliApi.Users.UserSpace.GetSeriesDetail(mid, id, current, VideoNumberInPage);
             if (series == null || meta?.Meta.Total == 0)
@@ -609,7 +607,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
                     break;
                 }
             }
-        }, (tokenSource = new CancellationTokenSource()).Token);
+        }, cancellationToken).ConfigureAwait(true);
 
         IsEnabled = true;
     }
@@ -650,5 +648,17 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         Pager.CurrentChanged += OnCurrentChanged_Pager;
         Pager.CountChanged += OnCountChanged_Pager;
         Pager.Current = 1;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            tokenSource?.Cancel();
+            tokenSource?.Dispose();
+            tokenSource = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

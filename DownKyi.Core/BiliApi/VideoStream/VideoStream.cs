@@ -122,7 +122,7 @@ public static class VideoStream
             {
                 throw;
             }
-            catch (Exception e)
+            catch (JsonException e)
             {
                 Console.PrintLine("GetSubtitle()发生异常: {0}", e);
                 LogManager.Error("GetSubtitle()", e);
@@ -360,9 +360,15 @@ public static class VideoStream
         {
             throw;
         }
-        catch (Exception e)
+        catch (JsonException e)
         {
             Console.PrintLine("GetPlayUrlPc()发生异常: {0}", e);
+            LogManager.Error("GetPlayUrlPc()", e);
+            return null;
+        }
+        catch (RegexMatchTimeoutException e)
+        {
+            Console.PrintLine("GetPlayUrlPc()正则匹配超时: {0}", e);
             LogManager.Error("GetPlayUrlPc()", e);
             return null;
         }

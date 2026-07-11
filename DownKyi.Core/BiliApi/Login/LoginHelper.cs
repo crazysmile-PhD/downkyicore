@@ -102,9 +102,15 @@ public static class LoginHelper
                 File.Copy(tempFile, LocalLoginInfo, true);
                 // Encryptor.EncryptFile(tempFile, LOCAL_LOGIN_INFO, password);
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 Console.PrintLine("SaveLoginInfoCookies()发生异常: {0}", e);
+                LogManager.Error(e);
+                return false;
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Console.PrintLine("SaveLoginInfoCookies()没有写入权限: {0}", e);
                 LogManager.Error(e);
                 return false;
             }
@@ -178,9 +184,15 @@ public static class LoginHelper
                         cookie.Domain))
                     .ToList();
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 Console.PrintLine("GetLoginInfoCookies()发生异常: {0}", e);
+                LogManager.Error(e);
+                return new List<DownKyiCookie>();
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Console.PrintLine("GetLoginInfoCookies()没有读取权限: {0}", e);
                 LogManager.Error(e);
                 return new List<DownKyiCookie>();
             }

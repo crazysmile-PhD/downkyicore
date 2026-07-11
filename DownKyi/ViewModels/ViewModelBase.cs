@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using DownKyi.Core.Logging;
@@ -9,8 +10,9 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewModelBase : BindableBase, INavigationAware
+public class ViewModelBase : BindableBase, INavigationAware, IDisposable
 {
+    private bool _disposed;
     protected readonly IEventAggregator EventAggregator;
     protected IDialogService? DialogService;
     protected IRegionNavigationJournal? Journal;
@@ -76,14 +78,59 @@ public class ViewModelBase : BindableBase, INavigationAware
 
     private static async Task RunFireAndForgetAsync(Task task, string operation)
     {
+        await task.ContinueWith(
+            completedTask =>
+            {
+                if (completedTask.Exception is { } exception)
+                {
+                    LogManager.Error(operation, exception.GetBaseException());
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default).ConfigureAwait(false);
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        _disposed = true;
+    }
+
+    protected bool IsDisposed => _disposed;
+
+    protected static void CancelAndDispose(ref CancellationTokenSource? source)
+    {
+        var current = Interlocked.Exchange(ref source, null);
+        if (current == null)
+        {
+            return;
+        }
+
         try
         {
-            await task;
+            current.Cancel();
         }
-        catch (Exception e)
+        catch (ObjectDisposedException)
         {
-            LogManager.Error(operation, e);
         }
+        finally
+        {
+            current.Dispose();
+        }
+    }
+
+    protected static CancellationToken ReplaceCancellationSource(ref CancellationTokenSource? source)
+    {
+        CancelAndDispose(ref source);
+        var replacement = new CancellationTokenSource();
+        source = replacement;
+        return replacement.Token;
     }
 
 }

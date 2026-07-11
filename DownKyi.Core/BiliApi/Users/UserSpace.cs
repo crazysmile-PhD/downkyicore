@@ -156,9 +156,15 @@ public static class UserSpace
         {
             throw;
         }
-        catch (Exception e)
+        catch (HttpRequestException e)
         {
             Console.PrintLine("GetPublication()发生异常: {0}", e);
+            LogManager.Error("UserSpace", e);
+            return null;
+        }
+        catch (JsonException e)
+        {
+            Console.PrintLine("GetPublication()JSON解析异常: {0}", e);
             LogManager.Error("UserSpace", e);
             return null;
         }

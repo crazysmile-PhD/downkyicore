@@ -82,7 +82,7 @@ public sealed class ClipboardListener : IDisposable
         try
         {
             _isTicking = true;
-            var currentContent = await _mainWindow.Clipboard.TryGetTextAsync();
+            var currentContent = await _mainWindow.Clipboard.TryGetTextAsync().ConfigureAwait(true);
 
             if (string.Equals(currentContent, _lastClipboardContent, StringComparison.Ordinal))
             {

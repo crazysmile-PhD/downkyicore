@@ -119,7 +119,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
         try
         {
             var alertService = new AlertService(DialogService);
-            var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"));
+            var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete")).ConfigureAwait(true);
             if (result != ButtonResult.OK)
             {
                 return;
@@ -132,10 +132,11 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
             _downloadStorageService.ClearDownloaded();
             App.PropertyChangeAsync(() => { App.DownloadedList.Clear(); });
         }
-        catch (Exception e)
+        catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or IOException
+            or UnauthorizedAccessException or InvalidOperationException)
         {
             var alertService = new AlertService(DialogService);
-            await alertService.ShowError(e.Message);
+            await alertService.ShowError(e.Message).ConfigureAwait(true);
         }
     }
 
@@ -157,7 +158,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
         var fileInfo = new FileInfo(videoPath);
         if (File.Exists(fileInfo.FullName))
         {
-            await PlatformHelper.Open(fileInfo.FullName);
+            await PlatformHelper.Open(fileInfo.FullName).ConfigureAwait(true);
         }
         else
         {
@@ -202,7 +203,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
             var videoPath = $"{downloadedItem.DownloadBase.FilePath}{suffix}";
             var fileInfo = new FileInfo(videoPath);
             if (!File.Exists(fileInfo.FullName) || fileInfo.DirectoryName == null) continue;
-            await PlatformHelper.OpenFolder(fileInfo.DirectoryName, EventAggregator);
+            await PlatformHelper.OpenFolder(fileInfo.DirectoryName, EventAggregator).ConfigureAwait(true);
             return;
         }
 
@@ -225,7 +226,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
         }
 
         var alertService = new AlertService(DialogService);
-        var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2);
+        var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2).ConfigureAwait(true);
         if (result != ButtonResult.OK)
         {
             return;

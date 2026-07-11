@@ -24,7 +24,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
 {
     public const string Tag = "PagePublicFavorites";
 
-    private CancellationTokenSource _tokenSource = null!;
+    private CancellationTokenSource? _tokenSource;
 
     #region 页面属性申明
 
@@ -226,7 +226,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     private async Task ExecuteCopyCoverUrlCommand()
     {
         // 复制封面url到剪贴板
-        await ClipboardManager.SetText(Favorites.CoverUrl);
+        await ClipboardManager.SetText(Favorites.CoverUrl).ConfigureAwait(true);
         LogManager.Info(Tag, "复制封面url到剪贴板");
     }
 
@@ -279,7 +279,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -307,9 +307,9 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(videoInfoService);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -408,16 +408,28 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
             }
 
             InitView();
+            var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
             await Task.Run(() =>
             {
-                var cancellationToken = _tokenSource.Token;
-
                 UpdateView(new FavoritesService(), parameter, cancellationToken);
-            }, (_tokenSource = new CancellationTokenSource()).Token);
+            }, cancellationToken).ConfigureAwait(true);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
         {
             LogManager.Error(nameof(ViewPublicFavoritesViewModel), e);
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _tokenSource?.Cancel();
+            _tokenSource?.Dispose();
+            _tokenSource = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

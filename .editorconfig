@@ -18,6 +18,23 @@ dotnet_diagnostic.CA5351.severity = error
 dotnet_diagnostic.CA5373.severity = error
 dotnet_diagnostic.CA5401.severity = error
 
+# Async, disposal, exception, and lifecycle rules cleaned in PR 02.
+dotnet_diagnostic.CA1001.severity = error
+dotnet_diagnostic.CA1031.severity = error
+dotnet_diagnostic.CA1032.severity = error
+dotnet_diagnostic.CA1058.severity = error
+dotnet_diagnostic.CA1063.severity = error
+dotnet_diagnostic.CA1816.severity = error
+dotnet_diagnostic.CA1849.severity = error
+dotnet_diagnostic.CA1850.severity = error
+dotnet_diagnostic.CA1872.severity = error
+dotnet_diagnostic.CA2000.severity = error
+dotnet_diagnostic.CA2007.severity = error
+dotnet_diagnostic.CA2008.severity = error
+dotnet_diagnostic.CA2025.severity = error
+dotnet_diagnostic.CA2213.severity = error
+dotnet_diagnostic.CA2214.severity = error
+
 [*.{csproj,props,targets,axaml,json,yml,yaml}]
 indent_style = space
 indent_size = 2

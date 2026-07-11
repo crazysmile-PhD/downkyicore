@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -66,28 +67,38 @@ public static class ImageLoader
             {
                 // A small delay allows to cancel early if the image goes out of screen too fast (eg. scrolling)
                 // The Bitmap constructor is expensive and cannot be cancelled
-                await Task.Delay(10, cts.Token);
+                await Task.Delay(10, cts.Token).ConfigureAwait(true);
                 if (sender.DesiredSize.Width != 0 && sender.DesiredSize.Height != 0)
                 {
                     var scale = Dispatcher.UIThread.Invoke(() => App.Current.MainWindow.DesktopScaling);
                     var actualWidth = Convert.ToInt32(sender.DesiredSize.Width * scale);
                     var actualHeight = Convert.ToInt32(sender.DesiredSize.Height * scale);
-                    return (await AsyncImageLoader.ProvideImageAsync(url))?.CreateScaledBitmap(new PixelSize(actualWidth, actualHeight));
+                    return (await AsyncImageLoader.ProvideImageAsync(url).ConfigureAwait(true))?.CreateScaledBitmap(new PixelSize(actualWidth, actualHeight));
                 }
 
-                return await AsyncImageLoader.ProvideImageAsync(url);
+                return await AsyncImageLoader.ProvideImageAsync(url).ConfigureAwait(true);
             }
             catch (TaskCanceledException)
             {
                 return null;
             }
-            catch (Exception e)
+            catch (HttpRequestException e)
+            {
+                Logger?.Log(LogEventLevel.Error, "ImageLoader image resolution failed: {0}", e);
+                return null;
+            }
+            catch (IOException e)
+            {
+                Logger?.Log(LogEventLevel.Error, "ImageLoader image resolution failed: {0}", e);
+                return null;
+            }
+            catch (InvalidOperationException e)
             {
                 Logger?.Log(LogEventLevel.Error, "ImageLoader image resolution failed: {0}", e);
 
                 return null;
             }
-        }, cts.Token);
+        }, cts.Token).ConfigureAwait(true);
 
         if (bitmap != null && !cts.Token.IsCancellationRequested)
             sender.Source = bitmap;

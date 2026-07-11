@@ -70,7 +70,7 @@ public class AlertService
             { "button_number", buttonNumber }
         };
 
-        await _dialogService.ShowDialogAsync(ViewAlertDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; });
+        await _dialogService.ShowDialogAsync(ViewAlertDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; }).ConfigureAwait(true);
         return result;
     }
 }

@@ -227,7 +227,7 @@ public class ViewFollowingViewModel : ViewModelBase
         {
             // 用户的关系状态数
             UserRelationStat? relationStat = null;
-            await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(_mid); });
+            await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(_mid); }).ConfigureAwait(true);
             if (relationStat != null)
             {
                 TabHeaders.Add(new TabHeader
@@ -246,7 +246,7 @@ public class ViewFollowingViewModel : ViewModelBase
 
             // 用户的关注分组
             List<FollowingGroup>? followingGroup = null;
-            await Task.Run(() => { followingGroup = UserRelation.GetFollowingGroup(); });
+            await Task.Run(() => { followingGroup = UserRelation.GetFollowingGroup(); }).ConfigureAwait(true);
             if (followingGroup != null)
             {
                 foreach (var tag in followingGroup)
@@ -259,7 +259,7 @@ public class ViewFollowingViewModel : ViewModelBase
         {
             // 用户的关系状态数
             UserRelationStat? relationStat = null;
-            await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(_mid); });
+            await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(_mid); }).ConfigureAwait(true);
             if (relationStat != null)
             {
                 TabHeaders.Add(new TabHeader
@@ -303,7 +303,7 @@ public class ViewFollowingViewModel : ViewModelBase
             }
 
             LoadContent(contents);
-        });
+        }).ConfigureAwait(true);
 
         return contents != null;
     }
@@ -320,7 +320,7 @@ public class ViewFollowingViewModel : ViewModelBase
             }
 
             LoadContent(contents);
-        });
+        }).ConfigureAwait(true);
 
         return contents != null;
     }
@@ -337,7 +337,7 @@ public class ViewFollowingViewModel : ViewModelBase
             }
 
             LoadContent(contents);
-        });
+        }).ConfigureAwait(true);
 
         return contents != null;
     }
@@ -357,9 +357,9 @@ public class ViewFollowingViewModel : ViewModelBase
 
         var isSucceed = tab.Id switch
         {
-            -1 => await LoadAllFollowings(current, NumberInPage),
-            -2 => await LoadWhispers(current, NumberInPage),
-            _ => await LoadFollowingGroupContent(tab.Id, current, NumberInPage)
+            -1 => await LoadAllFollowings(current, NumberInPage).ConfigureAwait(true),
+            -2 => await LoadWhispers(current, NumberInPage).ConfigureAwait(true),
+            _ => await LoadFollowingGroupContent(tab.Id, current, NumberInPage).ConfigureAwait(true)
         };
 
         if (isSucceed)
@@ -422,7 +422,7 @@ public class ViewFollowingViewModel : ViewModelBase
             {
                 InitView();
                 // 初始化左侧列表
-                await InitLeftTable();
+                await InitLeftTable().ConfigureAwait(true);
                 // 进入页面时显示的设置项
                 SelectTabId = 0;
             }
