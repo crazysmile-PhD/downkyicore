@@ -91,7 +91,7 @@ namespace DownKyi.ViewModels
         public ObservableCollection<TabHeader> TabHeaders
         {
             get => _tabHeaders;
-            set => SetProperty(ref _tabHeaders, value);
+            private set => SetProperty(ref _tabHeaders, value);
         }
 
         private int _selectTabId;
@@ -123,7 +123,7 @@ namespace DownKyi.ViewModels
         public ObservableCollection<PublicationMedia> Medias
         {
             get => _medias;
-            set => SetProperty(ref _medias, value);
+            private set => SetProperty(ref _medias, value);
         }
 
         private bool _isSelectAll;

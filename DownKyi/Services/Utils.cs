@@ -93,8 +93,9 @@ internal static class Utils
             {
                 Quality = playUrl.Quality,
                 QualityFormat = qns.First(x => x.Id == playUrl.Quality).Name,
-                VideoCodecList = new(codeIds.Where(x => x.Id == playUrl.VideoCodecid)
-                .Select(x => x.Name).ToList()),
+                VideoCodecList = codeIds.Where(x => x.Id == playUrl.VideoCodecid)
+                    .Select(x => x.Name)
+                    .ToList(),
                 SelectedVideoCodec = codeIds.First(x => x.Id == playUrl.VideoCodecid).Name
             };
 
@@ -233,7 +234,7 @@ internal static class Utils
             }
             else
             {
-                if (!videoQualityExist.VideoCodecList.Exists(t => t.Equals(codecName, System.StringComparison.Ordinal)))
+                if (!videoQualityExist.VideoCodecList.Any(t => t.Equals(codecName, System.StringComparison.Ordinal)))
                 {
                     if (!string.IsNullOrEmpty(codecName))
                     {

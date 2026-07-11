@@ -105,7 +105,7 @@ public class ViewFollowingViewModel : ViewModelBase
     public ObservableCollection<TabHeader> TabHeaders
     {
         get => _tabHeaders;
-        set => SetProperty(ref _tabHeaders, value);
+        private set => SetProperty(ref _tabHeaders, value);
     }
 
     private int _selectTabId;
@@ -137,7 +137,7 @@ public class ViewFollowingViewModel : ViewModelBase
     public ObservableCollection<FriendInfo> Contents
     {
         get => _contents;
-        set => SetProperty(ref _contents, value);
+        private set => SetProperty(ref _contents, value);
     }
 
     #endregion
@@ -245,7 +245,7 @@ public class ViewFollowingViewModel : ViewModelBase
             }
 
             // 用户的关注分组
-            List<FollowingGroup>? followingGroup = null;
+            IReadOnlyList<FollowingGroup>? followingGroup = null;
             await Task.Run(() => { followingGroup = UserRelation.GetFollowingGroup(); }).ConfigureAwait(true);
             if (followingGroup != null)
             {
@@ -275,7 +275,7 @@ public class ViewFollowingViewModel : ViewModelBase
         LoadingVisibility = false;
     }
 
-    private void LoadContent(List<RelationFollowInfo> contents)
+    private void LoadContent(IReadOnlyList<RelationFollowInfo> contents)
     {
         InnerContentVisibility = true;
         ContentLoadingVisibility = false;
@@ -288,7 +288,7 @@ public class ViewFollowingViewModel : ViewModelBase
 
     private async Task<bool> LoadAllFollowings(int pn, int ps)
     {
-        List<RelationFollowInfo>? contents = null;
+        IReadOnlyList<RelationFollowInfo>? contents = null;
         await Task.Run(() =>
         {
             var data = UserRelation.GetFollowings(_mid, pn, ps);
@@ -310,7 +310,7 @@ public class ViewFollowingViewModel : ViewModelBase
 
     private async Task<bool> LoadWhispers(int pn, int ps)
     {
-        List<RelationFollowInfo>? contents = null;
+        IReadOnlyList<RelationFollowInfo>? contents = null;
         await Task.Run(() =>
         {
             contents = UserRelation.GetWhispers(pn, ps);
@@ -327,7 +327,7 @@ public class ViewFollowingViewModel : ViewModelBase
 
     private async Task<bool> LoadFollowingGroupContent(long tagId, int pn, int ps)
     {
-        List<RelationFollowInfo>? contents = null;
+        IReadOnlyList<RelationFollowInfo>? contents = null;
         await Task.Run(() =>
         {
             contents = UserRelation.GetFollowingGroupContent(tagId, pn, ps);

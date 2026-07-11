@@ -66,7 +66,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     public RangeObservableCollection<FavoritesMedia> FavoritesMedias
     {
         get => _favoritesMedias;
-        set => SetProperty(ref _favoritesMedias, value);
+        private set => SetProperty(ref _favoritesMedias, value);
     }
 
     private bool _contentVisibility;

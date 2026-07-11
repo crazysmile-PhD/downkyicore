@@ -13,7 +13,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public List<AriaGetServersResult> Result { get; set; } = new();
+        public IReadOnlyList<AriaGetServersResult> Result { get; set; } = Array.Empty<AriaGetServersResult>();
 
         [JsonProperty("error")]
         public AriaError Error { get; set; } = new();
@@ -31,7 +31,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Index { get; set; } = string.Empty;
 
         [JsonProperty("servers")]
-        public List<AriaResultServer> Servers { get; set; } = new();
+        public IReadOnlyList<AriaResultServer> Servers { get; set; } = Array.Empty<AriaResultServer>();
 
         public override string ToString()
         {

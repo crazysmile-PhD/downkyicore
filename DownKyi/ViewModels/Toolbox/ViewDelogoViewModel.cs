@@ -132,7 +132,7 @@ public class ViewDelogoViewModel : ViewModelBase
     }
 
 
-    public List<SolidColorBrush> AvailableColors { get; }
+    public IReadOnlyList<SolidColorBrush> AvailableColors { get; }
 
 
     private SolidColorBrush _selectedColor = null!;
@@ -152,7 +152,7 @@ public class ViewDelogoViewModel : ViewModelBase
         VideoPath = string.Empty;
 
 
-        AvailableColors = new(){
+        AvailableColors = new[]{
             new SolidColorBrush(Colors.Red),
             new SolidColorBrush(Colors.Green),
             new SolidColorBrush(Colors.Blue),

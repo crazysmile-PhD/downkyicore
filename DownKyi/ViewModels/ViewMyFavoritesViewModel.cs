@@ -132,7 +132,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
     public RangeObservableCollection<TabHeader> TabHeaders
     {
         get => _tabHeaders;
-        set => SetProperty(ref _tabHeaders, value);
+        private set => SetProperty(ref _tabHeaders, value);
     }
 
     private int _selectTabId;
@@ -164,7 +164,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
     public RangeObservableCollection<FavoritesMedia> Medias
     {
         get => _medias;
-        set => SetProperty(ref _medias, value);
+        private set => SetProperty(ref _medias, value);
     }
 
     private bool _isSelectAll;

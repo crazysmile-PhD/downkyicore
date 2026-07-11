@@ -47,7 +47,7 @@ public class VideoView : BaseModel
 
     //[JsonProperty("no_cache")]
     //public bool no_cache { get; set; }
-    [JsonProperty("pages")] public List<VideoPage> Pages { get; set; } = new();
+    [JsonProperty("pages")] public IReadOnlyList<VideoPage> Pages { get; set; } = Array.Empty<VideoPage>();
     [JsonProperty("subtitle")] public VideoSubtitle Subtitle { get; set; } = new();
 
     [JsonProperty("ugc_season")] public UgcSeason? UgcSeason { get; set; }

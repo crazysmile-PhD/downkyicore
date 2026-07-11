@@ -255,7 +255,7 @@ public partial class SettingsManager
     /// 获取历史下载目录
     /// </summary>
     /// <returns></returns>
-    public List<string> GetHistoryVideoRootPaths()
+    public IReadOnlyList<string> GetHistoryVideoRootPaths()
     {
         if (_appSettings.Video.HistoryVideoRootPaths == null)
         {
@@ -272,7 +272,7 @@ public partial class SettingsManager
     /// </summary>
     /// <param name="historyPaths"></param>
     /// <returns></returns>
-    public bool SetHistoryVideoRootPaths(List<string> historyPaths)
+    public bool SetHistoryVideoRootPaths(IReadOnlyList<string> historyPaths)
     {
         return SetProperty(
             _appSettings.Video.HistoryVideoRootPaths,
@@ -342,7 +342,7 @@ public partial class SettingsManager
     /// 获取文件命名格式
     /// </summary>
     /// <returns></returns>
-    public List<FileNamePart> GetFileNameParts()
+    public IReadOnlyList<FileNamePart> GetFileNameParts()
     {
         if (_appSettings.Video.FileNameParts == null || _appSettings.Video.FileNameParts.Count == 0)
         {
@@ -359,7 +359,7 @@ public partial class SettingsManager
     /// </summary>
     /// <param name="fileNameParts"></param>
     /// <returns></returns>
-    public bool SetFileNameParts(List<FileNamePart>? fileNameParts)
+    public bool SetFileNameParts(IReadOnlyList<FileNamePart>? fileNameParts)
     {
         var parts = fileNameParts is { Count: > 0 } ? fileNameParts : _fileNameParts;
         return SetProperty(

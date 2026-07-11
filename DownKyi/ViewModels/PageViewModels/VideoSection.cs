@@ -24,12 +24,12 @@ public class VideoSection : BindableBase
         set => SetProperty(ref _isSelected, value);
     }
 
-    private List<VideoPage> _videoPages = new();
+    private IList<VideoPage> _videoPages = new List<VideoPage>();
 
-    public List<VideoPage> VideoPages
+    public IList<VideoPage> VideoPages
     {
         get => _videoPages;
-        set => SetProperty(ref _videoPages, value);
+        internal set => SetProperty(ref _videoPages, value);
     }
 
     public VideoSection CloneForCache()

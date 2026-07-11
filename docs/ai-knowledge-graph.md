@@ -583,7 +583,7 @@ contracts:
   - The CSV retains every affected project, file, line, category, and compatibility-review flag.
   - Compatibility flags are review hints and never authorize mechanical API or schema changes.
   - Every assembly explicitly declares `CLSCompliant(false)` through `Directory.Build.props`; `CA1014` is enforced without claiming unverified CLS compatibility.
-  - The current checkpoint is 914 unique diagnostics across 24 rules; all 48 rules already cleared from the baseline are blocking errors.
+  - The current checkpoint is 590 unique diagnostics across 24 rules; all 50 rules already cleared from the baseline are blocking errors.
 hazards:
   - Reusing one SARIF path across projects loses rule metadata because later projects overwrite earlier output.
   - Comparing raw MSBuild warning totals without deduplication overstates the baseline.
@@ -796,8 +796,14 @@ test.json-contracts:
   paths:
     - tests/DownKyi.Core.Tests/BiliApiModelContractTests.cs
     - tests/DownKyi.Core.Tests/DanmakuAndZoneContractTests.cs
+    - tests/DownKyi.Core.Tests/VideoSettingsContractTests.cs
+    - tests/DownKyi.Tests/DownloadStorageResumeTests.cs
+    - tests/DownKyi.Tests/NfoModelContractTests.cs
   should_guard:
-    - sample Bilibili JSON arrays deserialize into mutable model collections without changing wire format
+    - sample Bilibili JSON arrays deserialize into read-only public collection contracts without changing wire format
+    - video settings collection arrays round-trip without changing property names
+    - SQLite reload preserves download files, completed segment keys, GID, paused state, and progress
+    - NFO collection elements round-trip through XmlSerializer
     - BVID web-page URL construction prefers BVID and falls back to AID only when BVID is empty
     - zone icon fallback, quality dimensions, and injected subtitle output encoding remain deterministic
     - missing data does not become NullReference later

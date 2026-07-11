@@ -8,7 +8,7 @@ public class PlayUrlDashVideo : BaseModel
     [JsonProperty("id")] public int Id { get; set; }
     [JsonProperty("base_url")] public string BaseUrl { get; set; } = string.Empty;
 
-    [JsonProperty("backup_url")] public List<string> BackupUrl { get; set; } = new();
+    [JsonProperty("backup_url")] public IReadOnlyList<string> BackupUrl { get; set; } = Array.Empty<string>();
 
     // bandwidth
     [JsonProperty("mimeType")] public string MimeType { get; set; } = string.Empty;

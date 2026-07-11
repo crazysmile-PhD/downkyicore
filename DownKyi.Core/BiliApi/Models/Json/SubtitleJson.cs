@@ -10,7 +10,7 @@ public class SubtitleJson : BaseModel
     [JsonProperty("background_alpha")] public float BackgroundAlpha { get; set; }
     [JsonProperty("background_color")] public string BackgroundColor { get; set; } = string.Empty;
     [JsonProperty("Stroke")] public string Stroke { get; set; } = string.Empty;
-    [JsonProperty("body")] public List<Subtitle> Body { get; set; } = new();
+    [JsonProperty("body")] public IReadOnlyList<Subtitle> Body { get; set; } = Array.Empty<Subtitle>();
 
     /// <summary>
     /// srt格式字幕

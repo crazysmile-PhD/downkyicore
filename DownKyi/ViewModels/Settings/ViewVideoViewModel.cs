@@ -31,9 +31,9 @@ public class ViewVideoViewModel : ViewModelBase
 
     #region 页面属性申明
 
-    private List<Quality> _videoCodecs = new();
+    private IReadOnlyList<Quality> _videoCodecs = Array.Empty<Quality>();
 
-    public List<Quality> VideoCodecs
+    public IReadOnlyList<Quality> VideoCodecs
     {
         get => _videoCodecs;
         set => SetProperty(ref _videoCodecs, value);
@@ -47,9 +47,9 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedVideoCodec, value);
     }
 
-    private List<Quality> _videoQualityList = new();
+    private IReadOnlyList<Quality> _videoQualityList = Array.Empty<Quality>();
 
-    public List<Quality> VideoQualityList
+    public IReadOnlyList<Quality> VideoQualityList
     {
         get => _videoQualityList;
         set => SetProperty(ref _videoQualityList, value);
@@ -63,9 +63,9 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedVideoQuality, value);
     }
 
-    private List<Quality> _audioQualityList = new();
+    private IReadOnlyList<Quality> _audioQualityList = Array.Empty<Quality>();
 
-    public List<Quality> AudioQualityList
+    public IReadOnlyList<Quality> AudioQualityList
     {
         get => _audioQualityList;
         set => SetProperty(ref _audioQualityList, value);
@@ -79,9 +79,9 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedAudioQuality, value);
     }
 
-    private List<VideoParseType> _videoParseTypeList = new();
+    private IReadOnlyList<VideoParseType> _videoParseTypeList = Array.Empty<VideoParseType>();
 
-    public List<VideoParseType> VideoParseTypeList
+    public IReadOnlyList<VideoParseType> VideoParseTypeList
     {
         get => _videoParseTypeList;
         set => SetProperty(ref _videoParseTypeList, value);
@@ -111,9 +111,9 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _isTranscodingAacToMp3, value);
     }
 
-    private List<FfmpegHardwareAccelerationItem> _ffmpegHardwareAccelerations = new();
+    private IReadOnlyList<FfmpegHardwareAccelerationItem> _ffmpegHardwareAccelerations = Array.Empty<FfmpegHardwareAccelerationItem>();
 
-    public List<FfmpegHardwareAccelerationItem> FfmpegHardwareAccelerations
+    public IReadOnlyList<FfmpegHardwareAccelerationItem> FfmpegHardwareAccelerations
     {
         get => _ffmpegHardwareAccelerations;
         set => SetProperty(ref _ffmpegHardwareAccelerations, value);
@@ -127,9 +127,9 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedFfmpegHardwareAcceleration, value);
     }
 
-    private List<int> _ffmpegMaxParallelJobs = new();
+    private IReadOnlyList<int> _ffmpegMaxParallelJobs = Array.Empty<int>();
 
-    public List<int> FfmpegMaxParallelJobs
+    public IReadOnlyList<int> FfmpegMaxParallelJobs
     {
         get => _ffmpegMaxParallelJobs;
         set => SetProperty(ref _ffmpegMaxParallelJobs, value);
@@ -218,19 +218,11 @@ public class ViewVideoViewModel : ViewModelBase
 
     private ObservableCollection<DisplayFileNamePart> _selectedFileName = new();
 
-    public ObservableCollection<DisplayFileNamePart> SelectedFileName
-    {
-        get => _selectedFileName;
-        set => SetProperty(ref _selectedFileName, value);
-    }
+    public ObservableCollection<DisplayFileNamePart> SelectedFileName => _selectedFileName;
 
     private ObservableCollection<DisplayFileNamePart> _optionalFields = new();
 
-    public ObservableCollection<DisplayFileNamePart> OptionalFields
-    {
-        get => _optionalFields;
-        set => SetProperty(ref _optionalFields, value);
-    }
+    public ObservableCollection<DisplayFileNamePart> OptionalFields => _optionalFields;
 
     private int _selectedOptionalField;
 
@@ -240,9 +232,9 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedOptionalField, value);
     }
 
-    private List<string> _fileNamePartTimeFormatList = new();
+    private IReadOnlyList<string> _fileNamePartTimeFormatList = Array.Empty<string>();
 
-    public List<string> FileNamePartTimeFormatList
+    public IReadOnlyList<string> FileNamePartTimeFormatList
     {
         get => _fileNamePartTimeFormatList;
         set => SetProperty(ref _fileNamePartTimeFormatList, value);
@@ -256,9 +248,9 @@ public class ViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _selectedFileNamePartTimeFormat, value);
     }
 
-    private List<OrderFormatDisplay> _orderFormatList = new();
+    private IReadOnlyList<OrderFormatDisplay> _orderFormatList = Array.Empty<OrderFormatDisplay>();
 
-    public List<OrderFormatDisplay> OrderFormatList
+    public IReadOnlyList<OrderFormatDisplay> OrderFormatList
     {
         get => _orderFormatList;
         set => SetProperty(ref _orderFormatList, value);
@@ -303,8 +295,6 @@ public class ViewVideoViewModel : ViewModelBase
         };
 
         // 文件命名格式
-        SelectedFileName = new ObservableCollection<DisplayFileNamePart>();
-
         SelectedFileName.CollectionChanged += (sender, e) =>
         {
             // 当前显示的命名格式part
@@ -314,7 +304,6 @@ public class ViewVideoViewModel : ViewModelBase
             PublishTip(isSucceed);
         };
 
-        OptionalFields = new ObservableCollection<DisplayFileNamePart>();
         foreach (var item in Enum.GetValues<FileNamePart>())
         {
             var display = DisplayFileNamePart(item);

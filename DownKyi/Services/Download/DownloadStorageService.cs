@@ -264,7 +264,7 @@ VALUES
     /// <summary>
     /// 获取所有下载中数据
     /// </summary>
-    public List<DownloadingItem> GetDownloading()
+    public IReadOnlyList<DownloadingItem> GetDownloading()
     {
         var result = new List<DownloadingItem>();
         lock (_lock)
@@ -336,7 +336,7 @@ ORDER BY db.main_title COLLATE NOCASE, db.""order"" ASC";
         return result;
     }
 
-    public Task<List<DownloadingItem>> GetDownloadingAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<DownloadingItem>> GetDownloadingAsync(CancellationToken cancellationToken = default)
     {
         return Task.Run(() => GetDownloading(), cancellationToken);
     }
@@ -501,7 +501,7 @@ VALUES (@id, @max_speed_display, @finished_timestamp, @finished_time)";
     /// <summary>
     /// 获取所有下载完成数据
     /// </summary>
-    public List<DownloadedItem> GetDownloaded()
+    public IReadOnlyList<DownloadedItem> GetDownloaded()
     {
         var result = new List<DownloadedItem>();
         lock (_lock)
@@ -549,7 +549,7 @@ ORDER BY d.finished_timestamp DESC";
         return result;
     }
 
-    public Task<List<DownloadedItem>> GetDownloadedAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<DownloadedItem>> GetDownloadedAsync(CancellationToken cancellationToken = default)
     {
         return Task.Run(() => GetDownloaded(), cancellationToken);
     }

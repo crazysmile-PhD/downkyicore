@@ -22,7 +22,7 @@ public class BangumiMediaData : BaseModel
 
 public class BangumiMedia : BaseModel
 {
-    [JsonProperty("areas")] public List<BangumiArea> Areas { get; set; } = new();
+    [JsonProperty("areas")] public IReadOnlyList<BangumiArea> Areas { get; set; } = Array.Empty<BangumiArea>();
     [JsonProperty("cover")] public string Cover { get; set; } = string.Empty;
 
     [JsonProperty("media_id")] public long MediaId { get; set; }

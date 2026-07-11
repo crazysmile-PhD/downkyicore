@@ -75,7 +75,7 @@ public static class DanmakuProtobuf
     /// <param name="avid">稿件avID</param>
     /// <param name="cid">视频CID</param>
     /// <returns></returns>
-    public static List<BiliDanmaku> GetAllDanmakuProto(long avid, long cid, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<BiliDanmaku> GetAllDanmakuProto(long avid, long cid, CancellationToken cancellationToken = default)
     {
         var danmakuList = new List<BiliDanmaku>();
 

@@ -6,5 +6,5 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/relation/tag?tagid={tagId}&pn={pn}&ps={ps}&order_type={orderType}
 public class FollowingGroupContent : BaseModel
 {
-    [JsonProperty("data")] public List<RelationFollowInfo> Data { get; set; } = new();
+    [JsonProperty("data")] public IReadOnlyList<RelationFollowInfo> Data { get; set; } = Array.Empty<RelationFollowInfo>();
 }

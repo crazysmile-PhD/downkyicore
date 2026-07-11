@@ -30,7 +30,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     public ObservableCollection<SeasonsSeries> SeasonsSeries
     {
         get => _seasonsSeries;
-        set => SetProperty(ref _seasonsSeries, value);
+        private set => SetProperty(ref _seasonsSeries, value);
     }
 
     private int _selectedItem;

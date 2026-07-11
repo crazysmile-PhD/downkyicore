@@ -15,5 +15,5 @@ public class SpaceChannelVideoList : BaseModel
     [JsonProperty("cover")] public string Cover { get; set; } = string.Empty;
 
     // is_live_playback
-    [JsonProperty("archives")] public List<SpaceChannelArchive> Archives { get; set; } = new();
+    [JsonProperty("archives")] public IReadOnlyList<SpaceChannelArchive> Archives { get; set; } = Array.Empty<SpaceChannelArchive>();
 }

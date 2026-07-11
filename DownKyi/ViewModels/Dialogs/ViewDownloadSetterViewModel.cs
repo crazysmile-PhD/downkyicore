@@ -49,7 +49,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
     }
 
 
-    public ObservableCollection<string> DirectoryList { get; set; }
+    public ObservableCollection<string> DirectoryList { get; private set; }
 
 
     private string _directory = string.Empty;

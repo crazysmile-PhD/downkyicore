@@ -42,7 +42,7 @@ public abstract class DownloadService : IDisposable
     protected Task? WorkTask;
     protected CancellationTokenSource? TokenSource;
     protected CancellationToken? CancellationToken;
-    protected readonly List<Task> DownloadingTasks = new();
+    private readonly List<Task> _downloadingTasks = new();
 
     protected const int Retry = 5;
     protected const string NullMark = "<null>";
@@ -337,7 +337,7 @@ public abstract class DownloadService : IDisposable
     }
 
 
-    protected List<string> BaseDownloadSubtitle(DownloadingItem downloading)
+    protected IReadOnlyList<string> BaseDownloadSubtitle(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -618,7 +618,7 @@ public abstract class DownloadService : IDisposable
         {
             try
             {
-                DownloadingTasks.RemoveAll((m) => m.IsCompleted);
+                _downloadingTasks.RemoveAll(task => task.IsCompleted);
 
                 foreach (var downloading in DownloadingList)
                 {
@@ -629,7 +629,7 @@ public abstract class DownloadService : IDisposable
                     //这里需要立刻设置状态，否则如果SingleDownload没有及时执行，会重复创建任务
                     downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
                     PersistDownloadingState(downloading);
-                    DownloadingTasks.Add(RunSingleDownloadAsync(downloading));
+                    _downloadingTasks.Add(RunSingleDownloadAsync(downloading));
                 }
             }
             catch (ObjectDisposedException e)
@@ -663,8 +663,8 @@ public abstract class DownloadService : IDisposable
             await Task.Delay(500).ConfigureAwait(true);
         }
 
-        await Task.WhenAny(Task.WhenAll(DownloadingTasks), Task.Delay(30000)).ConfigureAwait(true);
-        foreach (var tsk in DownloadingTasks.FindAll((m) => !m.IsCompleted))
+        await Task.WhenAny(Task.WhenAll(_downloadingTasks), Task.Delay(30000)).ConfigureAwait(true);
+        foreach (var tsk in _downloadingTasks.FindAll(task => !task.IsCompleted))
         {
             Console.PrintLine($"{Tag}.DoWork() 任务结束超时");
             LogManager.Debug($"{Tag}.DoWork()", "任务结束超时");
@@ -895,7 +895,7 @@ public abstract class DownloadService : IDisposable
                 // 暂停
                 Pause(downloading);
 
-                List<string>? outputSubtitles = null;
+                IReadOnlyList<string>? outputSubtitles = null;
                 // 如果需要下载字幕
                 if (downloading.DownloadBase.NeedDownloadContent["downloadSubtitle"])
                 {
@@ -1175,7 +1175,7 @@ public abstract class DownloadService : IDisposable
     public abstract string? DownloadAudio(DownloadingItem downloading);
     public abstract string? DownloadVideo(DownloadingItem downloading);
     public abstract string DownloadDanmaku(DownloadingItem downloading);
-    public abstract List<string> DownloadSubtitle(DownloadingItem downloading);
+    public abstract IReadOnlyList<string> DownloadSubtitle(DownloadingItem downloading);
     public abstract string? DownloadCover(DownloadingItem downloading, string? coverUrl, string fileName);
     public abstract string? MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid);
 

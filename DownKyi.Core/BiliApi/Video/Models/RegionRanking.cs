@@ -12,5 +12,5 @@ public class RegionRanking : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public List<RankingVideoView> Data { get; set; } = new();
+    [JsonProperty("data")] public IReadOnlyList<RankingVideoView> Data { get; set; } = Array.Empty<RankingVideoView>();
 }

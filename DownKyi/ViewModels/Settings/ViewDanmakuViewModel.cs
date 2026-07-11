@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Media;
@@ -59,9 +60,9 @@ public class ViewDanmakuViewModel : ViewModelBase
         set => SetProperty(ref _screenHeight, value);
     }
 
-    private List<string> _fonts = new();
+    private IReadOnlyList<string> _fonts = Array.Empty<string>();
 
-    public List<string> Fonts
+    public IReadOnlyList<string> Fonts
     {
         get => _fonts;
         set => SetProperty(ref _fonts, value);
@@ -114,12 +115,7 @@ public class ViewDanmakuViewModel : ViewModelBase
         #region 属性初始化
 
         // 弹幕字体
-        Fonts = new List<string>();
-        var fontCollection = FontManager.Current.SystemFonts.Select(x => x.Name);
-        foreach (var font in fontCollection)
-        {
-            Fonts.Add(font);
-        }
+        Fonts = FontManager.Current.SystemFonts.Select(x => x.Name).ToList();
 
         #endregion
     }

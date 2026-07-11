@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Xml.Serialization;
 
 namespace DownKyi.Models;
@@ -19,13 +20,13 @@ public class MovieMetadata
     public string Year { get; set; } = string.Empty;
 
     [XmlElement("genre")]
-    public List<string> Genres { get; set; } = new();
+    public Collection<string> Genres { get; } = new();
 
     [XmlElement("tag")]
-    public List<string> Tags { get; set; } = new();
+    public Collection<string> Tags { get; } = new();
 
     [XmlElement("actor")]
-    public List<Actor> Actors { get; set; } = new();
+    public Collection<Actor> Actors { get; } = new();
 
     [XmlElement("uniqueid")]
     public UniqueId BilibiliId { get; set; } = null!;
@@ -34,7 +35,7 @@ public class MovieMetadata
     public string Premiered { get; set; } = string.Empty;
 
     [XmlElement("rating")]
-    public List<Rating> Ratings { get; set; } = new();
+    public Collection<Rating> Ratings { get; } = new();
 }
 
 [Serializable]

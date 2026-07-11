@@ -35,7 +35,7 @@ public static class UserRelation
     /// </summary>
     /// <param name="mid">目标用户UID</param>
     /// <returns></returns>
-    public static List<RelationFollowInfo> GetAllFollowers(long mid)
+    public static IReadOnlyList<RelationFollowInfo> GetAllFollowers(long mid)
     {
         var result = new List<RelationFollowInfo>();
 
@@ -90,7 +90,7 @@ public static class UserRelation
     /// <param name="mid">目标用户UID</param>
     /// <param name="order">排序方式</param>
     /// <returns></returns>
-    public static List<RelationFollowInfo> GetAllFollowings(long mid, FollowingOrder order = FollowingOrder.DEFAULT)
+    public static IReadOnlyList<RelationFollowInfo> GetAllFollowings(long mid, FollowingOrder order = FollowingOrder.DEFAULT)
     {
         var result = new List<RelationFollowInfo>();
 
@@ -118,7 +118,7 @@ public static class UserRelation
     /// <param name="pn">页码</param>
     /// <param name="ps">每页项数</param>
     /// <returns></returns>
-    public static List<RelationFollowInfo>? GetWhispers(int pn, int ps)
+    public static IReadOnlyList<RelationFollowInfo>? GetWhispers(int pn, int ps)
     {
         var url = $"https://api.bilibili.com/x/relation/whispers?pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
@@ -137,7 +137,7 @@ public static class UserRelation
     /// <param name="pn">页码</param>
     /// <param name="ps">每页项数</param>
     /// <returns></returns>
-    public static List<RelationFollowInfo>? GetBlacks(int pn, int ps)
+    public static IReadOnlyList<RelationFollowInfo>? GetBlacks(int pn, int ps)
     {
         var url = $"https://api.bilibili.com/x/relation/blacks?pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
@@ -156,7 +156,7 @@ public static class UserRelation
     /// 查询关注分组列表
     /// </summary>
     /// <returns></returns>
-    public static List<FollowingGroup>? GetFollowingGroup()
+    public static IReadOnlyList<FollowingGroup>? GetFollowingGroup()
     {
         const string url = $"https://api.bilibili.com/x/relation/tags";
         const string referer = "https://www.bilibili.com";
@@ -177,7 +177,7 @@ public static class UserRelation
     /// <param name="ps">每页项数</param>
     /// <param name="order">排序方式</param>
     /// <returns></returns>
-    public static List<RelationFollowInfo>? GetFollowingGroupContent(long tagId, int pn, int ps,
+    public static IReadOnlyList<RelationFollowInfo>? GetFollowingGroupContent(long tagId, int pn, int ps,
         FollowingOrder order = FollowingOrder.DEFAULT)
     {
         var orderType = "";
@@ -204,7 +204,7 @@ public static class UserRelation
     /// <param name="tagId">分组ID</param>
     /// <param name="order">排序方式</param>
     /// <returns></returns>
-    public static List<RelationFollowInfo> GetAllFollowingGroupContent(int tagId,
+    public static IReadOnlyList<RelationFollowInfo> GetAllFollowingGroupContent(int tagId,
         FollowingOrder order = FollowingOrder.DEFAULT)
     {
         var result = new List<RelationFollowInfo>();

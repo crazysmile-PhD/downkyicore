@@ -8,7 +8,7 @@ namespace DownKyi.Models
 {
     public class VideoPlayUrlBasic
     {
-        public List<string> BackupUrl { get; set; } = new();
+        public IReadOnlyList<string> BackupUrl { get; set; } = Array.Empty<string>();
         public string BaseUrl { get; set; } = string.Empty;
 
         public int Id { get; set; }

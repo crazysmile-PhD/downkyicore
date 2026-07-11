@@ -37,6 +37,7 @@ dotnet_diagnostic.CA2213.severity = error
 dotnet_diagnostic.CA2214.severity = error
 
 # Correctness and API-usage rules cleaned in PR 02.
+dotnet_diagnostic.CA1002.severity = error
 dotnet_diagnostic.CA1008.severity = error
 dotnet_diagnostic.CA1012.severity = error
 dotnet_diagnostic.CA1014.severity = error
@@ -45,6 +46,7 @@ dotnet_diagnostic.CA1508.severity = error
 dotnet_diagnostic.CA1513.severity = error
 dotnet_diagnostic.CA2201.severity = error
 dotnet_diagnostic.CA2211.severity = error
+dotnet_diagnostic.CA2227.severity = error
 dotnet_diagnostic.CA2234.severity = error
 dotnet_diagnostic.CA2263.severity = error
 

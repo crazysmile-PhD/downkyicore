@@ -34,7 +34,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public List<AriaTellStatusResult> Result { get; set; } = new();
+        public IReadOnlyList<AriaTellStatusResult> Result { get; set; } = Array.Empty<AriaTellStatusResult>();
 
         [JsonProperty("error")]
         public AriaError Error { get; set; } = new();
@@ -70,7 +70,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string ErrorMessage { get; set; } = string.Empty;
 
         [JsonProperty("files")]
-        public List<AriaTellStatusResultFile> Files { get; set; } = new();
+        public IReadOnlyList<AriaTellStatusResultFile> Files { get; set; } = Array.Empty<AriaTellStatusResultFile>();
 
         [JsonProperty("gid")]
         public string Gid { get; set; } = string.Empty;
@@ -118,7 +118,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Selected { get; set; } = string.Empty;
 
         [JsonProperty("uris")]
-        public List<AriaUri> Uris { get; set; } = new();
+        public IReadOnlyList<AriaUri> Uris { get; set; } = Array.Empty<AriaUri>();
 
         public override string ToString()
         {

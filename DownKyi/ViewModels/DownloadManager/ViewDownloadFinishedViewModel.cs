@@ -30,7 +30,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
     public ImmutableObservableCollection<DownloadedItem> DownloadedList
     {
         get => _downloadedList;
-        set => SetProperty(ref _downloadedList, value);
+        private set => SetProperty(ref _downloadedList, value);
     }
 
     private int _finishedSortBy;

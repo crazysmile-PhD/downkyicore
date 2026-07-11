@@ -12,7 +12,7 @@ public class RelationFollowOrigin : BaseModel
 
 public class RelationFollow : BaseModel
 {
-    [JsonProperty("list")] public List<RelationFollowInfo> List { get; set; } = new();
+    [JsonProperty("list")] public IReadOnlyList<RelationFollowInfo> List { get; set; } = Array.Empty<RelationFollowInfo>();
 
     //[JsonProperty("re_version")]
     //public long reVersion { get; set; }

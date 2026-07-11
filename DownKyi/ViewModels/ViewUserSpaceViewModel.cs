@@ -161,7 +161,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
     public ObservableCollection<TabLeftBanner> TabLeftBanners
     {
         get => _tabLeftBanners;
-        set => SetProperty(ref _tabLeftBanners, value);
+        private set => SetProperty(ref _tabLeftBanners, value);
     }
 
     private ObservableCollection<TabRightBanner> _tabRightBanners = new();
@@ -169,7 +169,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
     public ObservableCollection<TabRightBanner> TabRightBanners
     {
         get => _tabRightBanners;
-        set => SetProperty(ref _tabRightBanners, value);
+        private set => SetProperty(ref _tabRightBanners, value);
     }
 
     private int _selectedRightBanner;
@@ -432,7 +432,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         ContentVisibility = true;
 
         // 投稿视频
-        List<SpacePublicationListTypeVideoZone>? publicationTypes = null;
+        IReadOnlyList<SpacePublicationListTypeVideoZone>? publicationTypes = null;
         await Task.Run(() => { publicationTypes = Core.BiliApi.Users.UserSpace.GetPublicationType(mid); }).ConfigureAwait(true);
         if (publicationTypes is { Count: > 0 })
         {

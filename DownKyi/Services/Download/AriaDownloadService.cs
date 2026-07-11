@@ -230,7 +230,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// 下载字幕
     /// </summary>
     /// <param name="downloading"></param>
-    public override List<string> DownloadSubtitle(DownloadingItem downloading)
+    public override IReadOnlyList<string> DownloadSubtitle(DownloadingItem downloading)
     {
         return BaseDownloadSubtitle(downloading);
     }

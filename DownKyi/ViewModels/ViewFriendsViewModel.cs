@@ -35,7 +35,7 @@ namespace DownKyi.ViewModels
         public ObservableCollection<TabHeader> TabHeaders
         {
             get => _tabHeaders;
-            set => SetProperty(ref _tabHeaders, value);
+            private set => SetProperty(ref _tabHeaders, value);
         }
 
         private int _selectTabId = -1;

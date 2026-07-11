@@ -54,7 +54,7 @@ public class BangumiInfoService : IInfoService
     /// 获取视频剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoPage> GetVideoPages(CancellationToken cancellationToken = default)
+    public IList<VideoPage> GetVideoPages(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var pages = new List<VideoPage>();
@@ -156,7 +156,7 @@ public class BangumiInfoService : IInfoService
     /// 获取视频章节与剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoSection>? GetVideoSections(bool noUgc = false, CancellationToken cancellationToken = default)
+    public IList<VideoSection>? GetVideoSections(bool noUgc = false, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (_bangumiSeason == null)

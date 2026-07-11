@@ -76,7 +76,7 @@ public static class VideoInfo
     /// <param name="bvid"></param>
     /// <param name="aid"></param>
     /// <returns></returns>
-    public static List<VideoPage>? VideoPagelist(string? bvid = null, long aid = -1, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<VideoPage>? VideoPagelist(string? bvid = null, long aid = -1, CancellationToken cancellationToken = default)
     {
         const string baseUrl = "https://api.bilibili.com/x/player/pagelist";
         const string referer = "https://www.bilibili.com";
@@ -95,7 +95,7 @@ public static class VideoInfo
         return pagelist?.Data;
     }
 
-    public static List<BiliTagInfo>? GetBiliTagInfo(string bvid, long? cid = null, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<BiliTagInfo>? GetBiliTagInfo(string bvid, long? cid = null, CancellationToken cancellationToken = default)
     {
         const string referer = "https://www.bilibili.com";
         string cidStr = cid.HasValue ? $"&cid={cid}" : "";

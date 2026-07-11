@@ -15,6 +15,6 @@ public class CheeseEpisodeListOrigin : BaseModel
 
 public class CheeseEpisodeList : BaseModel
 {
-    [JsonProperty("items")] public List<CheeseEpisode> Items { get; set; } = new();
+    [JsonProperty("items")] public IReadOnlyList<CheeseEpisode> Items { get; set; } = Array.Empty<CheeseEpisode>();
     [JsonProperty("page")] public CheeseEpisodePage Page { get; set; } = new();
 }

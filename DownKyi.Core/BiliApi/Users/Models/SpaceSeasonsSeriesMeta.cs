@@ -23,7 +23,7 @@ public class SpaceSeriesMeta : SpaceSeasonsSeriesMeta
 {
     [JsonProperty("creator")] public string Creator { get; set; } = string.Empty;
     [JsonProperty("ctime")] public long Ctime { get; set; }
-    [JsonProperty("keywords")] public List<string> Keywords { get; set; } = new();
+    [JsonProperty("keywords")] public IReadOnlyList<string> Keywords { get; set; } = Array.Empty<string>();
     [JsonProperty("last_update_ts")] public long LastUpdate { get; set; }
     [JsonProperty("mtime")] public long Mtime { get; set; }
     [JsonProperty("raw_keywords")] public string RawKeywords { get; set; } = string.Empty;

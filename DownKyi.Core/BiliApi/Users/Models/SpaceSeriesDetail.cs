@@ -17,8 +17,8 @@ public class SpaceSeriesDetailOrigin : BaseModel
 
 public class SpaceSeriesDetail : BaseModel
 {
-    [JsonProperty("aids")] public List<long> Aids { get; set; } = new();
+    [JsonProperty("aids")] public IReadOnlyList<long> Aids { get; set; } = Array.Empty<long>();
 
     // page
-    [JsonProperty("archives")] public List<SpaceSeasonsSeriesArchives> Archives { get; set; } = new();
+    [JsonProperty("archives")] public IReadOnlyList<SpaceSeasonsSeriesArchives> Archives { get; set; } = Array.Empty<SpaceSeasonsSeriesArchives>();
 }

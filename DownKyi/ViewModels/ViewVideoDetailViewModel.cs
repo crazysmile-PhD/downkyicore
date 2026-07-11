@@ -97,10 +97,10 @@ public class ViewVideoDetailViewModel : ViewModelBase
     public RangeObservableCollection<VideoSection> VideoSections
     {
         get => _videoSections;
-        set => SetProperty(ref _videoSections, value);
+        private set => SetProperty(ref _videoSections, value);
     }
 
-    public RangeObservableCollection<VideoSection> CaCheVideoSections { get; set; }
+    public RangeObservableCollection<VideoSection> CaCheVideoSections { get; private set; }
 
     private bool _isSelectAll;
 

@@ -16,7 +16,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Method { get; set; } = string.Empty;
 
         [JsonProperty("params")]
-        public List<object> Params { get; set; } = new();
+        public IReadOnlyList<object> Params { get; set; } = Array.Empty<object>();
 
         public override string ToString()
         {

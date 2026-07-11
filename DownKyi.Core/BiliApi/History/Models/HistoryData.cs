@@ -23,6 +23,6 @@ namespace DownKyi.Core.BiliApi.History.Models
         public HistoryCursor Cursor { get; set; } = new();
         //public List<HistoryDataTab> tab { get; set; } = new();
         [JsonProperty("list")]
-        public List<HistoryList> List { get; set; } = new();
+        public IReadOnlyList<HistoryList> List { get; set; } = Array.Empty<HistoryList>();
     }
 }

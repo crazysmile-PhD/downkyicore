@@ -17,6 +17,6 @@ public class RegionDynamicOrigin : BaseModel
 
 public class RegionDynamic : BaseModel
 {
-    [JsonProperty("archives")] public List<DynamicVideoView> Archives { get; set; } = new();
+    [JsonProperty("archives")] public IReadOnlyList<DynamicVideoView> Archives { get; set; } = Array.Empty<DynamicVideoView>();
     // page
 }

@@ -38,7 +38,7 @@ public static class UserSpace
     /// </summary>
     /// <param name="mid">用户id</param>
     /// <returns></returns>
-    public static List<SpacePublicationListTypeVideoZone>? GetPublicationType(long mid)
+    public static IReadOnlyList<SpacePublicationListTypeVideoZone>? GetPublicationType(long mid)
     {
         const int pn = 1;
         const int ps = 1;
@@ -51,7 +51,7 @@ public static class UserSpace
     /// </summary>
     /// <param name="publication"></param>
     /// <returns></returns>
-    public static List<SpacePublicationListTypeVideoZone>? GetPublicationType(SpacePublicationList? publication)
+    public static IReadOnlyList<SpacePublicationListTypeVideoZone>? GetPublicationType(SpacePublicationList? publication)
     {
         if (publication?.Tlist == null)
         {
@@ -79,7 +79,7 @@ public static class UserSpace
     /// <param name="tid">视频分区</param>
     /// <param name="keyword">搜索关键词</param>
     /// <returns></returns>
-    public static List<SpacePublicationListVideo> GetAllPublication(long mid, int tid = 0, PublicationOrder order = PublicationOrder.PUBDATE, string keyword = "")
+    public static IReadOnlyList<SpacePublicationListVideo> GetAllPublication(long mid, int tid = 0, PublicationOrder order = PublicationOrder.PUBDATE, string keyword = "")
     {
         var result = new List<SpacePublicationListVideo>();
 
@@ -179,7 +179,7 @@ public static class UserSpace
     /// </summary>
     /// <param name="mid">用户id</param>
     /// <returns></returns>
-    public static List<SpaceChannelList>? GetChannelList(long mid)
+    public static IReadOnlyList<SpaceChannelList>? GetChannelList(long mid)
     {
         var url = $"https://api.bilibili.com/x/space/channel/list?mid={mid}";
         const string referer = "https://www.bilibili.com";
@@ -198,7 +198,7 @@ public static class UserSpace
     /// <param name="mid"></param>
     /// <param name="cid"></param>
     /// <returns></returns>
-    public static List<SpaceChannelArchive?> GetAllChannelVideoList(long mid, long cid)
+    public static IReadOnlyList<SpaceChannelArchive?> GetAllChannelVideoList(long mid, long cid)
     {
         var result = new List<SpaceChannelArchive?>();
 
@@ -228,7 +228,7 @@ public static class UserSpace
     /// <param name="pn"></param>
     /// <param name="ps"></param>
     /// <returns></returns>
-    public static List<SpaceChannelArchive>? GetChannelVideoList(long mid, long cid, int pn, int ps)
+    public static IReadOnlyList<SpaceChannelArchive>? GetChannelVideoList(long mid, long cid, int pn, int ps)
     {
         var url = $"https://api.bilibili.com/x/space/channel/video?mid={mid}&cid={cid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
@@ -340,7 +340,7 @@ public static class UserSpace
     /// <param name="pn">页码</param>
     /// <param name="ps">每页项数</param>
     /// <returns></returns>
-    public static List<SpaceCheese>? GetCheese(long mid, int pn, int ps)
+    public static IReadOnlyList<SpaceCheese>? GetCheese(long mid, int pn, int ps)
     {
         var url = $"https://api.bilibili.com/pugv/app/web/season/page?mid={mid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
@@ -358,7 +358,7 @@ public static class UserSpace
     /// </summary>
     /// <param name="mid">目标用户UID</param>
     /// <returns></returns>
-    public static List<SpaceCheese> GetAllCheese(long mid)
+    public static IReadOnlyList<SpaceCheese> GetAllCheese(long mid)
     {
         var result = new List<SpaceCheese>();
 
@@ -411,7 +411,7 @@ public static class UserSpace
     /// <param name="mid">目标用户UID</param>
     /// <param name="type">查询类型</param>
     /// <returns></returns>
-    public static List<BangumiFollow> GetAllBangumiFollow(long mid, BangumiType type)
+    public static IReadOnlyList<BangumiFollow> GetAllBangumiFollow(long mid, BangumiType type)
     {
         var result = new List<BangumiFollow>();
 

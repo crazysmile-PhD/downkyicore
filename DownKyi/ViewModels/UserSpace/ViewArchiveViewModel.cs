@@ -28,7 +28,7 @@ public class ViewArchiveViewModel : ViewModelBase
     public ObservableCollection<PublicationZone> PublicationZones
     {
         get => _publicationZones;
-        set => SetProperty(ref _publicationZones, value);
+        private set => SetProperty(ref _publicationZones, value);
     }
 
     private int _selectedItem;

@@ -100,7 +100,7 @@ public class FavoritesService : IFavoritesService
     /// <param name="result"></param>
     /// <param name="eventAggregator"></param>
     /// <param name="cancellationToken"></param>
-    public void GetFavoritesMediaList(List<FavoritesMedia> medias, ObservableCollection<ViewModels.PageViewModels.FavoritesMedia> result, IEventAggregator eventAggregator,
+    public void GetFavoritesMediaList(IReadOnlyList<FavoritesMedia> medias, ObservableCollection<ViewModels.PageViewModels.FavoritesMedia> result, IEventAggregator eventAggregator,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(medias);

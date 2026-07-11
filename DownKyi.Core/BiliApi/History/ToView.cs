@@ -14,7 +14,7 @@ namespace DownKyi.Core.BiliApi.History
         /// 获取稍后再看视频列表
         /// </summary>
         /// <returns></returns>
-        public static List<ToViewList>? GetToView()
+        public static IReadOnlyList<ToViewList>? GetToView()
         {
             const string url = "https://api.bilibili.com/x/v2/history/toview";
             const string referer = "https://www.bilibili.com";

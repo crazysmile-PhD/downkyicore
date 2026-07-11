@@ -23,6 +23,6 @@ public class SpaceSeasonsSeriesData : BaseModel
 public class SpaceSeasonsSeries : BaseModel
 {
     [JsonProperty("page")] public SpaceSeasonsSeriesPage Page { get; set; } = new();
-    [JsonProperty("seasons_list")] public List<SpaceSeasons> SeasonsList { get; set; } = new();
-    [JsonProperty("series_list")] public List<SpaceSeries> SeriesList { get; set; } = new();
+    [JsonProperty("seasons_list")] public IReadOnlyList<SpaceSeasons> SeasonsList { get; set; } = Array.Empty<SpaceSeasons>();
+    [JsonProperty("series_list")] public IReadOnlyList<SpaceSeries> SeriesList { get; set; } = Array.Empty<SpaceSeries>();
 }

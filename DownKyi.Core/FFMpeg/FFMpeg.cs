@@ -191,7 +191,7 @@ public class FFMpeg
     /// <param name="outputVideo">输出视频路径</param>
     /// <param name="action">进度回调</param>
     /// <returns>是否成功</returns>
-    public bool ConcatVideos(List<string> inputFlvs, string outputVideo, Action<string> action)
+    public bool ConcatVideos(IReadOnlyList<string> inputFlvs, string outputVideo, Action<string> action)
     {
         var listFile = string.Empty;
         try

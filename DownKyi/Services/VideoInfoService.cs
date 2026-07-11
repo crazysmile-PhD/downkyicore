@@ -46,7 +46,7 @@ public class VideoInfoService : IInfoService
     /// 获取视频剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoPage>? GetVideoPages(CancellationToken cancellationToken = default)
+    public IList<VideoPage>? GetVideoPages(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (_videoView?.Pages == null)
@@ -136,7 +136,7 @@ public class VideoInfoService : IInfoService
     /// 获取视频章节与剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoSection>? GetVideoSections(bool noUgc = false, CancellationToken cancellationToken = default)
+    public IList<VideoSection>? GetVideoSections(bool noUgc = false, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!(_videoView?.UgcSeason?.Sections?.Count > 0)) return null;
@@ -305,10 +305,10 @@ public class VideoInfoService : IInfoService
         // 分区
         var videoZone = string.Empty;
         var zoneList = VideoZone.Instance().GetZones();
-        var zone = zoneList.Find(it => it.Id == videoView.Tid);
+        var zone = zoneList.FirstOrDefault(it => it.Id == videoView.Tid);
         if (zone != null)
         {
-            var zoneParent = zoneList.Find(it => it.Id == zone.ParentId);
+            var zoneParent = zoneList.FirstOrDefault(it => it.Id == zone.ParentId);
             if (zoneParent != null)
             {
                 videoZone = zoneParent.Name + ">" + zone.Name;

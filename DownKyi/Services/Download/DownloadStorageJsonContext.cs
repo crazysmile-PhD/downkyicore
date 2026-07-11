@@ -8,5 +8,8 @@ namespace DownKyi.Services.Download;
 [JsonSerializable(typeof(Dictionary<string, bool>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(List<string>))]
+[JsonSerializable(typeof(IDictionary<string, bool>))]
+[JsonSerializable(typeof(IDictionary<string, string>))]
+[JsonSerializable(typeof(IList<string>))]
 [JsonSerializable(typeof(Quality))]
 internal sealed partial class DownloadStorageJsonContext : JsonSerializerContext;

@@ -234,7 +234,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// </summary>
     /// <param name="downloading"></param>
     /// <returns></returns>
-    public override List<string> DownloadSubtitle(DownloadingItem downloading)
+    public override IReadOnlyList<string> DownloadSubtitle(DownloadingItem downloading)
     {
         return BaseDownloadSubtitle(downloading);
     }

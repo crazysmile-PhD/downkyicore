@@ -6,19 +6,19 @@ namespace DownKyi.Core.Danmaku2Ass;
 public class Studio
 {
     private readonly System.Text.Encoding _outputEncoding;
-    public Config Config;
-    public List<Danmaku> Danmakus;
+    public Config Config { get; }
+    public IReadOnlyList<Danmaku> Danmakus { get; }
 
     public Creater Creater = null!;
     public int KeepedCount;
     public int DropedCount;
 
-    public Studio(Config config, List<Danmaku> danmakus)
+    public Studio(Config config, IReadOnlyList<Danmaku> danmakus)
         : this(config, danmakus, new System.Text.UTF8Encoding(false))
     {
     }
 
-    internal Studio(Config config, List<Danmaku> danmakus, System.Text.Encoding outputEncoding)
+    internal Studio(Config config, IReadOnlyList<Danmaku> danmakus, System.Text.Encoding outputEncoding)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(danmakus);

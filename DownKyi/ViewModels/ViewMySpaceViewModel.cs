@@ -258,7 +258,7 @@ public class ViewMySpaceViewModel : ViewModelBase
     public ObservableCollection<SpaceItem> StatusList
     {
         get => _statusList;
-        set => SetProperty(ref _statusList, value);
+        private set => SetProperty(ref _statusList, value);
     }
 
     private ObservableCollection<SpaceItem> _packageList = new();
@@ -266,7 +266,7 @@ public class ViewMySpaceViewModel : ViewModelBase
     public ObservableCollection<SpaceItem> PackageList
     {
         get => _packageList;
-        set => SetProperty(ref _packageList, value);
+        private set => SetProperty(ref _packageList, value);
     }
 
     private int _selectedStatus = -1;

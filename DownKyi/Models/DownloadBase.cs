@@ -28,7 +28,7 @@ public class DownloadBase
     public string Id { get; set; } = string.Empty;
 
     // 需要下载的内容
-    public Dictionary<string, bool> NeedDownloadContent { get; set; }
+    public IDictionary<string, bool> NeedDownloadContent { get; internal set; }
 
     // 视频的id
     public string Bvid { get; set; } = string.Empty;

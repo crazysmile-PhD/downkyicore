@@ -1,7 +1,7 @@
 # DownKyi Core Live Refactoring Plan
 
 Status: active
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 Current group: PR 02
 Next branch: `refactor/pr-02-host-composition`
 
@@ -29,7 +29,7 @@ Branch: `refactor/pr-02-host-composition`
 - Extend architecture tests to enforce package and namespace restrictions for every new project.
 - Preserve existing database, settings, login, portable-mode, and aria2 session paths.
 - Document every temporary bridge with its deletion PR; no permanent legacy adapter is allowed.
-- Fix the remaining 914 diagnostics across 24 CA rules in separate commits ordered by public API/collection design, then naming/globalization/style; 48 security, async, disposal, exception, lifecycle, null-contract, correctness, API-shape, performance, and allocation rules are already at zero and enforced as errors.
+- Fix the remaining 590 diagnostics across 24 CA rules in separate commits ordered by public API design, then naming/globalization/style; 50 security, async, disposal, exception, lifecycle, null-contract, correctness, collection, API-shape, performance, and allocation rules are already at zero and enforced as errors.
 - Preserve the external-protocol hash exception only where a contract test proves it is required; document why it is not a password or trust primitive.
 - Promote each fully cleaned rule to `error` in `.editorconfig`; finish with zero unhandled CA warnings and default `CodeAnalysisTreatWarningsAsErrors=true`.
 - Make local and CI analyzer settings identical and add required Windows, Linux, and macOS build or smoke coverage.

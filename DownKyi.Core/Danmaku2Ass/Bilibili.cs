@@ -106,10 +106,8 @@ public class Bilibili
     public void Create(long avid, long cid, Config subtitleConfig, string assFile, CancellationToken cancellationToken = default)
     {
         // 弹幕转换
-        var biliDanmakus = DanmakuProtobuf.GetAllDanmakuProto(avid, cid, cancellationToken);
-
-        // 按弹幕出现顺序排序
-        biliDanmakus.Sort((x, y) => { return x.Progress.CompareTo(y.Progress); });
+        var biliDanmakus = DanmakuProtobuf.GetAllDanmakuProto(avid, cid, cancellationToken)
+            .OrderBy(danmaku => danmaku.Progress);
 
         var danmakus = new List<Danmaku>();
         foreach (var biliDanmaku in biliDanmakus)

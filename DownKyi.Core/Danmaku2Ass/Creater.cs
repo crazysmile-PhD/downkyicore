@@ -5,12 +5,12 @@ namespace DownKyi.Core.Danmaku2Ass;
 /// </summary>
 public class Creater
 {
-    public Config Config;
-    public List<Danmaku> Danmakus;
-    public List<Subtitle> Subtitles;
-    public string Text;
+    public Config Config { get; }
+    public IReadOnlyList<Danmaku> Danmakus { get; }
+    public IReadOnlyList<Subtitle> Subtitles { get; }
+    public string Text { get; }
 
-    public Creater(Config config, List<Danmaku> danmakus)
+    public Creater(Config config, IReadOnlyList<Danmaku> danmakus)
     {
         Config = config;
         Danmakus = danmakus;
@@ -18,7 +18,7 @@ public class Creater
         Text = SetText();
     }
 
-    protected List<Subtitle> SetSubtitles()
+    protected IReadOnlyList<Subtitle> SetSubtitles()
     {
         var scroll = new Collision(Config.LineCount);
         var stayed = new Collision(Config.LineCount);

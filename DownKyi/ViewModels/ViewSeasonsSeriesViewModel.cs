@@ -116,7 +116,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     public ObservableCollection<ChannelMedia> Medias
     {
         get => _medias;
-        set => SetProperty(ref _medias, value);
+        private set => SetProperty(ref _medias, value);
     }
 
     private bool _isSelectAll;

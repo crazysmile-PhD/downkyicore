@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using DownKyi.Core.Settings;
@@ -82,9 +83,9 @@ public class ViewBasicViewModel : ViewModelBase
         set => SetProperty(ref _autoParseVideo, value);
     }
 
-    private List<ParseScopeDisplay> _parseScopes = new();
+    private IReadOnlyList<ParseScopeDisplay> _parseScopes = Array.Empty<ParseScopeDisplay>();
 
-    public List<ParseScopeDisplay> ParseScopes
+    public IReadOnlyList<ParseScopeDisplay> ParseScopes
     {
         get => _parseScopes;
         set => SetProperty(ref _parseScopes, value);
@@ -114,9 +115,9 @@ public class ViewBasicViewModel : ViewModelBase
         set => SetProperty(ref _repeatFileAutoAddNumberSuffix, value);
     }
 
-    private List<RepeatDownloadStrategyDisplay> _repeatDownloadStrategy = new();
+    private IReadOnlyList<RepeatDownloadStrategyDisplay> _repeatDownloadStrategy = Array.Empty<RepeatDownloadStrategyDisplay>();
 
-    public List<RepeatDownloadStrategyDisplay> RepeatDownloadStrategy
+    public IReadOnlyList<RepeatDownloadStrategyDisplay> RepeatDownloadStrategy
     {
         get => _repeatDownloadStrategy;
         set => SetProperty(ref _repeatDownloadStrategy, value);

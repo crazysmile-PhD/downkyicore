@@ -37,9 +37,9 @@ using DownKyi.Views.Toolbox;
 using DownKyi.Views.UserSpace;
 using Prism.DryIoc;
 using Prism.Ioc;
+using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 using ViewSeasonsSeries = DownKyi.Views.ViewSeasonsSeries;
 using ViewSeasonsSeriesViewModel = DownKyi.ViewModels.ViewSeasonsSeriesViewModel;
-using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 
 namespace DownKyi;
 
@@ -49,8 +49,8 @@ public partial class App : PrismApplication, IDisposable
     public const string RepoOwner = "crazysmile-PhD";
     public const string RepoName = "downkyicore";
 
-    public static ImmutableObservableCollection<DownloadingItem> DownloadingList { get; set; } = new();
-    public static ImmutableObservableCollection<DownloadedItem> DownloadedList { get; set; } = new();
+    public static ImmutableObservableCollection<DownloadingItem> DownloadingList { get; private set; } = new();
+    public static ImmutableObservableCollection<DownloadedItem> DownloadedList { get; private set; } = new();
     public new static App Current => (App)Application.Current!;
     public new MainWindow MainWindow => Container.Resolve<MainWindow>();
     public IClassicDesktopStyleApplicationLifetime? AppLife;
@@ -408,6 +408,6 @@ public partial class App : PrismApplication, IDisposable
     }
 
     private sealed record DownloadStartupState(
-        List<DownloadingItem> DownloadingItems,
-        List<DownloadedItem> DownloadedItems);
+        IReadOnlyList<DownloadingItem> DownloadingItems,
+        IReadOnlyList<DownloadedItem> DownloadedItems);
 }

@@ -22,7 +22,7 @@ public class AriaVersion
 [JsonObject]
 public class AriaVersionResult
 {
-    [JsonProperty("enabledFeatures")] public List<string> EnabledFeatures { get; set; } = new();
+    [JsonProperty("enabledFeatures")] public IReadOnlyList<string> EnabledFeatures { get; set; } = Array.Empty<string>();
 
     [JsonProperty("version")] public string Version { get; set; } = string.Empty;
 

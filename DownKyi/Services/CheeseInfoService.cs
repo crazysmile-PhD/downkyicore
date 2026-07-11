@@ -42,7 +42,7 @@ public class CheeseInfoService : IInfoService
     /// 获取视频剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoPage> GetVideoPages(System.Threading.CancellationToken cancellationToken = default)
+    public IList<VideoPage> GetVideoPages(System.Threading.CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var pages = new List<VideoPage>();
@@ -119,7 +119,7 @@ public class CheeseInfoService : IInfoService
     /// 获取视频章节与剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoSection>? GetVideoSections(bool noUgc = false, System.Threading.CancellationToken cancellationToken = default)
+    public IList<VideoSection>? GetVideoSections(bool noUgc = false, System.Threading.CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return null;

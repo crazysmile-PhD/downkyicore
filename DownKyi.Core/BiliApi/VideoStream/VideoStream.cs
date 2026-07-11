@@ -57,7 +57,7 @@ public static class VideoStream
     /// <param name="bvid"></param>
     /// <param name="cid"></param>
     /// <returns></returns>
-    public static List<SubRipText> GetSubtitle(long avid, string? bvid, long cid, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<SubRipText> GetSubtitle(long avid, string? bvid, long cid, CancellationToken cancellationToken = default)
     {
         var subRipTexts = new List<SubRipText>();
 

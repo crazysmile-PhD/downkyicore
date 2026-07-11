@@ -32,7 +32,7 @@ public class AddToDownloadService
     private readonly string Tag = "AddToDownloadService";
     private IInfoService _videoInfoService = null!;
     private VideoInfoView? _videoInfoView;
-    private List<VideoSection>? _videoSections;
+    private IList<VideoSection>? _videoSections;
     private DownloadStorageService _downloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
 
     // 下载内容
@@ -92,7 +92,7 @@ public class AddToDownloadService
         _videoInfoService = videoInfoService;
     }
 
-    public void GetVideo(VideoInfoView videoInfoView, List<VideoSection> videoSections)
+    public void GetVideo(VideoInfoView videoInfoView, IList<VideoSection> videoSections)
     {
         _videoInfoView = videoInfoView;
         _videoSections = videoSections;
@@ -415,7 +415,7 @@ public class AddToDownloadService
                 // 视频分区
                 var zoneId = -1;
                 var zoneList = VideoZone.Instance().GetZones();
-                var zone = zoneList.Find(it => it.Id == _videoInfoView?.TypeId);
+                var zone = zoneList.FirstOrDefault(it => it.Id == _videoInfoView?.TypeId);
                 if (zone != null)
                 {
                     if (zone.ParentId == 0)
@@ -424,7 +424,7 @@ public class AddToDownloadService
                     }
                     else
                     {
-                        var zoneParent = zoneList.Find(it => it.Id == zone.ParentId);
+                        var zoneParent = zoneList.FirstOrDefault(it => it.Id == zone.ParentId);
                         if (zoneParent != null)
                         {
                             zoneId = zoneParent.Id;
@@ -603,23 +603,25 @@ public class AddToDownloadService
             Plot = _videoInfoView?.Description ?? string.Empty,
             Year = page.OriginalPublishTime.Year.ToString(),
             Premiered = page.OriginalPublishTime.ToString("yyyy-MM-dd"),
-            BilibiliId = new UniqueId("bilibili", page.Bvid),
-            Actors = new List<Actor> { new(page.Owner?.Name ?? string.Empty, (page.Owner?.Mid ?? -1).ToString()) },
-            Genres = _videoInfoView?.VideoZone?.Split(">")?.ToList() ?? new List<string>(),
-            Tags = page.LazyTags?.Value ?? new List<string>(),
-            Ratings = score != null
-                ? new List<Rating>
-                {
-                    new()
-                    {
-                        IsDefault = true,
-                        Max = 10,
-                        Name = "bilibili",
-                        Value = score.Value
-                    }
-                }
-                : new List<Rating>()
+            BilibiliId = new UniqueId("bilibili", page.Bvid)
         };
+
+        metadata.Actors.Add(new Actor(page.Owner?.Name ?? string.Empty, (page.Owner?.Mid ?? -1).ToString()));
+        foreach (var genre in _videoInfoView?.VideoZone?.Split(">") ?? Array.Empty<string>())
+        {
+            metadata.Genres.Add(genre);
+        }
+
+        foreach (var tag in page.LazyTags?.Value ?? Enumerable.Empty<string>())
+        {
+            metadata.Tags.Add(tag);
+        }
+
+        if (score != null)
+        {
+            metadata.Ratings.Add(new Rating("bilibili", score.Value, isDefault: true));
+        }
+
         return metadata;
     }
 }

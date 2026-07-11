@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -73,9 +75,9 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _highSpeedDownloadMode, value);
     }
 
-    private List<int> _maxCurrentDownloads = new();
+    private IReadOnlyList<int> _maxCurrentDownloads = Array.Empty<int>();
 
-    public List<int> MaxCurrentDownloads
+    public IReadOnlyList<int> MaxCurrentDownloads
     {
         get => _maxCurrentDownloads;
         set => SetProperty(ref _maxCurrentDownloads, value);
@@ -105,9 +107,9 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _customNetworkProxy, value);
     }
 
-    private List<int> _splits = new();
+    private IReadOnlyList<int> _splits = Array.Empty<int>();
 
-    public List<int> Splits
+    public IReadOnlyList<int> Splits
     {
         get => _splits;
         set => SetProperty(ref _splits, value);
@@ -169,9 +171,9 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _ariaToken, value);
     }
 
-    private List<string> _ariaLogLevels = new();
+    private IReadOnlyList<string> _ariaLogLevels = Array.Empty<string>();
 
-    public List<string> AriaLogLevels
+    public IReadOnlyList<string> AriaLogLevels
     {
         get => _ariaLogLevels;
         set => SetProperty(ref _ariaLogLevels, value);
@@ -185,9 +187,9 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _selectedAriaLogLevel, value);
     }
 
-    private List<int> _ariaMaxConcurrentDownloads = new();
+    private IReadOnlyList<int> _ariaMaxConcurrentDownloads = Array.Empty<int>();
 
-    public List<int> AriaMaxConcurrentDownloads
+    public IReadOnlyList<int> AriaMaxConcurrentDownloads
     {
         get => _ariaMaxConcurrentDownloads;
         set => SetProperty(ref _ariaMaxConcurrentDownloads, value);
@@ -201,9 +203,9 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _selectedAriaMaxConcurrentDownload, value);
     }
 
-    private List<int> _ariaSplits = new();
+    private IReadOnlyList<int> _ariaSplits = Array.Empty<int>();
 
-    public List<int> AriaSplits
+    public IReadOnlyList<int> AriaSplits
     {
         get => _ariaSplits;
         set => SetProperty(ref _ariaSplits, value);
@@ -217,9 +219,9 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _selectedAriaSplit, value);
     }
 
-    private List<int> _ariaMaxConnectionPerServers = new();
+    private IReadOnlyList<int> _ariaMaxConnectionPerServers = Array.Empty<int>();
 
-    public List<int> AriaMaxConnectionPerServers
+    public IReadOnlyList<int> AriaMaxConnectionPerServers
     {
         get => _ariaMaxConnectionPerServers;
         set => SetProperty(ref _ariaMaxConnectionPerServers, value);
@@ -233,9 +235,9 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _selectedAriaMaxConnectionPerServer, value);
     }
 
-    private List<int> _ariaMinSplitSizes = new();
+    private IReadOnlyList<int> _ariaMinSplitSizes = Array.Empty<int>();
 
-    public List<int> AriaMinSplitSizes
+    public IReadOnlyList<int> AriaMinSplitSizes
     {
         get => _ariaMinSplitSizes;
         set => SetProperty(ref _ariaMinSplitSizes, value);
@@ -289,9 +291,9 @@ public class ViewNetworkViewModel : ViewModelBase
         set => SetProperty(ref _ariaHttpProxyPort, value);
     }
 
-    private List<string> _ariaFileAllocations = new();
+    private IReadOnlyList<string> _ariaFileAllocations = Array.Empty<string>();
 
-    public List<string> AriaFileAllocations
+    public IReadOnlyList<string> AriaFileAllocations
     {
         get => _ariaFileAllocations;
         set => SetProperty(ref _ariaFileAllocations, value);
@@ -313,18 +315,10 @@ public class ViewNetworkViewModel : ViewModelBase
         #region 属性初始化
 
         // builtin同时下载数
-        MaxCurrentDownloads = new List<int>();
-        for (var i = 1; i <= 10; i++)
-        {
-            MaxCurrentDownloads.Add(i);
-        }
+        MaxCurrentDownloads = Enumerable.Range(1, 10).ToArray();
 
         // builtin最大线程数
-        Splits = new List<int>();
-        for (var i = 1; i <= 16; i++)
-        {
-            Splits.Add(i);
-        }
+        Splits = Enumerable.Range(1, 16).ToArray();
 
         // Aria的日志等级
         AriaLogLevels = new List<string>
@@ -337,25 +331,13 @@ public class ViewNetworkViewModel : ViewModelBase
         };
 
         // Aria同时下载数
-        AriaMaxConcurrentDownloads = new List<int>();
-        for (var i = 1; i <= 10; i++)
-        {
-            AriaMaxConcurrentDownloads.Add(i);
-        }
+        AriaMaxConcurrentDownloads = Enumerable.Range(1, 10).ToArray();
 
         // Aria最大线程数
-        AriaSplits = new List<int>();
-        for (var i = 1; i <= 16; i++)
-        {
-            AriaSplits.Add(i);
-        }
+        AriaSplits = Enumerable.Range(1, 16).ToArray();
 
         // Aria per-server connections
-        AriaMaxConnectionPerServers = new List<int>();
-        for (var i = 1; i <= 16; i++)
-        {
-            AriaMaxConnectionPerServers.Add(i);
-        }
+        AriaMaxConnectionPerServers = Enumerable.Range(1, 16).ToArray();
 
         AriaMinSplitSizes = new List<int>
         {

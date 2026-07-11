@@ -26,11 +26,11 @@ public static class ListHelper
     /// <typeparam name="T"></typeparam>
     /// <param name="list"></param>
     /// <param name="item"></param>
-    public static void AddUnique<T>(List<T> list, T item)
+    public static void AddUnique<T>(IList<T> list, T item)
     {
         ArgumentNullException.ThrowIfNull(list);
 
-        if (!list.Exists(t => EqualityComparer<T>.Default.Equals(t, item)))
+        if (!list.Contains(item))
         {
             list.Add(item);
         }

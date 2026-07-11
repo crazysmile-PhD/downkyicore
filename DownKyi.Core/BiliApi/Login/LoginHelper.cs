@@ -92,7 +92,7 @@ public static class LoginHelper
     /// </summary>
     /// <param name="cookies"></param>
     /// <returns></returns>
-    public static bool SaveLoginInfoCookies(List<DownKyiCookie> cookies)
+    public static bool SaveLoginInfoCookies(IReadOnlyList<DownKyiCookie> cookies)
     {
         var tempFile = LocalLoginInfo + "-" + Guid.NewGuid().ToString("N");
 
@@ -142,7 +142,7 @@ public static class LoginHelper
     /// 获得登录的cookies，结果会被缓存到内存中，直到下次写操作使缓存失效
     /// </summary>
     /// <returns></returns>
-    public static List<DownKyiCookie> GetLoginInfoCookies()
+    public static IReadOnlyList<DownKyiCookie> GetLoginInfoCookies()
     {
         // 先尝试从缓存读取
         CacheLock.EnterReadLock();

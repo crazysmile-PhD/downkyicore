@@ -16,10 +16,10 @@ public class VideoSettings
     public FfmpegHardwareAcceleration FfmpegHardwareAcceleration { get; set; } = FfmpegHardwareAcceleration.NotSet;
     public int FfmpegMaxParallelJobs { get; set; } = -1;
     public string? SaveVideoRootPath { get; set; } // 视频保存路径
-    public List<string>? HistoryVideoRootPaths { get; set; } // 历史视频保存路径
+    public IReadOnlyList<string>? HistoryVideoRootPaths { get; set; } // 历史视频保存路径
     public AllowStatus IsUseSaveVideoRootPath { get; set; } = AllowStatus.None; // 是否使用默认视频保存路径
     public VideoContentSettings? VideoContent { get; set; } // 下载内容
-    public List<FileNamePart>? FileNameParts { get; set; } // 文件命名格式
+    public IReadOnlyList<FileNamePart>? FileNameParts { get; set; } // 文件命名格式
     public string? FileNamePartTimeFormat { get; set; } // 文件命名中的时间格式
     public OrderFormat OrderFormat { get; set; } = OrderFormat.NotSet; // 文件命名中的序号格式
 }

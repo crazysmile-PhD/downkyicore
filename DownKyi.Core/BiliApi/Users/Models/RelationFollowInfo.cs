@@ -8,7 +8,7 @@ public class RelationFollowInfo : BaseModel
     [JsonProperty("mid")] public long Mid { get; set; }
     [JsonProperty("attribute")] public int Attribute { get; set; }
     [JsonProperty("mtime")] public long Mtime { get; set; }
-    [JsonProperty("tag")] public List<long> Tag { get; set; } = new();
+    [JsonProperty("tag")] public IReadOnlyList<long> Tag { get; set; } = Array.Empty<long>();
 
     [JsonProperty("special")] public int Special { get; set; }
 

@@ -19,7 +19,7 @@ public class FavoritesList : BaseModel
 {
     [JsonProperty("count")] public int Count { get; set; }
 
-    [JsonProperty("list")] public List<FavoritesMetaInfo> List { get; set; } = new();
+    [JsonProperty("list")] public IReadOnlyList<FavoritesMetaInfo> List { get; set; } = Array.Empty<FavoritesMetaInfo>();
     //[JsonProperty("has_more")]
     //public bool HasMore { get; set; }
 }

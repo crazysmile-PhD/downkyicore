@@ -80,7 +80,7 @@ public class ViewFollowerViewModel : ViewModelBase
     public ObservableCollection<FriendInfo> Contents
     {
         get => _contents;
-        set => SetProperty(ref _contents, value);
+        private set => SetProperty(ref _contents, value);
     }
 
     #endregion
@@ -100,7 +100,7 @@ public class ViewFollowerViewModel : ViewModelBase
     }
 
 
-    private void LoadContent(List<RelationFollowInfo> contents)
+    private void LoadContent(IReadOnlyList<RelationFollowInfo> contents)
     {
         ContentVisibility = true;
         LoadingVisibility = false;
@@ -123,7 +123,7 @@ public class ViewFollowerViewModel : ViewModelBase
         NoDataVisibility = false;
 
         RelationFollow? data = null;
-        List<RelationFollowInfo>? contents = null;
+        IReadOnlyList<RelationFollowInfo>? contents = null;
         await Task.Run(() =>
         {
             data = UserRelation.GetFollowers(_mid, current, NumberInPage);

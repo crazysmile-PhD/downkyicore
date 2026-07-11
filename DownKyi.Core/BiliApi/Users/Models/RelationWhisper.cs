@@ -11,6 +11,6 @@ public class RelationWhisper : BaseModel
 
 public class RelationWhisperData : BaseModel
 {
-    [JsonProperty("list")] public List<RelationFollowInfo> List { get; set; } = new();
+    [JsonProperty("list")] public IReadOnlyList<RelationFollowInfo> List { get; set; } = Array.Empty<RelationFollowInfo>();
     // re_version
 }

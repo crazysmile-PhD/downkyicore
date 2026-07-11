@@ -17,7 +17,7 @@ public static class ObjectHelper
     /// </summary>
     /// <param name="url"></param>
     /// <returns></returns>
-    public static List<DownKyiCookie> ParseCookie(string? url)
+    public static IReadOnlyList<DownKyiCookie> ParseCookie(string? url)
     {
         var cookies = new List<DownKyiCookie>();
         if (url is null or "") return cookies;
@@ -83,7 +83,7 @@ public static class ObjectHelper
     /// <param name="file"></param>
     /// <param name="cookieJar"></param>
     /// <returns></returns>
-    public static bool WriteCookiesToDisk(string file, List<DownKyiCookie> cookieJar)
+    public static bool WriteCookiesToDisk(string file, IReadOnlyList<DownKyiCookie> cookieJar)
     {
         return WriteObjectToDisk(file, cookieJar);
     }
@@ -93,7 +93,7 @@ public static class ObjectHelper
     /// </summary>
     /// <param name="file"></param>
     /// <returns></returns>
-    public static List<DownKyiCookie>? ReadCookiesFromDisk(string file)
+    public static IReadOnlyList<DownKyiCookie>? ReadCookiesFromDisk(string file)
     {
         try
         {
@@ -126,7 +126,7 @@ public static class ObjectHelper
     /// </summary>
     /// <param name="stream"></param>
     /// <returns></returns>
-    public static List<DownKyiCookie>? ReadCookiesFromStream(Stream stream)
+    public static IReadOnlyList<DownKyiCookie>? ReadCookiesFromStream(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
 

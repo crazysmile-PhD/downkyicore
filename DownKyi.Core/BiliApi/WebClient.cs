@@ -216,7 +216,7 @@ public static class WebClient
         {
             request.Headers.Add("origin", "https://www.bilibili.com");
 
-            var cookies = LoginHelper.GetLoginInfoCookies();
+            var cookies = LoginHelper.GetLoginInfoCookies().ToList();
 
             if (!string.IsNullOrEmpty(_bvuid3))
             {

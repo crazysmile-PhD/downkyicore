@@ -11,7 +11,7 @@ public class BangumiFollowOrigin : BaseModel
 
 public class BangumiFollowData : BaseModel
 {
-    [JsonProperty("list")] public List<BangumiFollow> List { get; set; } = new();
+    [JsonProperty("list")] public IReadOnlyList<BangumiFollow> List { get; set; } = Array.Empty<BangumiFollow>();
     [JsonProperty("pn")] public int Pn { get; set; }
     [JsonProperty("ps")] public int Ps { get; set; }
     [JsonProperty("total")] public int Total { get; set; }

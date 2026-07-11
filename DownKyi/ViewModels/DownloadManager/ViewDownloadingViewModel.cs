@@ -27,7 +27,7 @@ namespace DownKyi.ViewModels.DownloadManager
         public ImmutableObservableCollection<DownloadingItem> DownloadingList
         {
             get => _downloadingList;
-            set => SetProperty(ref _downloadingList, value);
+            private set => SetProperty(ref _downloadingList, value);
         }
 
         #endregion

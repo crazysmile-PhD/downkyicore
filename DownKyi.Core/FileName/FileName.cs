@@ -4,7 +4,7 @@ namespace DownKyi.Core.FileName;
 
 public class FileName
 {
-    private readonly List<FileNamePart> _nameParts;
+    private readonly IReadOnlyList<FileNamePart> _nameParts;
     private string _order = "ORDER";
     private string _section = "SECTION";
     private string _mainTitle = "MAIN_TITLE";
@@ -23,12 +23,12 @@ public class FileName
     private long _upMid = -1;
     private string _upName = "UP_NAME";
 
-    private FileName(List<FileNamePart> nameParts)
+    private FileName(IReadOnlyList<FileNamePart> nameParts)
     {
         this._nameParts = nameParts;
     }
 
-    public static FileName Builder(List<FileNamePart> nameParts)
+    public static FileName Builder(IReadOnlyList<FileNamePart> nameParts)
     {
         return new FileName(nameParts);
     }

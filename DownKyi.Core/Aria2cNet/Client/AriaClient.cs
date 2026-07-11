@@ -39,7 +39,7 @@ public static class AriaClient
     /// <param name="dir"></param>
     /// <param name="outFile"></param>
     /// <returns></returns>
-    public static async Task<AriaAddUri> AddUriAsync(List<string> uris, AriaSendOption option, int position = -1)
+    public static async Task<AriaAddUri> AddUriAsync(IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
@@ -89,7 +89,7 @@ public static class AriaClient
     /// <param name="uris"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public static async Task<AriaAddTorrent> AddTorrentAsync(string torrent, List<string> uris, AriaSendOption option, int position = -1)
+    public static async Task<AriaAddTorrent> AddTorrentAsync(string torrent, IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
@@ -134,7 +134,7 @@ public static class AriaClient
     /// <param name="uris"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public static async Task<AriaAddMetalink> AddMetalinkAsync(string metalink, List<string> uris, AriaSendOption option, int position = -1)
+    public static async Task<AriaAddMetalink> AddMetalinkAsync(string metalink, IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
@@ -633,7 +633,7 @@ public static class AriaClient
     /// <param name="addUris"></param>
     /// <param name="position"></param>
     /// <returns></returns>
-    public static async Task<AriaChangeUri> ChangeUriAsync(string gid, int fileIndex, List<string> delUris, List<string> addUris, int position = -1)
+    public static async Task<AriaChangeUri> ChangeUriAsync(string gid, int fileIndex, IReadOnlyList<string> delUris, IReadOnlyList<string> addUris, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
@@ -970,7 +970,7 @@ public static class AriaClient
     /// </summary>
     /// <param name="systemMulticallMathods"></param>
     /// <returns></returns>
-    public static async Task<List<SystemMulticall>> MulticallAsync(List<SystemMulticallMathod> systemMulticallMathods)
+    public static async Task<List<SystemMulticall>> MulticallAsync(IReadOnlyList<SystemMulticallMathod> systemMulticallMathods)
     {
         List<object> ariaParams = new List<object>
         {

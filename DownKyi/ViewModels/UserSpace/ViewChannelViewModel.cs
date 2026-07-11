@@ -21,7 +21,7 @@ public class ViewChannelViewModel : ViewModelBase
     public ObservableCollection<Channel> Channels
     {
         get => channels;
-        set => SetProperty(ref channels, value);
+        private set => SetProperty(ref channels, value);
     }
 
     private int selectedItem;

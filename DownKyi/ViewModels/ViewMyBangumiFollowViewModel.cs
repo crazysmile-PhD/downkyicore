@@ -66,7 +66,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
     public ObservableCollection<TabHeader> TabHeaders
     {
         get => _tabHeaders;
-        set => SetProperty(ref _tabHeaders, value);
+        private set => SetProperty(ref _tabHeaders, value);
     }
 
     private int _selectTabId;
@@ -106,7 +106,7 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
     public ObservableCollection<BangumiFollowMedia> Medias
     {
         get => _medias;
-        set => SetProperty(ref _medias, value);
+        private set => SetProperty(ref _medias, value);
     }
 
     private bool _isSelectAll;

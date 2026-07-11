@@ -14,7 +14,7 @@ public class VideoZone
         return _that ??= new VideoZone();
     }
 
-    public List<ZoneAttr> GetZones()
+    public IReadOnlyList<ZoneAttr> GetZones()
     {
         return _zones;
     }

@@ -5,14 +5,14 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 
 public class SpaceSeasons : BaseModel
 {
-    [JsonProperty("archives")] public List<SpaceSeasonsSeriesArchives> Archives { get; set; } = new();
+    [JsonProperty("archives")] public IReadOnlyList<SpaceSeasonsSeriesArchives> Archives { get; set; } = Array.Empty<SpaceSeasonsSeriesArchives>();
     [JsonProperty("meta")] public SpaceSeasonsMeta Meta { get; set; } = new();
-    [JsonProperty("recent_aids")] public List<long> RecentAids { get; set; } = new();
+    [JsonProperty("recent_aids")] public IReadOnlyList<long> RecentAids { get; set; } = Array.Empty<long>();
 }
 
 public class SpaceSeries : BaseModel
 {
-    [JsonProperty("archives")] public List<SpaceSeasonsSeriesArchives> Archives { get; set; } = new();
+    [JsonProperty("archives")] public IReadOnlyList<SpaceSeasonsSeriesArchives> Archives { get; set; } = Array.Empty<SpaceSeasonsSeriesArchives>();
     [JsonProperty("meta")] public SpaceSeriesMeta Meta { get; set; } = new();
-    [JsonProperty("recent_aids")] public List<long> RecentAids { get; set; } = new();
+    [JsonProperty("recent_aids")] public IReadOnlyList<long> RecentAids { get; set; } = Array.Empty<long>();
 }

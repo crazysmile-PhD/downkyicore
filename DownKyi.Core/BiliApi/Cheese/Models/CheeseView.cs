@@ -30,7 +30,7 @@ public class CheeseView : BaseModel
     // episode_page
     // episode_sort
     // episode_tag
-    [JsonProperty("episodes")] public List<CheeseEpisode> Episodes { get; set; } = new();
+    [JsonProperty("episodes")] public IReadOnlyList<CheeseEpisode> Episodes { get; set; } = Array.Empty<CheeseEpisode>();
 
     // faq
     // faq1

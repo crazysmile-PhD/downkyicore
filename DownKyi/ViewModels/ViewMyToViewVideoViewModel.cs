@@ -65,7 +65,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
     public ObservableCollection<ToViewMedia> Medias
     {
         get => _medias;
-        set => SetProperty(ref _medias, value);
+        private set => SetProperty(ref _medias, value);
     }
 
     private bool _isSelectAll;
