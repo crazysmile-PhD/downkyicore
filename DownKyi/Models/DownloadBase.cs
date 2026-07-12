@@ -6,7 +6,7 @@ using DownKyi.Core.BiliApi.BiliUtils;
 namespace DownKyi.Models;
 
 [Description("下载项的基础信息")]
-public class DownloadBase
+internal class DownloadBase
 {
     public DownloadBase()
     {

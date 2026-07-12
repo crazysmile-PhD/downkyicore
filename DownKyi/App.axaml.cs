@@ -43,7 +43,7 @@ using ViewSeasonsSeriesViewModel = DownKyi.ViewModels.ViewSeasonsSeriesViewModel
 
 namespace DownKyi;
 
-public partial class App : PrismApplication, IDisposable
+internal partial class App : PrismApplication, IDisposable
 {
     private bool _disposed;
     public const string RepoOwner = "crazysmile-PhD";

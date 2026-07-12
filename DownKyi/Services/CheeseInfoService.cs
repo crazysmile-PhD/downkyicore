@@ -14,7 +14,7 @@ using DownKyi.ViewModels.PageViewModels;
 
 namespace DownKyi.Services;
 
-public class CheeseInfoService : IInfoService
+internal class CheeseInfoService : IInfoService
 {
     private readonly CheeseView? _cheeseView;
 

@@ -6,7 +6,7 @@ using Avalonia.Media;
 
 namespace DownKyi.CustomControl;
 
-public class VideoFramePreview : Control
+internal class VideoFramePreview : Control
 {
     public static readonly DirectProperty<VideoFramePreview, IImage?> SourceProperty =
         AvaloniaProperty.RegisterDirect<VideoFramePreview, IImage?>(

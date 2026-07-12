@@ -10,7 +10,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewModelBase : BindableBase, INavigationAware, IDisposable
+internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
 {
     private bool _disposed;
     protected IEventAggregator EventAggregator { get; }

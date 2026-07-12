@@ -29,7 +29,7 @@ using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Services.Download;
 
-public abstract class DownloadService : IDisposable
+internal abstract class DownloadService : IDisposable
 {
     private bool _disposed;
     protected string Tag { get; set; } = "DownloadService";

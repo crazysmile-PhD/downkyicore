@@ -1,6 +1,6 @@
 namespace DownKyi.Images;
 
-public class SystemIcon
+internal class SystemIcon
 {
     private static SystemIcon? _instance;
 

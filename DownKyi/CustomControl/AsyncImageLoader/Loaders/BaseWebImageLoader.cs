@@ -8,7 +8,7 @@ using Avalonia.Platform;
 
 namespace DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
-public class BaseWebImageLoader : IAsyncImageLoader
+internal class BaseWebImageLoader : IAsyncImageLoader
 {
     private readonly ParametrizedLogger? _logger;
     private readonly bool _shouldDisposeHttpClient;

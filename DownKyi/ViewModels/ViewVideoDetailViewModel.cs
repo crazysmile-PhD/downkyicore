@@ -31,7 +31,7 @@ using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels;
 
-public class ViewVideoDetailViewModel : ViewModelBase
+internal class ViewVideoDetailViewModel : ViewModelBase
 {
     public const string Tag = "PageVideoDetail";
 

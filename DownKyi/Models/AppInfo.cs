@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace DownKyi.Models;
 
-public class AppInfo
+internal class AppInfo
 {
     public string Name { get; } = "哔哩下载姬";
     public int VersionCode { get; }

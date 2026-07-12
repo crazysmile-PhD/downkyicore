@@ -7,7 +7,7 @@ using Avalonia.Platform.Storage;
 
 namespace DownKyi.Utils;
 
-public static class DialogUtils
+internal static class DialogUtils
 {
     private static readonly string DefaultDirectory = AppDomain.CurrentDomain.BaseDirectory;
     private static readonly FilePickerFileType[] VideoFileTypes =

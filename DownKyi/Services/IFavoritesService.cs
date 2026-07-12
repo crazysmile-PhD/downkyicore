@@ -7,7 +7,7 @@ using FavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
 
 namespace DownKyi.Services;
 
-public interface IFavoritesService
+internal interface IFavoritesService
 {
     FavoritesPageItem? GetFavorites(long mediaId, CancellationToken cancellationToken = default);
 

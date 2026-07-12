@@ -9,7 +9,7 @@ using Prism.Ioc;
 
 namespace DownKyi.PrismExtension.Dialog;
 
-public class DialogService : Prism.Dialogs.DialogService, IDialogService
+internal class DialogService : Prism.Dialogs.DialogService, IDialogService
 {
     private readonly IContainerExtension _containerExtension;
 

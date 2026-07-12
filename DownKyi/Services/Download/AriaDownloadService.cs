@@ -24,7 +24,7 @@ using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
 
-public class AriaDownloadService : DownloadService, IDownloadService
+internal class AriaDownloadService : DownloadService, IDownloadService
 {
     public AriaDownloadService(
         ImmutableObservableCollection<DownloadingItem> downloadingList,

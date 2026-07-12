@@ -19,7 +19,7 @@ using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels;
 
-public class ViewIndexViewModel : ViewModelBase
+internal class ViewIndexViewModel : ViewModelBase
 {
     public const string Tag = "PageIndex";
 

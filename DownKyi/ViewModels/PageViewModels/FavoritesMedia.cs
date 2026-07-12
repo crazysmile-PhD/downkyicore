@@ -7,7 +7,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class FavoritesMedia : BindableBase
+internal class FavoritesMedia : BindableBase
 {
     protected IEventAggregator EventAggregator { get; }
 

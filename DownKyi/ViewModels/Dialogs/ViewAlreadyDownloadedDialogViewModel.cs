@@ -5,7 +5,7 @@ using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-public class ViewAlreadyDownloadedDialogViewModel : BaseDialogViewModel
+internal class ViewAlreadyDownloadedDialogViewModel : BaseDialogViewModel
 {
     public const string Tag = "AlreadyDownloadedAlert";
 

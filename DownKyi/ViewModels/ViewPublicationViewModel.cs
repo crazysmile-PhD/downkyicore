@@ -26,7 +26,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
 {
-    public class ViewPublicationViewModel : ViewModelBase
+    internal class ViewPublicationViewModel : ViewModelBase
     {
         public const string Tag = "PagePublication";
 

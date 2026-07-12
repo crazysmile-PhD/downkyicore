@@ -5,7 +5,7 @@ using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-public class ViewAlertDialogViewModel : BaseDialogViewModel
+internal class ViewAlertDialogViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogAlert";
 

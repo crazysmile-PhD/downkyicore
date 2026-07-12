@@ -12,7 +12,7 @@ using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs
 {
-    public class NewVersionAvailableDialogViewModel : BaseDialogViewModel
+    internal class NewVersionAvailableDialogViewModel : BaseDialogViewModel
     {
         public const string Tag = "NewVersionAvailable";
 

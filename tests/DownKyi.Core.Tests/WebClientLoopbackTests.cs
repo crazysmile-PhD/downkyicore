@@ -4,7 +4,6 @@ using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 
 namespace DownKyi.Core.Tests;
 
-[Collection(WebClientTestGroup.Name)]
 public sealed class WebClientLoopbackTests : IDisposable
 {
     public WebClientLoopbackTests()

@@ -21,7 +21,7 @@ using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels;
 
-public sealed class MainWindowViewModel : BindableBase, IDisposable
+internal sealed class MainWindowViewModel : BindableBase, IDisposable
 {
     private bool _disposed;
     private readonly IEventAggregator _eventAggregator;

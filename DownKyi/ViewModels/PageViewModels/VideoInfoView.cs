@@ -4,7 +4,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class VideoInfoView : BindableBase
+internal class VideoInfoView : BindableBase
 {
     private string _coverUrl = string.Empty;
 

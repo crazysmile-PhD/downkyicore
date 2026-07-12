@@ -11,7 +11,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewDownloadManagerViewModel : ViewModelBase
+internal class ViewDownloadManagerViewModel : ViewModelBase
 {
     public const string Tag = "PageDownloadManager";
 

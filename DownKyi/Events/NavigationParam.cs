@@ -1,6 +1,6 @@
 namespace DownKyi.Events;
 
-public class NavigationParam
+internal class NavigationParam
 {
     public string? ViewName { get; set; }
     public string? ParentViewName { get; set; }

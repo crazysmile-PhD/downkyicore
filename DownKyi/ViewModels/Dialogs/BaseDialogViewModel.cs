@@ -8,7 +8,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-public class BaseDialogViewModel : BindableBase, IDialogAware
+internal class BaseDialogViewModel : BindableBase, IDialogAware
 {
     #region 页面属性申明
 

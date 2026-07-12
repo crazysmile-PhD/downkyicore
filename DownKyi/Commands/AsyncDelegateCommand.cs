@@ -7,7 +7,7 @@ using DownKyi.Core.Logging;
 
 namespace DownKyi.Commands;
 
-public class DownKyiAsyncDelegateCommand<T> : ICommand
+internal class DownKyiAsyncDelegateCommand<T> : ICommand
 {
     private readonly Func<T?, Task> _execute;
     private readonly Func<T, bool>? _canExecute;
@@ -114,7 +114,7 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
     }
 }
 
-public class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
+internal class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
 {
     public DownKyiAsyncDelegateCommand(Func<object?, Task> execute, Func<object, bool>? canExecute = null)
         : base(execute, canExecute)

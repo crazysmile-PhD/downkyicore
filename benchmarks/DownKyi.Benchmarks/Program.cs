@@ -12,6 +12,6 @@ internal static class Program
             Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Environment.SetEnvironmentVariable("DOWNKYI_DATA_DIR", dataRoot);
 
-        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+        BenchmarkSwitcher.FromAssembly(typeof(RequestPreparationBenchmarks).Assembly).Run(args);
     }
 }

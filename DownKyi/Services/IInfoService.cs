@@ -3,7 +3,7 @@ using DownKyi.ViewModels.PageViewModels;
 
 namespace DownKyi.Services;
 
-public interface IInfoService
+internal interface IInfoService
 {
     VideoInfoView? GetVideoView(System.Threading.CancellationToken cancellationToken = default);
 

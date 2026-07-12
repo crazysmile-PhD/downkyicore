@@ -8,7 +8,7 @@ using Avalonia.Media.Imaging;
 
 namespace DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
-public class DiskCachedWebImageLoader : BaseWebImageLoader
+internal class DiskCachedWebImageLoader : BaseWebImageLoader
 {
     private readonly string _cacheFolder;
 

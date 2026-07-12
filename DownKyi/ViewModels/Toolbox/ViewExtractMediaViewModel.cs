@@ -13,7 +13,7 @@ using Prism.Events;
 
 namespace DownKyi.ViewModels.Toolbox;
 
-public class ViewExtractMediaViewModel : ViewModelBase
+internal class ViewExtractMediaViewModel : ViewModelBase
 {
     public const string Tag = "PageToolboxExtractMedia";
 

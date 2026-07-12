@@ -8,7 +8,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 namespace DownKyi.ViewModels;
 
-public sealed class ImmutableObservableCollection<T> : IList<T>, IList, INotifyCollectionChanged, INotifyPropertyChanged
+internal sealed class ImmutableObservableCollection<T> : IList<T>, IList, INotifyCollectionChanged, INotifyPropertyChanged
 {
     private ImmutableList<T> _items;
 

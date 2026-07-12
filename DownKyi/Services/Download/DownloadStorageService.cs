@@ -19,7 +19,7 @@ namespace DownKyi.Services.Download;
 /// 使用原生 SQLite（Microsoft.Data.Sqlite）替代 FreeSql 的下载存储服务。
 /// 单例生命周期，内部维持长连接，读写操作通过 lock 保证线程安全。
 /// </summary>
-public sealed class DownloadStorageService : IDisposable
+internal sealed class DownloadStorageService : IDisposable
 {
     private const string Tag = "DownloadStorageService";
     private readonly SqliteConnection _connection;

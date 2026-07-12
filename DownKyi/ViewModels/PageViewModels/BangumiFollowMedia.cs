@@ -7,7 +7,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class BangumiFollowMedia : BindableBase
+internal class BangumiFollowMedia : BindableBase
 {
     protected IEventAggregator EventAggregator { get; }
 

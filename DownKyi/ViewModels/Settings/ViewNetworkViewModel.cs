@@ -19,7 +19,7 @@ using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.Settings;
 
-public class ViewNetworkViewModel : ViewModelBase
+internal class ViewNetworkViewModel : ViewModelBase
 {
     public const string Tag = "PageSettingsNetwork";
 

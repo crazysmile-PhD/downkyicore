@@ -6,7 +6,7 @@ using Avalonia.Xaml.Interactivity;
 
 namespace DownKyi.CustomAction;
 
-public class NumericInputBehavior : Behavior<TextBox>
+internal class NumericInputBehavior : Behavior<TextBox>
 {
     protected override void OnAttached()
     {

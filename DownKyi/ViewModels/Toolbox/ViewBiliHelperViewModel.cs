@@ -10,7 +10,7 @@ using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels.Toolbox;
 
-public class ViewBiliHelperViewModel : ViewModelBase
+internal class ViewBiliHelperViewModel : ViewModelBase
 {
     public const string Tag = "PageToolboxBiliHelper";
 

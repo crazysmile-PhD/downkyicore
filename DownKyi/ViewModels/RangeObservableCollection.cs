@@ -7,7 +7,7 @@ using System.Linq;
 
 namespace DownKyi.ViewModels;
 
-public sealed class RangeObservableCollection<T> : ObservableCollection<T>
+internal sealed class RangeObservableCollection<T> : ObservableCollection<T>
 {
     public RangeObservableCollection()
     {

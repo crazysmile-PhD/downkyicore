@@ -3,7 +3,6 @@ using DownKyi.Core.Aria2cNet.Server;
 
 namespace DownKyi.Core.Tests;
 
-[Collection(ProcessTestGroup.Name)]
 public sealed class AriaServerProcessTests
 {
     [Fact]
@@ -45,10 +44,4 @@ public sealed class AriaServerProcessTests
         return Process.Start(startInfo)
                ?? throw new InvalidOperationException("Could not start the process used by the cleanup test.");
     }
-}
-
-[CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class ProcessTestGroup
-{
-    public const string Name = "External process tests";
 }

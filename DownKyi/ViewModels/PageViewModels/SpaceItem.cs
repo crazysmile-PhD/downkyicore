@@ -3,7 +3,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class SpaceItem : BindableBase
+internal class SpaceItem : BindableBase
 {
     private bool _isEnabled;
 

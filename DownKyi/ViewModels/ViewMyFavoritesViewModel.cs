@@ -24,7 +24,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewMyFavoritesViewModel : ViewModelBase
+internal class ViewMyFavoritesViewModel : ViewModelBase
 {
     public const string Tag = "PageMyFavorites";
 

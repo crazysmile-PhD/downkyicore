@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views.UserSpace;
 
-public partial class ViewArchive : UserControl
+internal partial class ViewArchive : UserControl
 {
     public ViewArchive()
     {

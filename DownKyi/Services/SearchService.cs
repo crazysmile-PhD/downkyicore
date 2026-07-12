@@ -6,7 +6,7 @@ using Prism.Events;
 
 namespace DownKyi.Services;
 
-public class SearchService
+internal class SearchService
 {
     private readonly IEventAggregator? _defaultEventAggregator;
 

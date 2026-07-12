@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace DownKyi.Models
 {
-    public class VideoPlayUrlBasic
+    internal class VideoPlayUrlBasic
     {
         public IReadOnlyList<string> BackupUrl { get; set; } = Array.Empty<string>();
         public string BaseUrl { get; set; } = string.Empty;

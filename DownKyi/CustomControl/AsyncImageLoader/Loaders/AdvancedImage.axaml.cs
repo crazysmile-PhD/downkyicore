@@ -12,7 +12,7 @@ using Avalonia.Platform;
 
 namespace DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
-public class AdvancedImage : ContentControl
+internal class AdvancedImage : ContentControl
 {
     /// <summary>
     ///     Defines the <see cref="Loader" /> property.

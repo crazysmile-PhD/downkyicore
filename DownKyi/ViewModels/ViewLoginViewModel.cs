@@ -13,7 +13,7 @@ using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels;
 
-public class ViewLoginViewModel : ViewModelBase
+internal class ViewLoginViewModel : ViewModelBase
 {
     public const string Tag = "PageLogin";
 

@@ -3,7 +3,7 @@ using DownKyi.Core.BiliApi.VideoStream;
 
 namespace DownKyi.Models;
 
-public class Downloading
+internal class Downloading
 {
     public string Id { get; set; } = null!;
 

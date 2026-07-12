@@ -11,7 +11,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewSettingsViewModel : ViewModelBase
+internal class ViewSettingsViewModel : ViewModelBase
 {
     public const string Tag = "PageSettings";
 

@@ -5,7 +5,7 @@ using Avalonia.Threading;
 
 namespace DownKyi.Utils;
 
-public static class DictionaryResource
+internal static class DictionaryResource
 {
     /// <summary>
     /// 从资源获取颜色的16进制字符串

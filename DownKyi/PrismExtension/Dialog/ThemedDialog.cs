@@ -4,7 +4,7 @@ using Avalonia.Styling;
 
 namespace DownKyi.PrismExtension.Dialog;
 
-public class ThemedDialog : Prism.Dialogs.Dialog
+internal class ThemedDialog : Prism.Dialogs.Dialog
 {
     public static readonly AvaloniaProperty ThemeProperty = AvaloniaProperty.RegisterAttached<AvaloniaObject, ControlTheme>("Theme", typeof(ThemedDialog));
 

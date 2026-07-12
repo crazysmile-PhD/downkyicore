@@ -18,7 +18,7 @@ using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.Settings;
 
-public class ViewAboutViewModel : ViewModelBase
+internal class ViewAboutViewModel : ViewModelBase
 {
     public const string Tag = "PageSettingsAbout";
 

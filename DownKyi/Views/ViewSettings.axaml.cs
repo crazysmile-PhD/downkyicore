@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views;
 
-public partial class ViewSettings : UserControl
+internal partial class ViewSettings : UserControl
 {
     public ViewSettings()
     {

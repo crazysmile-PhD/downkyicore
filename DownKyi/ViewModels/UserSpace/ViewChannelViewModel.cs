@@ -8,7 +8,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-public class ViewChannelViewModel : ViewModelBase
+internal class ViewChannelViewModel : ViewModelBase
 {
     public const string Tag = "PageUserSpaceChannel";
 

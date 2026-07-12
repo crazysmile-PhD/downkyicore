@@ -17,7 +17,7 @@ namespace DownKyi.ViewModels.UserSpace;
 /// <summary>
 /// 合集和列表
 /// </summary>
-public class ViewSeasonsSeriesViewModel : ViewModelBase
+internal class ViewSeasonsSeriesViewModel : ViewModelBase
 {
     public const string Tag = "PageUserSpaceSeasonsSeries";
 

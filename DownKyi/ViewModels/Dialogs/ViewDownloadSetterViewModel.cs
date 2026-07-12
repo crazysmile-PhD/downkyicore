@@ -14,7 +14,7 @@ using Prism.Events;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-public class ViewDownloadSetterViewModel : BaseDialogViewModel
+internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogDownloadSetter";
     private readonly IEventAggregator _eventAggregator;

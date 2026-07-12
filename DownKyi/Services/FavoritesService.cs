@@ -14,7 +14,7 @@ using FavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
 
 namespace DownKyi.Services;
 
-public class FavoritesService : IFavoritesService
+internal class FavoritesService : IFavoritesService
 {
     /// <summary>
     /// 获取收藏夹元数据

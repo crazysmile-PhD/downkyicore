@@ -7,7 +7,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class HistoryMedia : BindableBase
+internal class HistoryMedia : BindableBase
 {
     protected IEventAggregator EventAggregator { get; }
 

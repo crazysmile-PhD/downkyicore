@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views;
 
-public partial class ViewMyFavorites : UserControl
+internal partial class ViewMyFavorites : UserControl
 {
     public ViewMyFavorites()
     {

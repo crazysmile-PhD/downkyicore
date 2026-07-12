@@ -17,13 +17,13 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Settings;
 
-public sealed class FfmpegHardwareAccelerationItem
+internal sealed class FfmpegHardwareAccelerationItem
 {
     public string Name { get; init; } = string.Empty;
     public FfmpegHardwareAcceleration Value { get; init; }
 }
 
-public class ViewVideoViewModel : ViewModelBase
+internal class ViewVideoViewModel : ViewModelBase
 {
     public const string Tag = "PageSettingsVideo";
 

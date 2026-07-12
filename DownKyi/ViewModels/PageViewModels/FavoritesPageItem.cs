@@ -5,7 +5,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class FavoritesPageItem : BindableBase
+internal class FavoritesPageItem : BindableBase
 {
     private string coverUrl = string.Empty;
 

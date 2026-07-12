@@ -6,7 +6,7 @@ using Avalonia.Xaml.Interactivity;
 
 namespace DownKyi.CustomAction;
 
-public sealed class GridSplitterExtensions
+internal sealed class GridSplitterExtensions
 {
     private GridSplitterExtensions()
     {

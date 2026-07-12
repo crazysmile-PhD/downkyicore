@@ -24,7 +24,7 @@ namespace DownKyi.Services.Download;
 /// <summary>
 /// 音视频采用Aria下载，其余采用WebClient下载
 /// </summary>
-public class CustomAriaDownloadService : DownloadService, IDownloadService
+internal class CustomAriaDownloadService : DownloadService, IDownloadService
 {
     public CustomAriaDownloadService(ImmutableObservableCollection<DownloadingItem> downloadingList,
         ImmutableObservableCollection<DownloadedItem> downloadedList,

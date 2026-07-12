@@ -8,7 +8,7 @@ using DownKyi.Models;
 
 namespace DownKyi.Services
 {
-    public class VersionCheckerService
+    internal class VersionCheckerService
     {
         private readonly string _repoOwner;
         private readonly string _repoName;

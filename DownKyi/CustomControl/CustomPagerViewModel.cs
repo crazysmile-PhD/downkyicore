@@ -5,7 +5,7 @@ using Prism.Commands;
 
 namespace DownKyi.CustomControl;
 
-public class CustomPagerViewModel : INotifyPropertyChanged
+internal class CustomPagerViewModel : INotifyPropertyChanged
 {
     public CustomPagerViewModel(int current, int count)
     {

@@ -18,7 +18,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewMySpaceViewModel : ViewModelBase
+internal class ViewMySpaceViewModel : ViewModelBase
 {
     public const string Tag = "PageMySpace";
 

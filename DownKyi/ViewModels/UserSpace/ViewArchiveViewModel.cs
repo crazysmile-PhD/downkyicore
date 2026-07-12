@@ -15,7 +15,7 @@ namespace DownKyi.ViewModels.UserSpace;
 /// <summary>
 /// 投稿页面
 /// </summary>
-public class ViewArchiveViewModel : ViewModelBase
+internal class ViewArchiveViewModel : ViewModelBase
 {
     public const string Tag = "PageUserSpaceArchive";
 

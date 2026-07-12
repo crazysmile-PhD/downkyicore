@@ -3,7 +3,7 @@ using Prism.Dialogs;
 
 namespace DownKyi.PrismExtension.Dialog;
 
-public partial class DialogWindow : Window, IDialogWindow
+internal partial class DialogWindow : Window, IDialogWindow
 {
     public DialogWindow()
     {

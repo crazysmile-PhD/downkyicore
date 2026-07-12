@@ -3,7 +3,7 @@ using DownKyi.Core.Settings;
 
 namespace DownKyi.Utils;
 
-public static class ThemeHelper
+internal static class ThemeHelper
 {
     public static void SetTheme(ThemeMode themeMode)
     {

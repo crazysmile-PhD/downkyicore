@@ -10,7 +10,7 @@ using Prism.Events;
 
 namespace DownKyi.Utils;
 
-public static class PlatformHelper
+internal static class PlatformHelper
 {
     /// <summary>
     /// 打开文件夹

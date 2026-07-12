@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views;
 
-public partial class ViewMyToViewVideo : UserControl
+internal partial class ViewMyToViewVideo : UserControl
 {
     public ViewMyToViewVideo()
     {

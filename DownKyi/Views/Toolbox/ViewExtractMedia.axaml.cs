@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views.Toolbox;
 
-public partial class ViewExtractMedia : UserControl
+internal partial class ViewExtractMedia : UserControl
 {
     public ViewExtractMedia()
     {

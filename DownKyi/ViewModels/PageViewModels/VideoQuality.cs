@@ -3,7 +3,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class VideoQuality : BindableBase
+internal class VideoQuality : BindableBase
 {
     private int _quality;
 

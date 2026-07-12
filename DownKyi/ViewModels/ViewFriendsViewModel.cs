@@ -12,7 +12,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
 {
-    public class ViewFriendsViewModel : ViewModelBase
+    internal class ViewFriendsViewModel : ViewModelBase
     {
         public const string Tag = "PageFriends";
 

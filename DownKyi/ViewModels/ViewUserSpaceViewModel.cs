@@ -17,7 +17,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewUserSpaceViewModel : ViewModelBase
+internal class ViewUserSpaceViewModel : ViewModelBase
 {
     public const string Tag = "PageUserSpace";
 

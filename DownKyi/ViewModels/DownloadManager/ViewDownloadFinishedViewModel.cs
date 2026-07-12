@@ -17,7 +17,7 @@ using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.DownloadManager;
 
-public class ViewDownloadFinishedViewModel : ViewModelBase
+internal class ViewDownloadFinishedViewModel : ViewModelBase
 {
     public const string Tag = "PageDownloadManagerDownloadFinished";
 

@@ -7,7 +7,7 @@ using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.Services;
 
-public class AlertService
+internal class AlertService
 {
     private readonly IDialogService? _dialogService;
 

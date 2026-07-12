@@ -12,7 +12,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Settings;
 
-public class ViewDanmakuViewModel : ViewModelBase
+internal class ViewDanmakuViewModel : ViewModelBase
 {
     public const string Tag = "PageSettingsDanmaku";
 

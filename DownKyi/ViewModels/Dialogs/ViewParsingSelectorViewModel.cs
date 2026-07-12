@@ -5,7 +5,7 @@ using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-public class ViewParsingSelectorViewModel : BaseDialogViewModel
+internal class ViewParsingSelectorViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogParsingSelector";
 

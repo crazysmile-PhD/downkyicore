@@ -16,7 +16,7 @@ using VideoPage = DownKyi.ViewModels.PageViewModels.VideoPage;
 
 namespace DownKyi.Services;
 
-public class VideoInfoService : IInfoService
+internal class VideoInfoService : IInfoService
 {
     private readonly VideoView? _videoView;
     private readonly CancellationToken _cancellationToken;

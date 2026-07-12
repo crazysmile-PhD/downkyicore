@@ -27,7 +27,7 @@ namespace DownKyi.Services.Download;
 /// <summary>
 /// 添加到下载列表服务
 /// </summary>
-public class AddToDownloadService
+internal class AddToDownloadService
 {
     private readonly string Tag = "AddToDownloadService";
     private IInfoService _videoInfoService = null!;

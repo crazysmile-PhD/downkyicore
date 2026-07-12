@@ -12,7 +12,7 @@ using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
 
-public static class DownloadTaskFileService
+internal static class DownloadTaskFileService
 {
     private const string Tag = nameof(DownloadTaskFileService);
     private static readonly string[] MediaExtensions = { ".mp4", ".aac", ".mp3", ".flac" };

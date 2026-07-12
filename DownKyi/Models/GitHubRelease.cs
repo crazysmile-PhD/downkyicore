@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace DownKyi.Models;
 
-public class GitHubRelease
+internal class GitHubRelease
 {
     [JsonPropertyName("tag_name")]
     public string TagName { get; set; } = string.Empty;

@@ -9,7 +9,7 @@ using Avalonia.Media;
 
 namespace DownKyi.Converter;
 
-public class MarkdownToInlinesConverter : IValueConverter
+internal class MarkdownToInlinesConverter : IValueConverter
 {
     private static readonly string[] LineSeparators = { "\r\n", "\n" };
     private static readonly Dictionary<int, (double FontSize, FontWeight Weight)> HeaderStyles = new()

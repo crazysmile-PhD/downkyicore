@@ -12,7 +12,7 @@ using DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
 namespace DownKyi.CustomControl.AsyncImageLoader;
 
-public static class ImageBrushLoader
+internal static class ImageBrushLoader
 {
     private static readonly ParametrizedLogger? Logger =
         Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);

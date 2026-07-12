@@ -1,6 +1,6 @@
 namespace DownKyi.Images;
 
-public class LogoIcon
+internal class LogoIcon
 {
     private static LogoIcon? _instance;
 

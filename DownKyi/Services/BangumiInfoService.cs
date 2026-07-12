@@ -16,7 +16,7 @@ using DownKyi.ViewModels.PageViewModels;
 
 namespace DownKyi.Services;
 
-public class BangumiInfoService : IInfoService
+internal class BangumiInfoService : IInfoService
 {
     private readonly BangumiSeason? _bangumiSeason;
 

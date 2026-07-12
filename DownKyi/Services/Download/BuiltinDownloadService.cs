@@ -23,7 +23,7 @@ using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace DownKyi.Services.Download;
 
-public class BuiltinDownloadService : DownloadService, IDownloadService
+internal class BuiltinDownloadService : DownloadService, IDownloadService
 {
     public BuiltinDownloadService(ImmutableObservableCollection<DownloadingItem> downloadingList,
         ImmutableObservableCollection<DownloadedItem> downloadedList,

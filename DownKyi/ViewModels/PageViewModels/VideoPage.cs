@@ -10,7 +10,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class VideoPage : BindableBase
+internal class VideoPage : BindableBase
 {
     public PlayUrl? PlayUrl { get; set; }
 

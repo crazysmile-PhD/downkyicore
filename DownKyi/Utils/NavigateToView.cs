@@ -6,7 +6,7 @@ using Prism.Events;
 
 namespace DownKyi.Utils;
 
-public static class NavigateToView
+internal static class NavigateToView
 {
     /// <summary>
     /// 导航到用户空间，

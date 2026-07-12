@@ -29,7 +29,7 @@ using Path = System.IO.Path;
 
 namespace DownKyi.ViewModels.Toolbox;
 
-public class ViewDelogoViewModel : ViewModelBase
+internal class ViewDelogoViewModel : ViewModelBase
 {
     public const string Tag = "PageToolboxDelogo";
 

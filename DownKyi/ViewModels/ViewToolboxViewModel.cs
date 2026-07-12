@@ -10,7 +10,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
 {
-    public class ViewToolboxViewModel : ViewModelBase
+    internal class ViewToolboxViewModel : ViewModelBase
     {
         public const string Tag = "PageToolbox";
 

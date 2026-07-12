@@ -32,6 +32,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "benchmarks", "benchmarks", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.Benchmarks", "benchmarks\DownKyi.Benchmarks\DownKyi.Benchmarks.csproj", "{EB50A431-CC15-4012-B29E-BE3D9B892A58}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DownKyi.BenchmarkCases", "benchmarks\DownKyi.BenchmarkCases\DownKyi.BenchmarkCases.csproj", "{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -126,6 +128,18 @@ Global
 		{EB50A431-CC15-4012-B29E-BE3D9B892A58}.Release|x64.Build.0 = Release|Any CPU
 		{EB50A431-CC15-4012-B29E-BE3D9B892A58}.Release|x86.ActiveCfg = Release|Any CPU
 		{EB50A431-CC15-4012-B29E-BE3D9B892A58}.Release|x86.Build.0 = Release|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Debug|x64.Build.0 = Debug|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Debug|x86.Build.0 = Debug|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Release|x64.ActiveCfg = Release|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Release|x64.Build.0 = Release|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Release|x86.ActiveCfg = Release|Any CPU
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -136,5 +150,6 @@ Global
 		{69D979C6-C967-4285-B3B6-738DA5CFB4C4} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{2065175E-864E-47AD-B950-56C0C38B1853} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{EB50A431-CC15-4012-B29E-BE3D9B892A58} = {66320409-64EC-F7C5-3DEF-65E7510DAAD1}
+		{1CDCAB53-D402-49AF-87DC-25CE475DB1C0} = {66320409-64EC-F7C5-3DEF-65E7510DAAD1}
 	EndGlobalSection
 EndGlobal

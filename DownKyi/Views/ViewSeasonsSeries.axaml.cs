@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views;
 
-public partial class ViewSeasonsSeries : UserControl
+internal partial class ViewSeasonsSeries : UserControl
 {
     public ViewSeasonsSeries()
     {

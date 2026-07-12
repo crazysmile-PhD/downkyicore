@@ -17,7 +17,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Friends;
 
-public class ViewFollowingViewModel : ViewModelBase
+internal class ViewFollowingViewModel : ViewModelBase
 {
     public const string Tag = "PageFriendsFollowing";
 

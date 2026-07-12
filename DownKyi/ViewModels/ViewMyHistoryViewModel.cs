@@ -23,7 +23,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewMyHistoryViewModel : ViewModelBase
+internal class ViewMyHistoryViewModel : ViewModelBase
 {
     public const string Tag = "PageMyHistory";
 

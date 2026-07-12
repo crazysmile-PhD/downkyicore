@@ -2,7 +2,7 @@ using System;
 
 namespace DownKyi.Models;
 
-public class Downloaded
+internal class Downloaded
 {
     public string Id { get; set; } = null!;
 

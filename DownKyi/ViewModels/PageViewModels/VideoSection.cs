@@ -4,7 +4,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class VideoSection : BindableBase
+internal class VideoSection : BindableBase
 {
     public long Id { get; set; }
 

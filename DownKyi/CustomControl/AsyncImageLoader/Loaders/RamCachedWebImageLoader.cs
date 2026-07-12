@@ -5,7 +5,7 @@ using Avalonia.Media.Imaging;
 
 namespace DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
-public class RamCachedWebImageLoader : BaseWebImageLoader
+internal class RamCachedWebImageLoader : BaseWebImageLoader
 {
     private readonly ConcurrentDictionary<string, Task<Bitmap?>> _memoryCache = new();
 

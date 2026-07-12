@@ -8,7 +8,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.DownloadManager
 {
-    public class DownloadBaseItem : BindableBase
+    internal class DownloadBaseItem : BindableBase
     {
         // model数据
         private DownloadBase _downloadBase = new();

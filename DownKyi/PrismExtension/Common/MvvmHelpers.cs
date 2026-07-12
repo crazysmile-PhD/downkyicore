@@ -7,7 +7,7 @@ namespace DownKyi.PrismExtension.Common;
 /// <summary>
 /// Helper class for MVVM.
 /// </summary>
-public static class MvvmHelpers
+internal static class MvvmHelpers
 {
     /// <summary>
     /// Sets the AutoWireViewModel property to true for the <paramref name="viewOrViewModel"/>.

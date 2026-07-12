@@ -3,7 +3,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-public class TabLeftBanner : BindableBase
+internal class TabLeftBanner : BindableBase
 {
     public object NavigationData { get; set; } = new();
 

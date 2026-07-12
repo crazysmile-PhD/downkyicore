@@ -62,6 +62,7 @@ dotnet_diagnostic.CA1802.severity = error
 dotnet_diagnostic.CA1805.severity = error
 dotnet_diagnostic.CA1810.severity = error
 dotnet_diagnostic.CA1813.severity = error
+dotnet_diagnostic.CA1812.severity = error
 dotnet_diagnostic.CA1819.severity = error
 dotnet_diagnostic.CA1820.severity = error
 dotnet_diagnostic.CA1822.severity = error
@@ -72,6 +73,7 @@ dotnet_diagnostic.CA1845.severity = error
 dotnet_diagnostic.CA1847.severity = error
 dotnet_diagnostic.CA1854.severity = error
 dotnet_diagnostic.CA1859.severity = error
+dotnet_diagnostic.CA1852.severity = error
 dotnet_diagnostic.CA1861.severity = error
 dotnet_diagnostic.CA1862.severity = error
 dotnet_diagnostic.CA1864.severity = error
@@ -87,6 +89,9 @@ dotnet_diagnostic.CA1708.severity = error
 dotnet_diagnostic.CA1711.severity = error
 dotnet_diagnostic.CA1720.severity = error
 dotnet_diagnostic.CA1724.severity = error
+
+# Executable assembly surface rule cleaned in PR 02.
+dotnet_diagnostic.CA1515.severity = error
 
 [*.{csproj,props,targets,axaml,json,yml,yaml}]
 indent_style = space

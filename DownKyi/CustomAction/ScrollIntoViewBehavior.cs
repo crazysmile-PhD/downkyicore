@@ -8,7 +8,7 @@ using DownKyi.Core.Logging;
 
 namespace DownKyi.CustomAction;
 
-public class ScrollIntoViewBehavior : Behavior<DataGrid>
+internal class ScrollIntoViewBehavior : Behavior<DataGrid>
 {
     protected override void OnAttached()
     {

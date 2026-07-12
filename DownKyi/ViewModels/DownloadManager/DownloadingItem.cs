@@ -9,7 +9,7 @@ using DownloadStatus = DownKyi.Models.DownloadStatus;
 
 namespace DownKyi.ViewModels.DownloadManager
 {
-    public class DownloadingItem : DownloadBaseItem
+    internal class DownloadingItem : DownloadBaseItem
     {
 
         public DownloadingItem()

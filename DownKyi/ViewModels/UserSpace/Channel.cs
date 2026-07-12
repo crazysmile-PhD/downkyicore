@@ -2,7 +2,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-public class Channel : BindableBase
+internal class Channel : BindableBase
 {
     public long Cid { get; set; }
 

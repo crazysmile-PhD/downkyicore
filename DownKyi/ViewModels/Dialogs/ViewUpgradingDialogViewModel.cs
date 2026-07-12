@@ -20,7 +20,7 @@ using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-public class ViewUpgradingDialogViewModel : BaseDialogViewModel
+internal class ViewUpgradingDialogViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogLoading";
     private readonly DownloadStorageService _downloadStorageService;

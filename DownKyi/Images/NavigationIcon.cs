@@ -1,6 +1,6 @@
 namespace DownKyi.Images;
 
-public class NavigationIcon
+internal class NavigationIcon
 {
     private static NavigationIcon? _instance;
     public static NavigationIcon Instance()
