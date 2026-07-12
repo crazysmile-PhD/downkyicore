@@ -5,38 +5,57 @@ using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.Aria2cNet;
 
+public sealed class AriaProgressEventArgs(long totalLength, long completedLength, long speed, string gid) : EventArgs
+{
+    public long TotalLength { get; } = totalLength;
+    public long CompletedLength { get; } = completedLength;
+    public long Speed { get; } = speed;
+    public string Gid { get; } = gid;
+}
+
+public sealed class AriaDownloadCompletedEventArgs(
+    bool isSuccess,
+    string? downloadPath,
+    string gid,
+    string? message) : EventArgs
+{
+    public bool IsSuccess { get; } = isSuccess;
+    public string? DownloadPath { get; } = downloadPath;
+    public string Gid { get; } = gid;
+    public string? Message { get; } = message;
+}
+
+public sealed class AriaGlobalStatusEventArgs(long speed) : EventArgs
+{
+    public long Speed { get; } = speed;
+}
+
 public class AriaManager
 {
     private const int PollDelayMilliseconds = 500;
 
     // gid对应项目的状态
-    public delegate void TellStatusHandler(long totalLength, long completedLength, long speed, string gid);
-
-    public event TellStatusHandler? TellStatus;
+    public event EventHandler<AriaProgressEventArgs>? TellStatus;
 
     protected virtual void OnTellStatus(long totalLength, long completedLength, long speed, string gid)
     {
-        TellStatus?.Invoke(totalLength, completedLength, speed, gid);
+        TellStatus?.Invoke(this, new AriaProgressEventArgs(totalLength, completedLength, speed, gid));
     }
 
     // 下载结果回调
-    public delegate void DownloadFinishHandler(bool isSuccess, string? downloadPath, string gid, string? msg = null);
-
-    public event DownloadFinishHandler? DownloadFinish;
+    public event EventHandler<AriaDownloadCompletedEventArgs>? DownloadFinish;
 
     protected virtual void OnDownloadFinish(bool isSuccess, string? downloadPath, string gid, string? msg = null)
     {
-        DownloadFinish?.Invoke(isSuccess, downloadPath, gid, msg);
+        DownloadFinish?.Invoke(this, new AriaDownloadCompletedEventArgs(isSuccess, downloadPath, gid, msg));
     }
 
     // 全局下载状态
-    public delegate void GetGlobalStatusHandler(long speed);
-
-    public event GetGlobalStatusHandler? GlobalStatus;
+    public event EventHandler<AriaGlobalStatusEventArgs>? GlobalStatus;
 
     protected virtual void OnGlobalStatus(long speed)
     {
-        GlobalStatus?.Invoke(speed);
+        GlobalStatus?.Invoke(this, new AriaGlobalStatusEventArgs(speed));
     }
 
     /// <summary>

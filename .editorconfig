@@ -40,6 +40,7 @@ dotnet_diagnostic.CA2214.severity = error
 
 # Correctness and API-usage rules cleaned in PR 02.
 dotnet_diagnostic.CA1002.severity = error
+dotnet_diagnostic.CA1003.severity = error
 dotnet_diagnostic.CA1008.severity = error
 dotnet_diagnostic.CA1012.severity = error
 dotnet_diagnostic.CA1014.severity = error

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -243,8 +244,8 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
 
         // 页面选择
         Pager = new CustomPagerViewModel(1, 1);
-        Pager.CurrentChanged += OnCurrentChanged_Pager;
-        Pager.CountChanged += OnCountChanged_Pager;
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
     }
 
@@ -380,21 +381,19 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
             : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
     }
 
-    private void OnCountChanged_Pager(int count)
+    private void OnCountChangedPager(object? sender, EventArgs e)
     {
     }
 
-    private bool OnCurrentChanged_Pager(int old, int current)
+    private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
     {
         if (!IsEnabled)
         {
-            //Pager.Current = old;
-            return false;
+            e.Cancel = true;
+            return;
         }
 
-        RunFireAndForget(UpdateBangumiMediaListAsync(current), nameof(UpdateBangumiMediaListAsync));
-
-        return true;
+        RunFireAndForget(UpdateBangumiMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateBangumiMediaListAsync));
     }
 
     private async Task UpdateBangumiMediaListAsync(int current)
@@ -540,8 +539,8 @@ public class ViewMyBangumiFollowViewModel : ViewModelBase
 
         // 页面选择
         Pager = new CustomPagerViewModel(1, 1);
-        Pager.CurrentChanged += OnCurrentChanged_Pager;
-        Pager.CountChanged += OnCountChanged_Pager;
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
     }
 

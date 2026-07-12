@@ -50,3 +50,8 @@ public class LogInfo
     /// </summary>
     public string UserAgent { get; set; } = string.Empty;
 }
+
+public sealed class LogEventArgs(LogInfo info) : EventArgs
+{
+    public LogInfo Info { get; } = info;
+}

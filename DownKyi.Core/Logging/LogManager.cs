@@ -31,7 +31,7 @@ public static class LogManager
     /// <summary>
     /// 自定义事件
     /// </summary>
-    public static event Action<LogInfo>? Event;
+    public static event EventHandler<LogEventArgs>? Event;
 
     static LogManager()
     {
@@ -281,7 +281,7 @@ public static class LogManager
 
         LogQueue.Enqueue(new Tuple<string, string>(GetLogPath(), logText));
 
-        Event?.Invoke(new LogInfo
+        Event?.Invoke(null, new LogEventArgs(new LogInfo
         {
             LogLevel = level,
             Message = safeMessage,
@@ -292,7 +292,7 @@ public static class LogManager
             ExceptionType = exception?.GetType().Name ?? string.Empty,
             RequestUrl = string.Empty,
             UserAgent = string.Empty
-        });
+        }));
     }
 
     private static void DrainQueue()

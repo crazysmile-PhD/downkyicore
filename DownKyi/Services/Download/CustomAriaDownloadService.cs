@@ -477,8 +477,13 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         }), CancellationToken ?? System.Threading.CancellationToken.None).GetAwaiter().GetResult();
     }
 
-    private void AriaTellStatus(long totalLength, long completedLength, long speed, string gid)
+    private void AriaTellStatus(object? sender, AriaProgressEventArgs eventArgs)
     {
+        var totalLength = eventArgs.TotalLength;
+        var completedLength = eventArgs.CompletedLength;
+        var speed = eventArgs.Speed;
+        var gid = eventArgs.Gid;
+
         // 当前的下载视频
         DownloadingItem? video = null;
         try
@@ -526,7 +531,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         }
     }
 
-    private void AriaDownloadFinish(bool isSuccess, string? downloadPath, string gid, string? msg)
+    private void AriaDownloadFinish(object? sender, AriaDownloadCompletedEventArgs e)
     {
         //throw new NotImplementedException();
     }

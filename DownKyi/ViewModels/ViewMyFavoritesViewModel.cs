@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -275,8 +276,8 @@ public class ViewMyFavoritesViewModel : ViewModelBase
 
         // 页面选择
         Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle) / VideoNumberInPage));
-        Pager.CurrentChanged += OnCurrentChanged_Pager;
-        Pager.CountChanged += OnCountChanged_Pager;
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
     }
 
@@ -405,21 +406,19 @@ public class ViewMyFavoritesViewModel : ViewModelBase
             : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
     }
 
-    private void OnCountChanged_Pager(int count)
+    private void OnCountChangedPager(object? sender, EventArgs e)
     {
     }
 
-    private bool OnCurrentChanged_Pager(int old, int current)
+    private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
     {
         if (!IsEnabled)
         {
-            //Pager.Current = old;
-            return false;
+            e.Cancel = true;
+            return;
         }
 
-        RunFireAndForget(UpdateFavoritesMediaListAsync(current), nameof(UpdateFavoritesMediaListAsync));
-
-        return true;
+        RunFireAndForget(UpdateFavoritesMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateFavoritesMediaListAsync));
     }
 
     private async Task UpdateFavoritesMediaListAsync(int current)
@@ -544,8 +543,8 @@ public class ViewMyFavoritesViewModel : ViewModelBase
             // 页面选择
             Pager = new CustomPagerViewModel(1,
                 (int)Math.Ceiling(double.Parse(TabHeaders[0].SubTitle) / VideoNumberInPage));
-            Pager.CurrentChanged += OnCurrentChanged_Pager;
-            Pager.CountChanged += OnCountChanged_Pager;
+            Pager.CurrentChanging += OnCurrentChangedPager;
+            Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException

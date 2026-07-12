@@ -205,7 +205,7 @@ public sealed class MainWindowViewModel : BindableBase, IDisposable
 
     #region 剪贴板
 
-    private void ClipboardListenerOnChanged(string obj)
+    private void ClipboardListenerOnChanged(object? sender, ClipboardChangedEventArgs e)
     {
         var isListenClipboard = SettingsManager.Instance.GetIsListenClipboard();
         if (isListenClipboard != AllowStatus.Yes)
@@ -216,7 +216,7 @@ public sealed class MainWindowViewModel : BindableBase, IDisposable
         _clipboardDebounceCancellation?.Cancel();
         _clipboardDebounceCancellation?.Dispose();
         _clipboardDebounceCancellation = new CancellationTokenSource();
-        _ = HandleClipboardChangedAsync(obj, _clipboardDebounceCancellation.Token);
+        _ = HandleClipboardChangedAsync(e.Text, _clipboardDebounceCancellation.Token);
     }
 
     private async Task HandleClipboardChangedAsync(string text, CancellationToken cancellationToken)

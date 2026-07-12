@@ -6,7 +6,12 @@ using Avalonia.Threading;
 
 namespace DownKyi.Utils;
 
-public sealed class ClipboardListener : IDisposable
+internal sealed class ClipboardChangedEventArgs(string text) : EventArgs
+{
+    public string Text { get; } = text;
+}
+
+internal sealed class ClipboardListener : IDisposable
 {
     private readonly object _countLocker = new();
     private int _count;
@@ -42,9 +47,9 @@ public sealed class ClipboardListener : IDisposable
         _action = null;
     }
 
-    private event Action<string>? ChangedImpl;
+    private event EventHandler<ClipboardChangedEventArgs>? ChangedImpl;
 
-    public event Action<string>? Changed
+    public event EventHandler<ClipboardChangedEventArgs>? Changed
     {
         add
         {
@@ -73,7 +78,7 @@ public sealed class ClipboardListener : IDisposable
         }
     }
 
-    private void NotifyAll(string content) => ChangedImpl?.Invoke(content);
+    private void NotifyAll(string content) => ChangedImpl?.Invoke(this, new ClipboardChangedEventArgs(content));
 
     private async Task TickHandler()
     {

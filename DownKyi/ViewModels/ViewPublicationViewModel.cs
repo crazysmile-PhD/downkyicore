@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -229,8 +230,8 @@ namespace DownKyi.ViewModels
 
             // 页面选择
             Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle) / VideoNumberInPage));
-            Pager.CurrentChanged += OnCurrentChanged_Pager;
-            Pager.CountChanged += OnCountChanged_Pager;
+            Pager.CurrentChanging += OnCurrentChangedPager;
+            Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;
         }
 
@@ -350,16 +351,16 @@ namespace DownKyi.ViewModels
                 : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
         }
 
-        private void OnCountChanged_Pager(int count)
+        private void OnCountChangedPager(object? sender, EventArgs e)
         {
         }
 
-        private bool OnCurrentChanged_Pager(int old, int current)
+        private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
         {
             if (!IsEnabled)
             {
-                //Pager.Current = old;
-                return false;
+                e.Cancel = true;
+                return;
             }
 
             Medias.Clear();
@@ -367,9 +368,7 @@ namespace DownKyi.ViewModels
             LoadingVisibility = true;
             NoDataVisibility = false;
 
-            _ = UpdatePublication(current);
-
-            return true;
+            _ = UpdatePublication(((CustomPagerViewModel)sender!).ProposedCurrent);
         }
 
         private static string StringToUnicode(string s)
@@ -540,8 +539,8 @@ namespace DownKyi.ViewModels
             // 页面选择
             Pager = new CustomPagerViewModel(1,
                 (int)Math.Ceiling(double.Parse(selectTab.SubTitle) / VideoNumberInPage));
-            Pager.CurrentChanged += OnCurrentChanged_Pager;
-            Pager.CountChanged += OnCountChanged_Pager;
+            Pager.CurrentChanging += OnCurrentChangedPager;
+            Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;
         }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -317,16 +318,16 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
             : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
     }
 
-    private void OnCountChanged_Pager(int count)
+    private void OnCountChangedPager(object? sender, EventArgs e)
     {
     }
 
-    private bool OnCurrentChanged_Pager(int old, int current)
+    private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
     {
         if (!IsEnabled)
         {
-            //Pager.Current = old;
-            return false;
+            e.Cancel = true;
+            return;
         }
 
         Medias.Clear();
@@ -338,15 +339,14 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
         if (type == 1)
         {
-            RunFireAndForget(UpdateSeasonsAsync(current), nameof(UpdateSeasonsAsync));
+            RunFireAndForget(UpdateSeasonsAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateSeasonsAsync));
         }
 
         if (type == 2)
         {
-            RunFireAndForget(UpdateSeriesAsync(current), nameof(UpdateSeriesAsync));
+            RunFireAndForget(UpdateSeriesAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateSeriesAsync));
         }
 
-        return true;
     }
 
     //private async Task UpdateChannelAsync(int current)
@@ -646,8 +646,8 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
         // 页面选择
         Pager = new CustomPagerViewModel(1, (int)Math.Ceiling((double)count / VideoNumberInPage));
-        Pager.CurrentChanged += OnCurrentChanged_Pager;
-        Pager.CountChanged += OnCountChanged_Pager;
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
     }
 

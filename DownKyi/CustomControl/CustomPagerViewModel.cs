@@ -18,23 +18,29 @@ public class CustomPagerViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     // Current修改的回调
-    public delegate bool CurrentChangedHandler(int old, int current);
+    public event EventHandler<CancelEventArgs>? CurrentChanging;
 
-    public event CurrentChangedHandler? CurrentChanged;
+    public int ProposedCurrent { get; private set; }
 
-    protected virtual bool OnCurrentChanged(int old, int current)
+    private bool RequestCurrentChange(int current)
     {
-        return CurrentChanged != null && CurrentChanged.Invoke(old, current);
+        if (CurrentChanging == null)
+        {
+            return false;
+        }
+
+        ProposedCurrent = current;
+        var eventArgs = new CancelEventArgs();
+        CurrentChanging.Invoke(this, eventArgs);
+        return !eventArgs.Cancel;
     }
 
     // Count修改的回调
-    public delegate void CountChangedHandler(int count);
-
-    public event CountChangedHandler? CountChanged;
+    public event EventHandler? CountChanged;
 
     protected virtual void OnCountChanged(int count)
     {
-        CountChanged?.Invoke(count);
+        CountChanged?.Invoke(this, EventArgs.Empty);
     }
 
     #region 绑定属性
@@ -103,7 +109,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
             }
             else
             {
-                var isSuccess = OnCurrentChanged(_current, value);
+                var isSuccess = RequestCurrentChange(value);
                 if (isSuccess)
                 {
                     _current = value;
