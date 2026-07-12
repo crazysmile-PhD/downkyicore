@@ -15,4 +15,15 @@ public sealed class SystemClockTests
         var after = DateTimeOffset.UtcNow;
         Assert.InRange(observed, before, after);
     }
+
+    [Fact]
+    public async Task DelayHonorsCancellation()
+    {
+        var clock = new SystemClock();
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() =>
+            clock.DelayAsync(TimeSpan.FromMinutes(1), cancellation.Token));
+    }
 }
