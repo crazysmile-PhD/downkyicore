@@ -38,7 +38,7 @@ internal class SearchService
 
         eventAggregator = ResolveEventAggregator(eventAggregator);
         // 移除剪贴板id
-        var justId = input.Replace(AppConstant.ClipboardId, "");
+        var justId = input.Replace(AppConstant.ClipboardId, "", StringComparison.Ordinal);
 
         // 视频
         if (ParseEntrance.IsAvId(justId))

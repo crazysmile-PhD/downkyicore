@@ -91,7 +91,7 @@ public static class WbiSign
         // 按照 key 重排参数
         paraStr = paraStr.OrderBy(p => p.Key).ToDictionary(p => p.Key, p => p.Value);
         //过滤 value 中的 "!'()*" 字符
-        paraStr = paraStr.ToDictionary(kvp => kvp.Key, kvp => new string(kvp.Value.Where(chr => !"!'()*".Contains(chr)).ToArray()));
+        paraStr = paraStr.ToDictionary(kvp => kvp.Key, kvp => new string(kvp.Value.Where(chr => !"!'()*".Contains(chr, StringComparison.Ordinal)).ToArray()));
         // 序列化参数
         var query = string.Join(
             "&",

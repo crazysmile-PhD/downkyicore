@@ -212,7 +212,7 @@ public static class WebClient
             request.Headers.Referrer = new Uri(referer);
         }
 
-        if (!url.Contains("getLogin"))
+        if (!url.Contains("getLogin", StringComparison.Ordinal))
         {
             request.Headers.Add("origin", "https://www.bilibili.com");
 
@@ -271,7 +271,7 @@ public static class WebClient
         var query = string.Join("&", parameters.Select(kvp =>
             $"{HttpUtility.UrlEncode(kvp.Key)}={HttpUtility.UrlEncode(kvp.Value?.ToString() ?? string.Empty)}"));
 
-        return url.Contains('?')
+        return url.Contains('?', StringComparison.Ordinal)
             ? $"{url}&{query}"
             : $"{url}?{query}";
     }

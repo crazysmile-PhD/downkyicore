@@ -162,7 +162,7 @@ internal class ViewUpgradingDialogViewModel : BaseDialogViewModel
         string[] possibleDatabasePaths =
         {
             StorageManager.GetDownload(),
-            StorageManager.GetDownload().Replace(".db", "_debug.db")
+                StorageManager.GetDownload().Replace(".db", "_debug.db", StringComparison.Ordinal)
         };
 
         var oldDbPath = possibleDatabasePaths.FirstOrDefault(File.Exists);

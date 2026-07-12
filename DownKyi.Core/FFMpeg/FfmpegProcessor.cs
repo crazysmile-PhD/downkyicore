@@ -349,7 +349,7 @@ public class FfmpegProcessor
     private static string ToConcatFileLine(string file)
     {
         var normalizedPath = Path.GetFullPath(file).Replace('\\', '/');
-        return $"file '{normalizedPath.Replace("'", "'\\''")}'";
+        return $"file '{normalizedPath.Replace("'", "'\\''", StringComparison.Ordinal)}'";
     }
 
     private static bool IsValidOutput(string outputVideo)

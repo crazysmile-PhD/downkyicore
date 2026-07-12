@@ -42,7 +42,7 @@ public sealed class WebClientLoopbackTests : IDisposable
                 cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(2, server.RequestCount);
-        Assert.Contains("Request failed after 2 attempts", exception.Message);
+        Assert.Contains("Request failed after 2 attempts", exception.Message, StringComparison.Ordinal);
         Assert.IsType<HttpRequestException>(exception.InnerException);
     }
 

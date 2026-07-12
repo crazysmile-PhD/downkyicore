@@ -48,7 +48,7 @@ internal class MarkdownToInlinesConverter : IValueConverter
                 continue;
             }
 
-            if (line.TrimStart().StartsWith("<!--") && line.TrimEnd().EndsWith("-->")) continue;
+            if (line.TrimStart().StartsWith("<!--", StringComparison.Ordinal) && line.TrimEnd().EndsWith("-->", StringComparison.Ordinal)) continue;
 
 
             if (TryParseHeader(line, out var headerLevel, out var headerText))
@@ -60,7 +60,7 @@ internal class MarkdownToInlinesConverter : IValueConverter
                     FontWeight = style.Weight
                 });
             }
-            else if (line.Contains("**"))
+            else if (line.Contains("**", StringComparison.Ordinal))
             {
                 var parts = Regex.Split(line, @"\*\*(.*?)\*\*");
                 for (int i = 0; i < parts.Length; i++)

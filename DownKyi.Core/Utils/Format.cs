@@ -127,7 +127,7 @@ public static class Format
     public static string FormatFileName(string originName)
     {
         var destName = originName;
-        destName = Path.GetInvalidFileNameChars().Aggregate(destName, (current, c) => current.Replace(c.ToString(), string.Empty));
+        destName = Path.GetInvalidFileNameChars().Aggregate(destName, (current, c) => current.Replace(c.ToString(), string.Empty, StringComparison.Ordinal));
 
         var cleanedName = destName
              .SkipWhile(c => c is ' ' or '.')

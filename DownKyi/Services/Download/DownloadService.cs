@@ -215,18 +215,30 @@ internal abstract class DownloadService : IDisposable
 
         if (downloading?.PlayUrl?.Durl?.Count > 0)
         {
-            var durl = downloading.PlayUrl.Durl[0];
-            return new VideoPlayUrlBasic
-            {
-                BackupUrl = durl.BackupUrl,
-                BaseUrl = durl.SourceAddress,
-                Codecs = downloading.PlayUrl.VideoCodecid.GetHashCode().ToString(),
-                Id = downloading.DownloadBase.Bvid.GetHashCode(),
-                ExpectedSize = durl.Size
-            };
+            return CreateDurlDownloadDescriptor(downloading.PlayUrl.Durl);
         }
 
         return null;
+    }
+
+    internal static VideoPlayUrlBasic? CreateDurlDownloadDescriptor(IEnumerable<PlayUrlDurl> durls)
+    {
+        ArgumentNullException.ThrowIfNull(durls);
+
+        var durl = durls.OrderBy(item => item.Order).FirstOrDefault();
+        if (durl == null)
+        {
+            return null;
+        }
+
+        return new VideoPlayUrlBasic
+        {
+            BackupUrl = durl.BackupUrl,
+            BaseUrl = durl.SourceAddress,
+            Codecs = "durl",
+            Id = durl.Order,
+            ExpectedSize = durl.Size
+        };
     }
 
     protected string? BaseDownloadCover(DownloadingItem downloading, string? coverUrl, string fileName)
@@ -691,7 +703,7 @@ internal abstract class DownloadService : IDisposable
     private async Task SingleDownload(DownloadingItem downloading)
     {
         // 路径
-        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/");
+        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/", StringComparison.Ordinal);
         var temp = downloading.DownloadBase.FilePath.Split('/');
         //string path = downloading.DownloadBase.FilePath.Replace(temp[temp.Length - 1], "");
         var path = downloading.DownloadBase.FilePath.TrimEnd(temp[temp.Length - 1].ToCharArray());

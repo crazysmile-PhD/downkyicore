@@ -66,11 +66,11 @@ public class Creater
     protected string SetText()
     {
         var header = Config.HeaderTemplate
-            .Replace("{title}", Config.Title)
-            .Replace("{width}", Config.ScreenWidth.ToString())
-            .Replace("{height}", Config.ScreenHeight.ToString())
-            .Replace("{fontname}", Config.FontName)
-            .Replace("{fontsize}", Config.BaseFontSize.ToString());
+            .Replace("{title}", Config.Title, StringComparison.Ordinal)
+            .Replace("{width}", Config.ScreenWidth.ToString(), StringComparison.Ordinal)
+            .Replace("{height}", Config.ScreenHeight.ToString(), StringComparison.Ordinal)
+            .Replace("{fontname}", Config.FontName, StringComparison.Ordinal)
+            .Replace("{fontsize}", Config.BaseFontSize.ToString(), StringComparison.Ordinal);
 
         var events = Subtitles.Aggregate(string.Empty, (current, subtitle) => current + "\n" + subtitle.Text);
 

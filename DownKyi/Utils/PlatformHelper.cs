@@ -142,7 +142,7 @@ internal static class PlatformHelper
 
         private static string EscapeForShell(string input) => Regex
             .Replace(input, "(?=[`~!#&*()|;'<>])", "\\")
-            .Replace("\"", "\\\\\\\"");
+            .Replace("\"", "\\\\\\\"", StringComparison.Ordinal);
 
         private static void ShellExecRaw(string cmd, bool waitForExit = true)
         {

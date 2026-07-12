@@ -27,8 +27,8 @@ public sealed class WebClientTests : IDisposable
                 cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(1, calls);
-        Assert.Contains("Request failed after 1 attempts", exception.Message);
-        Assert.Contains("https://example.com/getLogin", exception.Message);
+        Assert.Contains("Request failed after 1 attempts", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("https://example.com/getLogin", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

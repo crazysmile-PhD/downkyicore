@@ -32,9 +32,9 @@ internal static class Utils
     /// <returns></returns>
     public static string CorrectTypos(string text)
     {
-        text = text.Replace("/n", "\\N");
-        text = text.Replace("&gt;", ">");
-        text = text.Replace("&lt;", "<");
+        text = text.Replace("/n", "\\N", StringComparison.Ordinal);
+        text = text.Replace("&gt;", ">", StringComparison.Ordinal);
+        text = text.Replace("&lt;", "<", StringComparison.Ordinal);
         return text;
     }
 
@@ -86,7 +86,7 @@ internal static class Utils
     /// <returns></returns>
     public static float Xhms2second(string xhms)
     {
-        var args = xhms.Replace("+", " +").Replace("-", " -").Split(' ');
+        var args = xhms.Replace("+", " +", StringComparison.Ordinal).Replace("-", " -", StringComparison.Ordinal).Split(' ');
 
         return args.Sum(Hms2second);
     }

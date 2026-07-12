@@ -238,7 +238,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
 
                     if (cache == null) continue;
 
-                    var pages = cache.VideoPages.Where(e => e.Name.Contains(InputSearchText)).ToList();
+                    var pages = cache.VideoPages.Where(e => e.Name.Contains(InputSearchText, StringComparison.Ordinal)).ToList();
                     section.VideoPages = pages;
                 }
             }
@@ -848,10 +848,10 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         {
             var param = navigationContext.Parameters.GetValue<string>("Parameter");
             // 移除剪贴板id
-            var input = param.Replace(AppConstant.ClipboardId, "");
+            var input = param.Replace(AppConstant.ClipboardId, "", StringComparison.Ordinal);
 
             // 检测是否从剪贴板传入
-            if (InputText == input && param.EndsWith(AppConstant.ClipboardId))
+            if (InputText == input && param.EndsWith(AppConstant.ClipboardId, StringComparison.Ordinal))
             {
                 return;
             }

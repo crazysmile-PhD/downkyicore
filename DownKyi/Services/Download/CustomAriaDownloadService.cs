@@ -108,14 +108,14 @@ internal class CustomAriaDownloadService : DownloadService, IDownloadService
         }
 
         // 路径
-        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/");
+        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/", StringComparison.Ordinal);
         string[] temp = downloading.DownloadBase.FilePath.Split('/');
         //string path = downloading.DownloadBase.FilePath.Replace(temp[temp.Length - 1], "");
         string path = downloading.DownloadBase.FilePath.TrimEnd(temp[temp.Length - 1].ToCharArray());
 
         // 下载文件名
         string fileName = Guid.NewGuid().ToString("N");
-        string key = $"{downloadVideo.Id}_{downloadVideo.Codecs}";
+        string key = VideoPlayUrlBasic.CreateDownloadKey(downloadVideo.Id, downloadVideo.Codecs);
 
         // 老版本数据库没有这一项，会变成null
         if (downloading.Downloading.DownloadedFiles == null)
@@ -159,9 +159,9 @@ internal class CustomAriaDownloadService : DownloadService, IDownloadService
             for (int i = 0; i < urls.Count; i++)
             {
                 string url = urls[i];
-                if (url.StartsWith("http://"))
+                if (url.StartsWith("http://", StringComparison.Ordinal))
                 {
-                    urls[i] = url.Replace("http://", "https://");
+                    urls[i] = url.Replace("http://", "https://", StringComparison.Ordinal);
                 }
             }
         }
@@ -170,9 +170,9 @@ internal class CustomAriaDownloadService : DownloadService, IDownloadService
             for (int i = 0; i < urls.Count; i++)
             {
                 string url = urls[i];
-                if (url.StartsWith("https://"))
+                if (url.StartsWith("https://", StringComparison.Ordinal))
                 {
-                    urls[i] = url.Replace("https://", "http://");
+                    urls[i] = url.Replace("https://", "http://", StringComparison.Ordinal);
                 }
             }
         }
@@ -406,7 +406,7 @@ internal class CustomAriaDownloadService : DownloadService, IDownloadService
                 downloading.Downloading.Gid = null;
             else if (status.Result.Result == null && status.Result.Error != null)
             {
-                if (status.Result.Error.Message.Contains("is not found"))
+                if (status.Result.Error.Message.Contains("is not found", StringComparison.Ordinal))
                 {
                     downloading.Downloading.Gid = null;
                     PersistDownloadingState(downloading);

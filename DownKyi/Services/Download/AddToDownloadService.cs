@@ -449,10 +449,10 @@ internal class AddToDownloadService
                     .SetAudioQuality(page.AudioQualityFormat)
                     .SetVideoQuality(videoQuality.QualityFormat)
                     .SetVideoCodec(
-                        videoQuality.SelectedVideoCodec.Contains("AVC") ? "AVC" :
-                        videoQuality.SelectedVideoCodec.Contains("HEVC") ? "HEVC" :
-                        videoQuality.SelectedVideoCodec.Contains("Dolby") ? "Dolby Vision" :
-                        videoQuality.SelectedVideoCodec.Contains("AV1") ? "AV1" : "")
+                        videoQuality.SelectedVideoCodec.Contains("AVC", StringComparison.Ordinal) ? "AVC" :
+                        videoQuality.SelectedVideoCodec.Contains("HEVC", StringComparison.Ordinal) ? "HEVC" :
+                        videoQuality.SelectedVideoCodec.Contains("Dolby", StringComparison.Ordinal) ? "Dolby Vision" :
+                        videoQuality.SelectedVideoCodec.Contains("AV1", StringComparison.Ordinal) ? "AV1" : "")
                     .SetVideoPublishTime(page.PublishTime)
                     .SetAvid(page.Avid)
                     .SetBvid(page.Bvid)

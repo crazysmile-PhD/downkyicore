@@ -87,7 +87,7 @@ public static class ParseEntrance
     public static bool IsBvId(string input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        return input.StartsWith("BV") && input.Length == 12;
+        return input.StartsWith("BV", StringComparison.Ordinal) && input.Length == 12;
     }
 
     /// <summary>
@@ -428,7 +428,7 @@ public static class ParseEntrance
             return false;
         }
 
-        if (input.Contains("space.bilibili.com"))
+        if (input.Contains("space.bilibili.com", StringComparison.Ordinal))
         {
             return true;
         }
@@ -481,7 +481,7 @@ public static class ParseEntrance
     /// <returns></returns>
     private static bool IsUrl(string input)
     {
-        return input.StartsWith("http://") || input.StartsWith("https://");
+        return input.StartsWith("http://", StringComparison.Ordinal) || input.StartsWith("https://", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -495,7 +495,7 @@ public static class ParseEntrance
             return url;
         }
 
-        return url.Replace("http://", "https://");
+        return url.Replace("http://", "https://", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -568,18 +568,18 @@ public static class ParseEntrance
         var url = EnableHttps(input);
         url = DeleteUrlParam(url);
 
-        url = url.Replace(ShareWwwUrl, WwwUrl);
-        url = url.Replace(MobileUrl, WwwUrl);
+        url = url.Replace(ShareWwwUrl, WwwUrl, StringComparison.Ordinal);
+        url = url.Replace(MobileUrl, WwwUrl, StringComparison.Ordinal);
 
-        if (url.Contains("b23.tv/ss") || url.Contains("b23.tv/ep"))
+        if (url.Contains("b23.tv/ss", StringComparison.Ordinal) || url.Contains("b23.tv/ep", StringComparison.Ordinal))
         {
-            url = url.Replace(ShortUrl, BangumiUrl);
+            url = url.Replace(ShortUrl, BangumiUrl, StringComparison.Ordinal);
         }
         else
         {
-            url = url.Replace(ShortUrl, VideoUrl);
+            url = url.Replace(ShortUrl, VideoUrl, StringComparison.Ordinal);
         }
 
-        return !url.StartsWith(baseUrl) ? "" : url.Replace(baseUrl, "");
+        return !url.StartsWith(baseUrl, StringComparison.Ordinal) ? "" : url.Replace(baseUrl, "", StringComparison.Ordinal);
     }
 }

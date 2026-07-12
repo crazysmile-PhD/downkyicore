@@ -29,7 +29,7 @@ Branch: `refactor/pr-02-host-composition`
 - Extend architecture tests to enforce package and namespace restrictions for every new project.
 - Preserve existing database, settings, login, portable-mode, and aria2 session paths.
 - Document every temporary bridge with its deletion PR; no permanent legacy adapter is allowed.
-- Fix the remaining 166 diagnostics across 5 globalization/string-comparison CA rules in separate commits; 71 security, async, disposal, exception, lifecycle, null-contract, correctness, collection, executable-surface, URL/API-shape, performance, allocation, naming, and globalization rules are already at zero and enforced as errors.
+- Fix the remaining 107 diagnostics across 3 culture/formatting CA rules in separate commits; 73 security, async, disposal, exception, lifecycle, null-contract, correctness, collection, executable-surface, URL/API-shape, performance, allocation, naming, and globalization rules are already at zero and enforced as errors.
 - Preserve the external-protocol hash exception only where a contract test proves it is required; document why it is not a password or trust primitive.
 - Promote each fully cleaned rule to `error` in `.editorconfig`; finish with zero unhandled CA warnings and default `CodeAnalysisTreatWarningsAsErrors=true`.
 - Make local and CI analyzer settings identical and add required Windows, Linux, and macOS build or smoke coverage.
@@ -64,7 +64,7 @@ Branch: `refactor/pr-07-15-download-runtime`
 - Replace `BiliApiRequest` catch-and-return-null behavior with typed failures visible to UI and diagnostics.
 - Add source-generated JSON contexts and fixed API contract samples for success, missing data, rejected code, HTML, and malformed JSON.
 - Make incomplete stream cleanup atomic; a Content-Length failure must not leave a file that can be mistaken for completed media.
-- Give every DURL segment a stable download key containing `DURL.Order` or an explicit segment index; never use `Bvid.GetHashCode()` or codec `GetHashCode()` as segment identity.
+
 - Sort all DURL inputs by `Order` before queueing or merging.
 - For multi-segment DURL output, skip stream copy and rebuild timestamps, keyframes, and MP4 indexes through hardware encoding with CPU `libx264 + aac` fallback.
 - Make concat return an explicit success result and validate output with ffprobe: video stream exists, duration is positive and close to summed segments, and middle/tail seeks decode successfully.
