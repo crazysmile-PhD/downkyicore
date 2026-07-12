@@ -593,7 +593,7 @@ public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
             2 => DownloadPhase.Pausing,
             3 => DownloadPhase.Paused,
             4 => DownloadPhase.Downloading,
-            5 => DownloadPhase.Completed,
+            5 => DownloadPhase.Queued,
             6 => DownloadPhase.Failed,
             _ => DownloadPhase.Queued
         };

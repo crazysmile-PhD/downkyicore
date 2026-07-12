@@ -35,6 +35,9 @@
 
     <ItemGroup>
         <ProjectReference Include="..\DownKyi.Core\DownKyi.Core.csproj"/>
+        <ProjectReference Include="..\src\DownKyi.Application\DownKyi.Application.csproj" />
         <ProjectReference Include="..\src\DownKyi.Desktop\DownKyi.Desktop.csproj" />
+        <ProjectReference Include="..\src\DownKyi.Domain\DownKyi.Domain.csproj" />
+        <ProjectReference Include="..\src\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
     </ItemGroup>
 </Project>

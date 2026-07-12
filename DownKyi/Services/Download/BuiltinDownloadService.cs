@@ -214,9 +214,9 @@ internal class BuiltinDownloadService : DownloadService, IDownloadService
     /// <param name="coverUrl"></param>
     /// <param name="fileName"></param>
     /// <returns></returns>
-    public override string? DownloadCover(DownloadingItem downloading, string? coverUrl, string fileName)
+    public override Task<string?> DownloadCoverAsync(DownloadingItem downloading, string? coverUrl, string fileName)
     {
-        return BaseDownloadCover(downloading, coverUrl, fileName);
+        return BaseDownloadCoverAsync(downloading, coverUrl, fileName);
     }
 
     /// <summary>
@@ -224,9 +224,9 @@ internal class BuiltinDownloadService : DownloadService, IDownloadService
     /// </summary>
     /// <param name="downloading"></param>
     /// <returns></returns>
-    public override string DownloadDanmaku(DownloadingItem downloading)
+    public override Task<string> DownloadDanmakuAsync(DownloadingItem downloading)
     {
-        return BaseDownloadDanmaku(downloading);
+        return BaseDownloadDanmakuAsync(downloading);
     }
 
     /// <summary>
@@ -234,9 +234,9 @@ internal class BuiltinDownloadService : DownloadService, IDownloadService
     /// </summary>
     /// <param name="downloading"></param>
     /// <returns></returns>
-    public override IReadOnlyList<string> DownloadSubtitle(DownloadingItem downloading)
+    public override Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading)
     {
-        return BaseDownloadSubtitle(downloading);
+        return BaseDownloadSubtitleAsync(downloading);
     }
 
     /// <summary>
@@ -255,9 +255,9 @@ internal class BuiltinDownloadService : DownloadService, IDownloadService
     /// 解析视频流的下载链接
     /// </summary>
     /// <param name="downloading"></param>
-    public override void Parse(DownloadingItem downloading)
+    public override Task ParseAsync(DownloadingItem downloading)
     {
-        BaseParse(downloading);
+        return BaseParseAsync(downloading);
     }
 
     /// <summary>

@@ -1,4 +1,6 @@
 using System.Text.Json;
+using DownKyi.Infrastructure.Downloads;
+using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
@@ -14,7 +16,7 @@ public sealed class DownloadStorageResumeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void AddDownloadingPreservesResumeIdentityFilesAndPausedStateAcrossReopen()
+    public async Task AddDownloadingPreservesResumeIdentityFilesAndPausedStateAcrossReopen()
     {
         Directory.CreateDirectory(_directory);
         var database = Path.Combine(_directory, "download.db");
@@ -36,14 +38,21 @@ public sealed class DownloadStorageResumeTests : IDisposable
         item.DownloadBase.Id = taskId;
         item.DownloadBase.FilePath = Path.Combine(_directory, "episode-01");
 
-        using (var storage = new DownloadStorageService(database))
+        using (var store = new SqliteDownloadTaskStore(
+                   new SqliteDownloadTaskStoreOptions(database),
+                   new SystemClock()))
+        using (var storage = new DownloadStorageService(store, new SystemClock()))
         {
-            storage.AddDownloading(item);
+            await storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
         }
 
-        using (var reopenedStorage = new DownloadStorageService(database))
+        using (var store = new SqliteDownloadTaskStore(
+                   new SqliteDownloadTaskStoreOptions(database),
+                   new SystemClock()))
+        using (var reopenedStorage = new DownloadStorageService(store, new SystemClock()))
         {
-            var restored = Assert.Single(reopenedStorage.GetDownloading());
+            var restored = Assert.Single(
+                await reopenedStorage.GetDownloadingAsync(TestContext.Current.CancellationToken));
             Assert.Equal(ariaGid, restored.Downloading.Gid);
             Assert.Equal("video.m4s", restored.Downloading.DownloadFiles["video"]);
             Assert.Equal("audio.m4s", restored.Downloading.DownloadFiles["audio"]);
@@ -53,13 +62,13 @@ public sealed class DownloadStorageResumeTests : IDisposable
         }
 
         using var connection = new SqliteConnection($"Data Source={database};Mode=ReadOnly");
-        connection.Open();
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT gid, download_files, downloaded_files, download_status, progress FROM downloading WHERE id = @id";
         command.Parameters.AddWithValue("@id", taskId);
-        using var reader = command.ExecuteReader();
+        using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
 
-        Assert.True(reader.Read());
+        Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
         Assert.Equal(ariaGid, reader.GetString(0));
         using var downloadFiles = JsonDocument.Parse(reader.GetString(1));
         using var downloadedFiles = JsonDocument.Parse(reader.GetString(2));
@@ -68,6 +77,61 @@ public sealed class DownloadStorageResumeTests : IDisposable
         Assert.Equal("cover", downloadedFiles.RootElement[0].GetString());
         Assert.Equal((int)DownloadStatus.Pause, reader.GetInt32(3));
         Assert.Equal(42.5f, reader.GetFloat(4));
+    }
+
+    [Fact]
+    public async Task LegacyCompletionSequenceMovesTaskAtomicallyToHistory()
+    {
+        Directory.CreateDirectory(_directory);
+        var database = Path.Combine(_directory, "completion.db");
+        var downloadingItem = new DownloadingItem
+        {
+            DownloadBase = new DownloadBase
+            {
+                Id = "complete-task-01",
+                Name = "Completed episode",
+                FilePath = Path.Combine(_directory, "completed-episode")
+            },
+            Downloading = new Downloading
+            {
+                Id = "complete-task-01",
+                DownloadStatus = DownloadStatus.Downloading,
+                Progress = 100
+            }
+        };
+        var downloadedItem = new DownloadedItem
+        {
+            DownloadBase = downloadingItem.DownloadBase,
+            Downloaded = new Downloaded
+            {
+                Id = "complete-task-01",
+                FinishedTimestamp = 1234,
+                FinishedTime = "finished",
+                MaxSpeedDisplay = "24 Mbps"
+            }
+        };
+        using (var store = new SqliteDownloadTaskStore(
+                   new SqliteDownloadTaskStoreOptions(database),
+                   new SystemClock()))
+        using (var storage = new DownloadStorageService(store, new SystemClock()))
+        {
+            await storage.AddDownloadingAsync(downloadingItem, TestContext.Current.CancellationToken);
+            await storage.RemoveDownloadingAsync(
+                downloadingItem,
+                cascadeRemove: false,
+                cancellationToken: TestContext.Current.CancellationToken);
+            await storage.AddDownloadedAsync(downloadedItem, TestContext.Current.CancellationToken);
+        }
+
+        using var reopenedStore = new SqliteDownloadTaskStore(
+            new SqliteDownloadTaskStoreOptions(database),
+            new SystemClock());
+        using var reopened = new DownloadStorageService(reopenedStore, new SystemClock());
+        Assert.Empty(await reopened.GetDownloadingAsync(TestContext.Current.CancellationToken));
+        var restored = Assert.Single(
+            await reopened.GetDownloadedAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("complete-task-01", restored.DownloadBase.Id);
+        Assert.Equal(1234, restored.Downloaded.FinishedTimestamp);
     }
 
     public void Dispose()

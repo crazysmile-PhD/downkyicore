@@ -172,7 +172,7 @@ internal static class DownloadStoreSchema
                 WHEN 2 THEN @pausing
                 WHEN 3 THEN @paused
                 WHEN 4 THEN @downloading
-                WHEN 5 THEN @completed
+                WHEN 5 THEN @queued
                 WHEN 6 THEN @failed
                 ELSE @queued
             END
@@ -185,7 +185,6 @@ internal static class DownloadStoreSchema
             command.Parameters.AddWithValue("@pausing", (int)DownloadPhase.Pausing);
             command.Parameters.AddWithValue("@paused", (int)DownloadPhase.Paused);
             command.Parameters.AddWithValue("@downloading", (int)DownloadPhase.Downloading);
-            command.Parameters.AddWithValue("@completed", (int)DownloadPhase.Completed);
             command.Parameters.AddWithValue("@failed", (int)DownloadPhase.Failed);
             command.Parameters.AddWithValue("@queued", (int)DownloadPhase.Queued);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

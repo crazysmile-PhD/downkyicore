@@ -8,12 +8,12 @@ namespace DownKyi.Services.Download;
 
 internal interface IDownloadService : IDisposable
 {
-    void Parse(DownloadingItem downloading);
+    Task ParseAsync(DownloadingItem downloading);
     string? DownloadAudio(DownloadingItem downloading);
     string? DownloadVideo(DownloadingItem downloading);
-    string DownloadDanmaku(DownloadingItem downloading);
-    IReadOnlyList<string> DownloadSubtitle(DownloadingItem downloading);
-    string? DownloadCover(DownloadingItem downloading, string? coverUrl, string fileName);
+    Task<string> DownloadDanmakuAsync(DownloadingItem downloading);
+    Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading);
+    Task<string?> DownloadCoverAsync(DownloadingItem downloading, string? coverUrl, string fileName);
     string? MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid);
 
     Task StartAsync(CancellationToken cancellationToken = default);

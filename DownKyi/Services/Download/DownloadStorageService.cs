@@ -1,733 +1,605 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Downloads;
+using DownKyi.Application.Time;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
-using DownKyi.Core.Logging;
-using DownKyi.Core.Storage;
+using DownKyi.Domain.Downloads;
 using DownKyi.Models;
 using DownKyi.ViewModels.DownloadManager;
-using Microsoft.Data.Sqlite;
-using Console = DownKyi.Core.Utils.Debugging.Console;
+using DomainDownloadTask = DownKyi.Domain.Downloads.DownloadTask;
+using DomainQuality = DownKyi.Domain.Downloads.DownloadQuality;
+using LegacyDownloadStatus = DownKyi.Models.DownloadStatus;
+using LegacyQuality = DownKyi.Core.BiliApi.BiliUtils.Quality;
 
 namespace DownKyi.Services.Download;
 
 /// <summary>
-/// 使用原生 SQLite（Microsoft.Data.Sqlite）替代 FreeSql 的下载存储服务。
-/// 单例生命周期，内部维持长连接，读写操作通过 lock 保证线程安全。
+/// Projects the new download domain into legacy UI models while the ViewModels are migrated.
+/// Persistence belongs exclusively to <see cref="IDownloadTaskStore"/>.
 /// </summary>
 internal sealed class DownloadStorageService : IDisposable
 {
-    private const string Tag = "DownloadStorageService";
-    private readonly SqliteConnection _connection;
-    private readonly object _lock = new();
+    private const int MaximumUpdateAttempts = 2;
+    private readonly IDownloadTaskStore _store;
+    private readonly IClock _clock;
+    private readonly ConcurrentDictionary<string, DomainDownloadTask> _snapshots = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _taskGates = new(StringComparer.Ordinal);
+    private bool _disposed;
 
-    public DownloadStorageService()
-        : this(StorageManager.GetDbPath())
+    public DownloadStorageService(IDownloadTaskStore store, IClock clock)
     {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(clock);
+        _store = store;
+        _clock = clock;
     }
 
-    internal DownloadStorageService(string dbPath)
+    public async Task AddDownloadingAsync(
+        DownloadingItem? downloadingItem,
+        CancellationToken cancellationToken = default)
     {
-        var connString = new SqliteConnectionStringBuilder
+        if (downloadingItem?.DownloadBase == null)
         {
-            DataSource = dbPath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = true,
-            DefaultTimeout = 30
-        }.ToString();
-
-        _connection = new SqliteConnection(connString);
-        _connection.Open();
-
-        EnsureSchema();
-    }
-
-    /// <summary>
-    /// 建表（幂等），并开启外键支持
-    /// </summary>
-    private void EnsureSchema()
-    {
-        const string ddl = @"
-                           PRAGMA foreign_keys = ON;
-                           PRAGMA journal_mode = WAL;
-                           PRAGMA synchronous = NORMAL;
-                           PRAGMA temp_store = MEMORY;
-                           PRAGMA busy_timeout = 5000;
-
-                           CREATE TABLE IF NOT EXISTS download_base (
-                               id                    TEXT PRIMARY KEY,
-                               need_download_content TEXT NOT NULL DEFAULT '{}',
-                               bvid                  TEXT NOT NULL DEFAULT '',
-                               avid                  INTEGER NOT NULL DEFAULT 0,
-                               cid                   INTEGER NOT NULL DEFAULT 0,
-                               episode_id            INTEGER NOT NULL DEFAULT 0,
-                               cover_url             TEXT NOT NULL DEFAULT '',
-                               page_cover_url        TEXT NOT NULL DEFAULT '',
-                               zone_id               INTEGER NOT NULL DEFAULT 0,
-                               [order]               INTEGER NOT NULL DEFAULT 0,
-                               main_title            TEXT NOT NULL DEFAULT '',
-                               name                  TEXT NOT NULL DEFAULT '',
-                               duration              TEXT NOT NULL DEFAULT '',
-                               video_codec_name      TEXT NOT NULL DEFAULT '',
-                               resolution            TEXT NOT NULL DEFAULT '{}',
-                               audio_codec           TEXT,
-                               file_path             TEXT NOT NULL DEFAULT '',
-                               file_size             TEXT,
-                               page                  INTEGER NOT NULL DEFAULT 1
-                           );
-
-                           CREATE TABLE IF NOT EXISTS downloading (
-                               id                    TEXT PRIMARY KEY REFERENCES download_base(id) ON DELETE CASCADE,
-                               gid                   TEXT,
-                               download_files        TEXT NOT NULL DEFAULT '{}',
-                               downloaded_files      TEXT NOT NULL DEFAULT '[]',
-                               play_stream_type      INTEGER NOT NULL DEFAULT 0,
-                               download_status       INTEGER NOT NULL DEFAULT 0,
-                               download_content      TEXT,
-                               download_status_title TEXT,
-                               progress              REAL NOT NULL DEFAULT 0,
-                               downloading_file_size TEXT,
-                               max_speed             INTEGER NOT NULL DEFAULT 0,
-                               speed_display         TEXT
-                           );
-
-                           CREATE TABLE IF NOT EXISTS downloaded (
-                               id                    TEXT PRIMARY KEY REFERENCES download_base(id) ON DELETE CASCADE,
-                               max_speed_display     TEXT,
-                               finished_timestamp    INTEGER NOT NULL DEFAULT 0,
-                               finished_time         TEXT NOT NULL DEFAULT ''
-                           );
-
-                           CREATE INDEX IF NOT EXISTS ix_downloading_status ON downloading(download_status);
-                           CREATE INDEX IF NOT EXISTS ix_downloaded_finished_timestamp ON downloaded(finished_timestamp DESC);
-                           CREATE INDEX IF NOT EXISTS ix_download_base_main_title_order ON download_base(main_title, [order]);
-                           ";
-        lock (_lock)
-        {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = ddl;
-            cmd.ExecuteNonQuery();
+            return;
         }
+
+        var task = CreateUnfinishedTask(downloadingItem, _clock.UtcNow);
+        var result = await _store.AddAsync(task, cancellationToken).ConfigureAwait(true);
+        if (result.IsSuccess)
+        {
+            _snapshots[task.Id.Value] = task;
+            return;
+        }
+
+        var existing = await _store.FindAsync(task.Id, cancellationToken).ConfigureAwait(true);
+        if (existing != null)
+        {
+            _snapshots[task.Id.Value] = existing;
+            return;
+        }
+
+        ThrowStoreFailure(result.Error?.Message);
     }
 
-    // ─── 辅助：JSON 序列化 / 反序列化 ────────────────────────────────────────
-
-    private static string ToJson<T>(T value) =>
-        JsonSerializer.Serialize(value, GetJsonTypeInfo<T>());
-
-    private static T FromJson<T>(string? json, T fallback) where T : new()
+    public async Task RemoveDownloadingAsync(
+        DownloadingItem? downloadingItem,
+        bool cascadeRemove = false,
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(json)) return fallback;
+        if (downloadingItem?.DownloadBase == null || !cascadeRemove)
+        {
+            // A non-cascading removal is followed by AddDownloadedAsync. The new store performs
+            // that table move atomically when the completed aggregate is persisted.
+            return;
+        }
+
+        await DeleteAsync(downloadingItem.DownloadBase.Id, cancellationToken).ConfigureAwait(true);
+    }
+
+    public async Task<IReadOnlyList<DownloadingItem>> GetDownloadingAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var tasks = await _store.GetUnfinishedAsync(cancellationToken).ConfigureAwait(true);
+        foreach (var task in tasks)
+        {
+            _snapshots[task.Id.Value] = task;
+        }
+
+        return tasks.Select(ToDownloadingItem).ToArray();
+    }
+
+    public async Task UpdateDownloadingAsync(
+        DownloadingItem? downloadingItem,
+        CancellationToken cancellationToken = default)
+    {
+        if (downloadingItem?.DownloadBase == null)
+        {
+            return;
+        }
+
+        var id = downloadingItem.DownloadBase.Id;
+        var gate = GetTaskGate(id);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(true);
         try
         {
-            return JsonSerializer.Deserialize(json, GetJsonTypeInfo<T>()) ?? fallback;
-        }
-        catch (JsonException)
-        {
-            return fallback;
-        }
-    }
-
-    private static JsonTypeInfo<T> GetJsonTypeInfo<T>()
-    {
-        var typeInfo = DownloadStorageJsonContext.Default.GetTypeInfo(typeof(T));
-        if (typeInfo is JsonTypeInfo<T> typedTypeInfo)
-        {
-            return typedTypeInfo;
-        }
-
-        throw new InvalidOperationException($"Missing JSON metadata for {typeof(T).FullName}.");
-    }
-
-    // ─── DownloadBase 映射 ────────────────────────────────────────────────────
-
-    private static DownloadBase ReadDownloadBase(SqliteDataReader r) => new()
-    {
-        Id = r.GetString(r.GetOrdinal("id")),
-        NeedDownloadContent = FromJson(
-            r.IsDBNull(r.GetOrdinal("need_download_content"))
-                ? null
-                : r.GetString(r.GetOrdinal("need_download_content")),
-            new Dictionary<string, bool>()),
-        Bvid = r.IsDBNull(r.GetOrdinal("bvid")) ? "" : r.GetString(r.GetOrdinal("bvid")),
-        Avid = r.GetInt64(r.GetOrdinal("avid")),
-        Cid = r.GetInt64(r.GetOrdinal("cid")),
-        EpisodeId = r.GetInt64(r.GetOrdinal("episode_id")),
-        CoverUrl = r.IsDBNull(r.GetOrdinal("cover_url")) ? "" : r.GetString(r.GetOrdinal("cover_url")),
-        PageCoverUrl = r.IsDBNull(r.GetOrdinal("page_cover_url")) ? "" : r.GetString(r.GetOrdinal("page_cover_url")),
-        ZoneId = r.GetInt32(r.GetOrdinal("zone_id")),
-        Order = r.GetInt32(r.GetOrdinal("order")),
-        MainTitle = r.IsDBNull(r.GetOrdinal("main_title")) ? "" : r.GetString(r.GetOrdinal("main_title")),
-        Name = r.IsDBNull(r.GetOrdinal("name")) ? "" : r.GetString(r.GetOrdinal("name")),
-        Duration = r.IsDBNull(r.GetOrdinal("duration")) ? "" : r.GetString(r.GetOrdinal("duration")),
-        VideoCodecName = r.IsDBNull(r.GetOrdinal("video_codec_name"))
-            ? ""
-            : r.GetString(r.GetOrdinal("video_codec_name")),
-        Resolution = FromJson(
-            r.IsDBNull(r.GetOrdinal("resolution")) ? null : r.GetString(r.GetOrdinal("resolution")),
-            new Quality()),
-        AudioCodec = FromJson(
-            r.IsDBNull(r.GetOrdinal("audio_codec")) ? null : r.GetString(r.GetOrdinal("audio_codec")),
-            new Quality()),
-        FilePath = r.IsDBNull(r.GetOrdinal("file_path")) ? "" : r.GetString(r.GetOrdinal("file_path")),
-        FileSize = r.IsDBNull(r.GetOrdinal("file_size")) ? null : r.GetString(r.GetOrdinal("file_size")),
-        Page = r.GetInt32(r.GetOrdinal("page"))
-    };
-
-    // ─── 下载中数据 ───────────────────────────────────────────────────────────
-
-    #region 下载中数据
-
-    /// <summary>
-    /// 添加下载中数据（幂等：已存在则跳过）
-    /// </summary>
-    public void AddDownloading(DownloadingItem? downloadingItem)
-    {
-        if (downloadingItem?.DownloadBase == null) return;
-
-        var db = downloadingItem.DownloadBase;
-        var dl = downloadingItem.Downloading;
-        dl.Id = db.Id;
-
-        lock (_lock)
-        {
-            using var tx = _connection.BeginTransaction();
-            try
+            for (var attempt = 0; attempt < MaximumUpdateAttempts; attempt++)
             {
-                InsertOrIgnoreDownloadBase(db, tx);
-
-                using var cmd = _connection.CreateCommand();
-                cmd.Transaction = tx;
-                cmd.CommandText = @"
-INSERT OR IGNORE INTO downloading
-    (id, gid, download_files, downloaded_files, play_stream_type, download_status,
-     download_content, download_status_title, progress, downloading_file_size, max_speed, speed_display)
-VALUES
-    (@id, @gid, @download_files, @downloaded_files, @play_stream_type, @download_status,
-     @download_content, @download_status_title, @progress, @downloading_file_size, @max_speed, @speed_display)";
-                BindDownloading(cmd, dl);
-                cmd.ExecuteNonQuery();
-
-                tx.Commit();
-            }
-            catch (SqliteException e)
-            {
-                tx.Rollback();
-                LogManager.Error(Tag, e);
-                Console.PrintLine("AddDownloading发生异常: {0}", e);
-                throw;
-            }
-        }
-    }
-
-    /// <summary>
-    /// 删除下载中数据
-    /// </summary>
-    /// <param name="downloadingItem"></param>
-    /// <param name="cascadeRemove">true=连同 download_base 一起删除</param>
-    public void RemoveDownloading(DownloadingItem? downloadingItem, bool cascadeRemove = false)
-    {
-        if (downloadingItem?.DownloadBase == null) return;
-        var id = downloadingItem.DownloadBase.Id;
-
-        lock (_lock)
-        {
-            try
-            {
-                EnableForeignKeys();
-                using var cmd = _connection.CreateCommand();
-                // 外键 ON DELETE CASCADE：删除 download_base 会级联删除 downloading/downloaded
-                if (cascadeRemove)
+                var current = await GetCurrentTaskAsync(id, cancellationToken).ConfigureAwait(true);
+                if (current == null)
                 {
-                    cmd.CommandText = "DELETE FROM download_base WHERE id = @id";
+                    await AddDownloadingAsync(downloadingItem, cancellationToken).ConfigureAwait(true);
+                    return;
+                }
+
+                var updated = CreateUnfinishedTask(
+                    downloadingItem,
+                    current.CreatedAtUtc,
+                    checked(current.Version + 1),
+                    LaterOf(_clock.UtcNow, current.UpdatedAtUtc),
+                    current.Progress);
+                var result = await _store
+                    .UpdateAsync(updated, current.Version, cancellationToken)
+                    .ConfigureAwait(true);
+                if (result.IsSuccess)
+                {
+                    _snapshots[id] = updated;
+                    return;
+                }
+
+                _snapshots.TryRemove(id, out _);
+            }
+
+            ThrowStoreFailure($"Download task '{id}' changed while it was being saved.");
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task AddDownloadedAsync(
+        DownloadedItem? downloadedItem,
+        CancellationToken cancellationToken = default)
+    {
+        if (downloadedItem?.DownloadBase == null)
+        {
+            return;
+        }
+
+        var id = downloadedItem.DownloadBase.Id;
+        var gate = GetTaskGate(id);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(true);
+        try
+        {
+            for (var attempt = 0; attempt < MaximumUpdateAttempts; attempt++)
+            {
+                var current = await GetCurrentTaskAsync(id, cancellationToken).ConfigureAwait(true);
+                if (current == null)
+                {
+                    var completed = CreateCompletedTask(downloadedItem, _clock.UtcNow);
+                    var addResult = await _store.AddAsync(completed, cancellationToken).ConfigureAwait(true);
+                    if (addResult.IsSuccess)
+                    {
+                        _snapshots[id] = completed;
+                        return;
+                    }
                 }
                 else
                 {
-                    cmd.CommandText = "DELETE FROM downloading WHERE id = @id";
-                }
-                cmd.Parameters.AddWithValue("@id", id);
-                cmd.ExecuteNonQuery();
-            }
-            catch (SqliteException e)
-            {
-                LogManager.Error(Tag, e);
-                Console.PrintLine("RemoveDownloading发生异常: {0}", e);
-                throw;
-            }
-        }
-    }
-
-    /// <summary>
-    /// 获取所有下载中数据
-    /// </summary>
-    public IReadOnlyList<DownloadingItem> GetDownloading()
-    {
-        var result = new List<DownloadingItem>();
-        lock (_lock)
-        {
-            try
-            {
-                using var cmd = _connection.CreateCommand();
-                cmd.CommandText = @"
-SELECT
-    dl.id, dl.gid, dl.download_files, dl.downloaded_files, dl.play_stream_type,
-    dl.download_status, dl.download_content, dl.download_status_title, dl.progress,
-    dl.downloading_file_size, dl.max_speed, dl.speed_display,
-    db.need_download_content, db.bvid, db.avid, db.cid, db.episode_id,
-    db.cover_url, db.page_cover_url, db.zone_id, db.""order"", db.main_title,
-    db.name, db.duration, db.video_codec_name, db.resolution, db.audio_codec,
-    db.file_path, db.file_size, db.page
-FROM downloading dl
-LEFT JOIN download_base db ON db.id = dl.id
-ORDER BY db.main_title COLLATE NOCASE, db.""order"" ASC";
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    var downloadBase = ReadDownloadBase(reader);
-                    var downloading = new Downloading
+                    var completed = CreateCompletedTask(
+                        downloadedItem,
+                        current.CreatedAtUtc,
+                        checked(current.Version + 1),
+                        LaterOf(_clock.UtcNow, current.UpdatedAtUtc),
+                        current.Progress,
+                        current.Transfer,
+                        current.Plan);
+                    var updateResult = await _store
+                        .UpdateAsync(completed, current.Version, cancellationToken)
+                        .ConfigureAwait(true);
+                    if (updateResult.IsSuccess)
                     {
-                        Id = reader.GetString(reader.GetOrdinal("id")),
-                        Gid = reader.IsDBNull(reader.GetOrdinal("gid"))
-                            ? null
-                            : reader.GetString(reader.GetOrdinal("gid")),
-                        DownloadFiles = FromJson(
-                            reader.IsDBNull(reader.GetOrdinal("download_files"))
-                                ? null
-                                : reader.GetString(reader.GetOrdinal("download_files")),
-                            new Dictionary<string, string>()),
-                        DownloadedFiles = FromJson(
-                            reader.IsDBNull(reader.GetOrdinal("downloaded_files"))
-                                ? null
-                                : reader.GetString(reader.GetOrdinal("downloaded_files")),
-                            new List<string>()),
-                        PlayStreamType = (PlayStreamType)reader.GetInt32(reader.GetOrdinal("play_stream_type")),
-                        DownloadStatus = (DownloadStatus)reader.GetInt32(reader.GetOrdinal("download_status")),
-                        DownloadContent = reader.IsDBNull(reader.GetOrdinal("download_content"))
-                            ? null
-                            : reader.GetString(reader.GetOrdinal("download_content")),
-                        DownloadStatusTitle = reader.IsDBNull(reader.GetOrdinal("download_status_title"))
-                            ? null
-                            : reader.GetString(reader.GetOrdinal("download_status_title")),
-                        Progress = reader.GetFloat(reader.GetOrdinal("progress")),
-                        DownloadingFileSize = reader.IsDBNull(reader.GetOrdinal("downloading_file_size"))
-                            ? null
-                            : reader.GetString(reader.GetOrdinal("downloading_file_size")),
-                        MaxSpeed = reader.GetInt64(reader.GetOrdinal("max_speed")),
-                        SpeedDisplay = reader.IsDBNull(reader.GetOrdinal("speed_display"))
-                            ? null
-                            : reader.GetString(reader.GetOrdinal("speed_display")),
-                        DownloadBase = downloadBase
-                    };
-                    result.Add(new DownloadingItem { Downloading = downloading, DownloadBase = downloadBase });
+                        _snapshots[id] = completed;
+                        return;
+                    }
                 }
+
+                _snapshots.TryRemove(id, out _);
             }
-            catch (SqliteException e)
-            {
-                LogManager.Error(Tag, e);
-                Console.PrintLine("GetDownloading发生异常: {0}", e);
-                throw;
-            }
+
+            ThrowStoreFailure($"Completed download '{id}' could not be saved.");
         }
-
-        return result;
-    }
-
-    public Task<IReadOnlyList<DownloadingItem>> GetDownloadingAsync(CancellationToken cancellationToken = default)
-    {
-        return Task.Run(() => GetDownloading(), cancellationToken);
-    }
-
-    /// <summary>
-    /// 更新下载中数据
-    /// </summary>
-    public void UpdateDownloading(DownloadingItem? downloadingItem)
-    {
-        if (downloadingItem?.DownloadBase == null) return;
-
-        var dl = downloadingItem.Downloading;
-        dl.DownloadBase = downloadingItem.DownloadBase;
-
-        lock (_lock)
+        finally
         {
-            using var tx = _connection.BeginTransaction();
-            try
-            {
-                UpdateDownloadBase(downloadingItem.DownloadBase, tx);
-
-                using var cmd = _connection.CreateCommand();
-                cmd.Transaction = tx;
-                cmd.CommandText = @"
-UPDATE downloading SET
-    gid = @gid,
-    download_files = @download_files,
-    downloaded_files = @downloaded_files,
-    play_stream_type = @play_stream_type,
-    download_status = @download_status,
-    download_content = @download_content,
-    download_status_title = @download_status_title,
-    progress = @progress,
-    downloading_file_size = @downloading_file_size,
-    max_speed = @max_speed,
-    speed_display = @speed_display
-WHERE id = @id";
-                BindDownloading(cmd, dl);
-                cmd.ExecuteNonQuery();
-
-                tx.Commit();
-            }
-            catch (SqliteException e)
-            {
-                tx.Rollback();
-                LogManager.Error(Tag, e);
-                Console.PrintLine("UpdateDownloading发生异常: {0}", e);
-                throw;
-            }
+            gate.Release();
         }
     }
 
-    #endregion
-
-    // ─── 下载完成数据 ─────────────────────────────────────────────────────────
-
-    #region 下载完成数据
-
-    /// <summary>
-    /// 添加下载完成数据（幂等：已存在则跳过）
-    /// </summary>
-    public void AddDownloaded(DownloadedItem? downloadedItem)
-    {
-        if (downloadedItem?.DownloadBase == null) return;
-
-        var db = downloadedItem.DownloadBase;
-        var d = downloadedItem.Downloaded;
-        d.Id = db.Id;
-
-        lock (_lock)
-        {
-            using var tx = _connection.BeginTransaction();
-            try
-            {
-                InsertOrIgnoreDownloadBase(db, tx);
-
-                using var cmd = _connection.CreateCommand();
-                cmd.Transaction = tx;
-                cmd.CommandText = @"
-INSERT OR IGNORE INTO downloaded (id, max_speed_display, finished_timestamp, finished_time)
-VALUES (@id, @max_speed_display, @finished_timestamp, @finished_time)";
-                BindDownloaded(cmd, d);
-                cmd.ExecuteNonQuery();
-
-                tx.Commit();
-            }
-            catch (SqliteException e)
-            {
-                tx.Rollback();
-                LogManager.Error(Tag, e);
-                Console.PrintLine("AddDownloaded发生异常: {0}", e);
-                throw;
-            }
-        }
-    }
-
-    /// <summary>
-    /// 批量插入下载完成数据（用于数据迁移）
-    /// </summary>
-    public void AddDownloadedBatch(IEnumerable<Downloaded> items)
+    public async Task AddDownloadedBatchAsync(
+        IEnumerable<Downloaded> items,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
-
-        lock (_lock)
+        foreach (var item in items)
         {
-            using var tx = _connection.BeginTransaction();
-            try
+            cancellationToken.ThrowIfCancellationRequested();
+            if (item.DownloadBase == null)
             {
-                foreach (var d in items)
-                {
-                    if (d.DownloadBase == null) continue;
-                    InsertOrIgnoreDownloadBase(d.DownloadBase, tx);
-
-                    using var cmd = _connection.CreateCommand();
-                    cmd.Transaction = tx;
-                    cmd.CommandText = @"
-INSERT OR IGNORE INTO downloaded (id, max_speed_display, finished_timestamp, finished_time)
-VALUES (@id, @max_speed_display, @finished_timestamp, @finished_time)";
-                    BindDownloaded(cmd, d);
-                    cmd.ExecuteNonQuery();
-                }
-
-                tx.Commit();
+                continue;
             }
-            catch (SqliteException e)
+
+            var completed = CreateCompletedTask(item, item.DownloadBase, _clock.UtcNow);
+            var result = await _store.AddAsync(completed, cancellationToken).ConfigureAwait(true);
+            if (result.IsSuccess)
             {
-                tx.Rollback();
-                LogManager.Error(Tag, e);
-                Console.PrintLine("AddDownloadedBatch发生异常: {0}", e);
-                throw;
+                _snapshots[completed.Id.Value] = completed;
+                continue;
             }
+
+            var existing = await _store.FindAsync(completed.Id, cancellationToken).ConfigureAwait(true);
+            if (existing == null)
+            {
+                ThrowStoreFailure(result.Error?.Message);
+            }
+
+            if (existing.Phase == DownloadPhase.Completed)
+            {
+                _snapshots[existing.Id.Value] = existing;
+                continue;
+            }
+
+            completed = CreateCompletedTask(
+                item,
+                item.DownloadBase,
+                existing.CreatedAtUtc,
+                checked(existing.Version + 1),
+                LaterOf(_clock.UtcNow, existing.UpdatedAtUtc),
+                existing.Progress,
+                existing.Transfer,
+                existing.Plan);
+            result = await _store
+                .UpdateAsync(completed, existing.Version, cancellationToken)
+                .ConfigureAwait(true);
+            if (!result.IsSuccess)
+            {
+                ThrowStoreFailure(result.Error?.Message);
+            }
+
+            _snapshots[completed.Id.Value] = completed;
         }
     }
 
-    /// <summary>
-    /// 删除下载完成数据（级联删除 download_base）
-    /// </summary>
-    public void RemoveDownloaded(DownloadedItem? downloadedItem)
+    public async Task RemoveDownloadedAsync(
+        DownloadedItem? downloadedItem,
+        CancellationToken cancellationToken = default)
     {
-        if (downloadedItem?.DownloadBase == null) return;
-        var id = downloadedItem.DownloadBase.Id;
-
-        lock (_lock)
+        if (downloadedItem?.DownloadBase == null)
         {
-            try
-            {
-                EnableForeignKeys();
-                using var cmd = _connection.CreateCommand();
-                cmd.CommandText = "DELETE FROM download_base WHERE id = @id";
-                cmd.Parameters.AddWithValue("@id", id);
-                cmd.ExecuteNonQuery();
-            }
-            catch (SqliteException e)
-            {
-                LogManager.Error(Tag, e);
-                Console.PrintLine("RemoveDownloaded发生异常: {0}", e);
-                throw;
-            }
-        }
-    }
-
-    /// <summary>
-    /// 获取所有下载完成数据
-    /// </summary>
-    public IReadOnlyList<DownloadedItem> GetDownloaded()
-    {
-        var result = new List<DownloadedItem>();
-        lock (_lock)
-        {
-            try
-            {
-                using var cmd = _connection.CreateCommand();
-                cmd.CommandText = @"
-SELECT
-    d.id, d.max_speed_display, d.finished_timestamp, d.finished_time,
-    db.need_download_content, db.bvid, db.avid, db.cid, db.episode_id,
-    db.cover_url, db.page_cover_url, db.zone_id, db.""order"", db.main_title,
-    db.name, db.duration, db.video_codec_name, db.resolution, db.audio_codec,
-    db.file_path, db.file_size, db.page
-FROM downloaded d
-LEFT JOIN download_base db ON db.id = d.id
-ORDER BY d.finished_timestamp DESC";
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    var downloadBase = ReadDownloadBase(reader);
-                    var downloaded = new Downloaded
-                    {
-                        Id = reader.GetString(reader.GetOrdinal("id")),
-                        MaxSpeedDisplay = reader.IsDBNull(reader.GetOrdinal("max_speed_display"))
-                            ? null
-                            : reader.GetString(reader.GetOrdinal("max_speed_display")),
-                        FinishedTimestamp = reader.GetInt64(reader.GetOrdinal("finished_timestamp")),
-                        FinishedTime = reader.IsDBNull(reader.GetOrdinal("finished_time"))
-                            ? ""
-                            : reader.GetString(reader.GetOrdinal("finished_time")),
-                        DownloadBase = downloadBase
-                    };
-                    result.Add(new DownloadedItem { Downloaded = downloaded, DownloadBase = downloadBase });
-                }
-            }
-            catch (SqliteException e)
-            {
-                LogManager.Error(Tag, e);
-                Console.PrintLine("GetDownloaded发生异常: {0}", e);
-                throw;
-            }
+            return;
         }
 
-        return result;
+        await DeleteAsync(downloadedItem.DownloadBase.Id, cancellationToken).ConfigureAwait(true);
     }
 
-    public Task<IReadOnlyList<DownloadedItem>> GetDownloadedAsync(CancellationToken cancellationToken = default)
+    public async Task<DownloadHistoryPage> GetDownloadedPageAsync(
+        DownloadHistoryCursor? cursor,
+        int pageSize,
+        CancellationToken cancellationToken = default)
     {
-        return Task.Run(() => GetDownloaded(), cancellationToken);
-    }
-
-    /// <summary>
-    /// 更新下载完成数据
-    /// </summary>
-    public void UpdateDownloaded(DownloadedItem? downloadedItem)
-    {
-        if (downloadedItem?.DownloadBase == null) return;
-
-        var d = downloadedItem.Downloaded;
-        d.DownloadBase = downloadedItem.DownloadBase;
-
-        lock (_lock)
+        var page = await _store
+            .GetHistoryPageAsync(cursor, pageSize, cancellationToken)
+            .ConfigureAwait(true);
+        foreach (var task in page.Items)
         {
-            using var tx = _connection.BeginTransaction();
-            try
-            {
-                UpdateDownloadBase(downloadedItem.DownloadBase, tx);
-
-                using var cmd = _connection.CreateCommand();
-                cmd.Transaction = tx;
-                cmd.CommandText = @"
-UPDATE downloaded SET
-    max_speed_display = @max_speed_display,
-    finished_timestamp = @finished_timestamp,
-    finished_time = @finished_time
-WHERE id = @id";
-                BindDownloaded(cmd, d);
-                cmd.ExecuteNonQuery();
-
-                tx.Commit();
-            }
-            catch (SqliteException e)
-            {
-                tx.Rollback();
-                LogManager.Error(Tag, e);
-                Console.PrintLine("UpdateDownloaded发生异常: {0}", e);
-                throw;
-            }
+            _snapshots[task.Id.Value] = task;
         }
+
+        return page;
     }
 
-    /// <summary>
-    /// 清空所有下载完成记录（同时清空对应的 download_base 记录）
-    /// </summary>
-    public void ClearDownloaded()
+    public async Task<IReadOnlyList<DownloadedItem>> GetDownloadedAsync(
+        CancellationToken cancellationToken = default)
     {
-        lock (_lock)
+        var items = new List<DownloadedItem>();
+        DownloadHistoryCursor? cursor = null;
+        do
         {
-            using var tx = _connection.BeginTransaction();
-            try
-            {
-                EnableForeignKeys();
-                // 只删 downloaded 中存在的 download_base（不影响 downloading 中还在用的）
-                using var cmd = _connection.CreateCommand();
-                cmd.Transaction = tx;
-                cmd.CommandText = @"
-DELETE FROM download_base
-WHERE id IN (SELECT id FROM downloaded)
-  AND id NOT IN (SELECT id FROM downloading)";
-                cmd.ExecuteNonQuery();
-
-                // 剩余（同时在 downloading 中）只删 downloaded 记录
-                using var cmd2 = _connection.CreateCommand();
-                cmd2.Transaction = tx;
-                cmd2.CommandText = "DELETE FROM downloaded";
-                cmd2.ExecuteNonQuery();
-
-                tx.Commit();
-            }
-            catch (SqliteException e)
-            {
-                tx.Rollback();
-                LogManager.Error(Tag, e);
-                Console.PrintLine("ClearDownloaded发生异常: {0}", e);
-                throw;
-            }
+            var page = await GetDownloadedPageAsync(cursor, 500, cancellationToken).ConfigureAwait(true);
+            items.AddRange(page.Items.Select(ToDownloadedItem));
+            cursor = page.NextCursor;
         }
+        while (cursor != null);
+
+        return items;
     }
 
-    #endregion
-
-    // ─── 私有辅助方法 ─────────────────────────────────────────────────────────
-
-    private void EnableForeignKeys()
+    public async Task<IReadOnlyList<DownloadedItem>> GetRecentDownloadedAsync(
+        int pageSize,
+        CancellationToken cancellationToken = default)
     {
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = "PRAGMA foreign_keys = ON";
-        cmd.ExecuteNonQuery();
+        var page = await GetDownloadedPageAsync(null, pageSize, cancellationToken).ConfigureAwait(true);
+        return page.Items.Select(ToDownloadedItem).ToArray();
     }
 
-    private void InsertOrIgnoreDownloadBase(DownloadBase db, SqliteTransaction tx)
+    public Task UpdateDownloadedAsync(
+        DownloadedItem? downloadedItem,
+        CancellationToken cancellationToken = default)
     {
-        using var cmd = _connection.CreateCommand();
-        cmd.Transaction = tx;
-        cmd.CommandText = @"
-INSERT OR IGNORE INTO download_base
-    (id, need_download_content, bvid, avid, cid, episode_id, cover_url, page_cover_url,
-     zone_id, ""order"", main_title, name, duration, video_codec_name, resolution,
-     audio_codec, file_path, file_size, page)
-VALUES
-    (@id, @need_download_content, @bvid, @avid, @cid, @episode_id, @cover_url, @page_cover_url,
-     @zone_id, @order, @main_title, @name, @duration, @video_codec_name, @resolution,
-     @audio_codec, @file_path, @file_size, @page)";
-        BindDownloadBase(cmd, db);
-        cmd.ExecuteNonQuery();
+        return AddDownloadedAsync(downloadedItem, cancellationToken);
     }
 
-    private void UpdateDownloadBase(DownloadBase db, SqliteTransaction tx)
+    public async Task ClearDownloadedAsync(CancellationToken cancellationToken = default)
     {
-        using var cmd = _connection.CreateCommand();
-        cmd.Transaction = tx;
-        cmd.CommandText = @"
-UPDATE download_base SET
-    need_download_content = @need_download_content,
-    bvid = @bvid, avid = @avid, cid = @cid, episode_id = @episode_id,
-    cover_url = @cover_url, page_cover_url = @page_cover_url,
-    zone_id = @zone_id, ""order"" = @order, main_title = @main_title, name = @name,
-    duration = @duration, video_codec_name = @video_codec_name, resolution = @resolution,
-    audio_codec = @audio_codec, file_path = @file_path, file_size = @file_size, page = @page
-WHERE id = @id";
-        BindDownloadBase(cmd, db);
-        cmd.ExecuteNonQuery();
-    }
+        var result = await _store.ClearHistoryAsync(cancellationToken).ConfigureAwait(true);
+        if (!result.IsSuccess)
+        {
+            ThrowStoreFailure(result.Error?.Message);
+        }
 
-    private static void BindDownloadBase(SqliteCommand cmd, DownloadBase db)
-    {
-        cmd.Parameters.AddWithValue("@id", db.Id);
-        cmd.Parameters.AddWithValue("@need_download_content", ToJson(db.NeedDownloadContent));
-        cmd.Parameters.AddWithValue("@bvid", db.Bvid);
-        cmd.Parameters.AddWithValue("@avid", db.Avid);
-        cmd.Parameters.AddWithValue("@cid", db.Cid);
-        cmd.Parameters.AddWithValue("@episode_id", db.EpisodeId);
-        cmd.Parameters.AddWithValue("@cover_url", db.CoverUrl);
-        cmd.Parameters.AddWithValue("@page_cover_url", db.PageCoverUrl);
-        cmd.Parameters.AddWithValue("@zone_id", db.ZoneId);
-        cmd.Parameters.AddWithValue("@order", db.Order);
-        cmd.Parameters.AddWithValue("@main_title", db.MainTitle);
-        cmd.Parameters.AddWithValue("@name", db.Name);
-        cmd.Parameters.AddWithValue("@duration", db.Duration);
-        cmd.Parameters.AddWithValue("@video_codec_name", db.VideoCodecName);
-        cmd.Parameters.AddWithValue("@resolution", ToJson(db.Resolution));
-        cmd.Parameters.AddWithValue("@audio_codec", ToJson(db.AudioCodec));
-        cmd.Parameters.AddWithValue("@file_path", db.FilePath);
-        cmd.Parameters.AddWithValue("@file_size", db.FileSize ?? (object)DBNull.Value);
-        cmd.Parameters.AddWithValue("@page", db.Page);
-    }
-
-    private static void BindDownloading(SqliteCommand cmd, Downloading dl)
-    {
-        cmd.Parameters.AddWithValue("@id", dl.Id);
-        cmd.Parameters.AddWithValue("@gid", dl.Gid ?? (object)DBNull.Value);
-        cmd.Parameters.AddWithValue("@download_files", ToJson(dl.DownloadFiles));
-        cmd.Parameters.AddWithValue("@downloaded_files", ToJson(dl.DownloadedFiles));
-        cmd.Parameters.AddWithValue("@play_stream_type", (int)dl.PlayStreamType);
-        cmd.Parameters.AddWithValue("@download_status", (int)dl.DownloadStatus);
-        cmd.Parameters.AddWithValue("@download_content", dl.DownloadContent ?? (object)DBNull.Value);
-        cmd.Parameters.AddWithValue("@download_status_title", dl.DownloadStatusTitle ?? (object)DBNull.Value);
-        cmd.Parameters.AddWithValue("@progress", dl.Progress);
-        cmd.Parameters.AddWithValue("@downloading_file_size", dl.DownloadingFileSize ?? (object)DBNull.Value);
-        cmd.Parameters.AddWithValue("@max_speed", dl.MaxSpeed);
-        cmd.Parameters.AddWithValue("@speed_display", dl.SpeedDisplay ?? (object)DBNull.Value);
-    }
-
-    private static void BindDownloaded(SqliteCommand cmd, Downloaded d)
-    {
-        cmd.Parameters.AddWithValue("@id", d.Id);
-        cmd.Parameters.AddWithValue("@max_speed_display", d.MaxSpeedDisplay ?? (object)DBNull.Value);
-        cmd.Parameters.AddWithValue("@finished_timestamp", d.FinishedTimestamp);
-        cmd.Parameters.AddWithValue("@finished_time", d.FinishedTime);
+        foreach (var snapshot in _snapshots.Where(item => item.Value.Phase == DownloadPhase.Completed).ToArray())
+        {
+            _snapshots.TryRemove(snapshot.Key, out _);
+        }
     }
 
     public void Dispose()
     {
-        _connection.Close();
-        _connection.Dispose();
-        GC.SuppressFinalize(this);
+        if (_disposed)
+        {
+            return;
+        }
+
+        foreach (var gate in _taskGates.Values)
+        {
+            gate.Dispose();
+        }
+
+        _taskGates.Clear();
+        _disposed = true;
+    }
+
+    internal static DownloadingItem ToDownloadingItem(DomainDownloadTask task)
+    {
+        var downloadBase = ToDownloadBase(task);
+        var downloading = new Downloading
+        {
+            Id = task.Id.Value,
+            Gid = task.Transfer.BackendIdentity,
+            DownloadFiles = task.Plan.TransferFiles.ToDictionary(item => item.Key, item => item.Value),
+            DownloadedFiles = task.Transfer.CompletedFileKeys.ToList(),
+            PlayStreamType = (PlayStreamType)task.Plan.StreamType,
+            DownloadStatus = ToLegacyStatus(task.Phase),
+            DownloadContent = task.Transfer.ActiveContent,
+            DownloadStatusTitle = task.Transfer.StatusText,
+            Progress = checked((float)task.Progress.Percentage),
+            DownloadingFileSize = task.Progress.DownloadedSizeText,
+            MaxSpeed = task.Transfer.MaximumBytesPerSecond,
+            SpeedDisplay = task.Progress.SpeedText,
+            DownloadBase = downloadBase
+        };
+        return new DownloadingItem { DownloadBase = downloadBase, Downloading = downloading };
+    }
+
+    internal static DownloadedItem ToDownloadedItem(DomainDownloadTask task)
+    {
+        var completion = task.Completion
+            ?? throw new InvalidOperationException("Completed download is missing completion details.");
+        var downloadBase = ToDownloadBase(task);
+        var downloaded = new Downloaded
+        {
+            Id = task.Id.Value,
+            MaxSpeedDisplay = completion.MaximumSpeedText,
+            FinishedTimestamp = completion.FinishedTimestamp,
+            FinishedTime = completion.FinishedTimeText,
+            DownloadBase = downloadBase
+        };
+        return new DownloadedItem { DownloadBase = downloadBase, Downloaded = downloaded };
+    }
+
+    private async Task DeleteAsync(string id, CancellationToken cancellationToken)
+    {
+        var taskId = new DownloadTaskId(id);
+        var result = await _store.DeleteAsync(taskId, cancellationToken).ConfigureAwait(true);
+        if (!result.IsSuccess && result.Error?.Code != "download.store.not_found")
+        {
+            ThrowStoreFailure(result.Error?.Message);
+        }
+
+        _snapshots.TryRemove(id, out _);
+    }
+
+    private async Task<DomainDownloadTask?> GetCurrentTaskAsync(
+        string id,
+        CancellationToken cancellationToken)
+    {
+        if (_snapshots.TryGetValue(id, out var snapshot))
+        {
+            return snapshot;
+        }
+
+        var loaded = await _store.FindAsync(new DownloadTaskId(id), cancellationToken).ConfigureAwait(true);
+        if (loaded != null)
+        {
+            _snapshots[id] = loaded;
+        }
+
+        return loaded;
+    }
+
+    private SemaphoreSlim GetTaskGate(string id)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _taskGates.GetOrAdd(id, static _ => new SemaphoreSlim(1, 1));
+    }
+
+    private static DomainDownloadTask CreateUnfinishedTask(
+        DownloadingItem item,
+        DateTimeOffset createdAtUtc,
+        long version = 0,
+        DateTimeOffset? updatedAtUtc = null,
+        DownloadProgress? existingProgress = null)
+    {
+        var downloading = item.Downloading;
+        var phase = ToDomainPhase(downloading.DownloadStatus);
+        var failure = phase == DownloadPhase.Failed
+            ? new DownloadFailure(
+                "download.legacy.failed",
+                downloading.DownloadStatusTitle ?? "Download failed.",
+                true)
+            : null;
+        return DomainDownloadTask.Restore(
+            new DownloadTaskId(item.DownloadBase.Id),
+            ToMetadata(item.DownloadBase),
+            new DownloadPlan(
+                item.DownloadBase.NeedDownloadContent,
+                downloading.DownloadFiles,
+                (int)downloading.PlayStreamType),
+            new DownloadOutput(item.DownloadBase.FilePath, item.DownloadBase.FileSize),
+            phase,
+            new DownloadProgress(
+                downloading.Progress,
+                existingProgress?.DownloadedBytes,
+                existingProgress?.TotalBytes,
+                existingProgress?.BytesPerSecond ?? 0,
+                downloadedSizeText: downloading.DownloadingFileSize,
+                speedText: downloading.SpeedDisplay),
+            new DownloadTransferState(
+                downloading.Gid,
+                downloading.DownloadedFiles,
+                downloading.DownloadContent,
+                downloading.DownloadStatusTitle,
+                downloading.MaxSpeed),
+            failure,
+            null,
+            version,
+            createdAtUtc,
+            updatedAtUtc ?? createdAtUtc);
+    }
+
+    private static DomainDownloadTask CreateCompletedTask(
+        DownloadedItem item,
+        DateTimeOffset createdAtUtc,
+        long version = 0,
+        DateTimeOffset? updatedAtUtc = null,
+        DownloadProgress? progress = null,
+        DownloadTransferState? transfer = null,
+        DownloadPlan? plan = null)
+    {
+        return CreateCompletedTask(
+            item.Downloaded,
+            item.DownloadBase,
+            createdAtUtc,
+            version,
+            updatedAtUtc,
+            progress,
+            transfer,
+            plan);
+    }
+
+    private static DomainDownloadTask CreateCompletedTask(
+        Downloaded downloaded,
+        DownloadBase downloadBase,
+        DateTimeOffset createdAtUtc,
+        long version = 0,
+        DateTimeOffset? updatedAtUtc = null,
+        DownloadProgress? progress = null,
+        DownloadTransferState? transfer = null,
+        DownloadPlan? plan = null)
+    {
+        return DomainDownloadTask.Restore(
+            new DownloadTaskId(downloadBase.Id),
+            ToMetadata(downloadBase),
+            plan ?? new DownloadPlan(downloadBase.NeedDownloadContent, [], 0),
+            new DownloadOutput(downloadBase.FilePath, downloadBase.FileSize),
+            DownloadPhase.Completed,
+            progress ?? DownloadProgress.None,
+            transfer ?? DownloadTransferState.Empty,
+            null,
+            new DownloadCompletion(
+                downloaded.FinishedTimestamp,
+                downloaded.FinishedTime,
+                downloaded.MaxSpeedDisplay),
+            version,
+            createdAtUtc,
+            updatedAtUtc ?? createdAtUtc);
+    }
+
+    private static DownloadTaskMetadata ToMetadata(DownloadBase downloadBase)
+    {
+        return new DownloadTaskMetadata(
+            new DownloadMediaIdentity(
+                downloadBase.Bvid,
+                downloadBase.Avid,
+                downloadBase.Cid,
+                downloadBase.EpisodeId,
+                downloadBase.Page,
+                downloadBase.Order),
+            downloadBase.MainTitle,
+            downloadBase.Name,
+            downloadBase.Duration,
+            downloadBase.VideoCodecName,
+            ToDomainQuality(downloadBase.Resolution),
+            ToDomainQuality(downloadBase.AudioCodec),
+            downloadBase.CoverUrl,
+            downloadBase.PageCoverUrl,
+            downloadBase.ZoneId);
+    }
+
+    private static DownloadBase ToDownloadBase(DomainDownloadTask task)
+    {
+        return new DownloadBase
+        {
+            Id = task.Id.Value,
+            NeedDownloadContent = task.Plan.RequestedAssets.ToDictionary(item => item.Key, item => item.Value),
+            Bvid = task.Metadata.Media.Bvid,
+            Avid = task.Metadata.Media.Avid,
+            Cid = task.Metadata.Media.Cid,
+            EpisodeId = task.Metadata.Media.EpisodeId,
+            CoverUrl = task.Metadata.CoverAddress,
+            PageCoverUrl = task.Metadata.PageCoverAddress,
+            ZoneId = task.Metadata.ZoneId,
+            Order = task.Metadata.Media.Order,
+            MainTitle = task.Metadata.MainTitle,
+            Name = task.Metadata.Name,
+            Duration = task.Metadata.DurationText,
+            VideoCodecName = task.Metadata.VideoCodecName,
+            Resolution = ToLegacyQuality(task.Metadata.Resolution),
+            AudioCodec = ToLegacyQuality(task.Metadata.AudioCodec),
+            FilePath = task.Output.BasePath,
+            FileSize = task.Output.FileSizeText,
+            Page = task.Metadata.Media.Page
+        };
+    }
+
+    private static DomainQuality ToDomainQuality(LegacyQuality quality)
+    {
+        return new DomainQuality(quality.Id, quality.Name);
+    }
+
+    private static LegacyQuality ToLegacyQuality(DomainQuality quality)
+    {
+        return new LegacyQuality { Id = quality.Id, Name = quality.Name };
+    }
+
+    private static DownloadPhase ToDomainPhase(LegacyDownloadStatus status)
+    {
+        return status switch
+        {
+            LegacyDownloadStatus.PauseStarted => DownloadPhase.Pausing,
+            LegacyDownloadStatus.Pause => DownloadPhase.Paused,
+            LegacyDownloadStatus.Downloading => DownloadPhase.Downloading,
+            LegacyDownloadStatus.DownloadFailed => DownloadPhase.Failed,
+            _ => DownloadPhase.Queued
+        };
+    }
+
+    private static LegacyDownloadStatus ToLegacyStatus(DownloadPhase phase)
+    {
+        return phase switch
+        {
+            DownloadPhase.Pausing => LegacyDownloadStatus.PauseStarted,
+            DownloadPhase.Paused or DownloadPhase.Canceled => LegacyDownloadStatus.Pause,
+            DownloadPhase.Downloading => LegacyDownloadStatus.Downloading,
+            DownloadPhase.Failed => LegacyDownloadStatus.DownloadFailed,
+            DownloadPhase.Completed => LegacyDownloadStatus.DownloadSucceed,
+            _ => LegacyDownloadStatus.WaitForDownload
+        };
+    }
+
+    private static DateTimeOffset LaterOf(DateTimeOffset first, DateTimeOffset second)
+    {
+        return first >= second ? first : second;
+    }
+
+    [DoesNotReturn]
+    private static void ThrowStoreFailure(string? message)
+    {
+        throw new InvalidOperationException(message ?? "Download storage operation failed.");
     }
 }

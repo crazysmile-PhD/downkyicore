@@ -48,6 +48,19 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task LegacySucceedStatusStillInDownloadingTableIsQueuedForRecovery()
+    {
+        await CreateLegacyDatabaseAsync();
+        await SetLegacyDownloadStatusAsync(5);
+        using var store = CreateStore();
+
+        var restored = Assert.Single(
+            await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(DownloadPhase.Queued, restored.Phase);
+    }
+
+    [Fact]
     public async Task PausedTaskPreservesResumeStateAcrossReopen()
     {
         var expected = CreatePausedTask("resume-01");
@@ -291,6 +304,15 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         command.CommandText = "UPDATE download_base SET need_download_content = @value WHERE id = @id";
         command.Parameters.AddWithValue("@value", sensitiveValue);
         command.Parameters.AddWithValue("@id", id);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SetLegacyDownloadStatusAsync(int status)
+    {
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE downloading SET download_status = @status";
+        command.Parameters.AddWithValue("@status", status);
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
     }
 
