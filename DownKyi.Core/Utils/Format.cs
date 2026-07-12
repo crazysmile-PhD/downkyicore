@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace DownKyi.Core.Utils;
 
 public static class Format
@@ -74,9 +76,9 @@ public static class Format
     {
         return number switch
         {
-            > 99999999 => (number / 100000000.0f).ToString("F1") + "亿",
-            > 9999 => (number / 10000.0f).ToString("F1") + "万",
-            _ => number.ToString()
+            > 99999999 => (number / 100000000.0f).ToString("F1", CultureInfo.CurrentCulture) + "亿",
+            > 9999 => (number / 10000.0f).ToString("F1", CultureInfo.CurrentCulture) + "万",
+            _ => number.ToString(CultureInfo.CurrentCulture)
         };
     }
 
@@ -113,9 +115,9 @@ public static class Format
         {
             <= 0 => "0B",
             < 1024 => fileSize + "B",
-            < 1024 * 1024 => (fileSize / 1024.0).ToString("#.##") + "KB",
-            < 1024 * 1024 * 1024 => (fileSize / 1024.0 / 1024.0).ToString("#.##") + "MB",
-            _ => (fileSize / 1024.0 / 1024.0 / 1024.0).ToString("#.##") + "GB"
+            < 1024 * 1024 => (fileSize / 1024.0).ToString("#.##", CultureInfo.CurrentCulture) + "KB",
+            < 1024 * 1024 * 1024 => (fileSize / 1024.0 / 1024.0).ToString("#.##", CultureInfo.CurrentCulture) + "MB",
+            _ => (fileSize / 1024.0 / 1024.0 / 1024.0).ToString("#.##", CultureInfo.CurrentCulture) + "GB"
         };
     }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.Users.Models;
@@ -154,7 +155,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
             // 当地时区
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);
             var dateCTime = startTime.AddSeconds(item.Meta.Ptime);
-            var mtime = dateCTime.ToString("yyyy-MM-dd");
+            var mtime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
             SeasonsSeries.Add(new SeasonsSeries
             {
@@ -187,7 +188,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
             // 当地时区
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); ;
             var dateCTime = startTime.AddSeconds(item.Meta.Mtime);
-            var mtime = dateCTime.ToString("yyyy-MM-dd");
+            var mtime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
             SeasonsSeries.Add(new SeasonsSeries
             {

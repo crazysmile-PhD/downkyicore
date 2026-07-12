@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Formats.Nrbf;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -487,7 +488,7 @@ internal class ViewUpgradingDialogViewModel : BaseDialogViewModel
 
             string fileName = Path.GetFileNameWithoutExtension(dbPath);
             string extension = Path.GetExtension(dbPath);
-            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
             string backupPath = Path.Combine(backupDir, $"{fileName}_failed_{timestamp}{extension}");
 
             File.Move(dbPath, backupPath);

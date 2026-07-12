@@ -331,7 +331,7 @@ internal abstract class DownloadService : IDisposable
             BaseFontSize = SettingsManager.Instance.GetDanmakuFontSize(),
             LineCount = SettingsManager.Instance.GetDanmakuLineCount(),
             LayoutAlgorithm =
-                SettingsManager.Instance.GetDanmakuLayoutAlgorithm().ToString("G").ToLower(), // async/sync
+                GetDanmakuLayoutAlgorithmValue(SettingsManager.Instance.GetDanmakuLayoutAlgorithm()), // async/sync
             TuneDuration = 0,
             DropOffset = 0,
             BottomMargin = 0,
@@ -681,6 +681,17 @@ internal abstract class DownloadService : IDisposable
             Console.PrintLine($"{Tag}.DoWork() 任务结束超时");
             LogManager.Debug($"{Tag}.DoWork()", "任务结束超时");
         }
+    }
+
+    private static string GetDanmakuLayoutAlgorithmValue(DanmakuLayoutAlgorithm algorithm)
+    {
+        return algorithm switch
+        {
+            DanmakuLayoutAlgorithm.None => "none",
+            DanmakuLayoutAlgorithm.Async => "async",
+            DanmakuLayoutAlgorithm.Sync => "sync",
+            _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, "Unsupported danmaku layout algorithm.")
+        };
     }
 
     private async Task RunSingleDownloadAsync(DownloadingItem downloading)

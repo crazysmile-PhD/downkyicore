@@ -552,7 +552,7 @@ contracts:
   - Nightly/release workflows should own heavy or noisy regression discovery.
   - Local and CI builds must use the same AnalysisMode=All analyzer policy.
   - Windows, Linux, and macOS builds expose the same analyzer diagnostics.
-  - Compiler warnings block PRs during cleanup; CA warnings become blocking rule-by-rule and globally after the baseline reaches zero.
+  - Compiler and CA warnings block every PR on Windows, Linux, and macOS with the repository default `CodeAnalysisTreatWarningsAsErrors=true`.
   - Cleaned analyzer rules are promoted to errors and cannot regress.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
@@ -572,6 +572,7 @@ paths:
   - script/analyzer-inventory.ps1
   - docs/analyzer-baseline.md
   - docs/analyzer-baseline.csv
+  - docs/analyzer-cleanup-report.md
 responsibility: Converts clean Release build diagnostics and SARIF rule metadata into a deduplicated, reviewable analyzer baseline.
 inbound:
   - workflow.strict-pr-ci
@@ -583,7 +584,8 @@ contracts:
   - The CSV retains every affected project, file, line, category, and compatibility-review flag.
   - Compatibility flags are review hints and never authorize mechanical API or schema changes.
   - Every assembly explicitly declares `CLSCompliant(false)` through `Directory.Build.props`; `CA1014` is enforced without claiming unverified CLS compatibility.
-  - The current checkpoint is 107 unique diagnostics across 3 culture/formatting rules; all 73 rules already cleared from the baseline are blocking errors.
+  - The full solution has zero unhandled CA diagnostics; all 77 cleaned rules and the global analyzer warning policy are blocking errors.
+  - Windows Release build/tests and local `linux-x64`/`osx-x64` cross-RID builds are verified; native Linux/macOS tests run only on their CI matrix runners.
   - Parameterless singleton, settings, zone-list, and log-directory getters use properties. These types are application components shared across project boundaries, not a supported package API; internal call sites must use the properties so analyzer-clean API shape does not depend on compatibility wrappers.
   - The request-preparation benchmark deserializes to `JsonElement`, avoiding artificial public DTO contracts that exist only for measurement. The advanced-image wrapper remains private. `FfmpegHardwareAccelerationItem` is namespace-level and public because Avalonia-visible ViewModel properties expose it for option display and selection.
   - Async command event notification uses the standard protected `OnCanExecuteChanged` raiser. Dialog ViewModels call the protected `CloseDialog` action; it invokes Prism's `RequestClose` listener and is not itself an event.

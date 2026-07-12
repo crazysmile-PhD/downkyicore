@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Reflection;
 using System.Text.RegularExpressions;
 
@@ -50,7 +51,7 @@ internal class AppInfo
             var i = 2;
             foreach (var item in parts)
             {
-                code += int.Parse(item) * (int)Math.Pow(100, i);
+                code += int.Parse(item, CultureInfo.InvariantCulture) * (int)Math.Pow(100, i);
                 i--;
             }
         }

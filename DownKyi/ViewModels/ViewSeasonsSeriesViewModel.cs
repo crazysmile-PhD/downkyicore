@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -497,7 +498,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
 
                 var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
                 var dateCTime = startTime.AddSeconds(video.Ctime);
-                var ctime = dateCTime.ToString("yyyy-MM-dd");
+                var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
                 App.PropertyChangeAsync(new Action(() =>
                 {
@@ -581,7 +582,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
 
                 var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
                 var dateCTime = startTime.AddSeconds(video.Ctime);
-                var ctime = dateCTime.ToString("yyyy-MM-dd");
+                var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
                 App.PropertyChangeAsync(() =>
                 {

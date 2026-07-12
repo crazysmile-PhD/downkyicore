@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace DownKyi.Core.Danmaku2Ass;
 
 /// <summary>
@@ -67,10 +69,10 @@ public class Creater
     {
         var header = Config.HeaderTemplate
             .Replace("{title}", Config.Title, StringComparison.Ordinal)
-            .Replace("{width}", Config.ScreenWidth.ToString(), StringComparison.Ordinal)
-            .Replace("{height}", Config.ScreenHeight.ToString(), StringComparison.Ordinal)
+            .Replace("{width}", Config.ScreenWidth.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{height}", Config.ScreenHeight.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
             .Replace("{fontname}", Config.FontName, StringComparison.Ordinal)
-            .Replace("{fontsize}", Config.BaseFontSize.ToString(), StringComparison.Ordinal);
+            .Replace("{fontsize}", Config.BaseFontSize.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
 
         var events = Subtitles.Aggregate(string.Empty, (current, subtitle) => current + "\n" + subtitle.Text);
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using DownKyi.Core.BiliApi.Users;
@@ -181,7 +182,7 @@ internal class ViewFollowingViewModel : ViewModelBase
         }
 
         // 页面选择
-        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle) / NumberInPage));
+        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / NumberInPage));
         Pager.CurrentChanging += OnCurrentChangedPager;
         Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
@@ -235,13 +236,13 @@ internal class ViewFollowingViewModel : ViewModelBase
                 {
                     Id = -1,
                     Title = DictionaryResource.GetString("AllFollowing"),
-                    SubTitle = relationStat.Following.ToString()
+                    SubTitle = relationStat.Following.ToString(CultureInfo.CurrentCulture)
                 });
                 TabHeaders.Add(new TabHeader
                 {
                     Id = -2,
                     Title = DictionaryResource.GetString("WhisperFollowing"),
-                    SubTitle = relationStat.Whisper.ToString()
+                    SubTitle = relationStat.Whisper.ToString(CultureInfo.CurrentCulture)
                 });
             }
 
@@ -252,7 +253,7 @@ internal class ViewFollowingViewModel : ViewModelBase
             {
                 foreach (var tag in followingGroup)
                 {
-                    TabHeaders.Add(new TabHeader { Id = tag.TagId, Title = tag.Name, SubTitle = tag.Count.ToString() });
+                    TabHeaders.Add(new TabHeader { Id = tag.TagId, Title = tag.Name, SubTitle = tag.Count.ToString(CultureInfo.CurrentCulture) });
                 }
             }
         }
@@ -267,7 +268,7 @@ internal class ViewFollowingViewModel : ViewModelBase
                 {
                     Id = -1,
                     Title = DictionaryResource.GetString("AllFollowing"),
-                    SubTitle = relationStat.Following.ToString()
+                    SubTitle = relationStat.Following.ToString(CultureInfo.CurrentCulture)
                 });
             }
         }

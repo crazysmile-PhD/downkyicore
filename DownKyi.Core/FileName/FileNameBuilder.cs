@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace DownKyi.Core.FileName;
@@ -35,14 +36,14 @@ public class FileNameBuilder
 
     public FileNameBuilder SetOrder(int order)
     {
-        _order = order.ToString();
+        _order = order.ToString(CultureInfo.InvariantCulture);
         return this;
     }
 
     public FileNameBuilder SetOrder(int order, int count)
     {
-        var length = Math.Abs(count).ToString().Length;
-        _order = order.ToString("D" + length);
+        var length = Math.Abs(count).ToString(CultureInfo.InvariantCulture).Length;
+        _order = order.ToString("D" + length, CultureInfo.InvariantCulture);
 
         return this;
     }
@@ -161,16 +162,16 @@ public class FileNameBuilder
                     path += _videoPublishTime;
                     break;
                 case FileNamePart.Avid:
-                    path += $"av{_avid}";
+                    path += string.Create(CultureInfo.InvariantCulture, $"av{_avid}");
                     break;
                 case FileNamePart.Bvid:
                     path += _bvid;
                     break;
                 case FileNamePart.Cid:
-                    path += _cid;
+                    path += _cid.ToString(CultureInfo.InvariantCulture);
                     break;
                 case FileNamePart.UpMid:
-                    path += _upMid;
+                    path += _upMid.ToString(CultureInfo.InvariantCulture);
                     break;
                 case FileNamePart.UpName:
                     path += _upName;

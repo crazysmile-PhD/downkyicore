@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using Avalonia.Threading;
@@ -124,7 +125,7 @@ internal class VideoInfoService : IInfoService
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(_videoView.Pubdate);
             videoPage.OriginalPublishTime = dateTime;
-            videoPage.PublishTime = dateTime.ToString(timeFormat);
+            videoPage.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
 
             videoPages.Add(videoPage);
         }
@@ -227,7 +228,7 @@ internal class VideoInfoService : IInfoService
                 Duration = "N/A",
                 Owner = owner,
                 Page = p.Page,
-                PublishTime = dateTime.ToString(timeFormat),
+                PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture),
                 OriginalPublishTime = dateTime,
                 LazyTags = new Lazy<List<string>>(() =>
                 {
@@ -263,7 +264,7 @@ internal class VideoInfoService : IInfoService
             })
         };
         var dateTime = startTime.AddSeconds(episode.Arc.Ctime);
-        page.PublishTime = dateTime.ToString(timeFormat);
+        page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
         page.OriginalPublishTime = dateTime;
         return page;
     }
@@ -348,7 +349,7 @@ internal class VideoInfoService : IInfoService
 
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(videoView.Pubdate);
-            videoInfoView.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss");
+            videoInfoView.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
 
             videoInfoView.PlayNumber = Format.FormatNumber(videoView.Stat.View);
             videoInfoView.DanmakuNumber = Format.FormatNumber(videoView.Stat.Danmaku);

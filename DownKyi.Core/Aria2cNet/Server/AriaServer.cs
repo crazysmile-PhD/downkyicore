@@ -110,7 +110,7 @@ namespace DownKyi.Core.Aria2cNet.Server
                     $"--rpc-secret={config.Token} " +
                     $"--input-file=\"{sessionFile}\" --save-session=\"{sessionFile}\" " +
                     $"--save-session-interval={saveSessionInterval} " +
-                    $"--log=\"{logFile}\" --log-level={config.LogLevel.ToString("G").ToLower()} " + // log-level: 'debug' 'info' 'notice' 'warn' 'error'
+                    $"--log=\"{logFile}\" --log-level={GetLogLevelArgument(config.LogLevel)} " + // log-level: 'debug' 'info' 'notice' 'warn' 'error'
                     $"--max-concurrent-downloads={config.MaxConcurrentDownloads} " + // 最大同时下载数(任务数)
                     $"--max-connection-per-server={config.MaxConnectionPerServer} " + // 同服务器连接数
                     $"--split={config.Split} " + // 单文件最大线程数
@@ -118,10 +118,10 @@ namespace DownKyi.Core.Aria2cNet.Server
                     $"--min-split-size={config.MinSplitSize}M " + // 最小文件分片大小, 下载线程数上限取决于能分出多少片, 对于小文件重要
                     $"--max-overall-download-limit={config.MaxOverallDownloadLimit} " + // 下载速度限制
                     $"--max-download-limit={config.MaxDownloadLimit} " + // 下载单文件速度限制
-                    $"--continue={config.ContinueDownload.ToString().ToLower()} " + // 断点续传
+                    $"--continue={(config.ContinueDownload ? "true" : "false")} " + // 断点续传
                     $"--allow-overwrite=true " + // 允许复写文件
                     $"--auto-file-renaming=false " +
-                    $"--file-allocation={config.FileAllocation.ToString("G").ToLower()} " + // 文件预分配, none prealloc
+                    $"--file-allocation={GetFileAllocationArgument(config.FileAllocation)} " + // 文件预分配, none prealloc
                     $"{headers}" + // header
                     "",
                     null, (s, e) =>
@@ -403,6 +403,31 @@ namespace DownKyi.Core.Aria2cNet.Server
             return Server != null;
         }
 
+        internal static string GetLogLevelArgument(AriaConfigLogLevel logLevel)
+        {
+            return logLevel switch
+            {
+                AriaConfigLogLevel.NotSet => "notset",
+                AriaConfigLogLevel.DEBUG => "debug",
+                AriaConfigLogLevel.INFO => "info",
+                AriaConfigLogLevel.NOTICE => "notice",
+                AriaConfigLogLevel.WARN => "warn",
+                AriaConfigLogLevel.ERROR => "error",
+                _ => throw new ArgumentOutOfRangeException(nameof(logLevel), logLevel, "Unsupported aria2 log level.")
+            };
+        }
+
+        internal static string GetFileAllocationArgument(AriaConfigFileAllocation fileAllocation)
+        {
+            return fileAllocation switch
+            {
+                AriaConfigFileAllocation.NotSet => "notset",
+                AriaConfigFileAllocation.NONE => "none",
+                AriaConfigFileAllocation.PREALLOC => "prealloc",
+                AriaConfigFileAllocation.FALLOC => "falloc",
+                _ => throw new ArgumentOutOfRangeException(nameof(fileAllocation), fileAllocation, "Unsupported aria2 file allocation mode.")
+            };
+        }
 
         private static void ExecuteProcess(string exe, string arg, string? workingDirectory,
             DataReceivedEventHandler output)

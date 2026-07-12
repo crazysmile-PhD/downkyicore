@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -427,8 +428,8 @@ internal class CustomAriaDownloadService : DownloadService, IDownloadService
                 //Header = $"cookie: {LoginHelper.GetLoginInfoCookiesString()}\nreferer: https://www.bilibili.com",
                 //UseHead = "true",
                 UserAgent = SettingsManager.Instance.GetUserAgent(),
-                Split = SettingsManager.Instance.GetAriaSplit().ToString(),
-                MaxConnectionPerServer = SettingsManager.Instance.GetAriaMaxConnectionPerServer().ToString(),
+                Split = SettingsManager.Instance.GetAriaSplit().ToString(CultureInfo.InvariantCulture),
+                MaxConnectionPerServer = SettingsManager.Instance.GetAriaMaxConnectionPerServer().ToString(CultureInfo.InvariantCulture),
                 MinSplitSize = $"{SettingsManager.Instance.GetAriaMinSplitSize()}M",
             };
 

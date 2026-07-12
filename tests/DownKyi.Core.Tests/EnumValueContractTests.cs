@@ -2,6 +2,7 @@ using DownKyi.Core.Aria2cNet;
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi.History.Models;
+using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.FileName;
@@ -69,6 +70,17 @@ public sealed class EnumValueContractTests
         Assert.Equal(100, (int)FileNamePart.Slash);
         Assert.Equal(0, (int)ThemeMode.None);
         Assert.Equal(1, (int)ThemeMode.Default);
+    }
+
+    [Fact]
+    public void EnumWireMappingsRemainExplicitAndLowercase()
+    {
+        Assert.Equal("debug", AriaServer.GetLogLevelArgument(AriaConfigLogLevel.DEBUG));
+        Assert.Equal("notice", AriaServer.GetLogLevelArgument(AriaConfigLogLevel.NOTICE));
+        Assert.Equal("none", AriaServer.GetFileAllocationArgument(AriaConfigFileAllocation.NONE));
+        Assert.Equal("prealloc", AriaServer.GetFileAllocationArgument(AriaConfigFileAllocation.PREALLOC));
+        Assert.Equal("pubdate", UserSpace.GetPublicationOrderValue(PublicationOrder.PUBDATE));
+        Assert.Equal("click", UserSpace.GetPublicationOrderValue(PublicationOrder.CLICK));
     }
 
     private sealed class TestAriaManager : AriaManager

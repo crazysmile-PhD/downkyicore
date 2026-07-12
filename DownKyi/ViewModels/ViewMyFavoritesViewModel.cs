@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -275,7 +276,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         MediaContentVisibility = false;
 
         // 页面选择
-        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle) / VideoNumberInPage));
+        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
         Pager.CurrentChanging += OnCurrentChangedPager;
         Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
@@ -542,7 +543,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
 
             // 页面选择
             Pager = new CustomPagerViewModel(1,
-                (int)Math.Ceiling(double.Parse(TabHeaders[0].SubTitle) / VideoNumberInPage));
+            (int)Math.Ceiling(double.Parse(TabHeaders[0].SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
             Pager.CurrentChanging += OnCurrentChangedPager;
             Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;

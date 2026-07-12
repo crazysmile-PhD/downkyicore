@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
@@ -43,7 +44,8 @@ internal class SearchService
         // 视频
         if (ParseEntrance.IsAvId(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.VideoUrl}{input.ToLower()}");
+            var avid = ParseEntrance.GetAvId(justId).ToString(CultureInfo.InvariantCulture);
+            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.VideoUrl}av{avid}");
         }
         else if (ParseEntrance.IsAvUrl(justId))
         {
@@ -60,7 +62,8 @@ internal class SearchService
         // 番剧（电影、电视剧）
         else if (ParseEntrance.IsBangumiSeasonId(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiUrl}{input.ToLower()}");
+            var seasonId = ParseEntrance.GetBangumiSeasonId(justId).ToString(CultureInfo.InvariantCulture);
+            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiUrl}ss{seasonId}");
         }
         else if (ParseEntrance.IsBangumiSeasonUrl(justId))
         {
@@ -68,7 +71,8 @@ internal class SearchService
         }
         else if (ParseEntrance.IsBangumiEpisodeId(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiUrl}{input.ToLower()}");
+            var episodeId = ParseEntrance.GetBangumiEpisodeId(justId).ToString(CultureInfo.InvariantCulture);
+            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiUrl}ep{episodeId}");
         }
         else if (ParseEntrance.IsBangumiEpisodeUrl(justId))
         {
@@ -76,7 +80,8 @@ internal class SearchService
         }
         else if (ParseEntrance.IsBangumiMediaId(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiMediaUrl}{input.ToLower()}");
+            var mediaId = ParseEntrance.GetBangumiMediaId(justId).ToString(CultureInfo.InvariantCulture);
+            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiMediaUrl}md{mediaId}");
         }
         else if (ParseEntrance.IsBangumiMediaUrl(justId))
         {

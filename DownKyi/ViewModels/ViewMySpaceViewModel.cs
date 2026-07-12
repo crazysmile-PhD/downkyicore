@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
@@ -591,7 +592,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
                 MaxExp = myInfo.LevelExp.NextExp;
                 ExpProgress = myInfo.LevelExp.CurrentExp;
                 // 节操值
-                StatusList[4].Subtitle = myInfo.Moral.ToString();
+                StatusList[4].Subtitle = myInfo.Moral.ToString(CultureInfo.CurrentCulture);
                 // 封禁状态                   
                 if (myInfo.Silence == 0)
                 {
@@ -663,22 +664,22 @@ internal class ViewMySpaceViewModel : ViewModelBase
                 ContentVisibility = true;
 
                 // 硬币
-                Coin = navData.Money == 0 ? "0.0" : navData.Money.ToString("F1");
+                Coin = navData.Money == 0 ? "0.0" : navData.Money.ToString("F1", CultureInfo.CurrentCulture);
                 // B币
-                Money = navData.Wallet.BcoinBalance == 0 ? "0.0" : navData.Wallet.BcoinBalance.ToString("F1");
+                Money = navData.Wallet.BcoinBalance == 0 ? "0.0" : navData.Wallet.BcoinBalance.ToString("F1", CultureInfo.CurrentCulture);
             }
 
             //用户的关系状态数
             var relationStat = UserStatus.GetUserRelationStat(_mid);
             if (relationStat == null) return;
             // 关注数
-            StatusList[0].Subtitle = relationStat.Following.ToString();
+            StatusList[0].Subtitle = relationStat.Following.ToString(CultureInfo.CurrentCulture);
             // 悄悄关注数
-            StatusList[1].Subtitle = relationStat.Whisper.ToString();
+            StatusList[1].Subtitle = relationStat.Whisper.ToString(CultureInfo.CurrentCulture);
             // 粉丝数
-            StatusList[2].Subtitle = relationStat.Follower.ToString();
+            StatusList[2].Subtitle = relationStat.Follower.ToString(CultureInfo.CurrentCulture);
             // 黑名单数
-            StatusList[3].Subtitle = relationStat.Black.ToString();
+            StatusList[3].Subtitle = relationStat.Black.ToString(CultureInfo.CurrentCulture);
         }).ConfigureAwait(true);
     }
 

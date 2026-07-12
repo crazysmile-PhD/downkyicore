@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -229,7 +230,7 @@ namespace DownKyi.ViewModels
             }
 
             // 页面选择
-            Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle) / VideoNumberInPage));
+            Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
             Pager.CurrentChanging += OnCurrentChangedPager;
             Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;
@@ -379,7 +380,7 @@ namespace DownKyi.ViewModels
             foreach (var t in charbuffers)
             {
                 buffer = Encoding.Unicode.GetBytes(t.ToString());
-                sb.Append($"\\u{buffer[1]:X2}{buffer[0]:X2}");
+                sb.Append(CultureInfo.InvariantCulture, $"\\u{buffer[1]:X2}{buffer[0]:X2}");
             }
 
             return sb.ToString();
@@ -440,7 +441,7 @@ namespace DownKyi.ViewModels
 
                         var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
                         var dateCTime = startTime.AddSeconds(video.Created);
-                        var ctime = dateCTime.ToString("yyyy-MM-dd");
+                        var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
                         App.PropertyChangeAsync(() =>
                         {
                             var media = new PublicationMedia(EventAggregator)
@@ -522,7 +523,7 @@ namespace DownKyi.ViewModels
                 {
                     Id = item.Tid,
                     Title = item.Name,
-                    SubTitle = item.Count.ToString()
+                    SubTitle = item.Count.ToString(CultureInfo.CurrentCulture)
                 });
             }
 
@@ -538,7 +539,7 @@ namespace DownKyi.ViewModels
 
             // 页面选择
             Pager = new CustomPagerViewModel(1,
-                (int)Math.Ceiling(double.Parse(selectTab.SubTitle) / VideoNumberInPage));
+            (int)Math.Ceiling(double.Parse(selectTab.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
             Pager.CurrentChanging += OnCurrentChangedPager;
             Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;

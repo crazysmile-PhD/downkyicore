@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -601,12 +602,12 @@ internal class AddToDownloadService
         {
             Title = page.Name,
             Plot = _videoInfoView?.Description ?? string.Empty,
-            Year = page.OriginalPublishTime.Year.ToString(),
-            Premiered = page.OriginalPublishTime.ToString("yyyy-MM-dd"),
+            Year = page.OriginalPublishTime.Year.ToString(CultureInfo.InvariantCulture),
+            Premiered = page.OriginalPublishTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             BilibiliId = new UniqueId("bilibili", page.Bvid)
         };
 
-        metadata.Actors.Add(new Actor(page.Owner?.Name ?? string.Empty, (page.Owner?.Mid ?? -1).ToString()));
+        metadata.Actors.Add(new Actor(page.Owner?.Name ?? string.Empty, (page.Owner?.Mid ?? -1).ToString(CultureInfo.InvariantCulture)));
         foreach (var genre in _videoInfoView?.VideoZone?.Split(">") ?? Array.Empty<string>())
         {
             metadata.Genres.Add(genre);

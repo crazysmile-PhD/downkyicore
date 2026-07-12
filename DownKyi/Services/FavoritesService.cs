@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using Avalonia.Media.Imaging;
@@ -46,7 +47,7 @@ internal class FavoritesService : IFavoritesService
 
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(favoritesMetaInfo.Ctime);
-            favorites.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss");
+            favorites.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
 
             favorites.PlayNumber = Format.FormatNumber(favoritesMetaInfo.CntInfo.Play);
             favorites.LikeNumber = Format.FormatNumber(favoritesMetaInfo.CntInfo.ThumbUp);
@@ -126,11 +127,11 @@ internal class FavoritesService : IFavoritesService
 
             // 创建时间
             var dateCTime = startTime.AddSeconds(media.Ctime);
-            var ctime = dateCTime.ToString("yyyy-MM-dd");
+            var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
             // 收藏时间
             var dateFavTime = startTime.AddSeconds(media.FavTime);
-            var favTime = dateFavTime.ToString("yyyy-MM-dd");
+            var favTime = dateFavTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
             mappedMedias.Add(new ViewModels.PageViewModels.FavoritesMedia(eventAggregator)
             {
@@ -185,7 +186,7 @@ internal class FavoritesService : IFavoritesService
         foreach (var item in favorites)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString() });
+            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString(CultureInfo.CurrentCulture) });
         }
 
         App.PropertyChangeAsync(() =>
@@ -221,7 +222,7 @@ internal class FavoritesService : IFavoritesService
         foreach (var item in favorites)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString() });
+            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString(CultureInfo.CurrentCulture) });
         }
 
         App.PropertyChangeAsync(() =>

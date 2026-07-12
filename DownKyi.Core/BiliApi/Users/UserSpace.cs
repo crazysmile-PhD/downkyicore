@@ -118,7 +118,7 @@ public static class UserSpace
             { "mid", mid },
             { "pn", pn },
             { "ps", ps },
-            { "order", order.ToString("G").ToLower() },
+            { "order", GetPublicationOrderValue(order) },
             { "tid", tid },
             { "keyword", keyword },
         };
@@ -168,6 +168,18 @@ public static class UserSpace
             LogManager.Error("UserSpace", e);
             return null;
         }
+    }
+
+    internal static string GetPublicationOrderValue(PublicationOrder order)
+    {
+        return order switch
+        {
+            PublicationOrder.None => "none",
+            PublicationOrder.PUBDATE => "pubdate",
+            PublicationOrder.CLICK => "click",
+            PublicationOrder.STOW => "stow",
+            _ => throw new ArgumentOutOfRangeException(nameof(order), order, "Unsupported publication order.")
+        };
     }
 
     #endregion

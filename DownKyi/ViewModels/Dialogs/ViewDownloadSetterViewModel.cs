@@ -62,7 +62,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
             SetProperty(ref _directory, value);
 
             if (string.IsNullOrEmpty(_directory)) return;
-            DriveName = _directory[..1].ToUpper();
+            DriveName = _directory[..1].ToUpperInvariant();
             DriveNameFreeSpace = Format.FormatFileSize(HardDisk.GetHardDiskFreeSpace(DriveName));
         }
     }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 
 namespace DownKyi.Core.BiliApi.BiliUtils;
@@ -5,8 +6,8 @@ namespace DownKyi.Core.BiliApi.BiliUtils;
 public static class BvId
 {
     // 常量定义
-    private static readonly BigInteger XorCode = BigInteger.Parse("23442827791579");
-    private static readonly BigInteger MaskCode = BigInteger.Parse("2251799813685247");
+    private static readonly BigInteger XorCode = BigInteger.Parse("23442827791579", CultureInfo.InvariantCulture);
+    private static readonly BigInteger MaskCode = BigInteger.Parse("2251799813685247", CultureInfo.InvariantCulture);
     private static readonly BigInteger MaxAid = BigInteger.One << 51;
     private const long Base = 58;
 

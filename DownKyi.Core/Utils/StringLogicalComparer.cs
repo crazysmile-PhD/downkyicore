@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace DownKyi.Core.Utils;
 
 public class StringLogicalComparer<T> : IComparer<T>
@@ -37,12 +39,12 @@ public class StringLogicalComparer<T> : IComparer<T>
                     j++;
                 }
 
-                if (int.Parse(s1) > int.Parse(s2))
+                if (int.Parse(s1, CultureInfo.InvariantCulture) > int.Parse(s2, CultureInfo.InvariantCulture))
                 {
                     return 1;
                 }
 
-                if (int.Parse(s1) < int.Parse(s2))
+                if (int.Parse(s1, CultureInfo.InvariantCulture) < int.Parse(s2, CultureInfo.InvariantCulture))
                 {
                     return -1;
                 }

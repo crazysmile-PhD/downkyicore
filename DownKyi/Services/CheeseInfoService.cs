@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Avalonia.Threading;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Cheese;
@@ -107,7 +108,7 @@ internal class CheeseInfoService : IInfoService
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(episode.ReleaseDate);
-            page.PublishTime = dateTime.ToString(timeFormat);
+            page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
             page.OriginalPublishTime = dateTime;
             pages.Add(page);
         }

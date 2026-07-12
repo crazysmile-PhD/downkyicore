@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using DownKyi.Core.Utils.Validator;
 
@@ -463,7 +464,7 @@ public static class ParseEntrance
             var match = Regex.Match(url, @"\d+");
             if (match.Success)
             {
-                return long.Parse(match.Value);
+                return long.Parse(match.Value, CultureInfo.InvariantCulture);
             }
 
             return -1;

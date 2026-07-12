@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using DownKyi.Core.BiliApi.Users.Models;
 using Prism.Commands;
 using Prism.Events;
@@ -118,7 +119,7 @@ internal class ViewChannelViewModel : ViewModelBase
             // 当地时区
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); ;
             var dateCTime = startTime.AddSeconds(channel.Mtime);
-            var mtime = dateCTime.ToString("yyyy-MM-dd");
+            var mtime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
             Channels.Add(new Channel
             {

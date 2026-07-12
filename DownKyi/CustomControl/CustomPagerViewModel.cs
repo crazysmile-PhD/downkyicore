@@ -68,7 +68,6 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
             {
                 Visibility = false;
                 //throw new Exception("数值不在允许的范围内。");
-                Console.WriteLine(value.ToString());
             }
             else
             {

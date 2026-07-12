@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using DownKyi.Core.Storage;
@@ -83,11 +84,11 @@ public static class LogManager
         var builder = new StringBuilder();
 
         builder.AppendLine("DownKyi diagnostic log");
-        builder.AppendLine($"GeneratedAt: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
-        builder.AppendLine($"OS: {Sanitize(Environment.OSVersion.ToString())}");
-        builder.AppendLine($".NET: {Environment.Version}");
-        builder.AppendLine($"Architecture: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}");
-        builder.AppendLine($"PortableMode: {StorageManager.IsPortableMode()}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"GeneratedAt: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"OS: {Sanitize(Environment.OSVersion.ToString())}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $".NET: {Environment.Version}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Architecture: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"PortableMode: {StorageManager.IsPortableMode()}");
         builder.AppendLine("Paths: redacted");
         builder.AppendLine();
         builder.AppendLine("Recent useful entries");
@@ -328,7 +329,7 @@ public static class LogManager
                 : LogDirectory;
             Directory.CreateDirectory(logDir);
 
-            var date = DateTime.Now.ToString("yyyyMMdd");
+            var date = DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
             if (CachedLogDate == date &&
                 !string.IsNullOrEmpty(CachedLogPath) &&
                 (!File.Exists(CachedLogPath) || new FileInfo(CachedLogPath).Length <= MaxLogFileBytes))

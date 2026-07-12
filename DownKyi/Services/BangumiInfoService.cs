@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -144,7 +145,7 @@ internal class BangumiInfoService : IInfoService
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(episode.PubTime);
-            page.PublishTime = dateTime.ToString(timeFormat);
+            page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
             page.OriginalPublishTime = dateTime;
             pages.Add(page);
         }
@@ -242,7 +243,7 @@ internal class BangumiInfoService : IInfoService
                 var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
                 var dateTime = startTime.AddSeconds(episode.PubTime);
                 page.OriginalPublishTime = dateTime;
-                page.PublishTime = dateTime.ToString(timeFormat);
+                page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
                 pages.Add(page);
             }
 
