@@ -10,6 +10,7 @@ using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Prism.Container.DryIoc;
 using Prism.Events;
+using Prism.Ioc;
 using Prism.Navigation.Regions;
 using DesktopDialogService = DownKyi.PrismExtension.Dialog.DialogService;
 
@@ -20,6 +21,9 @@ public sealed class UiSmokeTests
     [Fact]
     public async Task RealHostResolvesShellAndKeyViewModelsWithoutGlobalContainerState()
     {
+        ContainerLocator.ResetContainer();
+        AssertPrismContainerIsUninitialized();
+
         var builder = AppBuilder
             .Configure<SmokeTestApplication>()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions());
@@ -48,6 +52,7 @@ public sealed class UiSmokeTests
             Assert.NotNull(host.Services.GetRequiredService<ViewVideoDetailViewModel>());
             Assert.NotNull(host.Services.GetRequiredService<ViewDownloadManagerViewModel>());
             Assert.NotNull(Program.BuildAvaloniaApp());
+            AssertPrismContainerIsUninitialized();
         }
         finally
         {
@@ -87,6 +92,11 @@ public sealed class UiSmokeTests
             StorageManager.GetLogin(),
             StorageManager.GetAriaDir()
         ];
+    }
+
+    private static void AssertPrismContainerIsUninitialized()
+    {
+        Assert.Throws<InvalidOperationException>(() => ContainerLocator.Container);
     }
 
     private sealed class SmokeTestApplication : Avalonia.Application

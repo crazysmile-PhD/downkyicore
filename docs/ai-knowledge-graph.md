@@ -879,6 +879,7 @@ test.enum-values:
 test.architecture-boundaries:
   paths:
     - tests/DownKyi.Architecture.Tests/ProjectDependencyTests.cs
+    - tests/DownKyi.Architecture.Tests/RootViewArchitectureTests.cs
   guards:
     - production project references remain acyclic
     - target Domain/Application/Infrastructure/Desktop dependency direction is enforced
@@ -886,6 +887,8 @@ test.architecture-boundaries:
     - Domain cannot reference UI, SQLite, JSON, or FFmpeg framework packages
     - only DownKyi.Desktop can own the Host package
     - every temporary legacy bridge names the PR that deletes it
+    - Host-independent root XAML cannot use Prism ViewModelLocator or RegionManager attached properties
+    - production C# cannot reference Prism ContainerLocator directly
 
 test.ui-smoke:
   paths:
@@ -893,6 +896,7 @@ test.ui-smoke:
   guards:
     - Avalonia headless platform initializes
     - MainWindow XAML and its ViewModel binding resolve from the real Host without setting Prism ContainerLocator
+    - Prism ContainerLocator is uninitialized before Host creation and remains uninitialized after root XAML construction
     - MainWindow, index, video-detail, and download-manager ViewModels resolve from Microsoft DI
     - Host creation does not redirect database, settings, login, portable-mode, or aria2 paths
     - production AppBuilder can be created
