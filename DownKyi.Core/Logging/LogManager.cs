@@ -290,7 +290,7 @@ public static class LogManager
             Source = source ?? string.Empty,
             Exception = exception!,
             ExceptionType = exception?.GetType().Name ?? string.Empty,
-            RequestUrl = string.Empty,
+            RequestAddress = string.Empty,
             UserAgent = string.Empty
         }));
     }

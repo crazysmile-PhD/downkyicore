@@ -237,8 +237,8 @@ internal class ViewIndexViewModel : ViewModelBase
                     Name = userInfo.Name,
                     IsLogin = userInfo.IsLogin,
                     IsVip = userInfo.VipStatus == 1,
-                    ImgKey = userInfo.Wbi.ImgUrl.Split('/').ToList().Last().Split('.')[0],
-                    SubKey = userInfo.Wbi.SubUrl.Split('/').ToList().Last().Split('.')[0],
+                    ImgKey = userInfo.Wbi.ImageAddress.Split('/').ToList().Last().Split('.')[0],
+                    SubKey = userInfo.Wbi.SubAddress.Split('/').ToList().Last().Split('.')[0],
                 });
             }
             else

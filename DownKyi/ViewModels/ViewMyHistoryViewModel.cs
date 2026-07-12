@@ -453,7 +453,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         history.History.Business switch
         {
             "archive" => $"https://www.bilibili.com/video/{history.History.Bvid}",
-            "pgc" => history.Uri,
+            "pgc" => history.Address,
             _ => "https://www.bilibili.com"
         };
 

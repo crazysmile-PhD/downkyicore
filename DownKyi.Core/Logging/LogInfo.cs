@@ -43,7 +43,7 @@ public class LogInfo
     /// <summary>
     /// 请求路径
     /// </summary>
-    public string RequestUrl { get; set; } = string.Empty;
+    public string RequestAddress { get; set; } = string.Empty;
 
     /// <summary>
     /// 客户端代理

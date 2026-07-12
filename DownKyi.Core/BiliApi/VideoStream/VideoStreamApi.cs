@@ -77,7 +77,7 @@ public static class VideoStreamApi
         {
             cancellationToken.ThrowIfCancellationRequested();
             const string referer = "https://www.bilibili.com";
-            var subtitleUrl = NormalizeSubtitleUrl(subtitle.SubtitleUrl);
+            var subtitleUrl = NormalizeSubtitleUrl(subtitle.SubtitleAddress);
             if (subtitleUrl == null)
             {
                 LogManager.Debug(nameof(GetSubtitle), $"Skip empty subtitle url. lan={subtitle.Lan}, lan_doc={subtitle.LanDoc}");

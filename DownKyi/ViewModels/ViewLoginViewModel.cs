@@ -91,15 +91,19 @@ internal class ViewLoginViewModel : ViewModelBase
                 return;
             }
 
-            if (loginUrl.Data?.Url == null || loginUrl.Data?.QrcodeKey == null)
+            if (loginUrl.Data?.QrCodeAddress == null || loginUrl.Data?.QrcodeKey == null)
             {
                 EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("GetLoginUrlFailed"));
                 return;
             }
 
-            PropertyChangeAsync(() => { LoginQrCode = LoginQr.GetLoginQrCode(loginUrl.Data.Url); });
-            Console.PrintLine(loginUrl.Data.Url + "\n");
-            LogManager.Debug(Tag, loginUrl.Data.Url);
+            if (!Uri.TryCreate(loginUrl.Data.QrCodeAddress, UriKind.Absolute, out var loginUri))
+            {
+                EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("GetLoginUrlFailed"));
+                return;
+            }
+
+            PropertyChangeAsync(() => { LoginQrCode = LoginQr.GetLoginQrCode(loginUri); });
 
             await GetLoginStatusAsync(loginUrl.Data.QrcodeKey, cancellationToken).ConfigureAwait(true);
         }
@@ -160,7 +164,8 @@ internal class ViewLoginViewModel : ViewModelBase
                     // 保存登录信息
                     try
                     {
-                        var isSucceed = LoginHelper.SaveLoginInfoCookies(loginStatus.Data.Url);
+                        var redirectUri = new Uri(loginStatus.Data.RedirectAddress, UriKind.Absolute);
+                        var isSucceed = LoginHelper.SaveLoginInfoCookies(redirectUri);
                         if (!isSucceed)
                         {
                             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginFailed"));

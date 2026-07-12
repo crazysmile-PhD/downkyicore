@@ -78,11 +78,11 @@ public static class LoginHelper
     /// <summary>
     /// 保存登录的cookies到文件
     /// </summary>
-    /// <param name="url"></param>
+    /// <param name="redirectUri"></param>
     /// <returns></returns>
-    public static bool SaveLoginInfoCookies(string url)
+    public static bool SaveLoginInfoCookies(Uri redirectUri)
     {
-        var cookies = ObjectHelper.ParseCookie(url);
+        var cookies = ObjectHelper.ParseCookie(redirectUri);
 
         return SaveLoginInfoCookies(cookies);
     }

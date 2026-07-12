@@ -207,14 +207,14 @@ namespace DownKyi.Core.Settings
             return _customNetworkProxy;
         }
 
-        public bool SetCustomProxy(string proxyUrl)
+        public bool SetCustomProxy(string proxyAddress)
         {
             try
             {
-                _ = new WebProxy(proxyUrl);
+                _ = new WebProxy(proxyAddress);
                 return SetProperty(
                     _appSettings.Network.CustomNetworkProxy,
-                    proxyUrl,
+                    proxyAddress,
                     v => _appSettings.Network.CustomNetworkProxy = v);
             }
             catch (UriFormatException)

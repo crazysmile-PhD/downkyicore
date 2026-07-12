@@ -48,7 +48,7 @@ public class CheeseView : BaseModel
     // release_status
     [JsonProperty("season_id")] public long SeasonId { get; set; }
 
-    [JsonProperty("share_url")] public string ShareUrl { get; set; } = string.Empty;
+    [JsonProperty("share_url")] public string ShareAddress { get; set; } = string.Empty;
 
     // short_link
     [JsonProperty("stat")] public CheeseStat Stat { get; set; } = new();

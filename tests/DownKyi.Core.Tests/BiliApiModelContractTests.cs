@@ -1,6 +1,8 @@
+using DownKyi.Core.Aria2cNet.Client.Entity;
 using DownKyi.Core.BiliApi.Bangumi.Models;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Favorites.Models;
+using DownKyi.Core.BiliApi.Login.Models;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
@@ -67,6 +69,7 @@ public sealed class BiliApiModelContractTests
             """);
 
         Assert.NotNull(durl);
+        Assert.Equal("https://example.invalid/segment", durl.SourceAddress);
         Assert.Equal("https://backup.invalid/segment", Assert.Single(durl.BackupUrl));
     }
 
@@ -88,9 +91,34 @@ public sealed class BiliApiModelContractTests
 
         Assert.NotNull(playUrl);
         Assert.Equal(2, Assert.Single(playUrl.Durl).Order);
-        Assert.Equal(80, Assert.Single(playUrl.Dash.Video).Id);
+        var video = Assert.Single(playUrl.Dash.Video);
+        Assert.Equal(80, video.Id);
+        Assert.Equal("https://example.invalid/video", video.BaseAddress);
         Assert.Equal(30280, Assert.Single(playUrl.Dash.Audio).Id);
         Assert.Equal(80, Assert.Single(playUrl.SupportFormats).Quality);
+    }
+
+    [Fact]
+    public void LoginAndAriaAddressesPreserveWireNames()
+    {
+        var loginUrl = JsonConvert.DeserializeObject<LoginUrl>("""
+            { "qrcode_key": "key", "url": "https://example.invalid/qr" }
+            """);
+        var loginStatus = JsonConvert.DeserializeObject<LoginStatusData>("""
+            { "url": "https://example.invalid/callback", "refresh_token": "token" }
+            """);
+        var ariaUri = JsonConvert.DeserializeObject<AriaUri>("""
+            { "status": "used", "uri": "https://example.invalid/file" }
+            """);
+        var ariaServer = JsonConvert.DeserializeObject<AriaResultServer>("""
+            { "currentUri": "https://example.invalid/current", "uri": "https://example.invalid/original" }
+            """);
+
+        Assert.Equal("https://example.invalid/qr", loginUrl?.QrCodeAddress);
+        Assert.Equal("https://example.invalid/callback", loginStatus?.RedirectAddress);
+        Assert.Equal("https://example.invalid/file", ariaUri?.Address);
+        Assert.Equal("https://example.invalid/current", ariaServer?.CurrentAddress);
+        Assert.Equal("https://example.invalid/original", ariaServer?.Address);
     }
 
     [Fact]

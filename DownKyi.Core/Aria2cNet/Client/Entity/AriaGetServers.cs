@@ -43,13 +43,13 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     public class AriaResultServer
     {
         [JsonProperty("currentUri")]
-        public string CurrentUri { get; set; } = string.Empty;
+        public string CurrentAddress { get; set; } = string.Empty;
 
         [JsonProperty("downloadSpeed")]
         public string DownloadSpeed { get; set; } = string.Empty;
 
         [JsonProperty("uri")]
-        public string Uri { get; set; } = string.Empty;
+        public string Address { get; set; } = string.Empty;
 
         public override string ToString()
         {

@@ -10,7 +10,7 @@ public class Subtitle : BaseModel
     [JsonProperty("lan_doc")] public string LanDoc { get; set; } = string.Empty;
     [JsonProperty("is_lock")] public bool IsLock { get; set; }
     [JsonProperty("author_mid")] public long AuthorMid { get; set; }
-    [JsonProperty("subtitle_url")] public string SubtitleUrl { get; set; } = string.Empty;
+    [JsonProperty("subtitle_url")] public string SubtitleAddress { get; set; } = string.Empty;
     [JsonProperty("type")] public int Type { get; set; }
     [JsonProperty("id_str")] public string IdStr { get; set; } = string.Empty;
 }

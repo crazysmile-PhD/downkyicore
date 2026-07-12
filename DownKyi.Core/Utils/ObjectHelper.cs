@@ -15,15 +15,14 @@ public static class ObjectHelper
     /// <summary>
     /// 解析二维码登录返回的url，用于设置cookie
     /// </summary>
-    /// <param name="url"></param>
+    /// <param name="redirectUri"></param>
     /// <returns></returns>
-    public static IReadOnlyList<DownKyiCookie> ParseCookie(string? url)
+    public static IReadOnlyList<DownKyiCookie> ParseCookie(Uri? redirectUri)
     {
         var cookies = new List<DownKyiCookie>();
-        if (url is null or "") return cookies;
+        if (redirectUri is null) return cookies;
 
-        var uri = new Uri(url);
-        var queryString = uri.Query;
+        var queryString = redirectUri.Query;
         var query = HttpUtility.ParseQueryString(queryString);
         cookies = (from item in query.AllKeys.OfType<string>()
                    let value = query[item]

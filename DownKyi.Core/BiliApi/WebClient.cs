@@ -99,7 +99,7 @@ public static class WebClient
     }
 
     public static string RequestWeb(
-        string url,
+        string requestAddress,
         string? referer = null,
         string method = "GET",
         Dictionary<string, object?>? parameters = null,
@@ -107,7 +107,7 @@ public static class WebClient
         bool json = false,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestAddress);
 
         Exception? lastError = null;
         var attempts = Math.Max(1, retry);
@@ -116,12 +116,12 @@ public static class WebClient
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (string.IsNullOrEmpty(_bvuid3) && url != "https://api.bilibili.com/x/frontend/finger/spi")
+                if (string.IsNullOrEmpty(_bvuid3) && requestAddress != "https://api.bilibili.com/x/frontend/finger/spi")
                 {
                     GetBuvid(cancellationToken);
                 }
 
-                using var request = BuildRequest(url, referer, method, parameters, json);
+                using var request = BuildRequest(requestAddress, referer, method, parameters, json);
                 using var response = SendRequest(request, cancellationToken);
                 response.EnsureSuccessStatusCode();
 
@@ -131,7 +131,7 @@ public static class WebClient
                 if (string.IsNullOrWhiteSpace(content))
                 {
                     throw new HttpRequestException(
-                        $"Request returned an empty response: {LogManager.SanitizeForDiagnostics(url)}");
+                        $"Request returned an empty response: {LogManager.SanitizeForDiagnostics(requestAddress)}");
                 }
 
                 return content;
@@ -163,7 +163,7 @@ public static class WebClient
         }
 
         throw new HttpRequestException(
-            $"Request failed after {attempts} attempts: {LogManager.SanitizeForDiagnostics(url)}",
+            $"Request failed after {attempts} attempts: {LogManager.SanitizeForDiagnostics(requestAddress)}",
             lastError);
     }
 
@@ -294,26 +294,26 @@ public static class WebClient
         return TimeSpan.FromMilliseconds(delayMilliseconds);
     }
 
-    public static void DownloadFile(string url, string destFile, string? referer = null, CancellationToken cancellationToken = default)
+    public static void DownloadFile(string sourceAddress, string destFile, string? referer = null, CancellationToken cancellationToken = default)
     {
         using var fs = File.Create(destFile);
-        using var stream = RequestStream(url, referer, cancellationToken: cancellationToken);
+        using var stream = RequestStream(sourceAddress, referer, cancellationToken: cancellationToken);
         stream.CopyTo(fs);
     }
 
-    public static Stream RequestStream(string url, string? referer = null, string method = "GET", CancellationToken cancellationToken = default)
+    public static Stream RequestStream(string requestAddress, string? referer = null, string method = "GET", CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestAddress);
 
         cancellationToken.ThrowIfCancellationRequested();
-        var request = new HttpRequestMessage(new HttpMethod(method), url);
+        var request = new HttpRequestMessage(new HttpMethod(method), requestAddress);
 
         if (referer != null)
         {
             request.Headers.Referrer = new Uri(referer);
         }
 
-        if (!url.Contains("getLogin"))
+        if (!requestAddress.Contains("getLogin", StringComparison.Ordinal))
         {
             request.Headers.Add("origin", "https://m.bilibili.com");
             var cookies = LoginHelper.GetLoginInfoCookiesString();

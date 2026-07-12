@@ -207,7 +207,7 @@ internal abstract class DownloadService : IDisposable
                         BackupUrl = video.BackupUrl,
                         Codecs = video.Codecs,
                         Id = video.Id,
-                        BaseUrl = video.BaseUrl
+                        BaseUrl = video.BaseAddress
                     };
                 }
             }
@@ -219,7 +219,7 @@ internal abstract class DownloadService : IDisposable
             return new VideoPlayUrlBasic
             {
                 BackupUrl = durl.BackupUrl,
-                BaseUrl = durl.Url,
+                BaseUrl = durl.SourceAddress,
                 Codecs = downloading.PlayUrl.VideoCodecid.GetHashCode().ToString(),
                 Id = downloading.DownloadBase.Bvid.GetHashCode(),
                 ExpectedSize = durl.Size

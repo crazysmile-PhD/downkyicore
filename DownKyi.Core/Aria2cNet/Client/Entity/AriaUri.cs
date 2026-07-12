@@ -7,7 +7,7 @@ public class AriaUri
 {
     [JsonProperty("status")] public string Status { get; set; } = string.Empty;
 
-    [JsonProperty("uri")] public string Uri { get; set; } = string.Empty;
+    [JsonProperty("uri")] public string Address { get; set; } = string.Empty;
 
     public override string ToString()
     {

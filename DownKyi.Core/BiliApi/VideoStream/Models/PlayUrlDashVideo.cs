@@ -6,7 +6,7 @@ namespace DownKyi.Core.BiliApi.VideoStream.Models;
 public class PlayUrlDashVideo : BaseModel
 {
     [JsonProperty("id")] public int Id { get; set; }
-    [JsonProperty("base_url")] public string BaseUrl { get; set; } = string.Empty;
+    [JsonProperty("base_url")] public string BaseAddress { get; set; } = string.Empty;
 
     [JsonProperty("backup_url")] public IReadOnlyList<string> BackupUrl { get; set; } = Array.Empty<string>();
 

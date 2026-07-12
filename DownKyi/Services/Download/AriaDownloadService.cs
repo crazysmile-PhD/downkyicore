@@ -82,7 +82,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         {
             Id = downloadVideo.Id,
             Codecs = downloadVideo.Codecs,
-            BaseUrl = downloadVideo.BaseUrl,
+            BaseAddress = downloadVideo.BaseUrl,
             BackupUrl = downloadVideo.BackupUrl,
             ExpectedSize = downloadVideo.ExpectedSize
         });
@@ -98,9 +98,9 @@ internal class AriaDownloadService : DownloadService, IDownloadService
 
         // 下载链接
         var urls = new List<string>();
-        if (downloadVideo.BaseUrl != null)
+        if (downloadVideo.BaseAddress != null)
         {
-            urls.Add(downloadVideo.BaseUrl);
+            urls.Add(downloadVideo.BaseAddress);
         }
 
         if (downloadVideo.BackupUrl != null)

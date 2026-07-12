@@ -30,7 +30,7 @@ public class BangumiMedia : BaseModel
     // new_ep
     // rating
     [JsonProperty("season_id")] public long SeasonId { get; set; }
-    [JsonProperty("share_url")] public string ShareUrl { get; set; } = string.Empty;
+    [JsonProperty("share_url")] public string ShareAddress { get; set; } = string.Empty;
     [JsonProperty("title")] public string Title { get; set; } = string.Empty;
     [JsonProperty("type_name")] public string TypeName { get; set; } = string.Empty;
 }

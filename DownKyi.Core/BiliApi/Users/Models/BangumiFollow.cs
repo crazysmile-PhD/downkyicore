@@ -45,7 +45,7 @@ public class BangumiFollow : BaseModel
     // publish
     // mode
     // section
-    [JsonProperty("url")] public string Url { get; set; } = string.Empty;
+    [JsonProperty("url")] public string Address { get; set; } = string.Empty;
 
     // badge_info
     // first_ep_info
