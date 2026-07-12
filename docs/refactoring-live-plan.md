@@ -1,9 +1,9 @@
 # DownKyi Core Live Refactoring Plan
 
 Status: active
-Last updated: 2026-07-12
-Current group: PR 03-06
-Next branch: `refactor/pr-03-06-download-domain-store`
+Last updated: 2026-07-13
+Current group: PR 07-15
+Next branch: `refactor/pr-07-15-download-runtime`
 
 This file contains only unfinished work. Completed items are removed in the same PR that finishes them; newly discovered debt is added immediately with an owning PR or phase.
 
@@ -18,21 +18,7 @@ This file contains only unfinished work. Completed items are removed in the same
 - A group may contain multiple ordered commits, but it must not be split into smaller public PRs or combined with another numbered range.
 - The next group starts only after the previous group has completed its full scope and passed build, tests, data compatibility checks, documentation updates, and `git diff --check`.
 
-## Active Next: PR 03-06 - Download Domain And SQLite Store
-
-Branch: `refactor/pr-03-06-download-domain-store`
-
-- Introduce immutable download IDs, media identity, plan, output, progress, failure, phase, and legal state transitions.
-- Separate pause, cancel, delete, failure, and retry semantics.
-- Build `IDownloadTaskStore`, short pooled connections, real async APIs, migrations, transaction rollback, pre-migration backup, and corrupt-row quarantine.
-- Replace the deprecated `SQLitePCLRaw.bundle_e_sqlcipher` only after encrypted legacy database migration and rollback tests prove user data compatibility.
-- Stop mapping SQLite rows directly into `DownloadingItem`; current mapping requires Avalonia resources and blocks storage-only round-trip tests.
-- Preserve legacy `gid`, partial file maps, downloaded assets, status, progress, and settings snapshots during migration.
-- Add keyset history pagination, startup loading of unfinished tasks plus one recent page, and delayed full history.
-- Add a bounded write-behind channel that coalesces progress while persisting state transitions immediately.
-- Stop converting malformed stored JSON into silent empty collections; report record ID, field, and reason through sanitized diagnostics.
-
-## PR 07-15 - Download, FFmpeg, Aria2, And HTTP Runtime
+## Active Next: PR 07-15 - Download, FFmpeg, Aria2, And HTTP Runtime
 
 Branch: `refactor/pr-07-15-download-runtime`
 
@@ -47,6 +33,7 @@ Branch: `refactor/pr-07-15-download-runtime`
 - Replace `BiliApiRequest` catch-and-return-null behavior with typed failures visible to UI and diagnostics.
 - Add source-generated JSON contexts and fixed API contract samples for success, missing data, rejected code, HTML, and malformed JSON.
 - Make incomplete stream cleanup atomic; a Content-Length failure must not leave a file that can be mistaken for completed media.
+- Remove the tracked synchronous persistence compatibility bridge after built-in and aria2 callbacks become async; state transitions must await the store and high-rate progress must use the bounded write-behind boundary.
 
 - Sort all DURL inputs by `Order` before queueing or merging.
 - For multi-segment DURL output, skip stream copy and rebuild timestamps, keyframes, and MP4 indexes through hardware encoding with CPU `libx264 + aac` fallback.
