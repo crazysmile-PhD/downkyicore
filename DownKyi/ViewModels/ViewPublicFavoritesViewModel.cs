@@ -53,9 +53,9 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _downloadManage, value);
     }
 
-    private Favorites _favorites = null!;
+    private FavoritesPageItem _favorites = null!;
 
-    public Favorites Favorites
+    public FavoritesPageItem Favorites
     {
         get => _favorites;
         set => SetProperty(ref _favorites, value);

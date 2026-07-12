@@ -1,10 +1,10 @@
 using Bilibili.Community.Service.Dm.V1;
-using DownKyi.Core.BiliApi.Danmaku.Models;
+using DownKyi.Core.BiliApi.DanmakuApi.Models;
 using DownKyi.Core.Storage;
 using Google.Protobuf;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 
-namespace DownKyi.Core.BiliApi.Danmaku;
+namespace DownKyi.Core.BiliApi.DanmakuApi;
 
 public static class DanmakuProtobuf
 {

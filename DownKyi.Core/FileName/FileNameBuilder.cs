@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace DownKyi.Core.FileName;
 
-public class FileName
+public class FileNameBuilder
 {
     private readonly IReadOnlyList<FileNamePart> _nameParts;
     private string _order = "ORDER";
@@ -23,23 +23,23 @@ public class FileName
     private long _upMid = -1;
     private string _upName = "UP_NAME";
 
-    private FileName(IReadOnlyList<FileNamePart> nameParts)
+    private FileNameBuilder(IReadOnlyList<FileNamePart> nameParts)
     {
         this._nameParts = nameParts;
     }
 
-    public static FileName Builder(IReadOnlyList<FileNamePart> nameParts)
+    public static FileNameBuilder Create(IReadOnlyList<FileNamePart> nameParts)
     {
-        return new FileName(nameParts);
+        return new FileNameBuilder(nameParts);
     }
 
-    public FileName SetOrder(int order)
+    public FileNameBuilder SetOrder(int order)
     {
         _order = order.ToString();
         return this;
     }
 
-    public FileName SetOrder(int order, int count)
+    public FileNameBuilder SetOrder(int order, int count)
     {
         var length = Math.Abs(count).ToString().Length;
         _order = order.ToString("D" + length);
@@ -47,79 +47,79 @@ public class FileName
         return this;
     }
 
-    public FileName SetSection(string section)
+    public FileNameBuilder SetSection(string section)
     {
         _section = section;
         return this;
     }
 
-    public FileName SetMainTitle(string mainTitle)
+    public FileNameBuilder SetMainTitle(string mainTitle)
     {
         _mainTitle = mainTitle;
         return this;
     }
 
-    public FileName SetPageTitle(string pageTitle)
+    public FileNameBuilder SetPageTitle(string pageTitle)
     {
         _pageTitle = pageTitle;
         return this;
     }
 
-    public FileName SetVideoZone(string videoZone)
+    public FileNameBuilder SetVideoZone(string videoZone)
     {
         _videoZone = videoZone;
         return this;
     }
 
-    public FileName SetAudioQuality(string audioQuality)
+    public FileNameBuilder SetAudioQuality(string audioQuality)
     {
         _audioQuality = audioQuality;
         return this;
     }
 
-    public FileName SetVideoQuality(string videoQuality)
+    public FileNameBuilder SetVideoQuality(string videoQuality)
     {
         _videoQuality = videoQuality;
         return this;
     }
 
-    public FileName SetVideoCodec(string videoCodec)
+    public FileNameBuilder SetVideoCodec(string videoCodec)
     {
         _videoCodec = videoCodec;
         return this;
     }
 
-    public FileName SetVideoPublishTime(string videoPublishTime)
+    public FileNameBuilder SetVideoPublishTime(string videoPublishTime)
     {
         _videoPublishTime = videoPublishTime;
         return this;
     }
 
-    public FileName SetAvid(long avid)
+    public FileNameBuilder SetAvid(long avid)
     {
         _avid = avid;
         return this;
     }
 
-    public FileName SetBvid(string bvid)
+    public FileNameBuilder SetBvid(string bvid)
     {
         _bvid = bvid;
         return this;
     }
 
-    public FileName SetCid(long cid)
+    public FileNameBuilder SetCid(long cid)
     {
         _cid = cid;
         return this;
     }
 
-    public FileName SetUpMid(long upMid)
+    public FileNameBuilder SetUpMid(long upMid)
     {
         _upMid = upMid;
         return this;
     }
 
-    public FileName SetUpName(string upName)
+    public FileNameBuilder SetUpName(string upName)
     {
         _upName = upName;
         return this;

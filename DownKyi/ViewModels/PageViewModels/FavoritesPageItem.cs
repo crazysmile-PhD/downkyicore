@@ -5,7 +5,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class Favorites : BindableBase
+public class FavoritesPageItem : BindableBase
 {
     private string coverUrl = string.Empty;
 
@@ -130,7 +130,7 @@ public class Favorites : BindableBase
         set => SetProperty(ref upHeader, value);
     }
 
-    public Favorites()
+    public FavoritesPageItem()
     {
         #region 属性初始化
 

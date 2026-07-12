@@ -441,7 +441,7 @@ public class AddToDownloadService
 
                 // 文件路径
                 var fileNameParts = SettingsManager.Instance.GetFileNameParts();
-                var fileName = FileName.Builder(fileNameParts)
+                var fileName = FileNameBuilder.Create(fileNameParts)
                     .SetSection(Format.FormatFileName(sectionName))
                     .SetMainTitle(Format.FormatFileName(_videoInfoView.Title))
                     .SetPageTitle(Format.FormatFileName(page.Name))

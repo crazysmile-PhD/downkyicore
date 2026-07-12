@@ -5,7 +5,7 @@ using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.Video;
 
-public static class Dynamic
+public static class DynamicApi
 {
     /// <summary>
     /// 获取分区最新视频列表

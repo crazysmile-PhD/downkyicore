@@ -8,20 +8,20 @@ using FFMpegCore.Pipes;
 
 namespace DownKyi.Core.FFMpeg;
 
-public class FFMpeg
+public class FfmpegProcessor
 {
     private const string Tag = "FFmpegHelper";
-    private static readonly FFMpeg instance = new();
+    private static readonly FfmpegProcessor instance = new();
     private readonly object _ffmpegJobLock = new();
     private int _runningFfmpegJobs;
 
-    private FFMpeg()
+    private FfmpegProcessor()
     {
         GlobalFFOptions.Configure(new FFOptions { BinaryFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg") });
         FFMpegHelper.VerifyFFMpegExists(GlobalFFOptions.Current);
     }
 
-    public static FFMpeg Instance => instance;
+    public static FfmpegProcessor Instance => instance;
 
     /// <summary>
     /// 合并音频和视频
@@ -431,9 +431,9 @@ public class FFMpeg
 
     private sealed class FfmpegSlot : IDisposable
     {
-        private FFMpeg? _owner;
+        private FfmpegProcessor? _owner;
 
-        public FfmpegSlot(FFMpeg owner)
+        public FfmpegSlot(FfmpegProcessor owner)
         {
             _owner = owner;
         }

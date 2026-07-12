@@ -114,7 +114,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
                 // 音频文件名
                 var audioFileName = item.Remove(item.Length - 4, 4) + ".aac";
                 // 执行提取音频程序
-                FFMpeg.Instance.ExtractAudio(item, audioFileName, output => { Status += output + "\n"; });
+                FfmpegProcessor.Instance.ExtractAudio(item, audioFileName, output => { Status += output + "\n"; });
             }
 
             _isExtracting = false;
@@ -153,7 +153,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
                 // 视频文件名
                 var videoFileName = item.Remove(item.Length - 4, 4) + "_onlyVideo.mp4";
                 // 执行提取视频程序
-                FFMpeg.Instance.ExtractVideo(item, videoFileName, new Action<string>((output) => { Status += output + "\n"; }));
+                FfmpegProcessor.Instance.ExtractVideo(item, videoFileName, new Action<string>((output) => { Status += output + "\n"; }));
             }
 
             _isExtracting = false;

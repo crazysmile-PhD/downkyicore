@@ -1,10 +1,10 @@
-using DownKyi.Core.BiliApi.Danmaku;
+using DownKyi.Core.BiliApi.DanmakuApi;
 
 namespace DownKyi.Core.Danmaku2Ass;
 
-public class Bilibili
+public class BilibiliDanmakuConverter
 {
-    private static Bilibili instance = null!;
+    private static BilibiliDanmakuConverter instance = null!;
     private readonly Dictionary<int, VideoResolution> _resolutions;
 
     private readonly Dictionary<string, bool> config = new Dictionary<string, bool>
@@ -40,13 +40,13 @@ public class Bilibili
     /// <summary>
     /// 获取Bilibili实例
     /// </summary>
-    public static Bilibili Instance
+    public static BilibiliDanmakuConverter Instance
     {
         get
         {
             if (instance == null)
             {
-                instance = new Bilibili();
+                instance = new BilibiliDanmakuConverter();
             }
 
             return instance;
@@ -56,7 +56,7 @@ public class Bilibili
     /// <summary>
     /// 隐藏Bilibili()方法，必须使用单例模式
     /// </summary>
-    private Bilibili()
+    private BilibiliDanmakuConverter()
     {
         _resolutions = new Dictionary<int, VideoResolution>
         {
@@ -77,7 +77,7 @@ public class Bilibili
     /// </summary>
     /// <param name="isFilter"></param>
     /// <returns></returns>
-    public Bilibili SetTopFilter(bool isFilter)
+    public BilibiliDanmakuConverter SetTopFilter(bool isFilter)
     {
         config["top_filter"] = isFilter;
         return this;
@@ -88,7 +88,7 @@ public class Bilibili
     /// </summary>
     /// <param name="isFilter"></param>
     /// <returns></returns>
-    public Bilibili SetBottomFilter(bool isFilter)
+    public BilibiliDanmakuConverter SetBottomFilter(bool isFilter)
     {
         config["bottom_filter"] = isFilter;
         return this;
@@ -99,7 +99,7 @@ public class Bilibili
     /// </summary>
     /// <param name="isFilter"></param>
     /// <returns></returns>
-    public Bilibili SetScrollFilter(bool isFilter)
+    public BilibiliDanmakuConverter SetScrollFilter(bool isFilter)
     {
         config["scroll_filter"] = isFilter;
         return this;

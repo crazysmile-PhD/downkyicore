@@ -188,7 +188,7 @@ public class ViewDelogoViewModel : ViewModelBase
         {
             try
             {
-                Source = new Bitmap(await FFMpeg.Instance.ExtractVideoFrame(VideoPath, TimeSpan.FromSeconds(1)).ConfigureAwait(true));
+                Source = new Bitmap(await FfmpegProcessor.Instance.ExtractVideoFrame(VideoPath, TimeSpan.FromSeconds(1)).ConfigureAwait(true));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException
                 or InvalidOperationException or System.ComponentModel.Win32Exception)
@@ -252,7 +252,7 @@ public class ViewDelogoViewModel : ViewModelBase
         {
             // 执行去水印程序
             _isDelogo = true;
-            FFMpeg.Instance.Delogo
+            FfmpegProcessor.Instance.Delogo
             (
                 VideoPath,
                 newFileName,

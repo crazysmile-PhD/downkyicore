@@ -86,6 +86,7 @@ dotnet_diagnostic.CA1707.severity = error
 dotnet_diagnostic.CA1708.severity = error
 dotnet_diagnostic.CA1711.severity = error
 dotnet_diagnostic.CA1720.severity = error
+dotnet_diagnostic.CA1724.severity = error
 
 [*.{csproj,props,targets,axaml,json,yml,yaml}]
 indent_style = space

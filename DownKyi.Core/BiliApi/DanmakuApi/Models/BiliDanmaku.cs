@@ -1,4 +1,4 @@
-namespace DownKyi.Core.BiliApi.Danmaku.Models;
+namespace DownKyi.Core.BiliApi.DanmakuApi.Models;
 
 public class BiliDanmaku
 {

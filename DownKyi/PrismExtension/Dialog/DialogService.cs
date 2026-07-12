@@ -96,7 +96,7 @@ public class DialogService : Prism.Dialogs.DialogService, IDialogService
         IDialogAware viewModel)
     {
 
-        var windowTheme = Dialog.GetTheme(dialogContent);
+        var windowTheme = ThemedDialog.GetTheme(dialogContent);
         if (windowTheme != null)
         {
             window.Theme = windowTheme;

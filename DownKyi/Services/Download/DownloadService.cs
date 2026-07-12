@@ -326,7 +326,7 @@ public abstract class DownloadService : IDisposable
             CustomOffset = 0
         };
 
-        var bilibili = Core.Danmaku2Ass.Bilibili.Instance;
+        var bilibili = Core.Danmaku2Ass.BilibiliDanmakuConverter.Instance;
         bilibili.SetTopFilter(SettingsManager.Instance.GetDanmakuTopFilter() == AllowStatus.Yes);
         bilibili.SetBottomFilter(SettingsManager.Instance.GetDanmakuBottomFilter() == AllowStatus.Yes);
         bilibili.SetScrollFilter(SettingsManager.Instance.GetDanmakuScrollFilter() == AllowStatus.Yes);
@@ -503,7 +503,7 @@ public abstract class DownloadService : IDisposable
         }
 
         // 合并音视频
-        FFMpeg.Instance.MergeVideo(audioUid, videoUid, finalFile);
+        FfmpegProcessor.Instance.MergeVideo(audioUid, videoUid, finalFile);
 
         // 获取文件大小
         if (File.Exists(finalFile))
@@ -528,7 +528,7 @@ public abstract class DownloadService : IDisposable
         downloading.SpeedDisplay = string.Empty;
 
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
-        FFMpeg.Instance.ConcatVideos(videoUids, finalFile, (x) => { });
+        FfmpegProcessor.Instance.ConcatVideos(videoUids, finalFile, (x) => { });
         if (File.Exists(finalFile))
         {
             var info = new FileInfo(finalFile);

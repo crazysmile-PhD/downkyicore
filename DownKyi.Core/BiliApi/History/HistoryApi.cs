@@ -8,7 +8,7 @@ namespace DownKyi.Core.BiliApi.History
     /// <summary>
     /// 历史记录
     /// </summary>
-    public static class History
+    public static class HistoryApi
     {
         /// <summary>
         /// 获取历史记录列表（视频、直播、专栏）

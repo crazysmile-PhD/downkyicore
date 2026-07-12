@@ -21,7 +21,7 @@ public class FavoritesService : IFavoritesService
     /// </summary>
     /// <param name="mediaId"></param>
     /// <returns></returns>
-    public Favorites? GetFavorites(long mediaId, CancellationToken cancellationToken = default)
+    public FavoritesPageItem? GetFavorites(long mediaId, CancellationToken cancellationToken = default)
     {
         var favoritesMetaInfo = FavoritesInfo.GetFavoritesInfo(mediaId, cancellationToken);
         if (favoritesMetaInfo == null)
@@ -36,7 +36,7 @@ public class FavoritesService : IFavoritesService
         var upName = favoritesMetaInfo.Upper?.Name ?? string.Empty;
 
         // 为Favorites赋值
-        var favorites = new Favorites();
+        var favorites = new FavoritesPageItem();
         App.PropertyChangeAsync(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();

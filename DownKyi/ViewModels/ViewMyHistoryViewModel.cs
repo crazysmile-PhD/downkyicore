@@ -350,7 +350,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
         try
         {
             var result = await Task.Run(() =>
-                History.GetHistory(_nextMax, _nextViewAt, VideoNumberInPage, cancellationToken: cancellationToken),
+                HistoryApi.GetHistory(_nextMax, _nextViewAt, VideoNumberInPage, cancellationToken: cancellationToken),
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
 

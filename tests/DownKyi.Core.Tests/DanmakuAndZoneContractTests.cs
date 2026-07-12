@@ -1,7 +1,7 @@
 using System.Text;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Core.Danmaku2Ass;
-using DanmakuBilibili = DownKyi.Core.Danmaku2Ass.Bilibili;
+using DanmakuBilibili = DownKyi.Core.Danmaku2Ass.BilibiliDanmakuConverter;
 
 namespace DownKyi.Core.Tests;
 
