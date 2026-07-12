@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-07-10
+Last reviewed: 2026-07-12
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -64,6 +64,10 @@ tests:
 flowchart TD
     Program["app.program\nDownKyi/Program.cs"]
     App["app.application\nDownKyi/App.axaml.cs"]
+    Host["app.host-composition\nsrc/DownKyi.Desktop/Composition/DownKyiHost.cs"]
+    Domain["core.domain-contracts\nsrc/DownKyi.Domain"]
+    ApplicationLayer["service.application-contracts\nsrc/DownKyi.Application"]
+    Infrastructure["core.infrastructure\nsrc/DownKyi.Infrastructure"]
     MainWindow["ui.main-window\nDownKyi/Views/MainWindow.axaml"]
     MainVm["viewmodel.main-window\nDownKyi/ViewModels/MainWindowViewModel.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
@@ -87,7 +91,13 @@ flowchart TD
     AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
 
     Program -->|calls| App
-    App -->|injects| MainWindow
+    App -->|creates| Host
+    Host -->|injects| MainWindow
+    Host -->|registers| ApplicationLayer
+    Host -->|registers| Infrastructure
+    ApplicationLayer -->|depends on| Domain
+    Infrastructure -->|implements| ApplicationLayer
+    Infrastructure -->|depends on| Domain
     MainWindow -->|binds| MainVm
     MainVm -->|navigates| VideoVm
     VideoVm -->|calls| Resolver
@@ -109,7 +119,10 @@ flowchart TD
     Tests -->|guards| WebClient
     Tests -->|guards| DownloadAdd
     Tests -->|guards| DownloadService
-    ArchitectureTests -->|guards dependency direction| App
+    ArchitectureTests -->|guards dependency direction| Domain
+    ArchitectureTests -->|guards dependency direction| ApplicationLayer
+    ArchitectureTests -->|guards dependency direction| Infrastructure
+    ArchitectureTests -->|guards dependency direction| Host
     UiSmoke -->|guards XAML construction| MainWindow
     Benchmarks -->|measures| WebClient
     CI -->|guards| Tests
@@ -148,16 +161,19 @@ id: app.application
 type: app
 paths:
   - DownKyi/App.axaml.cs
-responsibility: Owns Prism registration, shell creation, global download lists, startup download-state loading, and graceful exit cleanup.
+  - DownKyi/Composition/LegacyDesktopComposition.cs
+responsibility: Bridges legacy Prism registrations into the Host, shows the shell, owns global download projections, and coordinates startup and exit cleanup.
 inbound:
   - app.program
 outbound:
+  - app.host-composition
   - ui.main-window
   - service.download-runtime
   - core.storage
   - core.logging
 contracts:
   - UI shell should appear before heavy download state and service startup finish.
+  - The Host is created with default configuration sources disabled and must not redirect database, settings, login, portable-mode, or aria2 session paths.
   - Download startup and shutdown must be cancellation-aware.
   - Global downloading/downloaded lists are shared UI state and must be mutated on the UI thread.
   - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
@@ -166,8 +182,102 @@ hazards:
   - Any synchronous database, aria2, or file scan here directly hurts startup time.
   - Exit cleanup can leave aria2 running if cancellation and timeout paths drift.
   - Controlled lifetime exit still synchronously waits up to 15 seconds; PR 16-24 owns replacement with bounded Host shutdown.
+  - `LegacyDesktopComposition` and `MainWindow.AttachLegacyRegion` still bridge Prism global region state; PR 25-29 owns deletion after typed navigation takes over.
 tests:
   - test.ui-smoke
+  - test.composition-root
+```
+
+### app.host-composition
+
+```yaml
+id: app.host-composition
+type: app
+paths:
+  - src/DownKyi.Desktop/Composition/DownKyiHost.cs
+responsibility: Builds the single Microsoft.Extensions.Hosting composition root and owns application-wide service lifetime.
+inbound:
+  - app.application
+outbound:
+  - core.domain-contracts
+  - service.application-contracts
+  - core.infrastructure
+contracts:
+  - `DisableDefaults=true` prevents implicit configuration, logging, environment, and path side effects during composition.
+  - Host stop signals the shared application shutdown token before services are disposed.
+  - Only this target-architecture project references Microsoft.Extensions.Hosting.
+hazards:
+  - Legacy UI types are registered through a callback until PR 25-29 moves them into DownKyi.Desktop.
+tests:
+  - test.composition-root
+  - test.architecture-boundaries
+```
+
+### core.domain-contracts
+
+```yaml
+id: core.domain-contracts
+type: core
+paths:
+  - src/DownKyi.Domain/Results/OperationError.cs
+  - src/DownKyi.Domain/Results/OperationResult.cs
+responsibility: Defines framework-free typed success and failure contracts shared by future download and media use cases.
+inbound:
+  - service.application-contracts
+  - core.infrastructure
+outbound: []
+contracts:
+  - Failure retains a typed error kind, stable code, and user-safe message.
+  - Success values are non-null; failed results cannot expose a value without an explicit exception.
+hazards:
+  - Error messages must not contain cookies, full sensitive URLs, or personal filesystem paths.
+tests:
+  - test.domain-results
+  - test.architecture-boundaries
+```
+
+### service.application-contracts
+
+```yaml
+id: service.application-contracts
+type: service
+paths:
+  - src/DownKyi.Application/Lifetime/ApplicationCancellation.cs
+  - src/DownKyi.Application/Time/IClock.cs
+responsibility: Defines application lifetime cancellation and deterministic time boundaries without UI or infrastructure dependencies.
+inbound:
+  - app.host-composition
+  - core.infrastructure
+outbound:
+  - core.domain-contracts
+contracts:
+  - Every long-running operation links caller cancellation with the application shutdown token.
+  - Cancellation remains control flow and must not be converted into a failure result or retry.
+  - Time-dependent use cases receive IClock instead of reading the system clock directly.
+tests:
+  - test.application-lifetime
+  - test.architecture-boundaries
+```
+
+### core.infrastructure
+
+```yaml
+id: core.infrastructure
+type: core
+paths:
+  - src/DownKyi.Infrastructure/Time/SystemClock.cs
+responsibility: Provides framework and operating-system implementations for Application contracts.
+inbound:
+  - app.host-composition
+outbound:
+  - service.application-contracts
+  - core.domain-contracts
+contracts:
+  - Infrastructure never references Desktop or Prism.
+  - SystemClock returns UTC time; deterministic tests replace IClock at the composition boundary.
+tests:
+  - test.infrastructure-clock
+  - test.architecture-boundaries
 ```
 
 ### viewmodel.main-window
@@ -772,15 +882,48 @@ test.architecture-boundaries:
   guards:
     - production project references remain acyclic
     - target Domain/Application/Infrastructure/Desktop dependency direction is enforced
+    - target projects exist exactly once and forbidden source namespaces cannot cross inward
     - Domain cannot reference UI, SQLite, JSON, or FFmpeg framework packages
+    - only DownKyi.Desktop can own the Host package
+    - every temporary legacy bridge names the PR that deletes it
 
 test.ui-smoke:
   paths:
     - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
   guards:
     - Avalonia headless platform initializes
-    - MainWindow XAML and its ViewModel binding can be constructed
+    - MainWindow XAML and its ViewModel binding resolve from the real Host without setting Prism ContainerLocator
+    - MainWindow, index, video-detail, and download-manager ViewModels resolve from Microsoft DI
+    - Host creation does not redirect database, settings, login, portable-mode, or aria2 paths
     - production AppBuilder can be created
+
+test.composition-root:
+  paths:
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+  guards:
+    - the real Host starts and stops without Prism global container state
+    - Host stop signals the shared application shutdown token
+    - the shell and key ViewModels resolve from the same service provider
+
+test.domain-results:
+  paths:
+    - tests/DownKyi.Domain.Tests/OperationResultTests.cs
+  guards:
+    - successful results expose their non-null value
+    - failed results preserve the exact typed error and do not expose a value
+
+test.application-lifetime:
+  paths:
+    - tests/DownKyi.Application.Tests/ApplicationCancellationTests.cs
+  guards:
+    - application shutdown cancels every linked operation
+    - caller cancellation does not cancel unrelated work or global shutdown
+
+test.infrastructure-clock:
+  paths:
+    - tests/DownKyi.Infrastructure.Tests/SystemClockTests.cs
+  guards:
+    - SystemClock returns a current UTC timestamp through the Application contract
 
 test.performance-baseline:
   paths:
@@ -827,13 +970,6 @@ test.json-contracts:
     - missing data does not become NullReference later
     - code != 0 is visible
     - empty string and HTML error pages fail as JSON
-
-test.composition-root:
-  status: planned
-  should_guard:
-    - the real Host registers all main services without Prism global state
-    - MainWindow and key ViewModels resolve from the real composition root
-    - shutdown cancels workers and flushes storage, settings, and logs within a bounded timeout
 
 test.durl-seekability:
   status: planned-for-pr-07-15

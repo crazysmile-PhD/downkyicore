@@ -531,7 +531,7 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+            (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
             // var dir = AppDomain.CurrentDomain.SetupInformation.ApplicationBase;
             // todo 暂时去掉自动重启,多平台需要不同实现
             // if (dir != null)
@@ -583,7 +583,7 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+            (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         }
     }
 
@@ -623,7 +623,7 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+            (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         }
     }
 
@@ -790,7 +790,7 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+            (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         }
     }
 

@@ -1,48 +1,95 @@
-using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Headless;
+using DownKyi.Application.Lifetime;
+using DownKyi.Composition;
+using DownKyi.Core.Storage;
+using DownKyi.Desktop.Composition;
+using DownKyi.PrismExtension.Dialog;
 using DownKyi.ViewModels;
 using DownKyi.Views;
+using Microsoft.Extensions.DependencyInjection;
 using Prism.Container.DryIoc;
-using Prism.Ioc;
-using Prism.Mvvm;
+using Prism.Events;
 using Prism.Navigation.Regions;
+using DesktopDialogService = DownKyi.PrismExtension.Dialog.DialogService;
 
 namespace DownKyi.Desktop.Tests;
 
 public sealed class UiSmokeTests
 {
     [Fact]
-    public void AppBuilderAndMainWindowCanInitializeOnHeadlessPlatform()
+    public async Task RealHostResolvesShellAndKeyViewModelsWithoutGlobalContainerState()
     {
         var builder = AppBuilder
             .Configure<SmokeTestApplication>()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions());
         builder.SetupWithoutStarting();
 
-        var app = Assert.IsType<SmokeTestApplication>(Application.Current);
+        var app = Assert.IsType<SmokeTestApplication>(Avalonia.Application.Current);
         app.Initialize();
-        var container = new DryIocContainerExtension();
-        container.RegisterSingleton<IRegionManager, RegionManager>();
-        ContainerLocator.SetContainerExtension(container);
-        ViewModelLocationProvider.SetDefaultViewModelFactory(RuntimeHelpers.GetUninitializedObject);
+        var prismContainer = new DryIocContainerExtension();
+        var regionManager = new RegionManager();
+        var eventAggregator = new EventAggregator();
+        var dialogService = new DesktopDialogService(prismContainer);
+        using var host = DownKyiHost.Create(services => services.AddLegacyDesktopShell(
+            regionManager,
+            eventAggregator,
+            dialogService));
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
         try
         {
-            var window = new MainWindow();
+            var window = host.Services.GetRequiredService<MainWindow>();
 
             Assert.True(window.Width >= window.MinWidth);
             Assert.True(window.Height >= window.MinHeight);
-            Assert.IsType<MainWindowViewModel>(window.DataContext);
+            Assert.Same(host.Services.GetRequiredService<MainWindowViewModel>(), window.DataContext);
+            Assert.NotNull(host.Services.GetRequiredService<ViewIndexViewModel>());
+            Assert.NotNull(host.Services.GetRequiredService<ViewVideoDetailViewModel>());
+            Assert.NotNull(host.Services.GetRequiredService<ViewDownloadManagerViewModel>());
             Assert.NotNull(Program.BuildAvaloniaApp());
         }
         finally
         {
-            ContainerLocator.ResetContainer();
-            container.Instance.Dispose();
+            await host.StopAsync(TestContext.Current.CancellationToken);
+            prismContainer.Instance.Dispose();
         }
     }
 
-    private sealed class SmokeTestApplication : Application
+    [Fact]
+    public void CreatingHostDoesNotRedirectExistingUserDataPaths()
+    {
+        var pathsBefore = GetUserDataPaths();
+
+        using var host = DownKyiHost.Create();
+
+        Assert.Equal(pathsBefore, GetUserDataPaths());
+    }
+
+    [Fact]
+    public async Task StoppingHostSignalsSharedApplicationCancellation()
+    {
+        using var host = DownKyiHost.Create();
+        var cancellation = host.Services.GetRequiredService<ApplicationCancellation>();
+        await host.StartAsync(TestContext.Current.CancellationToken);
+
+        await host.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(cancellation.ShutdownToken.IsCancellationRequested);
+    }
+
+    private static string[] GetUserDataPaths()
+    {
+        return
+        [
+            StorageManager.GetDbPath(),
+            StorageManager.GetSettings(),
+            StorageManager.GetLogin(),
+            StorageManager.GetAriaDir()
+        ];
+    }
+
+    private sealed class SmokeTestApplication : Avalonia.Application
     {
     }
 }

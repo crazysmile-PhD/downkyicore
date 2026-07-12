@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DownKyi.Application\DownKyi.Application.csproj" />
+    <ProjectReference Include="..\DownKyi.Domain\DownKyi.Domain.csproj" />
+    <ProjectReference Include="..\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

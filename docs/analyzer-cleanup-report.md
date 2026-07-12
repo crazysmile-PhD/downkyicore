@@ -112,10 +112,10 @@ No project-wide `NoWarn`, `GlobalSuppressions.cs`, `#nullable disable`, analyzer
 
 ## Test Coverage
 
-- Full solution tests: **93 passed** on the local .NET 10 Release build.
+- Full solution tests: **104 passed** on the local .NET 10 Release build.
 - Full solution cross-RID builds passed with zero warnings for `linux-x64` and `osx-x64`; native Linux/macOS test execution remains the responsibility of the matching CI runners.
 - Added or extended contracts for WebClient retry/cancellation, JSON wire names, XML/NFO round trips, aria2 lifecycle, DURL stable identity/order, and culture-invariant SRT/file-name output.
-- Avalonia headless smoke constructs the application builder, MainWindow, and primary ViewModel binding.
+- Avalonia headless smoke starts the real Host and resolves MainWindow plus key ViewModels without Prism global container state; layer tests cover typed results, cancellation propagation, the system clock boundary, and unchanged user-data paths.
 - Benchmark runner executes public non-sealed cases and requires an actual result row, not only exit code zero.
 
 ## Final Gate

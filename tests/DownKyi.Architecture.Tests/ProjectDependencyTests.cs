@@ -5,6 +5,27 @@ namespace DownKyi.Architecture.Tests;
 public sealed class ProjectDependencyTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly string[] TargetArchitectureProjects =
+    [
+        "DownKyi.Domain",
+        "DownKyi.Application",
+        "DownKyi.Infrastructure",
+        "DownKyi.Desktop"
+    ];
+
+    [Fact]
+    public void TargetArchitectureProjectsExistExactlyOnce()
+    {
+        foreach (var projectName in TargetArchitectureProjects)
+        {
+            var matches = Directory
+                .EnumerateFiles(RepositoryRoot, $"{projectName}.csproj", SearchOption.AllDirectories)
+                .Where(path => !IsUnderDirectory(path, "tests"))
+                .ToArray();
+
+            Assert.Single(matches);
+        }
+    }
 
     [Fact]
     public void ProductionProjectReferencesAreAcyclic()
@@ -93,6 +114,95 @@ public sealed class ProjectDependencyTests
         Assert.True(
             invalid.Length == 0,
             $"Domain references forbidden packages: {string.Join(", ", invalid)}");
+    }
+
+    [Fact]
+    public void OnlyDesktopCompositionRootReferencesHosting()
+    {
+        var packageOwners = TargetArchitectureProjects
+            .Select(projectName => new
+            {
+                ProjectName = projectName,
+                Packages = LoadPackageReferences(GetTargetProjectPath(projectName))
+            })
+            .Where(item => item.Packages.Contains("Microsoft.Extensions.Hosting", StringComparer.OrdinalIgnoreCase))
+            .Select(item => item.ProjectName)
+            .ToArray();
+
+        Assert.Equal(["DownKyi.Desktop"], packageOwners);
+    }
+
+    [Fact]
+    public void TargetSourceNamespacesDoNotCrossLayerBoundaries()
+    {
+        var forbiddenNamespaces = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["DownKyi.Domain"] =
+            [
+                "DownKyi.Application",
+                "DownKyi.Infrastructure",
+                "DownKyi.Desktop",
+                "Avalonia",
+                "Prism",
+                "Microsoft.Data.Sqlite"
+            ],
+            ["DownKyi.Application"] =
+            [
+                "DownKyi.Infrastructure",
+                "DownKyi.Desktop",
+                "Avalonia",
+                "Prism",
+                "Microsoft.Data.Sqlite"
+            ],
+            ["DownKyi.Infrastructure"] =
+            [
+                "DownKyi.Desktop",
+                "Avalonia",
+                "Prism"
+            ]
+        };
+
+        foreach (var boundary in forbiddenNamespaces)
+        {
+            var projectDirectory = Path.GetDirectoryName(GetTargetProjectPath(boundary.Key))!;
+            var violations = Directory
+                .EnumerateFiles(projectDirectory, "*.cs", SearchOption.AllDirectories)
+                .Where(path => !IsUnderDirectory(path, "obj"))
+                .SelectMany(path => boundary.Value
+                    .Where(forbidden => File.ReadAllText(path).Contains(forbidden, StringComparison.Ordinal))
+                    .Select(forbidden => $"{Path.GetRelativePath(RepositoryRoot, path)} -> {forbidden}"))
+                .ToArray();
+
+            Assert.True(
+                violations.Length == 0,
+                $"{boundary.Key} crosses a forbidden namespace boundary: {string.Join(", ", violations)}");
+        }
+    }
+
+    [Fact]
+    public void LegacyDesktopBridgeHasAnExplicitRemovalOwner()
+    {
+        var bridgePath = Path.Combine(RepositoryRoot, "DownKyi", "Composition", "LegacyDesktopComposition.cs");
+        var bridge = File.ReadAllText(bridgePath);
+
+        Assert.Contains("PR 25-29", bridge, StringComparison.Ordinal);
+    }
+
+    private static string GetTargetProjectPath(string projectName)
+    {
+        return Directory
+            .EnumerateFiles(RepositoryRoot, $"{projectName}.csproj", SearchOption.AllDirectories)
+            .Single(path => !IsUnderDirectory(path, "tests"));
+    }
+
+    private static string[] LoadPackageReferences(string projectPath)
+    {
+        return XDocument.Load(projectPath)
+            .Descendants("PackageReference")
+            .Select(element => (string?)element.Attribute("Include"))
+            .Where(package => !string.IsNullOrWhiteSpace(package))
+            .Cast<string>()
+            .ToArray();
     }
 
     private static Dictionary<string, string[]> LoadProductionProjectGraph()

@@ -1,14 +1,18 @@
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
+using DownKyi.ViewModels;
+using Prism.Navigation.Regions;
 
 namespace DownKyi.Views;
 
 internal partial class MainWindow : Window
 {
+    private const string ContentRegionName = "ContentRegion";
     private WindowSettings _windowSettings;
 
     public MainWindow()
@@ -16,6 +20,17 @@ internal partial class MainWindow : Window
         InitializeComponent();
         _windowSettings = SettingsManager.Instance.GetWindowSettings().Clone();
         ApplyWindowSettings();
+    }
+
+    public MainWindow(MainWindowViewModel viewModel) : this()
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        DataContext = viewModel;
+    }
+
+    public void AttachLegacyRegion()
+    {
+        RegionManager.SetRegionName(ContentRegionHost, ContentRegionName);
     }
 
     private void ApplyWindowSettings()
@@ -46,7 +61,7 @@ internal partial class MainWindow : Window
 
         SettingsManager.Instance.SettingWindowSettings(_windowSettings);
 
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             Dispatcher.UIThread.Post(() => desktop.Shutdown(), DispatcherPriority.Background);
         }

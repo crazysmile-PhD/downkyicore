@@ -51,7 +51,7 @@ internal class DialogService : Prism.Dialogs.DialogService, IDialogService
         ArgumentNullException.ThrowIfNull(dialogWindow);
 
         if (isModal &&
-            Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime deskLifetime)
+            Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime deskLifetime)
         {
             // Ref:
             //  - https://docs.avaloniaui.net/docs/controls/window#show-a-window-as-a-dialog

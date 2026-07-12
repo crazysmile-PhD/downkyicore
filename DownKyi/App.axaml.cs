@@ -12,11 +12,14 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using DownKyi.Application.Lifetime;
+using DownKyi.Composition;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
+using DownKyi.Desktop.Composition;
 using DownKyi.Models;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
@@ -35,8 +38,12 @@ using DownKyi.Views.Friends;
 using DownKyi.Views.Settings;
 using DownKyi.Views.Toolbox;
 using DownKyi.Views.UserSpace;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Prism.DryIoc;
+using Prism.Events;
 using Prism.Ioc;
+using Prism.Navigation.Regions;
 using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 using ViewSeasonsSeries = DownKyi.Views.ViewSeasonsSeries;
 using ViewSeasonsSeriesViewModel = DownKyi.ViewModels.ViewSeasonsSeriesViewModel;
@@ -51,8 +58,9 @@ internal partial class App : PrismApplication, IDisposable
 
     public static ImmutableObservableCollection<DownloadingItem> DownloadingList { get; private set; } = new();
     public static ImmutableObservableCollection<DownloadedItem> DownloadedList { get; private set; } = new();
-    public new static App Current => (App)Application.Current!;
-    public new MainWindow MainWindow => Container.Resolve<MainWindow>();
+    public new static App Current => (App)Avalonia.Application.Current!;
+    public new MainWindow MainWindow => _host?.Services.GetRequiredService<MainWindow>()
+        ?? throw new InvalidOperationException("The application host has not been created.");
     public IClassicDesktopStyleApplicationLifetime? AppLife { get; private set; }
 #if !DEBUG
     private static Mutex? _mutex;
@@ -60,7 +68,7 @@ internal partial class App : PrismApplication, IDisposable
 
     // 下载服务
     private IDownloadService? _downloadService;
-    private readonly CancellationTokenSource _startupCancellation = new();
+    private IHost? _host;
     private Task? _downloadStartupTask;
 
     public override void Initialize()
@@ -98,7 +106,6 @@ internal partial class App : PrismApplication, IDisposable
     {
         containerRegistry.RegisterSingleton<DownloadStorageService>();
 
-        containerRegistry.RegisterSingleton<MainWindow>();
         containerRegistry.RegisterSingleton<IDialogService, DialogService>();
         containerRegistry.Register<IDialogWindow, DialogWindow>();
         // pages
@@ -159,7 +166,12 @@ internal partial class App : PrismApplication, IDisposable
 
     protected override AvaloniaObject CreateShell()
     {
-        var shell = Container.Resolve<MainWindow>();
+        _host = DownKyiHost.Create(services => services.AddLegacyDesktopShell(
+            Container.Resolve<IRegionManager>(),
+            Container.Resolve<IEventAggregator>(),
+            Container.Resolve<IDialogService>()));
+        var shell = _host.Services.GetRequiredService<MainWindow>();
+        shell.AttachLegacyRegion();
         if (!Design.IsDesignMode)
         {
             Dispatcher.UIThread.Post(StartDownloadBootstrap, DispatcherPriority.Background);
@@ -190,16 +202,17 @@ internal partial class App : PrismApplication, IDisposable
     private void StartDownloadBootstrap()
     {
         RunStorageMaintenance();
-        _downloadStartupTask ??= LoadDownloadStateAndStartServiceAsync(_startupCancellation.Token);
+        _downloadStartupTask ??= StartHostAndDownloadServiceAsync(GetShutdownToken());
     }
 
     private void RunStorageMaintenance()
     {
+        var cancellationToken = GetShutdownToken();
         _ = Task.Run(async () =>
         {
             try
             {
-                await StorageManager.RunMaintenanceAsync(_startupCancellation.Token).ConfigureAwait(true);
+                await StorageManager.RunMaintenanceAsync(cancellationToken).ConfigureAwait(true);
             }
             catch (OperationCanceledException)
             {
@@ -211,10 +224,15 @@ internal partial class App : PrismApplication, IDisposable
         });
     }
 
-    private async Task LoadDownloadStateAndStartServiceAsync(CancellationToken cancellationToken)
+    private async Task StartHostAndDownloadServiceAsync(CancellationToken cancellationToken)
     {
         try
         {
+            if (_host != null)
+            {
+                await _host.StartAsync(cancellationToken).ConfigureAwait(true);
+            }
+
             var downloadStorageService = Container.Resolve<DownloadStorageService>();
             var downloadState = await LoadDownloadStateAsync(downloadStorageService, cancellationToken).ConfigureAwait(true);
 
@@ -331,7 +349,22 @@ internal partial class App : PrismApplication, IDisposable
 
     private async Task OnExitAsync()
     {
-        await _startupCancellation.CancelAsync().ConfigureAwait(false);
+        if (_host != null)
+        {
+            await _host.Services
+                .GetRequiredService<ApplicationCancellation>()
+                .RequestShutdownAsync()
+                .ConfigureAwait(false);
+            using var hostStopTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            try
+            {
+                await _host.StopAsync(hostStopTimeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (hostStopTimeout.IsCancellationRequested)
+            {
+                LogManager.Info(nameof(App), "Application host cleanup timed out.");
+            }
+        }
 
         // 强制落盘设置（防止防抖延迟期间退出导致配置丢失）
         SettingsManager.Instance.Flush();
@@ -377,7 +410,8 @@ internal partial class App : PrismApplication, IDisposable
         _downloadService?.Dispose();
         _downloadService = null;
         BiliWebClient.DisposeSharedResources();
-        _startupCancellation.Dispose();
+        _host?.Dispose();
+        _host = null;
 #if !DEBUG
         try
         {
@@ -405,6 +439,12 @@ internal partial class App : PrismApplication, IDisposable
             .ToUpperInvariant();
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(installPath)).AsSpan(0, 8));
         return $@"Global\DownKyi-{RepoOwner}-{RepoName}-{hash}";
+    }
+
+    private CancellationToken GetShutdownToken()
+    {
+        return _host?.Services.GetRequiredService<ApplicationCancellation>().ShutdownToken
+            ?? throw new InvalidOperationException("The application cancellation service has not been created.");
     }
 
     private sealed record DownloadStartupState(

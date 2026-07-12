@@ -20,7 +20,7 @@ namespace DownKyi.ViewModels.DownloadManager
             {
                 _downloadBase = value;
 
-                ZoneImage = Application.Current == null
+                ZoneImage = Avalonia.Application.Current == null
                     ? null
                     : DictionaryResource.Get<DrawingImage>(
                         VideoZoneIcon.Instance().GetZoneImageKey(DownloadBase.ZoneId));
