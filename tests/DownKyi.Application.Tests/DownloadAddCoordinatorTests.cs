@@ -1,11 +1,11 @@
-using DownKyi.Services.Download;
+using DownKyi.Application.Downloads;
 
-namespace DownKyi.Tests;
+namespace DownKyi.Application.Tests;
 
 public sealed class DownloadAddCoordinatorTests
 {
     [Fact]
-    public async Task AddToDownloadIfDirectorySelectedAsyncDoesNotAddWhenDirectorySelectionIsCanceled()
+    public async Task CancelingDirectorySelectionDoesNotAddADownload()
     {
         var addWasCalled = false;
 
@@ -23,7 +23,7 @@ public sealed class DownloadAddCoordinatorTests
     }
 
     [Fact]
-    public async Task AddToDownloadIfDirectorySelectedAsyncAddsWhenDirectoryIsSelected()
+    public async Task SelectedDirectoryReachesTheDownloadOperation()
     {
         string? receivedDirectory = null;
 
