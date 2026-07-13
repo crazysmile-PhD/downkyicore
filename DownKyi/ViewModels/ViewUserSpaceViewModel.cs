@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.Users;
@@ -9,6 +10,7 @@ using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
 using DownKyi.Events;
 using DownKyi.Images;
+using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.UserSpace;
 using Prism.Commands;
@@ -22,6 +24,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     public const string Tag = "PageUserSpace";
 
     private readonly IRegionManager _regionManager;
+    private CancellationTokenSource? _loadCancellation;
 
     // mid
     private long mid = -1;
@@ -343,69 +346,21 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     /// </summary>
     private async Task UpdateSpaceInfoAsync()
     {
-        var isNoData = true;
-        string? toutuUri = null;
-        string? headerUri = null;
-        Uri? sexUri = null;
-        Uri? levelUri = null;
-
-        await Task.Run(() =>
+        var cancellationToken = ResetLoadCancellation();
+        UserSpaceSnapshot snapshot;
+        try
         {
-            // 背景图片
-            var spaceSettings = Core.BiliApi.Users.UserSpace.GetSpaceSettings(mid);
-            toutuUri = spaceSettings != null ? $"https://i0.hdslb.com/{spaceSettings.Toutu.Limg}" : "avares://DownKyi/Resources/backgound/9-绿荫秘境.png";
+            snapshot = await UserSpaceLoadCoordinator.LoadAsync(mid, cancellationToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
 
-            // 用户信息
-            var userInfo = UserInfo.GetUserInfoForSpace(mid);
-            if (userInfo != null)
-            {
-                isNoData = false;
-
-                // 头像
-                headerUri = userInfo.Face;
-                // 用户名
-                UserName = userInfo.Name;
-                sexUri = userInfo.Sex switch
-                {
-                    // 性别
-                    "男" => new Uri("avares://DownKyi/Resources/sex/male.png"),
-                    "女" => new Uri("avares://DownKyi/Resources/sex/female.png"),
-                    _ => sexUri
-                };
-
-                // 显示vip信息
-                if (userInfo.Vip?.Label?.Text is null or "")
-                {
-                    VipTypeVisibility = false;
-                }
-                else
-                {
-                    VipTypeVisibility = true;
-                    VipType = userInfo.Vip.Label.Text;
-                }
-
-                // 等级
-                levelUri = new Uri($"avares://DownKyi/Resources/level/lv{userInfo.Level}.png");
-                // 签名
-                Sign = userInfo.Sign;
-
-                // 是否关注此UP
-                PropertyChangeAsync(() =>
-                {
-                    IsFollowed = userInfo.IsFollowed
-                        ? DictionaryResource.GetString("Followed")
-                        : DictionaryResource.GetString("NotFollowed");
-                });
-            }
-            else
-            {
-                // 没有数据
-                isNoData = true;
-            }
-        }).ConfigureAwait(true);
+        var userInfo = snapshot.User;
 
         // 是否获取到数据
-        if (isNoData)
+        if (userInfo == null)
         {
             TopNavigationBg = "#00FFFFFF"; // 透明
             ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
@@ -419,15 +374,30 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         else
         {
             // 头像
-            Header = headerUri;
+            Header = userInfo.Face;
+            UserName = userInfo.Name;
+            var sexUri = userInfo.Sex switch
+            {
+                "男" => new Uri("avares://DownKyi/Resources/sex/male.png"),
+                "女" => new Uri("avares://DownKyi/Resources/sex/female.png"),
+                _ => null
+            };
             // 性别
             Sex = sexUri == null ? null : ImageHelper.LoadFromResource(sexUri);
             // 等级
-            Level = levelUri == null ? null : ImageHelper.LoadFromResource(levelUri);
+            Level = ImageHelper.LoadFromResource(new Uri($"avares://DownKyi/Resources/level/lv{userInfo.Level}.png"));
+            VipType = userInfo.Vip?.Label?.Text ?? string.Empty;
+            VipTypeVisibility = !string.IsNullOrEmpty(VipType);
+            Sign = userInfo.Sign;
+            IsFollowed = userInfo.IsFollowed
+                ? DictionaryResource.GetString("Followed")
+                : DictionaryResource.GetString("NotFollowed");
 
             ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
             TopNavigationBg = DictionaryResource.GetColor("ColorMask100");
-            Background = toutuUri;
+            Background = snapshot.Settings != null
+                ? $"https://i0.hdslb.com/{snapshot.Settings.Toutu.Limg}"
+                : "avares://DownKyi/Resources/backgound/9-绿荫秘境.png";
 
             ViewVisibility = true;
             LoadingVisibility = false;
@@ -437,8 +407,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         ContentVisibility = true;
 
         // 投稿视频
-        IReadOnlyList<SpacePublicationListTypeVideoZone>? publicationTypes = null;
-        await Task.Run(() => { publicationTypes = Core.BiliApi.Users.UserSpace.GetPublicationType(mid); }).ConfigureAwait(true);
+        var publicationTypes = snapshot.PublicationTypes;
         if (publicationTypes is { Count: > 0 })
         {
             TabLeftBanners.Add(new TabLeftBanner
@@ -452,27 +421,8 @@ internal class ViewUserSpaceViewModel : ViewModelBase
             });
         }
 
-        // 频道
-        //List<SpaceChannelList> channelList = null;
-        //await Task.Run(() =>
-        //{
-        //    channelList = Core.BiliApi.Users.UserSpace.GetChannelList(mid);
-        //});
-        //if (channelList != null && channelList.Count > 0)
-        //{
-        //    TabLeftBanners.Add(new TabLeftBanner
-        //    {
-        //        NavigationData = channelList,
-        //        Id = 1,
-        //        Icon = NormalIcon.Instance().Channel,
-        //        IconColor = "#FF23C9ED",
-        //        Title = DictionaryResource.GetString("Channel")
-        //    });
-        //}
-
         // 合集和列表
-        SpaceSeasonsSeries? seasonsSeries = null;
-        await Task.Run(() => { seasonsSeries = Core.BiliApi.Users.UserSpace.GetSeasonsSeries(mid, 1, 20); }).ConfigureAwait(true);
+        var seasonsSeries = snapshot.SeasonsSeries;
         if (seasonsSeries is { Page.Total: > 0 })
         {
             TabLeftBanners.Add(new TabLeftBanner
@@ -489,8 +439,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         // 订阅
 
         // 关系状态数
-        UserRelationStat? relationStat = null;
-        await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(mid); }).ConfigureAwait(true);
+        var relationStat = snapshot.Relation;
         if (relationStat != null)
         {
             TabRightBanners.Add(new TabRightBanner
@@ -514,8 +463,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         }
 
         // UP主状态数，需要任意用户登录，否则不会返回任何数据
-        UpStat? upStat = null;
-        await Task.Run(() => { upStat = UserStatus.GetUpStat(mid); }).ConfigureAwait(true);
+        var upStat = snapshot.Statistics;
         if (upStat is { Archive: not null, Article: not null })
         {
             TabRightBanners.Add(new TabRightBanner
@@ -570,5 +518,31 @@ internal class ViewUserSpaceViewModel : ViewModelBase
 
         InitView();
         RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync));
+    }
+
+    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    {
+        _loadCancellation?.Cancel();
+        base.OnNavigatedFrom(navigationContext);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _loadCancellation?.Cancel();
+            _loadCancellation?.Dispose();
+            _loadCancellation = null;
+        }
+
+        base.Dispose(disposing);
+    }
+
+    private CancellationToken ResetLoadCancellation()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = new CancellationTokenSource();
+        return _loadCancellation.Token;
     }
 }
