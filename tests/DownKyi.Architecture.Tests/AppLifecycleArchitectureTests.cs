@@ -12,6 +12,7 @@ public sealed class AppLifecycleArchitectureTests
         Assert.DoesNotContain("OnExitAsync().Wait", source, StringComparison.Ordinal);
         Assert.DoesNotContain(".GetAwaiter().GetResult()", source, StringComparison.Ordinal);
         Assert.Contains("RequestShutdownAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Task.Run", source, StringComparison.Ordinal);
     }
 
     [Fact]

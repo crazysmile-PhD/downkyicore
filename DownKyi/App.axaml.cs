@@ -29,6 +29,7 @@ using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
 using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
+using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
@@ -183,6 +184,7 @@ internal partial class App : PrismApplication, IDisposable
         _host = DownKyiHost.Create(services =>
         {
             services.AddDownKyiBilibiliHttpClient();
+            services.AddSingleton<IHostedService, StorageMaintenanceHostedService>();
             services.AddLegacyDesktopShell(
                 Container.Resolve<IRegionManager>(),
                 Container.Resolve<IEventAggregator>(),
@@ -221,27 +223,7 @@ internal partial class App : PrismApplication, IDisposable
 
     private void StartDownloadBootstrap()
     {
-        RunStorageMaintenance();
         _downloadStartupTask ??= StartHostAndDownloadServiceAsync(GetShutdownToken());
-    }
-
-    private void RunStorageMaintenance()
-    {
-        var cancellationToken = GetShutdownToken();
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await StorageManager.RunMaintenanceAsync(cancellationToken).ConfigureAwait(true);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                LogManager.Error(nameof(StorageManager), e);
-            }
-        });
     }
 
     private async Task StartHostAndDownloadServiceAsync(CancellationToken cancellationToken)

@@ -6,6 +6,7 @@ using DownKyi.Composition;
 using DownKyi.Core.Storage;
 using DownKyi.Desktop.Composition;
 using DownKyi.PrismExtension.Dialog;
+using DownKyi.Services;
 using DownKyi.ViewModels;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -81,6 +82,18 @@ public sealed class UiSmokeTests
         await host.StartAsync(TestContext.Current.CancellationToken);
 
         await host.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(cancellation.ShutdownToken.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task StorageMaintenanceHostedServiceStopsWithApplicationCancellation()
+    {
+        using var cancellation = new ApplicationCancellation();
+        var service = new StorageMaintenanceHostedService(cancellation);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        await service.StopAsync(TestContext.Current.CancellationToken);
 
         Assert.True(cancellation.ShutdownToken.IsCancellationRequested);
     }
