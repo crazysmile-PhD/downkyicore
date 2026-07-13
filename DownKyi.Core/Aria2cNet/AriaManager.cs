@@ -61,17 +61,9 @@ public class AriaManager
     /// <summary>
     /// 获取gid下载项的状态。
     /// </summary>
-    public DownloadResult GetDownloadStatus(string gid, Action? action = null)
-    {
-        return GetDownloadStatusAsync(gid, action).GetAwaiter().GetResult();
-    }
-
-    /// <summary>
-    /// 获取gid下载项的状态。
-    /// </summary>
     public async Task<DownloadResult> GetDownloadStatusAsync(
         string gid,
-        Action? action = null,
+        Func<CancellationToken, ValueTask>? statusCallback = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(gid))
@@ -111,7 +103,10 @@ public class AriaManager
             OnTellStatus(totalLength, completedLength, speed, gid);
 
             // 在外部执行
-            action?.Invoke();
+            if (statusCallback != null)
+            {
+                await statusCallback(cancellationToken).ConfigureAwait(false);
+            }
 
             if (result.Status == "complete")
             {
@@ -139,14 +134,6 @@ public class AriaManager
 
             await Task.Delay(PollDelayMilliseconds, cancellationToken).ConfigureAwait(false);
         }
-    }
-
-    /// <summary>
-    /// 获取全局下载速度。
-    /// </summary>
-    public void GetGlobalStatus()
-    {
-        _ = GetGlobalStatusAsync();
     }
 
     /// <summary>
