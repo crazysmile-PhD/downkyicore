@@ -411,6 +411,29 @@ tests:
   - test.ui-smoke
 ```
 
+### viewmodel.user-space
+
+```yaml
+id: viewmodel.user-space
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewUserSpaceViewModel.cs
+  - DownKyi/Services/UserSpace/UserSpaceLoadCoordinator.cs
+responsibility: Projects one background-loaded user-space snapshot into profile, publication, collection, relation, and statistics UI state.
+inbound:
+  - typed or legacy navigation
+outbound:
+  - core.bili-api
+contracts:
+  - Background API work returns a snapshot and never mutates Avalonia-bound properties.
+  - A new navigation cancels the previous load; leaving or disposing the page cancels projection of stale results.
+  - Back first uses the navigation journal and falls back to the recorded parent or index.
+hazards:
+  - Legacy synchronous Bilibili API methods cannot abort an in-flight socket call yet; cancellation prevents subsequent calls and stale UI projection.
+tests:
+  - test.architecture-boundaries
+```
+
 ### service.video-parse-coordinator
 
 ```yaml

@@ -23,7 +23,7 @@ This file contains only unfinished work. Completed items are removed in the same
 Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
 - Move collection parsing, video parsing, selection, plan building, duplicate policy, and queueing into Application use cases; BV/AV/bangumi/course entry resolution and directory-cancel/add coordination are complete.
-- Replace ViewModel `Task.Run` calls with page-specific cancellable use cases; 36 active call sites remain, excluding comments, after video-detail parsing moved to its coordinator.
+- Replace ViewModel `Task.Run` calls with page-specific cancellable use cases; 32 active call sites remain, excluding comments, after video-detail and user-space loading moved to coordinators.
 - Continue CommunityToolkit.Mvvm adoption after the video-detail `Idle`/`Busy`/`Content`/`Empty` state model; ViewModels should contain only binding state, commands, navigation, and result projection.
 - Move notifications, dialogs, and navigation behind Desktop interfaces; clipboard and file-picker boundaries are complete and their static helpers are deleted.
 - Reduce `App.axaml.cs` to XAML, Host, shell, start, and stop; remove static download collections and service locator calls.
