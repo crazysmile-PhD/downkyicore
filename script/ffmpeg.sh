@@ -64,6 +64,7 @@ PY
 extract_ffmpeg() {
   local archive=$1
   local destination=$2
+  local ffprobe_archive=${3:-}
   local extract_dir="$download_dir/ffmpeg-extract-$os-$arch"
 
   rm -rf "$extract_dir"
@@ -88,11 +89,25 @@ extract_ffmpeg() {
     exit 1
   fi
 
+  local ffprobe_bin
+  ffprobe_bin=$(find "$extract_dir" -type f -name ffprobe | head -n 1)
+  if [ -z "$ffprobe_bin" ] && [ -n "$ffprobe_archive" ]; then
+    local probe_extract_dir="$extract_dir/ffprobe"
+    create_dir "$probe_extract_dir"
+    unzip -q -d "$probe_extract_dir" -o "$ffprobe_archive"
+    ffprobe_bin=$(find "$probe_extract_dir" -type f -name ffprobe | head -n 1)
+  fi
+  if [ -z "$ffprobe_bin" ]; then
+    echo "ffprobe binary not found in supplied archives" >&2
+    exit 1
+  fi
+
   create_dir "$destination"
   find "$destination" -maxdepth 1 -type f -delete
   cp "$ffmpeg_bin" "$destination/ffmpeg"
+  cp "$ffprobe_bin" "$destination/ffprobe"
   copy_license_files "$(dirname "$ffmpeg_bin")" "$destination"
-  chmod +x "$destination/ffmpeg"
+  chmod +x "$destination/ffmpeg" "$destination/ffprobe"
 }
 
 create_dir "$download_dir"
@@ -104,9 +119,16 @@ download_ffmpeg_macos() {
   url=$(asset_value "$rid" "url")
   expected_sha256=$(asset_value "$rid" "sha256")
   local archive="$download_dir/ffmpeg-mac-$arch.zip"
+  local ffprobe_url
+  local ffprobe_sha256
+  ffprobe_url=$(asset_value "$rid" "ffprobeUrl")
+  ffprobe_sha256=$(asset_value "$rid" "ffprobeSha256")
+  local ffprobe_archive="$download_dir/ffprobe-mac-$arch.zip"
   curl -kL "$url" -o "$archive"
   verify_asset "$archive" "$expected_sha256"
-  extract_ffmpeg "$archive" "$ffmpeg_save_path/$rid/ffmpeg"
+  curl -kL "$ffprobe_url" -o "$ffprobe_archive"
+  verify_asset "$ffprobe_archive" "$ffprobe_sha256"
+  extract_ffmpeg "$archive" "$ffmpeg_save_path/$rid/ffmpeg" "$ffprobe_archive"
 }
 
 download_ffmpeg_linux() {

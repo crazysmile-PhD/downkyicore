@@ -10,13 +10,28 @@ internal sealed record FfmpegHardwareEncoderProfile(
     FfmpegHardwareAcceleration Mode,
     string DisplayName,
     string EncoderName,
-    string OutputArguments);
+    IReadOnlyList<string> OutputArguments);
 
 internal static class FfmpegHardwareEncoderDetector
 {
     private const string Tag = "FfmpegHardwareEncoderDetector";
     private static readonly char[] EncoderLineSeparators = { '\r', '\n' };
     private static readonly Lazy<HashSet<string>> AvailableEncoders = new(LoadAvailableEncoders);
+    private static readonly IReadOnlyList<string> NvidiaArguments =
+        Array.AsReadOnly(new[] { "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23" });
+    private static readonly IReadOnlyList<string> IntelQsvArguments =
+        Array.AsReadOnly(new[] { "-c:v", "h264_qsv", "-global_quality", "23" });
+    private static readonly IReadOnlyList<string> AmdAmfArguments =
+        Array.AsReadOnly(new[] { "-c:v", "h264_amf", "-quality", "balanced" });
+    private static readonly IReadOnlyList<string> VaapiArguments = Array.AsReadOnly(new[]
+    {
+        "-vaapi_device", GetVaapiDevice(),
+        "-vf", "format=nv12,hwupload",
+        "-c:v", "h264_vaapi",
+        "-qp", "23"
+    });
+    private static readonly IReadOnlyList<string> VideoToolboxArguments =
+        Array.AsReadOnly(new[] { "-c:v", "h264_videotoolbox", "-b:v", "6M" });
 
     public static FfmpegHardwareEncoderProfile? Select(FfmpegHardwareAcceleration mode)
     {
@@ -83,7 +98,7 @@ internal static class FfmpegHardwareEncoderDetector
             FfmpegHardwareAcceleration.NvidiaNvenc,
             "NVIDIA NVENC",
             "h264_nvenc",
-            "-c:v h264_nvenc -preset p4 -cq 23 -pix_fmt yuv420p");
+            NvidiaArguments);
     }
 
     private static FfmpegHardwareEncoderProfile IntelQsv()
@@ -92,7 +107,7 @@ internal static class FfmpegHardwareEncoderDetector
             FfmpegHardwareAcceleration.IntelQsv,
             "Intel QSV",
             "h264_qsv",
-            "-c:v h264_qsv -global_quality 23");
+            IntelQsvArguments);
     }
 
     private static FfmpegHardwareEncoderProfile AmdAmf()
@@ -101,7 +116,7 @@ internal static class FfmpegHardwareEncoderDetector
             FfmpegHardwareAcceleration.AmdAmf,
             "AMD AMF",
             "h264_amf",
-            "-c:v h264_amf -quality balanced");
+            AmdAmfArguments);
     }
 
     private static FfmpegHardwareEncoderProfile Vaapi()
@@ -110,7 +125,7 @@ internal static class FfmpegHardwareEncoderDetector
             FfmpegHardwareAcceleration.Vaapi,
             "Linux VAAPI",
             "h264_vaapi",
-            $"-vaapi_device {GetVaapiDevice()} -vf format=nv12,hwupload -c:v h264_vaapi -qp 23");
+            VaapiArguments);
     }
 
     private static FfmpegHardwareEncoderProfile VideoToolbox()
@@ -119,7 +134,7 @@ internal static class FfmpegHardwareEncoderDetector
             FfmpegHardwareAcceleration.VideoToolbox,
             "macOS VideoToolbox",
             "h264_videotoolbox",
-            "-c:v h264_videotoolbox -b:v 6M");
+            VideoToolboxArguments);
     }
 
     private static HashSet<string> LoadAvailableEncoders()
@@ -152,7 +167,7 @@ internal static class FfmpegHardwareEncoderDetector
             using var process = new Process();
             process.StartInfo = new ProcessStartInfo
             {
-                FileName = GetFfmpegExecutable(),
+                FileName = FfmpegExecutableLocator.Ffmpeg,
                 Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -189,13 +204,6 @@ internal static class FfmpegHardwareEncoderDetector
             LogManager.Error(Tag, e);
             return string.Empty;
         }
-    }
-
-    private static string GetFfmpegExecutable()
-    {
-        var fileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffmpeg.exe" : "ffmpeg";
-        var bundledPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg", fileName);
-        return File.Exists(bundledPath) ? bundledPath : "ffmpeg";
     }
 
     private static string GetVaapiDevice()

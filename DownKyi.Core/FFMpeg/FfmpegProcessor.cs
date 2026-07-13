@@ -12,6 +12,7 @@ public class FfmpegProcessor
 {
     private const string Tag = "FFmpegHelper";
     private static readonly FfmpegProcessor instance = new();
+    private readonly FfmpegConcatRuntime _concatRuntime;
     private readonly object _ffmpegJobLock = new();
     private int _runningFfmpegJobs;
 
@@ -19,9 +20,31 @@ public class FfmpegProcessor
     {
         GlobalFFOptions.Configure(new FFOptions { BinaryFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg") });
         FFMpegHelper.VerifyFFMpegExists(GlobalFFOptions.Current);
+        var processRunner = new FfmpegProcessRunner();
+        _concatRuntime = new FfmpegConcatRuntime(
+            processRunner,
+            new FfmpegMediaValidator(processRunner),
+            SettingsManager.Instance.GetFfmpegMaxParallelJobs);
     }
 
     public static FfmpegProcessor Instance => instance;
+
+    public Task<FfmpegOperationResult> ConcatDurlVideosAsync(
+        IReadOnlyList<FfmpegConcatSegment> segments,
+        string outputVideo,
+        Action<string>? action = null,
+        CancellationToken cancellationToken = default)
+    {
+        var encoder = FfmpegHardwareEncoderDetector.Select(
+            SettingsManager.Instance.GetFfmpegHardwareAcceleration());
+        return _concatRuntime.ConcatAsync(
+            segments,
+            outputVideo,
+            encoder,
+            allowStreamCopy: false,
+            action,
+            cancellationToken);
+    }
 
     /// <summary>
     /// 合并音频和视频
@@ -311,7 +334,7 @@ public class FfmpegProcessor
         var arguments = BuildConcatInput(listFile)
             .OutputToFile(outputVideo, true, options => options
                 .WithAudioCodec("aac")
-                .WithCustomArgument(encoder.OutputArguments)
+                .WithCustomArgument(string.Join(' ', encoder.OutputArguments))
                 .WithCustomArgument("-movflags +faststart")
                 .WithCustomArgument("-avoid_negative_ts make_zero"));
 

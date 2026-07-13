@@ -558,7 +558,10 @@ internal abstract class DownloadService : IDisposable
     }
 
 
-    private static string ConcatVideos(DownloadingItem downloading, List<string> videoUids)
+    private static async Task<FfmpegOperationResult> ConcatDurlVideosAsync(
+        DownloadingItem downloading,
+        IReadOnlyList<DurlDownloadResult> downloads,
+        CancellationToken cancellationToken)
     {
         downloading.DownloadStatusTitle = DictionaryResource.GetString("ConcatVideos");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingVideo");
@@ -566,10 +569,19 @@ internal abstract class DownloadService : IDisposable
         downloading.SpeedDisplay = string.Empty;
 
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
-        FfmpegProcessor.Instance.ConcatVideos(videoUids, finalFile, (x) => { });
-        if (File.Exists(finalFile))
+        var segments = downloads
+            .OrderBy(download => download.Durl.Order)
+            .Select(download => new FfmpegConcatSegment(
+                download.Durl.Order,
+                download.FilePath,
+                TimeSpan.FromMilliseconds(download.Durl.Length)))
+            .ToArray();
+        var result = await FfmpegProcessor.Instance
+            .ConcatDurlVideosAsync(segments, finalFile, cancellationToken: cancellationToken)
+            .ConfigureAwait(true);
+        if (result.Succeeded && result.OutputPath != null)
         {
-            var info = new FileInfo(finalFile);
+            var info = new FileInfo(result.OutputPath);
             downloading.FileSize = Format.FormatFileSize(info.Length);
         }
         else
@@ -577,8 +589,10 @@ internal abstract class DownloadService : IDisposable
             downloading.FileSize = Format.FormatFileSize(0);
         }
 
-        return finalFile;
+        return result;
     }
+
+    private sealed record DurlDownloadResult(PlayUrlDurl Durl, string FilePath);
 
 
     protected async Task BaseParseAsync(DownloadingItem downloading)
@@ -859,43 +873,54 @@ internal abstract class DownloadService : IDisposable
                         isMediaSuccess = File.Exists(outputMedia);
                     }
                 }
-                else if (downloading.PlayUrl.Durl != null)
+                else if (downloading.PlayUrl.Durl.Count > 0)
                 {
                     if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"] ||
                         downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
                     {
-                        var durls = downloading.PlayUrl.Durl.ToList();
+                        var durls = downloading.PlayUrl.Durl
+                            .OrderBy(durl => durl.Order)
+                            .ToList();
                         var downloadStatus = durls
-                            .Select((durl, index) => new { Durl = durl, Index = index })
-                            .ToDictionary(x => x.Index, x => new { Durl = x.Durl, Result = string.Empty });
-
-                        for (int i = 0; i < durls.Count; i++)
+                            .Select(durl => new DurlDownloadResult(durl, NullMark))
+                            .ToArray();
+                        var originalDurls = downloading.PlayUrl.Durl;
+                        try
                         {
-                            downloading.PlayUrl.Durl = new List<PlayUrlDurl> { durls[i] };
-                            var result = DownloadVideo(downloading);
-                            downloadStatus[i] = new { Durl = durls[i], Result = result ?? NullMark };
-                        }
-
-                        int retryCount = 0;
-                        while (retryCount < Retry && downloadStatus.Values
-                                   .Any(x => x.Result == NullMark))
-                        {
-                            var toRetry = downloadStatus
-                                .Where(x => retryCount == 0 || x.Value.Result == NullMark)
-                                .ToList();
-
-                            foreach (var item in toRetry)
+                            for (var retryCount = 0; retryCount < Retry; retryCount++)
                             {
-                                downloading.PlayUrl.Durl = new List<PlayUrlDurl> { item.Value.Durl };
-                                var result = DownloadVideo(downloading);
-                                downloadStatus[item.Key] = new { item.Value.Durl, Result = result ?? NullMark };
-                            }
+                                for (var index = 0; index < downloadStatus.Length; index++)
+                                {
+                                    if (downloadStatus[index].FilePath != NullMark)
+                                    {
+                                        continue;
+                                    }
 
-                            retryCount++;
-                            await Task.Delay(1000).ConfigureAwait(true);
+                                    downloading.PlayUrl.Durl = new[] { downloadStatus[index].Durl };
+                                    var result = DownloadVideo(downloading);
+                                    downloadStatus[index] = downloadStatus[index] with
+                                    {
+                                        FilePath = result ?? NullMark
+                                    };
+                                }
+
+                                if (downloadStatus.All(download => download.FilePath != NullMark))
+                                {
+                                    break;
+                                }
+
+                                await Task.Delay(
+                                        TimeSpan.FromSeconds(1),
+                                        CancellationToken.GetValueOrDefault())
+                                    .ConfigureAwait(true);
+                            }
+                        }
+                        finally
+                        {
+                            downloading.PlayUrl.Durl = originalDurls;
                         }
 
-                        if (downloadStatus.Values.Any(x => x.Result == NullMark))
+                        if (downloadStatus.Any(download => download.FilePath == NullMark))
                         {
                             await DownloadFailedAsync(downloading).ConfigureAwait(true);
                             return;
@@ -905,14 +930,16 @@ internal abstract class DownloadService : IDisposable
 
                         if (durls.Count > 1)
                         {
-                            var output = ConcatVideos(downloading, downloadStatus.Values
-                                .Select(x => x.Result).ToList());
-
-                            isMediaSuccess = File.Exists(output);
+                            var concatResult = await ConcatDurlVideosAsync(
+                                    downloading,
+                                    downloadStatus,
+                                    CancellationToken.GetValueOrDefault())
+                                .ConfigureAwait(true);
+                            isMediaSuccess = concatResult.Succeeded;
                         }
                         else
                         {
-                            var outputMedia = MixedFlow(downloading, null, downloadStatus.First().Value.Result);
+                            var outputMedia = MixedFlow(downloading, null, downloadStatus[0].FilePath);
                             isMediaSuccess = File.Exists(outputMedia);
                         }
                     }
@@ -924,6 +951,11 @@ internal abstract class DownloadService : IDisposable
                     }
 
                     Pause(downloading);
+                }
+                else
+                {
+                    await DownloadFailedAsync(downloading).ConfigureAwait(true);
+                    return;
                 }
 
 
