@@ -42,6 +42,19 @@ Current PR 02 analyzer result: zero unhandled CA diagnostics. All 77 cleaned rul
 
 PR 03-06 result: legacy GID, partial-file maps, completed asset keys, paused state, progress, task identity, and history survive reopen. Completion moves from active state to history in one transaction. The removed deprecated SQLCipher provider was replaced only after the current cross-platform provider opened the old encrypted fixture and rejected a wrong password. Release build, all tests, isolated App startup/close, Linux x64/arm64 and macOS x64/arm64 cross-RID builds, deprecated-package audit, and vulnerable-package audit passed locally.
 
+## Download And Media Runtime Policy
+
+- Queue consumption uses a bounded Channel and fixed workers. Do not restore per-item task spawning or synchronous persistence callbacks.
+- Built-in and aria2 transfers share key, resume, integrity, and persistence behavior. Custom aria2 is a backend selection, not a copied workflow.
+- Pause and process shutdown preserve partial/resume files. Explicit task deletion removes generated media and `.aria2` / `.download` sidecars.
+- Multi-segment DURL identity includes `DURL.Order`, input is sorted by that order, and concat never starts with stream copy.
+- FFmpeg operations use `FfmpegProcessRunner`, bounded concurrency, cancellation, timeout, captured stderr, and process-tree cleanup. Hardware encoding is attempted when available, with CPU fallback kept for success rate.
+- A multi-segment output is complete only after ffprobe confirms a video stream, expected duration, and successful middle/tail seek decoding. Invalid partial output is deleted.
+- Bilibili requests use the typed `BilibiliHttpClient` registered through `IHttpClientFactory`. The static `WebClient` exists only as a compatibility facade while legacy synchronous API callers are migrated.
+- HTTP 401/403 and API schema rejection are non-retryable, 429 honors bounded `Retry-After`, cancellation is never retried, and empty/HTML/malformed responses fail visibly.
+
+PR 07-15 result: Release build completed with zero warnings, 161 tests passed including real FFmpeg/ffprobe seek validation and Host smoke without Prism global container state, format verification passed, and both vulnerable and deprecated package audits were clean. Cross-RID Release builds passed for Windows x86, Linux x64/arm64, and macOS x64/arm64. An isolated Windows process smoke created the main window, accepted close, and exited with code 0 without reading or writing real user data. Native Linux/macOS execution remains owned by their CI runners.
+
 ## Host Composition Policy
 
 - `src/DownKyi.Domain` is framework-free and owns typed result/error contracts.
@@ -82,7 +95,7 @@ Both suppressions cover only the algorithm construction or one-shot hash call. E
 Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
 
 - `script/aria2.ps1` and `script/aria2.sh` manage aria2 assets.
-- `script/ffmpeg.ps1` and `script/ffmpeg.sh` manage FFmpeg assets.
+- `script/ffmpeg.ps1` and `script/ffmpeg.sh` manage FFmpeg and ffprobe assets.
 - Windows x64 and Linux packages prefer FFmpeg builds with hardware encoders.
 - macOS packages prefer builds that expose VideoToolbox when available.
 
