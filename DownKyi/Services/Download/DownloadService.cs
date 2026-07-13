@@ -631,7 +631,11 @@ internal abstract class DownloadService : IDisposable
     }
 
 
-    protected static string? BaseMixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
+    protected static async Task<string?> BaseMixedFlowAsync(
+        DownloadingItem downloading,
+        string? audioUid,
+        string? videoUid,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -659,7 +663,14 @@ internal abstract class DownloadService : IDisposable
         }
 
         // 合并音视频
-        FfmpegProcessor.Instance.MergeVideo(audioUid, videoUid, finalFile);
+        var succeeded = await FfmpegProcessor.Instance
+            .MergeVideoAsync(audioUid, videoUid, finalFile, cancellationToken)
+            .ConfigureAwait(true);
+        if (!succeeded)
+        {
+            downloading.FileSize = Format.FormatFileSize(0);
+            return null;
+        }
 
         // 获取文件大小
         if (File.Exists(finalFile))
@@ -1437,10 +1448,14 @@ internal abstract class DownloadService : IDisposable
         DownloadingItem downloading,
         string? coverUrl,
         string fileName) => BaseDownloadCoverAsync(downloading, coverUrl, fileName);
-    public Task<string?> MixedFlowAsync(DownloadingItem downloading, string? audioUid, string? videoUid)
+    public async Task<string?> MixedFlowAsync(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
         EnsureDownloadIsActive(downloading);
-        return Task.FromResult(BaseMixedFlow(downloading, audioUid, videoUid));
+        return await BaseMixedFlowAsync(
+            downloading,
+            audioUid,
+            videoUid,
+            CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
     }
 
     protected abstract Task<DownloadTransferOutcome> TransferAsync(

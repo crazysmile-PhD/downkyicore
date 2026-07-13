@@ -17,6 +17,7 @@ using DownKyi.Application.Lifetime;
 using DownKyi.Application.Time;
 using DownKyi.Composition;
 using DownKyi.Core.Aria2cNet.Server;
+using DownKyi.Core.BiliApi;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
@@ -174,10 +175,15 @@ internal partial class App : PrismApplication, IDisposable
 
     protected override AvaloniaObject CreateShell()
     {
-        _host = DownKyiHost.Create(services => services.AddLegacyDesktopShell(
-            Container.Resolve<IRegionManager>(),
-            Container.Resolve<IEventAggregator>(),
-            Container.Resolve<IDialogService>()));
+        _host = DownKyiHost.Create(services =>
+        {
+            services.AddDownKyiBilibiliHttpClient();
+            services.AddLegacyDesktopShell(
+                Container.Resolve<IRegionManager>(),
+                Container.Resolve<IEventAggregator>(),
+                Container.Resolve<IDialogService>());
+        });
+        WebClient.Configure(_host.Services.GetRequiredService<BilibiliHttpClient>());
         var shell = _host.Services.GetRequiredService<MainWindow>();
         shell.AttachLegacyRegion();
         if (!Design.IsDesignMode)

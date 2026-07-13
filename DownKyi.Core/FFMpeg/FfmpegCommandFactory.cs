@@ -4,6 +4,96 @@ namespace DownKyi.Core.FFMpeg;
 
 internal static class FfmpegCommandFactory
 {
+    public static FfmpegCommand BuildMerge(
+        string? audioFile,
+        string? videoFile,
+        string outputFile,
+        bool transcodeAudioToMp3)
+    {
+        var arguments = CreateBaseArguments();
+        if (audioFile != null)
+        {
+            arguments.AddRange(["-i", audioFile]);
+        }
+
+        if (videoFile != null)
+        {
+            arguments.AddRange(["-i", videoFile]);
+        }
+
+        if (audioFile != null && videoFile != null)
+        {
+            arguments.AddRange(["-map", "1:v:0", "-map", "0:a:0", "-c:v", "copy", "-c:a", "copy"]);
+        }
+        else if (videoFile != null)
+        {
+            arguments.AddRange(["-map", "0:v:0", "-map", "0:a?", "-c", "copy"]);
+        }
+        else if (transcodeAudioToMp3)
+        {
+            arguments.AddRange(["-vn", "-c:a", "libmp3lame"]);
+        }
+        else
+        {
+            arguments.AddRange(["-vn", "-c:a", "copy"]);
+        }
+
+        if (videoFile != null && string.Equals(Path.GetExtension(outputFile), ".mp4", StringComparison.OrdinalIgnoreCase))
+        {
+            arguments.AddRange(["-movflags", "+faststart"]);
+        }
+
+        arguments.Add(outputFile);
+        return new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg, arguments, "merge-media");
+    }
+
+    public static FfmpegCommand BuildExtractAudio(string inputFile, string outputFile)
+    {
+        var arguments = CreateBaseArguments();
+        arguments.AddRange(["-i", inputFile, "-vn", "-c:a", "copy", outputFile]);
+        return new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg, arguments, "extract-audio");
+    }
+
+    public static FfmpegCommand BuildExtractVideo(string inputFile, string outputFile)
+    {
+        var arguments = CreateBaseArguments();
+        arguments.AddRange(["-i", inputFile, "-an", "-c:v", "copy", outputFile]);
+        return new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg, arguments, "extract-video");
+    }
+
+    public static FfmpegCommand BuildDelogo(
+        string inputFile,
+        string outputFile,
+        int x,
+        int y,
+        int width,
+        int height)
+    {
+        var arguments = CreateBaseArguments();
+        arguments.AddRange([
+            "-i", inputFile,
+            "-vf", $"delogo=x={x}:y={y}:w={width}:h={height}:show=0",
+            outputFile
+        ]);
+        return new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg, arguments, "delogo");
+    }
+
+    public static FfmpegCommand BuildExtractFrame(
+        string inputFile,
+        string outputFile,
+        TimeSpan timestamp)
+    {
+        var arguments = CreateBaseArguments();
+        arguments.AddRange([
+            "-ss", timestamp.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture),
+            "-i", inputFile,
+            "-frames:v", "1",
+            "-c:v", "mjpeg",
+            outputFile
+        ]);
+        return new FfmpegCommand(FfmpegExecutableLocator.Ffmpeg, arguments, "extract-frame");
+    }
+
     public static FfmpegCommand BuildConcat(
         string listFile,
         string outputFile,
@@ -98,5 +188,10 @@ internal static class FfmpegCommandFactory
                 "-"
             ],
             "seek-decode");
+    }
+
+    private static List<string> CreateBaseArguments()
+    {
+        return ["-hide_banner", "-nostdin", "-y"];
     }
 }

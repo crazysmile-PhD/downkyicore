@@ -13,10 +13,10 @@
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Avalonia"/>
-        <PackageReference Include="FFMpegCore"/>
         <PackageReference Include="Google.Protobuf"/>
         <PackageReference Include="Grpc.Tools" PrivateAssets="All"/>
         <PackageReference Include="Microsoft.Data.Sqlite.Core"/>
+        <PackageReference Include="Microsoft.Extensions.Http"/>
         <PackageReference Include="Newtonsoft.Json"/>
         <PackageReference Include="QRCoder"/>
         <PackageReference Include="SQLite3MC.PCLRaw.bundle"/>
