@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Headless;
+using DownKyi.Application.Desktop;
 using DownKyi.Application.Lifetime;
 using DownKyi.Composition;
 using DownKyi.Core.Storage;
@@ -38,7 +39,8 @@ public sealed class UiSmokeTests
         using var host = DownKyiHost.Create(services => services.AddLegacyDesktopShell(
             regionManager,
             eventAggregator,
-            dialogService));
+            dialogService,
+            new StubClipboardService()));
 
         await host.StartAsync(TestContext.Current.CancellationToken);
         try
@@ -101,5 +103,13 @@ public sealed class UiSmokeTests
 
     private sealed class SmokeTestApplication : Avalonia.Application
     {
+    }
+
+    private sealed class StubClipboardService : IClipboardService
+    {
+        public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
     }
 }

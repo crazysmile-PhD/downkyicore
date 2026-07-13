@@ -1,4 +1,5 @@
 using System;
+using DownKyi.Application.Desktop;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.ViewModels;
 using DownKyi.Views;
@@ -15,16 +16,19 @@ internal static class LegacyDesktopComposition
         this IServiceCollection services,
         IRegionManager regionManager,
         IEventAggregator eventAggregator,
-        IDialogService dialogService)
+        IDialogService dialogService,
+        IClipboardService clipboardService)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(regionManager);
         ArgumentNullException.ThrowIfNull(eventAggregator);
         ArgumentNullException.ThrowIfNull(dialogService);
+        ArgumentNullException.ThrowIfNull(clipboardService);
 
         services.AddSingleton(regionManager);
         services.AddSingleton(eventAggregator);
         services.AddSingleton(dialogService);
+        services.AddSingleton(clipboardService);
         services.AddSingleton<MainWindowViewModel>();
         services.AddTransient<ViewIndexViewModel>();
         services.AddTransient<ViewVideoDetailViewModel>();

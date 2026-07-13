@@ -25,6 +25,7 @@
         <!--Condition below keeps the Avalonia developer tooling bridge out of Release output.-->
         <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="AvaloniaUI.DiagnosticsSupport"/>
         <PackageReference Include="Avalonia.Themes.Simple"/>
+        <PackageReference Include="CommunityToolkit.Mvvm"/>
         <PackageReference Include="Downloader"/>
         <PackageReference Include="Prism.Avalonia"/>
         <PackageReference Include="Prism.DryIoc.Avalonia"/>

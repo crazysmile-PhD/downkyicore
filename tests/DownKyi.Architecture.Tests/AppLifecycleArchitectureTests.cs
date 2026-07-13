@@ -27,6 +27,20 @@ public sealed class AppLifecycleArchitectureTests
         Assert.Contains("_closeConfirmed = true", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void SettingsRestartPromptsCannotBypassAsynchronousCleanup()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "Settings",
+            "ViewNetworkViewModel.cs"));
+
+        Assert.DoesNotContain("IClassicDesktopStyleApplicationLifetime", source, StringComparison.Ordinal);
+        Assert.Contains("await App.Current.RequestShutdownAsync()", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

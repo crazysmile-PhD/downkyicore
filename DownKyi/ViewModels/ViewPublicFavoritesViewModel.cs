@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -25,6 +26,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     public const string Tag = "PagePublicFavorites";
 
     private readonly IFavoritesService _favoritesService;
+    private readonly IClipboardService _clipboardService;
     private CancellationTokenSource? _tokenSource;
 
     #region 页面属性申明
@@ -128,18 +130,23 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
 
     #endregion
 
-    public ViewPublicFavoritesViewModel(IEventAggregator eventAggregator, IDialogService dialogService)
-        : this(eventAggregator, dialogService, new FavoritesService())
+    public ViewPublicFavoritesViewModel(
+        IEventAggregator eventAggregator,
+        IDialogService dialogService,
+        IClipboardService clipboardService)
+        : this(eventAggregator, dialogService, new FavoritesService(), clipboardService)
     {
     }
 
     internal ViewPublicFavoritesViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        IFavoritesService favoritesService) : base(eventAggregator)
+        IFavoritesService favoritesService,
+        IClipboardService clipboardService) : base(eventAggregator)
     {
         DialogService = dialogService;
         _favoritesService = favoritesService;
+        _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
 
         #region 属性初始化
 
@@ -235,7 +242,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     private async Task ExecuteCopyCoverUrlCommand()
     {
         // 复制封面url到剪贴板
-        await ClipboardManager.SetText(Favorites.CoverUrl).ConfigureAwait(true);
+        await _clipboardService.SetTextAsync(Favorites.CoverUrl).ConfigureAwait(true);
         LogManager.Info(Tag, "复制封面url到剪贴板");
     }
 

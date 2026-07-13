@@ -14,6 +14,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.FFMpeg;
@@ -35,6 +36,7 @@ internal class ViewDelogoViewModel : ViewModelBase
 
     // 是否正在执行去水印任务
     private bool _isDelogo;
+    private readonly IFilePickerService _filePickerService;
 
     private IImage _source = null!;
 
@@ -145,8 +147,11 @@ internal class ViewDelogoViewModel : ViewModelBase
 
     #endregion
 
-    public ViewDelogoViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewDelogoViewModel(
+        IEventAggregator eventAggregator,
+        IFilePickerService filePickerService) : base(eventAggregator)
     {
+        _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         #region 属性初始化
 
         VideoPath = string.Empty;
@@ -183,7 +188,7 @@ internal class ViewDelogoViewModel : ViewModelBase
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
-        VideoPath = await DialogUtils.SelectVideoFile().ConfigureAwait(true);
+        VideoPath = await _filePickerService.SelectVideoAsync().ConfigureAwait(true);
         if (!string.IsNullOrEmpty(VideoPath))
         {
             try

@@ -12,6 +12,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
 using DownKyi.Application.Time;
@@ -26,6 +27,7 @@ using DownKyi.Desktop.Composition;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
+using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
 using DownKyi.Utils;
@@ -115,6 +117,8 @@ internal partial class App : PrismApplication, IDisposable
         containerRegistry.RegisterSingleton<IClock, SystemClock>();
         containerRegistry.RegisterSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
         containerRegistry.RegisterSingleton<DownloadStorageService>();
+        containerRegistry.RegisterSingleton<IClipboardService, AvaloniaClipboardService>();
+        containerRegistry.RegisterSingleton<IFilePickerService, AvaloniaFilePickerService>();
 
         containerRegistry.RegisterSingleton<IDialogService, DialogService>();
         containerRegistry.Register<IDialogWindow, DialogWindow>();
@@ -182,7 +186,8 @@ internal partial class App : PrismApplication, IDisposable
             services.AddLegacyDesktopShell(
                 Container.Resolve<IRegionManager>(),
                 Container.Resolve<IEventAggregator>(),
-                Container.Resolve<IDialogService>());
+                Container.Resolve<IDialogService>(),
+                Container.Resolve<IClipboardService>());
         });
         WebClient.Configure(_host.Services.GetRequiredService<BilibiliHttpClient>());
         var shell = _host.Services.GetRequiredService<MainWindow>();

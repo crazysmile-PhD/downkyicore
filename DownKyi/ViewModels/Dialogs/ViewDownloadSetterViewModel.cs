@@ -1,6 +1,8 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
@@ -18,6 +20,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogDownloadSetter";
     private readonly IEventAggregator _eventAggregator;
+    private readonly IFilePickerService _filePickerService;
 
     // 历史文件夹的数量
     private const int MaxDirectoryListCount = 20;
@@ -133,9 +136,12 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 
     #endregion
 
-    public ViewDownloadSetterViewModel(IEventAggregator eventAggregator)
+    public ViewDownloadSetterViewModel(
+        IEventAggregator eventAggregator,
+        IFilePickerService filePickerService)
     {
         _eventAggregator = eventAggregator;
+        _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
 
         #region 属性初始化
 
@@ -420,11 +426,11 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     /// 设置下载路径
     /// </summary>
     /// <returns></returns>
-    private static async Task<string?> SetDirectory()
+    private async Task<string?> SetDirectory()
     {
         // 下载目录
         // 弹出选择下载目录的窗口
-        return await DialogUtils.SetDownloadDirectory().ConfigureAwait(true);
+        return await _filePickerService.SelectFolderAsync().ConfigureAwait(true);
         // if (path == null || path == string.Empty)
         // {
         //     return null;

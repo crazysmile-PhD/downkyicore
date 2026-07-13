@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.VisualTree;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Events;
@@ -19,6 +20,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
 
     // 是否正在执行任务
     private bool _isExtracting;
+    private readonly IFilePickerService _filePickerService;
 
     #region 页面属性申明
 
@@ -52,8 +54,11 @@ internal class ViewExtractMediaViewModel : ViewModelBase
 
     #endregion
 
-    public ViewExtractMediaViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewExtractMediaViewModel(
+        IEventAggregator eventAggregator,
+        IFilePickerService filePickerService) : base(eventAggregator)
     {
+        _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         #region 属性初始化
 
         VideoPaths = Array.Empty<string>();
@@ -79,7 +84,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
             return;
         }
 
-        VideoPaths = await DialogUtils.SelectMultiVideoFile().ConfigureAwait(true) ?? Array.Empty<string>();
+        VideoPaths = await _filePickerService.SelectVideosAsync().ConfigureAwait(true);
     }
 
     // 提取音频事件

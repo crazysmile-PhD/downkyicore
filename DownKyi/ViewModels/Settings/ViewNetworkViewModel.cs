@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
 using DownKyi.Commands;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Settings;
@@ -531,7 +529,8 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+            await App.Current.RequestShutdownAsync().ConfigureAwait(true);
+            App.Current.AppLife?.Shutdown();
             // var dir = AppDomain.CurrentDomain.SetupInformation.ApplicationBase;
             // todo 暂时去掉自动重启,多平台需要不同实现
             // if (dir != null)
@@ -583,7 +582,8 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+            await App.Current.RequestShutdownAsync().ConfigureAwait(true);
+            App.Current.AppLife?.Shutdown();
         }
     }
 
@@ -623,7 +623,8 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+            await App.Current.RequestShutdownAsync().ConfigureAwait(true);
+            App.Current.AppLife?.Shutdown();
         }
     }
 
@@ -790,7 +791,8 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+            await App.Current.RequestShutdownAsync().ConfigureAwait(true);
+            App.Current.AppLife?.Shutdown();
         }
     }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.FileName;
@@ -28,6 +29,7 @@ internal class ViewVideoViewModel : ViewModelBase
     public const string Tag = "PageSettingsVideo";
 
     private bool _isOnNavigatedTo;
+    private readonly IFilePickerService _filePickerService;
 
     #region 页面属性申明
 
@@ -266,8 +268,11 @@ internal class ViewVideoViewModel : ViewModelBase
 
     #endregion
 
-    public ViewVideoViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewVideoViewModel(
+        IEventAggregator eventAggregator,
+        IFilePickerService filePickerService) : base(eventAggregator)
     {
+        _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         #region 属性初始化
 
         // 优先下载的视频编码
@@ -606,7 +611,7 @@ internal class ViewVideoViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteChangeSaveVideoDirectoryCommand()
     {
-        var directory = await DialogUtils.SetDownloadDirectory().ConfigureAwait(true);
+        var directory = await _filePickerService.SelectFolderAsync().ConfigureAwait(true);
         if (string.IsNullOrEmpty(directory))
         {
             return;

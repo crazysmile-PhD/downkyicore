@@ -62,8 +62,8 @@
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center"
                             Foreground="Gray"
-                            IsActive="{Binding Loading}"
-                            IsVisible="{Binding LoadingVisibility}" />
+                            IsActive="True"
+                            IsVisible="{Binding UiState.IsBusy}" />
 
             <Button
                 Grid.Column="2"
@@ -92,7 +92,7 @@
                 </LinearGradientBrush>
             </TextBlock.Background>
         </TextBlock>
-        <Grid Grid.Row="2" IsVisible="{Binding ContentVisibility}">
+        <Grid Grid.Row="2" IsVisible="{Binding UiState.IsContentVisible}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="100*" MaxHeight="180" />
                 <RowDefinition Height="200*" />
@@ -562,7 +562,7 @@
             Width="256"
             Height="256"
             Source="/Resources/no-data.png"
-            IsVisible="{Binding NoDataVisibility}" />
+            IsVisible="{Binding UiState.IsEmptyVisible}" />
 
     </Grid>
 </UserControl>

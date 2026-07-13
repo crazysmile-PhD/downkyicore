@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Controls;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -22,6 +23,7 @@ using DownKyi.Services.Video;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.PageViewModels;
+using DownKyi.ViewModels.UiState;
 using Prism.Commands;
 using Prism.Dialogs;
 using Prism.Events;
@@ -39,6 +41,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     private string _input = string.Empty;
 
     private readonly VideoParseCoordinator _parseCoordinator = new();
+    private readonly IClipboardService _clipboardService;
     private CancellationTokenSource? _operationCancellation;
 
     #region 页面属性申明
@@ -59,22 +62,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         set => SetProperty(ref _inputSearchText, value);
     }
 
-    private bool _loading;
-
-    public bool Loading
-    {
-        get => _loading;
-        set => SetProperty(ref _loading, value);
-    }
-
-
-    private bool _loadingVisibility;
-
-    public bool LoadingVisibility
-    {
-        get => _loadingVisibility;
-        set => SetProperty(ref _loadingVisibility, value);
-    }
+    public VideoDetailUiState UiState { get; } = new();
 
     private VectorImage _downloadManage = ButtonIcon.Instance().DownloadManage;
 
@@ -110,33 +98,16 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         set => SetProperty(ref _isSelectAll, value);
     }
 
-    private bool _contentVisibility;
-
-    public bool ContentVisibility
-    {
-        get => _contentVisibility;
-        set => SetProperty(ref _contentVisibility, value);
-    }
-
-    private bool _noDataVisibility;
-
-    public bool NoDataVisibility
-    {
-        get => _noDataVisibility;
-        set => SetProperty(ref _noDataVisibility, value);
-    }
-
-
     public ResetGridSplitterBehavior ResetGridBehavior { get; set; } = new();
 
     #endregion
 
-    public ViewVideoDetailViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(eventAggregator, dialogService)
+    public ViewVideoDetailViewModel(
+        IEventAggregator eventAggregator,
+        IDialogService dialogService,
+        IClipboardService clipboardService) : base(eventAggregator, dialogService)
     {
-        // 初始化loading
-        Loading = true;
-        LoadingVisibility = false;
-
+        _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
         // 下载管理按钮
         DownloadManage = ButtonIcon.Instance().DownloadManage;
         DownloadManage.Height = 24;
@@ -158,6 +129,24 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     private void CancelOperation()
     {
         _operationCancellation?.Cancel();
+    }
+
+    private void SetDisplayState(VideoDetailDisplayState state)
+    {
+        if (UiDispatcher.CheckAccess())
+        {
+            UiState.DisplayState = state;
+            return;
+        }
+
+        UiDispatcher.Post(() => UiState.DisplayState = state);
+    }
+
+    private void RestoreDisplayState()
+    {
+        SetDisplayState(VideoInfoView == null
+            ? VideoDetailDisplayState.Idle
+            : VideoDetailDisplayState.Content);
     }
 
     #region 命令申明
@@ -265,7 +254,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         {
             if (string.IsNullOrWhiteSpace(requestedInput))
             {
-                LoadingVisibility = false;
+                SetDisplayState(VideoDetailDisplayState.Idle);
                 return;
             }
 
@@ -286,7 +275,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         }
         catch (OperationCanceledException)
         {
-            LoadingVisibility = false;
+            SetDisplayState(VideoDetailDisplayState.Idle);
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or RegexMatchTimeoutException or Newtonsoft.Json.JsonException)
@@ -295,9 +284,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
             LogManager.Error(Tag, e);
             EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
 
-            LoadingVisibility = false;
-            ContentVisibility = false;
-            NoDataVisibility = true;
+            SetDisplayState(VideoDetailDisplayState.Empty);
         }
     }
 
@@ -307,7 +294,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     /// <returns></returns>
     private bool CanExecuteInputCommand()
     {
-        return LoadingVisibility != true;
+        return !UiState.IsBusy;
     }
 
     // 复制封面事件
@@ -337,7 +324,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     {
         if (_videoInfoView?.CoverUrl == null) return;
         // 复制封面url到剪贴板
-        await ClipboardManager.SetText(_videoInfoView.CoverUrl).ConfigureAwait(true);
+        await _clipboardService.SetTextAsync(_videoInfoView.CoverUrl).ConfigureAwait(true);
         LogManager.Info(Tag, "复制封面url到剪贴板");
     }
 
@@ -479,7 +466,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
             return;
         }
 
-        LoadingVisibility = true;
+        SetDisplayState(VideoDetailDisplayState.Busy);
         var cancellationToken = ResetOperationCancellation();
 
         try
@@ -494,7 +481,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         }
         catch (OperationCanceledException)
         {
-            LoadingVisibility = false;
+            RestoreDisplayState();
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or RegexMatchTimeoutException or Newtonsoft.Json.JsonException)
@@ -503,10 +490,10 @@ internal class ViewVideoDetailViewModel : ViewModelBase
             LogManager.Error(Tag, e);
             EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
 
-            LoadingVisibility = false;
+            RestoreDisplayState();
         }
 
-        LoadingVisibility = false;
+        RestoreDisplayState();
     }
 
     /// <summary>
@@ -516,7 +503,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     /// <returns></returns>
     private bool CanExecuteParseCommand(object parameter)
     {
-        return LoadingVisibility != true;
+        return !UiState.IsBusy;
     }
 
 
@@ -562,7 +549,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     /// <returns></returns>
     private bool CanExecuteParseAllVideoCommand()
     {
-        return LoadingVisibility != true;
+        return !UiState.IsBusy;
     }
 
     private async Task ExecuteParse(ParseScope parseScope)
@@ -570,7 +557,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         var cancellationToken = ResetOperationCancellation();
         try
         {
-            LoadingVisibility = true;
+            SetDisplayState(VideoDetailDisplayState.Busy);
             LogManager.Debug(Tag, "Parse video");
             var pages = VideoSelectionState.GetPagesForScope(VideoSections, parseScope);
             await _parseCoordinator.ExecutePagesAsync(
@@ -581,7 +568,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         }
         catch (OperationCanceledException)
         {
-            LoadingVisibility = false;
+            RestoreDisplayState();
             return;
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
@@ -591,10 +578,10 @@ internal class ViewVideoDetailViewModel : ViewModelBase
             LogManager.Error(Tag, e);
             EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
 
-            LoadingVisibility = false;
+            RestoreDisplayState();
         }
 
-        LoadingVisibility = false;
+        RestoreDisplayState();
 
         // 解析后是否自动下载解析视频
         var isAutoDownloadAll = SettingsManager.Instance.GetIsAutoDownloadAll();
@@ -616,7 +603,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     /// </summary>
     private bool CanExecuteAddToDownloadCommand()
     {
-        return LoadingVisibility != true;
+        return !UiState.IsBusy;
     }
 
     #endregion
@@ -630,9 +617,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     {
         LogManager.Debug(Tag, "初始化页面元素");
         ResetGridBehavior.ResetGrid();
-        LoadingVisibility = true;
-        ContentVisibility = false;
-        NoDataVisibility = false;
+        SetDisplayState(VideoDetailDisplayState.Busy);
         VideoSections.ReplaceRange(Array.Empty<VideoSection>());
         CaCheVideoSections.ReplaceRange(Array.Empty<VideoSection>());
         _parseCoordinator.Reset();
@@ -652,16 +637,12 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         {
             LogManager.Debug(Tag, "VideoInfoView is null.");
 
-            LoadingVisibility = false;
-            ContentVisibility = false;
-            NoDataVisibility = true;
+            SetDisplayState(VideoDetailDisplayState.Empty);
             return;
         }
         else
         {
-            LoadingVisibility = false;
-            ContentVisibility = true;
-            NoDataVisibility = false;
+            SetDisplayState(VideoDetailDisplayState.Content);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -845,7 +826,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
             }
 
             // 正在执行任务时不开启新任务
-            if (LoadingVisibility != true)
+            if (!UiState.IsBusy)
             {
                 InputText = input;
                 RunFireAndForget(ExecuteInputCommandAsync(input), nameof(ExecuteInputCommandAsync));
