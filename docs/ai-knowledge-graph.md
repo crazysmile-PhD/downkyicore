@@ -71,7 +71,7 @@ flowchart TD
     MainWindow["ui.main-window\nDownKyi/Views/MainWindow.axaml"]
     MainVm["viewmodel.main-window\nDownKyi/ViewModels/MainWindowViewModel.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
-    Resolver["service.video-input-resolver\nDownKyi/Services/Video/VideoInputResolver.cs"]
+    Resolver["service.video-input-resolver\nsrc/DownKyi.Application/Media"]
     Parser["service.video-parse-coordinator\nDownKyi/Services/Video/VideoParseCoordinator.cs"]
     InfoServices["service.info-services\nVideo/Bangumi/Cheese services"]
     BiliApi["core.bili-api\nDownKyi.Core/BiliApi"]
@@ -184,13 +184,15 @@ contracts:
   - UI shell should appear before heavy download state and service startup finish.
   - The Host is created with default configuration sources disabled and must not redirect database, settings, login, portable-mode, or aria2 session paths.
   - Download startup and shutdown must be cancellation-aware.
+  - MainWindow defers final close until one idempotent bounded shutdown task has canceled Host/download work and flushed settings/logs; Exit never synchronously waits on a Task.
+  - Storage retention maintenance is an IHostedService and cannot be an App-owned fire-and-forget Task.
   - Global downloading/downloaded lists are shared UI state and must be mutated on the UI thread.
   - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
   - UI continuations use the Avalonia context; background and Core continuations do not depend on it.
 hazards:
   - Any synchronous database, aria2, or file scan here directly hurts startup time.
-  - Exit cleanup can leave aria2 running if cancellation and timeout paths drift.
-  - Controlled lifetime exit still synchronously waits up to 15 seconds; PR 16-24 owns replacement with bounded Host shutdown.
+  - Exit cleanup can leave aria2 running if cancellation and timeout paths drift; the tracked-process timeout fallback must remain bounded.
+  - Download bootstrap and static UI projections still keep too much ownership in App; PR 16-24 owns the remaining move.
   - `LegacyDesktopComposition` and `MainWindow.AttachLegacyRegion` still bridge Prism global region state; PR 25-29 owns deletion after typed navigation takes over.
 tests:
   - test.ui-smoke
@@ -347,9 +349,12 @@ outbound:
   - service.video-parse-coordinator
   - service.video-selection-state
   - service.download-add
+  - service.desktop-platform-boundaries
 contracts:
   - Keep UI state and command wiring here; keep pure parsing and selection rules in services.
   - Canceling directory selection must not enqueue download work.
+  - `Idle`, `Busy`, `Content`, and `Empty` are one mutually exclusive CommunityToolkit state model.
+  - Ordinary row clicks toggle selection; repeated clicks clear the item and select-all has an explicit clear-selection peer.
 hazards:
   - This file historically accumulated unrelated parsing, selection, and download orchestration logic.
   - Any JSON clone/deep-copy pattern here is a performance and schema-fragility smell.
@@ -365,19 +370,45 @@ tests:
 id: service.video-input-resolver
 type: service
 paths:
+  - src/DownKyi.Application/Media/VideoInputResolver.cs
   - DownKyi/Services/Video/VideoInputResolver.cs
 responsibility: Classifies and normalizes BV/AV, video URL, bangumi, and cheese/course entry inputs.
 inbound:
   - viewmodel.video-detail
 outbound:
-  - core.bili-api
+  - service.video-parse-coordinator
 contracts:
   - Input classification must match the parse flow and add-to-download flow.
-  - Resolver functions should stay pure and fast.
+  - Application owns pure classification; the legacy adapter only maps the result to external `PlayStreamType`.
 hazards:
   - Divergence between parse and download input handling causes "can parse but cannot download" bugs.
 tests:
   - test.video-input-resolver
+```
+
+### service.desktop-platform-boundaries
+
+```yaml
+id: service.desktop-platform-boundaries
+type: service
+paths:
+  - src/DownKyi.Application/Desktop
+  - DownKyi/Platform
+responsibility: Keeps clipboard and file/folder picker contracts independent of Avalonia while Desktop adapters own MainWindow and StorageProvider access.
+inbound:
+  - viewmodel.video-detail
+  - legacy toolbox/settings/dialog viewmodels
+outbound:
+  - external.os-desktop
+contracts:
+  - Application interfaces contain no Avalonia, Prism, path-policy, or global App references.
+  - Picker cancellation returns null or an empty list and never becomes a fake path.
+  - Host smoke injects a fake clipboard and resolves key ViewModels without initializing Prism ContainerLocator.
+hazards:
+  - Notifications, dialogs, and navigation still use Prism/EventAggregator and remain in PR 16-24.
+tests:
+  - test.architecture-boundaries
+  - test.ui-smoke
 ```
 
 ### service.video-parse-coordinator
@@ -1046,6 +1077,7 @@ test.performance-baseline:
 
 test.video-input-resolver:
   paths:
+    - tests/DownKyi.Application.Tests/VideoInputResolverTests.cs
     - tests/DownKyi.Tests/VideoInputResolverTests.cs
   guards:
     - BV/AV/video/bangumi/cheese inputs classify consistently

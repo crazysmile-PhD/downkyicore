@@ -22,16 +22,12 @@ This file contains only unfinished work. Completed items are removed in the same
 
 Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
-- Move BV/AV/bangumi/course/collection resolution, parsing, selection, plan building, duplicate policy, and queueing into Application use cases.
-- Keep directory-picker cancellation as a normal no-op result with no database write or background task.
-- Replace ViewModel `Task.Run` calls with cancellable use cases; 47 active call sites remain, excluding comments.
-- Introduce CommunityToolkit.Mvvm and keep ViewModels limited to binding state, commands, navigation, and result projection.
-- Fix collection and video-detail item toggle selection, reliable multi-select, and clear-selection beside select-all.
-- Fix user-space back navigation, startup URL input being overwritten, and delayed reopen caused by lingering shutdown work.
-- Replace conflicting loading booleans with one UI state model.
-- Move clipboard, file picker, notifications, dialogs, and navigation behind Desktop interfaces.
+- Move collection parsing, video parsing, selection, plan building, duplicate policy, and queueing into Application use cases; BV/AV/bangumi/course entry resolution and directory-cancel/add coordination are complete.
+- Replace ViewModel `Task.Run` calls with page-specific cancellable use cases; 36 active call sites remain, excluding comments, after video-detail parsing moved to its coordinator.
+- Continue CommunityToolkit.Mvvm adoption after the video-detail `Idle`/`Busy`/`Content`/`Empty` state model; ViewModels should contain only binding state, commands, navigation, and result projection.
+- Move notifications, dialogs, and navigation behind Desktop interfaces; clipboard and file-picker boundaries are complete and their static helpers are deleted.
 - Reduce `App.axaml.cs` to XAML, Host, shell, start, and stop; remove static download collections and service locator calls.
-- Replace `OnExitAsync().Wait(15s)` with bounded asynchronous Host shutdown and explicit settings/log flush.
+- Move the remaining download bootstrap and projection ownership out of `App.axaml.cs`; storage maintenance and bounded async shutdown are now Host-owned/awaited.
 
 ## PR 25-29 - Remove Prism And Legacy Architecture
 
