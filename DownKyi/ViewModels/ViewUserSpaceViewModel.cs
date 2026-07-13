@@ -216,9 +216,14 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     /// </summary>
     protected internal override void ExecuteBackSpace()
     {
+        if (TryNavigateBack())
+        {
+            return;
+        }
+
         var parameter = new NavigationParam
         {
-            ViewName = ParentView,
+            ViewName = string.IsNullOrWhiteSpace(ParentView) ? ViewIndexViewModel.Tag : ParentView,
             ParentViewName = null,
             Parameter = null
         };

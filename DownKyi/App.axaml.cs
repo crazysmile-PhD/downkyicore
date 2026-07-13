@@ -76,6 +76,7 @@ internal partial class App : PrismApplication, IDisposable
     private IHost? _host;
     private Task? _downloadStartupTask;
     private Task? _downloadHistoryTask;
+    private Task? _shutdownTask;
 
     public override void Initialize()
     {
@@ -371,67 +372,78 @@ internal partial class App : PrismApplication, IDisposable
 
     private void OnExit(object sender, ControlledApplicationLifetimeExitEventArgs e)
     {
-        try
+        if (_shutdownTask is { IsCompleted: false })
         {
-            if (!OnExitAsync().Wait(TimeSpan.FromSeconds(15)))
-            {
-                LogManager.Info(nameof(App), "Application exit cleanup timed out.");
-            }
+            LogManager.Info(nameof(App), "Application lifetime exited before asynchronous cleanup completed.");
         }
-        catch (Exception ex) when (ex is AggregateException or ObjectDisposedException)
-        {
-            LogManager.Error(nameof(App), ex);
-        }
-        finally
-        {
-            Dispose();
-        }
+
+        Dispose();
     }
 
-    private async Task OnExitAsync()
+    internal Task RequestShutdownAsync()
     {
+        return _shutdownTask ??= ShutdownCoreAsync();
+    }
+
+    private async Task ShutdownCoreAsync()
+    {
+        var cleanupTasks = new List<Task>();
         if (_host != null)
         {
             await _host.Services
                 .GetRequiredService<ApplicationCancellation>()
                 .RequestShutdownAsync()
                 .ConfigureAwait(false);
-            using var hostStopTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            try
-            {
-                await _host.StopAsync(hostStopTimeout.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (hostStopTimeout.IsCancellationRequested)
-            {
-                LogManager.Info(nameof(App), "Application host cleanup timed out.");
-            }
+            cleanupTasks.Add(StopHostAsync(_host));
         }
 
-        // 强制落盘设置（防止防抖延迟期间退出导致配置丢失）
         SettingsManager.Instance.Flush();
 
         if (_downloadStartupTask != null)
         {
-            await Task.WhenAny(_downloadStartupTask, Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(false);
+            cleanupTasks.Add(_downloadStartupTask);
         }
 
         if (_downloadHistoryTask != null)
         {
-            await Task.WhenAny(_downloadHistoryTask, Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(false);
+            cleanupTasks.Add(_downloadHistoryTask);
         }
 
-        // 关闭下载服务
         if (_downloadService != null)
         {
-            var downloadShutdown = _downloadService.EndAsync();
-            if (await Task.WhenAny(downloadShutdown, Task.Delay(TimeSpan.FromSeconds(12))).ConfigureAwait(false) != downloadShutdown)
-            {
-                LogManager.Info(nameof(App), "Download service cleanup timed out; killing tracked aria2 process.");
-                AriaServer.KillTrackedServer("application exit cleanup timed out.");
-            }
+            cleanupTasks.Add(_downloadService.EndAsync());
+        }
+
+        var cleanup = Task.WhenAll(cleanupTasks);
+        if (await Task.WhenAny(cleanup, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false) == cleanup)
+        {
+            await cleanup.ConfigureAwait(false);
+        }
+        else
+        {
+            LogManager.Info(nameof(App), "Application cleanup timed out; killing the tracked aria2 process.");
+            AriaServer.KillTrackedServer("application exit cleanup timed out.");
+            _ = cleanup.ContinueWith(
+                task => LogManager.Error(nameof(App), task.Exception!.GetBaseException()),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
         }
 
         await LogManager.FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+    }
+
+    private static async Task StopHostAsync(IHost host)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            await host.StopAsync(timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            LogManager.Info(nameof(App), "Application host cleanup timed out.");
+        }
     }
 
     public void Dispose()
@@ -473,8 +485,9 @@ internal partial class App : PrismApplication, IDisposable
 #endif
     }
 
-    private void NativeMenuItem_OnClick(object? sender, EventArgs e)
+    private async void NativeMenuItem_OnClick(object? sender, EventArgs e)
     {
+        await RequestShutdownAsync().ConfigureAwait(true);
         AppLife?.Shutdown();
     }
 

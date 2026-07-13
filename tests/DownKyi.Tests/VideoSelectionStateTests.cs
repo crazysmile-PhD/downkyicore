@@ -78,6 +78,18 @@ public sealed class VideoSelectionStateTests
         Assert.True(VideoSelectionState.IsAllSelected(section, VideoSelectionState.GetSelectedPages(section).Count));
     }
 
+    [Fact]
+    public void SetAllSelectedSupportsSelectAllAndClearSelection()
+    {
+        var section = CreateSections()[0];
+
+        VideoSelectionState.SetAllSelected(section, isSelected: true);
+        Assert.All(section.VideoPages, page => Assert.True(page.IsSelected));
+
+        VideoSelectionState.SetAllSelected(section, isSelected: false);
+        Assert.All(section.VideoPages, page => Assert.False(page.IsSelected));
+    }
+
     private static List<VideoSection> CreateSections()
     {
         return new List<VideoSection>

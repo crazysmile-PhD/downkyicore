@@ -31,6 +31,19 @@ internal static class VideoSelectionState
         return section?.VideoPages.Count > 0 && selectedCount == section.VideoPages.Count;
     }
 
+    public static void SetAllSelected(VideoSection? section, bool isSelected)
+    {
+        if (section == null)
+        {
+            return;
+        }
+
+        foreach (var page in section.VideoPages)
+        {
+            page.IsSelected = isSelected;
+        }
+    }
+
     public static List<VideoPage> GetPagesForScope(IEnumerable<VideoSection> sections, ParseScope parseScope)
     {
         return parseScope switch

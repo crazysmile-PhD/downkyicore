@@ -132,6 +132,11 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
         _eventAggregator.GetEvent<NavigationEvent>().Subscribe(view =>
         {
+            if (_regionManager.Regions[ContentRegion].ActiveViews.Any())
+            {
+                return;
+            }
+
             var param = new NavigationParameters
             {
                 { "Parent", view.ParentViewName ?? string.Empty },

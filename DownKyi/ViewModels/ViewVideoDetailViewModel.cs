@@ -173,9 +173,14 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     protected internal override void ExecuteBackSpace()
     {
         CancelOperation();
+        if (TryNavigateBack())
+        {
+            return;
+        }
+
         var parameter = new NavigationParam
         {
-            ViewName = ParentView,
+            ViewName = string.IsNullOrWhiteSpace(ParentView) ? ViewIndexViewModel.Tag : ParentView,
             ParentViewName = null,
             Parameter = null
         };
@@ -215,66 +220,69 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     /// <summary>
     /// 搜索视频输入事件
     /// </summary>
-    private async Task ExecuteInputSearchCommandAsync()
+    private Task ExecuteInputSearchCommandAsync()
     {
-        await Task.Run(() =>
+        if (string.IsNullOrEmpty(InputSearchText))
         {
-            if (string.IsNullOrEmpty(InputSearchText))
+            foreach (var section in VideoSections)
             {
-                foreach (var section in VideoSections)
+                var cache = CaCheVideoSections.FirstOrDefault(e => e.Id == section.Id);
+                if (cache != null)
                 {
-                    var cache = CaCheVideoSections.FirstOrDefault(e => e.Id == section.Id);
-                    if (cache != null)
-                    {
-                        section.VideoPages = cache.VideoPages;
-                    }
+                    section.VideoPages = cache.VideoPages;
                 }
             }
-            else
+        }
+        else
+        {
+            foreach (var section in VideoSections)
             {
-                foreach (var section in VideoSections)
-                {
-                    var cache = CaCheVideoSections.FirstOrDefault(e => e.Id == section.Id);
+                var cache = CaCheVideoSections.FirstOrDefault(e => e.Id == section.Id);
 
-                    if (cache == null) continue;
+                if (cache == null) continue;
 
-                    var pages = cache.VideoPages.Where(e => e.Name.Contains(InputSearchText, StringComparison.Ordinal)).ToList();
-                    section.VideoPages = pages;
-                }
+                var pages = cache.VideoPages.Where(e => e.Name.Contains(InputSearchText, StringComparison.Ordinal)).ToList();
+                section.VideoPages = pages;
             }
-        }).ConfigureAwait(true);
+        }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
     /// 处理输入事件
     /// </summary>
-    private async Task ExecuteInputCommandAsync()
+    private Task ExecuteInputCommandAsync()
+    {
+        return ExecuteInputCommandAsync(InputText);
+    }
+
+    private async Task ExecuteInputCommandAsync(string? requestedInput)
     {
         var cancellationToken = ResetOperationCancellation();
         InitView();
         try
         {
-            await Task.Run(() =>
+            if (string.IsNullOrWhiteSpace(requestedInput))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (string.IsNullOrEmpty(InputText))
-                {
-                    return;
-                }
+                LoadingVisibility = false;
+                return;
+            }
 
-                LogManager.Debug(Tag, $"InputText: {InputText}");
-                InputText = Regex.Replace(InputText, @"[【]*[^【]*[^】]*[】 ]", "");
-                _input = InputText;
+            var input = Regex.Replace(requestedInput, @"[【]*[^【]*[^】]*[】 ]", "");
+            InputText = input;
+            _input = input;
+            LogManager.Debug(Tag, "Processing captured video input.");
+            await _parseCoordinator.ExecuteAsync(
+                input,
+                refresh: true,
+                UpdateView,
+                cancellationToken).ConfigureAwait(true);
 
-                // 更新页面
-                UnityUpdateView(UpdateView, _input, true, cancellationToken);
-
-                // 是否自动解析视频
-                if (SettingsManager.Instance.GetIsAutoParseVideo() == AllowStatus.Yes)
-                {
-                    PropertyChangeAsync(() => _ = ExecuteParseAllVideoCommandAsync());
-                }
-            }, cancellationToken).ConfigureAwait(true);
+            if (SettingsManager.Instance.GetIsAutoParseVideo() == AllowStatus.Yes)
+            {
+                RunFireAndForget(ExecuteParseAllVideoCommandAsync(), nameof(ExecuteParseAllVideoCommandAsync));
+            }
         }
         catch (OperationCanceledException)
         {
@@ -424,12 +432,32 @@ internal class ViewVideoDetailViewModel : ViewModelBase
             return;
         }
 
+        var section = VideoSelectionState.GetSelectedSection(VideoSections);
+        VideoSelectionState.SetAllSelected(section, IsSelectAll);
         if (IsSelectAll)
         {
             dataGrid.SelectAll();
         }
         else
         {
+            dataGrid.SelectedIndex = -1;
+        }
+    }
+
+    private DelegateCommand<object>? _clearSelectionCommand;
+
+    public DelegateCommand<object> ClearSelectionCommand =>
+        _clearSelectionCommand ??= new DelegateCommand<object>(ExecuteClearSelectionCommand);
+
+    private void ExecuteClearSelectionCommand(object parameter)
+    {
+        VideoSelectionState.SetAllSelected(
+            VideoSelectionState.GetSelectedSection(VideoSections),
+            isSelected: false);
+        IsSelectAll = false;
+        if (parameter is DataGrid dataGrid)
+        {
+            dataGrid.SelectedItems.Clear();
             dataGrid.SelectedIndex = -1;
         }
     }
@@ -456,13 +484,13 @@ internal class ViewVideoDetailViewModel : ViewModelBase
 
         try
         {
-            await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                LogManager.Debug(Tag, $"Video Page: {videoPage.Cid}");
-
-                UnityUpdateView(ParseVideo, _input, videoPage, true, cancellationToken);
-            }, cancellationToken).ConfigureAwait(true);
+            LogManager.Debug(Tag, $"Video Page: {videoPage.Cid}");
+            await _parseCoordinator.ExecutePageAsync(
+                _input,
+                videoPage,
+                refresh: true,
+                ParseVideo,
+                cancellationToken).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -543,19 +571,13 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         try
         {
             LoadingVisibility = true;
-            await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                LogManager.Debug(Tag, "Parse video");
-
-                var pages = VideoSelectionState.GetPagesForScope(VideoSections, parseScope);
-                foreach (var page in pages)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    // 执行解析任务
-                    UnityUpdateView(ParseVideo, _input, page, cancellationToken: cancellationToken);
-                }
-            }, cancellationToken).ConfigureAwait(true);
+            LogManager.Debug(Tag, "Parse video");
+            var pages = VideoSelectionState.GetPagesForScope(VideoSections, parseScope);
+            await _parseCoordinator.ExecutePagesAsync(
+                _input,
+                pages,
+                ParseVideo,
+                cancellationToken).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -616,40 +638,6 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         _parseCoordinator.Reset();
     }
 
-
-    /// <summary>
-    /// 更新页面的统一方法
-    /// </summary>
-    /// <param name="action"></param>
-    /// <param name="input"></param>
-    /// <param name="page"></param>
-    /// <param name="refresh"></param>
-    private void UnityUpdateView(Action<IInfoService, CancellationToken> action, string input, bool refresh = false, CancellationToken cancellationToken = default)
-    {
-        var infoService = GetInfoService(input, refresh, cancellationToken);
-        if (infoService == null)
-        {
-            return;
-        }
-
-        action(infoService, cancellationToken);
-    }
-
-    private void UnityUpdateView(Action<IInfoService, VideoPage, CancellationToken> action, string input, VideoPage page, bool refresh = false, CancellationToken cancellationToken = default)
-    {
-        var infoService = GetInfoService(input, refresh, cancellationToken);
-        if (infoService == null)
-        {
-            return;
-        }
-
-        action(infoService, page, cancellationToken);
-    }
-
-    private IInfoService? GetInfoService(string input, bool refresh, CancellationToken cancellationToken)
-    {
-        return _parseCoordinator.GetInfoService(input, refresh, cancellationToken);
-    }
 
     /// <summary>
     /// 更新页面
@@ -805,13 +793,13 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         // 视频计数
         var addedCount = await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
             () => addToDownloadService.SetDirectory(DialogService),
-            directory => Task.Run(async () =>
+            async directory =>
             {
                 // 传递video对象
                 addToDownloadService.GetVideo(videoInfoView, videoSections);
                 // 下载
                 return await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory, isAll).ConfigureAwait(true);
-            })).ConfigureAwait(true);
+            }).ConfigureAwait(true);
 
         if (addedCount == null)
         {
@@ -860,7 +848,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
             if (LoadingVisibility != true)
             {
                 InputText = input;
-                PropertyChangeAsync(() => _ = ExecuteInputCommandAsync());
+                RunFireAndForget(ExecuteInputCommandAsync(input), nameof(ExecuteInputCommandAsync));
             }
         }
 

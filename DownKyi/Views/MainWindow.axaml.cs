@@ -1,8 +1,7 @@
 using System;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Threading;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
 using DownKyi.ViewModels;
@@ -14,6 +13,8 @@ internal partial class MainWindow : Window
 {
     private const string ContentRegionName = "ContentRegion";
     private WindowSettings _windowSettings;
+    private bool _closeConfirmed;
+    private bool _closeInProgress;
 
     public MainWindow()
     {
@@ -49,8 +50,31 @@ internal partial class MainWindow : Window
 
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        base.OnClosing(e);
-        if (Design.IsDesignMode) return;
+        if (Design.IsDesignMode || _closeConfirmed)
+        {
+            SaveWindowSettings();
+            base.OnClosing(e);
+            return;
+        }
+
+        e.Cancel = true;
+        if (_closeInProgress)
+        {
+            return;
+        }
+
+        _closeInProgress = true;
+        SaveWindowSettings();
+        _ = CompleteCloseAsync();
+    }
+
+    private void SaveWindowSettings()
+    {
+        if (Design.IsDesignMode)
+        {
+            return;
+        }
+
         if (WindowState == WindowState.Normal)
         {
             _windowSettings.Width = Width;
@@ -60,11 +84,17 @@ internal partial class MainWindow : Window
         }
 
         SettingsManager.Instance.SettingWindowSettings(_windowSettings);
+    }
 
-        if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+    private async Task CompleteCloseAsync()
+    {
+        if (Avalonia.Application.Current is App app)
         {
-            Dispatcher.UIThread.Post(() => desktop.Shutdown(), DispatcherPriority.Background);
+            await app.RequestShutdownAsync().ConfigureAwait(true);
         }
+
+        _closeConfirmed = true;
+        Close();
     }
 
     // protected override void OnClosed(EventArgs e)

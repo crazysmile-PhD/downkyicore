@@ -47,6 +47,17 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
 
     }
 
+    protected bool TryNavigateBack()
+    {
+        if (Journal?.CanGoBack != true)
+        {
+            return false;
+        }
+
+        Journal.GoBack();
+        return true;
+    }
+
     public bool IsNavigationTarget(NavigationContext navigationContext)
     {
         return true;
