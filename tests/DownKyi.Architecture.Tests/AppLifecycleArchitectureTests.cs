@@ -50,23 +50,48 @@ public sealed class AppLifecycleArchitectureTests
         Assert.DoesNotContain("static ImmutableObservableCollection", source, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadingList { get;", source, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadedList { get;", source, StringComparison.Ordinal);
-        Assert.Contains("DownloadListState", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadListState", source, StringComparison.Ordinal);
     }
 
     [Fact]
     public void HostOwnsDownloadBootstrapAndRuntimeLifecycle()
     {
-        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+        var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+        var compositionSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyDesktopComposition.cs"));
 
-        Assert.Contains("DownloadBootstrapHostedService", source, StringComparison.Ordinal);
-        Assert.Contains("host.StopAsync(CancellationToken.None)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("LoadDownloadStateAsync", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("LoadRemainingHistoryAsync", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("LoadRemainingDownloadHistoryAsync", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("CreateDownloadService", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("GetDownloadingAsync", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("GetDownloadedAsync", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("_downloadService", source, StringComparison.Ordinal);
+        Assert.Contains("CreateLegacyDesktopHost", appSource, StringComparison.Ordinal);
+        Assert.Contains("host.StopAsync(CancellationToken.None)", appSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadBootstrapHostedService", compositionSource, StringComparison.Ordinal);
+        Assert.Contains("IDownloadRuntimeFactory", compositionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoadDownloadStateAsync", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoadRemainingHistoryAsync", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoadRemainingDownloadHistoryAsync", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateDownloadService", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetDownloadingAsync", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetDownloadedAsync", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("_downloadService", appSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AppDelegatesPrismRegistrationToCompatibilityComposition()
+    {
+        var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+        var compositionSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyPrismComposition.cs"));
+
+        Assert.Contains("RegisterLegacyApplication", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("RegisterForNavigation", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("RegisterDialog", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("RegisterSingleton", appSource, StringComparison.Ordinal);
+        Assert.Contains("RegisterForNavigation", compositionSource, StringComparison.Ordinal);
+        Assert.Contains("RegisterDialog", compositionSource, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

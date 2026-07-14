@@ -94,6 +94,22 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.DoesNotContain("Container.Resolve", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void DownloadRuntimeProjectsCollectionsThroughInjectedUiDispatcher()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Download",
+            "DownloadService.cs"));
+
+        Assert.Contains("IUiDispatcher", source, StringComparison.Ordinal);
+        Assert.Contains("await UiDispatcher.InvokeAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("App.PropertyChange", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dispatcher.UIThread", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

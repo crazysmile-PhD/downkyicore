@@ -114,105 +114,13 @@ internal partial class App : PrismApplication, IDisposable
 
     protected override void RegisterTypes(IContainerRegistry containerRegistry)
     {
-        containerRegistry.RegisterInstance(new SqliteDownloadTaskStoreOptions(StorageManager.GetDbPath()));
-        containerRegistry.RegisterSingleton<IClock, SystemClock>();
-        containerRegistry.RegisterSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
-        containerRegistry.RegisterSingleton<DownloadStorageService>();
-        containerRegistry.RegisterSingleton<DownloadListState>();
-        containerRegistry.RegisterSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
-        containerRegistry.Register<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
-        containerRegistry.RegisterSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();
-        containerRegistry.RegisterSingleton<IContentDownloadCoordinator, ContentDownloadCoordinator>();
-        containerRegistry.RegisterSingleton<IPersonalMediaCoordinator, PersonalMediaCoordinator>();
-        containerRegistry.RegisterSingleton<ILegacyUpgradeCoordinator, LegacyUpgradeCoordinator>();
-        containerRegistry.RegisterSingleton<IFavoritesService, FavoritesService>();
-        containerRegistry.RegisterSingleton<IFavoritesCoordinator, FavoritesCoordinator>();
-        containerRegistry.RegisterSingleton<IBiliHelperCoordinator, BiliHelperCoordinator>();
-        containerRegistry.RegisterSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
-        containerRegistry.RegisterSingleton<ILoginCoordinator, LoginCoordinator>();
-        containerRegistry.RegisterSingleton<IFriendRelationCoordinator, FriendRelationCoordinator>();
-        containerRegistry.RegisterSingleton<ISeasonsSeriesCoordinator, SeasonsSeriesCoordinator>();
-        containerRegistry.RegisterSingleton<IUserSpacePageCoordinator, UserSpacePageCoordinator>();
-        containerRegistry.RegisterSingleton<IClipboardService, AvaloniaClipboardService>();
-        containerRegistry.RegisterSingleton<IFilePickerService, AvaloniaFilePickerService>();
-
-        containerRegistry.RegisterSingleton<IDialogService, DialogService>();
-        containerRegistry.Register<IDialogWindow, DialogWindow>();
-        // pages
-        containerRegistry.RegisterForNavigation<ViewIndex>(ViewIndexViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewLogin>(ViewLoginViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewVideoDetail>(ViewVideoDetailViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewSettings>(ViewSettingsViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewToolbox>(ViewToolboxViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewDownloadManager>(ViewDownloadManagerViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewPublicFavorites>(ViewPublicFavoritesViewModel.Tag);
-
-        containerRegistry.RegisterForNavigation<ViewUserSpace>(ViewUserSpaceViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewPublication>(ViewPublicationViewModel.Tag);
-        // containerRegistry.RegisterForNavigation<Views.ViewChannel>(ViewModels.ViewChannelViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewSeasonsSeries>(ViewSeasonsSeriesViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewFriends>(ViewFriendsViewModel.Tag);
-
-        containerRegistry.RegisterForNavigation<ViewMySpace>(ViewMySpaceViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewMyFavorites>(ViewMyFavoritesViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewMyBangumiFollow>(ViewMyBangumiFollowViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewMyToViewVideo>(ViewMyToViewVideoViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewMyHistory>(ViewMyHistoryViewModel.Tag);
-
-        // downloadManager pages
-        containerRegistry.RegisterForNavigation<ViewDownloading>(ViewDownloadingViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewDownloadFinished>(ViewDownloadFinishedViewModel.Tag);
-
-        // Friend
-        containerRegistry.RegisterForNavigation<ViewFollowing>(ViewFollowingViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewFollower>(ViewFollowerViewModel.Tag);
-
-        // settings pages
-        containerRegistry.RegisterForNavigation<ViewBasic>(ViewBasicViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewNetwork>(ViewNetworkViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewVideo>(ViewVideoViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewDanmaku>(ViewDanmakuViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewAbout>(ViewAboutViewModel.Tag);
-
-        // tools pages
-        containerRegistry.RegisterForNavigation<ViewBiliHelper>(ViewBiliHelperViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewDelogo>(ViewDelogoViewModel.Tag);
-        containerRegistry.RegisterForNavigation<ViewExtractMedia>(ViewExtractMediaViewModel.Tag);
-
-        // UserSpace
-        containerRegistry.RegisterForNavigation<ViewArchive>(ViewArchiveViewModel.Tag);
-        // containerRegistry.RegisterForNavigation<Views.UserSpace.ViewChannel>(ViewModels.UserSpace.ViewChannelViewModel.Tag);
-        containerRegistry.RegisterForNavigation<Views.UserSpace.ViewSeasonsSeries>(ViewModels.UserSpace.ViewSeasonsSeriesViewModel.Tag);
-
-        // dialogs
-        containerRegistry.RegisterDialog<ViewAlertDialog>(ViewAlertDialogViewModel.Tag);
-        containerRegistry.RegisterDialog<ViewDownloadSetter>(ViewDownloadSetterViewModel.Tag);
-        containerRegistry.RegisterDialog<ViewParsingSelector>(ViewParsingSelectorViewModel.Tag);
-        containerRegistry.RegisterDialog<ViewAlreadyDownloadedDialog>(ViewAlreadyDownloadedDialogViewModel.Tag);
-        containerRegistry.RegisterDialog<NewVersionAvailableDialog>(NewVersionAvailableDialogViewModel.Tag);
-        containerRegistry.RegisterDialog<ViewUpgradingDialog>(ViewUpgradingDialogViewModel.Tag);
+        containerRegistry.RegisterLegacyApplication();
     }
 
 
     protected override AvaloniaObject CreateShell()
     {
-        var downloadLists = Container.Resolve<DownloadListState>();
-        _host = DownKyiHost.Create(services =>
-        {
-            services.AddDownKyiBilibiliHttpClient();
-            services.AddSingleton<IHostedService, StorageMaintenanceHostedService>();
-            services.AddSingleton(downloadLists);
-            services.AddSingleton(Container.Resolve<DownloadStorageService>());
-            services.AddSingleton(Container.Resolve<IAddToDownloadServiceFactory>());
-            services.AddLegacyDesktopShell(
-                Container.Resolve<IRegionManager>(),
-                Container.Resolve<IEventAggregator>(),
-                Container.Resolve<IDialogService>(),
-                Container.Resolve<IClipboardService>());
-            services.AddSingleton<IDownloadRuntimeFactory, DownloadRuntimeFactory>();
-            services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
-            services.AddSingleton<IHostedService, DownloadBootstrapHostedService>();
-        });
+        _host = Container.CreateLegacyDesktopHost();
         WebClient.Configure(_host.Services.GetRequiredService<BilibiliHttpClient>());
         var shell = _host.Services.GetRequiredService<MainWindow>();
         shell.AttachLegacyRegion();
@@ -231,16 +139,6 @@ internal partial class App : PrismApplication, IDisposable
         // regionManager.RegisterViewWithRegion("ContentRegion", typeof(ViewIndex));
         // regionManager.RegisterViewWithRegion("DownloadManagerContentRegion", typeof(ViewDownloading));
         // regionManager.RegisterViewWithRegion("SettingsContentRegion", typeof(ViewBasic));
-    }
-
-    public static void PropertyChangeAsync(Action callback)
-    {
-        Dispatcher.UIThread.Invoke(callback);
-    }
-
-    public static void PropertyChangePost(Action callback)
-    {
-        Dispatcher.UIThread.Post(callback);
     }
 
     private void StartDownloadBootstrap()

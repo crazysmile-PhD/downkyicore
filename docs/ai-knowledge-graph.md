@@ -210,7 +210,8 @@ type: app
 paths:
   - DownKyi/App.axaml.cs
   - DownKyi/Composition/LegacyDesktopComposition.cs
-responsibility: Bridges legacy Prism registrations into the Host, shows the shell, and coordinates bounded Host-level exit cleanup.
+  - DownKyi/Composition/LegacyPrismComposition.cs
+responsibility: Keeps App focused on XAML, shell, Host start/stop, and bounded exit cleanup while named compatibility composition owns temporary Prism and legacy Desktop wiring.
 inbound:
   - app.program
 outbound:
@@ -228,12 +229,14 @@ contracts:
   - Host stop shares the outer five-second cleanup budget; a shorter nested timeout must not interrupt resumable-state persistence before the outer fallback runs.
   - Storage retention maintenance is an IHostedService and cannot be an App-owned fire-and-forget Task.
   - `DownloadListState` owns one stable downloading/history collection pair shared by Prism, Host services, and ViewModels; App must not expose static list properties.
+  - App cannot contain concrete service, navigation, or dialog registration; `LegacyPrismComposition` is the only temporary Prism registration owner.
+  - Download runtime construction and hosted-service wiring stay in `LegacyDesktopComposition`, not App.
   - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
   - UI continuations use the Avalonia context; background and Core continuations do not depend on it.
 hazards:
   - Any synchronous database, aria2, or file scan here directly hurts startup time.
   - Exit cleanup can leave aria2 running if cancellation and timeout paths drift; the tracked-process timeout fallback must remain bounded.
-  - `LegacyDesktopComposition` and `MainWindow.AttachLegacyRegion` still bridge Prism global region state; PR 25-29 owns deletion after typed navigation takes over.
+  - `LegacyPrismComposition`, `LegacyDesktopComposition`, and `MainWindow.AttachLegacyRegion` still bridge Prism state; PR 25-29 owns deletion after typed navigation takes over.
 tests:
   - test.ui-smoke
   - test.composition-root
@@ -1191,6 +1194,7 @@ contracts:
   - Startup restores every unfinished task and the newest 100 history items before loading remaining history in the background.
   - Observable collection mutation crosses the explicit `IUiDispatcher` boundary; the hosted service cannot reference Avalonia Dispatcher directly.
   - Runtime creation is isolated behind `IDownloadRuntimeFactory`, and Host stop awaits runtime recovery plus any outstanding history load together.
+  - Download completion projects observable collection mutations through injected `IUiDispatcher`; runtime code cannot call App dispatcher helpers.
   - Host shutdown does not impose a shorter cancellation deadline than the App-level bounded cleanup fallback.
   - Cancellation must not turn active persisted rows into abandoned `Downloading` state; runtime shutdown owns resumable-state recovery.
 hazards:

@@ -10,6 +10,7 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Models;
+using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
@@ -24,8 +25,9 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
     public BuiltinDownloadService(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        IDialogService? dialogService)
-        : base(downloadLists, downloadStorageService, dialogService)
+        IDialogService? dialogService,
+        IUiDispatcher uiDispatcher)
+        : base(downloadLists, downloadStorageService, dialogService, uiDispatcher)
     {
         Tag = nameof(BuiltinDownloadService);
     }

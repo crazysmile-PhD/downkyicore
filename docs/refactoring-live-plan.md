@@ -24,7 +24,6 @@ Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
 - Move collection parsing, video parsing, selection, plan building, duplicate policy, and queueing into Application use cases; BV/AV/bangumi/course entry resolution, cancellable detail/stream result coordination, directory-cancel/add coordination, and single-source video search projection are complete.
 - Move notifications, dialogs, and navigation behind Desktop interfaces; clipboard and file-picker boundaries are complete and their static helpers are deleted.
-- Reduce `App.axaml.cs` to XAML, Host, shell, start, and stop; static download collections, storage lookup, history paging, backend creation, and runtime lifecycle are removed, while Prism registration and the legacy composition bridge still remain.
 - Replace `SettingsManager.Instance` with an injected `ISettingsStore`, immutable validated snapshots, schema migration, debounced atomic writes, and explicit async shutdown flush; 26 production files still reference the singleton.
 - Replace static `LogManager` usage with injected `Microsoft.Extensions.Logging`, correlation/task/process context, one sensitive-data redactor, bounded recent-event diagnostics, rotation, export, and async shutdown flush; 42 production files still reference the static logger.
 

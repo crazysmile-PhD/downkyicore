@@ -29,13 +29,19 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     public void DesktopHostRegistersTheTypedBilibiliClient()
     {
         var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+        var compositionSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyDesktopComposition.cs"));
         var registrationSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "DownKyi.Core",
             "BiliApi",
             "BilibiliHttpClientRegistration.cs"));
 
-        Assert.Contains("AddDownKyiBilibiliHttpClient()", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AddDownKyiBilibiliHttpClient()", appSource, StringComparison.Ordinal);
+        Assert.Contains("AddDownKyiBilibiliHttpClient()", compositionSource, StringComparison.Ordinal);
         Assert.Contains("AddHttpClient<BilibiliHttpClient>", registrationSource, StringComparison.Ordinal);
         Assert.Contains("ConfigurePrimaryHttpMessageHandler", registrationSource, StringComparison.Ordinal);
     }

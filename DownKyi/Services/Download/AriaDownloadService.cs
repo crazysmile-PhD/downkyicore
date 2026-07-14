@@ -17,6 +17,7 @@ using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Images;
 using DownKyi.Models;
+using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
@@ -31,8 +32,9 @@ internal class AriaDownloadService : DownloadService, IDownloadService
     public AriaDownloadService(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        IDialogService? dialogService)
-        : this(downloadLists, downloadStorageService, dialogService, ownsAriaServer: true)
+        IDialogService? dialogService,
+        IUiDispatcher uiDispatcher)
+        : this(downloadLists, downloadStorageService, dialogService, uiDispatcher, ownsAriaServer: true)
     {
     }
 
@@ -40,8 +42,9 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
         IDialogService? dialogService,
+        IUiDispatcher uiDispatcher,
         bool ownsAriaServer)
-        : base(downloadLists, downloadStorageService, dialogService)
+        : base(downloadLists, downloadStorageService, dialogService, uiDispatcher)
     {
         _ownsAriaServer = ownsAriaServer;
         Tag = ownsAriaServer ? nameof(AriaDownloadService) : nameof(CustomAriaDownloadService);

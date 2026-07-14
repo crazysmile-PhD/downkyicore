@@ -14,9 +14,15 @@ public sealed class DesktopPlatformBoundaryTests
             .Select(path => Path.GetRelativePath(RepositoryRoot, path))
             .ToArray();
         var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+        var compositionSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyPrismComposition.cs"));
 
         Assert.Empty(violations);
-        Assert.Contains("IClipboardService, AvaloniaClipboardService", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AvaloniaClipboardService", appSource, StringComparison.Ordinal);
+        Assert.Contains("IClipboardService, AvaloniaClipboardService", compositionSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -29,9 +35,15 @@ public sealed class DesktopPlatformBoundaryTests
             .Select(path => Path.GetRelativePath(RepositoryRoot, path))
             .ToArray();
         var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+        var compositionSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyPrismComposition.cs"));
 
         Assert.Empty(violations);
-        Assert.Contains("IFilePickerService, AvaloniaFilePickerService", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AvaloniaFilePickerService", appSource, StringComparison.Ordinal);
+        Assert.Contains("IFilePickerService, AvaloniaFilePickerService", compositionSource, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

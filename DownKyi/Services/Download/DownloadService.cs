@@ -21,6 +21,7 @@ using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
 using DownKyi.Images;
 using DownKyi.Models;
+using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
@@ -41,6 +42,7 @@ internal abstract class DownloadService : IDisposable
     protected ImmutableObservableCollection<DownloadingItem> DownloadingList { get; }
     protected ImmutableObservableCollection<DownloadedItem> DownloadedList { get; }
     private DownloadStorageService DownloadStorageService { get; }
+    private IUiDispatcher UiDispatcher { get; }
 
     protected Task? WorkTask { get; set; }
     protected CancellationTokenSource? TokenSource { get; set; }
@@ -136,13 +138,15 @@ internal abstract class DownloadService : IDisposable
     protected DownloadService(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        IDialogService? dialogService)
+        IDialogService? dialogService,
+        IUiDispatcher uiDispatcher)
     {
         DownloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         DownloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         DownloadingList = downloadLists.Downloading;
         DownloadedList = downloadLists.Downloaded;
         DialogService = dialogService;
+        UiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
     }
 
     protected static PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
@@ -1250,7 +1254,7 @@ internal abstract class DownloadService : IDisposable
                 await DownloadStorageService
                     .AddDownloadedAsync(downloadedItem, CancellationToken.GetValueOrDefault())
                     .ConfigureAwait(true);
-                App.PropertyChangeAsync(() =>
+                await UiDispatcher.InvokeAsync(() =>
                 {
                     // 加入到下载完成list中，并从下载中list去除
                     DownloadedList.Add(downloadedItem);
@@ -1259,7 +1263,7 @@ internal abstract class DownloadService : IDisposable
                     // 下载完成列表排序
                     var finishedSort = SettingsManager.Instance.GetDownloadFinishedSort();
                     DownloadLists.SortDownloaded(finishedSort);
-                });
+                }).ConfigureAwait(true);
                 // _notifyIcon.ShowBalloonTip(DictionaryResource.GetString("DownloadSuccess"), $"{downloadedItem.DownloadBase.Name}", BalloonIcon.Info);
             }
         }
@@ -1324,11 +1328,6 @@ internal abstract class DownloadService : IDisposable
                 // 打开文件夹
                 break;
             case AfterDownloadOperation.CloseApp:
-                // 关闭程序
-                App.PropertyChangeAsync(() =>
-                {
-                    // System.Windows.Application.Current.Shutdown();
-                });
                 break;
             case AfterDownloadOperation.CloseSystem:
                 // 关机

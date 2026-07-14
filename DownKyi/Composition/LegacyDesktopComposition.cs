@@ -1,12 +1,19 @@
 using System;
 using DownKyi.Application.Desktop;
+using DownKyi.Core.BiliApi;
+using DownKyi.Desktop.Composition;
+using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
+using DownKyi.Services;
 using DownKyi.Services.Account;
+using DownKyi.Services.Download;
 using DownKyi.Services.Video;
 using DownKyi.ViewModels;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Prism.Events;
+using Prism.Ioc;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.Composition;
@@ -14,6 +21,28 @@ namespace DownKyi.Composition;
 // Temporary bridge: PR 25-29 removes Prism and moves these registrations into DownKyi.Desktop.
 internal static class LegacyDesktopComposition
 {
+    public static IHost CreateLegacyDesktopHost(this IContainerProvider container)
+    {
+        ArgumentNullException.ThrowIfNull(container);
+        var downloadLists = container.Resolve<DownloadListState>();
+        return DownKyiHost.Create(services =>
+        {
+            services.AddDownKyiBilibiliHttpClient();
+            services.AddSingleton<IHostedService, StorageMaintenanceHostedService>();
+            services.AddSingleton(downloadLists);
+            services.AddSingleton(container.Resolve<DownloadStorageService>());
+            services.AddSingleton(container.Resolve<IAddToDownloadServiceFactory>());
+            services.AddLegacyDesktopShell(
+                container.Resolve<IRegionManager>(),
+                container.Resolve<IEventAggregator>(),
+                container.Resolve<IDialogService>(),
+                container.Resolve<IClipboardService>());
+            services.AddSingleton<IDownloadRuntimeFactory, DownloadRuntimeFactory>();
+            services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
+            services.AddSingleton<IHostedService, DownloadBootstrapHostedService>();
+        });
+    }
+
     public static IServiceCollection AddLegacyDesktopShell(
         this IServiceCollection services,
         IRegionManager regionManager,
