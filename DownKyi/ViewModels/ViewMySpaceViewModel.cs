@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Logging;
+using DownKyi.Core.Settings;
 using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Services.UserSpace;
@@ -23,6 +24,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
     public const string Tag = "PageMySpace";
 
     private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
+    private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
 
     // mid
@@ -290,9 +292,11 @@ internal class ViewMySpaceViewModel : ViewModelBase
 
     public ViewMySpaceViewModel(
         IEventAggregator eventAggregator,
-        IUserSpacePageCoordinator userSpaceCoordinator) : base(eventAggregator)
+        IUserSpacePageCoordinator userSpaceCoordinator,
+        ISettingsStore settingsStore) : base(eventAggregator)
     {
         _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         #region 属性初始化
 
         // 返回按钮
@@ -359,7 +363,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
     private void ExecuteLogoutCommand()
     {
         // 注销
-        LoginHelper.Logout();
+        LoginHelper.Logout(_settingsStore);
 
         // 返回上一页
         var parameter = new NavigationParam

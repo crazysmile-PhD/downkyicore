@@ -1373,6 +1373,7 @@ inbound:
   - service.video-parse-coordinator
   - service.download-add
   - service.user-space-navigation
+  - core.login-session
 outbound:
   - core.legacy-settings-migration
   - external.filesystem
@@ -1383,6 +1384,7 @@ contracts:
   - MainWindow has no parameterless singleton fallback; Host composition supplies both its ViewModel and settings owner.
   - Video, bangumi, and cheese info services receive settings from their parse/add coordinator; manually constructed info services cannot fall back to global state.
   - User-space navigation compares the target MID with the user from its injected settings owner; it cannot inspect process-global settings.
+  - Logout deletes the existing login file, invalidates the in-memory cookie cache, and resets the user through the caller's injected settings owner.
   - The persisted JSON property names, enum values, and storage path remain compatible with existing user settings.
   - Shutdown flush is awaited without synchronously blocking the UI thread.
 hazards:
@@ -1909,10 +1911,12 @@ test.settings-store:
   paths:
     - tests/DownKyi.Core.Tests/SettingsStoreTests.cs
     - tests/DownKyi.Tests/NavigateToViewTests.cs
+    - tests/DownKyi.Core.Tests/LoginHelperTests.cs
   guards:
     - an isolated settings owner flushes modified values to its assigned file
     - tests never read or write the user's real settings path
     - user-space navigation routes the signed-in MID to My Space and other MIDs to public User Space using the injected owner
+    - logout removes an isolated login file and clears only the injected settings owner
 
 test.ui-smoke:
   paths:

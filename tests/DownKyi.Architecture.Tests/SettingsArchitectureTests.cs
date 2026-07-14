@@ -39,7 +39,9 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi", "ViewModels", "PageViewModels", "HistoryMedia.cs")]
     [InlineData("DownKyi", "ViewModels", "PageViewModels", "ToViewMedia.cs")]
     [InlineData("DownKyi", "ViewModels", "ViewPublicFavoritesViewModel.cs")]
+    [InlineData("DownKyi", "ViewModels", "ViewMySpaceViewModel.cs")]
     [InlineData("DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs")]
+    [InlineData("DownKyi.Core", "BiliApi", "Login", "LoginHelper.cs")]
     public void MigratedApplicationOwnersDoNotReachIntoTheSettingsSingleton(params string[] pathParts)
     {
         var source = File.ReadAllText(Path.Combine([RepositoryRoot, .. pathParts]));

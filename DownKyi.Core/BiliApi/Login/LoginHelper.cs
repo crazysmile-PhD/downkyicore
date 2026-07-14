@@ -249,20 +249,28 @@ public static class LoginHelper
     /// 注销登录
     /// </summary>
     /// <returns></returns>
-    public static bool Logout()
+    public static bool Logout(ISettingsStore settingsStore)
     {
-        if (!File.Exists(LocalLoginInfo)) return false;
+        return Logout(settingsStore, LocalLoginInfo);
+    }
+
+    internal static bool Logout(ISettingsStore settingsStore, string loginInfoPath)
+    {
+        ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentException.ThrowIfNullOrWhiteSpace(loginInfoPath);
+        if (!File.Exists(loginInfoPath)) return false;
+
         try
         {
-            File.Delete(LocalLoginInfo);
+            File.Delete(loginInfoPath);
 
             // 注销后使缓存立即失效
             InvalidateCache();
 
-            SettingsManager.Instance.SetUserInfo(new UserInfoSettings
+            settingsStore.Settings.SetUserInfo(new UserInfoSettings
             {
                 Mid = -1,
-                Name = "",
+                Name = string.Empty,
                 IsLogin = false,
                 IsVip = false
             });
