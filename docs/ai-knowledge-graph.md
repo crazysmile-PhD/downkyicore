@@ -74,6 +74,8 @@ flowchart TD
     IndexVm["viewmodel.index\nViewIndexViewModel.cs"]
     LoginVm["viewmodel.login\nViewLoginViewModel.cs"]
     AccountSession["service.account-session\nServices/Account"]
+    FriendVms["viewmodel.friend-relations\nFriends ViewModels"]
+    FriendRelations["service.friend-relations\nFriendRelationCoordinator.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
     BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
     BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
@@ -122,6 +124,8 @@ flowchart TD
     IndexVm -->|refreshes| AccountSession
     LoginVm -->|polls and persists| AccountSession
     AccountSession -->|calls| BiliApi
+    FriendVms -->|loads pages| FriendRelations
+    FriendRelations -->|calls| BiliApi
     BiliHelperVm -->|calls| BiliHelper
     BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
@@ -430,6 +434,56 @@ tests:
   - test.architecture-boundaries
 ```
 
+### viewmodel.friend-relations
+
+```yaml
+id: viewmodel.friend-relations
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/Friends/ViewFollowingViewModel.cs
+  - DownKyi/ViewModels/Friends/ViewFollowerViewModel.cs
+responsibility: Projects following groups, following/follower pages, pager state, loading state, and user navigation.
+inbound:
+  - typed or legacy navigation
+outbound:
+  - service.friend-relations
+contracts:
+  - ViewModels never perform relation API work or mutate bound collections from worker threads.
+  - Each page result is projected with one `AddRange` notification rather than one dispatcher post per user.
+  - Replacing or disposing a pager detaches `CurrentChanging` and `CountChanged` handlers.
+  - New navigation/page work and `OnNavigatedFrom` cancel the previous request; stale results cannot change visibility or contents.
+  - Leaving during a load restores enabled/non-loading UI state so a cached page remains usable when revisited.
+hazards:
+  - Per-item dispatcher posts make large relation lists stutter and can reorder results after navigation.
+  - Retaining old pager event subscriptions keeps ViewModels alive and can issue duplicate page requests.
+tests:
+  - test.friend-relations
+  - test.architecture-boundaries
+```
+
+### service.friend-relations
+
+```yaml
+id: service.friend-relations
+type: service
+paths:
+  - DownKyi/Services/Friends/FriendRelationCoordinator.cs
+responsibility: Loads relation overview, private groups, following pages, and follower pages as cancellation-aware snapshots.
+inbound:
+  - viewmodel.friend-relations
+outbound:
+  - core.bili-api
+contracts:
+  - Private whisper/group data is requested only for the current logged-in user.
+  - Coordinator methods return API models without accessing Avalonia, Prism, settings paths, or bound collections.
+  - Caller cancellation is checked before and after every legacy synchronous API operation.
+hazards:
+  - Legacy synchronous relation calls cannot abort an in-flight socket request; cancellation still blocks stale projection and subsequent calls.
+tests:
+  - test.friend-relations
+  - test.architecture-boundaries
+```
+
 ### viewmodel.video-detail
 
 ```yaml
@@ -691,6 +745,7 @@ inbound:
   - service.download-runtime
   - service.bili-helper
   - service.account-session
+  - service.friend-relations
 outbound:
   - core.web-client
   - core.logging
@@ -1252,6 +1307,15 @@ test.account-session:
     - the real Host resolves ViewIndexViewModel with its injected session coordinator
     - index and login ViewModels cannot regain direct Task.Run calls
 
+test.friend-relations:
+  paths:
+    - tests/DownKyi.Tests/FriendRelationCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - pre-canceled overview, following, and follower requests cannot start API work
+    - friend relation ViewModels cannot regain Task.Run, dispatcher-per-item projection, or direct Dispatcher access
+    - relation page projection uses AddRange and pager replacement detaches old event handlers
+
 test.download-list-state:
   paths:
     - tests/DownKyi.Tests/DownloadListStateTests.cs
@@ -1377,6 +1441,7 @@ test.architecture-boundaries:
     - video-detail ViewModel cannot own `DataGrid`, Avalonia control, or behavior instances
     - Bili Helper CPU work cannot move back into the ViewModel or lose core-loop cancellation
     - account network and cookie work cannot move back into index/login ViewModels
+    - friend relation API work cannot move back into ViewModels or per-item dispatcher posts
 
 test.ui-smoke:
   paths:

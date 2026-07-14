@@ -175,6 +175,36 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("ILoginCoordinator", coordinatorSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void FriendRelationWorkReturnsSnapshotsAndBatchesUiProjection()
+    {
+        var viewModelPaths = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "Friends", "ViewFollowingViewModel.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "Friends", "ViewFollowerViewModel.cs")
+        };
+        var viewModelSource = string.Join(
+            Environment.NewLine,
+            viewModelPaths.Select(File.ReadAllText));
+        var coordinatorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Friends",
+            "FriendRelationCoordinator.cs"));
+
+        Assert.DoesNotContain("Task.Run", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("PropertyChangeAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dispatcher.UIThread", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("Contents.AddRange", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("CurrentChanging -=", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("OnNavigatedFrom", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("CancelAndDispose(ref _loadCancellation)", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled = true", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
