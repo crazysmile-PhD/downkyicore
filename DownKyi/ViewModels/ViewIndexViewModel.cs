@@ -215,7 +215,7 @@ internal class ViewIndexViewModel : ViewModelBase
 
         LogManager.Debug(Tag, $"InputText: {InputText}");
         InputText = Regex.Replace(InputText, @"[【]*[^【]*[^】]*[】 ]", "");
-        var searchService = new SearchService();
+        var searchService = new SearchService(_settingsStore);
         var isSupport = searchService.BiliInput(InputText, Tag, EventAggregator);
         if (!isSupport)
         {

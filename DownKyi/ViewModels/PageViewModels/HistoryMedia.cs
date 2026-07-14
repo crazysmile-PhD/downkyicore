@@ -1,4 +1,6 @@
+using System;
 using Avalonia.Media.Imaging;
+using DownKyi.Core.Settings;
 using DownKyi.Images;
 using DownKyi.Utils;
 using Prism.Commands;
@@ -9,11 +11,13 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 internal class HistoryMedia : BindableBase
 {
+    private readonly ISettingsStore _settingsStore;
     protected IEventAggregator EventAggregator { get; }
 
-    public HistoryMedia(IEventAggregator eventAggregator)
+    public HistoryMedia(IEventAggregator eventAggregator, ISettingsStore settingsStore)
     {
         EventAggregator = eventAggregator;
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
     }
 
     // bvid
@@ -186,7 +190,7 @@ internal class HistoryMedia : BindableBase
             return;
         }
 
-        NavigateToView.NavigateToViewUserSpace(EventAggregator, tag, UpMid);
+        NavigateToView.NavigateToViewUserSpace(EventAggregator, _settingsStore, tag, UpMid);
     }
 
     #endregion

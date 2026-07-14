@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Core.Settings;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using Prism.Events;
@@ -10,9 +11,11 @@ namespace DownKyi.Services;
 internal class SearchService
 {
     private readonly IEventAggregator? _defaultEventAggregator;
+    private readonly ISettingsStore _settingsStore;
 
-    public SearchService(IEventAggregator? defaultEventAggregator = null)
+    public SearchService(ISettingsStore settingsStore, IEventAggregator? defaultEventAggregator = null)
     {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _defaultEventAggregator = defaultEventAggregator;
     }
 
@@ -95,11 +98,19 @@ internal class SearchService
         // 用户（参数传入mid）
         else if (ParseEntrance.IsUserId(justId))
         {
-            NavigateToView.NavigateToViewUserSpace(eventAggregator, ViewIndexViewModel.Tag, ParseEntrance.GetUserId(justId));
+            NavigateToView.NavigateToViewUserSpace(
+                eventAggregator,
+                _settingsStore,
+                ViewIndexViewModel.Tag,
+                ParseEntrance.GetUserId(justId));
         }
         else if (ParseEntrance.IsUserUrl(justId))
         {
-            NavigateToView.NavigateToViewUserSpace(eventAggregator, ViewIndexViewModel.Tag, ParseEntrance.GetUserId(justId));
+            NavigateToView.NavigateToViewUserSpace(
+                eventAggregator,
+                _settingsStore,
+                ViewIndexViewModel.Tag,
+                ParseEntrance.GetUserId(justId));
         }
         // 收藏夹
         else if (ParseEntrance.IsFavoritesId(justId))

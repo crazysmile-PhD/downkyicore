@@ -242,7 +242,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             return;
         }
 
-        var searchService = new SearchService();
+        var searchService = new SearchService(_settingsStore);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (!cancellationToken.IsCancellationRequested)

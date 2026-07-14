@@ -9,6 +9,7 @@ using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Logging;
+using DownKyi.Core.Settings;
 using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
@@ -31,6 +32,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly IFavoritesCoordinator _favoritesCoordinator;
+    private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
 
@@ -141,7 +143,8 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         IClipboardService clipboardService,
         IAddToDownloadServiceFactory addToDownloadServiceFactory,
         IContentDownloadCoordinator downloadCoordinator,
-        IFavoritesCoordinator favoritesCoordinator) : base(eventAggregator)
+        IFavoritesCoordinator favoritesCoordinator,
+        ISettingsStore settingsStore) : base(eventAggregator)
     {
         DialogService = dialogService;
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
@@ -149,6 +152,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
             ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _favoritesCoordinator = favoritesCoordinator ?? throw new ArgumentNullException(nameof(favoritesCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
 
         #region 属性初始化
 
@@ -257,7 +261,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     /// </summary>
     private void ExecuteUpperCommand()
     {
-        NavigateToView.NavigateToViewUserSpace(EventAggregator, Tag, Favorites.UpperMid);
+        NavigateToView.NavigateToViewUserSpace(EventAggregator, _settingsStore, Tag, Favorites.UpperMid);
     }
 
     // 添加选中项到下载列表事件

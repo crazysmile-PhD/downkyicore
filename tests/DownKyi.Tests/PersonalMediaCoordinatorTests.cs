@@ -9,7 +9,8 @@ public sealed class PersonalMediaCoordinatorTests
     [Fact]
     public async Task PreCanceledToViewLoadDoesNotStartApiWork()
     {
-        var coordinator = new PersonalMediaCoordinator();
+        using var settings = new TestSettingsStore();
+        var coordinator = new PersonalMediaCoordinator(settings.Store);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -20,7 +21,8 @@ public sealed class PersonalMediaCoordinatorTests
     [Fact]
     public async Task PreCanceledHistoryLoadDoesNotStartApiWork()
     {
-        var coordinator = new PersonalMediaCoordinator();
+        using var settings = new TestSettingsStore();
+        var coordinator = new PersonalMediaCoordinator(settings.Store);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -31,6 +33,7 @@ public sealed class PersonalMediaCoordinatorTests
     [Fact]
     public void HistoryMappingPreservesSupportedAddressAndNormalizesCover()
     {
+        using var settings = new TestSettingsStore();
         var source = new HistoryList
         {
             Title = "video",
@@ -42,7 +45,7 @@ public sealed class PersonalMediaCoordinatorTests
             }
         };
 
-        var media = PersonalMediaCoordinator.ConvertHistory(source, new EventAggregator());
+        var media = PersonalMediaCoordinator.ConvertHistory(source, new EventAggregator(), settings.Store);
 
         Assert.NotNull(media);
         Assert.Equal("https://www.bilibili.com/video/BV1test", media.Url);
@@ -52,11 +55,12 @@ public sealed class PersonalMediaCoordinatorTests
     [Fact]
     public void HistoryMappingRejectsUnsupportedBusiness()
     {
+        using var settings = new TestSettingsStore();
         var source = new HistoryList
         {
             History = new HistoryListHistory { Business = "article" }
         };
 
-        Assert.Null(PersonalMediaCoordinator.ConvertHistory(source, new EventAggregator()));
+        Assert.Null(PersonalMediaCoordinator.ConvertHistory(source, new EventAggregator(), settings.Store));
     }
 }

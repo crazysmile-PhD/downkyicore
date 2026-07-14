@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 using DownKyi.Core.BiliApi.Favorites;
+using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Prism.Events;
@@ -12,6 +13,13 @@ namespace DownKyi.Services;
 
 internal sealed class FavoritesService : IFavoritesService
 {
+    private readonly ISettingsStore _settingsStore;
+
+    public FavoritesService(ISettingsStore settingsStore)
+    {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+    }
+
     public FavoritesPageItem? GetFavorites(long mediaId, CancellationToken cancellationToken = default)
     {
         var metadata = FavoritesInfo.GetFavoritesInfo(mediaId, cancellationToken);
@@ -59,7 +67,7 @@ internal sealed class FavoritesService : IFavoritesService
             }
 
             order++;
-            result.Add(new FavoritesMedia(eventAggregator)
+            result.Add(new FavoritesMedia(eventAggregator, _settingsStore)
             {
                 Avid = media.Id,
                 Bvid = media.Bvid,

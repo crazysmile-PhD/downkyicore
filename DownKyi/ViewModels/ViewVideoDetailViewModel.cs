@@ -143,7 +143,11 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
     {
         if (UiState.VideoInfoView != null)
         {
-            NavigateToView.NavigateToViewUserSpace(EventAggregator, Tag, UiState.VideoInfoView.UpperMid);
+            NavigateToView.NavigateToViewUserSpace(
+                EventAggregator,
+                _settingsStore,
+                Tag,
+                UiState.VideoInfoView.UpperMid);
         }
     }
 

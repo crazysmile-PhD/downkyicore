@@ -1,5 +1,7 @@
+using System;
 using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Core.Settings;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Events;
@@ -9,11 +11,13 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 internal class FavoritesMedia : BindableBase
 {
+    private readonly ISettingsStore _settingsStore;
     protected IEventAggregator EventAggregator { get; }
 
-    public FavoritesMedia(IEventAggregator eventAggregator)
+    public FavoritesMedia(IEventAggregator eventAggregator, ISettingsStore settingsStore)
     {
         EventAggregator = eventAggregator;
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
     }
 
     public long Avid { get; set; }
@@ -150,7 +154,7 @@ internal class FavoritesMedia : BindableBase
             return;
         }
 
-        NavigateToView.NavigateToViewUserSpace(EventAggregator, tag, UpMid);
+        NavigateToView.NavigateToViewUserSpace(EventAggregator, _settingsStore, tag, UpMid);
     }
 
     #endregion

@@ -1,5 +1,7 @@
+using System;
 using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Core.Settings;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Events;
@@ -9,11 +11,13 @@ namespace DownKyi.ViewModels.PageViewModels;
 
 internal class ToViewMedia : BindableBase
 {
+    private readonly ISettingsStore _settingsStore;
     protected IEventAggregator EventAggregator { get; }
 
-    public ToViewMedia(IEventAggregator eventAggregator)
+    public ToViewMedia(IEventAggregator eventAggregator, ISettingsStore settingsStore)
     {
         EventAggregator = eventAggregator;
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
     }
 
     // aid
@@ -111,7 +115,7 @@ internal class ToViewMedia : BindableBase
             return;
         }
 
-        NavigateToView.NavigateToViewUserSpace(EventAggregator, tag, UpMid);
+        NavigateToView.NavigateToViewUserSpace(EventAggregator, _settingsStore, tag, UpMid);
     }
 
     #endregion

@@ -29,8 +29,16 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi", "Services", "Download", "AddToDownloadService.cs")]
     [InlineData("DownKyi", "Services", "Download", "AddToDownloadServiceFactory.cs")]
     [InlineData("DownKyi", "Services", "Media", "ContentDownloadCoordinator.cs")]
+    [InlineData("DownKyi", "Services", "Media", "PersonalMediaCoordinator.cs")]
+    [InlineData("DownKyi", "Services", "FavoritesService.cs")]
+    [InlineData("DownKyi", "Services", "SearchService.cs")]
     [InlineData("DownKyi", "Services", "Video", "VideoParseCoordinator.cs")]
     [InlineData("DownKyi", "Services", "Video", "VideoDetailWorkflowCoordinator.cs")]
+    [InlineData("DownKyi", "Utils", "NavigateToView.cs")]
+    [InlineData("DownKyi", "ViewModels", "PageViewModels", "FavoritesMedia.cs")]
+    [InlineData("DownKyi", "ViewModels", "PageViewModels", "HistoryMedia.cs")]
+    [InlineData("DownKyi", "ViewModels", "PageViewModels", "ToViewMedia.cs")]
+    [InlineData("DownKyi", "ViewModels", "ViewPublicFavoritesViewModel.cs")]
     [InlineData("DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs")]
     public void MigratedApplicationOwnersDoNotReachIntoTheSettingsSingleton(params string[] pathParts)
     {

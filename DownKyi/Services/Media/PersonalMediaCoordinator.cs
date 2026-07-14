@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.History;
 using DownKyi.Core.BiliApi.History.Models;
+using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Images;
 using DownKyi.Utils;
@@ -35,6 +36,13 @@ internal interface IPersonalMediaCoordinator
 
 internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
 {
+    private readonly ISettingsStore _settingsStore;
+
+    public PersonalMediaCoordinator(ISettingsStore settingsStore)
+    {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+    }
+
     public Task<IReadOnlyList<ToViewMedia>> LoadToViewAsync(
         IEventAggregator eventAggregator,
         CancellationToken cancellationToken)
@@ -53,7 +61,7 @@ internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
             foreach (var item in items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                result.Add(new ToViewMedia(eventAggregator)
+                result.Add(new ToViewMedia(eventAggregator, _settingsStore)
                 {
                     Aid = item.Aid,
                     Bvid = item.Bvid,
@@ -86,7 +94,7 @@ internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
                 pageSize,
                 cancellationToken: cancellationToken);
             var medias = response?.List?
-                .Select(item => ConvertHistory(item, eventAggregator))
+                .Select(item => ConvertHistory(item, eventAggregator, _settingsStore))
                 .Where(item => item != null && !string.IsNullOrEmpty(item.Title))
                 .Cast<HistoryMedia>()
                 .ToArray() ?? Array.Empty<HistoryMedia>();
@@ -98,9 +106,13 @@ internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
         }, cancellationToken);
     }
 
-    internal static HistoryMedia? ConvertHistory(HistoryList history, IEventAggregator eventAggregator)
+    internal static HistoryMedia? ConvertHistory(
+        HistoryList history,
+        IEventAggregator eventAggregator,
+        ISettingsStore settingsStore)
     {
         ArgumentNullException.ThrowIfNull(eventAggregator);
+        ArgumentNullException.ThrowIfNull(settingsStore);
         if (history?.History == null || history.History.Business is not ("archive" or "pgc"))
         {
             return null;
@@ -109,7 +121,7 @@ internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
         var address = history.History.Business == "archive"
             ? $"https://www.bilibili.com/video/{history.History.Bvid}"
             : history.Address;
-        return new HistoryMedia(eventAggregator)
+        return new HistoryMedia(eventAggregator, settingsStore)
         {
             Business = history.History.Business,
             Bvid = history.History.Bvid ?? string.Empty,
