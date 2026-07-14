@@ -78,6 +78,37 @@ public sealed class DownloadRuntimeArchitectureTests
     }
 
     [Fact]
+    public void DownloadRuntimeUsesInjectedSettingsAndDiagnosticOwners()
+    {
+        var directory = Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download");
+        string[] runtimeOwners =
+        [
+            "DownloadRuntimeFactory.cs",
+            "DownloadService.cs",
+            "BuiltinDownloadService.cs",
+            "AriaDownloadService.cs",
+            "CustomAriaDownloadService.cs",
+            "DownloadDiagnosticLogger.cs"
+        ];
+        var violations = runtimeOwners
+            .Select(file => Path.Combine(directory, file))
+            .Where(path => File.ReadAllText(path).Contains("SettingsManager.Instance", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .ToArray();
+        var diagnosticSource = File.ReadAllText(Path.Combine(directory, "DownloadDiagnosticLogger.cs"));
+        var compositionSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyDesktopComposition.cs"));
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
+        Assert.Contains("sealed class DownloadDiagnosticLogger", diagnosticSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("static class DownloadDiagnosticLogger", diagnosticSource, StringComparison.Ordinal);
+        Assert.Contains("AddSingleton<DownloadDiagnosticLogger>()", compositionSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DownloadBootstrapUsesExplicitRuntimeAndUiBoundaries()
     {
         var source = File.ReadAllText(Path.Combine(

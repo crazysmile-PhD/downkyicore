@@ -40,6 +40,7 @@ internal static class LegacyDesktopComposition
                 container.Resolve<IDialogService>(),
                 container.Resolve<IClipboardService>(),
                 settingsStore);
+            services.AddSingleton<DownloadDiagnosticLogger>();
             services.AddSingleton<IDownloadRuntimeFactory, DownloadRuntimeFactory>();
             services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
             services.AddSingleton<IHostedService, DownloadBootstrapHostedService>();

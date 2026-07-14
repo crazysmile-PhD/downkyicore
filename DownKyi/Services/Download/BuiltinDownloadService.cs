@@ -26,8 +26,10 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
         IDialogService? dialogService,
-        IUiDispatcher uiDispatcher)
-        : base(downloadLists, downloadStorageService, dialogService, uiDispatcher)
+        IUiDispatcher uiDispatcher,
+        ISettingsStore settingsStore,
+        DownloadDiagnosticLogger diagnosticLogger)
+        : base(downloadLists, downloadStorageService, dialogService, uiDispatcher, settingsStore, diagnosticLogger)
     {
         Tag = nameof(BuiltinDownloadService);
     }
@@ -73,17 +75,17 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             {
                 { "cookie", LoginHelper.GetLoginInfoCookiesString() }
             },
-            UserAgent = SettingsManager.Instance.GetUserAgent(),
+            UserAgent = Settings.GetUserAgent(),
             Referer = "https://www.bilibili.com"
         };
-        if (SettingsManager.Instance.GetIsHttpProxy() == AllowStatus.Yes)
+        if (Settings.GetIsHttpProxy() == AllowStatus.Yes)
         {
             requestConfiguration.Proxy = new WebProxy(
-                SettingsManager.Instance.GetHttpProxy(),
-                SettingsManager.Instance.GetHttpProxyListenPort());
+                Settings.GetHttpProxy(),
+                Settings.GetHttpProxyListenPort());
         }
 
-        var split = SettingsManager.Instance.GetSplit();
+        var split = Settings.GetSplit();
         var configuration = new DownloadConfiguration
         {
             ChunkCount = split,
@@ -102,7 +104,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             var totalBytesToReceive = expectedBytes;
             var receivedBytes = 0L;
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            DownloadDiagnosticLogger.LogBuiltInTaskStart(
+            DiagnosticLogger.LogBuiltInTaskStart(
                 Tag,
                 localFileName,
                 urls.Count,
@@ -129,7 +131,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
                 downloading.DownloadingFileSize = $"{Format.FormatFileSize(args.ReceivedBytesSize)}/{Format.FormatFileSize(args.TotalBytesToReceive)}";
                 var speed = (long)args.BytesPerSecondSpeed;
                 downloading.SpeedDisplay = Format.FormatSpeedWithBandwidth(speed);
-                DownloadDiagnosticLogger.LogSpeed(
+                DiagnosticLogger.LogSpeed(
                     Tag,
                     localFileName,
                     args.ReceivedBytesSize,

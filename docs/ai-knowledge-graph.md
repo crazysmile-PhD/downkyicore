@@ -1263,6 +1263,7 @@ outbound:
   - external.aria2
   - external.ffmpeg
   - core.logging
+  - core.settings
 contracts:
   - A bounded Channel and fixed workers own queue consumption; global shutdown and per-task cancellation cannot create unbounded transfer tasks.
   - Built-in and aria2 backends share key generation, resume path selection, integrity checks, and awaited persistence; CustomAria only selects the shared aria backend.
@@ -1273,6 +1274,8 @@ contracts:
   - Multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; hardware failure falls back to `libx264 + aac`.
   - State transitions await persistence; high-rate progress uses the bounded write-behind boundary.
   - Runtime receives `DownloadListState` and `DownloadStorageService` through construction; it cannot resolve either through App/Prism.
+  - Runtime factory, backends, workers, and diagnostic logger share the Host-injected `ISettingsStore`; no download service reads the global settings singleton.
+  - Download diagnostic throttling belongs to the injected runtime logger instance and cannot retain task IDs in process-wide static state.
   - Shutdown cancellation while dispatch waits for capacity cannot skip fixed-worker drain or resumable-state recovery; active `Downloading` rows return to `WaitForDownload` and are persisted before exit completes.
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
@@ -1365,6 +1368,7 @@ inbound:
   - viewmodel.settings-pages
   - legacy dialogs and download/friend ViewModels
   - service.account-session
+  - service.download-runtime
 outbound:
   - core.legacy-settings-migration
   - external.filesystem

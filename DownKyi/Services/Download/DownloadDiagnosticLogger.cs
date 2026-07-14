@@ -9,12 +9,18 @@ using DownKyi.Core.Utils;
 
 namespace DownKyi.Services.Download;
 
-internal static class DownloadDiagnosticLogger
+internal sealed class DownloadDiagnosticLogger
 {
     private static readonly TimeSpan SpeedLogInterval = TimeSpan.FromSeconds(30);
-    private static readonly ConcurrentDictionary<string, DateTimeOffset> LastSpeedLogTimes = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastSpeedLogTimes = new();
+    private readonly ISettingsStore _settingsStore;
 
-    public static void LogAriaServerConfig(string source, AriaConfig config)
+    public DownloadDiagnosticLogger(ISettingsStore settingsStore)
+    {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+    }
+
+    public void LogAriaServerConfig(string source, AriaConfig config)
     {
         LogManager.Info(source,
             "Aria config " +
@@ -28,9 +34,9 @@ internal static class DownloadDiagnosticLogger
             $"fileAllocation={config.FileAllocation}");
     }
 
-    public static void LogAriaTaskStart(string source, string? gid, int urlCount)
+    public void LogAriaTaskStart(string source, string? gid, int urlCount)
     {
-        var settings = SettingsManager.Instance;
+        var settings = _settingsStore.Settings;
         LogManager.Info(source,
             "Aria task started " +
             $"task={ShortId(gid)}; " +
@@ -43,7 +49,7 @@ internal static class DownloadDiagnosticLogger
             $"taskLimit={settings.GetAriaMaxDownloadLimit()}KB/s");
     }
 
-    public static void LogBuiltInTaskStart(string source, string taskId, int urlCount, int chunkCount, int parallelCount)
+    public void LogBuiltInTaskStart(string source, string taskId, int urlCount, int chunkCount, int parallelCount)
     {
         LogManager.Info(source,
             "Built-in task started " +
@@ -54,17 +60,17 @@ internal static class DownloadDiagnosticLogger
             $"parallelCount={parallelCount}");
     }
 
-    public static void LogSpeed(string source, string taskId, long completedLength, long totalLength, long bytesPerSecond)
+    public void LogSpeed(string source, string taskId, long completedLength, long totalLength, long bytesPerSecond)
     {
         var key = $"{source}:{taskId}";
         var now = DateTimeOffset.UtcNow;
 
-        if (LastSpeedLogTimes.TryGetValue(key, out var last) && now - last < SpeedLogInterval)
+        if (_lastSpeedLogTimes.TryGetValue(key, out var last) && now - last < SpeedLogInterval)
         {
             return;
         }
 
-        LastSpeedLogTimes[key] = now;
+        _lastSpeedLogTimes[key] = now;
         LogManager.Info(source,
             "Download speed " +
             $"task={ShortId(taskId)}; " +
@@ -72,9 +78,9 @@ internal static class DownloadDiagnosticLogger
             $"progress={Format.FormatFileSize(completedLength)}/{Format.FormatFileSize(totalLength)}");
     }
 
-    private static bool IsHighSpeedEnabled()
+    private bool IsHighSpeedEnabled()
     {
-        return SettingsManager.Instance.GetHighSpeedDownloadMode() == AllowStatus.Yes;
+        return _settingsStore.Settings.GetHighSpeedDownloadMode() == AllowStatus.Yes;
     }
 
     private static string FormatLimit(long bytesPerSecond)

@@ -1,3 +1,4 @@
+using DownKyi.Core.Settings;
 using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.ViewModels;
@@ -11,8 +12,17 @@ internal sealed class CustomAriaDownloadService : AriaDownloadService
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
         IDialogService? dialogService,
-        IUiDispatcher uiDispatcher)
-        : base(downloadLists, downloadStorageService, dialogService, uiDispatcher, ownsAriaServer: false)
+        IUiDispatcher uiDispatcher,
+        ISettingsStore settingsStore,
+        DownloadDiagnosticLogger diagnosticLogger)
+        : base(
+            downloadLists,
+            downloadStorageService,
+            dialogService,
+            uiDispatcher,
+            settingsStore,
+            diagnosticLogger,
+            ownsAriaServer: false)
     {
     }
 }
