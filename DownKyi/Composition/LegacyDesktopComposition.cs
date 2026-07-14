@@ -30,7 +30,7 @@ internal static class LegacyDesktopComposition
         var settingsStore = container.Resolve<ISettingsStore>();
         return DownKyiHost.Create(services =>
         {
-            services.AddDownKyiBilibiliHttpClient();
+            services.AddDownKyiBilibiliHttpClient(settingsStore);
             services.AddSingleton<IHostedService, StorageMaintenanceHostedService>();
             services.AddSingleton(downloadLists);
             services.AddSingleton(container.Resolve<FfmpegProcessor>());

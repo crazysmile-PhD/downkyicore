@@ -57,7 +57,6 @@ using Prism.DryIoc;
 using Prism.Events;
 using Prism.Ioc;
 using Prism.Navigation.Regions;
-using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 using ViewSeasonsSeries = DownKyi.Views.ViewSeasonsSeries;
 using ViewSeasonsSeriesViewModel = DownKyi.ViewModels.ViewSeasonsSeriesViewModel;
 
@@ -243,7 +242,6 @@ internal partial class App : PrismApplication, IDisposable
             return;
         }
 
-        BiliWebClient.DisposeSharedResources();
         _host?.Dispose();
         _host = null;
 #if !DEBUG

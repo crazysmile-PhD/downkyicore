@@ -1095,7 +1095,10 @@ inbound:
 outbound:
   - external.bilibili
   - core.logging
+  - core.settings
 contracts:
+  - Host composition creates the typed client and handler from the shared injected settings owner before any legacy API call.
+  - The static WebClient facade does not create a fallback client, read process-global settings, or dispose the Host-owned connection pool.
   - Retry is iterative, not recursive.
   - Retry exhaustion throws HttpRequestException.
   - HTTP 200 with an empty body is a failed request, not a valid payload.
@@ -1673,6 +1676,8 @@ test.web-client:
     - tests/DownKyi.Core.Tests/WebClientLoopbackTests.cs
     - tests/DownKyi.Core.Tests/BilibiliHttpClientTests.cs
     - tests/DownKyi.Core.Tests/BiliApiContractSampleTests.cs
+    - tests/DownKyi.Core.Tests/WebClientConfigurationTests.cs
+    - tests/DownKyi.Core.Tests/WebClientTestContext.cs
     - tests/DownKyi.Core.Tests/Infrastructure/LoopbackHttpServer.cs
   guards:
     - retry exhaustion throws HttpRequestException
@@ -1684,6 +1689,8 @@ test.web-client:
     - cancellation is not retried or swallowed
     - query parameter URL building stays stable
     - typed client registration, Retry-After handling, and API failure contracts remain explicit
+    - requests fail clearly before Host configuration instead of silently constructing a global fallback
+    - User-Agent and proxy configuration come only from an isolated injected settings owner
 
 test.download-add:
   paths:
