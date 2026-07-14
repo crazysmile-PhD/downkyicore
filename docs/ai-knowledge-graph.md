@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-07-13
+Last reviewed: 2026-07-14
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -92,6 +92,7 @@ flowchart TD
     InfoServices["service.info-services\nVideo/Bangumi/Cheese services"]
     BiliApi["core.bili-api\nDownKyi.Core/BiliApi"]
     WebClient["core.web-client\nDownKyi.Core/BiliApi/WebClient.cs"]
+    Settings["core.settings\nISettingsStore + SettingsManager"]
     LegacySettings["core.legacy-settings-migration\nLegacySettingsDecryptor.cs"]
     DownloadAdd["service.download-add\nAddToDownloadService + DownloadAddCoordinator"]
     DownloadBootstrap["service.download-bootstrap\nDownloadBootstrapHostedService"]
@@ -152,7 +153,9 @@ flowchart TD
     Parser -->|calls| InfoServices
     InfoServices -->|calls| BiliApi
     BiliApi -->|calls| WebClient
-    App -->|reads old settings only| LegacySettings
+    App -->|flushes on shutdown| Settings
+    VideoVm -->|reads| Settings
+    Settings -->|migrates old format through| LegacySettings
     VideoVm -->|calls| DownloadAdd
     DownloadAdd -->|persists| Storage
     DownloadAdd -->|queues| DownloadService
@@ -220,6 +223,7 @@ outbound:
   - service.download-bootstrap
   - service.download-list-state
   - core.storage
+  - core.settings
   - core.logging
 contracts:
   - UI shell should appear before heavy download state and service startup finish.
@@ -231,6 +235,7 @@ contracts:
   - `DownloadListState` owns one stable downloading/history collection pair shared by Prism, Host services, and ViewModels; App must not expose static list properties.
   - App cannot contain concrete service, navigation, or dialog registration; `LegacyPrismComposition` is the only temporary Prism registration owner.
   - Download runtime construction and hosted-service wiring stay in `LegacyDesktopComposition`, not App.
+  - App startup, Host services, and shutdown share one injected `ISettingsStore`; shutdown flush must not block the UI thread.
   - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
   - UI continuations use the Avalonia context; background and Core continuations do not depend on it.
 hazards:
@@ -1313,6 +1318,35 @@ tests:
   - test.diagnostic-log-redaction
 ```
 
+### core.settings
+
+```yaml
+id: core.settings
+type: core
+paths:
+  - DownKyi.Core/Settings/ISettingsStore.cs
+  - DownKyi.Core/Settings/SettingsManager.cs
+responsibility: Owns the current settings instance, debounces atomic persistence, and exposes an injectable shutdown flush boundary while legacy consumers are migrated.
+inbound:
+  - app.application
+  - app.host-composition
+  - viewmodel.video-detail
+outbound:
+  - core.legacy-settings-migration
+  - external.filesystem
+contracts:
+  - Prism and Microsoft Host composition share the same store instance; they must not create competing settings owners.
+  - App and migrated ViewModels cannot reach through `SettingsManager.Instance`.
+  - The persisted JSON property names, enum values, and storage path remain compatible with existing user settings.
+  - Shutdown flush is awaited without synchronously blocking the UI thread.
+hazards:
+  - `SettingsManager` remains mutable and singleton-backed behind the compatibility facade; immutable validated snapshots and full consumer migration remain PR 16-24 work.
+  - Timer callbacks and shutdown flush must not race into partial or non-atomic writes.
+tests:
+  - test.settings-store
+  - test.architecture-boundaries
+```
+
 ### core.legacy-settings-migration
 
 ```yaml
@@ -1799,6 +1833,7 @@ test.architecture-boundaries:
   paths:
     - tests/DownKyi.Architecture.Tests/ProjectDependencyTests.cs
     - tests/DownKyi.Architecture.Tests/RootViewArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/SettingsArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/DownloadRuntimeArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
@@ -1819,6 +1854,15 @@ test.architecture-boundaries:
     - friend relation API work cannot move back into ViewModels or per-item dispatcher posts
     - season/series loading and add work cannot move back into the ViewModel or bypass directory cancellation
     - legacy upgrade migration cannot move NRBF, SQLite, storage lookup, Task.Run, or Dispatcher work back into the dialog ViewModel
+    - migrated App and video-detail owners cannot restore direct SettingsManager singleton access
+    - Prism and Host composition must share one injected settings owner
+
+test.settings-store:
+  paths:
+    - tests/DownKyi.Core.Tests/SettingsStoreTests.cs
+  guards:
+    - an isolated settings owner flushes modified values to its assigned file
+    - tests never read or write the user's real settings path
 
 test.ui-smoke:
   paths:

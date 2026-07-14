@@ -43,6 +43,7 @@ internal static class LegacyPrismComposition
     {
         containerRegistry.RegisterInstance(new SqliteDownloadTaskStoreOptions(StorageManager.GetDbPath()));
         containerRegistry.RegisterSingleton<IClock, SystemClock>();
+        containerRegistry.RegisterSingleton<ISettingsStore, SettingsStore>();
         containerRegistry.RegisterSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
         containerRegistry.RegisterSingleton<DownloadStorageService>();
         containerRegistry.RegisterSingleton<DownloadListState>();

@@ -33,12 +33,12 @@ public partial class SettingsManager
     private AppSettings _appSettings;
 
     // 设置的配置文件路径
-    private readonly string _settingsName = StorageManager.GetSettings();
+    private readonly string _settingsName;
 
     // 密钥（用于旧版加密配置迁移）
     private readonly string password = "YO1J$4#p";
 
-    // 防抖写：延迟 500ms 后真正落盘
+    // 防抖写：短时间内多次修改只落盘一次
     private Timer? _flushTimer;
     private bool _dirty;
 
@@ -51,7 +51,14 @@ public partial class SettingsManager
     /// 隐藏构造函数，必须使用单例模式
     /// </summary>
     private SettingsManager()
+        : this(StorageManager.GetSettings())
     {
+    }
+
+    internal SettingsManager(string settingsName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsName);
+        _settingsName = settingsName;
         _appSettings = LoadFromFile();
     }
 

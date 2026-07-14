@@ -134,7 +134,7 @@ internal partial class App : PrismApplication, IDisposable
 
     protected override void OnInitialized()
     {
-        ThemeHelper.SetTheme(SettingsManager.Instance.GetThemeMode());
+        ThemeHelper.SetTheme(Container.Resolve<ISettingsStore>().Settings.GetThemeMode());
         // var regionManager = Container.Resolve<IRegionManager>();
         // regionManager.RegisterViewWithRegion("ContentRegion", typeof(ViewIndex));
         // regionManager.RegisterViewWithRegion("DownloadManagerContentRegion", typeof(ViewDownloading));
@@ -193,7 +193,7 @@ internal partial class App : PrismApplication, IDisposable
             cleanupTasks.Add(StopHostAsync(_host));
         }
 
-        SettingsManager.Instance.Flush();
+        cleanupTasks.Add(Container.Resolve<ISettingsStore>().FlushAsync());
 
         if (_downloadStartupTask != null)
         {

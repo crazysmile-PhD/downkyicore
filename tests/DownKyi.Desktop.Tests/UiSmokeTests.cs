@@ -6,6 +6,7 @@ using DownKyi.Application.Desktop;
 using DownKyi.Application.Lifetime;
 using DownKyi.Composition;
 using DownKyi.Core.BiliApi.VideoStream;
+using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.CustomAction;
 using DownKyi.Desktop.Composition;
@@ -41,6 +42,8 @@ public sealed class UiSmokeTests
         var regionManager = new RegionManager();
         var eventAggregator = new EventAggregator();
         var dialogService = new DesktopDialogService(prismContainer);
+        var settingsDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-host-smoke-{Guid.NewGuid():N}");
+        var settingsStore = new SettingsStore(Path.Combine(settingsDirectory, "settings.json"));
         using var host = DownKyiHost.Create(services =>
         {
             services.AddSingleton<IAddToDownloadServiceFactory>(new StubAddToDownloadServiceFactory());
@@ -48,12 +51,13 @@ public sealed class UiSmokeTests
                 regionManager,
                 eventAggregator,
                 dialogService,
-                new StubClipboardService());
+                new StubClipboardService(),
+                settingsStore);
         });
 
-        await host.StartAsync(TestContext.Current.CancellationToken);
         try
         {
+            await host.StartAsync(TestContext.Current.CancellationToken);
             var window = host.Services.GetRequiredService<MainWindow>();
 
             Assert.True(window.Width >= window.MinWidth);
@@ -67,8 +71,18 @@ public sealed class UiSmokeTests
         }
         finally
         {
-            await host.StopAsync(TestContext.Current.CancellationToken);
-            prismContainer.Instance.Dispose();
+            try
+            {
+                await host.StopAsync(CancellationToken.None);
+            }
+            finally
+            {
+                prismContainer.Instance.Dispose();
+                if (Directory.Exists(settingsDirectory))
+                {
+                    Directory.Delete(settingsDirectory, recursive: true);
+                }
+            }
         }
     }
 

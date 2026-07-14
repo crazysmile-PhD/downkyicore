@@ -1,6 +1,7 @@
 using System;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi;
+using DownKyi.Core.Settings;
 using DownKyi.Desktop.Composition;
 using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
@@ -25,6 +26,7 @@ internal static class LegacyDesktopComposition
     {
         ArgumentNullException.ThrowIfNull(container);
         var downloadLists = container.Resolve<DownloadListState>();
+        var settingsStore = container.Resolve<ISettingsStore>();
         return DownKyiHost.Create(services =>
         {
             services.AddDownKyiBilibiliHttpClient();
@@ -36,7 +38,8 @@ internal static class LegacyDesktopComposition
                 container.Resolve<IRegionManager>(),
                 container.Resolve<IEventAggregator>(),
                 container.Resolve<IDialogService>(),
-                container.Resolve<IClipboardService>());
+                container.Resolve<IClipboardService>(),
+                settingsStore);
             services.AddSingleton<IDownloadRuntimeFactory, DownloadRuntimeFactory>();
             services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
             services.AddSingleton<IHostedService, DownloadBootstrapHostedService>();
@@ -48,18 +51,21 @@ internal static class LegacyDesktopComposition
         IRegionManager regionManager,
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        IClipboardService clipboardService)
+        IClipboardService clipboardService,
+        ISettingsStore settingsStore)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(regionManager);
         ArgumentNullException.ThrowIfNull(eventAggregator);
         ArgumentNullException.ThrowIfNull(dialogService);
         ArgumentNullException.ThrowIfNull(clipboardService);
+        ArgumentNullException.ThrowIfNull(settingsStore);
 
         services.AddSingleton(regionManager);
         services.AddSingleton(eventAggregator);
         services.AddSingleton(dialogService);
         services.AddSingleton(clipboardService);
+        services.AddSingleton(settingsStore);
         services.AddSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
         services.AddTransient<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         services.AddSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();

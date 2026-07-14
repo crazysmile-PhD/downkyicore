@@ -31,17 +31,20 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
 
     private readonly IClipboardService _clipboardService;
     private readonly IVideoDetailDownloadCoordinator _downloadCoordinator;
+    private readonly ISettingsStore _settingsStore;
     private readonly IVideoDetailWorkflowCoordinator _workflow;
 
     public ViewVideoDetailViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
         IClipboardService clipboardService,
+        ISettingsStore settingsStore,
         IVideoDetailWorkflowCoordinator workflow,
         IVideoDetailDownloadCoordinator downloadCoordinator)
         : base(eventAggregator, dialogService)
     {
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         UiState.DownloadManage = CreateDownloadManageIcon();
@@ -118,7 +121,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             LogManager.Debug(Tag, "Processing captured video input.");
             var result = await _workflow.LoadDetailAsync(operation).ConfigureAwait(true);
             await UiDispatcher.InvokeAsync(() => ApplyVideoDetailResult(result, operation.CancellationToken));
-            if (_workflow.IsCurrent(operation) && SettingsManager.Instance.GetIsAutoParseVideo() == AllowStatus.Yes)
+            if (_workflow.IsCurrent(operation) && _settingsStore.Settings.GetIsAutoParseVideo() == AllowStatus.Yes)
             {
                 RunFireAndForget(ExecuteParseAllVideoCommandAsync(), nameof(ExecuteParseAllVideoCommandAsync));
             }
@@ -173,7 +176,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
 
     private async Task ExecuteParseAllVideoCommandAsync()
     {
-        var parseScope = SettingsManager.Instance.GetParseScope();
+        var parseScope = _settingsStore.Settings.GetParseScope();
         if (parseScope != ParseScope.None)
         {
             await ExecuteParseAsync(parseScope).ConfigureAwait(true);
@@ -208,7 +211,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             }
 
             RestoreDisplayState();
-            if (parseScope != ParseScope.None && SettingsManager.Instance.GetIsAutoDownloadAll() == AllowStatus.Yes)
+            if (parseScope != ParseScope.None && _settingsStore.Settings.GetIsAutoDownloadAll() == AllowStatus.Yes)
             {
                 await AddToDownloadAsync(true).ConfigureAwait(true);
             }
