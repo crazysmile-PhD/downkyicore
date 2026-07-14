@@ -249,7 +249,7 @@
                     BorderThickness="0"
                     ItemsSource="{Binding Medias}"
                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                    SelectionMode="Multiple"
+                    SelectionMode="Multiple,Toggle"
                     ItemContainerTheme="{StaticResource MediaListStyle}">
                     <Interaction.Behaviors>
                         <EventTriggerBehavior EventName="SelectionChanged">

@@ -78,6 +78,8 @@ flowchart TD
     FriendRelations["service.friend-relations\nFriendRelationCoordinator.cs"]
     SeasonsSeriesVm["viewmodel.seasons-series\nViewSeasonsSeriesViewModel.cs"]
     SeasonsSeries["service.seasons-series\nSeasonsSeriesCoordinator.cs"]
+    FavoritesVms["viewmodel.favorites\nPrivate/Public Favorites ViewModels"]
+    Favorites["service.favorites\nFavoritesCoordinator.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
     BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
     BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
@@ -130,6 +132,9 @@ flowchart TD
     FriendRelations -->|calls| BiliApi
     SeasonsSeriesVm -->|loads and queues| SeasonsSeries
     SeasonsSeries -->|calls| BiliApi
+    FavoritesVms -->|loads snapshots| Favorites
+    Favorites -->|calls| BiliApi
+    FavoritesVms -->|queues selected media| DownloadAdd
     BiliHelperVm -->|calls| BiliHelper
     BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
@@ -522,7 +527,7 @@ id: service.seasons-series
 type: service
 paths:
   - DownKyi/Services/UserSpace/SeasonsSeriesCoordinator.cs
-responsibility: Loads season/series archive snapshots and performs legacy per-video parse/add work away from the UI thread.
+responsibility: Loads season/series archive snapshots and delegates legacy per-video parse/add work to the shared media coordinator.
 inbound:
   - viewmodel.seasons-series
 outbound:
@@ -537,6 +542,65 @@ hazards:
   - The add path still crosses Prism dialog/event compatibility types until PR 25-29 removes the bridge.
 tests:
   - test.seasons-series
+  - test.architecture-boundaries
+```
+
+### viewmodel.favorites
+
+```yaml
+id: viewmodel.favorites
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewMyFavoritesViewModel.cs
+  - DownKyi/ViewModels/ViewPublicFavoritesViewModel.cs
+  - DownKyi/Views/ViewMyFavorites.axaml
+  - DownKyi/Views/ViewPublicFavorites.axaml
+responsibility: Projects private/public favorite folders and media snapshots, selection, pager, navigation, and add-to-download results.
+inbound:
+  - viewmodel.user-space
+  - viewmodel.main-window
+outbound:
+  - service.favorites
+  - service.download-add
+contracts:
+  - ViewModels never perform favorite API or parse/add work on their own worker tasks.
+  - Network results are returned as snapshots and applied with one `AddRange` UI notification.
+  - Canceling directory selection returns before creating a download snapshot or parsing media.
+  - Leaving, replacing a request, or disposing cancels folder, page, and download work; pager replacement detaches old handlers.
+  - Favorite lists use `Multiple,Toggle`, so an ordinary click toggles each selected item without a modifier key.
+hazards:
+  - Mutating observable collections from the worker thread can fault Avalonia bindings and leave stale rows after navigation.
+  - Starting parse/add before checking a null directory performs work after the user explicitly canceled.
+  - Replacing a pager without detaching events retains the ViewModel and issues duplicate page requests.
+tests:
+  - test.favorites
+  - test.download-add
+  - test.architecture-boundaries
+```
+
+### service.favorites
+
+```yaml
+id: service.favorites
+type: service
+paths:
+  - DownKyi/Services/FavoritesCoordinator.cs
+  - DownKyi/Services/FavoritesService.cs
+  - DownKyi/Services/IFavoritesService.cs
+responsibility: Loads favorite folders, metadata, and media off the UI thread and returns fully mapped read-only snapshots.
+inbound:
+  - viewmodel.favorites
+outbound:
+  - core.bili-api
+contracts:
+  - `FavoritesService` is a pure mapper/API adapter and never accesses `App`, Dispatcher, or observable collections.
+  - Pre-canceled requests cannot start legacy synchronous API work.
+  - Invalid favorite videos remain filtered and timestamp/number projection preserves the existing UI contract.
+hazards:
+  - Legacy synchronous Bilibili calls cannot abort in flight; cancellation prevents subsequent calls and stale UI projection.
+  - API model and UI model both use `FavoritesMedia`; aliases must remain explicit at the mapping boundary.
+tests:
+  - test.favorites
   - test.architecture-boundaries
 ```
 
@@ -858,15 +922,20 @@ paths:
   - DownKyi/Services/Download/AddToDownloadService.cs
   - DownKyi/Services/Download/AddToDownloadServiceFactory.cs
   - DownKyi/Services/Download/DownloadAddCoordinator.cs
-responsibility: Converts selected parsed media into download tasks, handles duplicate decisions, and writes queue state.
+  - DownKyi/Services/Media/ContentDownloadCoordinator.cs
+responsibility: Converts selected parsed media into download tasks, centralizes legacy per-item info-service parsing, handles duplicate decisions, and writes queue state.
 inbound:
   - viewmodel.video-detail
+  - viewmodel.seasons-series
+  - viewmodel.favorites
   - other viewmodels that support add-to-download
 outbound:
   - core.storage
   - service.download-runtime
   - service.download-list-state
 contracts:
+  - `ContentDownloadCoordinator` checks cancellation between items and receives a confirmed non-empty directory.
+  - Video and bangumi info-service construction is selected by an explicit enum; ViewModels do not duplicate parse/add loops.
   - Directory selection returning null means user canceled; no task should be queued.
   - Existing downloaded/downloading records must be checked before inserting duplicates.
   - ViewModels receive `IAddToDownloadServiceFactory`; the add service receives list/storage owners explicitly and cannot resolve them through App.
@@ -1381,6 +1450,16 @@ test.seasons-series:
     - pre-canceled season and series page requests cannot start user-space API work
     - season/series ViewModel cannot regain Task.Run, App UI dispatch, duplicated page methods, or dead channel loader code
     - page projection uses AddRange and directory cancellation precedes the coordinator add call
+
+test.favorites:
+  paths:
+    - tests/DownKyi.Tests/FavoritesCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - pre-canceled private/public favorite requests cannot start API work
+    - favorite ViewModels cannot regain Task.Run or App dispatcher projection
+    - favorite services return snapshots rather than mutating observable collections
+    - directory cancellation precedes shared download coordination and list selection remains click-toggle capable
 
 test.download-list-state:
   paths:

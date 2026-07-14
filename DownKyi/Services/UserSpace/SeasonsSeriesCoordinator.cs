@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
+using DownKyi.Services.Media;
 using Prism.Events;
 
 namespace DownKyi.Services.UserSpace;
@@ -39,6 +40,13 @@ internal interface ISeasonsSeriesCoordinator
 
 internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
 {
+    private readonly IContentDownloadCoordinator _downloadCoordinator;
+
+    public SeasonsSeriesCoordinator(IContentDownloadCoordinator downloadCoordinator)
+    {
+        _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
+    }
+
     public Task<IReadOnlyList<SpaceSeasonsSeriesArchives>> LoadPageAsync(
         long mid,
         long id,
@@ -70,34 +78,21 @@ internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
         IDialogService? dialogService,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(addToDownloadService);
         ArgumentNullException.ThrowIfNull(items);
-        ArgumentException.ThrowIfNullOrEmpty(directory);
-        ArgumentNullException.ThrowIfNull(eventAggregator);
-
-        return Task.Run(async () =>
+        var downloadItems = new List<ContentDownloadItem>(items.Count);
+        foreach (var item in items)
         {
-            var addedCount = 0;
-            foreach (var item in items)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (onlySelected && !item.IsSelected)
-                {
-                    continue;
-                }
+            downloadItems.Add(new ContentDownloadItem(item.Bvid, DownloadInfoKind.Video, item.IsSelected));
+        }
 
-                var videoInfoService = new VideoInfoService(item.Bvid);
-                addToDownloadService.SetVideoInfoService(videoInfoService);
-                addToDownloadService.GetVideo();
-                addToDownloadService.ParseVideo(videoInfoService);
-                cancellationToken.ThrowIfCancellationRequested();
-                addedCount += await addToDownloadService
-                    .AddToDownload(eventAggregator, dialogService, directory)
-                    .ConfigureAwait(false);
-            }
-
-            return addedCount;
-        }, cancellationToken);
+        return _downloadCoordinator.AddAsync(
+            addToDownloadService,
+            downloadItems,
+            onlySelected,
+            directory,
+            eventAggregator,
+            dialogService,
+            cancellationToken);
     }
 
     private static IReadOnlyList<SpaceSeasonsSeriesArchives> LoadSeason(

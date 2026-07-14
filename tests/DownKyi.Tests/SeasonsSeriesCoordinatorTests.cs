@@ -1,3 +1,4 @@
+using DownKyi.Services.Media;
 using DownKyi.Services.UserSpace;
 
 namespace DownKyi.Tests;
@@ -9,7 +10,7 @@ public sealed class SeasonsSeriesCoordinatorTests
     [InlineData(2)]
     public async Task PreCanceledPageRequestDoesNotStartUserSpaceApiWork(int kindValue)
     {
-        var coordinator = new SeasonsSeriesCoordinator();
+        var coordinator = new SeasonsSeriesCoordinator(new ContentDownloadCoordinator());
         var kind = (SeasonsSeriesKind)kindValue;
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();

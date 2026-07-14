@@ -235,6 +235,64 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
     }
 
+    [Fact]
+    public void FavoritesWorkUsesCancellableSnapshotsAndSharedDownloadCoordination()
+    {
+        var viewModelPaths = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "ViewMyFavoritesViewModel.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "ViewPublicFavoritesViewModel.cs")
+        };
+        var viewModelSource = string.Join(Environment.NewLine, viewModelPaths.Select(File.ReadAllText));
+        var favoritesServiceSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "FavoritesService.cs"));
+        var favoritesCoordinatorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "FavoritesCoordinator.cs"));
+        var downloadCoordinatorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Media",
+            "ContentDownloadCoordinator.cs"));
+
+        Assert.DoesNotContain("Task.Run", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("App.PropertyChangeAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("App.PropertyChangeAsync", favoritesServiceSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ObservableCollection", favoritesServiceSource, StringComparison.Ordinal);
+        Assert.Contains("AddRange", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IFavoritesCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IContentDownloadCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("Task.Run", favoritesCoordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken", favoritesCoordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("Task.Run", downloadCoordinatorSource, StringComparison.Ordinal);
+
+        foreach (var source in viewModelPaths.Select(File.ReadAllText))
+        {
+            var directoryCancellation = source.IndexOf("if (directory == null)", StringComparison.Ordinal);
+            var addCall = source.IndexOf("_downloadCoordinator.AddAsync(", StringComparison.Ordinal);
+            Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
+        }
+
+        var publicView = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Views",
+            "ViewPublicFavorites.axaml"));
+        var privateView = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Views",
+            "ViewMyFavorites.axaml"));
+        Assert.Contains("SelectionMode=\"Multiple,Toggle\"", publicView, StringComparison.Ordinal);
+        Assert.Contains("SelectionMode=\"Multiple,Toggle\"", privateView, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

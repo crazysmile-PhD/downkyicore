@@ -1,6 +1,7 @@
 using System;
-using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
@@ -13,6 +14,7 @@ using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Download;
+using DownKyi.Services.Media;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Prism.Commands;
@@ -25,10 +27,12 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
 {
     public const string Tag = "PagePublicFavorites";
 
-    private readonly IFavoritesService _favoritesService;
     private readonly IClipboardService _clipboardService;
     private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
-    private CancellationTokenSource? _tokenSource;
+    private readonly IContentDownloadCoordinator _downloadCoordinator;
+    private readonly IFavoritesCoordinator _favoritesCoordinator;
+    private CancellationTokenSource? _loadCancellation;
+    private CancellationTokenSource? _downloadCancellation;
 
     #region 页面属性申明
 
@@ -135,23 +139,16 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         IEventAggregator eventAggregator,
         IDialogService dialogService,
         IClipboardService clipboardService,
-        IAddToDownloadServiceFactory addToDownloadServiceFactory)
-        : this(eventAggregator, dialogService, new FavoritesService(), clipboardService, addToDownloadServiceFactory)
-    {
-    }
-
-    internal ViewPublicFavoritesViewModel(
-        IEventAggregator eventAggregator,
-        IDialogService dialogService,
-        IFavoritesService favoritesService,
-        IClipboardService clipboardService,
-        IAddToDownloadServiceFactory addToDownloadServiceFactory) : base(eventAggregator)
+        IAddToDownloadServiceFactory addToDownloadServiceFactory,
+        IContentDownloadCoordinator downloadCoordinator,
+        IFavoritesCoordinator favoritesCoordinator) : base(eventAggregator)
     {
         DialogService = dialogService;
-        _favoritesService = favoritesService;
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
         _addToDownloadServiceFactory = addToDownloadServiceFactory
             ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
+        _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
+        _favoritesCoordinator = favoritesCoordinator ?? throw new ArgumentNullException(nameof(favoritesCoordinator));
 
         #region 属性初始化
 
@@ -191,7 +188,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     protected internal override void ExecuteBackSpace()
     {
         // 结束任务
-        _tokenSource?.Cancel();
+        CancelOperations();
 
         NavigationParam parameter = new NavigationParam
         {
@@ -279,68 +276,45 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     /// <summary>
     /// 添加所有视频到下载列表事件
     /// </summary>
-    // 列表选择事件
-    private DelegateCommand<object>? _favoritesMediasCommand;
-
-    public DelegateCommand<object> FavoritesMediasCommand => _favoritesMediasCommand ??= new DelegateCommand<object>(ExecuteFavoritesMediasCommand);
-
-    /// <summary>
-    /// 列表选择事件
-    /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteFavoritesMediasCommand(object parameter)
-    {
-    }
-
     #endregion
 
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        // 收藏夹里只有视频
         var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
-
-        // 选择文件夹
         var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-
-        // 视频计数
-        var i = 0;
-        await Task.Run(async () =>
-        {
-            // 为了避免执行其他操作时，
-            // Medias变化导致的异常
-            var list = FavoritesMedias.ToList();
-
-            // 添加到下载
-            foreach (var media in list)
-            {
-                // 只下载选中项，跳过未选中项
-                if (isOnlySelected && !media.IsSelected)
-                {
-                    continue;
-                }
-
-                /// 有分P的就下载全部
-
-                // 开启服务
-                var videoInfoService = new VideoInfoService(media.Bvid);
-
-                addToDownloadService.SetVideoInfoService(videoInfoService);
-                addToDownloadService.GetVideo();
-                addToDownloadService.ParseVideo(videoInfoService);
-                // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
-            }
-        }).ConfigureAwait(true);
-
         if (directory == null)
         {
             return;
         }
 
-        // 通知用户添加到下载列表的结果
-        EventAggregator.GetEvent<MessageEvent>().Publish(i <= 0
-            ? DictionaryResource.GetString("TipAddDownloadingZero")
-            : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var items = FavoritesMedias
+            .Select(media => new ContentDownloadItem(media.Bvid, DownloadInfoKind.Video, media.IsSelected))
+            .ToArray();
+        try
+        {
+            var addedCount = await _downloadCoordinator.AddAsync(
+                addToDownloadService,
+                items,
+                isOnlySelected,
+                directory,
+                EventAggregator,
+                DialogService,
+                cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
+                ? DictionaryResource.GetString("TipAddDownloadingZero")
+                : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+        {
+            LogManager.Error(Tag, e);
+            EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
+        }
     }
 
     /// <summary>
@@ -367,47 +341,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// 更新页面
-    /// </summary>
-    private void UpdateView(long favoritesId, CancellationToken cancellationToken)
-    {
-        LoadingVisibility = true;
-
-        var favorites = _favoritesService.GetFavorites(favoritesId, cancellationToken);
-        if (favorites == null)
-        {
-            LogManager.Debug(Tag, "Favorites is null.");
-
-            ContentVisibility = false;
-            LoadingVisibility = false;
-            NoDataVisibility = true;
-            return;
-        }
-
-        Favorites = favorites;
-        ContentVisibility = true;
-        LoadingVisibility = false;
-        NoDataVisibility = false;
-
-        MediaLoadingVisibility = true;
-
-        var medias = FavoritesResource.GetAllFavoritesMedia(favoritesId, cancellationToken);
-        if (medias == null || medias.Count == 0)
-        {
-            MediaLoadingVisibility = false;
-            MediaNoDataVisibility = true;
-            return;
-        }
-        else
-        {
-            MediaLoadingVisibility = false;
-            MediaNoDataVisibility = false;
-        }
-
-        _favoritesService.GetFavoritesMediaList(medias, FavoritesMedias, EventAggregator, cancellationToken);
-    }
-
-    /// <summary>
     /// 接收收藏夹id参数
     /// </summary>
     /// <param name="navigationContext"></param>
@@ -430,11 +363,34 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
             }
 
             InitView();
-            var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
-            await Task.Run(() =>
+            LoadingVisibility = true;
+            var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
+            var snapshot = await _favoritesCoordinator
+                .LoadPublicFavoritesAsync(parameter, EventAggregator, cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (snapshot == null)
             {
-                UpdateView(parameter, cancellationToken);
-            }, cancellationToken).ConfigureAwait(true);
+                LogManager.Debug(Tag, "Favorites is null.");
+                LoadingVisibility = false;
+                NoDataVisibility = true;
+                return;
+            }
+
+            Favorites = snapshot.Favorites;
+            ContentVisibility = true;
+            LoadingVisibility = false;
+            MediaLoadingVisibility = false;
+            if (snapshot.Medias.Count == 0)
+            {
+                MediaNoDataVisibility = true;
+                return;
+            }
+
+            FavoritesMedias.AddRange(snapshot.Medias);
+        }
+        catch (OperationCanceledException) when (_loadCancellation?.IsCancellationRequested != false)
+        {
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
@@ -443,13 +399,23 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         }
     }
 
+    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    {
+        CancelOperations();
+        base.OnNavigatedFrom(navigationContext);
+    }
+
+    private void CancelOperations()
+    {
+        CancelAndDispose(ref _loadCancellation);
+        CancelAndDispose(ref _downloadCancellation);
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing && !IsDisposed)
         {
-            _tokenSource?.Cancel();
-            _tokenSource?.Dispose();
-            _tokenSource = null;
+            CancelOperations();
         }
 
         base.Dispose(disposing);
