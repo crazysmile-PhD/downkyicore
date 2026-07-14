@@ -274,14 +274,14 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         SetDisplayState(VideoDetailDisplayState.Content);
     }
 
-    private static void ApplyVideoStreamResults(
+    private void ApplyVideoStreamResults(
         IReadOnlyList<VideoStreamParseResult> results,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         foreach (var result in results)
         {
-            Services.Utils.VideoPageInfo(result.PlayUrl, result.Page);
+            Services.Utils.VideoPageInfo(result.PlayUrl, result.Page, _settingsStore);
         }
     }
 

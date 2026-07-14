@@ -20,9 +20,14 @@ namespace DownKyi.Services;
 internal class BangumiInfoService : IInfoService
 {
     private readonly BangumiSeason? _bangumiSeason;
+    private readonly ISettingsStore _settingsStore;
 
-    public BangumiInfoService(string? input, CancellationToken cancellationToken = default)
+    public BangumiInfoService(
+        string? input,
+        ISettingsStore settingsStore,
+        CancellationToken cancellationToken = default)
     {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         if (input == null)
         {
             return;
@@ -141,7 +146,7 @@ internal class BangumiInfoService : IInfoService
             }
 
             // 文件命名中的时间格式
-            var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
+            var timeFormat = _settingsStore.Settings.GetFileNamePartTimeFormat();
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(episode.PubTime);
@@ -238,7 +243,7 @@ internal class BangumiInfoService : IInfoService
                 }
 
                 // 文件命名中的时间格式
-                var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
+                var timeFormat = _settingsStore.Settings.GetFileNamePartTimeFormat();
                 // 视频发布时间
                 var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
                 var dateTime = startTime.AddSeconds(episode.PubTime);

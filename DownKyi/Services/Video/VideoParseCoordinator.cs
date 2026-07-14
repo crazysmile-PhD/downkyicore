@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Media;
 using DownKyi.Core.BiliApi.VideoStream.Models;
+using DownKyi.Core.Settings;
 using DownKyi.ViewModels.PageViewModels;
 
 namespace DownKyi.Services.Video;
@@ -16,8 +17,8 @@ internal sealed class VideoParseCoordinator
     private IInfoService? _infoService;
     private string? _infoServiceInput;
 
-    public VideoParseCoordinator()
-        : this(CreateInfoService)
+    public VideoParseCoordinator(ISettingsStore settingsStore)
+        : this((input, cancellationToken) => CreateInfoService(input, settingsStore, cancellationToken))
     {
     }
 
@@ -166,13 +167,17 @@ internal sealed class VideoParseCoordinator
         }
     }
 
-    internal static IInfoService? CreateInfoService(string input, CancellationToken cancellationToken)
+    internal static IInfoService? CreateInfoService(
+        string input,
+        ISettingsStore settingsStore,
+        CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(settingsStore);
         return VideoInputResolver.Resolve(input) switch
         {
-            VideoInputKind.Video => new VideoInfoService(input, cancellationToken),
-            VideoInputKind.Bangumi => new BangumiInfoService(input, cancellationToken),
-            VideoInputKind.Cheese => new CheeseInfoService(input, cancellationToken),
+            VideoInputKind.Video => new VideoInfoService(input, settingsStore, cancellationToken),
+            VideoInputKind.Bangumi => new BangumiInfoService(input, settingsStore, cancellationToken),
+            VideoInputKind.Cheese => new CheeseInfoService(input, settingsStore, cancellationToken),
             _ => null
         };
     }

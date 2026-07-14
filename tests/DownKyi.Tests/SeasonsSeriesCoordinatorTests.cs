@@ -10,7 +10,8 @@ public sealed class SeasonsSeriesCoordinatorTests
     [InlineData(2)]
     public async Task PreCanceledPageRequestDoesNotStartUserSpaceApiWork(int kindValue)
     {
-        var coordinator = new SeasonsSeriesCoordinator(new ContentDownloadCoordinator());
+        using var settings = new TestSettingsStore();
+        var coordinator = new SeasonsSeriesCoordinator(new ContentDownloadCoordinator(settings.Store));
         var kind = (SeasonsSeriesKind)kindValue;
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();

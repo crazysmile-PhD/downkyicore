@@ -36,6 +36,7 @@ internal class AddToDownloadService
     private IList<VideoSection>? _videoSections;
     private readonly DownloadListState _downloadLists;
     private readonly DownloadStorageService _downloadStorageService;
+    private readonly ISettingsStore _settingsStore;
 
     // 下载内容
     private bool _downloadAudio = true;
@@ -53,20 +54,22 @@ internal class AddToDownloadService
     public AddToDownloadService(
         PlayStreamType streamType,
         DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService)
+        DownloadStorageService downloadStorageService,
+        ISettingsStore settingsStore)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         switch (streamType)
         {
             case PlayStreamType.Video:
-                _videoInfoService = new VideoInfoService(null);
+                _videoInfoService = new VideoInfoService(null, settingsStore);
                 break;
             case PlayStreamType.Bangumi:
-                _videoInfoService = new BangumiInfoService(null);
+                _videoInfoService = new BangumiInfoService(null, settingsStore);
                 break;
             case PlayStreamType.Cheese:
-                _videoInfoService = new CheeseInfoService(null);
+                _videoInfoService = new CheeseInfoService(null, settingsStore);
                 break;
             default:
                 break;
@@ -84,20 +87,22 @@ internal class AddToDownloadService
         string id,
         PlayStreamType streamType,
         DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService)
+        DownloadStorageService downloadStorageService,
+        ISettingsStore settingsStore)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         switch (streamType)
         {
             case PlayStreamType.Video:
-                _videoInfoService = new VideoInfoService(id);
+                _videoInfoService = new VideoInfoService(id, settingsStore);
                 break;
             case PlayStreamType.Bangumi:
-                _videoInfoService = new BangumiInfoService(id);
+                _videoInfoService = new BangumiInfoService(id, settingsStore);
                 break;
             case PlayStreamType.Cheese:
-                _videoInfoService = new CheeseInfoService(id);
+                _videoInfoService = new CheeseInfoService(id, settingsStore);
                 break;
             default:
                 break;
@@ -169,7 +174,7 @@ internal class AddToDownloadService
             foreach (var page in section.VideoPages)
             {
                 // 执行解析任务
-                Utils.VideoPageInfo(videoInfoService.GetVideoStream(page), page);
+                Utils.VideoPageInfo(videoInfoService.GetVideoStream(page), page, _settingsStore);
             }
         }
     }
@@ -185,17 +190,17 @@ internal class AddToDownloadService
         var directory = string.Empty;
 
         // 是否使用默认下载目录
-        if (SettingsManager.Instance.GetIsUseSaveVideoRootPath() == AllowStatus.Yes)
+        if (_settingsStore.Settings.GetIsUseSaveVideoRootPath() == AllowStatus.Yes)
         {
             // 下载内容
-            var videoContent = SettingsManager.Instance.GetVideoContent();
+            var videoContent = _settingsStore.Settings.GetVideoContent();
             _downloadAudio = videoContent.DownloadAudio;
             _downloadVideo = videoContent.DownloadVideo;
             _downloadDanmaku = videoContent.DownloadDanmaku;
             _downloadSubtitle = videoContent.DownloadSubtitle;
             _downloadCover = videoContent.DownloadCover;
 
-            directory = SettingsManager.Instance.GetSaveVideoRootPath();
+            directory = _settingsStore.Settings.GetSaveVideoRootPath();
         }
         else
         {
@@ -302,7 +307,7 @@ internal class AddToDownloadService
                 while (page.VideoQuality == null && retry < 5)
                 {
                     // 执行解析任务
-                    Utils.VideoPageInfo(_videoInfoService.GetVideoStream(page), page);
+                    Utils.VideoPageInfo(_videoInfoService.GetVideoStream(page), page, _settingsStore);
                     retry++;
                 }
 
@@ -374,7 +379,7 @@ internal class AddToDownloadService
                     {
                         // eventAggregator.GetEvent<MessageEvent>().Publish($"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloaded")}");
                         // isDownloaded = true;
-                        var repeatDownloadStrategy = SettingsManager.Instance.GetRepeatDownloadStrategy();
+                        var repeatDownloadStrategy = _settingsStore.Settings.GetRepeatDownloadStrategy();
                         switch (repeatDownloadStrategy)
                         {
                             case RepeatDownloadStrategy.Ask:
@@ -454,7 +459,7 @@ internal class AddToDownloadService
                 }
 
                 // 文件路径
-                var fileNameParts = SettingsManager.Instance.GetFileNameParts();
+                var fileNameParts = _settingsStore.Settings.GetFileNameParts();
                 var fileName = FileNameBuilder.Create(fileNameParts)
                     .SetSection(Format.FormatFileName(sectionName))
                     .SetMainTitle(Format.FormatFileName(_videoInfoView.Title))
@@ -475,7 +480,7 @@ internal class AddToDownloadService
                     .SetUpName(Format.FormatFileName(ownerName));
 
                 // 序号设置
-                var orderFormat = SettingsManager.Instance.GetOrderFormat();
+                var orderFormat = _settingsStore.Settings.GetOrderFormat();
                 switch (orderFormat)
                 {
                     case OrderFormat.Natural:
@@ -489,7 +494,7 @@ internal class AddToDownloadService
                 // 合成绝对路径
                 var filePath = Path.Combine(directory, fileName.RelativePath());
 
-                if (SettingsManager.Instance.IsRepeatFileAutoAddNumberSuffix())
+                if (_settingsStore.Settings.IsRepeatFileAutoAddNumberSuffix())
                 {
                     // 如果存在同名文件，自动重命名
                     // todo 如果重新下载呢。还没想好
@@ -588,7 +593,7 @@ internal class AddToDownloadService
                     PlayUrl = page.PlayUrl,
                 };
 
-                if (SettingsManager.Instance.GetVideoContent()
+                if (_settingsStore.Settings.GetVideoContent()
                         .GenerateMovieMetadata && _downloadVideo)
                 {
                     downloadingItem.Metadata = BuildMovieMetadata(page);

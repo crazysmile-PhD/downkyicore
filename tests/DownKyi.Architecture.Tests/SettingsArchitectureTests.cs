@@ -22,6 +22,15 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi", "ViewModels", "Friends", "ViewFollowerViewModel.cs")]
     [InlineData("DownKyi", "ViewModels", "Friends", "ViewFollowingViewModel.cs")]
     [InlineData("DownKyi", "Services", "Account", "UserSessionCoordinator.cs")]
+    [InlineData("DownKyi", "Services", "VideoInfoService.cs")]
+    [InlineData("DownKyi", "Services", "BangumiInfoService.cs")]
+    [InlineData("DownKyi", "Services", "CheeseInfoService.cs")]
+    [InlineData("DownKyi", "Services", "Utils.cs")]
+    [InlineData("DownKyi", "Services", "Download", "AddToDownloadService.cs")]
+    [InlineData("DownKyi", "Services", "Download", "AddToDownloadServiceFactory.cs")]
+    [InlineData("DownKyi", "Services", "Media", "ContentDownloadCoordinator.cs")]
+    [InlineData("DownKyi", "Services", "Video", "VideoParseCoordinator.cs")]
+    [InlineData("DownKyi", "Services", "Video", "VideoDetailWorkflowCoordinator.cs")]
     public void MigratedApplicationOwnersDoNotReachIntoTheSettingsSingleton(params string[] pathParts)
     {
         var source = File.ReadAllText(Path.Combine([RepositoryRoot, .. pathParts]));

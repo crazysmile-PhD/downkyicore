@@ -21,9 +21,14 @@ internal class VideoInfoService : IInfoService
 {
     private readonly VideoView? _videoView;
     private readonly CancellationToken _cancellationToken;
+    private readonly ISettingsStore _settingsStore;
 
-    public VideoInfoService(string? input, CancellationToken cancellationToken = default)
+    public VideoInfoService(
+        string? input,
+        ISettingsStore settingsStore,
+        CancellationToken cancellationToken = default)
     {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _cancellationToken = cancellationToken;
         if (input == null)
         {
@@ -120,7 +125,7 @@ internal class VideoInfoService : IInfoService
             }
 
             // 文件命名中的时间格式
-            var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
+            var timeFormat = _settingsStore.Settings.GetFileNamePartTimeFormat();
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(_videoView.Pubdate);
@@ -150,7 +155,7 @@ internal class VideoInfoService : IInfoService
             return videoSections;
         }
 
-        var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
+        var timeFormat = _settingsStore.Settings.GetFileNamePartTimeFormat();
         var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);
 
         foreach (var section in _videoView.UgcSeason.Sections)
@@ -277,7 +282,7 @@ internal class VideoInfoService : IInfoService
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var playUrl = SettingsManager.Instance.VideoParseType switch
+        var playUrl = _settingsStore.Settings.VideoParseType switch
         {
             0 => VideoStreamApi.GetVideoPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken),
             1 => VideoStreamApi.GetVideoPlayUrlWebPage(page.Avid, page.Bvid, page.Cid, page.Page, cancellationToken),

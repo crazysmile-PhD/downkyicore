@@ -10,7 +10,8 @@ public sealed class VideoDetailWorkflowCoordinatorTests
     [Fact]
     public void StartingNewOperationCancelsPreviousGeneration()
     {
-        using var coordinator = new VideoDetailWorkflowCoordinator();
+        using var settings = new TestSettingsStore();
+        using var coordinator = new VideoDetailWorkflowCoordinator(settings.Store);
 
         var first = coordinator.StartOperation();
         var second = coordinator.StartOperation();

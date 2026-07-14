@@ -1140,6 +1140,7 @@ contracts:
   - Existing downloaded/downloading records must be checked before inserting duplicates.
   - Video-detail receives `IVideoDetailDownloadCoordinator`; remaining legacy media ViewModels receive the factory until their add flows move behind the shared coordinator.
   - The add service receives list/storage owners explicitly and cannot resolve them through App.
+  - Add factory, content coordinator, and info-service construction share the injected settings owner; file naming, quality selection, and duplicate policy cannot read a global singleton.
 hazards:
   - Running add logic on stale VideoInfoView snapshots can enqueue wrong media.
   - Duplicate dialog paths can accidentally remove completed records.
@@ -1369,6 +1370,8 @@ inbound:
   - legacy dialogs and download/friend ViewModels
   - service.account-session
   - service.download-runtime
+  - service.video-parse-coordinator
+  - service.download-add
 outbound:
   - core.legacy-settings-migration
   - external.filesystem
@@ -1377,6 +1380,7 @@ contracts:
   - App and migrated ViewModels cannot reach through `SettingsManager.Instance`.
   - Basic, network, video, danmaku, and about settings pages use the same injected owner for reads and writes.
   - MainWindow has no parameterless singleton fallback; Host composition supplies both its ViewModel and settings owner.
+  - Video, bangumi, and cheese info services receive settings from their parse/add coordinator; manually constructed info services cannot fall back to global state.
   - The persisted JSON property names, enum values, and storage path remain compatible with existing user settings.
   - Shutdown flush is awaited without synchronously blocking the UI thread.
 hazards:

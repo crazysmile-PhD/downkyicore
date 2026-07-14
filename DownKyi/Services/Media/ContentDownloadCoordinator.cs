@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Core.Settings;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
 using Prism.Events;
@@ -30,6 +31,13 @@ internal interface IContentDownloadCoordinator
 
 internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
 {
+    private readonly ISettingsStore _settingsStore;
+
+    public ContentDownloadCoordinator(ISettingsStore settingsStore)
+    {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+    }
+
     public Task<int> AddAsync(
         AddToDownloadService addToDownloadService,
         IReadOnlyList<ContentDownloadItem> items,
@@ -57,8 +65,8 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
 
                 IInfoService infoService = item.Kind switch
                 {
-                    DownloadInfoKind.Video => new VideoInfoService(item.Source),
-                    DownloadInfoKind.Bangumi => new BangumiInfoService(item.Source),
+                    DownloadInfoKind.Video => new VideoInfoService(item.Source, _settingsStore),
+                    DownloadInfoKind.Bangumi => new BangumiInfoService(item.Source, _settingsStore),
                     _ => throw new ArgumentOutOfRangeException(nameof(items), item.Kind, null)
                 };
 

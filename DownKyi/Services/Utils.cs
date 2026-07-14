@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -17,8 +18,9 @@ internal static class Utils
     /// </summary>
     /// <param name="playUrl"></param>
     /// <param name="page"></param>
-    internal static void VideoPageInfo(PlayUrl? playUrl, VideoPage page)
+    internal static void VideoPageInfo(PlayUrl? playUrl, VideoPage page, ISettingsStore settingsStore)
     {
+        ArgumentNullException.ThrowIfNull(settingsStore);
         if (playUrl == null)
         {
             return;
@@ -28,10 +30,11 @@ internal static class Utils
         page.PlayUrl = playUrl;
 
         // 获取设置
-        var userInfo = SettingsManager.Instance.GetUserInfo();
-        var defaultQuality = SettingsManager.Instance.GetQuality();
-        var videoCodecs = SettingsManager.Instance.GetVideoCodecs();
-        var defaultAudioQuality = SettingsManager.Instance.GetAudioQuality();
+        var settings = settingsStore.Settings;
+        var userInfo = settings.GetUserInfo();
+        var defaultQuality = settings.GetQuality();
+        var videoCodecs = settings.GetVideoCodecs();
+        var defaultAudioQuality = settings.GetAudioQuality();
 
         // 未登录时，最高仅720P
         if (userInfo.Mid == -1)
