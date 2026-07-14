@@ -32,6 +32,7 @@ using DownKyi.Services.Account;
 using DownKyi.Services.Download;
 using DownKyi.Services.Friends;
 using DownKyi.Services.Toolbox;
+using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.Dialogs;
@@ -120,6 +121,7 @@ internal partial class App : PrismApplication, IDisposable
         containerRegistry.RegisterSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
         containerRegistry.RegisterSingleton<ILoginCoordinator, LoginCoordinator>();
         containerRegistry.RegisterSingleton<IFriendRelationCoordinator, FriendRelationCoordinator>();
+        containerRegistry.RegisterSingleton<ISeasonsSeriesCoordinator, SeasonsSeriesCoordinator>();
         containerRegistry.RegisterSingleton<IClipboardService, AvaloniaClipboardService>();
         containerRegistry.RegisterSingleton<IFilePickerService, AvaloniaFilePickerService>();
 

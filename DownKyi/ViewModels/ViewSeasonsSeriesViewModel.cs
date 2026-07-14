@@ -1,23 +1,25 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Media.Imaging;
 using DownKyi.Commands;
+using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.VideoStream;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
 using DownKyi.CustomControl;
 using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
-using DownKyi.Services;
 using DownKyi.Services.Download;
+using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Prism.Commands;
@@ -29,18 +31,16 @@ namespace DownKyi.ViewModels;
 internal class ViewSeasonsSeriesViewModel : ViewModelBase
 {
     public const string Tag = "PageSeasonsSeries";
-    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
-
-    private CancellationTokenSource? tokenSource;
-
-    private long mid = -1;
-    private long id = -1;
-    private int type;
-
-    // 每页视频数量，暂时在此写死，以后在设置中增加选项
     private const int VideoNumberInPage = 30;
+    private const string PlaceholderCover = "avares://DownKyi/Resources/video-placeholder.png";
 
-    #region 页面属性申明
+    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
+    private readonly ISeasonsSeriesCoordinator _coordinator;
+    private CancellationTokenSource? _loadCancellation;
+    private CancellationTokenSource? _downloadCancellation;
+    private long _mid = -1;
+    private long _id = -1;
+    private SeasonsSeriesKind _kind;
 
     private string _pageName = Tag;
 
@@ -50,7 +50,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         set => SetProperty(ref _pageName, value);
     }
 
-    private bool _loading;
+    private bool _loading = true;
 
     public bool Loading
     {
@@ -114,9 +114,9 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         set => SetProperty(ref _pager, value);
     }
 
-    private ObservableCollection<ChannelMedia> _medias = new();
+    private RangeObservableCollection<ChannelMedia> _medias = new();
 
-    public ObservableCollection<ChannelMedia> Medias
+    public RangeObservableCollection<ChannelMedia> Medias
     {
         get => _medias;
         private set => SetProperty(ref _medias, value);
@@ -130,199 +130,215 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         set => SetProperty(ref _isSelectAll, value);
     }
 
-    #endregion
-
     public ViewSeasonsSeriesViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        IAddToDownloadServiceFactory addToDownloadServiceFactory) : base(
-        eventAggregator)
+        IAddToDownloadServiceFactory addToDownloadServiceFactory,
+        ISeasonsSeriesCoordinator coordinator) : base(eventAggregator)
     {
-        DialogService = dialogService;
+        DialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _addToDownloadServiceFactory = addToDownloadServiceFactory
             ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
-
-        #region 属性初始化
-
-        // 初始化loading
-        Loading = true;
-        LoadingVisibility = false;
-        NoDataVisibility = false;
+        _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
 
         ArrowBack = NavigationIcon.Instance().ArrowBack;
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
-        // 下载管理按钮
         DownloadManage = ButtonIcon.Instance().DownloadManage;
         DownloadManage.Height = 24;
         DownloadManage.Width = 24;
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
-
-        Medias = new ObservableCollection<ChannelMedia>();
-
-        #endregion
     }
 
-    #region 命令申明
-
-    // 返回事件
     private DelegateCommand? _backSpaceCommand;
 
     public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
 
-    /// <summary>
-    /// 返回事件
-    /// </summary>
     protected internal override void ExecuteBackSpace()
     {
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
-
-        // 结束任务
-        tokenSource?.Cancel();
-
-        NavigationParam parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
-    }
-
-    // 前往下载管理页面
-    private DelegateCommand? _downloadManagerCommand;
-
-    public DelegateCommand DownloadManagerCommand => _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
-
-    /// <summary>
-    /// 前往下载管理页面
-    /// </summary>
-    private void ExecuteDownloadManagerCommand()
-    {
-        NavigationParam parameter = new NavigationParam
-        {
-            ViewName = ViewDownloadManagerViewModel.Tag,
-            ParentViewName = Tag,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
-    }
-
-    // 全选按钮点击事件
-    private DelegateCommand<object>? _selectAllCommand;
-
-    public DelegateCommand<object> SelectAllCommand => _selectAllCommand ??= new DelegateCommand<object>(ExecuteSelectAllCommand);
-
-    /// <summary>
-    /// 全选按钮点击事件
-    /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteSelectAllCommand(object parameter)
-    {
-        if (IsSelectAll)
-        {
-            foreach (var item in Medias)
-            {
-                item.IsSelected = true;
-            }
-        }
-        else
-        {
-            foreach (var item in Medias)
-            {
-                item.IsSelected = false;
-            }
-        }
-    }
-
-    // 列表选择事件
-    private DelegateCommand<object>? _mediasCommand;
-
-    public DelegateCommand<object> MediasCommand => _mediasCommand ??= new DelegateCommand<object>(ExecuteMediasCommand);
-
-    /// <summary>
-    /// 列表选择事件
-    /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteMediasCommand(object parameter)
-    {
-        if (parameter is not IList selectedMedia)
+        CancelOperations();
+        if (TryNavigateBack())
         {
             return;
         }
 
-        IsSelectAll = selectedMedia.Count == Medias.Count;
+        EventAggregator.GetEvent<NavigationEvent>().Publish(new NavigationParam
+        {
+            ViewName = ParentView,
+            ParentViewName = null,
+            Parameter = null
+        });
     }
 
-    // 添加选中项到下载列表事件
+    private DelegateCommand? _downloadManagerCommand;
+
+    public DelegateCommand DownloadManagerCommand =>
+        _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
+
+    private void ExecuteDownloadManagerCommand()
+    {
+        EventAggregator.GetEvent<NavigationEvent>().Publish(new NavigationParam
+        {
+            ViewName = ViewDownloadManagerViewModel.Tag,
+            ParentViewName = Tag,
+            Parameter = null
+        });
+    }
+
+    private DelegateCommand<object>? _selectAllCommand;
+
+    public DelegateCommand<object> SelectAllCommand =>
+        _selectAllCommand ??= new DelegateCommand<object>(ExecuteSelectAllCommand);
+
+    private void ExecuteSelectAllCommand(object parameter)
+    {
+        foreach (var item in Medias)
+        {
+            item.IsSelected = IsSelectAll;
+        }
+    }
+
+    private DelegateCommand<object>? _mediasCommand;
+
+    public DelegateCommand<object> MediasCommand =>
+        _mediasCommand ??= new DelegateCommand<object>(ExecuteMediasCommand);
+
+    private void ExecuteMediasCommand(object parameter)
+    {
+        if (parameter is IList selectedMedia)
+        {
+            IsSelectAll = selectedMedia.Count == Medias.Count;
+        }
+    }
+
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand =>
+        _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
 
-    /// <summary>
-    /// 添加选中项到下载列表事件
-    /// </summary>
-    // 添加所有视频到下载列表事件
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand =>
+        _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
 
-    /// <summary>
-    /// 添加所有视频到下载列表事件
-    /// </summary>
-    #endregion
-
-    /// <summary>
-    /// 添加到下载
-    /// </summary>
-    /// <param name="isOnlySelected"></param>
-    private async Task AddToDownloadAsync(bool isOnlySelected)
+    private async Task AddToDownloadAsync(bool onlySelected)
     {
-        // 频道里只有视频
         var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
-
-        // 选择文件夹
         var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-
-        // 视频计数
-        var i = 0;
-        await Task.Run(async () =>
-        {
-            // 为了避免执行其他操作时，
-            // Medias变化导致的异常
-            var list = Medias.ToList();
-
-            // 添加到下载
-            foreach (var media in list)
-            {
-                // 只下载选中项，跳过未选中项
-                if (isOnlySelected && !media.IsSelected)
-                {
-                    continue;
-                }
-
-                /// 有分P的就下载全部
-
-                // 开启服务
-                var videoInfoService = new VideoInfoService(media.Bvid);
-
-                addToDownloadService.SetVideoInfoService(videoInfoService);
-                addToDownloadService.GetVideo();
-                addToDownloadService.ParseVideo(videoInfoService);
-                // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
-            }
-        }).ConfigureAwait(true);
-
         if (directory == null)
         {
             return;
         }
 
-        // 通知用户添加到下载列表的结果
-        EventAggregator.GetEvent<MessageEvent>().Publish(i <= 0
-            ? DictionaryResource.GetString("TipAddDownloadingZero")
-            : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var items = Medias
+            .Select(media => new SeasonsSeriesDownloadItem(media.Bvid, media.IsSelected))
+            .ToArray();
+        try
+        {
+            var addedCount = await _coordinator
+                .AddToDownloadAsync(
+                    addToDownloadService,
+                    items,
+                    onlySelected,
+                    directory,
+                    EventAggregator,
+                    DialogService,
+                    cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
+                ? DictionaryResource.GetString("TipAddDownloadingZero")
+                : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+        {
+            LogManager.Error(Tag, e);
+            EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
+        }
+    }
+
+    private async Task UpdatePageAsync(int current)
+    {
+        var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
+        IsEnabled = false;
+        Medias.Clear();
+        IsSelectAll = false;
+        LoadingVisibility = true;
+        NoDataVisibility = false;
+
+        try
+        {
+            var archives = await _coordinator
+                .LoadPageAsync(_mid, _id, _kind, current, VideoNumberInPage, cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_loadCancellation?.Token != cancellationToken)
+            {
+                return;
+            }
+
+            if (archives.Count == 0)
+            {
+                LoadingVisibility = false;
+                NoDataVisibility = true;
+                return;
+            }
+
+            Medias.AddRange(archives.Select(CreateMedia));
+            LoadingVisibility = false;
+            NoDataVisibility = false;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+        {
+            LogManager.Error(Tag, e);
+            if (_loadCancellation?.Token == cancellationToken)
+            {
+                LoadingVisibility = false;
+                NoDataVisibility = true;
+            }
+        }
+        finally
+        {
+            if (_loadCancellation?.Token == cancellationToken)
+            {
+                IsEnabled = true;
+            }
+        }
+    }
+
+    private ChannelMedia CreateMedia(SpaceSeasonsSeriesArchives video)
+    {
+        var cover = string.IsNullOrWhiteSpace(video.Pic)
+            ? PlaceholderCover
+            : video.Pic.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? video.Pic
+                : $"https:{video.Pic}";
+        var play = video.Stat?.View > 0 ? Format.FormatNumber(video.Stat.View) : "--";
+        var createTime = DateTimeOffset
+            .FromUnixTimeSeconds(video.Ctime)
+            .ToLocalTime()
+            .ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
+
+        return new ChannelMedia(EventAggregator)
+        {
+            Avid = video.Aid,
+            Bvid = video.Bvid,
+            Cover = cover,
+            Duration = Format.FormatDuration3(video.Duration),
+            Title = video.Title,
+            PlayNumber = play,
+            CreateTime = createTime
+        };
     }
 
     private void OnCountChangedPager(object? sender, EventArgs e)
@@ -337,334 +353,81 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
             return;
         }
 
-        Medias.Clear();
-        IsSelectAll = false;
-        LoadingVisibility = true;
-        NoDataVisibility = false;
+        RunFireAndForget(
+            UpdatePageAsync(((CustomPagerViewModel)sender!).ProposedCurrent),
+            nameof(UpdatePageAsync));
+    }
 
-        //UpdateChannel(current);
-
-        if (type == 1)
+    private void ReplacePager(CustomPagerViewModel pager)
+    {
+        if (Pager != null)
         {
-            RunFireAndForget(UpdateSeasonsAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateSeasonsAsync));
+            Pager.CurrentChanging -= OnCurrentChangedPager;
+            Pager.CountChanged -= OnCountChangedPager;
         }
 
-        if (type == 2)
-        {
-            RunFireAndForget(UpdateSeriesAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateSeriesAsync));
-        }
-
+        Pager = pager;
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
     }
 
-    //private async Task UpdateChannelAsync(int current)
-    //{
-    //    // 是否正在获取数据
-    //    // 在所有的退出分支中都需要设为true
-    //    IsEnabled = false;
-
-    //    await Task.Run(() =>
-    //    {
-    //        CancellationToken cancellationToken = tokenSource.Token;
-
-    //        var channels = Core.BiliApi.Users.UserSpace.GetChannelVideoList(mid, cid, current, VideoNumberInPage);
-    //        if (channels == null || channels.Count == 0)
-    //        {
-    //            // 没有数据，UI提示
-    //            LoadingVisibility = Visibility.Collapsed;
-    //            NoDataVisibility = Visibility.Visible;
-    //            return;
-    //        }
-
-    //        foreach (var video in channels)
-    //        {
-    //            if (video.Cid == 0)
-    //            {
-    //                continue;
-    //            }
-
-    //            // 查询、保存封面
-    //            string coverUrl = video.Pic;
-    //            BitmapImage cover;
-    //            if (coverUrl == null || coverUrl == "")
-    //            {
-    //                cover = null; // new BitmapImage(new Uri($"pack://application:,,,/Resources/video-placeholder.png"));
-    //            }
-    //            else
-    //            {
-    //                if (!coverUrl.ToLower().StartsWith("http"))
-    //                {
-    //                    coverUrl = $"https:{video.Pic}";
-    //                }
-
-    //                StorageCover storageCover = new StorageCover();
-    //                cover = storageCover.GetCoverThumbnail(video.Aid, video.Bvid, -1, coverUrl, 200, 125);
-    //            }
-
-    //            // 播放数
-    //            string play = string.Empty;
-    //            if (video.Stat != null)
-    //            {
-    //                if (video.Stat.View > 0)
-    //                {
-    //                    play = Format.FormatNumber(video.Stat.View);
-    //                }
-    //                else
-    //                {
-    //                    play = "--";
-    //                }
-    //            }
-    //            else
-    //            {
-    //                play = "--";
-    //            }
-
-    //            DateTime startTime = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1)); // 当地时区
-    //            DateTime dateCTime = startTime.AddSeconds(video.Ctime);
-    //            string ctime = dateCTime.ToString("yyyy-MM-dd");
-
-    //            App.PropertyChangeAsync(new Action(() =>
-    //            {
-    //                ChannelMedia media = new ChannelMedia(eventAggregator)
-    //                {
-    //                    Avid = video.Aid,
-    //                    Bvid = video.Bvid,
-    //                    Cover = cover ?? new BitmapImage(new Uri($"pack://application:,,,/Resources/video-placeholder.png")),
-    //                    Duration = Format.FormatDuration3(video.Duration),
-    //                    Title = video.Title,
-    //                    PlayNumber = play,
-    //                    CreateTime = ctime
-    //                };
-    //                Medias.Add(media);
-
-    //                LoadingVisibility = Visibility.Collapsed;
-    //                NoDataVisibility = Visibility.Collapsed;
-    //            }));
-
-    //            // 判断是否该结束线程，若为true，跳出循环
-    //            if (cancellationToken.IsCancellationRequested)
-    //            {
-    //                break;
-    //            }
-    //        }
-
-    //    }, (tokenSource = new CancellationTokenSource()).Token);
-
-    //    IsEnabled = true;
-    //}
-
-    private async Task UpdateSeasonsAsync(int current)
-    {
-        // 是否正在获取数据
-        // 在所有的退出分支中都需要设为true
-        IsEnabled = false;
-        var cancellationToken = ReplaceCancellationSource(ref tokenSource);
-
-        await Task.Run(() =>
-        {
-            var seasons = Core.BiliApi.Users.UserSpace.GetSeasonsDetail(mid, id, current, VideoNumberInPage);
-            if (seasons == null || seasons.Meta.Total == 0)
-            {
-                // 没有数据，UI提示
-                LoadingVisibility = false;
-                NoDataVisibility = true;
-                return;
-            }
-
-            foreach (var video in seasons.Archives)
-            {
-                //if (video.Cid == 0)
-                //{
-                //    continue;
-                //}
-
-                // 查询、保存封面
-                var coverUrl = video.Pic;
-                if (!coverUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                {
-                    coverUrl = $"https:{video.Pic}";
-                }
-
-                // 播放数
-                var play = string.Empty;
-                if (video.Stat != null)
-                {
-                    if (video.Stat.View > 0)
-                    {
-                        play = Format.FormatNumber(video.Stat.View);
-                    }
-                    else
-                    {
-                        play = "--";
-                    }
-                }
-                else
-                {
-                    play = "--";
-                }
-
-                var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
-                var dateCTime = startTime.AddSeconds(video.Ctime);
-                var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
-
-                App.PropertyChangeAsync(new Action(() =>
-                {
-                    var media = new ChannelMedia(EventAggregator)
-                    {
-                        Avid = video.Aid,
-                        Bvid = video.Bvid,
-                        Cover = coverUrl ?? "avares://DownKyi/Resources/video-placeholder.png",
-                        Duration = Format.FormatDuration3(video.Duration),
-                        Title = video.Title,
-                        PlayNumber = play,
-                        CreateTime = ctime
-                    };
-                    Medias.Add(media);
-
-                    LoadingVisibility = false;
-                    NoDataVisibility = false;
-                }));
-
-                // 判断是否该结束线程，若为true，跳出循环
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-            }
-        }, cancellationToken).ConfigureAwait(true);
-
-        IsEnabled = true;
-    }
-
-    private async Task UpdateSeriesAsync(int current)
-    {
-        // 是否正在获取数据
-        // 在所有的退出分支中都需要设为true
-        IsEnabled = false;
-        var cancellationToken = ReplaceCancellationSource(ref tokenSource);
-
-        await Task.Run(() =>
-        {
-            var meta = Core.BiliApi.Users.UserSpace.GetSeriesMeta(id);
-            var series = Core.BiliApi.Users.UserSpace.GetSeriesDetail(mid, id, current, VideoNumberInPage);
-            if (series == null || meta?.Meta.Total == 0)
-            {
-                // 没有数据，UI提示
-                LoadingVisibility = false;
-                NoDataVisibility = true;
-                return;
-            }
-
-            foreach (var video in series.Archives)
-            {
-                //if (video.Cid == 0)
-                //{
-                //    continue;
-                //}
-
-                // 查询、保存封面
-                var coverUrl = video.Pic;
-                if (!coverUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                {
-                    coverUrl = $"https:{video.Pic}";
-                }
-
-                // 播放数
-                var play = string.Empty;
-                if (video.Stat != null)
-                {
-                    if (video.Stat.View > 0)
-                    {
-                        play = Format.FormatNumber(video.Stat.View);
-                    }
-                    else
-                    {
-                        play = "--";
-                    }
-                }
-                else
-                {
-                    play = "--";
-                }
-
-                var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
-                var dateCTime = startTime.AddSeconds(video.Ctime);
-                var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
-
-                App.PropertyChangeAsync(() =>
-                {
-                    var media = new ChannelMedia(EventAggregator)
-                    {
-                        Avid = video.Aid,
-                        Bvid = video.Bvid,
-                        Cover = coverUrl ?? "avares://DownKyi/Resources/video-placeholder.png",
-                        Duration = Format.FormatDuration3(video.Duration),
-                        Title = video.Title,
-                        PlayNumber = play,
-                        CreateTime = ctime
-                    };
-                    Medias.Add(media);
-
-                    LoadingVisibility = false;
-                    NoDataVisibility = false;
-                });
-
-                // 判断是否该结束线程，若为true，跳出循环
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-            }
-        }, cancellationToken).ConfigureAwait(true);
-
-        IsEnabled = true;
-    }
-
-    /// <summary>
-    /// 导航到VideoDetail页面时执行
-    /// </summary>
-    /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
-
         DownloadManage = ButtonIcon.Instance().DownloadManage;
         DownloadManage.Height = 24;
         DownloadManage.Width = 24;
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-        // 根据传入参数不同执行不同任务
         var parameter = navigationContext.Parameters.GetValue<Dictionary<string, object>>("Parameter");
         if (parameter == null)
         {
             return;
         }
 
+        CancelOperations();
+        IsEnabled = true;
         Medias.Clear();
         IsSelectAll = false;
-
-        mid = (long)parameter["mid"];
-        id = (long)parameter["id"];
-        type = (int)parameter["type"];
+        _mid = (long)parameter["mid"];
+        _id = (long)parameter["id"];
+        _kind = (SeasonsSeriesKind)(int)parameter["type"];
         Title = (string)parameter["name"];
         var count = (int)parameter["count"];
 
-        // 页面选择
-        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling((double)count / VideoNumberInPage));
-        Pager.CurrentChanging += OnCurrentChangedPager;
-        Pager.CountChanged += OnCountChangedPager;
+        ReplacePager(new CustomPagerViewModel(
+            1,
+            (int)Math.Ceiling((double)count / VideoNumberInPage)));
         Pager.Current = 1;
+    }
+
+    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    {
+        CancelOperations();
+        IsEnabled = true;
+        LoadingVisibility = false;
+        base.OnNavigatedFrom(navigationContext);
+    }
+
+    private void CancelOperations()
+    {
+        CancelAndDispose(ref _loadCancellation);
+        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing && !IsDisposed)
         {
-            tokenSource?.Cancel();
-            tokenSource?.Dispose();
-            tokenSource = null;
+            CancelOperations();
+            if (Pager != null)
+            {
+                Pager.CurrentChanging -= OnCurrentChangedPager;
+                Pager.CountChanged -= OnCountChangedPager;
+            }
         }
 
         base.Dispose(disposing);

@@ -76,6 +76,8 @@ flowchart TD
     AccountSession["service.account-session\nServices/Account"]
     FriendVms["viewmodel.friend-relations\nFriends ViewModels"]
     FriendRelations["service.friend-relations\nFriendRelationCoordinator.cs"]
+    SeasonsSeriesVm["viewmodel.seasons-series\nViewSeasonsSeriesViewModel.cs"]
+    SeasonsSeries["service.seasons-series\nSeasonsSeriesCoordinator.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
     BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
     BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
@@ -126,6 +128,8 @@ flowchart TD
     AccountSession -->|calls| BiliApi
     FriendVms -->|loads pages| FriendRelations
     FriendRelations -->|calls| BiliApi
+    SeasonsSeriesVm -->|loads and queues| SeasonsSeries
+    SeasonsSeries -->|calls| BiliApi
     BiliHelperVm -->|calls| BiliHelper
     BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
@@ -484,6 +488,58 @@ tests:
   - test.architecture-boundaries
 ```
 
+### viewmodel.seasons-series
+
+```yaml
+id: viewmodel.seasons-series
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewSeasonsSeriesViewModel.cs
+responsibility: Projects one season/series page, selection state, pager state, navigation, and add-to-download results.
+inbound:
+  - viewmodel.user-space
+outbound:
+  - service.seasons-series
+  - service.download-add
+contracts:
+  - Season and series pages share one result projection and one batched collection update.
+  - Canceling directory selection returns before parsing or queueing any media.
+  - Navigation, pager replacement, and disposal cancel outstanding page/download work and detach pager events.
+  - Back navigation uses the Prism journal when available before publishing the compatibility navigation event.
+hazards:
+  - Duplicated season/series loops drift in cover normalization, dates, loading flags, and cancellation behavior.
+  - Running parse/add after a null directory silently queues work the user canceled.
+tests:
+  - test.seasons-series
+  - test.download-add
+  - test.architecture-boundaries
+```
+
+### service.seasons-series
+
+```yaml
+id: service.seasons-series
+type: service
+paths:
+  - DownKyi/Services/UserSpace/SeasonsSeriesCoordinator.cs
+responsibility: Loads season/series archive snapshots and performs legacy per-video parse/add work away from the UI thread.
+inbound:
+  - viewmodel.seasons-series
+outbound:
+  - core.bili-api
+  - service.download-add
+contracts:
+  - `SeasonsSeriesKind` selects the matching Bilibili endpoint and invalid values fail explicitly.
+  - Page calls check caller cancellation before and after synchronous legacy API work.
+  - Add work checks cancellation between items and receives a confirmed non-empty directory.
+hazards:
+  - Legacy synchronous page and parse calls cannot abort in flight; cancellation blocks subsequent work and stale UI projection.
+  - The add path still crosses Prism dialog/event compatibility types until PR 25-29 removes the bridge.
+tests:
+  - test.seasons-series
+  - test.architecture-boundaries
+```
+
 ### viewmodel.video-detail
 
 ```yaml
@@ -746,6 +802,7 @@ inbound:
   - service.bili-helper
   - service.account-session
   - service.friend-relations
+  - service.seasons-series
 outbound:
   - core.web-client
   - core.logging
@@ -1316,6 +1373,15 @@ test.friend-relations:
     - friend relation ViewModels cannot regain Task.Run, dispatcher-per-item projection, or direct Dispatcher access
     - relation page projection uses AddRange and pager replacement detaches old event handlers
 
+test.seasons-series:
+  paths:
+    - tests/DownKyi.Tests/SeasonsSeriesCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - pre-canceled season and series page requests cannot start user-space API work
+    - season/series ViewModel cannot regain Task.Run, App UI dispatch, duplicated page methods, or dead channel loader code
+    - page projection uses AddRange and directory cancellation precedes the coordinator add call
+
 test.download-list-state:
   paths:
     - tests/DownKyi.Tests/DownloadListStateTests.cs
@@ -1442,6 +1508,7 @@ test.architecture-boundaries:
     - Bili Helper CPU work cannot move back into the ViewModel or lose core-loop cancellation
     - account network and cookie work cannot move back into index/login ViewModels
     - friend relation API work cannot move back into ViewModels or per-item dispatcher posts
+    - season/series loading and add work cannot move back into the ViewModel or bypass directory cancellation
 
 test.ui-smoke:
   paths:

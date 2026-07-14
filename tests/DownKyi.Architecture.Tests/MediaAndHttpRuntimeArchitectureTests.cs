@@ -205,6 +205,36 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void SeasonsSeriesWorkUsesOneCancellableSnapshotPipeline()
+    {
+        var viewModelSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "ViewSeasonsSeriesViewModel.cs"));
+        var coordinatorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "UserSpace",
+            "SeasonsSeriesCoordinator.cs"));
+
+        Assert.DoesNotContain("Task.Run", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("App.PropertyChangeAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("UpdateSeasonsAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("UpdateSeriesAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("UpdateChannelAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("Medias.AddRange", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("ISeasonsSeriesCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
+
+        var directoryCancellation = viewModelSource.IndexOf("if (directory == null)", StringComparison.Ordinal);
+        var addCall = viewModelSource.IndexOf(".AddToDownloadAsync(", StringComparison.Ordinal);
+        Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
