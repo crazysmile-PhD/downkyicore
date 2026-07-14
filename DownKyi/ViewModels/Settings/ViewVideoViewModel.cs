@@ -30,6 +30,7 @@ internal class ViewVideoViewModel : ViewModelBase
 
     private bool _isOnNavigatedTo;
     private readonly IFilePickerService _filePickerService;
+    private readonly ISettingsStore _settingsStore;
 
     #region 页面属性申明
 
@@ -270,9 +271,11 @@ internal class ViewVideoViewModel : ViewModelBase
 
     public ViewVideoViewModel(
         IEventAggregator eventAggregator,
-        IFilePickerService filePickerService) : base(eventAggregator)
+        IFilePickerService filePickerService,
+        ISettingsStore settingsStore) : base(eventAggregator)
     {
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         #region 属性初始化
 
         // 优先下载的视频编码
@@ -305,7 +308,7 @@ internal class ViewVideoViewModel : ViewModelBase
             // 当前显示的命名格式part
             var fileName = SelectedFileName.Select(item => item.Id).ToList();
 
-            var isSucceed = SettingsManager.Instance.SetFileNameParts(fileName);
+            var isSucceed = _settingsStore.Settings.SetFileNameParts(fileName);
             PublishTip(isSucceed);
         };
 
@@ -361,46 +364,46 @@ internal class ViewVideoViewModel : ViewModelBase
         _isOnNavigatedTo = true;
 
         // 优先下载的视频编码
-        var videoCodecs = SettingsManager.Instance.GetVideoCodecs();
+        var videoCodecs = _settingsStore.Settings.GetVideoCodecs();
         //SelectedVideoCodec = GetVideoCodecsString(videoCodecs);
         SelectedVideoCodec = VideoCodecs.FirstOrDefault(t => t.Id == videoCodecs) ?? VideoCodecs[0];
 
         // 优先下载画质
-        var quality = SettingsManager.Instance.GetQuality();
+        var quality = _settingsStore.Settings.GetQuality();
         SelectedVideoQuality = VideoQualityList.FirstOrDefault(t => t.Id == quality) ?? VideoQualityList[0];
 
         // 优先下载音质
-        var audioQuality = SettingsManager.Instance.GetAudioQuality();
+        var audioQuality = _settingsStore.Settings.GetAudioQuality();
         SelectedAudioQuality = AudioQualityList.FirstOrDefault(t => t.Id == audioQuality) ?? AudioQualityList[0];
 
         // 首选视频解析方式
-        var videoParseType = SettingsManager.Instance.VideoParseType;
+        var videoParseType = _settingsStore.Settings.VideoParseType;
         SelectedVideoParseType = VideoParseTypeList.FirstOrDefault(t => t.Id == videoParseType) ?? VideoParseTypeList[0];
 
         // 是否下载flv视频后转码为mp4
-        var isTranscodingFlvToMp4 = SettingsManager.Instance.GetIsTranscodingFlvToMp4();
+        var isTranscodingFlvToMp4 = _settingsStore.Settings.GetIsTranscodingFlvToMp4();
         IsTranscodingFlvToMp4 = isTranscodingFlvToMp4 == AllowStatus.Yes;
 
         // 是否下载aac音频后转码为mp3
-        var isTranscodingAacToMp3 = SettingsManager.Instance.GetIsTranscodingAacToMp3();
+        var isTranscodingAacToMp3 = _settingsStore.Settings.GetIsTranscodingAacToMp3();
         IsTranscodingAacToMp3 = isTranscodingAacToMp3 == AllowStatus.Yes;
 
-        var ffmpegHardwareAcceleration = SettingsManager.Instance.GetFfmpegHardwareAcceleration();
+        var ffmpegHardwareAcceleration = _settingsStore.Settings.GetFfmpegHardwareAcceleration();
         SelectedFfmpegHardwareAcceleration = FfmpegHardwareAccelerations
                                                  .FirstOrDefault(t => t.Value == ffmpegHardwareAcceleration) ??
                                              FfmpegHardwareAccelerations[0];
 
-        SelectedFfmpegMaxParallelJob = SettingsManager.Instance.GetFfmpegMaxParallelJobs();
+        SelectedFfmpegMaxParallelJob = _settingsStore.Settings.GetFfmpegMaxParallelJobs();
 
         // 是否使用默认下载目录
-        var isUseSaveVideoRootPath = SettingsManager.Instance.GetIsUseSaveVideoRootPath();
+        var isUseSaveVideoRootPath = _settingsStore.Settings.GetIsUseSaveVideoRootPath();
         IsUseDefaultDirectory = isUseSaveVideoRootPath == AllowStatus.Yes;
 
         // 默认下载目录
-        SaveVideoDirectory = SettingsManager.Instance.GetSaveVideoRootPath();
+        SaveVideoDirectory = _settingsStore.Settings.GetSaveVideoRootPath();
 
         // 下载内容
-        var videoContent = SettingsManager.Instance.GetVideoContent();
+        var videoContent = _settingsStore.Settings.GetVideoContent();
 
         DownloadAudio = videoContent.DownloadAudio;
         DownloadVideo = videoContent.DownloadVideo;
@@ -418,7 +421,7 @@ internal class ViewVideoViewModel : ViewModelBase
         }
 
         // 文件命名格式
-        var fileNameParts = SettingsManager.Instance.GetFileNameParts();
+        var fileNameParts = _settingsStore.Settings.GetFileNameParts();
         SelectedFileName.Clear();
         SelectedFileName.AddRange(fileNameParts.Select(x => new DisplayFileNamePart()
         {
@@ -427,10 +430,10 @@ internal class ViewVideoViewModel : ViewModelBase
         }));
 
         // 文件命名中的时间格式
-        SelectedFileNamePartTimeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
+        SelectedFileNamePartTimeFormat = _settingsStore.Settings.GetFileNamePartTimeFormat();
 
         // 文件命名中的序号格式
-        var orderFormat = SettingsManager.Instance.GetOrderFormat();
+        var orderFormat = _settingsStore.Settings.GetOrderFormat();
         OrderFormatDisplay = OrderFormatList.FirstOrDefault(t => t.OrderFormat == orderFormat) ?? OrderFormatList[0];
 
         _isOnNavigatedTo = false;
@@ -456,7 +459,7 @@ internal class ViewVideoViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.Instance.SetVideoCodecs(videoCodecs.Id);
+        var isSucceed = _settingsStore.Settings.SetVideoCodecs(videoCodecs.Id);
         PublishTip(isSucceed);
     }
 
@@ -476,7 +479,7 @@ internal class ViewVideoViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.Instance.SetQuality(resolution.Id);
+        var isSucceed = _settingsStore.Settings.SetQuality(resolution.Id);
         PublishTip(isSucceed);
     }
 
@@ -496,7 +499,7 @@ internal class ViewVideoViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.Instance.SetAudioQuality(quality.Id);
+        var isSucceed = _settingsStore.Settings.SetAudioQuality(quality.Id);
         PublishTip(isSucceed);
     }
 
@@ -517,7 +520,7 @@ internal class ViewVideoViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.Instance.SetVideoParseType(type.Id ?? 1);
+        var isSucceed = _settingsStore.Settings.SetVideoParseType(type.Id ?? 1);
         PublishTip(isSucceed);
     }
 
@@ -533,7 +536,7 @@ internal class ViewVideoViewModel : ViewModelBase
     {
         var isTranscodingFlvToMp4 = IsTranscodingFlvToMp4 ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.Instance.SetIsTranscodingFlvToMp4(isTranscodingFlvToMp4);
+        var isSucceed = _settingsStore.Settings.SetIsTranscodingFlvToMp4(isTranscodingFlvToMp4);
         PublishTip(isSucceed);
     }
 
@@ -549,7 +552,7 @@ internal class ViewVideoViewModel : ViewModelBase
     {
         var isTranscodingAacToMp3 = IsTranscodingAacToMp3 ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.Instance.SetIsTranscodingAacToMp3(isTranscodingAacToMp3);
+        var isSucceed = _settingsStore.Settings.SetIsTranscodingAacToMp3(isTranscodingAacToMp3);
         PublishTip(isSucceed);
     }
 
@@ -565,7 +568,7 @@ internal class ViewVideoViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.Instance.SetFfmpegHardwareAcceleration(acceleration.Value);
+        var isSucceed = _settingsStore.Settings.SetFfmpegHardwareAcceleration(acceleration.Value);
         PublishTip(isSucceed);
     }
 
@@ -581,7 +584,7 @@ internal class ViewVideoViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.Instance.SetFfmpegMaxParallelJobs(maxParallelJobs);
+        var isSucceed = _settingsStore.Settings.SetFfmpegMaxParallelJobs(maxParallelJobs);
         PublishTip(isSucceed);
     }
 
@@ -597,7 +600,7 @@ internal class ViewVideoViewModel : ViewModelBase
     {
         var isUseDefaultDirectory = IsUseDefaultDirectory ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.Instance.SetIsUseSaveVideoRootPath(isUseDefaultDirectory);
+        var isSucceed = _settingsStore.Settings.SetIsUseSaveVideoRootPath(isUseDefaultDirectory);
         PublishTip(isSucceed);
     }
 
@@ -617,7 +620,7 @@ internal class ViewVideoViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.Instance.SetSaveVideoRootPath(directory);
+        var isSucceed = _settingsStore.Settings.SetSaveVideoRootPath(directory);
         PublishTip(isSucceed);
 
         if (isSucceed)
@@ -811,7 +814,7 @@ internal class ViewVideoViewModel : ViewModelBase
         //    fileName.Add(item.Id);
         //}
 
-        //isSucceed = SettingsManager.Instance.SetFileNameParts(fileName);
+        //isSucceed = _settingsStore.Settings.SetFileNameParts(fileName);
         //PublishTip(isSucceed);
 
         SelectedOptionalField = -1;
@@ -837,7 +840,7 @@ internal class ViewVideoViewModel : ViewModelBase
 
         var fileName = SelectedFileName.Select(item => item.Id).ToList();
 
-        var isSucceed = SettingsManager.Instance.SetFileNameParts(fileName);
+        var isSucceed = _settingsStore.Settings.SetFileNameParts(fileName);
         PublishTip(isSucceed);
 
         SelectedOptionalField = -1;
@@ -852,10 +855,10 @@ internal class ViewVideoViewModel : ViewModelBase
     /// </summary>
     private void ExecuteResetCommand()
     {
-        var isSucceed = SettingsManager.Instance.SetFileNameParts(null);
+        var isSucceed = _settingsStore.Settings.SetFileNameParts(null);
         PublishTip(isSucceed);
 
-        var fileNameParts = SettingsManager.Instance.GetFileNameParts();
+        var fileNameParts = _settingsStore.Settings.GetFileNameParts();
         SelectedFileName.Clear();
         foreach (var item in fileNameParts)
         {
@@ -882,7 +885,7 @@ internal class ViewVideoViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.Instance.SetFileNamePartTimeFormat(timeFormat);
+        var isSucceed = _settingsStore.Settings.SetFileNamePartTimeFormat(timeFormat);
         PublishTip(isSucceed);
     }
 
@@ -902,7 +905,7 @@ internal class ViewVideoViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.Instance.SetOrderFormat(orderFormatDisplay.OrderFormat);
+        var isSucceed = _settingsStore.Settings.SetOrderFormat(orderFormatDisplay.OrderFormat);
         PublishTip(isSucceed);
     }
 
@@ -972,7 +975,7 @@ internal class ViewVideoViewModel : ViewModelBase
             GenerateMovieMetadata = GenerateMovieMetadata
         };
 
-        var isSucceed = SettingsManager.Instance.SetVideoContent(videoContent);
+        var isSucceed = _settingsStore.Settings.SetVideoContent(videoContent);
         PublishTip(isSucceed);
     }
 

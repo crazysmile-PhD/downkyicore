@@ -85,6 +85,7 @@ flowchart TD
     UserSpacePageVms["viewmodel.user-space-pages\nPublication/My-space ViewModels"]
     UserSpacePages["service.user-space-pages\nUserSpacePageCoordinator.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
+    SettingsVms["viewmodel.settings-pages\nSettings ViewModels"]
     BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
     BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
     Resolver["service.video-input-resolver\nsrc/DownKyi.Application/Media"]
@@ -150,6 +151,7 @@ flowchart TD
     BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
     VideoVm -->|calls| Parser
+    SettingsVms -->|reads and writes| Settings
     Parser -->|calls| InfoServices
     InfoServices -->|calls| BiliApi
     BiliApi -->|calls| WebClient
@@ -718,6 +720,32 @@ tests:
   - test.video-search-state
   - test.download-add
   - test.video-detail-download
+```
+
+### viewmodel.settings-pages
+
+```yaml
+id: viewmodel.settings-pages
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/Settings/ViewBasicViewModel.cs
+  - DownKyi/ViewModels/Settings/ViewNetworkViewModel.cs
+  - DownKyi/ViewModels/Settings/ViewVideoViewModel.cs
+  - DownKyi/ViewModels/Settings/ViewDanmakuViewModel.cs
+  - DownKyi/ViewModels/Settings/ViewAboutViewModel.cs
+responsibility: Projects the current settings into Avalonia bindings and forwards validated user changes to the injected settings owner.
+inbound:
+  - legacy Prism navigation
+outbound:
+  - core.settings
+  - service.desktop-platform-boundaries
+contracts:
+  - All five pages receive `ISettingsStore` through construction and cannot access `SettingsManager.Instance`.
+  - Existing setting getter/setter behavior, persisted JSON names, and enum values remain unchanged during the compatibility migration.
+hazards:
+  - These pages still mutate the legacy manager through the store facade; immutable snapshots and typed updates remain PR 16-24 work.
+tests:
+  - test.architecture-boundaries
 ```
 
 ### service.video-input-resolver
@@ -1331,12 +1359,14 @@ inbound:
   - app.application
   - app.host-composition
   - viewmodel.video-detail
+  - viewmodel.settings-pages
 outbound:
   - core.legacy-settings-migration
   - external.filesystem
 contracts:
   - Prism and Microsoft Host composition share the same store instance; they must not create competing settings owners.
   - App and migrated ViewModels cannot reach through `SettingsManager.Instance`.
+  - Basic, network, video, danmaku, and about settings pages use the same injected owner for reads and writes.
   - The persisted JSON property names, enum values, and storage path remain compatible with existing user settings.
   - Shutdown flush is awaited without synchronously blocking the UI thread.
 hazards:
@@ -1854,7 +1884,7 @@ test.architecture-boundaries:
     - friend relation API work cannot move back into ViewModels or per-item dispatcher posts
     - season/series loading and add work cannot move back into the ViewModel or bypass directory cancellation
     - legacy upgrade migration cannot move NRBF, SQLite, storage lookup, Task.Run, or Dispatcher work back into the dialog ViewModel
-    - migrated App and video-detail owners cannot restore direct SettingsManager singleton access
+    - migrated App, video-detail, and settings-page owners cannot restore direct SettingsManager singleton access
     - Prism and Host composition must share one injected settings owner
 
 test.settings-store:

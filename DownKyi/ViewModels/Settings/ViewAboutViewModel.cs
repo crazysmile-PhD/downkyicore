@@ -22,6 +22,7 @@ internal class ViewAboutViewModel : ViewModelBase
 {
     public const string Tag = "PageSettingsAbout";
 
+    private readonly ISettingsStore _settingsStore;
     private bool _isOnNavigatedTo;
 
     #region 页面属性申明
@@ -60,9 +61,13 @@ internal class ViewAboutViewModel : ViewModelBase
 
     #endregion
 
-    public ViewAboutViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(eventAggregator,
+    public ViewAboutViewModel(
+        IEventAggregator eventAggregator,
+        IDialogService dialogService,
+        ISettingsStore settingsStore) : base(eventAggregator,
         dialogService)
     {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         #region 属性初始化
 
         var app = new AppInfo();
@@ -83,11 +88,11 @@ internal class ViewAboutViewModel : ViewModelBase
         _isOnNavigatedTo = true;
 
         // 是否接收测试版更新
-        var isReceiveBetaVersion = SettingsManager.Instance.GetIsReceiveBetaVersion();
+        var isReceiveBetaVersion = _settingsStore.Settings.GetIsReceiveBetaVersion();
         IsReceiveBetaVersion = isReceiveBetaVersion == AllowStatus.Yes;
 
         // 是否在启动时自动检查更新
-        var isAutoUpdateWhenLaunch = SettingsManager.Instance.GetAutoUpdateWhenLaunch();
+        var isAutoUpdateWhenLaunch = _settingsStore.Settings.GetAutoUpdateWhenLaunch();
         AutoUpdateWhenLaunch = isAutoUpdateWhenLaunch == AllowStatus.Yes;
 
         _isOnNavigatedTo = false;
@@ -197,7 +202,7 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         var isReceiveBetaVersion = IsReceiveBetaVersion ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.Instance.SetIsReceiveBetaVersion(isReceiveBetaVersion);
+        var isSucceed = _settingsStore.Settings.SetIsReceiveBetaVersion(isReceiveBetaVersion);
         PublishTip(isSucceed);
     }
 
@@ -213,7 +218,7 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         var isAutoUpdateWhenLaunch = AutoUpdateWhenLaunch ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.Instance.SetAutoUpdateWhenLaunch(isAutoUpdateWhenLaunch);
+        var isSucceed = _settingsStore.Settings.SetAutoUpdateWhenLaunch(isAutoUpdateWhenLaunch);
         PublishTip(isSucceed);
     }
 
