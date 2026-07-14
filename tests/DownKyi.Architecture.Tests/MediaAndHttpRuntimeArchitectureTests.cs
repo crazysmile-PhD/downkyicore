@@ -293,6 +293,53 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("SelectionMode=\"Multiple,Toggle\"", privateView, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PersonalMediaPagesUseCancellableSnapshotsAndSharedDownloadCoordination()
+    {
+        var viewModelPaths = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "ViewMyToViewVideoViewModel.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "ViewMyHistoryViewModel.cs")
+        };
+        var viewModelSource = string.Join(Environment.NewLine, viewModelPaths.Select(File.ReadAllText));
+        var coordinatorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Media",
+            "PersonalMediaCoordinator.cs"));
+        var toViewApiSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "BiliApi",
+            "History",
+            "ToView.cs"));
+
+        Assert.DoesNotContain("Task.Run", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("App.PropertyChangeAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IPersonalMediaCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IContentDownloadCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("AddRange", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken cancellationToken = default", toViewApiSource, StringComparison.Ordinal);
+        Assert.Contains("cancellationToken);", toViewApiSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoadMoreCommand => new(", viewModelSource, StringComparison.Ordinal);
+
+        foreach (var source in viewModelPaths.Select(File.ReadAllText))
+        {
+            var directoryCancellation = source.IndexOf("if (directory == null)", StringComparison.Ordinal);
+            var addCall = source.IndexOf("_downloadCoordinator.AddAsync(", StringComparison.Ordinal);
+            Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
+        }
+
+        foreach (var viewName in new[] { "ViewMyToViewVideo.axaml", "ViewMyHistory.axaml" })
+        {
+            var viewSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "Views", viewName));
+            Assert.Contains("SelectionMode=\"Multiple,Toggle\"", viewSource, StringComparison.Ordinal);
+        }
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

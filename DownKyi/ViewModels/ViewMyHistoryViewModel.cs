@@ -1,20 +1,19 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Commands;
-using DownKyi.Core.BiliApi.History;
-using DownKyi.Core.BiliApi.History.Models;
 using DownKyi.Core.BiliApi.VideoStream;
-using DownKyi.Core.Utils;
+using DownKyi.Core.Logging;
 using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Download;
+using DownKyi.Services.Media;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Prism.Commands;
@@ -27,12 +26,16 @@ internal class ViewMyHistoryViewModel : ViewModelBase
 {
     public const string Tag = "PageMyHistory";
     private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
+    private readonly IContentDownloadCoordinator _downloadCoordinator;
+    private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
 
     // 每页视频数量，暂时在此写死，以后在设置中增加选项
     private const int VideoNumberInPage = 30;
     private CancellationTokenSource? _loadCancellation;
+    private CancellationTokenSource? _downloadCancellation;
     private bool _isLoadingPage;
     private bool _hasMoreHistory = true;
+    private int _loadVersion;
 
     #region 页面属性申明
 
@@ -113,12 +116,17 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     public ViewMyHistoryViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        IAddToDownloadServiceFactory addToDownloadServiceFactory) : base(
+        IAddToDownloadServiceFactory addToDownloadServiceFactory,
+        IContentDownloadCoordinator downloadCoordinator,
+        IPersonalMediaCoordinator personalMediaCoordinator) : base(
         eventAggregator)
     {
         DialogService = dialogService;
         _addToDownloadServiceFactory = addToDownloadServiceFactory
             ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
+        _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
+        _personalMediaCoordinator = personalMediaCoordinator
+            ?? throw new ArgumentNullException(nameof(personalMediaCoordinator));
 
         #region 属性初始化
 
@@ -155,7 +163,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     /// </summary>
     protected internal override void ExecuteBackSpace()
     {
-        _loadCancellation?.Cancel();
+        CancelOperations();
         InitView();
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
@@ -252,7 +260,10 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     public DownKyiAsyncDelegateCommand AddAllToDownloadCommand =>
         _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
 
-    public DownKyiAsyncDelegateCommand LoadMoreCommand => new(ExecuteLoadMoreCommand);
+    private DownKyiAsyncDelegateCommand? _loadMoreCommand;
+
+    public DownKyiAsyncDelegateCommand LoadMoreCommand =>
+        _loadMoreCommand ??= new DownKyiAsyncDelegateCommand(ExecuteLoadMoreCommand);
 
     private long _nextMax;
 
@@ -260,8 +271,15 @@ internal class ViewMyHistoryViewModel : ViewModelBase
 
     private async Task ExecuteLoadMoreCommand()
     {
-        if (NoDataVisibility || _isLoadingPage || !_hasMoreHistory) return;
-        await LoadHistoryPageAsync(reset: false, _loadCancellation?.Token ?? CancellationToken.None).ConfigureAwait(true);
+        if (NoDataVisibility || _isLoadingPage || !_hasMoreHistory || _loadCancellation == null)
+        {
+            return;
+        }
+
+        await LoadHistoryPageAsync(
+            reset: false,
+            Volatile.Read(ref _loadVersion),
+            _loadCancellation.Token).ConfigureAwait(true);
     }
     /// <summary>
     /// 添加所有视频到下载列表事件
@@ -274,79 +292,59 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     /// <param name="isOnlySelected"></param>
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        // BANGUMI类型
         var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
-
-        // 选择文件夹
         var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-
-        // 视频计数
-        var i = 0;
-        await Task.Run(async () =>
-        {
-            // 为了避免执行其他操作时，
-            // Medias变化导致的异常
-            var list = Medias.ToList();
-
-            // 添加到下载
-            foreach (var media in list)
-            {
-                // 只下载选中项，跳过未选中项
-                if (isOnlySelected && !media.IsSelected)
-                {
-                    continue;
-                }
-
-                // 有分P的就下载全部
-
-                // 开启服务
-                IInfoService? service = media.Business switch
-                {
-                    "archive" => new VideoInfoService(media.Url),
-                    "pgc" => new BangumiInfoService(media.Url),
-                    _ => null
-                };
-
-                if (service == null)
-                {
-                    return;
-                }
-
-                addToDownloadService.SetVideoInfoService(service);
-                addToDownloadService.GetVideo();
-                addToDownloadService.ParseVideo(service);
-                // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
-            }
-        }).ConfigureAwait(true);
-
         if (directory == null)
         {
             return;
         }
 
-        // 通知用户添加到下载列表的结果
-        EventAggregator.GetEvent<MessageEvent>().Publish(i <= 0
-            ? DictionaryResource.GetString("TipAddDownloadingZero")
-            : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var items = Medias
+            .Where(media => media.Business is "archive" or "pgc")
+            .Select(media => new ContentDownloadItem(
+                media.Url,
+                media.Business == "archive" ? DownloadInfoKind.Video : DownloadInfoKind.Bangumi,
+                media.IsSelected))
+            .ToArray();
+        try
+        {
+            var addedCount = await _downloadCoordinator.AddAsync(
+                addToDownloadService,
+                items,
+                isOnlySelected,
+                directory,
+                EventAggregator,
+                DialogService,
+                cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
+                ? DictionaryResource.GetString("TipAddDownloadingZero")
+                : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+        {
+            LogManager.Error(Tag, e);
+            EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
+        }
     }
 
     private async Task UpdateHistoryMediaListAsync()
     {
-        if (_loadCancellation != null)
-        {
-            await _loadCancellation.CancelAsync().ConfigureAwait(true);
-        }
-        _loadCancellation?.Dispose();
-        _loadCancellation = new CancellationTokenSource();
-
+        var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
+        var loadVersion = Interlocked.Increment(ref _loadVersion);
+        _isLoadingPage = false;
         _nextMax = 0;
         _nextViewAt = 0;
         _hasMoreHistory = true;
-        await LoadHistoryPageAsync(reset: true, _loadCancellation.Token).ConfigureAwait(true);
+        await LoadHistoryPageAsync(reset: true, loadVersion, cancellationToken).ConfigureAwait(true);
     }
 
-    private async Task LoadHistoryPageAsync(bool reset, CancellationToken cancellationToken)
+    private async Task LoadHistoryPageAsync(bool reset, int loadVersion, CancellationToken cancellationToken)
     {
         if (_isLoadingPage) return;
         _isLoadingPage = true;
@@ -355,43 +353,54 @@ internal class ViewMyHistoryViewModel : ViewModelBase
 
         try
         {
-            var result = await Task.Run(() =>
-                HistoryApi.GetHistory(_nextMax, _nextViewAt, VideoNumberInPage, cancellationToken: cancellationToken),
+            var result = await _personalMediaCoordinator.LoadHistoryPageAsync(
+                _nextMax,
+                _nextViewAt,
+                VideoNumberInPage,
+                EventAggregator,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
+            if (loadVersion != Volatile.Read(ref _loadVersion))
+            {
+                return;
+            }
 
-            var medias = result?.List?
-                .Select(x => Convert(x, EventAggregator))
-                .Where(v => v != null && !string.IsNullOrEmpty(v.Title))
-                .Cast<HistoryMedia>()
-                .ToList() ?? new List<HistoryMedia>();
-            _hasMoreHistory = medias.Count > 0;
+            _hasMoreHistory = result.HasMore;
 
             if (reset)
             {
-                Medias.ReplaceRange(medias);
+                Medias.ReplaceRange(result.Medias);
             }
             else
             {
-                Medias.AddRange(medias);
+                Medias.AddRange(result.Medias);
             }
 
-            if (result?.Cursor != null)
-            {
-                _nextMax = result.Cursor.Max;
-                _nextViewAt = result.Cursor.ViewAt;
-            }
+            _nextMax = result.NextMax;
+            _nextViewAt = result.NextViewAt;
 
             ContentVisibility = Medias.Count > 0;
             NoDataVisibility = Medias.Count == 0;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+        }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
+        {
+            LogManager.Error(Tag, e);
+            if (reset)
+            {
+                NoDataVisibility = true;
+            }
         }
         finally
         {
-            LoadingVisibility = false;
-            _isLoadingPage = false;
+            if (loadVersion == Volatile.Read(ref _loadVersion))
+            {
+                LoadingVisibility = false;
+                _isLoadingPage = false;
+            }
         }
     }
 
@@ -452,77 +461,26 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         RunFireAndForget(UpdateHistoryMediaListAsync(), nameof(UpdateHistoryMediaListAsync));
     }
 
-    private static bool IsValidBusiness(string business)
-        => business is "archive" or "pgc";
-
-    private static string BuildMediaUrl(HistoryList history) =>
-        history.History.Business switch
-        {
-            "archive" => $"https://www.bilibili.com/video/{history.History.Bvid}",
-            "pgc" => history.Address,
-            _ => "https://www.bilibili.com"
-        };
-
-    private static string ProcessCoverUrl(string originalUrl) =>
-        !string.IsNullOrEmpty(originalUrl) && !originalUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-            ? $"https:{originalUrl}"
-            : originalUrl;
-
-    private static VectorImage? GetPlatformIcon(int dt) =>
-        dt switch
-        {
-            1 or 3 or 5 or 7 => NormalIcon.Instance().PlatformMobile,
-            2 => NormalIcon.Instance().PlatformPC,
-            4 or 6 => NormalIcon.Instance().PlatformIpad,
-            33 => NormalIcon.Instance().PlatformTV,
-            _ => null
-        };
-
-    private static string BuildProgressText(long progress) =>
-        progress switch
-        {
-            -1 => DictionaryResource.GetString("HistoryFinished"),
-            0 => DictionaryResource.GetString("HistoryStarted"),
-            _ => $"{DictionaryResource.GetString("HistoryWatch")} {Format.FormatDuration3(progress)}"
-        };
-
-    public static HistoryMedia? Convert(HistoryList history, IEventAggregator eventAggregator)
+    public override void OnNavigatedFrom(NavigationContext navigationContext)
     {
-        if (history?.History == null || !IsValidBusiness(history.History.Business))
-            return null;
+        CancelOperations();
+        LoadingVisibility = false;
+        _isLoadingPage = false;
+        base.OnNavigatedFrom(navigationContext);
+    }
 
-        var url = BuildMediaUrl(history);
-        var coverUrl = ProcessCoverUrl(history.Cover);
-        var platform = GetPlatformIcon(history.History.Dt);
-
-        return new HistoryMedia(eventAggregator)
-        {
-            Business = history.History.Business,
-            Bvid = history.History.Bvid ?? string.Empty,
-            Url = url,
-            UpMid = history.AuthorMid,
-            Cover = coverUrl ?? "avares://DownKyi/Resources/video-placeholder.png",
-            Title = history.Title ?? string.Empty,
-            SubTitle = history.ShowTitle ?? string.Empty,
-            Duration = history.Duration,
-            TagName = history.TagName ?? string.Empty,
-            Partdesc = history.NewDesc ?? string.Empty,
-            Progress = BuildProgressText(history.Progress),
-            Platform = platform,
-            UpName = history.AuthorFace != null ? history.AuthorName ?? string.Empty : string.Empty,
-            UpHeader = history.AuthorFace ?? "",
-            PartdescVisibility = !string.IsNullOrEmpty(history.NewDesc),
-            UpAndTagVisibility = history.History.Business == "archive"
-        };
+    private void CancelOperations()
+    {
+        Interlocked.Increment(ref _loadVersion);
+        CancelAndDispose(ref _loadCancellation);
+        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing && !IsDisposed)
         {
-            _loadCancellation?.Cancel();
-            _loadCancellation?.Dispose();
-            _loadCancellation = null;
+            CancelOperations();
         }
 
         base.Dispose(disposing);

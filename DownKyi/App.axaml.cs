@@ -119,6 +119,7 @@ internal partial class App : PrismApplication, IDisposable
         containerRegistry.RegisterSingleton<DownloadListState>();
         containerRegistry.RegisterSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
         containerRegistry.RegisterSingleton<IContentDownloadCoordinator, ContentDownloadCoordinator>();
+        containerRegistry.RegisterSingleton<IPersonalMediaCoordinator, PersonalMediaCoordinator>();
         containerRegistry.RegisterSingleton<IFavoritesService, FavoritesService>();
         containerRegistry.RegisterSingleton<IFavoritesCoordinator, FavoritesCoordinator>();
         containerRegistry.RegisterSingleton<IBiliHelperCoordinator, BiliHelperCoordinator>();

@@ -259,7 +259,7 @@
                 BorderThickness="0"
                 ItemContainerTheme="{StaticResource MediaListStyle}"
                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                SelectionMode="Multiple">
+                SelectionMode="Multiple,Toggle">
                 <Interaction.Behaviors>
                     <customAction:InfiniteScrollBehavior
 

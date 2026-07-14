@@ -1,7 +1,6 @@
+using System.Collections.Generic;
+using System.Threading;
 using DownKyi.Core.BiliApi.History.Models;
-using DownKyi.Core.Logging;
-using Newtonsoft.Json;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.History
 {
@@ -14,7 +13,7 @@ namespace DownKyi.Core.BiliApi.History
         /// 获取稍后再看视频列表
         /// </summary>
         /// <returns></returns>
-        public static IReadOnlyList<ToViewList>? GetToView()
+        public static IReadOnlyList<ToViewList>? GetToView(CancellationToken cancellationToken = default)
         {
             const string url = "https://api.bilibili.com/x/v2/history/toview";
             const string referer = "https://www.bilibili.com";
@@ -22,7 +21,8 @@ namespace DownKyi.Core.BiliApi.History
                 url,
                 referer,
                 nameof(GetToView),
-                "ToView");
+                "ToView",
+                cancellationToken);
 
             return toView?.Data?.List;
         }

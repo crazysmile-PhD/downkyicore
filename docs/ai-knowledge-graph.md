@@ -80,6 +80,8 @@ flowchart TD
     SeasonsSeries["service.seasons-series\nSeasonsSeriesCoordinator.cs"]
     FavoritesVms["viewmodel.favorites\nPrivate/Public Favorites ViewModels"]
     Favorites["service.favorites\nFavoritesCoordinator.cs"]
+    PersonalMediaVms["viewmodel.personal-media\nHistory/Watch-later ViewModels"]
+    PersonalMedia["service.personal-media\nPersonalMediaCoordinator.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
     BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
     BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
@@ -135,6 +137,9 @@ flowchart TD
     FavoritesVms -->|loads snapshots| Favorites
     Favorites -->|calls| BiliApi
     FavoritesVms -->|queues selected media| DownloadAdd
+    PersonalMediaVms -->|loads snapshots| PersonalMedia
+    PersonalMedia -->|calls| BiliApi
+    PersonalMediaVms -->|queues selected media| DownloadAdd
     BiliHelperVm -->|calls| BiliHelper
     BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
@@ -604,6 +609,63 @@ tests:
   - test.architecture-boundaries
 ```
 
+### viewmodel.personal-media
+
+```yaml
+id: viewmodel.personal-media
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewMyHistoryViewModel.cs
+  - DownKyi/ViewModels/ViewMyToViewVideoViewModel.cs
+  - DownKyi/Views/ViewMyHistory.axaml
+  - DownKyi/Views/ViewMyToViewVideo.axaml
+responsibility: Projects history/watch-later snapshots, history cursor state, selection, navigation, and add-to-download results.
+inbound:
+  - viewmodel.user-space
+outbound:
+  - service.personal-media
+  - service.download-add
+contracts:
+  - ViewModels do not own worker tasks or mutate bound collections from background threads.
+  - History paging applies only the current request version; canceled or stale responses cannot replace newer state.
+  - `LoadMoreCommand` has stable identity and concurrent load-more requests are rejected.
+  - Canceling directory selection returns before snapshot creation or media parsing.
+  - Lists use `Multiple,Toggle`, allowing ordinary clicks to toggle independent selections.
+hazards:
+  - Recreating `LoadMoreCommand` on every binding read creates avoidable command/event churn.
+  - An old history response can overwrite a newer navigation request unless both cancellation and request version are checked.
+  - Unknown history business types must be skipped; they must not abort supported items later in the batch.
+tests:
+  - test.personal-media
+  - test.download-add
+  - test.architecture-boundaries
+```
+
+### service.personal-media
+
+```yaml
+id: service.personal-media
+type: service
+paths:
+  - DownKyi/Services/Media/PersonalMediaCoordinator.cs
+  - DownKyi.Core/BiliApi/History/ToView.cs
+responsibility: Loads and maps history/watch-later API data into read-only UI snapshots away from the UI thread.
+inbound:
+  - viewmodel.personal-media
+outbound:
+  - core.bili-api
+contracts:
+  - Watch-later and history requests pass caller cancellation into the Bilibili API boundary.
+  - Pre-canceled requests cannot start API work and mapping checks cancellation between watch-later items.
+  - Only archive and pgc history entries are projected; protocol-relative image addresses are normalized without `Uri.Scheme` access.
+hazards:
+  - Legacy synchronous requests may remain in flight until their current HTTP operation returns; stale projection is still blocked.
+  - Platform icon creation remains a desktop mapping concern and must not migrate into `DownKyi.Core`.
+tests:
+  - test.personal-media
+  - test.architecture-boundaries
+```
+
 ### viewmodel.video-detail
 
 ```yaml
@@ -928,6 +990,7 @@ inbound:
   - viewmodel.video-detail
   - viewmodel.seasons-series
   - viewmodel.favorites
+  - viewmodel.personal-media
   - other viewmodels that support add-to-download
 outbound:
   - core.storage
@@ -1460,6 +1523,16 @@ test.favorites:
     - favorite ViewModels cannot regain Task.Run or App dispatcher projection
     - favorite services return snapshots rather than mutating observable collections
     - directory cancellation precedes shared download coordination and list selection remains click-toggle capable
+
+test.personal-media:
+  paths:
+    - tests/DownKyi.Tests/PersonalMediaCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - pre-canceled history and watch-later requests cannot start API work
+    - history mapping accepts archive/pgc, rejects unsupported business types, and normalizes protocol-relative covers
+    - personal-media ViewModels cannot regain Task.Run or per-item App dispatcher projection
+    - load-more command identity, directory cancellation ordering, batch projection, and click-toggle selection remain stable
 
 test.download-list-state:
   paths:
