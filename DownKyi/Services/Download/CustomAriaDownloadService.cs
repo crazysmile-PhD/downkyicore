@@ -209,27 +209,27 @@ internal class CustomAriaDownloadService : DownloadService, IDownloadService
     /// 下载封面
     /// </summary>
     /// <param name="downloading"></param>
-    public override string? DownloadCover(DownloadingItem downloading, string? coverUrl, string fileName)
+    public override Task<string?> DownloadCoverAsync(DownloadingItem downloading, string? coverUrl, string fileName)
     {
-        return BaseDownloadCover(downloading, coverUrl, fileName);
+        return BaseDownloadCoverAsync(downloading, coverUrl, fileName);
     }
 
     /// <summary>
     /// 下载弹幕
     /// </summary>
     /// <param name="downloading"></param>
-    public override string DownloadDanmaku(DownloadingItem downloading)
+    public override Task<string> DownloadDanmakuAsync(DownloadingItem downloading)
     {
-        return BaseDownloadDanmaku(downloading);
+        return BaseDownloadDanmakuAsync(downloading);
     }
 
     /// <summary>
     /// 下载字幕
     /// </summary>
     /// <param name="downloading"></param>
-    public override IReadOnlyList<string> DownloadSubtitle(DownloadingItem downloading)
+    public override Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading)
     {
-        return BaseDownloadSubtitle(downloading);
+        return BaseDownloadSubtitleAsync(downloading);
     }
 
     /// <summary>
@@ -253,9 +253,9 @@ internal class CustomAriaDownloadService : DownloadService, IDownloadService
     /// 解析视频流的下载链接
     /// </summary>
     /// <param name="downloading"></param>
-    public override void Parse(DownloadingItem downloading)
+    public override Task ParseAsync(DownloadingItem downloading)
     {
-        BaseParse(downloading);
+        return BaseParseAsync(downloading);
     }
 
     /// <summary>

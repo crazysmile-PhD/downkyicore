@@ -187,7 +187,7 @@ namespace DownKyi.ViewModels.DownloadManager
             downloadingItem.Downloading.DownloadStatus = DownloadStatus.Pause;
             App.PropertyChangeAsync(() => App.DownloadingList.Remove(downloadingItem));
             await DownloadTaskFileService.CancelActiveDownloadAsync(downloadingItem).ConfigureAwait(true);
-            _downloadStorageService.RemoveDownloading(downloadingItem, true);
+            await _downloadStorageService.RemoveDownloadingAsync(downloadingItem, true).ConfigureAwait(true);
             await DownloadTaskFileService.DeleteGeneratedFilesAsync(downloadingItem).ConfigureAwait(true);
         }
 

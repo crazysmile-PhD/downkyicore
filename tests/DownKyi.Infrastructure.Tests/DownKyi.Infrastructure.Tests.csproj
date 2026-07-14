@@ -16,6 +16,9 @@
     <ProjectReference Include="..\..\src\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Fixtures\*.db" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 </Project>

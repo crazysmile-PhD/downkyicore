@@ -422,7 +422,9 @@ internal class ViewUpgradingDialogViewModel : BaseDialogViewModel
                             downloadedList.Add(download);
                             processedCount++;
                             if (processedCount % batchSize != 0 && processedCount != totalCount) continue;
-                            _downloadStorageService.AddDownloadedBatch(downloadedList);
+                            await _downloadStorageService
+                                .AddDownloadedBatchAsync(downloadedList)
+                                .ConfigureAwait(true);
                             downloadedList.Clear();
 
                             // 更新进度
@@ -448,8 +450,8 @@ internal class ViewUpgradingDialogViewModel : BaseDialogViewModel
                 {
                     RestartVisible = true;
                     SetMessage("下载信息迁移完成");
-                    App.Current.RefreshDownloadedList();
                 });
+                await App.Current.RefreshDownloadedListAsync().ConfigureAwait(true);
             }
             catch (Exception e) when (IsMigrationException(e))
             {

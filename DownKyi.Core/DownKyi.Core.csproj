@@ -19,7 +19,7 @@
         <PackageReference Include="Microsoft.Data.Sqlite.Core"/>
         <PackageReference Include="Newtonsoft.Json"/>
         <PackageReference Include="QRCoder"/>
-        <PackageReference Include="SQLitePCLRaw.bundle_e_sqlcipher"/>
+        <PackageReference Include="SQLite3MC.PCLRaw.bundle"/>
     </ItemGroup>
 
     <ItemGroup>

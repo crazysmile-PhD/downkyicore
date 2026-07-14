@@ -33,11 +33,13 @@ public sealed class SqliteDatabase : IDisposable
     /// <param name="secretKey">加密密钥</param>
     public SqliteDatabase(string dbPath, string secretKey)
     {
+        var legacySqlCipherUri = new Uri(Path.GetFullPath(dbPath)).AbsoluteUri
+            + "?cipher=sqlcipher&legacy=4";
         _connectionString = new SqliteConnectionStringBuilder
         {
             Mode = SqliteOpenMode.ReadWriteCreate,
             Password = secretKey,
-            DataSource = dbPath,
+            DataSource = legacySqlCipherUri,
             Pooling = true,
             DefaultTimeout = 30
         }.ToString();

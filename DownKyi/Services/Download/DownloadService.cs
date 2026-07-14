@@ -43,6 +43,7 @@ internal abstract class DownloadService : IDisposable
     protected CancellationTokenSource? TokenSource { get; set; }
     protected CancellationToken? CancellationToken { get; set; }
     private readonly List<Task> _downloadingTasks = new();
+    private readonly List<Task> _persistenceTasks = new();
 
     protected const int Retry = 5;
     protected const string NullMark = "<null>";
@@ -60,15 +61,34 @@ internal abstract class DownloadService : IDisposable
         }
     }
 
-    protected void PersistDownloadingState(DownloadingItem downloading)
+    protected async Task PersistDownloadingStateAsync(DownloadingItem downloading)
     {
         try
         {
-            DownloadStorageService.UpdateDownloading(downloading);
+            await DownloadStorageService
+                .UpdateDownloadingAsync(downloading, CancellationToken.GetValueOrDefault())
+                .ConfigureAwait(true);
         }
         catch (SqliteException e)
         {
             LogManager.Debug(Tag, $"Persist downloading state failed: {e.Message}");
+        }
+        catch (InvalidOperationException e)
+        {
+            LogManager.Debug(Tag, $"Persist downloading state conflicted: {e.Message}");
+        }
+        catch (OperationCanceledException) when (CancellationToken?.IsCancellationRequested == true)
+        {
+        }
+    }
+
+    protected void PersistDownloadingState(DownloadingItem downloading)
+    {
+        var persistenceTask = PersistDownloadingStateAsync(downloading);
+        lock (_persistenceTasks)
+        {
+            _persistenceTasks.RemoveAll(task => task.IsCompleted);
+            _persistenceTasks.Add(persistenceTask);
         }
     }
 
@@ -241,7 +261,10 @@ internal abstract class DownloadService : IDisposable
         };
     }
 
-    protected string? BaseDownloadCover(DownloadingItem downloading, string? coverUrl, string fileName)
+    protected async Task<string?> BaseDownloadCoverAsync(
+        DownloadingItem downloading,
+        string? coverUrl,
+        string fileName)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -262,7 +285,7 @@ internal abstract class DownloadService : IDisposable
             // 记录本次下载的文件
             if (downloading.Downloading.DownloadFiles.TryAdd(coverUrl, fileName))
             {
-                PersistDownloadingState(downloading);
+                await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
             }
             return fileName;
         }
@@ -289,7 +312,7 @@ internal abstract class DownloadService : IDisposable
         return null;
     }
 
-    protected string BaseDownloadDanmaku(DownloadingItem downloading)
+    protected async Task<string> BaseDownloadDanmakuAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -307,7 +330,7 @@ internal abstract class DownloadService : IDisposable
         // 记录本次下载的文件
         if (downloading.Downloading.DownloadFiles.TryAdd("danmaku", assFile))
         {
-            PersistDownloadingState(downloading);
+            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
         }
 
         var screenWidth = SettingsManager.Instance.GetDanmakuScreenWidth();
@@ -349,7 +372,7 @@ internal abstract class DownloadService : IDisposable
     }
 
 
-    protected IReadOnlyList<string> BaseDownloadSubtitle(DownloadingItem downloading)
+    protected async Task<IReadOnlyList<string>> BaseDownloadSubtitleAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -373,12 +396,15 @@ internal abstract class DownloadService : IDisposable
             var srtFile = $"{downloading.DownloadBase.FilePath}_{subRip.LanDoc}.srt";
             try
             {
-                File.WriteAllText(srtFile, subRip.SrtString);
+                await File.WriteAllTextAsync(
+                    srtFile,
+                    subRip.SrtString,
+                    CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
 
                 // 记录本次下载的文件
                 if (downloading.Downloading.DownloadFiles.TryAdd("subtitle", srtFile))
                 {
-                    PersistDownloadingState(downloading);
+                    await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
                 }
 
                 srtFiles.Add(srtFile);
@@ -555,7 +581,7 @@ internal abstract class DownloadService : IDisposable
     }
 
 
-    protected void BaseParse(DownloadingItem downloading)
+    protected async Task BaseParseAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -607,7 +633,7 @@ internal abstract class DownloadService : IDisposable
 
         if (playUrl == null)
         {
-            DownloadFailed(downloading);
+            await DownloadFailedAsync(downloading).ConfigureAwait(true);
             return;
         }
 
@@ -640,7 +666,7 @@ internal abstract class DownloadService : IDisposable
                     await _downloadSemaphore.WaitAsync(CancellationToken.Value).ConfigureAwait(true);
                     //这里需要立刻设置状态，否则如果SingleDownload没有及时执行，会重复创建任务
                     downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
-                    PersistDownloadingState(downloading);
+                    await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
                     _downloadingTasks.Add(RunSingleDownloadAsync(downloading));
                 }
             }
@@ -758,7 +784,7 @@ internal abstract class DownloadService : IDisposable
                 //downloading.Downloading.DownloadFiles.Clear();
 
                 // 解析并依次下载音频、视频、弹幕、字幕、封面等内容
-                Parse(downloading);
+                await ParseAsync(downloading).ConfigureAwait(true);
 
                 // 暂停
                 Pause(downloading);
@@ -785,7 +811,7 @@ internal abstract class DownloadService : IDisposable
 
                     if (audioUid == NullMark)
                     {
-                        DownloadFailed(downloading);
+                        await DownloadFailedAsync(downloading).ConfigureAwait(true);
                         return;
                     }
 
@@ -808,7 +834,7 @@ internal abstract class DownloadService : IDisposable
 
                     if (videoUid == NullMark)
                     {
-                        DownloadFailed(downloading);
+                        await DownloadFailedAsync(downloading).ConfigureAwait(true);
                         return;
                     }
 
@@ -871,7 +897,7 @@ internal abstract class DownloadService : IDisposable
 
                         if (downloadStatus.Values.Any(x => x.Result == NullMark))
                         {
-                            DownloadFailed(downloading);
+                            await DownloadFailedAsync(downloading).ConfigureAwait(true);
                             return;
                         }
 
@@ -912,7 +938,7 @@ internal abstract class DownloadService : IDisposable
                 // 如果需要下载弹幕
                 if (downloading.DownloadBase.NeedDownloadContent["downloadDanmaku"])
                 {
-                    outputDanmaku = DownloadDanmaku(downloading);
+                    outputDanmaku = await DownloadDanmakuAsync(downloading).ConfigureAwait(true);
                 }
 
                 // 暂停
@@ -922,7 +948,7 @@ internal abstract class DownloadService : IDisposable
                 // 如果需要下载字幕
                 if (downloading.DownloadBase.NeedDownloadContent["downloadSubtitle"])
                 {
-                    outputSubtitles = DownloadSubtitle(downloading);
+                    outputSubtitles = await DownloadSubtitleAsync(downloading).ConfigureAwait(true);
                 }
 
                 // 暂停
@@ -935,13 +961,19 @@ internal abstract class DownloadService : IDisposable
                 {
                     // page的封面
                     var pageCoverFileName = $"{downloading.DownloadBase.FilePath}.{GetImageExtension(downloading.DownloadBase.PageCoverUrl)}";
-                    outputPageCover = DownloadCover(downloading, downloading.DownloadBase.PageCoverUrl, pageCoverFileName);
+                    outputPageCover = await DownloadCoverAsync(
+                        downloading,
+                        downloading.DownloadBase.PageCoverUrl,
+                        pageCoverFileName).ConfigureAwait(true);
 
 
                     var coverFileName = $"{downloading.DownloadBase.FilePath}.Cover.{GetImageExtension(downloading.DownloadBase.CoverUrl)}";
                     // 封面
                     //outputCover = DownloadCover(downloading, downloading.DownloadBase.CoverUrl, $"{path}/Cover.{GetImageExtension(downloading.DownloadBase.CoverUrl)}");
-                    outputCover = DownloadCover(downloading, downloading.DownloadBase.CoverUrl, coverFileName);
+                    outputCover = await DownloadCoverAsync(
+                        downloading,
+                        downloading.DownloadBase.CoverUrl,
+                        coverFileName).ConfigureAwait(true);
                 }
 
                 // 暂停
@@ -1001,7 +1033,7 @@ internal abstract class DownloadService : IDisposable
 
                 if (!isMediaSuccess || !isDanmakuSuccess || !isSubtitleSuccess || !isCover)
                 {
-                    DownloadFailed(downloading);
+                    await DownloadFailedAsync(downloading).ConfigureAwait(true);
                     return;
                 }
 
@@ -1019,8 +1051,9 @@ internal abstract class DownloadService : IDisposable
                     Downloaded = downloaded
                 };
 
-                DownloadStorageService.RemoveDownloading(downloading);
-                DownloadStorageService.AddDownloaded(downloadedItem);
+                await DownloadStorageService
+                    .AddDownloadedAsync(downloadedItem, CancellationToken.GetValueOrDefault())
+                    .ConfigureAwait(true);
                 App.PropertyChangeAsync(() =>
                 {
                     // 加入到下载完成list中，并从下载中list去除
@@ -1038,7 +1071,7 @@ internal abstract class DownloadService : IDisposable
         {
             Console.PrintLine(Tag, e.ToString());
             LogManager.Debug(Tag, e.Message);
-            PersistDownloadingState(downloading);
+            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
         }
     }
 
@@ -1046,7 +1079,7 @@ internal abstract class DownloadService : IDisposable
     /// 下载失败后的处理
     /// </summary>
     /// <param name="downloading"></param>
-    protected void DownloadFailed(DownloadingItem downloading)
+    protected async Task DownloadFailedAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -1059,7 +1092,7 @@ internal abstract class DownloadService : IDisposable
         downloading.Downloading.DownloadStatus = DownloadStatus.DownloadFailed;
         downloading.StartOrPause = ButtonIcon.Instance().Retry;
         downloading.StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
-        PersistDownloadingState(downloading);
+        await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -1123,6 +1156,14 @@ internal abstract class DownloadService : IDisposable
 
         if (WorkTask != null) await WorkTask.ConfigureAwait(true);
 
+        Task[] persistenceTasks;
+        lock (_persistenceTasks)
+        {
+            persistenceTasks = [.. _persistenceTasks];
+        }
+
+        await Task.WhenAll(persistenceTasks).ConfigureAwait(true);
+
         //先简单等待一下
 
         // 下载数据存储服务
@@ -1150,7 +1191,7 @@ internal abstract class DownloadService : IDisposable
 
             item.SpeedDisplay = string.Empty;
 
-            downloadStorageService.UpdateDownloading(item);
+            await downloadStorageService.UpdateDownloadingAsync(item).ConfigureAwait(true);
         }
     }
 
@@ -1194,12 +1235,15 @@ internal abstract class DownloadService : IDisposable
 
     #region 抽象接口函数
 
-    public abstract void Parse(DownloadingItem downloading);
+    public abstract Task ParseAsync(DownloadingItem downloading);
     public abstract string? DownloadAudio(DownloadingItem downloading);
     public abstract string? DownloadVideo(DownloadingItem downloading);
-    public abstract string DownloadDanmaku(DownloadingItem downloading);
-    public abstract IReadOnlyList<string> DownloadSubtitle(DownloadingItem downloading);
-    public abstract string? DownloadCover(DownloadingItem downloading, string? coverUrl, string fileName);
+    public abstract Task<string> DownloadDanmakuAsync(DownloadingItem downloading);
+    public abstract Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading);
+    public abstract Task<string?> DownloadCoverAsync(
+        DownloadingItem downloading,
+        string? coverUrl,
+        string fileName);
     public abstract string? MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid);
 
     protected abstract void Pause(DownloadingItem downloading);

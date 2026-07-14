@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-07-12
+Last reviewed: 2026-07-13
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -79,7 +79,10 @@ flowchart TD
     LegacySettings["core.legacy-settings-migration\nLegacySettingsDecryptor.cs"]
     DownloadAdd["service.download-add\nAddToDownloadService + DownloadAddCoordinator"]
     DownloadService["service.download-runtime\nDownloadService and implementations"]
-    Storage["core.storage\nDownloadStorageService + StorageManager"]
+    DownloadDomain["core.download-domain\nimmutable task aggregate"]
+    StoreContract["service.application-contracts\nIDownloadTaskStore"]
+    SqliteStore["core.sqlite-download-store\nSqliteDownloadTaskStore"]
+    Storage["core.storage\nlegacy projection + StorageManager"]
     Aria["external.aria2\naria2c process"]
     FFmpeg["external.ffmpeg\nffmpeg process"]
     Logs["core.logging\nLogManager + diagnostic export"]
@@ -98,6 +101,12 @@ flowchart TD
     ApplicationLayer -->|depends on| Domain
     Infrastructure -->|implements| ApplicationLayer
     Infrastructure -->|depends on| Domain
+    Domain -->|owns| DownloadDomain
+    ApplicationLayer -->|defines| StoreContract
+    SqliteStore -->|implements| StoreContract
+    SqliteStore -->|persists| DownloadDomain
+    Storage -->|projects legacy UI| DownloadDomain
+    Storage -->|calls| StoreContract
     MainWindow -->|binds| MainVm
     MainVm -->|navigates| VideoVm
     VideoVm -->|calls| Resolver
@@ -221,7 +230,8 @@ type: core
 paths:
   - src/DownKyi.Domain/Results/OperationError.cs
   - src/DownKyi.Domain/Results/OperationResult.cs
-responsibility: Defines framework-free typed success and failure contracts shared by future download and media use cases.
+  - src/DownKyi.Domain/Downloads
+responsibility: Defines framework-free typed results and the immutable download task aggregate with legal lifecycle transitions.
 inbound:
   - service.application-contracts
   - core.infrastructure
@@ -229,10 +239,13 @@ outbound: []
 contracts:
   - Failure retains a typed error kind, stable code, and user-safe message.
   - Success values are non-null; failed results cannot expose a value without an explicit exception.
+  - Download task IDs are stable strings; task versions increase monotonically and timestamps never move backward.
+  - Pause, cancel, delete, failure, completion, retry, progress, and transfer updates remain distinct transitions.
 hazards:
   - Error messages must not contain cookies, full sensitive URLs, or personal filesystem paths.
 tests:
   - test.domain-results
+  - test.download-domain
   - test.architecture-boundaries
 ```
 
@@ -244,7 +257,10 @@ type: service
 paths:
   - src/DownKyi.Application/Lifetime/ApplicationCancellation.cs
   - src/DownKyi.Application/Time/IClock.cs
-responsibility: Defines application lifetime cancellation and deterministic time boundaries without UI or infrastructure dependencies.
+  - src/DownKyi.Application/Downloads/IDownloadTaskStore.cs
+  - src/DownKyi.Application/Downloads/DownloadHistoryPage.cs
+  - src/DownKyi.Application/Downloads/DownloadProgressWrite.cs
+responsibility: Defines application lifetime, deterministic time, and async download persistence contracts without UI or infrastructure dependencies.
 inbound:
   - app.host-composition
   - core.infrastructure
@@ -254,6 +270,8 @@ contracts:
   - Every long-running operation links caller cancellation with the application shutdown token.
   - Cancellation remains control flow and must not be converted into a failure result or retry.
   - Time-dependent use cases receive IClock instead of reading the system clock directly.
+  - Store APIs are cancellation-aware and asynchronous; history uses stable keyset cursors rather than whole-table offsets.
+  - Coalesced progress writes retain their first expected version and latest contiguous target version.
 tests:
   - test.application-lifetime
   - test.architecture-boundaries
@@ -266,7 +284,10 @@ id: core.infrastructure
 type: core
 paths:
   - src/DownKyi.Infrastructure/Time/SystemClock.cs
-responsibility: Provides framework and operating-system implementations for Application contracts.
+  - src/DownKyi.Infrastructure/Downloads/SqliteDownloadTaskStore.cs
+  - src/DownKyi.Infrastructure/Downloads/DownloadStoreSchema.cs
+  - src/DownKyi.Infrastructure/Downloads/DownloadProgressWriteBehind.cs
+responsibility: Implements Application time and download persistence contracts using pooled SQLite connections and bounded background writes.
 inbound:
   - app.host-composition
 outbound:
@@ -275,8 +296,16 @@ outbound:
 contracts:
   - Infrastructure never references Desktop or Prism.
   - SystemClock returns UTC time; deterministic tests replace IClock at the composition boundary.
+  - SQLite uses one short pooled connection per operation, WAL, parameterized queries, optimistic versions, and transactional state moves.
+  - Existing databases are backed up before schema migration; failed migrations roll back and never advance `user_version`.
+  - One malformed row is quarantined with record ID, field, and sanitized reason; raw JSON and personal paths are not copied into diagnostics.
+  - The progress writer has a one-slot bounded wake channel, a bounded task set, contiguous coalescing, and a final shutdown flush.
+  - `SQLite3MC.PCLRaw.bundle` must keep reading the committed SQLCipher v4 fixture before dependency updates are accepted.
 tests:
   - test.infrastructure-clock
+  - test.download-store
+  - test.progress-write-behind
+  - test.legacy-sqlcipher
   - test.architecture-boundaries
 ```
 
@@ -506,6 +535,7 @@ hazards:
   - Blocking waits in download lifecycle can freeze UI or prevent process exit.
   - Resume behavior depends on preserving partial files while delete behavior must remove them.
   - aria2 process cleanup is platform-sensitive.
+  - Synchronous aria2 callbacks still use a tracked persistence bridge; PR 07-15 owns its removal after callback async conversion.
   - Reusing Id+codec or runtime GetHashCode values across DURL segments overwrites temporary files and can produce non-seekable MP4 output.
 tests:
   - test.download-file-integrity
@@ -525,21 +555,25 @@ paths:
   - DownKyi/Services/Download/DownloadStorageService.cs
   - DownKyi.Core/Storage/StorageManager.cs
   - DownKyi.Core/Storage/Database/SqliteDatabase.cs
-responsibility: Owns SQLite download records, app data directories, portable mode, and storage paths.
+responsibility: Projects immutable tasks into temporary legacy UI models and owns app data directories, portable mode, and storage paths; SQLite persistence itself belongs to core.infrastructure.
 inbound:
   - app.application
   - service.download-add
   - service.download-runtime
 outbound:
+  - service.application-contracts
   - external.filesystem
 contracts:
   - Download records must survive app restarts.
+  - The legacy adapter never opens SQLite or serializes storage JSON directly.
+  - Startup restores all unfinished tasks and only the newest 100 history items before loading remaining keyset pages later.
+  - Legacy completion order is atomic: non-cascading remove is deferred and completion moves state through one store transaction.
   - Storage paths used in logs must be sanitized when exported for diagnostics.
 hazards:
-  - Whole-table reads and global locks hurt startup and large history performance.
+  - `DownloadingItem` and `DownloadedItem` projection is a PR 25-29 compatibility boundary, not a persistence model.
   - Mixing user data with program files complicates updates and permissions.
 tests:
-  - test.storage-contracts
+  - test.download-store
   - test.storage-resume
 ```
 
@@ -728,19 +762,23 @@ sequenceDiagram
     participant Program as Program
     participant App as App.axaml.cs
     participant Shell as MainWindow
-    participant Storage as DownloadStorageService
+    participant Projection as DownloadStorageService
+    participant Store as SqliteDownloadTaskStore
     participant Runtime as DownloadService
 
     OS->>Program: launch DownKyi
     Program->>App: BuildAvaloniaApp()
     App->>App: RegisterTypes()
     App->>Shell: CreateShell()
-    App-->>Storage: load downloading/downloaded state in background
-    Storage-->>App: startup state
+    App-->>Projection: load unfinished + newest history page
+    Projection->>Store: async keyset queries
+    Store-->>Projection: immutable tasks
+    Projection-->>App: legacy UI projections
+    App-->>Projection: load remaining history after first screen
     App-->>Runtime: StartAsync()
 ```
 
-Rule: the shell should be created before download history and aria2 startup can slow down the UI.
+Rule: create the shell first, restore every unfinished task plus at most 100 recent history items, then page remaining history after the first screen; aria2 startup cannot block shell construction.
 
 ### Parse And Add Download
 
@@ -916,6 +954,14 @@ test.domain-results:
     - successful results expose their non-null value
     - failed results preserve the exact typed error and do not expose a value
 
+test.download-domain:
+  paths:
+    - tests/DownKyi.Domain.Tests/DownloadTaskStateMachineTests.cs
+  guards:
+    - legal lifecycle transitions produce new immutable task versions
+    - illegal pause, resume, retry, completion, and terminal updates return typed conflicts
+    - timestamps and transfer/progress payloads preserve aggregate invariants
+
 test.application-lifetime:
   paths:
     - tests/DownKyi.Application.Tests/ApplicationCancellationTests.cs
@@ -928,6 +974,36 @@ test.infrastructure-clock:
     - tests/DownKyi.Infrastructure.Tests/SystemClockTests.cs
   guards:
     - SystemClock returns a current UTC timestamp through the Application contract
+
+test.download-store:
+  paths:
+    - tests/DownKyi.Infrastructure.Tests/SqliteDownloadTaskStoreTests.cs
+    - tests/DownKyi.Tests/DownloadStorageResumeTests.cs
+  guards:
+    - fresh schema initialization and legacy schema migration reach the current version
+    - every legacy migration writes a pre-migration backup and failed migration rolls back columns and version
+    - GID, partial file map, completed assets, paused state, progress, and optimistic version survive reopen
+    - malformed JSON quarantines only the affected row and does not expose raw personal data
+    - completed state moves atomically from downloading to keyset-paged history
+    - a legacy success row left in downloading is queued for recovery instead of quarantined
+
+test.progress-write-behind:
+  paths:
+    - tests/DownKyi.Application.Tests/DownloadProgressWriteTests.cs
+    - tests/DownKyi.Infrastructure.Tests/DownloadProgressWriteBehindTests.cs
+  guards:
+    - contiguous progress versions coalesce to one store write
+    - pending task capacity is bounded and updates to an admitted task remain accepted
+    - shutdown interrupts the delay and flushes pending progress
+    - optimistic conflicts are counted without terminating the writer
+
+test.legacy-sqlcipher:
+  paths:
+    - tests/DownKyi.Infrastructure.Tests/LegacySqlCipherCompatibilityTests.cs
+    - tests/DownKyi.Infrastructure.Tests/Fixtures/legacy-sqlcipher-v4.db
+  guards:
+    - current SQLite3 Multiple Ciphers opens a database generated by the removed SQLCipher v4 provider
+    - an incorrect password cannot open or query the encrypted fixture
 
 test.performance-baseline:
   paths:

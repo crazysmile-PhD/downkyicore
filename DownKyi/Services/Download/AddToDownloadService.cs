@@ -379,11 +379,8 @@ internal class AddToDownloadService
 
                                     if (result == ButtonResult.OK)
                                     {
-                                        App.PropertyChangeAsync(() =>
-                                        {
-                                            App.DownloadedList.Remove(item);
-                                            _downloadStorageService.RemoveDownloaded(item);
-                                        });
+                                        await _downloadStorageService.RemoveDownloadedAsync(item).ConfigureAwait(true);
+                                        App.PropertyChangeAsync(() => App.DownloadedList.Remove(item));
                                         isDownloaded = false;
                                     }
                                     else
@@ -581,7 +578,7 @@ internal class AddToDownloadService
                     downloadingItem.Metadata = BuildMovieMetadata(page);
                 }
 
-                _downloadStorageService.AddDownloading(downloadingItem);
+                await _downloadStorageService.AddDownloadingAsync(downloadingItem).ConfigureAwait(true);
                 addedItems.Add(downloadingItem);
             }
         }

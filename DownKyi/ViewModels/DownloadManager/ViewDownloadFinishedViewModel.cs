@@ -129,7 +129,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             // 使用Clear()不能触发NotifyCollectionChangedAction.Remove事件
             // 因此遍历删除
             // DownloadingList中元素被删除后不能继续遍历
-            _downloadStorageService.ClearDownloaded();
+            await _downloadStorageService.ClearDownloadedAsync().ConfigureAwait(true);
             App.PropertyChangeAsync(() => { App.DownloadedList.Clear(); });
         }
         catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or IOException
@@ -233,7 +233,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         }
 
         App.DownloadedList.Remove(downloadedItem);
-        _downloadStorageService.RemoveDownloaded(downloadedItem);
+        await _downloadStorageService.RemoveDownloadedAsync(downloadedItem).ConfigureAwait(true);
     }
 
     #endregion

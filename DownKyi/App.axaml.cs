@@ -12,7 +12,9 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
+using DownKyi.Application.Time;
 using DownKyi.Composition;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Logging;
@@ -20,6 +22,8 @@ using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
 using DownKyi.Desktop.Composition;
+using DownKyi.Infrastructure.Downloads;
+using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
@@ -70,6 +74,7 @@ internal partial class App : PrismApplication, IDisposable
     private IDownloadService? _downloadService;
     private IHost? _host;
     private Task? _downloadStartupTask;
+    private Task? _downloadHistoryTask;
 
     public override void Initialize()
     {
@@ -104,6 +109,9 @@ internal partial class App : PrismApplication, IDisposable
 
     protected override void RegisterTypes(IContainerRegistry containerRegistry)
     {
+        containerRegistry.RegisterInstance(new SqliteDownloadTaskStoreOptions(StorageManager.GetDbPath()));
+        containerRegistry.RegisterSingleton<IClock, SystemClock>();
+        containerRegistry.RegisterSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
         containerRegistry.RegisterSingleton<DownloadStorageService>();
 
         containerRegistry.RegisterSingleton<IDialogService, DialogService>();
@@ -239,6 +247,7 @@ internal partial class App : PrismApplication, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             DownloadingList.AddRange(downloadState.DownloadingItems);
             DownloadedList.AddRange(downloadState.DownloadedItems);
+            _downloadHistoryTask = LoadRemainingDownloadHistoryAsync(downloadStorageService, cancellationToken);
 
             _downloadService = CreateDownloadService();
             if (_downloadService != null)
@@ -262,13 +271,36 @@ internal partial class App : PrismApplication, IDisposable
         CancellationToken cancellationToken)
     {
         var downloadingItemsTask = downloadStorageService.GetDownloadingAsync(cancellationToken);
-        var downloadedItemsTask = downloadStorageService.GetDownloadedAsync(cancellationToken);
+        var downloadedItemsTask = downloadStorageService.GetRecentDownloadedAsync(100, cancellationToken);
 
         await Task.WhenAll(downloadingItemsTask, downloadedItemsTask).ConfigureAwait(true);
 
         return new DownloadStartupState(
             await downloadingItemsTask.ConfigureAwait(true),
             await downloadedItemsTask.ConfigureAwait(true));
+    }
+
+    private static async Task LoadRemainingDownloadHistoryAsync(
+        DownloadStorageService downloadStorageService,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var allItems = await downloadStorageService.GetDownloadedAsync(cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            var loadedIds = DownloadedList
+                .Select(item => item.DownloadBase.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            DownloadedList.AddRange(allItems.Where(item => loadedIds.Add(item.DownloadBase.Id)));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            LogManager.Error(nameof(DownloadStorageService), exception);
+        }
     }
 
     private IDownloadService? CreateDownloadService()
@@ -319,13 +351,16 @@ internal partial class App : PrismApplication, IDisposable
         list.ForEach(item => DownloadedList.Add(item));
     }
 
-    public void RefreshDownloadedList()
+    public async Task RefreshDownloadedListAsync(CancellationToken cancellationToken = default)
     {
         // 重新获取下载完成列表
         var downloadStorageService = Container.Resolve<DownloadStorageService>();
-        var downloadedItems = downloadStorageService.GetDownloaded();
-        DownloadedList.Clear();
-        DownloadedList.AddRange(downloadedItems);
+        var downloadedItems = await downloadStorageService.GetDownloadedAsync(cancellationToken).ConfigureAwait(true);
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            DownloadedList.Clear();
+            DownloadedList.AddRange(downloadedItems);
+        });
     }
 
     private void OnExit(object sender, ControlledApplicationLifetimeExitEventArgs e)
@@ -372,6 +407,11 @@ internal partial class App : PrismApplication, IDisposable
         if (_downloadStartupTask != null)
         {
             await Task.WhenAny(_downloadStartupTask, Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(false);
+        }
+
+        if (_downloadHistoryTask != null)
+        {
+            await Task.WhenAny(_downloadHistoryTask, Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(false);
         }
 
         // 关闭下载服务
