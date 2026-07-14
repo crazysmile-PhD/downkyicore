@@ -12,6 +12,16 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi", "ViewModels", "Settings", "ViewDanmakuViewModel.cs")]
     [InlineData("DownKyi", "ViewModels", "Settings", "ViewNetworkViewModel.cs")]
     [InlineData("DownKyi", "ViewModels", "Settings", "ViewVideoViewModel.cs")]
+    [InlineData("DownKyi", "Views", "MainWindow.axaml.cs")]
+    [InlineData("DownKyi", "ViewModels", "MainWindowViewModel.cs")]
+    [InlineData("DownKyi", "ViewModels", "ViewIndexViewModel.cs")]
+    [InlineData("DownKyi", "ViewModels", "DownloadManager", "ViewDownloadFinishedViewModel.cs")]
+    [InlineData("DownKyi", "ViewModels", "Dialogs", "NewVersionAvailableDialogViewModel.cs")]
+    [InlineData("DownKyi", "ViewModels", "Dialogs", "ViewDownloadSetterViewModel.cs")]
+    [InlineData("DownKyi", "ViewModels", "Dialogs", "ViewParsingSelectorViewModel.cs")]
+    [InlineData("DownKyi", "ViewModels", "Friends", "ViewFollowerViewModel.cs")]
+    [InlineData("DownKyi", "ViewModels", "Friends", "ViewFollowingViewModel.cs")]
+    [InlineData("DownKyi", "Services", "Account", "UserSessionCoordinator.cs")]
     public void MigratedApplicationOwnersDoNotReachIntoTheSettingsSingleton(params string[] pathParts)
     {
         var source = File.ReadAllText(Path.Combine([RepositoryRoot, .. pathParts]));
@@ -30,6 +40,15 @@ public sealed class SettingsArchitectureTests
         Assert.Contains("var settingsStore = container.Resolve<ISettingsStore>()", hostSource, StringComparison.Ordinal);
         Assert.Contains("services.AddSingleton(settingsStore)", hostSource, StringComparison.Ordinal);
         Assert.DoesNotContain("new SettingsStore", hostSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindowRequiresItsSettingsOwnerFromHostComposition()
+    {
+        var source = ReadSource("DownKyi", "Views", "MainWindow.axaml.cs");
+
+        Assert.Contains("MainWindow(MainWindowViewModel viewModel, ISettingsStore settingsStore)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("public MainWindow()", source, StringComparison.Ordinal);
     }
 
     private static string ReadSource(params string[] pathParts)

@@ -1,4 +1,5 @@
 using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Core.Settings;
 using DownKyi.Services.Account;
 using DownKyi.ViewModels;
 using Prism.Events;
@@ -10,8 +11,9 @@ public sealed class UserSessionCoordinatorTests
     [Fact]
     public void ConstructingIndexViewModelDoesNotStartAccountWork()
     {
+        using var settings = new TemporarySettingsStore();
         var coordinator = new RecordingUserSessionCoordinator();
-        using var viewModel = new ViewIndexViewModel(new EventAggregator(), coordinator);
+        using var viewModel = new ViewIndexViewModel(new EventAggregator(), coordinator, settings.Store);
 
         Assert.Equal(0, coordinator.RefreshCount);
     }
@@ -19,7 +21,8 @@ public sealed class UserSessionCoordinatorTests
     [Fact]
     public async Task RefreshPreservesCancellationBeforeNetworkWork()
     {
-        var coordinator = new UserSessionCoordinator();
+        using var settings = new TemporarySettingsStore();
+        var coordinator = new UserSessionCoordinator(settings.Store);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -70,6 +73,28 @@ public sealed class UserSessionCoordinatorTests
         {
             RefreshCount++;
             return Task.FromResult(new UserSessionSnapshot(null, false));
+        }
+    }
+
+    private sealed class TemporarySettingsStore : IDisposable
+    {
+        private readonly string _directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-user-session-{Guid.NewGuid():N}");
+
+        public TemporarySettingsStore()
+        {
+            Store = new SettingsStore(Path.Combine(_directory, "settings.json"));
+        }
+
+        public SettingsStore Store { get; }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(_directory))
+            {
+                Directory.Delete(_directory, recursive: true);
+            }
         }
     }
 }

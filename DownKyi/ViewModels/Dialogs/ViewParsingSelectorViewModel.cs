@@ -1,3 +1,4 @@
+using System;
 using DownKyi.Core.Settings;
 using DownKyi.Utils;
 using Prism.Commands;
@@ -8,6 +9,7 @@ namespace DownKyi.ViewModels.Dialogs;
 internal class ViewParsingSelectorViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogParsingSelector";
+    private readonly ISettingsStore _settingsStore;
 
     #region 页面属性申明
 
@@ -21,14 +23,15 @@ internal class ViewParsingSelectorViewModel : BaseDialogViewModel
 
     #endregion
 
-    public ViewParsingSelectorViewModel()
+    public ViewParsingSelectorViewModel(ISettingsStore settingsStore)
     {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         #region 属性初始化
 
         Title = DictionaryResource.GetString("ParsingSelector");
 
         // 解析范围
-        var parseScope = SettingsManager.Instance.GetParseScope();
+        var parseScope = _settingsStore.Settings.GetParseScope();
         IsParseDefault = parseScope != ParseScope.None;
 
         #endregion
@@ -104,6 +107,6 @@ internal class ViewParsingSelectorViewModel : BaseDialogViewModel
     /// <param name="parseScope"></param>
     private void SetParseScopeSetting(ParseScope parseScope)
     {
-        SettingsManager.Instance.SetParseScope(IsParseDefault ? parseScope : ParseScope.None);
+        _settingsStore.Settings.SetParseScope(IsParseDefault ? parseScope : ParseScope.None);
     }
 }

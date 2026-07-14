@@ -20,6 +20,7 @@ internal class ViewIndexViewModel : ViewModelBase
 {
     public const string Tag = "PageIndex";
     private readonly IUserSessionCoordinator _userSessionCoordinator;
+    private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _userRefreshCancellation;
 
     private bool _loginPanelVisibility;
@@ -98,10 +99,12 @@ internal class ViewIndexViewModel : ViewModelBase
 
     public ViewIndexViewModel(
         IEventAggregator eventAggregator,
-        IUserSessionCoordinator userSessionCoordinator) : base(eventAggregator)
+        IUserSessionCoordinator userSessionCoordinator,
+        ISettingsStore settingsStore) : base(eventAggregator)
     {
         _userSessionCoordinator = userSessionCoordinator
             ?? throw new ArgumentNullException(nameof(userSessionCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _loginPanelVisibility = true;
         Header = "avares://DownKyi/Resources/default_header.jpg";
 
@@ -150,7 +153,7 @@ internal class ViewIndexViewModel : ViewModelBase
         else
         {
             // 进入用户空间
-            var userInfo = SettingsManager.Instance.GetUserInfo();
+            var userInfo = _settingsStore.Settings.GetUserInfo();
             if (userInfo != null && userInfo.Mid != -1)
             {
                 NavigateToView.NavigationView(EventAggregator, ViewMySpaceViewModel.Tag, Tag, userInfo.Mid);

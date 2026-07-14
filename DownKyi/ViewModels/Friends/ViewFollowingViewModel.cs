@@ -24,6 +24,7 @@ internal class ViewFollowingViewModel : ViewModelBase
 {
     public const string Tag = "PageFriendsFollowing";
     private readonly IFriendRelationCoordinator _friendRelationCoordinator;
+    private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
 
     // mid
@@ -150,10 +151,12 @@ internal class ViewFollowingViewModel : ViewModelBase
 
     public ViewFollowingViewModel(
         IEventAggregator eventAggregator,
-        IFriendRelationCoordinator friendRelationCoordinator) : base(eventAggregator)
+        IFriendRelationCoordinator friendRelationCoordinator,
+        ISettingsStore settingsStore) : base(eventAggregator)
     {
         _friendRelationCoordinator = friendRelationCoordinator
             ?? throw new ArgumentNullException(nameof(friendRelationCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         #region 属性初始化
 
         // 初始化loading gif
@@ -235,7 +238,7 @@ internal class ViewFollowingViewModel : ViewModelBase
         InitView();
         try
         {
-            var userInfo = SettingsManager.Instance.GetUserInfo();
+            var userInfo = _settingsStore.Settings.GetUserInfo();
             var isCurrentUser = userInfo != null && userInfo.Mid == _mid;
             var overview = await _friendRelationCoordinator
                 .LoadFollowingOverviewAsync(_mid, isCurrentUser, cancellationToken)

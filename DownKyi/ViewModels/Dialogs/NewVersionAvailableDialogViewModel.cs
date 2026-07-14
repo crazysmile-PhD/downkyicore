@@ -16,12 +16,18 @@ namespace DownKyi.ViewModels.Dialogs
     {
         public const string Tag = "NewVersionAvailable";
 
+        private readonly ISettingsStore _settingsStore;
         private DownKyiAsyncDelegateCommand? _allowCommand;
 
         private DelegateCommand? _skipCurrentVersionCommand;
 
         public DelegateCommand SkipCurrentVersionCommand => _skipCurrentVersionCommand ??= new DelegateCommand(ExecuteSkipCurrentVersionCommand);
         public DownKyiAsyncDelegateCommand AllowCommand => _allowCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAllowCommand);
+
+        public NewVersionAvailableDialogViewModel(ISettingsStore settingsStore)
+        {
+            _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        }
 
         private async Task ExecuteAllowCommand()
         {
@@ -32,7 +38,7 @@ namespace DownKyi.ViewModels.Dialogs
 
         private void ExecuteSkipCurrentVersionCommand()
         {
-            SettingsManager.Instance.SetSkipVersionOnLaunch(NewVersion);
+            _settingsStore.Settings.SetSkipVersionOnLaunch(NewVersion);
             CloseDialog(new DialogResult());
         }
 

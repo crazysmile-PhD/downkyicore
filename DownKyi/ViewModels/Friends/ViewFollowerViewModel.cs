@@ -20,6 +20,7 @@ internal class ViewFollowerViewModel : ViewModelBase
 {
     public const string Tag = "PageFriendsFollower";
     private readonly IFriendRelationCoordinator _friendRelationCoordinator;
+    private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
 
     // mid
@@ -98,10 +99,12 @@ internal class ViewFollowerViewModel : ViewModelBase
 
     public ViewFollowerViewModel(
         IEventAggregator eventAggregator,
-        IFriendRelationCoordinator friendRelationCoordinator) : base(eventAggregator)
+        IFriendRelationCoordinator friendRelationCoordinator,
+        ISettingsStore settingsStore) : base(eventAggregator)
     {
         _friendRelationCoordinator = friendRelationCoordinator
             ?? throw new ArgumentNullException(nameof(friendRelationCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         #region 属性初始化
 
         // 初始化loading
@@ -154,7 +157,7 @@ internal class ViewFollowerViewModel : ViewModelBase
                 Sign = item.Sign
             }));
 
-            var userInfo = SettingsManager.Instance.GetUserInfo();
+            var userInfo = _settingsStore.Settings.GetUserInfo();
             if (userInfo != null && userInfo.Mid == _mid)
             {
                 Pager.Count = (int)Math.Ceiling((double)data.Total / NumberInPage);

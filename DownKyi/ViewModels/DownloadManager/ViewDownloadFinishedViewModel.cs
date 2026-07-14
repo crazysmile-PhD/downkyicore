@@ -23,6 +23,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
 
     private DownloadStorageService _downloadStorageService;
     private readonly DownloadListState _downloadLists;
+    private readonly ISettingsStore _settingsStore;
 
     #region 页面属性申明
 
@@ -48,16 +49,18 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         IEventAggregator eventAggregator,
         IDialogService dialogService,
         DownloadStorageService downloadStorageService,
-        DownloadListState downloadLists
+        DownloadListState downloadLists,
+        ISettingsStore settingsStore
     ) : base(eventAggregator,
         dialogService)
     {
         // 初始化DownloadedList
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         DownloadedList = downloadLists.Downloaded;
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
 
-        var finishedSort = SettingsManager.Instance.GetDownloadFinishedSort();
+        var finishedSort = _settingsStore.Settings.GetDownloadFinishedSort();
         FinishedSortBy = finishedSort switch
         {
             DownloadFinishedSort.DownloadAsc => 0,
@@ -90,22 +93,22 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             case 0:
                 _downloadLists.SortDownloaded(DownloadFinishedSort.DownloadAsc);
                 // 更新设置
-                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
+                _settingsStore.Settings.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
             case 1:
                 _downloadLists.SortDownloaded(DownloadFinishedSort.DownloadDesc);
                 // 更新设置
-                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadDesc);
+                _settingsStore.Settings.SetDownloadFinishedSort(DownloadFinishedSort.DownloadDesc);
                 break;
             case 2:
                 _downloadLists.SortDownloaded(DownloadFinishedSort.Number);
                 // 更新设置
-                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.Number);
+                _settingsStore.Settings.SetDownloadFinishedSort(DownloadFinishedSort.Number);
                 break;
             default:
                 _downloadLists.SortDownloaded(DownloadFinishedSort.DownloadAsc);
                 // 更新设置
-                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
+                _settingsStore.Settings.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
         }
     }

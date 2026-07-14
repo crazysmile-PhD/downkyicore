@@ -29,6 +29,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
     private readonly IRegionManager _regionManager;
 
     private readonly IDialogService _dialogService;
+    private readonly ISettingsStore _settingsStore;
 
     private const string ContentRegion = nameof(ContentRegion);
 
@@ -122,11 +123,16 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         .Regions[ContentRegion].ActiveViews
         .FirstOrDefault() as UserControl;
 
-    public MainWindowViewModel(IRegionManager regionManager, IEventAggregator eventAggregator, IDialogService dialogService)
+    public MainWindowViewModel(
+        IRegionManager regionManager,
+        IEventAggregator eventAggregator,
+        IDialogService dialogService,
+        ISettingsStore settingsStore)
     {
         _eventAggregator = eventAggregator;
         _regionManager = regionManager;
         _dialogService = dialogService;
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
 
         #region MyRegion
 
@@ -212,7 +218,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
     private void ClipboardListenerOnChanged(object? sender, ClipboardChangedEventArgs e)
     {
-        var isListenClipboard = SettingsManager.Instance.GetIsListenClipboard();
+        var isListenClipboard = _settingsStore.Settings.GetIsListenClipboard();
         if (isListenClipboard != AllowStatus.Yes)
         {
             return;
@@ -257,11 +263,11 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
     {
         try
         {
-            var isAutoUpdate = SettingsManager.Instance.GetAutoUpdateWhenLaunch() != AllowStatus.Yes;
+            var isAutoUpdate = _settingsStore.Settings.GetAutoUpdateWhenLaunch() != AllowStatus.Yes;
             if (isAutoUpdate) return;
             var service = new VersionCheckerService(App.RepoOwner, App.RepoName,
-                SettingsManager.Instance.GetIsReceiveBetaVersion() == AllowStatus.Yes);
-            var release = await service.GetLatestReleaseAsync(SettingsManager.Instance.GetSkipVersionOnLaunch()).ConfigureAwait(true);
+                _settingsStore.Settings.GetIsReceiveBetaVersion() == AllowStatus.Yes);
+            var release = await service.GetLatestReleaseAsync(_settingsStore.Settings.GetSkipVersionOnLaunch()).ConfigureAwait(true);
             if (release != null && service.IsNewVersionAvailable(release.TagName))
             {
                 await _dialogService.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new

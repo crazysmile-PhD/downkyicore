@@ -12,20 +12,18 @@ namespace DownKyi.Views;
 internal partial class MainWindow : Window
 {
     private const string ContentRegionName = "ContentRegion";
+    private readonly ISettingsStore _settingsStore;
     private WindowSettings _windowSettings;
     private bool _closeConfirmed;
     private bool _closeInProgress;
 
-    public MainWindow()
-    {
-        InitializeComponent();
-        _windowSettings = SettingsManager.Instance.GetWindowSettings().Clone();
-        ApplyWindowSettings();
-    }
-
-    public MainWindow(MainWindowViewModel viewModel) : this()
+    public MainWindow(MainWindowViewModel viewModel, ISettingsStore settingsStore)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        InitializeComponent();
+        _windowSettings = _settingsStore.Settings.GetWindowSettings().Clone();
+        ApplyWindowSettings();
         DataContext = viewModel;
     }
 
@@ -83,7 +81,7 @@ internal partial class MainWindow : Window
             _windowSettings.Y = Position.Y;
         }
 
-        SettingsManager.Instance.SettingWindowSettings(_windowSettings);
+        _settingsStore.Settings.SettingWindowSettings(_windowSettings);
     }
 
     private async Task CompleteCloseAsync()
@@ -107,6 +105,6 @@ internal partial class MainWindow : Window
     //     _windowSettings.X = Position.X;
     //     _windowSettings.Y = Position.Y;
     //
-    //     SettingsManager.Instance.SettingWindowSettings(_windowSettings);
+    //     _settingsStore.Settings.SettingWindowSettings(_windowSettings);
     // }
 }

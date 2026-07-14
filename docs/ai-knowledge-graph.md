@@ -1358,8 +1358,13 @@ responsibility: Owns the current settings instance, debounces atomic persistence
 inbound:
   - app.application
   - app.host-composition
+  - ui.main-window
+  - viewmodel.main-window
+  - viewmodel.index
   - viewmodel.video-detail
   - viewmodel.settings-pages
+  - legacy dialogs and download/friend ViewModels
+  - service.account-session
 outbound:
   - core.legacy-settings-migration
   - external.filesystem
@@ -1367,6 +1372,7 @@ contracts:
   - Prism and Microsoft Host composition share the same store instance; they must not create competing settings owners.
   - App and migrated ViewModels cannot reach through `SettingsManager.Instance`.
   - Basic, network, video, danmaku, and about settings pages use the same injected owner for reads and writes.
+  - MainWindow has no parameterless singleton fallback; Host composition supplies both its ViewModel and settings owner.
   - The persisted JSON property names, enum values, and storage path remain compatible with existing user settings.
   - Shutdown flush is awaited without synchronously blocking the UI thread.
 hazards:
@@ -1884,7 +1890,7 @@ test.architecture-boundaries:
     - friend relation API work cannot move back into ViewModels or per-item dispatcher posts
     - season/series loading and add work cannot move back into the ViewModel or bypass directory cancellation
     - legacy upgrade migration cannot move NRBF, SQLite, storage lookup, Task.Run, or Dispatcher work back into the dialog ViewModel
-    - migrated App, video-detail, and settings-page owners cannot restore direct SettingsManager singleton access
+    - migrated App, shell, ViewModels, dialogs, account session, video-detail, and settings-page owners cannot restore direct SettingsManager singleton access
     - Prism and Host composition must share one injected settings owner
 
 test.settings-store:

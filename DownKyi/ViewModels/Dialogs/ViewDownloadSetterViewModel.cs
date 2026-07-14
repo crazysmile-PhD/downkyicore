@@ -21,6 +21,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     public const string Tag = "DialogDownloadSetter";
     private readonly IEventAggregator _eventAggregator;
     private readonly IFilePickerService _filePickerService;
+    private readonly ISettingsStore _settingsStore;
 
     // 历史文件夹的数量
     private const int MaxDirectoryListCount = 20;
@@ -138,10 +139,12 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 
     public ViewDownloadSetterViewModel(
         IEventAggregator eventAggregator,
-        IFilePickerService filePickerService)
+        IFilePickerService filePickerService,
+        ISettingsStore settingsStore)
     {
         _eventAggregator = eventAggregator;
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
 
         #region 属性初始化
 
@@ -154,7 +157,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         FolderIcon.Fill = DictionaryResource.GetColor("ColorPrimary");
 
         // 下载内容
-        var videoContent = SettingsManager.Instance.GetVideoContent();
+        var videoContent = _settingsStore.Settings.GetVideoContent();
 
         DownloadAudio = videoContent.DownloadAudio;
         DownloadVideo = videoContent.DownloadVideo;
@@ -172,8 +175,8 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         }
 
         // 历史下载目录
-        DirectoryList = new ObservableCollection<string>(SettingsManager.Instance.GetHistoryVideoRootPaths());
-        var directory = SettingsManager.Instance.GetSaveVideoRootPath();
+        DirectoryList = new ObservableCollection<string>(_settingsStore.Settings.GetHistoryVideoRootPaths());
+        var directory = _settingsStore.Settings.GetSaveVideoRootPath();
         if (!DirectoryList.Contains(directory))
         {
             ListHelper.InsertUnique(DirectoryList, directory, 0);
@@ -182,7 +185,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         Directory = directory;
 
         // 是否使用默认下载目录
-        IsDefaultDownloadDirectory = SettingsManager.Instance.GetIsUseSaveVideoRootPath() == AllowStatus.Yes;
+        IsDefaultDownloadDirectory = _settingsStore.Settings.GetIsUseSaveVideoRootPath() == AllowStatus.Yes;
 
         #endregion
     }
@@ -378,7 +381,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         }
 
         // 设此文件夹为默认下载文件夹
-        SettingsManager.Instance.SetIsUseSaveVideoRootPath(IsDefaultDownloadDirectory ? AllowStatus.Yes : AllowStatus.No);
+        _settingsStore.Settings.SetIsUseSaveVideoRootPath(IsDefaultDownloadDirectory ? AllowStatus.Yes : AllowStatus.No);
 
         // 将Directory移动到第一项
         // 如果直接在ComboBox中选择的就需要
@@ -386,8 +389,8 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         ListHelper.InsertUnique(DirectoryList, Directory, 0, ref _directory);
 
         // 将更新后的DirectoryList写入历史中
-        SettingsManager.Instance.SetSaveVideoRootPath(Directory);
-        SettingsManager.Instance.SetHistoryVideoRootPaths(DirectoryList.ToList());
+        _settingsStore.Settings.SetSaveVideoRootPath(Directory);
+        _settingsStore.Settings.SetHistoryVideoRootPaths(DirectoryList.ToList());
 
         // 返回数据
         IDialogParameters parameters = new DialogParameters
@@ -419,7 +422,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
             DownloadCover = DownloadCover
         };
 
-        SettingsManager.Instance.SetVideoContent(videoContent);
+        _settingsStore.Settings.SetVideoContent(videoContent);
     }
 
     /// <summary>

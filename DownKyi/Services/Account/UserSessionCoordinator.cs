@@ -21,6 +21,13 @@ internal interface IUserSessionCoordinator
 
 internal sealed class UserSessionCoordinator : IUserSessionCoordinator
 {
+    private readonly ISettingsStore _settingsStore;
+
+    public UserSessionCoordinator(ISettingsStore settingsStore)
+    {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+    }
+
     public Task<UserSessionSnapshot> RefreshAsync(CancellationToken cancellationToken)
     {
         return Task.Run(() =>
@@ -28,7 +35,7 @@ internal sealed class UserSessionCoordinator : IUserSessionCoordinator
             cancellationToken.ThrowIfCancellationRequested();
             var userInfo = UserInfo.GetUserInfoForNavigation();
             cancellationToken.ThrowIfCancellationRequested();
-            SettingsManager.Instance.SetUserInfo(MapSettings(userInfo));
+            _settingsStore.Settings.SetUserInfo(MapSettings(userInfo));
             cancellationToken.ThrowIfCancellationRequested();
             return new UserSessionSnapshot(userInfo, File.Exists(StorageManager.GetLogin()));
         }, cancellationToken);
