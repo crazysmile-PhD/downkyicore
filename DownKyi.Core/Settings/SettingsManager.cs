@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using DownKyi.Core.Logging;
@@ -44,10 +45,7 @@ public partial class SettingsManager
     /// <summary>
     /// 获取 SettingsManager 实例（单例）
     /// </summary>
-    public static SettingsManager GetInstance()
-    {
-        return _instance ??= new SettingsManager();
-    }
+    public static SettingsManager Instance => _instance ??= new SettingsManager();
 
     /// <summary>
     /// 隐藏构造函数，必须使用单例模式
@@ -74,12 +72,12 @@ public partial class SettingsManager
             {
                 return JsonConvert.DeserializeObject<AppSettings>(jsonWordTemplate) ?? new AppSettings();
             }
-            catch
+            catch (JsonException)
             {
                 // 尝试旧版加密格式
                 try
                 {
-                    string decryptedJson = Encryptor.DecryptString(jsonWordTemplate, password);
+                    string decryptedJson = LegacySettingsDecryptor.Decrypt(jsonWordTemplate, password);
                     var settings = JsonConvert.DeserializeObject<AppSettings>(decryptedJson);
                     if (settings != null)
                     {
@@ -90,16 +88,41 @@ public partial class SettingsManager
                         return migrated;
                     }
                 }
-                catch (Exception decryptEx)
+                catch (CryptographicException decryptEx)
                 {
                     Console.PrintLine("配置文件解密失败: {0}", decryptEx.Message);
                     LogManager.Error("SettingsManager", decryptEx);
                 }
+                catch (FormatException decryptEx)
+                {
+                    Console.PrintLine("旧版配置格式无效: {0}", decryptEx.Message);
+                    LogManager.Error("SettingsManager", decryptEx);
+                }
+                catch (ArgumentException decryptEx)
+                {
+                    Console.PrintLine("旧版配置参数无效: {0}", decryptEx.Message);
+                    LogManager.Error("SettingsManager", decryptEx);
+                }
+                catch (JsonException decryptEx)
+                {
+                    Console.PrintLine("旧版配置JSON无效: {0}", decryptEx.Message);
+                    LogManager.Error("SettingsManager", decryptEx);
+                }
             }
         }
-        catch (Exception e)
+        catch (IOException e)
         {
             Console.PrintLine("LoadFromFile()发生异常: {0}", e);
+            LogManager.Error("SettingsManager", e);
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            Console.PrintLine("LoadFromFile()没有读取权限: {0}", e);
+            LogManager.Error("SettingsManager", e);
+        }
+        catch (JsonException e)
+        {
+            Console.PrintLine("CreateDefaultSettingsFile()序列化失败: {0}", e);
             LogManager.Error("SettingsManager", e);
         }
         return new AppSettings();
@@ -112,9 +135,14 @@ public partial class SettingsManager
         {
             WriteSettingsFile(settings);
         }
-        catch (Exception e)
+        catch (IOException e)
         {
             Console.PrintLine("CreateDefaultSettingsFile()发生异常: {0}", e);
+            LogManager.Error("SettingsManager", e);
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            Console.PrintLine("CreateDefaultSettingsFile()没有写入权限: {0}", e);
             LogManager.Error("SettingsManager", e);
         }
 
@@ -147,9 +175,19 @@ public partial class SettingsManager
                 WriteSettingsFile(_appSettings);
                 _dirty = false;
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 Console.PrintLine("FlushNow()发生异常: {0}", e);
+                LogManager.Error("SettingsManager", e);
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Console.PrintLine("FlushNow()没有写入权限: {0}", e);
+                LogManager.Error("SettingsManager", e);
+            }
+            catch (JsonException e)
+            {
+                Console.PrintLine("FlushNow()序列化失败: {0}", e);
                 LogManager.Error("SettingsManager", e);
             }
         }
@@ -171,9 +209,19 @@ public partial class SettingsManager
                 WriteSettingsFile(_appSettings);
                 _dirty = false;
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 Console.PrintLine("Flush()发生异常: {0}", e);
+                LogManager.Error("SettingsManager", e);
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Console.PrintLine("Flush()没有写入权限: {0}", e);
+                LogManager.Error("SettingsManager", e);
+            }
+            catch (JsonException e)
+            {
+                Console.PrintLine("Flush()序列化失败: {0}", e);
                 LogManager.Error("SettingsManager", e);
             }
         }
@@ -218,7 +266,11 @@ public partial class SettingsManager
                     File.Delete(tempFile);
                 }
             }
-            catch (Exception e)
+            catch (IOException e)
+            {
+                LogManager.Error("SettingsManager", e);
+            }
+            catch (UnauthorizedAccessException e)
             {
                 LogManager.Error("SettingsManager", e);
             }

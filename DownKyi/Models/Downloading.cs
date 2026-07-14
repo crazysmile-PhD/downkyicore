@@ -3,7 +3,7 @@ using DownKyi.Core.BiliApi.VideoStream;
 
 namespace DownKyi.Models;
 
-public class Downloading
+internal class Downloading
 {
     public string Id { get; set; } = null!;
 
@@ -11,10 +11,10 @@ public class Downloading
     public string? Gid { get; set; }
 
     // 下载的文件
-    public Dictionary<string, string> DownloadFiles { get; set; } = new();
+    public IDictionary<string, string> DownloadFiles { get; internal set; } = new Dictionary<string, string>();
 
     // 已下载的文件
-    public List<string> DownloadedFiles { get; set; } = new();
+    public IList<string> DownloadedFiles { get; internal set; } = new List<string>();
 
     // 视频类别
     public PlayStreamType PlayStreamType { get; set; }

@@ -1,21 +1,36 @@
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
+using DownKyi.ViewModels;
+using Prism.Navigation.Regions;
 
 namespace DownKyi.Views;
 
-public partial class MainWindow : Window
+internal partial class MainWindow : Window
 {
+    private const string ContentRegionName = "ContentRegion";
     private WindowSettings _windowSettings;
 
     public MainWindow()
     {
         InitializeComponent();
-        _windowSettings = SettingsManager.GetInstance().GetWindowSettings().Clone();
+        _windowSettings = SettingsManager.Instance.GetWindowSettings().Clone();
         ApplyWindowSettings();
+    }
+
+    public MainWindow(MainWindowViewModel viewModel) : this()
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        DataContext = viewModel;
+    }
+
+    public void AttachLegacyRegion()
+    {
+        RegionManager.SetRegionName(ContentRegionHost, ContentRegionName);
     }
 
     private void ApplyWindowSettings()
@@ -44,9 +59,9 @@ public partial class MainWindow : Window
             _windowSettings.Y = Position.Y;
         }
 
-        SettingsManager.GetInstance().SettingWindowSettings(_windowSettings);
+        SettingsManager.Instance.SettingWindowSettings(_windowSettings);
 
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             Dispatcher.UIThread.Post(() => desktop.Shutdown(), DispatcherPriority.Background);
         }
@@ -62,6 +77,6 @@ public partial class MainWindow : Window
     //     _windowSettings.X = Position.X;
     //     _windowSettings.Y = Position.Y;
     //
-    //     SettingsManager.GetInstance().SettingWindowSettings(_windowSettings);
+    //     SettingsManager.Instance.SettingWindowSettings(_windowSettings);
     // }
 }

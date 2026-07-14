@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using DownKyi.Core.Settings;
@@ -6,6 +7,14 @@ namespace DownKyi.Core.BiliApi.Sign;
 
 public static class WbiSign
 {
+    private static readonly int[] MixinKeyEncodingTable =
+    {
+        46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+        33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
+        61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
+        36, 20, 34, 44, 52
+    };
+
     /// <summary>
     /// 打乱重排实时口令
     /// </summary>
@@ -13,16 +22,8 @@ public static class WbiSign
     /// <returns></returns>
     private static string GetMixinKey(string origin)
     {
-        int[] mixinKeyEncTab =
-        {
-            46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
-            33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
-            61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
-            36, 20, 34, 44, 52
-        };
-
         var temp = new StringBuilder();
-        foreach (var i in mixinKeyEncTab)
+        foreach (var i in MixinKeyEncodingTable)
         {
             temp.Append(origin[i]);
         }
@@ -37,6 +38,8 @@ public static class WbiSign
     /// <returns></returns>
     public static string ParametersToQuery(Dictionary<string, string> parameters)
     {
+        ArgumentNullException.ThrowIfNull(parameters);
+
         var keys = parameters.Keys.ToList();
         var queryList = (from item in keys let value = parameters[item] select $"{item}={value}").ToList();
 
@@ -50,7 +53,8 @@ public static class WbiSign
     /// <returns></returns>
     public static Dictionary<string, string> EncodeWbi(Dictionary<string, object?> parameters)
     {
-        return EncWbi(parameters, GetKey().Item1, GetKey().Item2);
+        var (imgKey, subKey) = GetKey();
+        return EncodeWbi(parameters, imgKey, subKey, DateTimeOffset.Now.ToUnixTimeSeconds());
     }
 
     /// <summary>
@@ -60,12 +64,20 @@ public static class WbiSign
     /// <param name="imgKey"></param>
     /// <param name="subKey"></param>
     /// <returns></returns>
-    private static Dictionary<string, string> EncWbi(Dictionary<string, object?> parameters, string imgKey, string subKey)
+    internal static Dictionary<string, string> EncodeWbi(
+        Dictionary<string, object?> parameters,
+        string imgKey,
+        string subKey,
+        long unixTimeSeconds)
     {
+        ArgumentNullException.ThrowIfNull(parameters);
+        ArgumentException.ThrowIfNullOrEmpty(imgKey);
+        ArgumentException.ThrowIfNullOrEmpty(subKey);
+
         var paraStr = new Dictionary<string, string>();
         foreach (var (key, value) in parameters)
         {
-            var val = value?.ToString();
+            var val = Convert.ToString(value, CultureInfo.InvariantCulture);
             if (val != null)
             {
                 paraStr.Add(key, val);
@@ -73,28 +85,37 @@ public static class WbiSign
         }
 
         var mixinKey = GetMixinKey(imgKey + subKey);
-        var currTime = DateTimeOffset.Now.ToUnixTimeSeconds().ToString();
+        var currTime = unixTimeSeconds.ToString(CultureInfo.InvariantCulture);
         //添加 wts 字段
         paraStr["wts"] = currTime;
         // 按照 key 重排参数
         paraStr = paraStr.OrderBy(p => p.Key).ToDictionary(p => p.Key, p => p.Value);
         //过滤 value 中的 "!'()*" 字符
-        paraStr = paraStr.ToDictionary(kvp => kvp.Key, kvp => new string(kvp.Value.Where(chr => !"!'()*".Contains(chr)).ToArray()));
+        paraStr = paraStr.ToDictionary(kvp => kvp.Key, kvp => new string(kvp.Value.Where(chr => !"!'()*".Contains(chr, StringComparison.Ordinal)).ToArray()));
         // 序列化参数
-        var query = new FormUrlEncodedContent(paraStr).ReadAsStringAsync().Result;
+        var query = string.Join(
+            "&",
+            paraStr.Select(pair => $"{EncodeFormComponent(pair.Key)}={EncodeFormComponent(pair.Value)}"));
         //计算 w_rid
-        using var md5 = MD5.Create();
-        var hashBytes = md5.ComputeHash(Encoding.UTF8.GetBytes(query + mixinKey));
-        var wbiSign = BitConverter.ToString(hashBytes).Replace("-", "").ToLower();
+        // Bilibili defines w_rid as MD5 here; it is a protocol field, not a password or local trust hash.
+#pragma warning disable CA5351
+        var hashBytes = MD5.HashData(Encoding.UTF8.GetBytes(query + mixinKey));
+#pragma warning restore CA5351
+        var wbiSign = Convert.ToHexStringLower(hashBytes);
         paraStr["w_rid"] = wbiSign;
 
         return paraStr;
     }
 
-    private static Tuple<string, string> GetKey()
+    private static string EncodeFormComponent(string value)
     {
-        var user = SettingsManager.GetInstance().GetUserInfo();
+        return Uri.EscapeDataString(value).Replace("%20", "+", StringComparison.Ordinal);
+    }
 
-        return new Tuple<string, string>(user.ImgKey, user.SubKey);
+    private static (string ImgKey, string SubKey) GetKey()
+    {
+        var user = SettingsManager.Instance.GetUserInfo();
+
+        return (user.ImgKey, user.SubKey);
     }
 }

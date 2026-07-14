@@ -3,12 +3,9 @@ namespace DownKyi.Core.Danmaku2Ass;
 /// <summary>
 /// 过滤器基类
 /// </summary>
-public class Filter
+public abstract class Filter
 {
-    public virtual List<Danmaku> DoFilter(List<Danmaku> danmakus)
-    {
-        throw new NotImplementedException("使用了过滤器的未实现的方法。");
-    }
+    public abstract IReadOnlyList<Danmaku> DoFilter(IReadOnlyList<Danmaku> danmakus);
 }
 
 /// <summary>
@@ -16,7 +13,7 @@ public class Filter
 /// </summary>
 public class TopFilter : Filter
 {
-    public override List<Danmaku> DoFilter(List<Danmaku> danmakus)
+    public override IReadOnlyList<Danmaku> DoFilter(IReadOnlyList<Danmaku> danmakus)
     {
         return danmakus.Where(danmaku => danmaku.Style != "top").ToList();
     }
@@ -27,7 +24,7 @@ public class TopFilter : Filter
 /// </summary>
 public class BottomFilter : Filter
 {
-    public override List<Danmaku> DoFilter(List<Danmaku> danmakus)
+    public override IReadOnlyList<Danmaku> DoFilter(IReadOnlyList<Danmaku> danmakus)
     {
         return danmakus.Where(danmaku => danmaku.Style != "bottom").ToList();
     }
@@ -38,7 +35,7 @@ public class BottomFilter : Filter
 /// </summary>
 public class ScrollFilter : Filter
 {
-    public override List<Danmaku> DoFilter(List<Danmaku> danmakus)
+    public override IReadOnlyList<Danmaku> DoFilter(IReadOnlyList<Danmaku> danmakus)
     {
         return danmakus.Where(danmaku => danmaku.Style != "scroll").ToList();
     }
@@ -49,9 +46,9 @@ public class ScrollFilter : Filter
 /// </summary>
 public class CustomFilter : Filter
 {
-    public override List<Danmaku> DoFilter(List<Danmaku> danmakus)
+    public override IReadOnlyList<Danmaku> DoFilter(IReadOnlyList<Danmaku> danmakus)
     {
         // TODO
-        return base.DoFilter(danmakus);
+        throw new NotImplementedException("使用了过滤器的未实现的方法。");
     }
 }

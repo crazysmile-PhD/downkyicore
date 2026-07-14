@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-07-10
+Last reviewed: 2026-07-12
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -64,6 +64,10 @@ tests:
 flowchart TD
     Program["app.program\nDownKyi/Program.cs"]
     App["app.application\nDownKyi/App.axaml.cs"]
+    Host["app.host-composition\nsrc/DownKyi.Desktop/Composition/DownKyiHost.cs"]
+    Domain["core.domain-contracts\nsrc/DownKyi.Domain"]
+    ApplicationLayer["service.application-contracts\nsrc/DownKyi.Application"]
+    Infrastructure["core.infrastructure\nsrc/DownKyi.Infrastructure"]
     MainWindow["ui.main-window\nDownKyi/Views/MainWindow.axaml"]
     MainVm["viewmodel.main-window\nDownKyi/ViewModels/MainWindowViewModel.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
@@ -72,6 +76,7 @@ flowchart TD
     InfoServices["service.info-services\nVideo/Bangumi/Cheese services"]
     BiliApi["core.bili-api\nDownKyi.Core/BiliApi"]
     WebClient["core.web-client\nDownKyi.Core/BiliApi/WebClient.cs"]
+    LegacySettings["core.legacy-settings-migration\nLegacySettingsDecryptor.cs"]
     DownloadAdd["service.download-add\nAddToDownloadService + DownloadAddCoordinator"]
     DownloadService["service.download-runtime\nDownloadService and implementations"]
     Storage["core.storage\nDownloadStorageService + StorageManager"]
@@ -81,11 +86,18 @@ flowchart TD
     Tests["test.suites\ntests/*"]
     ArchitectureTests["test.architecture-boundaries\nDownKyi.Architecture.Tests"]
     UiSmoke["test.ui-smoke\nDownKyi.Desktop.Tests"]
-    Benchmarks["test.performance-baseline\nDownKyi.Benchmarks"]
+    Benchmarks["test.performance-baseline\nBenchmarkCases + runner"]
     CI["workflow.strict-pr-ci\n.github/workflows/quality.yml"]
+    AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
 
     Program -->|calls| App
-    App -->|injects| MainWindow
+    App -->|creates| Host
+    Host -->|injects| MainWindow
+    Host -->|registers| ApplicationLayer
+    Host -->|registers| Infrastructure
+    ApplicationLayer -->|depends on| Domain
+    Infrastructure -->|implements| ApplicationLayer
+    Infrastructure -->|depends on| Domain
     MainWindow -->|binds| MainVm
     MainVm -->|navigates| VideoVm
     VideoVm -->|calls| Resolver
@@ -93,6 +105,7 @@ flowchart TD
     Parser -->|calls| InfoServices
     InfoServices -->|calls| BiliApi
     BiliApi -->|calls| WebClient
+    App -->|reads old settings only| LegacySettings
     VideoVm -->|calls| DownloadAdd
     DownloadAdd -->|persists| Storage
     DownloadAdd -->|queues| DownloadService
@@ -106,12 +119,16 @@ flowchart TD
     Tests -->|guards| WebClient
     Tests -->|guards| DownloadAdd
     Tests -->|guards| DownloadService
-    ArchitectureTests -->|guards dependency direction| App
+    ArchitectureTests -->|guards dependency direction| Domain
+    ArchitectureTests -->|guards dependency direction| ApplicationLayer
+    ArchitectureTests -->|guards dependency direction| Infrastructure
+    ArchitectureTests -->|guards dependency direction| Host
     UiSmoke -->|guards XAML construction| MainWindow
     Benchmarks -->|measures| WebClient
     CI -->|guards| Tests
     CI -->|guards| ArchitectureTests
     CI -->|guards| UiSmoke
+    AnalyzerInventory -->|documents diagnostics| CI
 ```
 
 ## Canonical Nodes
@@ -144,23 +161,123 @@ id: app.application
 type: app
 paths:
   - DownKyi/App.axaml.cs
-responsibility: Owns Prism registration, shell creation, global download lists, startup download-state loading, and graceful exit cleanup.
+  - DownKyi/Composition/LegacyDesktopComposition.cs
+responsibility: Bridges legacy Prism registrations into the Host, shows the shell, owns global download projections, and coordinates startup and exit cleanup.
 inbound:
   - app.program
 outbound:
+  - app.host-composition
   - ui.main-window
   - service.download-runtime
   - core.storage
   - core.logging
 contracts:
   - UI shell should appear before heavy download state and service startup finish.
+  - The Host is created with default configuration sources disabled and must not redirect database, settings, login, portable-mode, or aria2 session paths.
   - Download startup and shutdown must be cancellation-aware.
   - Global downloading/downloaded lists are shared UI state and must be mutated on the UI thread.
+  - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
+  - UI continuations use the Avalonia context; background and Core continuations do not depend on it.
 hazards:
   - Any synchronous database, aria2, or file scan here directly hurts startup time.
   - Exit cleanup can leave aria2 running if cancellation and timeout paths drift.
+  - Controlled lifetime exit still synchronously waits up to 15 seconds; PR 16-24 owns replacement with bounded Host shutdown.
+  - `LegacyDesktopComposition` and `MainWindow.AttachLegacyRegion` still bridge Prism global region state; PR 25-29 owns deletion after typed navigation takes over.
 tests:
   - test.ui-smoke
+  - test.composition-root
+```
+
+### app.host-composition
+
+```yaml
+id: app.host-composition
+type: app
+paths:
+  - src/DownKyi.Desktop/Composition/DownKyiHost.cs
+responsibility: Builds the single Microsoft.Extensions.Hosting composition root and owns application-wide service lifetime.
+inbound:
+  - app.application
+outbound:
+  - core.domain-contracts
+  - service.application-contracts
+  - core.infrastructure
+contracts:
+  - `DisableDefaults=true` prevents implicit configuration, logging, environment, and path side effects during composition.
+  - Host stop signals the shared application shutdown token before services are disposed.
+  - Only this target-architecture project references Microsoft.Extensions.Hosting.
+hazards:
+  - Legacy UI types are registered through a callback until PR 25-29 moves them into DownKyi.Desktop.
+tests:
+  - test.composition-root
+  - test.architecture-boundaries
+```
+
+### core.domain-contracts
+
+```yaml
+id: core.domain-contracts
+type: core
+paths:
+  - src/DownKyi.Domain/Results/OperationError.cs
+  - src/DownKyi.Domain/Results/OperationResult.cs
+responsibility: Defines framework-free typed success and failure contracts shared by future download and media use cases.
+inbound:
+  - service.application-contracts
+  - core.infrastructure
+outbound: []
+contracts:
+  - Failure retains a typed error kind, stable code, and user-safe message.
+  - Success values are non-null; failed results cannot expose a value without an explicit exception.
+hazards:
+  - Error messages must not contain cookies, full sensitive URLs, or personal filesystem paths.
+tests:
+  - test.domain-results
+  - test.architecture-boundaries
+```
+
+### service.application-contracts
+
+```yaml
+id: service.application-contracts
+type: service
+paths:
+  - src/DownKyi.Application/Lifetime/ApplicationCancellation.cs
+  - src/DownKyi.Application/Time/IClock.cs
+responsibility: Defines application lifetime cancellation and deterministic time boundaries without UI or infrastructure dependencies.
+inbound:
+  - app.host-composition
+  - core.infrastructure
+outbound:
+  - core.domain-contracts
+contracts:
+  - Every long-running operation links caller cancellation with the application shutdown token.
+  - Cancellation remains control flow and must not be converted into a failure result or retry.
+  - Time-dependent use cases receive IClock instead of reading the system clock directly.
+tests:
+  - test.application-lifetime
+  - test.architecture-boundaries
+```
+
+### core.infrastructure
+
+```yaml
+id: core.infrastructure
+type: core
+paths:
+  - src/DownKyi.Infrastructure/Time/SystemClock.cs
+responsibility: Provides framework and operating-system implementations for Application contracts.
+inbound:
+  - app.host-composition
+outbound:
+  - service.application-contracts
+  - core.domain-contracts
+contracts:
+  - Infrastructure never references Desktop or Prism.
+  - SystemClock returns UTC time; deterministic tests replace IClock at the composition boundary.
+tests:
+  - test.infrastructure-clock
+  - test.architecture-boundaries
 ```
 
 ### viewmodel.main-window
@@ -295,12 +412,14 @@ outbound:
 contracts:
   - API failures should be visible at the API boundary; do not turn errors into valid empty payloads.
   - OperationCanceledException must be rethrown.
+  - WBI request signatures must match the fixed protocol vector; MD5 is limited to that external format.
 hazards:
   - Bilibili schema changes can deserialize into null and fail later in UI/download flows.
   - Logging full URLs can leak tokens, cookies, and personal query data.
 tests:
   - test.web-client
   - test.json-contracts
+  - test.wbi-signature
 ```
 
 ### core.web-client
@@ -379,9 +498,9 @@ outbound:
 contracts:
   - Incomplete, empty, HTML/JSON error, and sidecar files are not valid completed media.
   - Canceled/deleted downloads should clean partial files and aria2 metadata.
-  - Each multi-segment DURL has a unique key derived from stable segment order or index.
-  - DURL merge input is sorted by Order and success requires ffprobe stream, duration, and seek/decode validation.
-  - Multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; stream copy is not a valid first strategy.
+  - Target in PR 07-15: each multi-segment DURL has a unique key derived from stable segment order or index.
+  - Target in PR 07-15: DURL merge input is sorted by Order and success requires ffprobe stream, duration, and seek/decode validation.
+  - Target in PR 07-15: multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; stream copy is not a valid first strategy.
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
   - Blocking waits in download lifecycle can freeze UI or prevent process exit.
@@ -449,6 +568,32 @@ tests:
   - test.diagnostic-log-redaction
 ```
 
+### core.legacy-settings-migration
+
+```yaml
+id: core.legacy-settings-migration
+type: core
+paths:
+  - DownKyi.Core/Utils/Encryptor/LegacySettingsDecryptor.cs
+  - DownKyi.Core/Settings/SettingsManager.cs
+responsibility: Reads the historical DES settings format once so existing settings can be rewritten as current JSON.
+inbound:
+  - app.application
+outbound:
+  - core.settings
+contracts:
+  - This path is read-only and cannot encrypt new settings.
+  - Invalid legacy payloads fail visibly to SettingsManager and never masquerade as valid JSON.
+  - Successful migration uses the existing atomic settings writer and preserves user values.
+hazards:
+  - DES is cryptographically broken and must never be reused for credentials, integrity, or new storage.
+  - Deleting the reader before the migration support window closes loses old user settings.
+tests:
+  - test.legacy-settings-migration
+deletion_owner:
+  - PR 25-29 after an explicit migration-window decision
+```
+
 ### external.ffmpeg
 
 ```yaml
@@ -467,6 +612,7 @@ contracts:
   - Stream copy is preferred when possible.
   - Hardware encode failure must fall back to CPU for success rate.
   - Release packages must include cross-platform ffmpeg binaries with checksums.
+  - FFmpeg concurrency state belongs to the singleton runtime instance; every operation, including frame extraction, must enter and release the same bounded slot gate.
 hazards:
   - GPU encoder flags differ across OS/GPU/driver.
   - Full transcode can spike CPU and memory during batch downloads.
@@ -515,12 +661,61 @@ contracts:
   - PR CI should block definite failures.
   - Nightly/release workflows should own heavy or noisy regression discovery.
   - Local and CI builds must use the same AnalysisMode=All analyzer policy.
+  - Windows, Linux, and macOS builds expose the same analyzer diagnostics.
+  - Compiler and CA warnings block every PR on Windows, Linux, and macOS with the repository default `CodeAnalysisTreatWarningsAsErrors=true`.
   - Cleaned analyzer rules are promoted to errors and cannot regress.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
   - Broad NoWarn, global suppressions, nullable disable, or analyzer exclusions hide new defects.
 tests:
   - github.actions
+```
+
+### workflow.analyzer-inventory
+
+```yaml
+id: workflow.analyzer-inventory
+type: workflow
+paths:
+  - Directory.Build.props
+  - .editorconfig
+  - script/analyzer-inventory.ps1
+  - docs/analyzer-baseline.md
+  - docs/analyzer-baseline.csv
+  - docs/analyzer-cleanup-report.md
+responsibility: Converts clean Release build diagnostics and SARIF rule metadata into a deduplicated, reviewable analyzer baseline.
+inbound:
+  - workflow.strict-pr-ci
+outbound:
+  - doc.analyzer-baseline
+contracts:
+  - Repository builds default to EnableNETAnalyzers=true, AnalysisMode=All, and EnforceCodeStyleInBuild=true.
+  - Diagnostic identity includes rule, project, file, location, and message so repeated MSBuild summaries do not inflate counts.
+  - The CSV retains every affected project, file, line, category, and compatibility-review flag.
+  - Compatibility flags are review hints and never authorize mechanical API or schema changes.
+  - Every assembly explicitly declares `CLSCompliant(false)` through `Directory.Build.props`; `CA1014` is enforced without claiming unverified CLS compatibility.
+  - The full solution has zero unhandled CA diagnostics; all 77 cleaned rules and the global analyzer warning policy are blocking errors.
+  - Windows Release build/tests and local `linux-x64`/`osx-x64` cross-RID builds are verified; native Linux/macOS tests run only on their CI matrix runners.
+  - Parameterless singleton, settings, zone-list, and log-directory getters use properties. These types are application components shared across project boundaries, not a supported package API; internal call sites must use the properties so analyzer-clean API shape does not depend on compatibility wrappers.
+  - The request-preparation benchmark deserializes to `JsonElement`, avoiding artificial public DTO contracts that exist only for measurement. The advanced-image wrapper remains private. `FfmpegHardwareAccelerationItem` is namespace-level and public because Avalonia-visible ViewModel properties expose it for option display and selection.
+  - Async command event notification uses the standard protected `OnCanExecuteChanged` raiser. Dialog ViewModels call the protected `CloseDialog` action; it invokes Prism's `RequestClose` listener and is not itself an event.
+  - `TabLeftBanner.NavigationData` carries the selected user-space tab payload. The downstream Prism navigation key remains the legacy string `"object"` for route compatibility.
+  - Test names use analyzer-compliant identifiers. Renamed enum members preserve their numeric settings values; aria2 change-position strings are produced by `AriaClient.GetChangePositionValue`, and Bilibili history still maps `ArticleList` to `article-list`.
+  - `VideoStreamApi` is the static Bilibili playback/subtitle API facade; it is not a `System.IO.Stream`. xUnit nonparallel fixtures use `...TestGroup` types while retaining their collection-name constants.
+  - Favorites API models map `bv_id` to `LegacyBvid` and `bvid` to `Bvid`; both wire fields remain distinct and are covered by a JSON contract test.
+  - Download diagnostic IDs use uppercase truncated SHA-256 values. NFO boolean attributes use explicit lowercase literals, and FFmpeg cleanup errors go only through `LogManager` rather than duplicate terminal output.
+  - Aria2, clipboard, logging, and pager notifications use standard `EventHandler` contracts. Pager veto semantics use `CancelEventArgs` plus `ProposedCurrent`; `ClipboardListener` remains desktop-internal.
+  - DURL descriptors are selected from an `Order`-sorted list and use `Order` plus the literal codec marker `durl` to form stable download keys; BVID and codec hashes are prohibited as segment identity.
+  - Role-specific names replace namespace collisions: `HistoryApi`, `DynamicApi`, `FileNameBuilder`, `FfmpegProcessor`, `BilibiliDanmakuConverter`, `FavoritesPageItem`, and `ThemedDialog`. Bilibili protobuf danmaku parsing lives under `DownKyi.Core.BiliApi.DanmakuApi`.
+  - Executable-only application/UI types are internal. BenchmarkDotNet cases are the deliberate exception: public, non-sealed types live in `DownKyi.BenchmarkCases`, while the executable runner remains internal and discovers the case assembly explicitly.
+  - NFO XML DTOs remain public in `DownKyi.Core/Models/NfoModels.cs`; `XmlSerializer` requires public root and member types. Their `DownKyi.Models` namespace and XML contract are stable even though assembly ownership moved out of the executable.
+  - Raw Bilibili and aria2 address fields remain strings with exact `JsonProperty` wire names; CLR members use semantic `...Address` names. Login QR and redirect consumers validate absolute `Uri` values before use. Do not normalize protocol-relative media addresses or aria2 option strings into `System.Uri`. Protocol, path, token, and marker comparisons use explicit ordinal semantics.
+hazards:
+  - Reusing one SARIF path across projects loses rule metadata because later projects overwrite earlier output.
+  - Comparing raw MSBuild warning totals without deduplication overstates the baseline.
+tests:
+  - clean Release build with AnalysisMode=All
+  - git diff --check
 ```
 
 ## Important Call Flows
@@ -640,6 +835,18 @@ test.storage-resume:
   guards:
     - gid, partial file map, downloaded assets, paused state, and progress survive reopen
 
+test.wbi-signature:
+  paths:
+    - tests/DownKyi.Core.Tests/WbiSignTests.cs
+  guards:
+    - fixed Bilibili WBI keys, timestamp, and parameters produce the expected w_rid
+
+test.legacy-settings-migration:
+  paths:
+    - tests/DownKyi.Core.Tests/LegacySettingsDecryptorTests.cs
+  guards:
+    - a fixed pre-1.0.21 DES settings fixture still decrypts exactly
+
 test.ffmpeg-command-selection:
   paths:
     - tests/DownKyi.Core.Tests/FfmpegProcessingPlanTests.cs
@@ -653,28 +860,83 @@ test.process-cleanup:
   guards:
     - tracked aria2-compatible process is terminated and released
 
+test.null-contracts:
+  paths:
+    - tests/DownKyi.Core.Tests/BiliApiModelContractTests.cs
+    - tests/DownKyi.Core.Tests/WebClientTests.cs
+    - tests/DownKyi.Tests/DownloadTaskFileServiceTests.cs
+    - tests/DownKyi.Tests/RangeObservableCollectionTests.cs
+  guards:
+    - externally visible non-null inputs fail immediately with ArgumentNullException
+    - URL, parser, download-file, collection, navigation, and UI callback entry points do not defer null failures
+
+test.enum-values:
+  paths:
+    - tests/DownKyi.Core.Tests/EnumValueContractTests.cs
+  guards:
+    - analyzer-required None members remain zero without shifting persisted, settings, or protocol enum values
+
 test.architecture-boundaries:
   paths:
     - tests/DownKyi.Architecture.Tests/ProjectDependencyTests.cs
+    - tests/DownKyi.Architecture.Tests/RootViewArchitectureTests.cs
   guards:
     - production project references remain acyclic
     - target Domain/Application/Infrastructure/Desktop dependency direction is enforced
+    - target projects exist exactly once and forbidden source namespaces cannot cross inward
     - Domain cannot reference UI, SQLite, JSON, or FFmpeg framework packages
+    - only DownKyi.Desktop can own the Host package
+    - every temporary legacy bridge names the PR that deletes it
+    - Host-independent root XAML cannot use Prism ViewModelLocator or RegionManager attached properties
+    - production C# cannot reference Prism ContainerLocator directly
 
 test.ui-smoke:
   paths:
     - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
   guards:
     - Avalonia headless platform initializes
-    - MainWindow XAML and its ViewModel binding can be constructed
+    - MainWindow XAML and its ViewModel binding resolve from the real Host without setting Prism ContainerLocator
+    - Prism ContainerLocator is uninitialized before Host creation and remains uninitialized after root XAML construction
+    - MainWindow, index, video-detail, and download-manager ViewModels resolve from Microsoft DI
+    - Host creation does not redirect database, settings, login, portable-mode, or aria2 paths
     - production AppBuilder can be created
+
+test.composition-root:
+  paths:
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+  guards:
+    - the real Host starts and stops without Prism global container state
+    - Host stop signals the shared application shutdown token
+    - the shell and key ViewModels resolve from the same service provider
+
+test.domain-results:
+  paths:
+    - tests/DownKyi.Domain.Tests/OperationResultTests.cs
+  guards:
+    - successful results expose their non-null value
+    - failed results preserve the exact typed error and do not expose a value
+
+test.application-lifetime:
+  paths:
+    - tests/DownKyi.Application.Tests/ApplicationCancellationTests.cs
+  guards:
+    - application shutdown cancels every linked operation
+    - caller cancellation does not cancel unrelated work or global shutdown
+
+test.infrastructure-clock:
+  paths:
+    - tests/DownKyi.Infrastructure.Tests/SystemClockTests.cs
+  guards:
+    - SystemClock returns a current UTC timestamp through the Application contract
 
 test.performance-baseline:
   paths:
+    - benchmarks/DownKyi.BenchmarkCases
     - benchmarks/DownKyi.Benchmarks
     - docs/performance-baseline.md
   guards:
     - request preparation and JSON allocation baselines are reproducible
+    - a benchmark run must produce a result row; process exit code zero alone does not prove BenchmarkDotNet executed a case
 
 test.video-input-resolver:
   paths:
@@ -695,19 +957,23 @@ These nodes are intentionally documented even when coverage is still missing. Ad
 
 ```yaml
 test.json-contracts:
-  status: planned
+  status: partial
+  paths:
+    - tests/DownKyi.Core.Tests/BiliApiModelContractTests.cs
+    - tests/DownKyi.Core.Tests/DanmakuAndZoneContractTests.cs
+    - tests/DownKyi.Core.Tests/VideoSettingsContractTests.cs
+    - tests/DownKyi.Tests/DownloadStorageResumeTests.cs
+    - tests/DownKyi.Tests/NfoModelContractTests.cs
   should_guard:
-    - sample Bilibili JSON deserializes
+    - sample Bilibili JSON arrays deserialize into read-only public collection contracts without changing wire format
+    - video settings collection arrays round-trip without changing property names
+    - SQLite reload preserves download files, completed segment keys, GID, paused state, and progress
+    - NFO collection elements round-trip through XmlSerializer
+    - BVID web-page URL construction prefers BVID and falls back to AID only when BVID is empty
+    - zone icon fallback, quality dimensions, and injected subtitle output encoding remain deterministic
     - missing data does not become NullReference later
     - code != 0 is visible
     - empty string and HTML error pages fail as JSON
-
-test.composition-root:
-  status: planned
-  should_guard:
-    - the real Host registers all main services without Prism global state
-    - MainWindow and key ViewModels resolve from the real composition root
-    - shutdown cancels workers and flushes storage, settings, and logs within a bounded timeout
 
 test.durl-seekability:
   status: planned-for-pr-07-15

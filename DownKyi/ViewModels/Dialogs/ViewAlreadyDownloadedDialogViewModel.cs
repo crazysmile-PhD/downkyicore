@@ -1,10 +1,11 @@
+using System;
 using DownKyi.Images;
 using Prism.Commands;
 using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-public class ViewAlreadyDownloadedDialogViewModel : BaseDialogViewModel
+internal class ViewAlreadyDownloadedDialogViewModel : BaseDialogViewModel
 {
     public const string Tag = "AlreadyDownloadedAlert";
 
@@ -42,7 +43,7 @@ public class ViewAlreadyDownloadedDialogViewModel : BaseDialogViewModel
 
     private void ExecuteYesCommand()
     {
-        RaiseRequestClose(new DialogResult(ButtonResult.OK));
+        CloseDialog(new DialogResult(ButtonResult.OK));
     }
 
     // 关闭窗口事件
@@ -54,13 +55,14 @@ public class ViewAlreadyDownloadedDialogViewModel : BaseDialogViewModel
     /// </summary>
     private void ExecuteCloseCommand()
     {
-        RaiseRequestClose(new DialogResult(ButtonResult.Cancel));
+        CloseDialog(new DialogResult(ButtonResult.Cancel));
     }
 
     #endregion
 
     public override void OnDialogOpened(IDialogParameters parameters)
     {
+        ArgumentNullException.ThrowIfNull(parameters);
         Message = parameters.GetValue<string>("message");
     }
 }

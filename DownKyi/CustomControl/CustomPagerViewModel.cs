@@ -5,7 +5,7 @@ using Prism.Commands;
 
 namespace DownKyi.CustomControl;
 
-public class CustomPagerViewModel : INotifyPropertyChanged
+internal class CustomPagerViewModel : INotifyPropertyChanged
 {
     public CustomPagerViewModel(int current, int count)
     {
@@ -18,23 +18,29 @@ public class CustomPagerViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     // Current修改的回调
-    public delegate bool CurrentChangedHandler(int old, int current);
+    public event EventHandler<CancelEventArgs>? CurrentChanging;
 
-    public event CurrentChangedHandler? CurrentChanged;
+    public int ProposedCurrent { get; private set; }
 
-    protected virtual bool OnCurrentChanged(int old, int current)
+    private bool RequestCurrentChange(int current)
     {
-        return CurrentChanged != null && CurrentChanged.Invoke(old, current);
+        if (CurrentChanging == null)
+        {
+            return false;
+        }
+
+        ProposedCurrent = current;
+        var eventArgs = new CancelEventArgs();
+        CurrentChanging.Invoke(this, eventArgs);
+        return !eventArgs.Cancel;
     }
 
     // Count修改的回调
-    public delegate void CountChangedHandler(int count);
-
-    public event CountChangedHandler? CountChanged;
+    public event EventHandler? CountChanged;
 
     protected virtual void OnCountChanged(int count)
     {
-        CountChanged?.Invoke(count);
+        CountChanged?.Invoke(this, EventArgs.Empty);
     }
 
     #region 绑定属性
@@ -47,7 +53,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _visibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Visibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Visibility)));
         }
     }
 
@@ -62,7 +68,6 @@ public class CustomPagerViewModel : INotifyPropertyChanged
             {
                 Visibility = false;
                 //throw new Exception("数值不在允许的范围内。");
-                Console.WriteLine(value.ToString());
             }
             else
             {
@@ -74,7 +79,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
 
                 SetView();
 
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Count"));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Count)));
             }
         }
     }
@@ -103,14 +108,14 @@ public class CustomPagerViewModel : INotifyPropertyChanged
             }
             else
             {
-                var isSuccess = OnCurrentChanged(_current, value);
+                var isSuccess = RequestCurrentChange(value);
                 if (isSuccess)
                 {
                     _current = value;
 
                     SetView();
 
-                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Current"));
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Current)));
                 }
             }
         }
@@ -124,7 +129,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _first = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("First"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(First)));
         }
     }
 
@@ -136,7 +141,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _previousSecond = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("PreviousSecond"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviousSecond)));
         }
     }
 
@@ -148,7 +153,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _previousFirst = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("PreviousFirst"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviousFirst)));
         }
     }
 
@@ -160,7 +165,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _nextFirst = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("NextFirst"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextFirst)));
         }
     }
 
@@ -172,7 +177,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _nextSecond = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("NextSecond"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextSecond)));
         }
     }
 
@@ -185,7 +190,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _previousVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("PreviousVisibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviousVisibility)));
         }
     }
 
@@ -197,7 +202,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _firstVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("FirstVisibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FirstVisibility)));
         }
     }
 
@@ -209,7 +214,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _leftJumpVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("LeftJumpVisibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LeftJumpVisibility)));
         }
     }
 
@@ -221,7 +226,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _previousSecondVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("PreviousSecondVisibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviousSecondVisibility)));
         }
     }
 
@@ -233,7 +238,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _previousFirstVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("PreviousFirstVisibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviousFirstVisibility)));
         }
     }
 
@@ -246,7 +251,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _nextFirstVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("NextFirstVisibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextFirstVisibility)));
         }
     }
 
@@ -258,7 +263,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _nextSecondVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("NextSecondVisibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextSecondVisibility)));
         }
     }
 
@@ -270,7 +275,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _rightJumpVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("RightJumpVisibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RightJumpVisibility)));
         }
     }
 
@@ -282,7 +287,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _lastVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("LastVisibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LastVisibility)));
         }
     }
 
@@ -294,7 +299,7 @@ public class CustomPagerViewModel : INotifyPropertyChanged
         set
         {
             _nextVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("NextVisibility"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextVisibility)));
         }
     }
 

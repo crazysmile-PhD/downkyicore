@@ -126,7 +126,7 @@ namespace DownKyi.Core.Settings
         /// <returns></returns>
         public string GetUserAgent()
         {
-            if (_appSettings.Network.UserAgent == string.Empty)
+            if (string.IsNullOrEmpty(_appSettings.Network.UserAgent))
             {
                 // 第一次获取，先设置默认值
                 SetUserAgent(UserAgent);
@@ -207,14 +207,14 @@ namespace DownKyi.Core.Settings
             return _customNetworkProxy;
         }
 
-        public bool SetCustomProxy(string proxyUrl)
+        public bool SetCustomProxy(string proxyAddress)
         {
             try
             {
-                _ = new WebProxy(proxyUrl);
+                _ = new WebProxy(proxyAddress);
                 return SetProperty(
                     _appSettings.Network.CustomNetworkProxy,
-                    proxyUrl,
+                    proxyAddress,
                     v => _appSettings.Network.CustomNetworkProxy = v);
             }
             catch (UriFormatException)
@@ -441,7 +441,7 @@ namespace DownKyi.Core.Settings
         /// <returns></returns>
         public AriaConfigLogLevel GetAriaLogLevel()
         {
-            if (_appSettings.Network.AriaLogLevel == AriaConfigLogLevel.NOT_SET)
+            if (_appSettings.Network.AriaLogLevel == AriaConfigLogLevel.NotSet)
             {
                 // 第一次获取，先设置默认值
                 SetAriaLogLevel(AriaLogLevel);
@@ -557,7 +557,7 @@ namespace DownKyi.Core.Settings
         /// <returns></returns>
         public AriaConfigFileAllocation GetAriaFileAllocation()
         {
-            if (_appSettings.Network.AriaFileAllocation == AriaConfigFileAllocation.NOT_SET)
+            if (_appSettings.Network.AriaFileAllocation == AriaConfigFileAllocation.NotSet)
             {
                 // 第一次获取，先设置默认值
                 SetAriaFileAllocation(AriaFileAllocation);
@@ -666,5 +666,6 @@ namespace DownKyi.Core.Settings
                 ariaHttpProxyListenPort,
                 v => _appSettings.Network.AriaHttpProxyListenPort = v);
         }
+
     }
 }

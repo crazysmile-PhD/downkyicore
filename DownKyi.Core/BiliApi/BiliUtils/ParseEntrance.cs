@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using DownKyi.Core.Utils.Validator;
 
@@ -42,6 +43,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsAvId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return IsIntId(input, "av");
     }
 
@@ -63,6 +65,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetAvId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (IsAvId(input))
         {
             return Number.GetInt(input.Remove(0, 2));
@@ -84,7 +87,8 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsBvId(string input)
     {
-        return input.StartsWith("BV") && input.Length == 12;
+        ArgumentNullException.ThrowIfNull(input);
+        return input.StartsWith("BV", StringComparison.Ordinal) && input.Length == 12;
     }
 
     /// <summary>
@@ -130,6 +134,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsBangumiSeasonId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return IsIntId(input, "ss");
     }
 
@@ -151,6 +156,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetBangumiSeasonId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (IsBangumiSeasonId(input))
         {
             return Number.GetInt(input.Remove(0, 2));
@@ -171,6 +177,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsBangumiEpisodeId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return IsIntId(input, "ep");
     }
 
@@ -192,6 +199,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetBangumiEpisodeId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (IsBangumiEpisodeId(input))
         {
             return Number.GetInt(input.Remove(0, 2));
@@ -212,6 +220,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsBangumiMediaId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return IsIntId(input, "md");
     }
 
@@ -233,6 +242,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetBangumiMediaId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (IsBangumiMediaId(input))
         {
             return Number.GetInt(input.Remove(0, 2));
@@ -303,6 +313,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsFavoritesId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         return IsIntId(input, "ml");
     }
 
@@ -356,6 +367,7 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetFavoritesId(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (IsFavoritesId(input))
         {
             return Number.GetInt(input.Remove(0, 2));
@@ -390,12 +402,13 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsUserId(string input)
     {
-        if (input.ToLower().StartsWith("uid:"))
+        ArgumentNullException.ThrowIfNull(input);
+        if (input.StartsWith("uid:", StringComparison.OrdinalIgnoreCase))
         {
             return Regex.IsMatch(input.Remove(0, 4), @"^\d+$");
         }
 
-        if (input.ToLower().StartsWith("uid"))
+        if (input.StartsWith("uid", StringComparison.OrdinalIgnoreCase))
         {
             return Regex.IsMatch(input.Remove(0, 3), @"^\d+$");
         }
@@ -410,12 +423,13 @@ public static class ParseEntrance
     /// <returns></returns>
     public static bool IsUserUrl(string input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         if (!IsUrl(input))
         {
             return false;
         }
 
-        if (input.Contains("space.bilibili.com"))
+        if (input.Contains("space.bilibili.com", StringComparison.Ordinal))
         {
             return true;
         }
@@ -432,12 +446,13 @@ public static class ParseEntrance
     /// <returns></returns>
     public static long GetUserId(string input)
     {
-        if (input.ToLower().StartsWith("uid:"))
+        ArgumentNullException.ThrowIfNull(input);
+        if (input.StartsWith("uid:", StringComparison.OrdinalIgnoreCase))
         {
             return Number.GetInt(input.Remove(0, 4));
         }
 
-        if (input.ToLower().StartsWith("uid"))
+        if (input.StartsWith("uid", StringComparison.OrdinalIgnoreCase))
         {
             return Number.GetInt(input.Remove(0, 3));
         }
@@ -449,7 +464,7 @@ public static class ParseEntrance
             var match = Regex.Match(url, @"\d+");
             if (match.Success)
             {
-                return long.Parse(match.Value);
+                return long.Parse(match.Value, CultureInfo.InvariantCulture);
             }
 
             return -1;
@@ -467,7 +482,7 @@ public static class ParseEntrance
     /// <returns></returns>
     private static bool IsUrl(string input)
     {
-        return input.StartsWith("http://") || input.StartsWith("https://");
+        return input.StartsWith("http://", StringComparison.Ordinal) || input.StartsWith("https://", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -481,7 +496,7 @@ public static class ParseEntrance
             return url;
         }
 
-        return url.Replace("http://", "https://");
+        return url.Replace("http://", "https://", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -493,7 +508,7 @@ public static class ParseEntrance
     {
         var strList = url.Split('?');
 
-        return strList[0].EndsWith("/") ? strList[0].TrimEnd('/') : strList[0];
+        return strList[0].EndsWith('/') ? strList[0].TrimEnd('/') : strList[0];
     }
 
     /// <summary>
@@ -514,7 +529,7 @@ public static class ParseEntrance
     private static string GetBangumiId(string input)
     {
         var id = GetId(input, BangumiUrl);
-        return id != "" ? id : GetId(input, BangumiMediaUrl);
+        return !string.IsNullOrEmpty(id) ? id : GetId(input, BangumiMediaUrl);
     }
 
     /// <summary>
@@ -535,7 +550,7 @@ public static class ParseEntrance
     /// <returns></returns>
     private static bool IsIntId(string input, string prefix)
     {
-        return input.ToLower().StartsWith(prefix) && Regex.IsMatch(input.Remove(0, 2), @"^\d+$");
+        return input.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && Regex.IsMatch(input.Remove(0, 2), @"^\d+$");
     }
 
     /// <summary>
@@ -554,18 +569,18 @@ public static class ParseEntrance
         var url = EnableHttps(input);
         url = DeleteUrlParam(url);
 
-        url = url.Replace(ShareWwwUrl, WwwUrl);
-        url = url.Replace(MobileUrl, WwwUrl);
+        url = url.Replace(ShareWwwUrl, WwwUrl, StringComparison.Ordinal);
+        url = url.Replace(MobileUrl, WwwUrl, StringComparison.Ordinal);
 
-        if (url.Contains("b23.tv/ss") || url.Contains("b23.tv/ep"))
+        if (url.Contains("b23.tv/ss", StringComparison.Ordinal) || url.Contains("b23.tv/ep", StringComparison.Ordinal))
         {
-            url = url.Replace(ShortUrl, BangumiUrl);
+            url = url.Replace(ShortUrl, BangumiUrl, StringComparison.Ordinal);
         }
         else
         {
-            url = url.Replace(ShortUrl, VideoUrl);
+            url = url.Replace(ShortUrl, VideoUrl, StringComparison.Ordinal);
         }
 
-        return !url.StartsWith(baseUrl) ? "" : url.Replace(baseUrl, "");
+        return !url.StartsWith(baseUrl, StringComparison.Ordinal) ? "" : url.Replace(baseUrl, "", StringComparison.Ordinal);
     }
 }

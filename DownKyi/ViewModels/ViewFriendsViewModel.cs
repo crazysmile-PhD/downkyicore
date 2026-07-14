@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using DownKyi.Events;
@@ -11,7 +12,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
 {
-    public class ViewFriendsViewModel : ViewModelBase
+    internal class ViewFriendsViewModel : ViewModelBase
     {
         public const string Tag = "PageFriends";
 
@@ -34,7 +35,7 @@ namespace DownKyi.ViewModels
         public ObservableCollection<TabHeader> TabHeaders
         {
             get => _tabHeaders;
-            set => SetProperty(ref _tabHeaders, value);
+            private set => SetProperty(ref _tabHeaders, value);
         }
 
         private int _selectTabId = -1;
@@ -147,6 +148,7 @@ namespace DownKyi.ViewModels
         /// <param name="navigationContext"></param>
         public override void OnNavigatedTo(NavigationContext navigationContext)
         {
+            ArgumentNullException.ThrowIfNull(navigationContext);
             base.OnNavigatedTo(navigationContext);
 
             ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");

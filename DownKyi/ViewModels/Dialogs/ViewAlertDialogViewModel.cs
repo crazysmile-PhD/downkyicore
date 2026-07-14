@@ -1,10 +1,11 @@
+using System;
 using DownKyi.Images;
 using Prism.Commands;
 using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-public class ViewAlertDialogViewModel : BaseDialogViewModel
+internal class ViewAlertDialogViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogAlert";
 
@@ -61,7 +62,7 @@ public class ViewAlertDialogViewModel : BaseDialogViewModel
     private void ExecuteAllowCommand()
     {
         ButtonResult result = ButtonResult.OK;
-        RaiseRequestClose(new DialogResult(result));
+        CloseDialog(new DialogResult(result));
     }
 
     #endregion
@@ -70,6 +71,7 @@ public class ViewAlertDialogViewModel : BaseDialogViewModel
 
     public override void OnDialogOpened(IDialogParameters parameters)
     {
+        ArgumentNullException.ThrowIfNull(parameters);
         base.OnDialogOpened(parameters);
 
         Image = parameters.GetValue<VectorImage>("image");

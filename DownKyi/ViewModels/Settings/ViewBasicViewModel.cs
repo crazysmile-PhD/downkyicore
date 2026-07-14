@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using DownKyi.Core.Settings;
@@ -10,7 +11,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Settings;
 
-public class ViewBasicViewModel : ViewModelBase
+internal class ViewBasicViewModel : ViewModelBase
 {
     public const string Tag = "PageSettingsBasic";
 
@@ -82,9 +83,9 @@ public class ViewBasicViewModel : ViewModelBase
         set => SetProperty(ref _autoParseVideo, value);
     }
 
-    private List<ParseScopeDisplay> _parseScopes = new();
+    private IReadOnlyList<ParseScopeDisplay> _parseScopes = Array.Empty<ParseScopeDisplay>();
 
-    public List<ParseScopeDisplay> ParseScopes
+    public IReadOnlyList<ParseScopeDisplay> ParseScopes
     {
         get => _parseScopes;
         set => SetProperty(ref _parseScopes, value);
@@ -114,9 +115,9 @@ public class ViewBasicViewModel : ViewModelBase
         set => SetProperty(ref _repeatFileAutoAddNumberSuffix, value);
     }
 
-    private List<RepeatDownloadStrategyDisplay> _repeatDownloadStrategy = new();
+    private IReadOnlyList<RepeatDownloadStrategyDisplay> _repeatDownloadStrategy = Array.Empty<RepeatDownloadStrategyDisplay>();
 
-    public List<RepeatDownloadStrategyDisplay> RepeatDownloadStrategy
+    public IReadOnlyList<RepeatDownloadStrategyDisplay> RepeatDownloadStrategy
     {
         get => _repeatDownloadStrategy;
         set => SetProperty(ref _repeatDownloadStrategy, value);
@@ -166,7 +167,7 @@ public class ViewBasicViewModel : ViewModelBase
         _isOnNavigatedTo = true;
 
         // 主题
-        var themeMode = SettingsManager.GetInstance().GetThemeMode();
+        var themeMode = SettingsManager.Instance.GetThemeMode();
         switch (themeMode)
         {
             case ThemeMode.Light:
@@ -181,31 +182,31 @@ public class ViewBasicViewModel : ViewModelBase
         }
 
         // 下载完成后的操作
-        var afterDownload = SettingsManager.GetInstance().GetAfterDownloadOperation();
+        var afterDownload = SettingsManager.Instance.GetAfterDownloadOperation();
         SetAfterDownloadOperation(afterDownload);
 
         // 是否监听剪贴板
-        var isListenClipboard = SettingsManager.GetInstance().GetIsListenClipboard();
+        var isListenClipboard = SettingsManager.Instance.GetIsListenClipboard();
         ListenClipboard = isListenClipboard == AllowStatus.Yes;
 
         // 是否自动解析视频
-        var isAutoParseVideo = SettingsManager.GetInstance().GetIsAutoParseVideo();
+        var isAutoParseVideo = SettingsManager.Instance.GetIsAutoParseVideo();
         AutoParseVideo = isAutoParseVideo == AllowStatus.Yes;
 
         // 解析范围
-        var parseScope = SettingsManager.GetInstance().GetParseScope();
-        SelectedParseScope = ParseScopes.FirstOrDefault(t => t.ParseScope == parseScope) ?? ParseScopes.First();
+        var parseScope = SettingsManager.Instance.GetParseScope();
+        SelectedParseScope = ParseScopes.FirstOrDefault(t => t.ParseScope == parseScope) ?? ParseScopes[0];
 
         // 解析后是否自动下载解析视频
-        var isAutoDownloadAll = SettingsManager.GetInstance().GetIsAutoDownloadAll();
+        var isAutoDownloadAll = SettingsManager.Instance.GetIsAutoDownloadAll();
         AutoDownloadAll = isAutoDownloadAll == AllowStatus.Yes;
 
         // 重复下载策略
-        var repeatDownloadStrategy = SettingsManager.GetInstance().GetRepeatDownloadStrategy();
-        SelectedRepeatDownloadStrategy = RepeatDownloadStrategy.FirstOrDefault(t => t.RepeatDownloadStrategy == repeatDownloadStrategy) ?? RepeatDownloadStrategy.First();
+        var repeatDownloadStrategy = SettingsManager.Instance.GetRepeatDownloadStrategy();
+        SelectedRepeatDownloadStrategy = RepeatDownloadStrategy.FirstOrDefault(t => t.RepeatDownloadStrategy == repeatDownloadStrategy) ?? RepeatDownloadStrategy[0];
 
         // 重复下载文件自动添加数字后缀
-        var repeatFileAutoAddNumberSuffix = SettingsManager.GetInstance().IsRepeatFileAutoAddNumberSuffix();
+        var repeatFileAutoAddNumberSuffix = SettingsManager.Instance.IsRepeatFileAutoAddNumberSuffix();
         RepeatFileAutoAddNumberSuffix = repeatFileAutoAddNumberSuffix;
 
         _isOnNavigatedTo = false;
@@ -231,7 +232,7 @@ public class ViewBasicViewModel : ViewModelBase
             _ => ThemeMode.Default
         };
 
-        var isSucceed = SettingsManager.GetInstance().SetThemeMode(themeMode);
+        var isSucceed = SettingsManager.Instance.SetThemeMode(themeMode);
         PublishTip(isSucceed);
         ThemeHelper.SetTheme(themeMode);
     }
@@ -263,7 +264,7 @@ public class ViewBasicViewModel : ViewModelBase
                 break;
         }
 
-        var isSucceed = SettingsManager.GetInstance().SetAfterDownloadOperation(afterDownload);
+        var isSucceed = SettingsManager.Instance.SetAfterDownloadOperation(afterDownload);
         PublishTip(isSucceed);
     }
 
@@ -279,7 +280,7 @@ public class ViewBasicViewModel : ViewModelBase
     {
         var isListenClipboard = ListenClipboard ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.GetInstance().SetIsListenClipboard(isListenClipboard);
+        var isSucceed = SettingsManager.Instance.SetIsListenClipboard(isListenClipboard);
         PublishTip(isSucceed);
     }
 
@@ -294,7 +295,7 @@ public class ViewBasicViewModel : ViewModelBase
     {
         var isAutoParseVideo = AutoParseVideo ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.GetInstance().SetIsAutoParseVideo(isAutoParseVideo);
+        var isSucceed = SettingsManager.Instance.SetIsAutoParseVideo(isAutoParseVideo);
         PublishTip(isSucceed);
     }
 
@@ -314,7 +315,7 @@ public class ViewBasicViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.GetInstance().SetParseScope(parseScope.ParseScope);
+        var isSucceed = SettingsManager.Instance.SetParseScope(parseScope.ParseScope);
         PublishTip(isSucceed);
     }
 
@@ -330,7 +331,7 @@ public class ViewBasicViewModel : ViewModelBase
     {
         var isAutoDownloadAll = AutoDownloadAll ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.GetInstance().SetIsAutoDownloadAll(isAutoDownloadAll);
+        var isSucceed = SettingsManager.Instance.SetIsAutoDownloadAll(isAutoDownloadAll);
         PublishTip(isSucceed);
     }
 
@@ -340,7 +341,7 @@ public class ViewBasicViewModel : ViewModelBase
 
     private void ExecuteRepeatFileAutoAddNumberSuffixCommand()
     {
-        var isSucceed = SettingsManager.GetInstance().IsRepeatFileAutoAddNumberSuffix(RepeatFileAutoAddNumberSuffix);
+        var isSucceed = SettingsManager.Instance.IsRepeatFileAutoAddNumberSuffix(RepeatFileAutoAddNumberSuffix);
         PublishTip(isSucceed);
     }
 
@@ -360,7 +361,7 @@ public class ViewBasicViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = SettingsManager.GetInstance().SetRepeatDownloadStrategy(repeatDownloadStrategy.RepeatDownloadStrategy);
+        var isSucceed = SettingsManager.Instance.SetRepeatDownloadStrategy(repeatDownloadStrategy.RepeatDownloadStrategy);
         PublishTip(isSucceed);
     }
 

@@ -21,7 +21,12 @@ internal static class BiliApiRequest
         {
             throw;
         }
-        catch (Exception e)
+        catch (HttpRequestException e)
+        {
+            LogManager.Error(logTag, e);
+            return default;
+        }
+        catch (JsonException e)
         {
             LogManager.Error(logTag, e);
             return default;
@@ -43,7 +48,7 @@ internal static class BiliApiRequest
         {
             throw;
         }
-        catch (Exception e)
+        catch (HttpRequestException e)
         {
             LogManager.Error(logTag, e);
             return null;

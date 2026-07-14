@@ -3,7 +3,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-public class PublicationZone : BindableBase
+internal class PublicationZone : BindableBase
 {
     public int Tid { get; set; }
 

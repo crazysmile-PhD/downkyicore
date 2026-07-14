@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using DownKyi.Core.Logging;
@@ -9,12 +10,14 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewModelBase : BindableBase, INavigationAware
+internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
 {
-    protected readonly IEventAggregator EventAggregator;
-    protected IDialogService? DialogService;
-    protected IRegionNavigationJournal? Journal;
-    protected string ParentView = string.Empty;
+    private bool _disposed;
+    protected IEventAggregator EventAggregator { get; }
+    protected IDialogService? DialogService { get; set; }
+    protected IRegionNavigationJournal? Journal { get; set; }
+    protected string ParentView { get; set; } = string.Empty;
+    protected virtual Dispatcher UiDispatcher => Dispatcher.UIThread;
 
     public ViewModelBase(IEventAggregator eventAggregator)
     {
@@ -29,6 +32,8 @@ public class ViewModelBase : BindableBase, INavigationAware
 
     public virtual void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
+
         Journal = navigationContext.NavigationService.Journal;
         var viewName = navigationContext.Parameters.GetValue<string>("Parent");
         if (viewName != null)
@@ -57,7 +62,7 @@ public class ViewModelBase : BindableBase, INavigationAware
     /// <param name="callback"></param>
     protected void PropertyChangeAsync(Action callback)
     {
-        Dispatcher.UIThread.InvokeAsync(callback);
+        UiDispatcher.InvokeAsync(callback);
     }
 
     /// <summary>
@@ -66,24 +71,70 @@ public class ViewModelBase : BindableBase, INavigationAware
     /// <param name="callback"></param>
     protected void PropertyChange(Action callback)
     {
-        Dispatcher.UIThread.Invoke(callback);
+        UiDispatcher.Invoke(callback);
     }
 
     protected void RunFireAndForget(Task task, string operation)
     {
-        _ = RunFireAndForgetAsync(task, operation);
+        ArgumentNullException.ThrowIfNull(task);
+        _ = RunFireAndForgetAsync(task, $"{GetType().Name}.{operation}");
     }
 
     private static async Task RunFireAndForgetAsync(Task task, string operation)
     {
+        await task.ContinueWith(
+            completedTask =>
+            {
+                if (completedTask.Exception is { } exception)
+                {
+                    LogManager.Error(operation, exception.GetBaseException());
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default).ConfigureAwait(false);
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        _disposed = true;
+    }
+
+    protected bool IsDisposed => _disposed;
+
+    protected static void CancelAndDispose(ref CancellationTokenSource? source)
+    {
+        var current = Interlocked.Exchange(ref source, null);
+        if (current == null)
+        {
+            return;
+        }
+
         try
         {
-            await task;
+            current.Cancel();
         }
-        catch (Exception e)
+        catch (ObjectDisposedException)
         {
-            LogManager.Error(operation, e);
         }
+        finally
+        {
+            current.Dispose();
+        }
+    }
+
+    protected static CancellationToken ReplaceCancellationSource(ref CancellationTokenSource? source)
+    {
+        CancelAndDispose(ref source);
+        var replacement = new CancellationTokenSource();
+        source = replacement;
+        return replacement.Token;
     }
 
 }

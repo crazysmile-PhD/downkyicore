@@ -12,7 +12,7 @@ namespace DownKyi.Core.BiliApi.History.Models
         public string Cover { get; set; } = string.Empty;
         // covers
         [JsonProperty("uri")]
-        public string Uri { get; set; } = string.Empty;
+        public string Address { get; set; } = string.Empty;
         [JsonProperty("history")]
         public HistoryListHistory History { get; set; } = new();
         [JsonProperty("videos")]

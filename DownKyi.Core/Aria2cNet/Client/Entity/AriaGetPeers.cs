@@ -13,7 +13,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public List<AriaPeer> Result { get; set; } = new();
+        public IReadOnlyList<AriaPeer> Result { get; set; } = Array.Empty<AriaPeer>();
 
         [JsonProperty("error")]
         public AriaError Error { get; set; } = new();

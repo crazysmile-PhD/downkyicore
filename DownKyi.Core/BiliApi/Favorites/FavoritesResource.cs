@@ -13,7 +13,7 @@ public static class FavoritesResource
     /// <param name="pn">页码</param>
     /// <param name="ps">每页项数</param>
     /// <returns></returns>
-    public static List<FavoritesMedia>? GetFavoritesMedia(long mediaId, int pn, int ps, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<FavoritesMedia>? GetFavoritesMedia(long mediaId, int pn, int ps, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/v3/fav/resource/list?media_id={mediaId}&pn={pn}&ps={ps}&platform=web";
         const string referer = "https://www.bilibili.com";
@@ -32,7 +32,7 @@ public static class FavoritesResource
     /// </summary>
     /// <param name="mediaId">收藏夹ID</param>
     /// <returns></returns>
-    public static List<FavoritesMedia> GetAllFavoritesMedia(long mediaId, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<FavoritesMedia> GetAllFavoritesMedia(long mediaId, CancellationToken cancellationToken = default)
     {
         var result = new List<FavoritesMedia>();
 
@@ -60,7 +60,7 @@ public static class FavoritesResource
     /// </summary>
     /// <param name="mediaId"></param>
     /// <returns></returns>
-    public static List<FavoritesMediaId>? GetFavoritesMediaId(long mediaId, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<FavoritesMediaId>? GetFavoritesMediaId(long mediaId, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/v3/fav/resource/ids?media_id={mediaId}";
         const string referer = "https://www.bilibili.com";

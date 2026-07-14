@@ -5,29 +5,29 @@ namespace DownKyi.Core.Danmaku2Ass;
 /// <summary>
 /// 显示方式
 /// </summary>
-public class Display
+public abstract class Display
 {
-    public Config Config = null!;
-    public Danmaku Danmaku = null!;
-    public int LineIndex;
+    public Config Config { get; protected set; } = null!;
+    public Danmaku Danmaku { get; protected set; } = null!;
+    public int LineIndex { get; protected set; }
 
-    public int FontSize;
-    public bool IsScaled;
-    public int MaxLength;
-    public int Width;
-    public int Height;
+    public int FontSize { get; protected set; }
+    public bool IsScaled { get; protected set; }
+    public int MaxLength { get; protected set; }
+    public int Width { get; protected set; }
+    public int Height { get; protected set; }
 
-    public Tuple<int, int> Horizontal = null!;
-    public Tuple<int, int> Vertical = null!;
+    public Tuple<int, int> Horizontal { get; protected set; } = null!;
+    public Tuple<int, int> Vertical { get; protected set; } = null!;
 
-    public int Duration;
-    public int Leave;
+    public int Duration { get; protected set; }
+    public int Leave { get; protected set; }
 
     protected Display()
     {
     }
 
-    public Display(Config config, Danmaku danmaku)
+    protected Display(Config config, Danmaku danmaku)
     {
         Config = config;
         Danmaku = danmaku;
@@ -39,9 +39,12 @@ public class Display
         Width = SetWidth();
         Height = SetHeight();
 
+    }
+
+    protected void InitializeLayout()
+    {
         Horizontal = SetHorizontal();
         Vertical = SetVertical();
-
         Duration = SetDuration();
         Leave = SetLeave();
     }
@@ -52,6 +55,9 @@ public class Display
     /// <returns></returns>
     public static Display Factory(Config config, Danmaku danmaku)
     {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(danmaku);
+
         var dict = new Dictionary<string, Display>
         {
             { "scroll", new ScrollDisplay(config, danmaku) },
@@ -198,7 +204,7 @@ public class TopDisplay : Display
 {
     public TopDisplay(Config config, Danmaku danmaku) : base(config, danmaku)
     {
-        //Console.WriteLine("TopDisplay constructor.");
+        InitializeLayout();
     }
 
     /// <summary>
@@ -220,7 +226,7 @@ public class BottomDisplay : Display
 {
     public BottomDisplay(Config config, Danmaku danmaku) : base(config, danmaku)
     {
-        //Console.WriteLine("BottomDisplay constructor.");
+        InitializeLayout();
     }
 
     /// <summary>
@@ -242,23 +248,11 @@ public class BottomDisplay : Display
 /// </summary>
 public class ScrollDisplay : Display
 {
-    public int Distance;
-    public int Speed;
+    public int Distance { get; private set; }
+    public int Speed { get; private set; }
 
-    public ScrollDisplay(Config config, Danmaku danmaku) : base()
+    public ScrollDisplay(Config config, Danmaku danmaku) : base(config, danmaku)
     {
-        //Console.WriteLine("ScrollDisplay constructor.");
-
-        Config = config;
-        Danmaku = danmaku;
-        LineIndex = 0;
-
-        IsScaled = SetIsScaled();
-        FontSize = SetFontSize();
-        MaxLength = SetMaxLength();
-        Width = SetWidth();
-        Height = SetHeight();
-
         Horizontal = SetHorizontal();
         Vertical = SetVertical();
 
@@ -376,8 +370,10 @@ public class ScrollDisplay : Display
     /// <returns></returns>
     protected override int SetDuration()
     {
-        var methodName = Config.LayoutAlgorithm.Substring(0, 1).ToUpper() + Config.LayoutAlgorithm.Substring(1);
-        methodName += "Duration";
+        var methodName = string.Concat(
+            Config.LayoutAlgorithm.AsSpan(0, 1).ToString().ToUpperInvariant(),
+            Config.LayoutAlgorithm.AsSpan(1),
+            "Duration");
         var method = typeof(ScrollDisplay).GetMethod(methodName);
         if (method != null)
         {

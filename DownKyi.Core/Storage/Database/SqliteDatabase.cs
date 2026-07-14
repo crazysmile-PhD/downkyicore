@@ -1,4 +1,3 @@
-using System.Data;
 using DownKyi.Core.Logging;
 using Microsoft.Data.Sqlite;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -46,46 +45,26 @@ public sealed class SqliteDatabase : IDisposable
 
 
     /// <summary>
-    /// 执行非查询SQL语句
-    /// </summary>
-    /// <param name="sql">SQL语句</param>
-    /// <param name="parametersAction">参数设置委托</param>
-    public void ExecuteNonQuery(string sql, Action<SqliteParameterCollection>? parametersAction = null)
-    {
-        try
-        {
-            using var connection = CreateConnection();
-            using var transaction = connection.BeginTransaction();
-            using var command = connection.CreateCommand();
-
-            command.CommandText = sql;
-            command.Transaction = transaction;
-            parametersAction?.Invoke(command.Parameters);
-
-            command.ExecuteNonQuery();
-            transaction.Commit();
-        }
-        catch (SqliteException ex)
-        {
-            Console.PrintLine("ExecuteNonQuery() 发生异常: {0}", ex);
-            LogManager.Error("SqliteDatabase.ExecuteNonQuery()", ex);
-            throw;
-        }
-    }
-
-    /// <summary>
     /// 执行查询SQL语句
     /// </summary>
-    /// <param name="sql">SQL语句</param>
+    /// <param name="configureCommand">建立固定查询并绑定参数的委托</param>
     /// <param name="readAction">读取数据的委托</param>
-    public void ExecuteQuery(string sql, Action<SqliteDataReader> readAction)
+    public void ExecuteQuery(Action<SqliteCommand> configureCommand, Action<SqliteDataReader> readAction)
     {
+        ArgumentNullException.ThrowIfNull(configureCommand);
+        ArgumentNullException.ThrowIfNull(readAction);
+
         try
         {
             using var connection = CreateConnection();
             using var command = connection.CreateCommand();
 
-            command.CommandText = sql;
+            configureCommand(command);
+            if (string.IsNullOrWhiteSpace(command.CommandText))
+            {
+                throw new InvalidOperationException("SQLite query command text must be configured.");
+            }
+
             using var reader = command.ExecuteReader();
 
             readAction(reader);

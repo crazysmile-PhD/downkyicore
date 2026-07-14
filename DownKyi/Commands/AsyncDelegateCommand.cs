@@ -1,11 +1,13 @@
 using System;
+using System.IO;
+using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using DownKyi.Core.Logging;
 
 namespace DownKyi.Commands;
 
-public class DownKyiAsyncDelegateCommand<T> : ICommand
+internal class DownKyiAsyncDelegateCommand<T> : ICommand
 {
     private readonly Func<T?, Task> _execute;
     private readonly Func<T, bool>? _canExecute;
@@ -43,20 +45,31 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
         if (parameter is null && typeof(T) == typeof(object))
         {
             _isExecuting = true;
-            RaiseCanExecuteChanged();
+            OnCanExecuteChanged();
 
             try
             {
-                await _execute(default!);
+                await _execute(default!).ConfigureAwait(true);
             }
-            catch (Exception e)
+            catch (OperationCanceledException)
+            {
+            }
+            catch (InvalidOperationException e)
+            {
+                LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
+            }
+            catch (HttpRequestException e)
+            {
+                LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
+            }
+            catch (IOException e)
             {
                 LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
             }
             finally
             {
                 _isExecuting = false;
-                RaiseCanExecuteChanged();
+                OnCanExecuteChanged();
             }
             return;
         }
@@ -67,30 +80,41 @@ public class DownKyiAsyncDelegateCommand<T> : ICommand
         }
 
         _isExecuting = true;
-        RaiseCanExecuteChanged();
+        OnCanExecuteChanged();
 
         try
         {
-            await _execute(typedParameter);
+            await _execute(typedParameter).ConfigureAwait(true);
         }
-        catch (Exception e)
+        catch (OperationCanceledException)
+        {
+        }
+        catch (InvalidOperationException e)
+        {
+            LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
+        }
+        catch (HttpRequestException e)
+        {
+            LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
+        }
+        catch (IOException e)
         {
             LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
         }
         finally
         {
             _isExecuting = false;
-            RaiseCanExecuteChanged();
+            OnCanExecuteChanged();
         }
     }
 
-    protected void RaiseCanExecuteChanged()
+    protected void OnCanExecuteChanged()
     {
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }
 }
 
-public class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
+internal class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
 {
     public DownKyiAsyncDelegateCommand(Func<object?, Task> execute, Func<object, bool>? canExecute = null)
         : base(execute, canExecute)

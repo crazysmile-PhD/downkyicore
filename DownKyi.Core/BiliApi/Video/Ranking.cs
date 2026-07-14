@@ -14,7 +14,7 @@ public static class Ranking
     /// <param name="day">3日榜或周榜（3/7）</param>
     /// <param name="original"></param>
     /// <returns></returns>
-    public static List<RankingVideoView>? RegionRankingList(int rid, int day = 3, int original = 0)
+    public static IReadOnlyList<RankingVideoView>? RegionRankingList(int rid, int day = 3, int original = 0)
     {
         var url = $"https://api.bilibili.com/x/web-interface/ranking/region?rid={rid}&day={day}&ps={original}";
         const string referer = "https://www.bilibili.com";

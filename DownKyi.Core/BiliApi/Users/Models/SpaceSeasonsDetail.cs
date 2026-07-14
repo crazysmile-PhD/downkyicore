@@ -17,8 +17,8 @@ public class SpaceSeasonsDetailOrigin : BaseModel
 
 public class SpaceSeasonsDetail : BaseModel
 {
-    [JsonProperty("aids")] public List<long> Aids { get; set; } = new();
-    [JsonProperty("archives")] public List<SpaceSeasonsSeriesArchives> Archives { get; set; } = new();
+    [JsonProperty("aids")] public IReadOnlyList<long> Aids { get; set; } = Array.Empty<long>();
+    [JsonProperty("archives")] public IReadOnlyList<SpaceSeasonsSeriesArchives> Archives { get; set; } = Array.Empty<SpaceSeasonsSeriesArchives>();
     [JsonProperty("meta")] public SpaceSeasonsMeta Meta { get; set; } = new();
     [JsonProperty("page")] public SpaceSeasonsSeriesPage Page { get; set; } = new();
 }

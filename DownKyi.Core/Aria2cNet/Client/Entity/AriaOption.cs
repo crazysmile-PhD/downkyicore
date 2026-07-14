@@ -183,7 +183,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Out { get; set; } = string.Empty;
 
         [JsonProperty("parameterized-uri")]
-        public string ParameterizedUri { get; set; } = string.Empty;
+        public string ParameterizedAddressing { get; set; } = string.Empty;
 
         [JsonProperty("pause-metadata")]
         public string PauseMetadata { get; set; } = string.Empty;
@@ -207,7 +207,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string RetryWait { get; set; } = string.Empty;
 
         [JsonProperty("reuse-uri")]
-        public string ReuseUri { get; set; } = string.Empty;
+        public string ReuseSourceAddress { get; set; } = string.Empty;
 
         [JsonProperty("rpc-save-upload-metadata")]
         public string RpcSaveUploadMetadata { get; set; } = string.Empty;
@@ -228,7 +228,7 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Timeout { get; set; } = string.Empty;
 
         [JsonProperty("uri-selector")]
-        public string UriSelector { get; set; } = string.Empty;
+        public string SourceSelectionAlgorithm { get; set; } = string.Empty;
 
         [JsonProperty("use-head")]
         public string UseHead { get; set; } = string.Empty;

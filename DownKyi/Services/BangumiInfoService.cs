@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -16,7 +17,7 @@ using DownKyi.ViewModels.PageViewModels;
 
 namespace DownKyi.Services;
 
-public class BangumiInfoService : IInfoService
+internal class BangumiInfoService : IInfoService
 {
     private readonly BangumiSeason? _bangumiSeason;
 
@@ -54,7 +55,7 @@ public class BangumiInfoService : IInfoService
     /// 获取视频剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoPage> GetVideoPages(CancellationToken cancellationToken = default)
+    public IList<VideoPage> GetVideoPages(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var pages = new List<VideoPage>();
@@ -140,11 +141,11 @@ public class BangumiInfoService : IInfoService
             }
 
             // 文件命名中的时间格式
-            var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
+            var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(episode.PubTime);
-            page.PublishTime = dateTime.ToString(timeFormat);
+            page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
             page.OriginalPublishTime = dateTime;
             pages.Add(page);
         }
@@ -156,7 +157,7 @@ public class BangumiInfoService : IInfoService
     /// 获取视频章节与剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoSection>? GetVideoSections(bool noUgc = false, CancellationToken cancellationToken = default)
+    public IList<VideoSection>? GetVideoSections(bool noUgc = false, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (_bangumiSeason == null)
@@ -202,7 +203,7 @@ public class BangumiInfoService : IInfoService
                 order++;
 
                 // 标题
-                var name = episode.LongTitle != null && episode.LongTitle != "" ? $"{episode.Title} {episode.LongTitle}" : episode.Title;
+                var name = !string.IsNullOrEmpty(episode.LongTitle) ? $"{episode.Title} {episode.LongTitle}" : episode.Title;
                 var page = new VideoPage
                 {
                     Avid = episode.Aid,
@@ -237,12 +238,12 @@ public class BangumiInfoService : IInfoService
                 }
 
                 // 文件命名中的时间格式
-                var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
+                var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
                 // 视频发布时间
                 var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
                 var dateTime = startTime.AddSeconds(episode.PubTime);
                 page.OriginalPublishTime = dateTime;
-                page.PublishTime = dateTime.ToString(timeFormat);
+                page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
                 pages.Add(page);
             }
 
@@ -264,8 +265,9 @@ public class BangumiInfoService : IInfoService
     /// <param name="page"></param>
     public void GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var playUrl = VideoStream.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken);
+        var playUrl = VideoStreamApi.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken);
         Dispatcher.UIThread.Invoke(() => Utils.VideoPageInfo(playUrl, page));
     }
 

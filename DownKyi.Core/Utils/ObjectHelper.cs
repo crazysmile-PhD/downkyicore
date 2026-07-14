@@ -5,6 +5,8 @@ using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 using JsonSerializer = System.Text.Json.JsonSerializer;
+using NewtonsoftJsonException = Newtonsoft.Json.JsonException;
+using SystemTextJsonException = System.Text.Json.JsonException;
 
 namespace DownKyi.Core.Utils;
 
@@ -13,15 +15,14 @@ public static class ObjectHelper
     /// <summary>
     /// 解析二维码登录返回的url，用于设置cookie
     /// </summary>
-    /// <param name="url"></param>
+    /// <param name="redirectUri"></param>
     /// <returns></returns>
-    public static List<DownKyiCookie> ParseCookie(string? url)
+    public static IReadOnlyList<DownKyiCookie> ParseCookie(Uri? redirectUri)
     {
         var cookies = new List<DownKyiCookie>();
-        if (url is null or "") return cookies;
+        if (redirectUri is null) return cookies;
 
-        var uri = new Uri(url);
-        var queryString = uri.Query;
+        var queryString = redirectUri.Query;
         var query = HttpUtility.ParseQueryString(queryString);
         cookies = (from item in query.AllKeys.OfType<string>()
                    let value = query[item]
@@ -81,7 +82,7 @@ public static class ObjectHelper
     /// <param name="file"></param>
     /// <param name="cookieJar"></param>
     /// <returns></returns>
-    public static bool WriteCookiesToDisk(string file, List<DownKyiCookie> cookieJar)
+    public static bool WriteCookiesToDisk(string file, IReadOnlyList<DownKyiCookie> cookieJar)
     {
         return WriteObjectToDisk(file, cookieJar);
     }
@@ -91,7 +92,7 @@ public static class ObjectHelper
     /// </summary>
     /// <param name="file"></param>
     /// <returns></returns>
-    public static List<DownKyiCookie>? ReadCookiesFromDisk(string file)
+    public static IReadOnlyList<DownKyiCookie>? ReadCookiesFromDisk(string file)
     {
         try
         {
@@ -105,9 +106,15 @@ public static class ObjectHelper
             LogManager.Error(e);
             return null;
         }
-        catch (Exception e)
+        catch (SystemTextJsonException e)
         {
             Console.PrintLine("ReadObjectFromDisk()发生异常: {0}", e);
+            LogManager.Error(e);
+            return null;
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            Console.PrintLine("ReadObjectFromDisk()没有读取权限: {0}", e);
             LogManager.Error(e);
             return null;
         }
@@ -118,8 +125,10 @@ public static class ObjectHelper
     /// </summary>
     /// <param name="stream"></param>
     /// <returns></returns>
-    public static List<DownKyiCookie>? ReadCookiesFromStream(Stream stream)
+    public static IReadOnlyList<DownKyiCookie>? ReadCookiesFromStream(Stream stream)
     {
+        ArgumentNullException.ThrowIfNull(stream);
+
         try
         {
             if (stream.CanSeek)
@@ -138,9 +147,15 @@ public static class ObjectHelper
             LogManager.Error(e);
             return null;
         }
-        catch (Exception e)
+        catch (NewtonsoftJsonException e)
         {
             Console.PrintLine("ReadCookiesFromStream()发生异常: {0}", e);
+            LogManager.Error(e);
+            return null;
+        }
+        catch (ObjectDisposedException e)
+        {
+            Console.PrintLine("ReadCookiesFromStream()流已关闭: {0}", e);
             LogManager.Error(e);
             return null;
         }
@@ -170,9 +185,15 @@ public static class ObjectHelper
             LogManager.Error(e);
             return false;
         }
-        catch (Exception e)
+        catch (SystemTextJsonException e)
         {
             Console.PrintLine("WriteObjectToDisk()发生异常: {0}", e);
+            LogManager.Error(e);
+            return false;
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            Console.PrintLine("WriteObjectToDisk()没有写入权限: {0}", e);
             LogManager.Error(e);
             return false;
         }

@@ -1,3 +1,5 @@
+using System;
+using System.Globalization;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
@@ -5,8 +7,15 @@ using Prism.Events;
 
 namespace DownKyi.Services;
 
-public class SearchService
+internal class SearchService
 {
+    private readonly IEventAggregator? _defaultEventAggregator;
+
+    public SearchService(IEventAggregator? defaultEventAggregator = null)
+    {
+        _defaultEventAggregator = defaultEventAggregator;
+    }
+
     /// <summary>
     /// 解析支持的输入，
     /// 支持的格式有：<para/>
@@ -24,15 +33,19 @@ public class SearchService
     /// <param name="parentViewName"></param>
     /// <param name="eventAggregator"></param>
     /// <returns></returns>
-    public bool BiliInput(string input, string parentViewName, IEventAggregator eventAggregator)
+    public bool BiliInput(string input, string parentViewName, IEventAggregator? eventAggregator = null)
     {
+        ArgumentNullException.ThrowIfNull(input);
+
+        eventAggregator = ResolveEventAggregator(eventAggregator);
         // 移除剪贴板id
-        var justId = input.Replace(AppConstant.ClipboardId, "");
+        var justId = input.Replace(AppConstant.ClipboardId, "", StringComparison.Ordinal);
 
         // 视频
         if (ParseEntrance.IsAvId(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.VideoUrl}{input.ToLower()}");
+            var avid = ParseEntrance.GetAvId(justId).ToString(CultureInfo.InvariantCulture);
+            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.VideoUrl}av{avid}");
         }
         else if (ParseEntrance.IsAvUrl(justId))
         {
@@ -49,7 +62,8 @@ public class SearchService
         // 番剧（电影、电视剧）
         else if (ParseEntrance.IsBangumiSeasonId(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiUrl}{input.ToLower()}");
+            var seasonId = ParseEntrance.GetBangumiSeasonId(justId).ToString(CultureInfo.InvariantCulture);
+            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiUrl}ss{seasonId}");
         }
         else if (ParseEntrance.IsBangumiSeasonUrl(justId))
         {
@@ -57,7 +71,8 @@ public class SearchService
         }
         else if (ParseEntrance.IsBangumiEpisodeId(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiUrl}{input.ToLower()}");
+            var episodeId = ParseEntrance.GetBangumiEpisodeId(justId).ToString(CultureInfo.InvariantCulture);
+            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiUrl}ep{episodeId}");
         }
         else if (ParseEntrance.IsBangumiEpisodeUrl(justId))
         {
@@ -65,7 +80,8 @@ public class SearchService
         }
         else if (ParseEntrance.IsBangumiMediaId(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiMediaUrl}{input.ToLower()}");
+            var mediaId = ParseEntrance.GetBangumiMediaId(justId).ToString(CultureInfo.InvariantCulture);
+            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiMediaUrl}md{mediaId}");
         }
         else if (ParseEntrance.IsBangumiMediaUrl(justId))
         {
@@ -108,8 +124,15 @@ public class SearchService
     /// <param name="key"></param>
     /// <param name="parentViewName"></param>
     /// <param name="eventAggregator"></param>
-    public void SearchKey(string key, string parentViewName, IEventAggregator eventAggregator)
+    public void SearchKey(string key, string parentViewName, IEventAggregator? eventAggregator = null)
     {
+        eventAggregator = ResolveEventAggregator(eventAggregator);
         // TODO
+    }
+
+    private IEventAggregator ResolveEventAggregator(IEventAggregator? eventAggregator)
+    {
+        return eventAggregator ?? _defaultEventAggregator
+            ?? throw new System.InvalidOperationException("Search navigation requires an event aggregator.");
     }
 }

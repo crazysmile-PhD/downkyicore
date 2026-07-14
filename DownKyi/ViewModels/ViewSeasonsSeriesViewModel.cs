@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,15 +26,15 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewSeasonsSeriesViewModel : ViewModelBase
+internal class ViewSeasonsSeriesViewModel : ViewModelBase
 {
     public const string Tag = "PageSeasonsSeries";
 
-    private CancellationTokenSource tokenSource = null!;
+    private CancellationTokenSource? tokenSource;
 
     private long mid = -1;
     private long id = -1;
-    private int type = 0;
+    private int type;
 
     // 每页视频数量，暂时在此写死，以后在设置中增加选项
     private const int VideoNumberInPage = 30;
@@ -116,7 +118,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     public ObservableCollection<ChannelMedia> Medias
     {
         get => _medias;
-        set => SetProperty(ref _medias, value);
+        private set => SetProperty(ref _medias, value);
     }
 
     private bool _isSelectAll;
@@ -274,7 +276,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -302,9 +304,9 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(videoInfoService);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -317,16 +319,16 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
             : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
     }
 
-    private void OnCountChanged_Pager(int count)
+    private void OnCountChangedPager(object? sender, EventArgs e)
     {
     }
 
-    private bool OnCurrentChanged_Pager(int old, int current)
+    private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
     {
         if (!IsEnabled)
         {
-            //Pager.Current = old;
-            return false;
+            e.Cancel = true;
+            return;
         }
 
         Medias.Clear();
@@ -338,15 +340,14 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
         if (type == 1)
         {
-            RunFireAndForget(UpdateSeasonsAsync(current), nameof(UpdateSeasonsAsync));
+            RunFireAndForget(UpdateSeasonsAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateSeasonsAsync));
         }
 
         if (type == 2)
         {
-            RunFireAndForget(UpdateSeriesAsync(current), nameof(UpdateSeriesAsync));
+            RunFireAndForget(UpdateSeriesAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateSeriesAsync));
         }
 
-        return true;
     }
 
     //private async Task UpdateChannelAsync(int current)
@@ -450,11 +451,10 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         // 是否正在获取数据
         // 在所有的退出分支中都需要设为true
         IsEnabled = false;
+        var cancellationToken = ReplaceCancellationSource(ref tokenSource);
 
         await Task.Run(() =>
         {
-            var cancellationToken = tokenSource.Token;
-
             var seasons = Core.BiliApi.Users.UserSpace.GetSeasonsDetail(mid, id, current, VideoNumberInPage);
             if (seasons == null || seasons.Meta.Total == 0)
             {
@@ -473,7 +473,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
                 // 查询、保存封面
                 var coverUrl = video.Pic;
-                if (!coverUrl.ToLower().StartsWith("http"))
+                if (!coverUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
                     coverUrl = $"https:{video.Pic}";
                 }
@@ -498,7 +498,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
                 var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
                 var dateCTime = startTime.AddSeconds(video.Ctime);
-                var ctime = dateCTime.ToString("yyyy-MM-dd");
+                var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
                 App.PropertyChangeAsync(new Action(() =>
                 {
@@ -524,7 +524,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
                     break;
                 }
             }
-        }, (tokenSource = new CancellationTokenSource()).Token);
+        }, cancellationToken).ConfigureAwait(true);
 
         IsEnabled = true;
     }
@@ -534,11 +534,10 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
         // 是否正在获取数据
         // 在所有的退出分支中都需要设为true
         IsEnabled = false;
+        var cancellationToken = ReplaceCancellationSource(ref tokenSource);
 
         await Task.Run(() =>
         {
-            var cancellationToken = tokenSource.Token;
-
             var meta = Core.BiliApi.Users.UserSpace.GetSeriesMeta(id);
             var series = Core.BiliApi.Users.UserSpace.GetSeriesDetail(mid, id, current, VideoNumberInPage);
             if (series == null || meta?.Meta.Total == 0)
@@ -558,7 +557,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
                 // 查询、保存封面
                 var coverUrl = video.Pic;
-                if (!coverUrl.ToLower().StartsWith("http"))
+                if (!coverUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
                     coverUrl = $"https:{video.Pic}";
                 }
@@ -583,7 +582,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
                 var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
                 var dateCTime = startTime.AddSeconds(video.Ctime);
-                var ctime = dateCTime.ToString("yyyy-MM-dd");
+                var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
                 App.PropertyChangeAsync(() =>
                 {
@@ -609,7 +608,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
                     break;
                 }
             }
-        }, (tokenSource = new CancellationTokenSource()).Token);
+        }, cancellationToken).ConfigureAwait(true);
 
         IsEnabled = true;
     }
@@ -620,6 +619,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
@@ -647,8 +647,20 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
 
         // 页面选择
         Pager = new CustomPagerViewModel(1, (int)Math.Ceiling((double)count / VideoNumberInPage));
-        Pager.CurrentChanged += OnCurrentChanged_Pager;
-        Pager.CountChanged += OnCountChanged_Pager;
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            tokenSource?.Cancel();
+            tokenSource?.Dispose();
+            tokenSource = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

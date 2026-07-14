@@ -12,6 +12,95 @@ dotnet_sort_system_directives_first = true
 dotnet_separate_import_directive_groups = false
 csharp_using_directive_placement = outside_namespace:suggestion
 
+# Security rules cleaned in PR 02. Minimal source suppressions are documented in docs/maintenance.md.
+dotnet_diagnostic.CA2100.severity = error
+dotnet_diagnostic.CA5351.severity = error
+dotnet_diagnostic.CA5369.severity = error
+dotnet_diagnostic.CA5373.severity = error
+dotnet_diagnostic.CA5401.severity = error
+
+# Async, disposal, exception, and lifecycle rules cleaned in PR 02.
+dotnet_diagnostic.CA1001.severity = error
+dotnet_diagnostic.CA1031.severity = error
+dotnet_diagnostic.CA1032.severity = error
+dotnet_diagnostic.CA1034.severity = error
+dotnet_diagnostic.CA1058.severity = error
+dotnet_diagnostic.CA1063.severity = error
+dotnet_diagnostic.CA1062.severity = error
+dotnet_diagnostic.CA1816.severity = error
+dotnet_diagnostic.CA1849.severity = error
+dotnet_diagnostic.CA1850.severity = error
+dotnet_diagnostic.CA1872.severity = error
+dotnet_diagnostic.CA2000.severity = error
+dotnet_diagnostic.CA2007.severity = error
+dotnet_diagnostic.CA2008.severity = error
+dotnet_diagnostic.CA2025.severity = error
+dotnet_diagnostic.CA2213.severity = error
+dotnet_diagnostic.CA2214.severity = error
+
+# Correctness and API-usage rules cleaned in PR 02.
+dotnet_diagnostic.CA1002.severity = error
+dotnet_diagnostic.CA1003.severity = error
+dotnet_diagnostic.CA1008.severity = error
+dotnet_diagnostic.CA1012.severity = error
+dotnet_diagnostic.CA1014.severity = error
+dotnet_diagnostic.CA1024.severity = error
+dotnet_diagnostic.CA1030.severity = error
+dotnet_diagnostic.CA1055.severity = error
+dotnet_diagnostic.CA1051.severity = error
+dotnet_diagnostic.CA1052.severity = error
+dotnet_diagnostic.CA1054.severity = error
+dotnet_diagnostic.CA1056.severity = error
+dotnet_diagnostic.CA1508.severity = error
+dotnet_diagnostic.CA1513.severity = error
+dotnet_diagnostic.CA2201.severity = error
+dotnet_diagnostic.CA2211.severity = error
+dotnet_diagnostic.CA2227.severity = error
+dotnet_diagnostic.CA2234.severity = error
+dotnet_diagnostic.CA2263.severity = error
+
+# Performance and allocation rules cleaned in PR 02.
+dotnet_diagnostic.CA1802.severity = error
+dotnet_diagnostic.CA1805.severity = error
+dotnet_diagnostic.CA1810.severity = error
+dotnet_diagnostic.CA1813.severity = error
+dotnet_diagnostic.CA1812.severity = error
+dotnet_diagnostic.CA1819.severity = error
+dotnet_diagnostic.CA1820.severity = error
+dotnet_diagnostic.CA1822.severity = error
+dotnet_diagnostic.CA1823.severity = error
+dotnet_diagnostic.CA1826.severity = error
+dotnet_diagnostic.CA1829.severity = error
+dotnet_diagnostic.CA1845.severity = error
+dotnet_diagnostic.CA1846.severity = error
+dotnet_diagnostic.CA1847.severity = error
+dotnet_diagnostic.CA1854.severity = error
+dotnet_diagnostic.CA1859.severity = error
+dotnet_diagnostic.CA1852.severity = error
+dotnet_diagnostic.CA1861.severity = error
+dotnet_diagnostic.CA1862.severity = error
+dotnet_diagnostic.CA1864.severity = error
+dotnet_diagnostic.CA1866.severity = error
+
+# Globalization rule cleared while removing case-normalization allocations.
+dotnet_diagnostic.CA1309.severity = error
+dotnet_diagnostic.CA1303.severity = error
+dotnet_diagnostic.CA1304.severity = error
+dotnet_diagnostic.CA1305.severity = error
+dotnet_diagnostic.CA1308.severity = error
+dotnet_diagnostic.CA1307.severity = error
+dotnet_diagnostic.CA1310.severity = error
+dotnet_diagnostic.CA1311.severity = error
+dotnet_diagnostic.CA1507.severity = error
+dotnet_diagnostic.CA1707.severity = error
+dotnet_diagnostic.CA1708.severity = error
+dotnet_diagnostic.CA1711.severity = error
+dotnet_diagnostic.CA1720.severity = error
+dotnet_diagnostic.CA1724.severity = error
+
+# Executable assembly surface rule cleaned in PR 02.
+dotnet_diagnostic.CA1515.severity = error
+
 [*.{csproj,props,targets,axaml,json,yml,yaml}]
 indent_style = space
 indent_size = 2

@@ -10,7 +10,7 @@ using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels.Toolbox;
 
-public class ViewBiliHelperViewModel : ViewModelBase
+internal class ViewBiliHelperViewModel : ViewModelBase
 {
     public const string Tag = "PageToolboxBiliHelper";
 
@@ -85,7 +85,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
             return;
         }
 
-        await Task.Run(() => { Bvid = BvId.Av2Bv(avid); });
+        await Task.Run(() => { Bvid = BvId.Av2Bv(avid); }).ConfigureAwait(true);
     }
 
     // 输入bvid事件
@@ -113,7 +113,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
         {
             var avid = BvId.Bv2Av(parameter);
             Avid = $"av{avid}";
-        });
+        }).ConfigureAwait(true);
     }
 
     // 访问网页事件
@@ -127,7 +127,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
     private async Task ExecuteGotoWebCommand()
     {
         var url = $"https://www.bilibili.com/video/{Bvid}";
-        await PlatformHelper.OpenUrl(url, EventAggregator);
+        await PlatformHelper.OpenUrl(url, EventAggregator).ConfigureAwait(true);
     }
 
     // 查询弹幕发送者事件
@@ -146,14 +146,15 @@ public class ViewBiliHelperViewModel : ViewModelBase
             {
                 UserMid = DanmakuSender.FindDanmakuSender(DanmakuUserId);
             }
-            catch (Exception e)
+            catch (Exception e) when (e is ArgumentException or FormatException
+                or InvalidOperationException or OverflowException)
             {
                 UserMid = null;
 
                 Console.PrintLine("FindDanmakuSenderCommand()发生异常: {0}", e);
                 LogManager.Error(Tag, e);
             }
-        });
+        }).ConfigureAwait(true);
     }
 
     // 访问用户空间事件
@@ -172,7 +173,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
         }
 
         var userSpace = $"https://space.bilibili.com/{UserMid}";
-        await PlatformHelper.OpenUrl(userSpace, EventAggregator);
+        await PlatformHelper.OpenUrl(userSpace, EventAggregator).ConfigureAwait(true);
     }
 
     #endregion

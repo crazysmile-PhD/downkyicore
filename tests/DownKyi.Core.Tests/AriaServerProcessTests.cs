@@ -3,11 +3,10 @@ using DownKyi.Core.Aria2cNet.Server;
 
 namespace DownKyi.Core.Tests;
 
-[Collection(ProcessTestCollection.Name)]
 public sealed class AriaServerProcessTests
 {
     [Fact]
-    public async Task KillTrackedServer_TerminatesAndReleasesTrackedProcess()
+    public async Task KillTrackedServerTerminatesAndReleasesTrackedProcess()
     {
         using var process = StartLongRunningProcess();
         AriaServer.SetTrackedServerForTests(process);
@@ -17,7 +16,7 @@ public sealed class AriaServerProcessTests
             Assert.True(AriaServer.KillTrackedServer("test cleanup"));
             await process
                 .WaitForExitAsync(TestContext.Current.CancellationToken)
-                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken).ConfigureAwait(true);
 
             Assert.True(process.HasExited);
             Assert.False(AriaServer.HasTrackedServerForTests());
@@ -45,10 +44,4 @@ public sealed class AriaServerProcessTests
         return Process.Start(startInfo)
                ?? throw new InvalidOperationException("Could not start the process used by the cleanup test.");
     }
-}
-
-[CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class ProcessTestCollection
-{
-    public const string Name = "External process tests";
 }

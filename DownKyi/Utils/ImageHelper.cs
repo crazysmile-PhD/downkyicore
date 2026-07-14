@@ -4,7 +4,7 @@ using Avalonia.Platform;
 
 namespace DownKyi.Utils;
 
-public static class ImageHelper
+internal static class ImageHelper
 {
     public static Bitmap LoadFromResource(Uri? resourceUri)
     {

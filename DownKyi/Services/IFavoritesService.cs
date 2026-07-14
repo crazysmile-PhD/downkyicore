@@ -7,13 +7,13 @@ using FavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
 
 namespace DownKyi.Services;
 
-public interface IFavoritesService
+internal interface IFavoritesService
 {
-    Favorites? GetFavorites(long mediaId, CancellationToken cancellationToken = default);
+    FavoritesPageItem? GetFavorites(long mediaId, CancellationToken cancellationToken = default);
 
     //void GetFavoritesMediaList(long mediaId, ObservableCollection<FavoritesMedia> result, IEventAggregator eventAggregator, CancellationToken cancellationToken);
     //void GetFavoritesMediaList(long mediaId, int pn, int ps, ObservableCollection<FavoritesMedia> result, IEventAggregator eventAggregator, CancellationToken cancellationToken);
-    void GetFavoritesMediaList(List<FavoritesMedia> medias, ObservableCollection<ViewModels.PageViewModels.FavoritesMedia> result, IEventAggregator eventAggregator,
+    void GetFavoritesMediaList(IReadOnlyList<FavoritesMedia> medias, ObservableCollection<ViewModels.PageViewModels.FavoritesMedia> result, IEventAggregator eventAggregator,
         CancellationToken cancellationToken);
 
     void GetCreatedFavorites(long mid, ObservableCollection<TabHeader> tabHeaders, CancellationToken cancellationToken);

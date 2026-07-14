@@ -15,5 +15,5 @@ public class SpaceChannel : BaseModel
     [JsonProperty("count")]
     public int Count { get; set; }
     [JsonProperty("list")]
-    public List<SpaceChannelList> List { get; set; } = new();
+    public IReadOnlyList<SpaceChannelList> List { get; set; } = Array.Empty<SpaceChannelList>();
 }

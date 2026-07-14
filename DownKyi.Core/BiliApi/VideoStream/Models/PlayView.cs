@@ -10,7 +10,7 @@ public class PlayViewOrigin
 public class PlayView
 {
     [JsonProperty("video_info")] public PlayUrl VideoInfo { get; set; } = new();
-    [JsonProperty("plugins")] public List<PlayViewPlugin> Plugins { get; set; } = new();
+    [JsonProperty("plugins")] public IReadOnlyList<PlayViewPlugin> Plugins { get; set; } = Array.Empty<PlayViewPlugin>();
 }
 
 public class PlayViewPlugin

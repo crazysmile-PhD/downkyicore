@@ -35,7 +35,7 @@ public class BangumiFollow : BaseModel
     // media_attr
     // season_attr
     [JsonProperty("evaluate")] public string Evaluate { get; set; } = string.Empty;
-    [JsonProperty("areas")] public List<BangumiFollowAreas> Areas { get; set; } = new();
+    [JsonProperty("areas")] public IReadOnlyList<BangumiFollowAreas> Areas { get; set; } = Array.Empty<BangumiFollowAreas>();
     [JsonProperty("subtitle")] public string Subtitle { get; set; } = string.Empty;
 
     [JsonProperty("first_ep")] public long FirstEp { get; set; }
@@ -45,7 +45,7 @@ public class BangumiFollow : BaseModel
     // publish
     // mode
     // section
-    [JsonProperty("url")] public string Url { get; set; } = string.Empty;
+    [JsonProperty("url")] public string Address { get; set; } = string.Empty;
 
     // badge_info
     // first_ep_info

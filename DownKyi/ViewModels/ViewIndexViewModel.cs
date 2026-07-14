@@ -19,7 +19,7 @@ using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels;
 
-public class ViewIndexViewModel : ViewModelBase
+internal class ViewIndexViewModel : ViewModelBase
 {
     public const string Tag = "PageIndex";
 
@@ -148,7 +148,7 @@ public class ViewIndexViewModel : ViewModelBase
         else
         {
             // 进入用户空间
-            var userInfo = SettingsManager.GetInstance().GetUserInfo();
+            var userInfo = SettingsManager.Instance.GetUserInfo();
             if (userInfo != null && userInfo.Mid != -1)
             {
                 NavigateToView.NavigationView(EventAggregator, ViewMySpaceViewModel.Tag, Tag, userInfo.Mid);
@@ -222,7 +222,7 @@ public class ViewIndexViewModel : ViewModelBase
     }
 
 
-    private async Task<UserInfoForNavigation?> GetUserInfo()
+    private static async Task<UserInfoForNavigation?> GetUserInfo()
     {
         UserInfoForNavigation? userInfo = null;
         await Task.Run(() =>
@@ -231,19 +231,19 @@ public class ViewIndexViewModel : ViewModelBase
             userInfo = UserInfo.GetUserInfoForNavigation();
             if (userInfo != null)
             {
-                SettingsManager.GetInstance().SetUserInfo(new UserInfoSettings
+                SettingsManager.Instance.SetUserInfo(new UserInfoSettings
                 {
                     Mid = userInfo.Mid,
                     Name = userInfo.Name,
                     IsLogin = userInfo.IsLogin,
                     IsVip = userInfo.VipStatus == 1,
-                    ImgKey = userInfo.Wbi.ImgUrl.Split('/').ToList().Last().Split('.')[0],
-                    SubKey = userInfo.Wbi.SubUrl.Split('/').ToList().Last().Split('.')[0],
+                    ImgKey = userInfo.Wbi.ImageAddress.Split('/').ToList().Last().Split('.')[0],
+                    SubKey = userInfo.Wbi.SubAddress.Split('/').ToList().Last().Split('.')[0],
                 });
             }
             else
             {
-                SettingsManager.GetInstance().SetUserInfo(new UserInfoSettings
+                SettingsManager.Instance.SetUserInfo(new UserInfoSettings
                 {
                     Mid = -1,
                     Name = "",
@@ -251,7 +251,7 @@ public class ViewIndexViewModel : ViewModelBase
                     IsVip = false,
                 });
             }
-        });
+        }).ConfigureAwait(true);
         return userInfo;
     }
 
@@ -265,14 +265,14 @@ public class ViewIndexViewModel : ViewModelBase
             if (isBackgroud)
             {
                 // 获取用户信息
-                await GetUserInfo();
+                await GetUserInfo().ConfigureAwait(true);
                 return;
             }
 
             LoginPanelVisibility = false;
 
             // 获取用户信息
-            var userInfo = await GetUserInfo();
+            var userInfo = await GetUserInfo().ConfigureAwait(true);
 
             // 检查本地是否存在login文件，没有则说明未登录
             if (!File.Exists(StorageManager.GetLogin()))
@@ -297,7 +297,9 @@ public class ViewIndexViewModel : ViewModelBase
                 UserName = null;
             }
         }
-        catch (Exception e)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
+            or FormatException or System.Security.Cryptography.CryptographicException
+            or Newtonsoft.Json.JsonException)
         {
             Console.PrintLine("UpdateUserInfo()发生异常: {0}", e);
             LogManager.Error(Tag, e);
@@ -306,6 +308,7 @@ public class ViewIndexViewModel : ViewModelBase
 
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         DownloadManager = ButtonIcon.Instance().DownloadManage;

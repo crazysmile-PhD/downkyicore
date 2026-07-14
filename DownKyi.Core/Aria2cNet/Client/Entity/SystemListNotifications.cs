@@ -9,7 +9,7 @@ public class SystemListNotifications
 
     [JsonProperty("jsonrpc")] public string Jsonrpc { get; set; } = string.Empty;
 
-    [JsonProperty("result")] public List<string> Result { get; set; } = new();
+    [JsonProperty("result")] public IReadOnlyList<string> Result { get; set; } = Array.Empty<string>();
 
     [JsonProperty("error")] public AriaError Error { get; set; } = new();
 

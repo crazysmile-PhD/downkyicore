@@ -36,13 +36,13 @@ public class NetworkSettings
 
     public int AriaListenPort { get; set; } = -1;
 
-    public AriaConfigLogLevel AriaLogLevel { get; set; } = AriaConfigLogLevel.NOT_SET;
+    public AriaConfigLogLevel AriaLogLevel { get; set; } = AriaConfigLogLevel.NotSet;
     public int AriaSplit { get; set; } = -1;
     public int AriaMaxConnectionPerServer { get; set; } = -1;
     public int AriaMinSplitSize { get; set; } = -1;
     public int AriaMaxOverallDownloadLimit { get; set; } = -1;
     public int AriaMaxDownloadLimit { get; set; } = -1;
-    public AriaConfigFileAllocation AriaFileAllocation { get; set; } = AriaConfigFileAllocation.NOT_SET;
+    public AriaConfigFileAllocation AriaFileAllocation { get; set; } = AriaConfigFileAllocation.NotSet;
 
     public AllowStatus IsAriaHttpProxy { get; set; } = AllowStatus.None;
     public string? AriaHttpProxy { get; set; }

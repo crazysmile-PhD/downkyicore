@@ -1,23 +1,23 @@
 using System;
-using Newtonsoft.Json;
+using System.Text.Json.Serialization;
 
 namespace DownKyi.Models;
 
-public class GitHubRelease
+internal class GitHubRelease
 {
-    [JsonProperty("tag_name")]
+    [JsonPropertyName("tag_name")]
     public string TagName { get; set; } = string.Empty;
 
-    [JsonProperty("name")]
+    [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
-    [JsonProperty("body")]
+    [JsonPropertyName("body")]
     public string Body { get; set; } = string.Empty;
 
-    [JsonProperty("prerelease")]
+    [JsonPropertyName("prerelease")]
     public bool Prerelease { get; set; }
 
-    [JsonProperty("published_at")]
+    [JsonPropertyName("published_at")]
     public DateTime? PublishedAt { get; set; }
 
     public bool IsEmpty()

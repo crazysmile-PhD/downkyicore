@@ -20,5 +20,5 @@ public class AriaConfig
     public bool ContinueDownload { get; set; } // 断点续传
     public AriaConfigFileAllocation FileAllocation { get; set; } // 文件预分配, none prealloc
 
-    public List<string> Headers { get; set; } = new();
+    public IReadOnlyList<string> Headers { get; set; } = Array.Empty<string>();
 }

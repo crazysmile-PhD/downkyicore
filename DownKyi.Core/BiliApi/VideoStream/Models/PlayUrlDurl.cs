@@ -12,6 +12,6 @@ public class PlayUrlDurl : BaseModel
 
     // ahead
     // vhead
-    [JsonProperty("url")] public string Url { get; set; } = string.Empty;
-    [JsonProperty("backup_url")] public List<string> BackupUrl { get; set; } = new();
+    [JsonProperty("url")] public string SourceAddress { get; set; } = string.Empty;
+    [JsonProperty("backup_url")] public IReadOnlyList<string> BackupUrl { get; set; } = Array.Empty<string>();
 }

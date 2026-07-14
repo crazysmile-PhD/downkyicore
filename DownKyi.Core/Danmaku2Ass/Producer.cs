@@ -2,13 +2,13 @@ namespace DownKyi.Core.Danmaku2Ass;
 
 public class Producer
 {
-    public Dictionary<string, bool> Config;
-    public Dictionary<string, Filter> Filters = new();
-    public List<Danmaku> Danmakus;
-    public List<Danmaku> KeepedDanmakus = new();
-    public Dictionary<string, int> FilterDetail = new();
+    public Dictionary<string, bool> Config { get; }
+    public Dictionary<string, Filter> Filters { get; private set; } = new();
+    public IReadOnlyList<Danmaku> Danmakus { get; }
+    public IReadOnlyList<Danmaku> KeepedDanmakus { get; private set; } = Array.Empty<Danmaku>();
+    public Dictionary<string, int> FilterDetail { get; private set; } = new();
 
-    public Producer(Dictionary<string, bool> config, List<Danmaku> danmakus)
+    public Producer(Dictionary<string, bool> config, IReadOnlyList<Danmaku> danmakus)
     {
         Config = config;
         Danmakus = danmakus;
@@ -58,14 +58,8 @@ public class Producer
         string[] orders = { "top_filter", "bottom_filter", "scroll_filter" };
         foreach (var name in orders)
         {
-            Filter filter;
-            try
+            if (!Filters.TryGetValue(name, out var filter))
             {
-                filter = Filters[name];
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("ApplyFilter()发生异常: {0}", e);
                 continue;
             }
 

@@ -5,6 +5,7 @@ namespace DownKyi.Core.Aria2cNet;
 /// </summary>
 public enum DownloadResult
 {
+    None = 0,
     SUCCESS = 1,
     FAILED,
     ABORT

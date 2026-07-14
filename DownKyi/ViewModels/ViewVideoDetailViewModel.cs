@@ -31,7 +31,7 @@ using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels;
 
-public class ViewVideoDetailViewModel : ViewModelBase
+internal class ViewVideoDetailViewModel : ViewModelBase
 {
     public const string Tag = "PageVideoDetail";
 
@@ -97,10 +97,10 @@ public class ViewVideoDetailViewModel : ViewModelBase
     public RangeObservableCollection<VideoSection> VideoSections
     {
         get => _videoSections;
-        set => SetProperty(ref _videoSections, value);
+        private set => SetProperty(ref _videoSections, value);
     }
 
-    public RangeObservableCollection<VideoSection> CaCheVideoSections { get; set; }
+    public RangeObservableCollection<VideoSection> CaCheVideoSections { get; private set; }
 
     private bool _isSelectAll;
 
@@ -238,11 +238,11 @@ public class ViewVideoDetailViewModel : ViewModelBase
 
                     if (cache == null) continue;
 
-                    var pages = cache.VideoPages.Where(e => e.Name.Contains(InputSearchText)).ToList();
+                    var pages = cache.VideoPages.Where(e => e.Name.Contains(InputSearchText, StringComparison.Ordinal)).ToList();
                     section.VideoPages = pages;
                 }
             }
-        });
+        }).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -270,17 +270,18 @@ public class ViewVideoDetailViewModel : ViewModelBase
                 UnityUpdateView(UpdateView, _input, true, cancellationToken);
 
                 // 是否自动解析视频
-                if (SettingsManager.GetInstance().GetIsAutoParseVideo() == AllowStatus.Yes)
+                if (SettingsManager.Instance.GetIsAutoParseVideo() == AllowStatus.Yes)
                 {
                     PropertyChangeAsync(() => _ = ExecuteParseAllVideoCommandAsync());
                 }
-            }, cancellationToken);
+            }, cancellationToken).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
             LoadingVisibility = false;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or RegexMatchTimeoutException or Newtonsoft.Json.JsonException)
         {
             Console.PrintLine("InputCommand()发生异常: {0}", e);
             LogManager.Error(Tag, e);
@@ -328,7 +329,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     {
         if (_videoInfoView?.CoverUrl == null) return;
         // 复制封面url到剪贴板
-        await ClipboardManager.SetText(_videoInfoView.CoverUrl);
+        await ClipboardManager.SetText(_videoInfoView.CoverUrl).ConfigureAwait(true);
         LogManager.Info(Tag, "复制封面url到剪贴板");
     }
 
@@ -461,13 +462,14 @@ public class ViewVideoDetailViewModel : ViewModelBase
                 LogManager.Debug(Tag, $"Video Page: {videoPage.Cid}");
 
                 UnityUpdateView(ParseVideo, _input, videoPage, true, cancellationToken);
-            }, cancellationToken);
+            }, cancellationToken).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
             LoadingVisibility = false;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or RegexMatchTimeoutException or Newtonsoft.Json.JsonException)
         {
             Console.PrintLine("ParseCommand()发生异常: {0}", e);
             LogManager.Error(Tag, e);
@@ -501,7 +503,7 @@ public class ViewVideoDetailViewModel : ViewModelBase
     private async Task ExecuteParseAllVideoCommandAsync()
     {
         // 解析范围
-        var parseScope = SettingsManager.GetInstance().GetParseScope();
+        var parseScope = SettingsManager.Instance.GetParseScope();
 
         // 是否选择了解析范围
         if (parseScope == ParseScope.None)
@@ -517,12 +519,12 @@ public class ViewVideoDetailViewModel : ViewModelBase
                 if (result.Result != ButtonResult.OK) return;
                 // 选择的解析范围
                 parseScope = result.Parameters.GetValue<ParseScope>("parseScope");
-                await ExecuteParse(parseScope);
-            });
+                await ExecuteParse(parseScope).ConfigureAwait(true);
+            }).ConfigureAwait(true);
         }
         else
         {
-            await ExecuteParse(parseScope);
+            await ExecuteParse(parseScope).ConfigureAwait(true);
         }
     }
 
@@ -553,14 +555,15 @@ public class ViewVideoDetailViewModel : ViewModelBase
                     // 执行解析任务
                     UnityUpdateView(ParseVideo, _input, page, cancellationToken: cancellationToken);
                 }
-            }, cancellationToken);
+            }, cancellationToken).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
             LoadingVisibility = false;
             return;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or RegexMatchTimeoutException or Newtonsoft.Json.JsonException)
         {
             Console.PrintLine("ParseCommand()发生异常: {0}", e);
             LogManager.Error(Tag, e);
@@ -572,10 +575,10 @@ public class ViewVideoDetailViewModel : ViewModelBase
         LoadingVisibility = false;
 
         // 解析后是否自动下载解析视频
-        var isAutoDownloadAll = SettingsManager.GetInstance().GetIsAutoDownloadAll();
+        var isAutoDownloadAll = SettingsManager.Instance.GetIsAutoDownloadAll();
         if (parseScope != ParseScope.None && isAutoDownloadAll == AllowStatus.Yes)
         {
-            await AddToDownloadAsync(true);
+            await AddToDownloadAsync(true).ConfigureAwait(true);
         }
 
         LogManager.Debug(Tag, $"ParseScope: {parseScope:G}");
@@ -807,8 +810,8 @@ public class ViewVideoDetailViewModel : ViewModelBase
                 // 传递video对象
                 addToDownloadService.GetVideo(videoInfoView, videoSections);
                 // 下载
-                return await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory, isAll);
-            }));
+                return await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory, isAll).ConfigureAwait(true);
+            })).ConfigureAwait(true);
 
         if (addedCount == null)
         {
@@ -834,6 +837,8 @@ public class ViewVideoDetailViewModel : ViewModelBase
 
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
+
         DownloadManage = ButtonIcon.Instance().DownloadManage;
         DownloadManage.Height = 24;
         DownloadManage.Width = 24;
@@ -843,10 +848,10 @@ public class ViewVideoDetailViewModel : ViewModelBase
         {
             var param = navigationContext.Parameters.GetValue<string>("Parameter");
             // 移除剪贴板id
-            var input = param.Replace(AppConstant.ClipboardId, "");
+            var input = param.Replace(AppConstant.ClipboardId, "", StringComparison.Ordinal);
 
             // 检测是否从剪贴板传入
-            if (InputText == input && param.EndsWith(AppConstant.ClipboardId))
+            if (InputText == input && param.EndsWith(AppConstant.ClipboardId, StringComparison.Ordinal))
             {
                 return;
             }
@@ -860,5 +865,17 @@ public class ViewVideoDetailViewModel : ViewModelBase
         }
 
         base.OnNavigatedTo(navigationContext);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _operationCancellation?.Cancel();
+            _operationCancellation?.Dispose();
+            _operationCancellation = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

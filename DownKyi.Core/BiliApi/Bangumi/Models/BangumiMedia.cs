@@ -22,7 +22,7 @@ public class BangumiMediaData : BaseModel
 
 public class BangumiMedia : BaseModel
 {
-    [JsonProperty("areas")] public List<BangumiArea> Areas { get; set; } = new();
+    [JsonProperty("areas")] public IReadOnlyList<BangumiArea> Areas { get; set; } = Array.Empty<BangumiArea>();
     [JsonProperty("cover")] public string Cover { get; set; } = string.Empty;
 
     [JsonProperty("media_id")] public long MediaId { get; set; }
@@ -30,7 +30,7 @@ public class BangumiMedia : BaseModel
     // new_ep
     // rating
     [JsonProperty("season_id")] public long SeasonId { get; set; }
-    [JsonProperty("share_url")] public string ShareUrl { get; set; } = string.Empty;
+    [JsonProperty("share_url")] public string ShareAddress { get; set; } = string.Empty;
     [JsonProperty("title")] public string Title { get; set; } = string.Empty;
     [JsonProperty("type_name")] public string TypeName { get; set; } = string.Empty;
 }

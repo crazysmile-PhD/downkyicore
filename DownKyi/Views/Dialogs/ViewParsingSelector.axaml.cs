@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views.Dialogs;
 
-public partial class ViewParsingSelector : UserControl
+internal partial class ViewParsingSelector : UserControl
 {
     public ViewParsingSelector()
     {

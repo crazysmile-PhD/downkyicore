@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using DownKyi.Core.BiliApi.Users.Models;
 using Prism.Commands;
 using Prism.Events;
@@ -8,7 +9,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-public class ViewChannelViewModel : ViewModelBase
+internal class ViewChannelViewModel : ViewModelBase
 {
     public const string Tag = "PageUserSpaceChannel";
 
@@ -21,7 +22,7 @@ public class ViewChannelViewModel : ViewModelBase
     public ObservableCollection<Channel> Channels
     {
         get => channels;
-        set => SetProperty(ref channels, value);
+        private set => SetProperty(ref channels, value);
     }
 
     private int selectedItem;
@@ -92,6 +93,7 @@ public class ViewChannelViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public async override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         Channels.Clear();
@@ -117,7 +119,7 @@ public class ViewChannelViewModel : ViewModelBase
             // 当地时区
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); ;
             var dateCTime = startTime.AddSeconds(channel.Mtime);
-            var mtime = dateCTime.ToString("yyyy-MM-dd");
+            var mtime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
             Channels.Add(new Channel
             {

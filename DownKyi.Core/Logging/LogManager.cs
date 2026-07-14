@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using DownKyi.Core.Storage;
@@ -9,7 +10,7 @@ namespace DownKyi.Core.Logging;
 /// <summary>
 /// 日志组件
 /// </summary>
-public class LogManager
+public static class LogManager
 {
     private const long MaxLogFileBytes = 1 * 1024 * 1024;
     private const int MaxDiagnosticEntries = 300;
@@ -31,7 +32,7 @@ public class LogManager
     /// <summary>
     /// 自定义事件
     /// </summary>
-    public static event Action<LogInfo>? Event;
+    public static event EventHandler<LogEventArgs>? Event;
 
     static LogManager()
     {
@@ -47,12 +48,7 @@ public class LogManager
     /// <summary>
     /// 日志存放目录，windows默认日志放在当前应用程序运行目录下的Logs文件夹中,macOS、linux存放于applicationData目录下
     /// </summary>
-    private static string LogDirectory => StorageManager.GetLogsDir();
-
-    public static string GetLogDirectory()
-    {
-        return LogDirectory;
-    }
+    public static string LogDirectory => StorageManager.GetLogsDir();
 
     public static Task FlushAsync(TimeSpan timeout)
     {
@@ -66,7 +62,11 @@ public class LogManager
         {
             FlushAsync(timeout).GetAwaiter().GetResult();
         }
-        catch (Exception e)
+        catch (TimeoutException e)
+        {
+            System.Diagnostics.Debug.WriteLine(e);
+        }
+        catch (OperationCanceledException e)
         {
             System.Diagnostics.Debug.WriteLine(e);
         }
@@ -84,11 +84,11 @@ public class LogManager
         var builder = new StringBuilder();
 
         builder.AppendLine("DownKyi diagnostic log");
-        builder.AppendLine($"GeneratedAt: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
-        builder.AppendLine($"OS: {Sanitize(Environment.OSVersion.ToString())}");
-        builder.AppendLine($".NET: {Environment.Version}");
-        builder.AppendLine($"Architecture: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}");
-        builder.AppendLine($"PortableMode: {StorageManager.IsPortableMode()}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"GeneratedAt: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"OS: {Sanitize(Environment.OSVersion.ToString())}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $".NET: {Environment.Version}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Architecture: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"PortableMode: {StorageManager.IsPortableMode()}");
         builder.AppendLine("Paths: redacted");
         builder.AppendLine();
         builder.AppendLine("Recent useful entries");
@@ -130,6 +130,7 @@ public class LogManager
     /// </summary>
     public static void Info(Type source, string info)
     {
+        ArgumentNullException.ThrowIfNull(source);
         Write(LogLevel.Info, source.FullName, info);
     }
 
@@ -157,6 +158,7 @@ public class LogManager
     [Conditional("DEBUG")]
     public static void Debug(Type source, string debug)
     {
+        ArgumentNullException.ThrowIfNull(source);
         Write(LogLevel.Debug, source.FullName, debug);
     }
 
@@ -165,6 +167,7 @@ public class LogManager
     /// </summary>
     public static void Error(Exception error)
     {
+        ArgumentNullException.ThrowIfNull(error);
         Write(LogLevel.Error, error.Source, error.Message, error);
     }
 
@@ -173,6 +176,8 @@ public class LogManager
     /// </summary>
     public static void Error(Type source, Exception error)
     {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(error);
         Write(LogLevel.Error, source.FullName, error.Message, error);
     }
 
@@ -181,6 +186,7 @@ public class LogManager
     /// </summary>
     public static void Error(Type source, string error)
     {
+        ArgumentNullException.ThrowIfNull(source);
         Write(LogLevel.Error, source.FullName, error);
     }
 
@@ -189,6 +195,7 @@ public class LogManager
     /// </summary>
     public static void Error(string source, Exception error)
     {
+        ArgumentNullException.ThrowIfNull(error);
         Write(LogLevel.Error, source, error.Message, error);
     }
 
@@ -205,6 +212,7 @@ public class LogManager
     /// </summary>
     public static void Fatal(Exception fatal)
     {
+        ArgumentNullException.ThrowIfNull(fatal);
         Write(LogLevel.Fatal, fatal.Source, fatal.Message, fatal);
     }
 
@@ -213,6 +221,8 @@ public class LogManager
     /// </summary>
     public static void Fatal(Type source, Exception fatal)
     {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(fatal);
         Write(LogLevel.Fatal, source.FullName, fatal.Message, fatal);
     }
 
@@ -221,6 +231,7 @@ public class LogManager
     /// </summary>
     public static void Fatal(Type source, string fatal)
     {
+        ArgumentNullException.ThrowIfNull(source);
         Write(LogLevel.Fatal, source.FullName, fatal);
     }
 
@@ -229,6 +240,7 @@ public class LogManager
     /// </summary>
     public static void Fatal(string source, Exception fatal)
     {
+        ArgumentNullException.ThrowIfNull(fatal);
         Write(LogLevel.Fatal, source, fatal.Message, fatal);
     }
 
@@ -270,7 +282,7 @@ public class LogManager
 
         LogQueue.Enqueue(new Tuple<string, string>(GetLogPath(), logText));
 
-        Event?.Invoke(new LogInfo
+        Event?.Invoke(null, new LogEventArgs(new LogInfo
         {
             LogLevel = level,
             Message = safeMessage,
@@ -279,9 +291,9 @@ public class LogManager
             Source = source ?? string.Empty,
             Exception = exception!,
             ExceptionType = exception?.GetType().Name ?? string.Empty,
-            RequestUrl = string.Empty,
+            RequestAddress = string.Empty,
             UserAgent = string.Empty
-        });
+        }));
     }
 
     private static void DrainQueue()
@@ -317,7 +329,7 @@ public class LogManager
                 : LogDirectory;
             Directory.CreateDirectory(logDir);
 
-            var date = DateTime.Now.ToString("yyyyMMdd");
+            var date = DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
             if (CachedLogDate == date &&
                 !string.IsNullOrEmpty(CachedLogPath) &&
                 (!File.Exists(CachedLogPath) || new FileInfo(CachedLogPath).Length <= MaxLogFileBytes))
@@ -364,13 +376,17 @@ public class LogManager
             Directory.CreateDirectory(Path.GetDirectoryName(logPath) ?? AppDomain.CurrentDomain.BaseDirectory);
             File.AppendAllText(logPath, logContent, Encoding.UTF8);
         }
-        catch (Exception e)
+        catch (IOException e)
+        {
+            System.Diagnostics.Debug.WriteLine(e);
+        }
+        catch (UnauthorizedAccessException e)
         {
             System.Diagnostics.Debug.WriteLine(e);
         }
     }
 
-    private static IEnumerable<string> ReadDiagnosticEntries(CancellationToken cancellationToken)
+    private static Queue<string> ReadDiagnosticEntries(CancellationToken cancellationToken)
     {
         var logFiles = Directory.Exists(LogDirectory)
             ? Directory.GetFiles(LogDirectory, "*.log", SearchOption.TopDirectoryOnly)

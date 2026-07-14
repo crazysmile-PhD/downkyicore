@@ -32,9 +32,9 @@ internal static class Utils
     /// <returns></returns>
     public static string CorrectTypos(string text)
     {
-        text = text.Replace("/n", "\\N");
-        text = text.Replace("&gt;", ">");
-        text = text.Replace("&lt;", "<");
+        text = text.Replace("/n", "\\N", StringComparison.Ordinal);
+        text = text.Replace("&gt;", ">", StringComparison.Ordinal);
+        text = text.Replace("&lt;", "<", StringComparison.Ordinal);
         return text;
     }
 
@@ -75,7 +75,7 @@ internal static class Utils
     {
         var numbers = hms.Split(':');
 
-        return numbers.Select((t, i) => (float)(float.Parse(numbers[numbers.Length - i - 1]) * Math.Pow(60, i))).Sum();
+        return numbers.Select((t, i) => (float)(float.Parse(numbers[numbers.Length - i - 1], CultureInfo.InvariantCulture) * Math.Pow(60, i))).Sum();
     }
 
     /// <summary>
@@ -86,7 +86,7 @@ internal static class Utils
     /// <returns></returns>
     public static float Xhms2second(string xhms)
     {
-        var args = xhms.Replace("+", " +").Replace("-", " -").Split(' ');
+        var args = xhms.Replace("+", " +", StringComparison.Ordinal).Replace("-", " -", StringComparison.Ordinal).Split(' ');
 
         return args.Sum(Hms2second);
     }
@@ -98,7 +98,7 @@ internal static class Utils
     /// <returns></returns>
     public static string Int2rgb(int integer)
     {
-        return integer.ToString("X").PadLeft(6, '0');
+        return integer.ToString("X", CultureInfo.InvariantCulture).PadLeft(6, '0');
     }
 
     /// <summary>
@@ -109,7 +109,7 @@ internal static class Utils
     public static string Int2bgr(int integer)
     {
         var rgb = Int2rgb(integer);
-        var bgr = rgb.Substring(4, 2) + rgb.Substring(2, 2) + rgb.Substring(0, 2);
+        var bgr = string.Concat(rgb.AsSpan(4, 2), rgb.AsSpan(2, 2), rgb.AsSpan(0, 2));
         return bgr;
     }
 
@@ -122,9 +122,9 @@ internal static class Utils
     {
         var rgb = Int2rgb(integer);
         int[] rgb_decimals = { 0, 0, 0 };
-        rgb_decimals[0] = int.Parse(rgb.Substring(0, 2), NumberStyles.HexNumber);
-        rgb_decimals[1] = int.Parse(rgb.Substring(2, 2), NumberStyles.HexNumber);
-        rgb_decimals[2] = int.Parse(rgb.Substring(4, 2), NumberStyles.HexNumber);
+        rgb_decimals[0] = int.Parse(rgb.AsSpan(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        rgb_decimals[1] = int.Parse(rgb.AsSpan(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        rgb_decimals[2] = int.Parse(rgb.AsSpan(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
 
         int[] rgb_coordinates = { 0, 0, 0 };
         rgb_coordinates[0] = (int)Math.Floor(rgb_decimals[0] / 255.0);

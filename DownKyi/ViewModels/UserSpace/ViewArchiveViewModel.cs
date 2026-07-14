@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -14,7 +15,7 @@ namespace DownKyi.ViewModels.UserSpace;
 /// <summary>
 /// 投稿页面
 /// </summary>
-public class ViewArchiveViewModel : ViewModelBase
+internal class ViewArchiveViewModel : ViewModelBase
 {
     public const string Tag = "PageUserSpaceArchive";
 
@@ -27,7 +28,7 @@ public class ViewArchiveViewModel : ViewModelBase
     public ObservableCollection<PublicationZone> PublicationZones
     {
         get => _publicationZones;
-        set => SetProperty(ref _publicationZones, value);
+        private set => SetProperty(ref _publicationZones, value);
     }
 
     private int _selectedItem;
@@ -96,6 +97,7 @@ public class ViewArchiveViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         PublicationZones.Clear();

@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -19,11 +20,11 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewMyToViewVideoViewModel : ViewModelBase
+internal class ViewMyToViewVideoViewModel : ViewModelBase
 {
     public const string Tag = "PageMyToView";
 
-    private CancellationTokenSource _tokenSource = null!;
+    private CancellationTokenSource? _tokenSource;
 
     #region 页面属性申明
 
@@ -64,7 +65,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
     public ObservableCollection<ToViewMedia> Medias
     {
         get => _medias;
-        set => SetProperty(ref _medias, value);
+        private set => SetProperty(ref _medias, value);
     }
 
     private bool _isSelectAll;
@@ -248,7 +249,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -276,9 +277,9 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(videoInfoService);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -296,11 +297,10 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
         LoadingVisibility = true;
         NoDataVisibility = false;
         Medias.Clear();
+        var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
 
         await Task.Run(() =>
         {
-            CancellationToken cancellationToken = _tokenSource.Token;
-
             var toViewList = ToView.GetToView();
             if (toViewList == null || toViewList.Count == 0)
             {
@@ -313,7 +313,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
             {
                 // 查询、保存封面
                 var coverUrl = toView.Pic;
-                if (!coverUrl.ToLower().StartsWith("http"))
+                if (!coverUrl.StartsWith("http", System.StringComparison.OrdinalIgnoreCase))
                 {
                     coverUrl = $"https:{toView.Pic}";
                 }
@@ -357,7 +357,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
                     break;
                 }
             }
-        }, (_tokenSource = new CancellationTokenSource()).Token);
+        }, cancellationToken).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -381,6 +381,7 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
@@ -406,5 +407,17 @@ public class ViewMyToViewVideoViewModel : ViewModelBase
         InitView();
 
         RunFireAndForget(UpdateToViewMediaListAsync(), nameof(UpdateToViewMediaListAsync));
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _tokenSource?.Cancel();
+            _tokenSource?.Dispose();
+            _tokenSource = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

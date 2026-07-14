@@ -3,7 +3,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class TabHeader : BindableBase
+internal class TabHeader : BindableBase
 {
     private long id;
 

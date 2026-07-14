@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -11,7 +12,7 @@ using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs
 {
-    public class NewVersionAvailableDialogViewModel : BaseDialogViewModel
+    internal class NewVersionAvailableDialogViewModel : BaseDialogViewModel
     {
         public const string Tag = "NewVersionAvailable";
 
@@ -25,14 +26,14 @@ namespace DownKyi.ViewModels.Dialogs
         private async Task ExecuteAllowCommand()
         {
             const ButtonResult result = ButtonResult.OK;
-            await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases/tag/{TagName}");
-            RaiseRequestClose(new DialogResult(result));
+            await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases/tag/{TagName}").ConfigureAwait(true);
+            CloseDialog(new DialogResult(result));
         }
 
         private void ExecuteSkipCurrentVersionCommand()
         {
-            SettingsManager.GetInstance().SetSkipVersionOnLaunch(NewVersion);
-            RaiseRequestClose(new DialogResult());
+            SettingsManager.Instance.SetSkipVersionOnLaunch(NewVersion);
+            CloseDialog(new DialogResult());
         }
 
         private string _tagName = string.Empty;
@@ -51,7 +52,7 @@ namespace DownKyi.ViewModels.Dialogs
             set => SetProperty(ref _markdownText, value);
         }
 
-        private bool _enableSkipVersionOnLaunch = false;
+        private bool _enableSkipVersionOnLaunch;
 
 
         private string _newVersion = string.Empty;
@@ -70,6 +71,8 @@ namespace DownKyi.ViewModels.Dialogs
 
         public override void OnDialogOpened(IDialogParameters parameters)
         {
+            ArgumentNullException.ThrowIfNull(parameters);
+
             var release = parameters.GetValue<GitHubRelease>("release");
             EnableSkipVersionOnLaunch = parameters.GetValue<bool>("enableSkipVersion");
             MarkdownText = release.Body;

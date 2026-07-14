@@ -6,7 +6,7 @@ This document records the project maintenance routine for dependencies, external
 
 1. Update managed package versions only in `Directory.Packages.props`.
 2. Run `dotnet restore ./DownKyi.sln`.
-3. Run `dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental -warnaserror -p:TreatWarningsAsErrors=true -p:CodeAnalysisTreatWarningsAsErrors=true -p:EnableNETAnalyzers=true -p:EnforceCodeStyleInBuild=true`.
+3. Run `dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental -p:TreatWarningsAsErrors=true -p:CodeAnalysisTreatWarningsAsErrors=true -p:EnableNETAnalyzers=true -p:AnalysisMode=All -p:EnforceCodeStyleInBuild=true`.
 4. Run `dotnet test ./DownKyi.sln -c Release --no-restore --no-build`.
 5. Run `dotnet package list --project ./DownKyi.sln --vulnerable --include-transitive`.
 6. Run `dotnet package list --project ./DownKyi.sln --deprecated` and review the report.
@@ -18,13 +18,50 @@ Avoid mixing package updates with large refactors unless the refactor is require
 Pull requests are guarded by `.github/workflows/quality.yml`:
 
 - format check with `dotnet format --verify-no-changes --verbosity diagnostic`
-- Windows and Linux Release builds
-- warnings-as-errors for compiler and default .NET analyzers
+- Windows, Linux, and macOS Release builds
+- compiler and all `AnalysisMode=All` CA diagnostics treated as errors
 - unit tests with uploaded TRX reports
 - transitive vulnerable package audit
 - deprecated package report
 
-`AnalysisMode=AllEnabledByDefault` is intentionally not a PR-blocking gate yet. On 2026-07-10 it produced hundreds of existing API-design analyzer failures, including public-field, collection-type, naming, and historical crypto-signing warnings. Turn these rules on in focused cleanup PRs, then promote them to CI only after the baseline is clean.
+The repository always uses the supported `AnalysisMode=All` value. The pre-fix baseline is 1,654 unique diagnostics across 71 CA rules; see `docs/analyzer-baseline.md` and `docs/analyzer-baseline.csv`. `CodeAnalysisTreatWarningsAsErrors=true` is the repository default. Every cleaned rule is also pinned to `error` in `.editorconfig`, preventing a future SDK severity change from reopening the baseline. The before/after inventory and retained exceptions are recorded in `docs/analyzer-cleanup-report.md`.
+
+Current PR 02 analyzer result: zero unhandled CA diagnostics. All 77 cleaned rules are enforced as errors, and the full solution defaults to `CodeAnalysisTreatWarningsAsErrors=true`. Public fields were converted only after checking JSON names, Avalonia bindings, inheritance, and download lifecycle ownership. Indexable collections now use direct indexing without changing empty-list behavior, and property/JSON names use compile-time `nameof` where the wire value is identical. Parameterless singleton, settings, zone-list, and log-directory getters now use properties; these cross-project application components are not a supported package API, and no compatibility wrapper or stored-data contract was added. Executable-only application, UI, service, model, and helper types are internal; clean Release compilation verifies Avalonia XAML can still construct its backing types. Public NFO XML contracts were moved unchanged to the Core library because `XmlSerializer` cannot process internal root/member types; the namespace, XML names, collections, and serialized data shape remain unchanged and are covered by round-trip tests. Raw Bilibili/aria2 address values retain string storage and their exact JSON keys, while semantic CLR names use `Address`; login QR/redirect consumers validate absolute `Uri` values at the API boundary, and raw QR addresses are no longer written to terminal or logs. This avoids treating aria2 option values or protocol-relative wire strings as `System.Uri`, and contract tests guard DURL, DASH, login, and aria2 mappings. The request-preparation benchmarks live in the public, non-sealed `DownKyi.BenchmarkCases` library because BenchmarkDotNet generates derived types through reflection, while the `DownKyi.Benchmarks` runner stays internal. Benchmark validation must confirm a result row was produced because BenchmarkDotNet can return exit code zero for an invalid benchmark type. The benchmark deserializes to `JsonElement`, avoiding artificial public DTO contracts that exist only for measurement. The advanced-image wrapper remains private, while the FFmpeg acceleration option item is namespace-level and public because Avalonia-visible ViewModel properties expose it. Async command notification now uses the standard protected event raiser, while dialog closure is a protected action that invokes Prism's existing listener rather than a second event. The user-space tab payload now has a semantic property name while preserving the legacy Prism navigation key. Test identifiers no longer use underscores; renamed protocol enums retain numeric settings values and use explicit aria2/Bilibili wire mappings. The playback facade is now named `VideoStreamApi`; assembly-wide xUnit nonparallelization preserves loopback/process test isolation without public collection-definition types. Favorites API `bv_id` and `bvid` fields now have distinct semantic property names and a JSON contract test. Diagnostic hashes use uppercase hexadecimal, NFO booleans use explicit lowercase literals, and FFmpeg cleanup failures no longer duplicate terminal output already captured by `LogManager`. Aria2, clipboard, logging, and pager notifications use standard event contracts; pager veto uses `CancelEventArgs` and clipboard polling remains desktop-internal. API facades, converters, builders, UI items, and attached-dialog helpers now use role-specific names rather than colliding with namespaces. The collection cleanup preserved JSON array names, SQLite task/resume state, NFO XML collections, and Avalonia collection notification identities; XML contract tests prohibit DTD processing and disable external resolution. Ordinal protocol/path/token comparisons are explicit. DURL descriptors are sorted before selection and use `DURL.Order` as the stable `Id`, producing deterministic keys such as `7_durl`; no BVID or codec hash participates in segment identity. This result was verified by a clean Windows Release build with 106 passing tests and zero warnings, plus zero-warning `linux-x64` and `osx-x64` cross-RID builds. Native Linux/macOS tests run on their matching CI matrix runners.
+
+## Host Composition Policy
+
+- `src/DownKyi.Domain` is framework-free and owns typed result/error contracts.
+- `src/DownKyi.Application` depends only on Domain and owns application cancellation plus injectable time contracts.
+- `src/DownKyi.Infrastructure` implements Application contracts and never references Desktop, Avalonia, or Prism.
+- `src/DownKyi.Desktop` is the only target-architecture project allowed to reference `Microsoft.Extensions.Hosting` or compose Infrastructure with Application.
+- `DownKyiHost` uses `DisableDefaults=true`; adding configuration providers must be explicit and must not redirect existing database, settings, login, portable-mode, or aria2 session paths.
+- `DownKyi/Composition/LegacyDesktopComposition.cs` and `MainWindow.AttachLegacyRegion` are temporary PR 25-29 bridges. Do not add new dependencies to them.
+- Host-independent root XAML must not use Prism `ViewModelLocator.AutoWireViewModel` or `RegionManager.RegionName`; production C# must not reference `ContainerLocator`.
+- Long-running operations create a linked scope from `ApplicationCancellation`; caller cancellation stays local, while Host stop cancels every linked operation.
+
+## Analyzer Policy
+
+- Do not add project-wide `NoWarn`, analyzer exclusions, `#nullable disable`, `GlobalSuppressions.cs`, or `.editorconfig` severities of `none` or `silent`.
+- Do not add `#pragma warning disable` or `SuppressMessage` merely to make a build pass.
+- A minimal external-protocol suppression is allowed only when the protocol requires the algorithm, a contract test proves the requirement, and the code documents why it is not used for passwords or trust decisions.
+- Fix diagnostics in this order: security/correctness; async/cancellation/disposal/threading; performance/allocation; public API/collections; naming/globalization/style.
+- Before changing fields, properties, collections, or names, inspect JSON/XML serialization, SQLite persistence, Avalonia bindings, reflection, and external protocol contracts.
+- Regenerate an inventory from clean-build logs with `script/analyzer-inventory.ps1`; its CSV is the authoritative file-and-line detail, while the Markdown file is the review summary.
+- UI-layer awaits that must continue on Avalonia state use `ConfigureAwait(true)`; reusable Core and background infrastructure use `ConfigureAwait(false)`. xUnit test bodies retain the test scheduler with `ConfigureAwait(true)`.
+- Fire-and-forget entry points must observe faulted tasks and log the base exception. Do not restore a general `catch (Exception)` sink.
+- Types that own cancellation sources, processes, HTTP resources, streams, bitmaps, or download services must release them through an explicit `IDisposable` or `IAsyncDisposable` owner.
+- Assemblies explicitly declare `CLSCompliant(false)` in `Directory.Build.props`; this satisfies `CA1014` by documenting the current cross-language contract and must not be changed to `true` without first auditing every public API for CLS compliance.
+
+### Approved Minimal Suppressions
+
+Only the following source-local suppressions are approved. Any other suppression requires the same contract evidence and an update to this section.
+
+| Rule | Location | Reason | Guard | Removal owner |
+| --- | --- | --- | --- | --- |
+| `CA5351` | `DownKyi.Core/BiliApi/Sign/WbiSign.cs` | Bilibili WBI defines `w_rid` as MD5 of the canonical query plus mixin key. It is an external request-signing format, not password storage or a local trust decision. | `WbiSignTests.EncodeWbiMatchesProtocolVector` | Remove only if Bilibili replaces WBI. |
+| `CA5351` | `DownKyi.Core/Utils/Encryptor/LegacySettingsDecryptor.cs` | Read-only migration of settings written by DownKyi 1.0.20 and earlier. It cannot encrypt new data; successful reads are immediately rewritten through the current JSON settings writer. | `LegacySettingsDecryptorTests.DecryptReadsLegacySettingsFixture` | PR 25-29 removes it after the supported migration window is explicitly closed. |
+
+Both suppressions cover only the algorithm construction or one-shot hash call. Expanding their scope, reusing them for credentials/integrity, or adding another weak-crypto caller is prohibited.
 
 ## External Binaries
 

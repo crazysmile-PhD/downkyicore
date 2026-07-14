@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 
 namespace DownKyi.Core.BiliApi.BiliUtils;
@@ -5,8 +6,8 @@ namespace DownKyi.Core.BiliApi.BiliUtils;
 public static class BvId
 {
     // 常量定义
-    private static readonly BigInteger XorCode = BigInteger.Parse("23442827791579");
-    private static readonly BigInteger MaskCode = BigInteger.Parse("2251799813685247");
+    private static readonly BigInteger XorCode = BigInteger.Parse("23442827791579", CultureInfo.InvariantCulture);
+    private static readonly BigInteger MaskCode = BigInteger.Parse("2251799813685247", CultureInfo.InvariantCulture);
     private static readonly BigInteger MaxAid = BigInteger.One << 51;
     private const long Base = 58;
 
@@ -14,15 +15,17 @@ public static class BvId
     private const string Data = "FcwAPNKTMug3GV5Lj7EJnHpWsx4tb8haYeviqBz6rkCy12mUSDQX9RdoZf";
 
     // 为了提高BvToAv的性能，预先构建字符到索引的映射
-    private static readonly Dictionary<char, int> DataMap;
+    private static readonly Dictionary<char, int> DataMap = CreateDataMap();
 
-    static BvId()
+    private static Dictionary<char, int> CreateDataMap()
     {
-        DataMap = new Dictionary<char, int>();
+        var dataMap = new Dictionary<char, int>();
         for (var i = 0; i < Data.Length; i++)
         {
-            DataMap[Data[i]] = i;
+            dataMap[Data[i]] = i;
         }
+
+        return dataMap;
     }
 
     /// <summary>
@@ -58,6 +61,8 @@ public static class BvId
     /// <returns>av号 (aid)</returns>
     public static long Bv2Av(string bvid)
     {
+        ArgumentException.ThrowIfNullOrEmpty(bvid);
+
         var bvidArr = bvid.ToCharArray();
 
         (bvidArr[3], bvidArr[9]) = (bvidArr[9], bvidArr[3]);

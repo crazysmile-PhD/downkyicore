@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.Users.Models;
@@ -17,7 +18,7 @@ namespace DownKyi.ViewModels.UserSpace;
 /// <summary>
 /// 合集和列表
 /// </summary>
-public class ViewSeasonsSeriesViewModel : ViewModelBase
+internal class ViewSeasonsSeriesViewModel : ViewModelBase
 {
     public const string Tag = "PageUserSpaceSeasonsSeries";
 
@@ -30,7 +31,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     public ObservableCollection<SeasonsSeries> SeasonsSeries
     {
         get => _seasonsSeries;
-        set => SetProperty(ref _seasonsSeries, value);
+        private set => SetProperty(ref _seasonsSeries, value);
     }
 
     private int _selectedItem;
@@ -118,6 +119,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         SeasonsSeries.Clear();
@@ -141,7 +143,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
             }
 
             string? image;
-            if (item.Meta.Cover == null || item.Meta.Cover == "")
+            if (string.IsNullOrEmpty(item.Meta.Cover))
             {
                 image = "avares://DownKyi/Resources/video-placeholder.png";
             }
@@ -153,7 +155,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
             // 当地时区
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);
             var dateCTime = startTime.AddSeconds(item.Meta.Ptime);
-            var mtime = dateCTime.ToString("yyyy-MM-dd");
+            var mtime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
             SeasonsSeries.Add(new SeasonsSeries
             {
@@ -174,7 +176,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
             }
 
             string? image;
-            if (item.Meta.Cover == null || item.Meta.Cover == "")
+            if (string.IsNullOrEmpty(item.Meta.Cover))
             {
                 image = "avares://DownKyi/Resources/video-placeholder.png";
             }
@@ -186,7 +188,7 @@ public class ViewSeasonsSeriesViewModel : ViewModelBase
             // 当地时区
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); ;
             var dateCTime = startTime.AddSeconds(item.Meta.Mtime);
-            var mtime = dateCTime.ToString("yyyy-MM-dd");
+            var mtime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
             SeasonsSeries.Add(new SeasonsSeries
             {

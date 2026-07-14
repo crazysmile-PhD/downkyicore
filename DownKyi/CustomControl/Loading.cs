@@ -4,7 +4,7 @@ using Avalonia.Controls.Primitives;
 
 namespace DownKyi.CustomControl;
 
-public class Loading : TemplatedControl
+internal class Loading : TemplatedControl
 {
     private const string LargeState = ":large";
     private const string SmallState = ":small";
@@ -89,6 +89,7 @@ public class Loading : TemplatedControl
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
+        ArgumentNullException.ThrowIfNull(change);
         base.OnPropertyChanged(change);
 
         if (change.Property == IsActiveProperty)

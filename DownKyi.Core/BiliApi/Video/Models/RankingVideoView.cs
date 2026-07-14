@@ -23,5 +23,5 @@ public class RankingVideoView : BaseModel
     [JsonProperty("duration")] public string Duration { get; set; } = string.Empty;
     [JsonProperty("badgepay")] public bool Badgepay { get; set; }
     [JsonProperty("pts")] public long Pts { get; set; }
-    [JsonProperty("redirect_url")] public string RedirectUrl { get; set; } = string.Empty;
+    [JsonProperty("redirect_url")] public string RedirectAddress { get; set; } = string.Empty;
 }

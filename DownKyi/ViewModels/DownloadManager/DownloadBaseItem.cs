@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Media;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Zone;
@@ -7,7 +8,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.DownloadManager
 {
-    public class DownloadBaseItem : BindableBase
+    internal class DownloadBaseItem : BindableBase
     {
         // model数据
         private DownloadBase _downloadBase = new();
@@ -19,7 +20,10 @@ namespace DownKyi.ViewModels.DownloadManager
             {
                 _downloadBase = value;
 
-                ZoneImage = DictionaryResource.Get<DrawingImage>(VideoZoneIcon.Instance().GetZoneImageKey(DownloadBase.ZoneId));
+                ZoneImage = Avalonia.Application.Current == null
+                    ? null
+                    : DictionaryResource.Get<DrawingImage>(
+                        VideoZoneIcon.Instance().GetZoneImageKey(DownloadBase.ZoneId));
             }
         }
 

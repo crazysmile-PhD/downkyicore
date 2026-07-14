@@ -5,7 +5,7 @@ using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-public class ViewParsingSelectorViewModel : BaseDialogViewModel
+internal class ViewParsingSelectorViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogParsingSelector";
 
@@ -28,7 +28,7 @@ public class ViewParsingSelectorViewModel : BaseDialogViewModel
         Title = DictionaryResource.GetString("ParsingSelector");
 
         // 解析范围
-        var parseScope = SettingsManager.GetInstance().GetParseScope();
+        var parseScope = SettingsManager.Instance.GetParseScope();
         IsParseDefault = parseScope != ParseScope.None;
 
         #endregion
@@ -53,7 +53,7 @@ public class ViewParsingSelectorViewModel : BaseDialogViewModel
             { "parseScope", ParseScope.SelectedItem }
         };
 
-        RaiseRequestClose(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
     }
 
     // 解析当前页视频事件
@@ -73,7 +73,7 @@ public class ViewParsingSelectorViewModel : BaseDialogViewModel
             { "parseScope", ParseScope.CurrentSection }
         };
 
-        RaiseRequestClose(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
     }
 
     // 解析所有视频事件
@@ -93,7 +93,7 @@ public class ViewParsingSelectorViewModel : BaseDialogViewModel
             { "parseScope", ParseScope.All }
         };
 
-        RaiseRequestClose(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
     }
 
     #endregion
@@ -104,6 +104,6 @@ public class ViewParsingSelectorViewModel : BaseDialogViewModel
     /// <param name="parseScope"></param>
     private void SetParseScopeSetting(ParseScope parseScope)
     {
-        SettingsManager.GetInstance().SetParseScope(IsParseDefault ? parseScope : ParseScope.None);
+        SettingsManager.Instance.SetParseScope(IsParseDefault ? parseScope : ParseScope.None);
     }
 }

@@ -11,12 +11,33 @@ namespace DownKyi.Core.BiliApi;
 
 public static class WebClient
 {
-    private static readonly HttpClient HttpClient;
+    private static readonly SocketsHttpHandler SocketsHandler = CreateSocketsHandler();
+    private static readonly HttpClient HttpClient = CreateHttpClient(SocketsHandler);
+    private static int _resourcesDisposed;
     private static string? _bvuid3 = string.Empty;
     private static string? _bvuid4 = string.Empty;
     internal static Func<HttpRequestMessage, CancellationToken, HttpResponseMessage>? SendOverrideForTests { get; set; }
 
-    static WebClient()
+    private static HttpClient CreateHttpClient(SocketsHttpHandler socketsHandler)
+    {
+        var httpClient = new HttpClient(socketsHandler, disposeHandler: false);
+        httpClient.DefaultRequestHeaders.Add("User-Agent", SettingsManager.Instance.GetUserAgent());
+        httpClient.DefaultRequestHeaders.Add("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
+        return httpClient;
+    }
+
+    public static void DisposeSharedResources()
+    {
+        if (Interlocked.Exchange(ref _resourcesDisposed, 1) != 0)
+        {
+            return;
+        }
+
+        HttpClient.Dispose();
+        SocketsHandler.Dispose();
+    }
+
+    private static SocketsHttpHandler CreateSocketsHandler()
     {
         var socketsHandler = new SocketsHttpHandler
         {
@@ -25,7 +46,7 @@ public static class WebClient
             AutomaticDecompression = DecompressionMethods.All,
             ConnectTimeout = TimeSpan.FromSeconds(8)
         };
-        switch (SettingsManager.GetInstance().GetNetworkProxy())
+        switch (SettingsManager.Instance.GetNetworkProxy())
         {
             case NetworkProxy.None:
                 socketsHandler.UseProxy = false;
@@ -40,9 +61,9 @@ public static class WebClient
                     try
                     {
                         socketsHandler.UseProxy = true;
-                        socketsHandler.Proxy = new WebProxy(SettingsManager.GetInstance().GetCustomProxy());
+                        socketsHandler.Proxy = new WebProxy(SettingsManager.Instance.GetCustomProxy());
                     }
-                    catch (Exception e)
+                    catch (UriFormatException e)
                     {
                         socketsHandler.UseProxy = false;
                         socketsHandler.Proxy = null;
@@ -52,9 +73,7 @@ public static class WebClient
                 break;
         }
 
-        HttpClient = new HttpClient(socketsHandler);
-        HttpClient.DefaultRequestHeaders.Add("User-Agent", SettingsManager.GetInstance().GetUserAgent());
-        HttpClient.DefaultRequestHeaders.Add("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
+        return socketsHandler;
     }
 
     internal class SpiOrigin
@@ -80,7 +99,7 @@ public static class WebClient
     }
 
     public static string RequestWeb(
-        string url,
+        string requestAddress,
         string? referer = null,
         string method = "GET",
         Dictionary<string, object?>? parameters = null,
@@ -88,6 +107,8 @@ public static class WebClient
         bool json = false,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestAddress);
+
         Exception? lastError = null;
         var attempts = Math.Max(1, retry);
         for (var attempt = 1; attempt <= attempts; attempt++)
@@ -95,12 +116,12 @@ public static class WebClient
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (string.IsNullOrEmpty(_bvuid3) && url != "https://api.bilibili.com/x/frontend/finger/spi")
+                if (string.IsNullOrEmpty(_bvuid3) && requestAddress != "https://api.bilibili.com/x/frontend/finger/spi")
                 {
                     GetBuvid(cancellationToken);
                 }
 
-                using var request = BuildRequest(url, referer, method, parameters, json);
+                using var request = BuildRequest(requestAddress, referer, method, parameters, json);
                 using var response = SendRequest(request, cancellationToken);
                 response.EnsureSuccessStatusCode();
 
@@ -110,7 +131,7 @@ public static class WebClient
                 if (string.IsNullOrWhiteSpace(content))
                 {
                     throw new HttpRequestException(
-                        $"Request returned an empty response: {LogManager.SanitizeForDiagnostics(url)}");
+                        $"Request returned an empty response: {LogManager.SanitizeForDiagnostics(requestAddress)}");
                 }
 
                 return content;
@@ -124,7 +145,12 @@ public static class WebClient
                 lastError = e;
                 LogManager.Error(nameof(RequestWeb), e);
             }
-            catch (Exception e)
+            catch (IOException e)
+            {
+                lastError = e;
+                LogManager.Error(nameof(RequestWeb), e);
+            }
+            catch (InvalidOperationException e)
             {
                 lastError = e;
                 LogManager.Error(nameof(RequestWeb), e);
@@ -137,7 +163,7 @@ public static class WebClient
         }
 
         throw new HttpRequestException(
-            $"Request failed after {attempts} attempts: {LogManager.SanitizeForDiagnostics(url)}",
+            $"Request failed after {attempts} attempts: {LogManager.SanitizeForDiagnostics(requestAddress)}",
             lastError);
     }
 
@@ -186,11 +212,11 @@ public static class WebClient
             request.Headers.Referrer = new Uri(referer);
         }
 
-        if (!url.Contains("getLogin"))
+        if (!url.Contains("getLogin", StringComparison.Ordinal))
         {
             request.Headers.Add("origin", "https://www.bilibili.com");
 
-            var cookies = LoginHelper.GetLoginInfoCookies();
+            var cookies = LoginHelper.GetLoginInfoCookies().ToList();
 
             if (!string.IsNullOrEmpty(_bvuid3))
             {
@@ -245,7 +271,7 @@ public static class WebClient
         var query = string.Join("&", parameters.Select(kvp =>
             $"{HttpUtility.UrlEncode(kvp.Key)}={HttpUtility.UrlEncode(kvp.Value?.ToString() ?? string.Empty)}"));
 
-        return url.Contains("?", StringComparison.Ordinal)
+        return url.Contains('?', StringComparison.Ordinal)
             ? $"{url}&{query}"
             : $"{url}?{query}";
     }
@@ -268,24 +294,26 @@ public static class WebClient
         return TimeSpan.FromMilliseconds(delayMilliseconds);
     }
 
-    public static void DownloadFile(string url, string destFile, string? referer = null, CancellationToken cancellationToken = default)
+    public static void DownloadFile(string sourceAddress, string destFile, string? referer = null, CancellationToken cancellationToken = default)
     {
         using var fs = File.Create(destFile);
-        using var stream = RequestStream(url, referer, cancellationToken: cancellationToken);
-        stream.CopyToAsync(fs, cancellationToken).GetAwaiter().GetResult();
+        using var stream = RequestStream(sourceAddress, referer, cancellationToken: cancellationToken);
+        stream.CopyTo(fs);
     }
 
-    public static Stream RequestStream(string url, string? referer = null, string method = "GET", CancellationToken cancellationToken = default)
+    public static Stream RequestStream(string requestAddress, string? referer = null, string method = "GET", CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestAddress);
+
         cancellationToken.ThrowIfCancellationRequested();
-        var request = new HttpRequestMessage(new HttpMethod(method), url);
+        var request = new HttpRequestMessage(new HttpMethod(method), requestAddress);
 
         if (referer != null)
         {
             request.Headers.Referrer = new Uri(referer);
         }
 
-        if (!url.Contains("getLogin"))
+        if (!requestAddress.Contains("getLogin", StringComparison.Ordinal))
         {
             request.Headers.Add("origin", "https://m.bilibili.com");
             var cookies = LoginHelper.GetLoginInfoCookiesString();
@@ -359,4 +387,5 @@ public static class WebClient
             await base.DisposeAsync().ConfigureAwait(false);
         }
     }
+
 }

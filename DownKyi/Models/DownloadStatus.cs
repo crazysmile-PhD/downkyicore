@@ -1,6 +1,6 @@
 namespace DownKyi.Models;
 
-public enum DownloadStatus
+internal enum DownloadStatus
 {
     NotStarted, // 未开始，从未开始下载
     WaitForDownload, // 等待下载，下载过，但是启动本次下载周期未开始，如重启程序后未开始

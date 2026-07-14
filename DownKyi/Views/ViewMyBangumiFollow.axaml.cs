@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views;
 
-public partial class ViewMyBangumiFollow : UserControl
+internal partial class ViewMyBangumiFollow : UserControl
 {
     public ViewMyBangumiFollow()
     {

@@ -4,7 +4,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-public class SeasonsSeries : BindableBase
+internal class SeasonsSeries : BindableBase
 {
     public long Id { get; set; }
 

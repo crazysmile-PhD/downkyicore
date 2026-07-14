@@ -7,9 +7,9 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class ToViewMedia : BindableBase
+internal class ToViewMedia : BindableBase
 {
-    protected readonly IEventAggregator EventAggregator;
+    protected IEventAggregator EventAggregator { get; }
 
     public ToViewMedia(IEventAggregator eventAggregator)
     {

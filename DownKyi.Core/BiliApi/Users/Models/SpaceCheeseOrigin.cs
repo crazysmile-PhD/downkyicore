@@ -11,6 +11,6 @@ public class SpaceCheeseOrigin : BaseModel
 
 public class SpaceCheeseData : BaseModel
 {
-    [JsonProperty("items")] public List<SpaceCheese> Items { get; set; } = new();
+    [JsonProperty("items")] public IReadOnlyList<SpaceCheese> Items { get; set; } = Array.Empty<SpaceCheese>();
     [JsonProperty("page")] public SpaceCheesePage Page { get; set; } = new();
 }

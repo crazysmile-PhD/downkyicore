@@ -6,7 +6,7 @@ using Avalonia.Media;
 
 namespace DownKyi.CustomControl;
 
-public class VideoFramePreview : Control
+internal class VideoFramePreview : Control
 {
     public static readonly DirectProperty<VideoFramePreview, IImage?> SourceProperty =
         AvaloniaProperty.RegisterDirect<VideoFramePreview, IImage?>(
@@ -145,6 +145,7 @@ public class VideoFramePreview : Control
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
+        ArgumentNullException.ThrowIfNull(e);
         base.OnPointerPressed(e);
 
         if (!IsWatermarkInteractive || !WatermarkRect.HasValue || _transformedWatermarkRect == null)
@@ -163,6 +164,7 @@ public class VideoFramePreview : Control
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
+        ArgumentNullException.ThrowIfNull(e);
         base.OnPointerMoved(e);
 
         if (!IsWatermarkInteractive || !WatermarkRect.HasValue || _transformedWatermarkRect == null)
@@ -314,6 +316,7 @@ public class VideoFramePreview : Control
 
     public override void Render(DrawingContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
         base.Render(context);
 
         var bounds = new Rect(0, 0, Bounds.Width, Bounds.Height);
@@ -386,7 +389,7 @@ public class VideoFramePreview : Control
             handleBrush, handlePen);
     }
 
-    private void DrawHandle(DrawingContext context, Rect rect, IBrush brush, Pen pen)
+    private static void DrawHandle(DrawingContext context, Rect rect, IBrush brush, Pen pen)
     {
         var shrinkAmount = 2;
         var smallerRect = new Rect(
@@ -446,7 +449,7 @@ public class VideoFramePreview : Control
         return CalculateScale(bounds, sourceSize);
     }
 
-    private double CalculateScale(Size bounds, Size source)
+    private static double CalculateScale(Size bounds, Size source)
     {
         if (source.Width <= 0 || source.Height <= 0)
             return 1;

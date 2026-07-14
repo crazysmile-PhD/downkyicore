@@ -14,5 +14,5 @@ public class UgcSection : BaseModel
     [JsonProperty("type")]
     public int Type { get; set; }
     [JsonProperty("episodes")]
-    public List<UgcEpisode> Episodes { get; set; } = new();
+    public IReadOnlyList<UgcEpisode> Episodes { get; set; } = Array.Empty<UgcEpisode>();
 }

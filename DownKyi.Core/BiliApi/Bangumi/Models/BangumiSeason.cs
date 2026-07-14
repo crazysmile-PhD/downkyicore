@@ -19,10 +19,10 @@ public class BangumiSeason : BaseModel
 {
     // activity
     // alias
-    [JsonProperty("areas")] public List<BangumiArea> Areas { get; set; } = new();
+    [JsonProperty("areas")] public IReadOnlyList<BangumiArea> Areas { get; set; } = Array.Empty<BangumiArea>();
     [JsonProperty("bkg_cover")] public string BkgCover { get; set; } = string.Empty;
     [JsonProperty("cover")] public string Cover { get; set; } = string.Empty;
-    [JsonProperty("episodes")] public List<BangumiEpisode> Episodes { get; set; } = new();
+    [JsonProperty("episodes")] public IReadOnlyList<BangumiEpisode> Episodes { get; set; } = Array.Empty<BangumiEpisode>();
 
     [JsonProperty("evaluate")] public string Evaluate { get; set; } = string.Empty;
 
@@ -42,15 +42,15 @@ public class BangumiSeason : BaseModel
     [JsonProperty("rating")] public BangumiRating? Rating { get; set; }
 
 
-    [JsonProperty("styles")] public string[] Styles { get; set; } = Array.Empty<string>();
+    [JsonProperty("styles")] public IList<string> Styles { get; } = new List<string>();
 
     // record
     // rights
     [JsonProperty("season_id")] public long SeasonId { get; set; }
     [JsonProperty("season_title")] public string SeasonTitle { get; set; } = string.Empty;
-    [JsonProperty("seasons")] public List<BangumiSeasonInfo> Seasons { get; set; } = new();
+    [JsonProperty("seasons")] public IReadOnlyList<BangumiSeasonInfo> Seasons { get; set; } = Array.Empty<BangumiSeasonInfo>();
 
-    [JsonProperty("section")] public List<BangumiSection> Section { get; set; } = new();
+    [JsonProperty("section")] public IReadOnlyList<BangumiSection> Section { get; set; } = Array.Empty<BangumiSection>();
 
     // series
     // share_copy

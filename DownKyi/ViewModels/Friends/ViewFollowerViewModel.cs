@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
@@ -13,7 +14,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Friends;
 
-public class ViewFollowerViewModel : ViewModelBase
+internal class ViewFollowerViewModel : ViewModelBase
 {
     public const string Tag = "PageFriendsFollower";
 
@@ -23,7 +24,13 @@ public class ViewFollowerViewModel : ViewModelBase
     // 每页数量，暂时在此写死，以后在设置中增加选项
     private const int NumberInPage = 20;
 
-    public bool IsEnabled = true;
+    private bool _isEnabled = true;
+
+    public bool IsEnabled
+    {
+        get => _isEnabled;
+        set => SetProperty(ref _isEnabled, value);
+    }
 
     #region 页面属性申明
 
@@ -80,7 +87,7 @@ public class ViewFollowerViewModel : ViewModelBase
     public ObservableCollection<FriendInfo> Contents
     {
         get => _contents;
-        set => SetProperty(ref _contents, value);
+        private set => SetProperty(ref _contents, value);
     }
 
     #endregion
@@ -100,7 +107,7 @@ public class ViewFollowerViewModel : ViewModelBase
     }
 
 
-    private void LoadContent(List<RelationFollowInfo> contents)
+    private void LoadContent(IReadOnlyList<RelationFollowInfo> contents)
     {
         ContentVisibility = true;
         LoadingVisibility = false;
@@ -123,7 +130,7 @@ public class ViewFollowerViewModel : ViewModelBase
         NoDataVisibility = false;
 
         RelationFollow? data = null;
-        List<RelationFollowInfo>? contents = null;
+        IReadOnlyList<RelationFollowInfo>? contents = null;
         await Task.Run(() =>
         {
             data = UserRelation.GetFollowers(_mid, current, NumberInPage);
@@ -138,7 +145,7 @@ public class ViewFollowerViewModel : ViewModelBase
             }
 
             LoadContent(contents);
-        });
+        }).ConfigureAwait(true);
 
         if (data == null || contents == null)
         {
@@ -148,7 +155,7 @@ public class ViewFollowerViewModel : ViewModelBase
         }
         else
         {
-            var userInfo = SettingsManager.GetInstance().GetUserInfo();
+            var userInfo = SettingsManager.Instance.GetUserInfo();
             if (userInfo != null && userInfo.Mid == _mid)
             {
                 Pager.Count = (int)Math.Ceiling((double)data.Total / NumberInPage);
@@ -167,21 +174,19 @@ public class ViewFollowerViewModel : ViewModelBase
         IsEnabled = true;
     }
 
-    private void OnCountChanged_Pager(int count)
+    private void OnCountChangedPager(object? sender, EventArgs e)
     {
     }
 
-    private bool OnCurrentChanged_Pager(int old, int current)
+    private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
     {
         if (!IsEnabled)
         {
-            //Pager.Current = old;
-            return false;
+            e.Cancel = true;
+            return;
         }
 
-        RunFireAndForget(UpdateContentAsync(current), nameof(UpdateContentAsync));
-
-        return true;
+        RunFireAndForget(UpdateContentAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateContentAsync));
     }
 
     /// <summary>
@@ -202,6 +207,7 @@ public class ViewFollowerViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         // 传入mid
@@ -224,8 +230,8 @@ public class ViewFollowerViewModel : ViewModelBase
 
         // 页面选择
         Pager = new CustomPagerViewModel(1, (int)Math.Ceiling((double)1 / NumberInPage));
-        Pager.CurrentChanged += OnCurrentChanged_Pager;
-        Pager.CountChanged += OnCountChanged_Pager;
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
     }
 }

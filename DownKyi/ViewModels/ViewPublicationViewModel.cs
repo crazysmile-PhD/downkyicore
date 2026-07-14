@@ -1,8 +1,9 @@
-#nullable disable
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -26,11 +27,11 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
 {
-    public class ViewPublicationViewModel : ViewModelBase
+    internal class ViewPublicationViewModel : ViewModelBase
     {
         public const string Tag = "PagePublication";
 
-        private CancellationTokenSource _tokenSource;
+        private CancellationTokenSource? _tokenSource;
 
         private long _mid = -1;
 
@@ -92,7 +93,7 @@ namespace DownKyi.ViewModels
         public ObservableCollection<TabHeader> TabHeaders
         {
             get => _tabHeaders;
-            set => SetProperty(ref _tabHeaders, value);
+            private set => SetProperty(ref _tabHeaders, value);
         }
 
         private int _selectTabId;
@@ -124,7 +125,7 @@ namespace DownKyi.ViewModels
         public ObservableCollection<PublicationMedia> Medias
         {
             get => _medias;
-            set => SetProperty(ref _medias, value);
+            private set => SetProperty(ref _medias, value);
         }
 
         private bool _isSelectAll;
@@ -149,17 +150,18 @@ namespace DownKyi.ViewModels
             LoadingVisibility = false;
             NoDataVisibility = false;
 
-            ArrowBack = NavigationIcon.Instance().ArrowBack;
-            ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
+            _arrowBack = NavigationIcon.Instance().ArrowBack;
+            _arrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
             // 下载管理按钮
-            DownloadManage = ButtonIcon.Instance().DownloadManage;
-            DownloadManage.Height = 24;
-            DownloadManage.Width = 24;
-            DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
+            _downloadManage = ButtonIcon.Instance().DownloadManage;
+            _downloadManage.Height = 24;
+            _downloadManage.Width = 24;
+            _downloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-            TabHeaders = new ObservableCollection<TabHeader>();
-            Medias = new ObservableCollection<PublicationMedia>();
+            _tabHeaders = new ObservableCollection<TabHeader>();
+            _medias = new ObservableCollection<PublicationMedia>();
+            _pager = new CustomPagerViewModel(1, 1);
 
             #endregion
         }
@@ -167,7 +169,7 @@ namespace DownKyi.ViewModels
         #region 命令申明
 
         // 返回事件
-        private DelegateCommand _backSpaceCommand;
+        private DelegateCommand? _backSpaceCommand;
 
         public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
 
@@ -192,7 +194,7 @@ namespace DownKyi.ViewModels
         }
 
         // 前往下载管理页面
-        private DelegateCommand _downloadManagerCommand;
+        private DelegateCommand? _downloadManagerCommand;
 
         public DelegateCommand DownloadManagerCommand => _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
 
@@ -211,7 +213,7 @@ namespace DownKyi.ViewModels
         }
 
         // 左侧tab点击事件
-        private DelegateCommand<object> _leftTabHeadersCommand;
+        private DelegateCommand<object>? _leftTabHeadersCommand;
 
         public DelegateCommand<object> LeftTabHeadersCommand =>
             _leftTabHeadersCommand ??= new DelegateCommand<object>(ExecuteLeftTabHeadersCommand, CanExecuteLeftTabHeadersCommand);
@@ -228,9 +230,9 @@ namespace DownKyi.ViewModels
             }
 
             // 页面选择
-            Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle) / VideoNumberInPage));
-            Pager.CurrentChanged += OnCurrentChanged_Pager;
-            Pager.CountChanged += OnCountChanged_Pager;
+            Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
+            Pager.CurrentChanging += OnCurrentChangedPager;
+            Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;
         }
 
@@ -245,7 +247,7 @@ namespace DownKyi.ViewModels
         }
 
         // 全选按钮点击事件
-        private DelegateCommand<object> _selectAllCommand;
+        private DelegateCommand<object>? _selectAllCommand;
 
         public DelegateCommand<object> SelectAllCommand => _selectAllCommand ??= new DelegateCommand<object>(ExecuteSelectAllCommand);
 
@@ -272,7 +274,7 @@ namespace DownKyi.ViewModels
         }
 
         // 列表选择事件
-        private DelegateCommand<object> _mediasCommand;
+        private DelegateCommand<object>? _mediasCommand;
 
         public DelegateCommand<object> MediasCommand => _mediasCommand ??= new DelegateCommand<object>(ExecuteMediasCommand);
 
@@ -291,7 +293,7 @@ namespace DownKyi.ViewModels
         }
 
         // 添加选中项到下载列表事件
-        private DownKyiAsyncDelegateCommand _addToDownloadCommand;
+        private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
         public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
 
@@ -299,7 +301,7 @@ namespace DownKyi.ViewModels
         /// 添加选中项到下载列表事件
         /// </summary>
         // 添加所有视频到下载列表事件
-        private DownKyiAsyncDelegateCommand _addAllToDownloadCommand;
+        private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
         public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
 
@@ -318,7 +320,7 @@ namespace DownKyi.ViewModels
             var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
             // 选择文件夹
-            var directory = await addToDownloadService.SetDirectory(DialogService);
+            var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
             // 视频计数
             var i = 0;
@@ -335,9 +337,9 @@ namespace DownKyi.ViewModels
                     addToDownloadService.GetVideo();
                     addToDownloadService.ParseVideo(videoInfoService);
                     // 下载
-                    i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                    i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
                 }
-            });
+            }).ConfigureAwait(true);
 
             if (directory == null)
             {
@@ -350,16 +352,16 @@ namespace DownKyi.ViewModels
                 : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
         }
 
-        private void OnCountChanged_Pager(int count)
+        private void OnCountChangedPager(object? sender, EventArgs e)
         {
         }
 
-        private bool OnCurrentChanged_Pager(int old, int current)
+        private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
         {
             if (!IsEnabled)
             {
-                //Pager.Current = old;
-                return false;
+                e.Cancel = true;
+                return;
             }
 
             Medias.Clear();
@@ -367,9 +369,7 @@ namespace DownKyi.ViewModels
             LoadingVisibility = true;
             NoDataVisibility = false;
 
-            _ = UpdatePublication(current);
-
-            return true;
+            _ = UpdatePublication(((CustomPagerViewModel)sender!).ProposedCurrent);
         }
 
         private static string StringToUnicode(string s)
@@ -380,7 +380,7 @@ namespace DownKyi.ViewModels
             foreach (var t in charbuffers)
             {
                 buffer = Encoding.Unicode.GetBytes(t.ToString());
-                sb.Append($"\\u{buffer[1]:X2}{buffer[0]:X2}");
+                sb.Append(CultureInfo.InvariantCulture, $"\\u{buffer[1]:X2}{buffer[0]:X2}");
             }
 
             return sb.ToString();
@@ -390,7 +390,10 @@ namespace DownKyi.ViewModels
 
         private async Task UpdatePublication(int current)
         {
-            _tokenSource?.Cancel();
+            if (_tokenSource != null)
+            {
+                await _tokenSource.CancelAsync().ConfigureAwait(true);
+            }
             // 是否正在获取数据
             // 在所有的退出分支中都需要设为true
             IsEnabled = false;
@@ -398,72 +401,80 @@ namespace DownKyi.ViewModels
             var cancellationToken = _tokenSource.Token;
 
             var tab = TabHeaders[SelectTabId];
-            await Task.Run(() =>
+            try
             {
-                var publications = Core.BiliApi.Users.UserSpace.GetPublication(_mid, current, VideoNumberInPage, tab.Id);
-                if (publications == null)
+                await Task.Run(() =>
                 {
-                    // 没有数据，UI提示
-                    LoadingVisibility = false;
-                    NoDataVisibility = true;
-                    return;
-                }
-
-                var videos = publications.Vlist;
-                if (videos == null)
-                {
-                    // 没有数据，UI提示
-                    LoadingVisibility = false;
-                    NoDataVisibility = true;
-                    return;
-                }
-
-                foreach (var video in videos)
-                {
-                    // 查询、保存封面
-                    var coverUrl = video.Pic;
-
-                    // 播放数
-                    var play = string.Empty;
-                    if (video.Play > 0)
+                    var publications = Core.BiliApi.Users.UserSpace.GetPublication(_mid, current, VideoNumberInPage, tab.Id);
+                    if (publications == null)
                     {
-                        play = Format.FormatNumber(video.Play);
-                    }
-                    else
-                    {
-                        play = "--";
-                    }
-
-                    var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
-                    var dateCTime = startTime.AddSeconds(video.Created);
-                    var ctime = dateCTime.ToString("yyyy-MM-dd");
-                    App.PropertyChangeAsync(() =>
-                    {
-                        var media = new PublicationMedia(EventAggregator)
-                        {
-                            Avid = video.Aid,
-                            Bvid = video.Bvid,
-                            Cover = _defaultPic,
-                            Duration = video.Length,
-                            Title = video.Title,
-                            PlayNumber = play,
-                            CreateTime = ctime,
-                            CoverUrl = coverUrl
-                        };
-                        _medias.Add(media);
-
+                        // 没有数据，UI提示
                         LoadingVisibility = false;
-                        NoDataVisibility = false;
-                    });
-
-                    if (cancellationToken.IsCancellationRequested)
-                    {
+                        NoDataVisibility = true;
                         return;
                     }
-                }
 
+                    var videos = publications.Vlist;
+                    if (videos == null)
+                    {
+                        // 没有数据，UI提示
+                        LoadingVisibility = false;
+                        NoDataVisibility = true;
+                        return;
+                    }
+
+                    foreach (var video in videos)
+                    {
+                        // 查询、保存封面
+                        var coverUrl = video.Pic;
+
+                        // 播放数
+                        var play = string.Empty;
+                        if (video.Play > 0)
+                        {
+                            play = Format.FormatNumber(video.Play);
+                        }
+                        else
+                        {
+                            play = "--";
+                        }
+
+                        var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
+                        var dateCTime = startTime.AddSeconds(video.Created);
+                        var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
+                        App.PropertyChangeAsync(() =>
+                        {
+                            var media = new PublicationMedia(EventAggregator)
+                            {
+                                Avid = video.Aid,
+                                Bvid = video.Bvid,
+                                Cover = _defaultPic,
+                                Duration = video.Length,
+                                Title = video.Title,
+                                PlayNumber = play,
+                                CreateTime = ctime,
+                                CoverUrl = coverUrl
+                            };
+                            _medias.Add(media);
+
+                            LoadingVisibility = false;
+                            NoDataVisibility = false;
+                        });
+
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            return;
+                        }
+                    }
+                }, cancellationToken).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            finally
+            {
                 IsEnabled = true;
-            }, cancellationToken).ContinueWith(t => { });
+            }
         }
 
         /// <summary>
@@ -490,6 +501,7 @@ namespace DownKyi.ViewModels
         /// <param name="navigationContext"></param>
         public override void OnNavigatedTo(NavigationContext navigationContext)
         {
+            ArgumentNullException.ThrowIfNull(navigationContext);
             base.OnNavigatedTo(navigationContext);
 
             // 根据传入参数不同执行不同任务
@@ -511,20 +523,39 @@ namespace DownKyi.ViewModels
                 {
                     Id = item.Tid,
                     Title = item.Name,
-                    SubTitle = item.Count.ToString()
+                    SubTitle = item.Count.ToString(CultureInfo.CurrentCulture)
                 });
             }
 
             // 初始选中项
             var selectTab = TabHeaders.FirstOrDefault(item => item.Id == tid);
+            if (selectTab == null)
+            {
+                NoDataVisibility = true;
+                return;
+            }
+
             SelectTabId = TabHeaders.IndexOf(selectTab);
 
             // 页面选择
             Pager = new CustomPagerViewModel(1,
-                (int)Math.Ceiling(double.Parse(selectTab.SubTitle) / VideoNumberInPage));
-            Pager.CurrentChanged += OnCurrentChanged_Pager;
-            Pager.CountChanged += OnCountChanged_Pager;
+            (int)Math.Ceiling(double.Parse(selectTab.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
+            Pager.CurrentChanging += OnCurrentChangedPager;
+            Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && !IsDisposed)
+            {
+                _tokenSource?.Cancel();
+                _tokenSource?.Dispose();
+                _tokenSource = null;
+                _defaultPic.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
     }
 }

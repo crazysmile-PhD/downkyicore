@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace DownKyi.Core.Danmaku2Ass;
 
 /// <summary>
@@ -5,12 +7,12 @@ namespace DownKyi.Core.Danmaku2Ass;
 /// </summary>
 public class Creater
 {
-    public Config Config;
-    public List<Danmaku> Danmakus;
-    public List<Subtitle> Subtitles;
-    public string Text;
+    public Config Config { get; }
+    public IReadOnlyList<Danmaku> Danmakus { get; }
+    public IReadOnlyList<Subtitle> Subtitles { get; }
+    public string Text { get; }
 
-    public Creater(Config config, List<Danmaku> danmakus)
+    public Creater(Config config, IReadOnlyList<Danmaku> danmakus)
     {
         Config = config;
         Danmakus = danmakus;
@@ -18,7 +20,7 @@ public class Creater
         Text = SetText();
     }
 
-    protected List<Subtitle> SetSubtitles()
+    protected IReadOnlyList<Subtitle> SetSubtitles()
     {
         var scroll = new Collision(Config.LineCount);
         var stayed = new Collision(Config.LineCount);
@@ -66,11 +68,11 @@ public class Creater
     protected string SetText()
     {
         var header = Config.HeaderTemplate
-            .Replace("{title}", Config.Title)
-            .Replace("{width}", Config.ScreenWidth.ToString())
-            .Replace("{height}", Config.ScreenHeight.ToString())
-            .Replace("{fontname}", Config.FontName)
-            .Replace("{fontsize}", Config.BaseFontSize.ToString());
+            .Replace("{title}", Config.Title, StringComparison.Ordinal)
+            .Replace("{width}", Config.ScreenWidth.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{height}", Config.ScreenHeight.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{fontname}", Config.FontName, StringComparison.Ordinal)
+            .Replace("{fontsize}", Config.BaseFontSize.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
 
         var events = Subtitles.Aggregate(string.Empty, (current, subtitle) => current + "\n" + subtitle.Text);
 

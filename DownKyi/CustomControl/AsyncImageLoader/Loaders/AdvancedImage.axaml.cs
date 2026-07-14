@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -11,7 +12,7 @@ using Avalonia.Platform;
 
 namespace DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
-public class AdvancedImage : ContentControl
+internal class AdvancedImage : ContentControl
 {
     /// <summary>
     ///     Defines the <see cref="Loader" /> property.
@@ -97,8 +98,14 @@ public class AdvancedImage : ContentControl
     /// </summary>
     /// <param name="serviceProvider">The XAML service provider.</param>
     public AdvancedImage(IServiceProvider serviceProvider)
-        : this((serviceProvider.GetService(typeof(IUriContext)) as IUriContext)?.BaseUri)
+        : this(GetBaseUri(serviceProvider))
     {
+    }
+
+    private static Uri? GetBaseUri(IServiceProvider serviceProvider)
+    {
+        ArgumentNullException.ThrowIfNull(serviceProvider);
+        return (serviceProvider.GetService(typeof(IUriContext)) as IUriContext)?.BaseUri;
     }
 
     /// <summary>
@@ -166,6 +173,8 @@ public class AdvancedImage : ContentControl
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
+        ArgumentNullException.ThrowIfNull(change);
+
         if (change.Property == SourceProperty)
             UpdateImage(change.GetNewValue<string>(), Loader);
         else if (change.Property == LoaderProperty && ShouldLoaderChangeTriggerUpdate)
@@ -200,7 +209,10 @@ public class AdvancedImage : ContentControl
 
         try
         {
-            oldCancellationToken?.Cancel();
+            if (oldCancellationToken != null)
+            {
+                await oldCancellationToken.CancelAsync().ConfigureAwait(true);
+            }
         }
         catch (ObjectDisposedException)
         {
@@ -209,6 +221,8 @@ public class AdvancedImage : ContentControl
         if (source is null && CurrentImage is not ImageWrapper)
         {
             // User provided image himself
+            Interlocked.CompareExchange(ref _updateCancellationToken, null, cancellationTokenSource);
+            cancellationTokenSource.Dispose();
             return;
         }
 
@@ -216,51 +230,80 @@ public class AdvancedImage : ContentControl
         CurrentImage = null;
 
 
-        var bitmap = await Task.Run(async () =>
+        Bitmap? bitmap;
+        var wasCancelled = false;
+        try
         {
-            try
+            bitmap = await Task.Run(async () =>
             {
-                if (source == null)
-                    return null;
-
-                // A small delay allows to cancel early if the image goes out of screen too fast (eg. scrolling)
-                // The Bitmap constructor is expensive and cannot be cancelled
-                await Task.Delay(10, cancellationTokenSource.Token);
-
-                // Hack to support relative URI
-                // TODO: Refactor IAsyncImageLoader to support BaseUri 
                 try
                 {
-                    var uri = new Uri(source, UriKind.RelativeOrAbsolute);
-                    if (AssetLoader.Exists(uri, _baseUri))
-                        return new Bitmap(AssetLoader.Open(uri, _baseUri));
+                    if (source == null)
+                        return null;
+
+                    // A small delay allows to cancel early if the image goes out of screen too fast (eg. scrolling)
+                    // The Bitmap constructor is expensive and cannot be cancelled
+                    await Task.Delay(10, cancellationTokenSource.Token).ConfigureAwait(true);
+
+                    // Hack to support relative URI
+                    // TODO: Refactor IAsyncImageLoader to support BaseUri
+                    try
+                    {
+                        var uri = new Uri(source, UriKind.RelativeOrAbsolute);
+                        if (AssetLoader.Exists(uri, _baseUri))
+                            return new Bitmap(AssetLoader.Open(uri, _baseUri));
+                    }
+                    catch (UriFormatException)
+                    {
+                        // The loader below may still support the source format.
+                    }
+                    catch (IOException)
+                    {
+                        // The loader below may still resolve a remote source.
+                    }
+
+                    loader ??= ImageLoader.AsyncImageLoader;
+                    return await loader.ProvideImageAsync(source).ConfigureAwait(true);
                 }
-                catch (Exception)
+                catch (TaskCanceledException)
                 {
-                    // ignored
+                    return null;
                 }
+                catch (IOException e)
+                {
+                    _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
+                    return null;
+                }
+                catch (UnauthorizedAccessException e)
+                {
+                    _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
+                    return null;
+                }
+                catch (InvalidOperationException e)
+                {
+                    _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
+                    return null;
+                }
+                catch (ArgumentException e)
+                {
+                    _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
 
-                loader ??= ImageLoader.AsyncImageLoader;
-                return await loader.ProvideImageAsync(source);
-            }
-            catch (TaskCanceledException)
-            {
-                return null;
-            }
-            catch (Exception e)
-            {
-                _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
+                    return null;
+                }
+            }, CancellationToken.None).ConfigureAwait(true);
+            wasCancelled = cancellationTokenSource.IsCancellationRequested;
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _updateCancellationToken, null, cancellationTokenSource);
+            cancellationTokenSource.Dispose();
+        }
 
-                return null;
-            }
-            finally
-            {
-                cancellationTokenSource.Dispose();
-            }
-        }, CancellationToken.None);
-
-        if (cancellationTokenSource.IsCancellationRequested)
+        if (wasCancelled)
+        {
+            bitmap?.Dispose();
             return;
+        }
         CurrentImage = bitmap is null ? null : new ImageWrapper(bitmap);
         IsLoading = false;
     }
@@ -277,6 +320,8 @@ public class AdvancedImage : ContentControl
     /// <param name="context">The drawing context.</param>
     public override void Render(DrawingContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
         var source = CurrentImage;
 
         if (source != null && Bounds is { Width: > 0, Height: > 0 })
@@ -323,11 +368,11 @@ public class AdvancedImage : ContentControl
             : base.ArrangeOverride(finalSize);
     }
 
-    public sealed class ImageWrapper : IImage
+    private sealed class ImageWrapper : IImage
     {
         public IImage ImageImplementation { get; }
 
-        internal ImageWrapper(IImage imageImplementation)
+        public ImageWrapper(IImage imageImplementation)
         {
             ImageImplementation = imageImplementation;
         }

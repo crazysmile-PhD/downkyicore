@@ -6,7 +6,7 @@ namespace DownKyi.Core.BiliApi.Video.Models;
 public class VideoSubtitle : BaseModel
 {
     [JsonProperty("allow_submit")] public bool AllowSubmit { get; set; }
-    [JsonProperty("list")] public List<Subtitle> List { get; set; } = new();
+    [JsonProperty("list")] public IReadOnlyList<Subtitle> List { get; set; } = Array.Empty<Subtitle>();
 }
 
 public class Subtitle : BaseModel
@@ -16,7 +16,7 @@ public class Subtitle : BaseModel
     [JsonProperty("lan_doc")] public string LanDoc { get; set; } = string.Empty;
     [JsonProperty("is_lock")] public bool IsLock { get; set; }
     [JsonProperty("author_mid")] public long AuthorMid { get; set; }
-    [JsonProperty("subtitle_url")] public string SubtitleUrl { get; set; } = string.Empty;
+    [JsonProperty("subtitle_url")] public string SubtitleAddress { get; set; } = string.Empty;
     [JsonProperty("author")] public SubtitleAuthor Author { get; set; } = new();
 }
 

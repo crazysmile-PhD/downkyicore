@@ -15,7 +15,7 @@ public sealed class VideoInputResolverTests
     [InlineData("https://www.bilibili.com/bangumi/play/ss32982", (int)VideoInputKind.Bangumi)]
     [InlineData("https://www.bilibili.com/cheese/play/ep3489", (int)VideoInputKind.Cheese)]
     [InlineData("not-a-video", (int)VideoInputKind.Unknown)]
-    public void Resolve_ReturnsExpectedInputKind(string input, int expectedKind)
+    public void ResolveReturnsExpectedInputKind(string input, int expectedKind)
     {
         Assert.Equal((VideoInputKind)expectedKind, VideoInputResolver.Resolve(input));
     }
@@ -24,13 +24,13 @@ public sealed class VideoInputResolverTests
     [InlineData("BV17x411w7KC", PlayStreamType.Video)]
     [InlineData("ss32982", PlayStreamType.Bangumi)]
     [InlineData("https://www.bilibili.com/cheese/play/ss205", PlayStreamType.Cheese)]
-    public void ResolvePlayStreamType_ReturnsExpectedDownloadStreamType(string input, PlayStreamType expectedStreamType)
+    public void ResolvePlayStreamTypeReturnsExpectedDownloadStreamType(string input, PlayStreamType expectedStreamType)
     {
         Assert.Equal(expectedStreamType, VideoInputResolver.ResolvePlayStreamType(input));
     }
 
     [Fact]
-    public void ResolvePlayStreamType_ReturnsNull_ForUnsupportedInput()
+    public void ResolvePlayStreamTypeReturnsNullForUnsupportedInput()
     {
         Assert.Null(VideoInputResolver.ResolvePlayStreamType("ml1329019876"));
     }

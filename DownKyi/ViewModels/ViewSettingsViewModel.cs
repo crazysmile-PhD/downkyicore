@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using DownKyi.Events;
 using DownKyi.Images;
@@ -10,7 +11,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewSettingsViewModel : ViewModelBase
+internal class ViewSettingsViewModel : ViewModelBase
 {
     public const string Tag = "PageSettings";
 
@@ -26,9 +27,9 @@ public class ViewSettingsViewModel : ViewModelBase
         set => SetProperty(ref _arrowBack, value);
     }
 
-    private List<TabHeader> _tabHeaders = new();
+    private IReadOnlyList<TabHeader> _tabHeaders = Array.Empty<TabHeader>();
 
-    public List<TabHeader> TabHeaders
+    public IReadOnlyList<TabHeader> TabHeaders
     {
         get => _tabHeaders;
         set => SetProperty(ref _tabHeaders, value);

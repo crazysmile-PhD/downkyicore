@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -27,12 +28,12 @@ namespace DownKyi.Services.Download;
 /// <summary>
 /// 添加到下载列表服务
 /// </summary>
-public class AddToDownloadService
+internal class AddToDownloadService
 {
     private readonly string Tag = "AddToDownloadService";
     private IInfoService _videoInfoService = null!;
     private VideoInfoView? _videoInfoView;
-    private List<VideoSection>? _videoSections;
+    private IList<VideoSection>? _videoSections;
     private DownloadStorageService _downloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
 
     // 下载内容
@@ -92,7 +93,7 @@ public class AddToDownloadService
         _videoInfoService = videoInfoService;
     }
 
-    public void GetVideo(VideoInfoView videoInfoView, List<VideoSection> videoSections)
+    public void GetVideo(VideoInfoView videoInfoView, IList<VideoSection> videoSections)
     {
         _videoInfoView = videoInfoView;
         _videoSections = videoSections;
@@ -140,6 +141,8 @@ public class AddToDownloadService
     /// <param name="videoInfoService"></param>
     public void ParseVideo(IInfoService videoInfoService)
     {
+        ArgumentNullException.ThrowIfNull(videoInfoService);
+
         if (_videoSections == null)
         {
             return;
@@ -166,17 +169,17 @@ public class AddToDownloadService
         var directory = string.Empty;
 
         // 是否使用默认下载目录
-        if (SettingsManager.GetInstance().GetIsUseSaveVideoRootPath() == AllowStatus.Yes)
+        if (SettingsManager.Instance.GetIsUseSaveVideoRootPath() == AllowStatus.Yes)
         {
             // 下载内容
-            var videoContent = SettingsManager.GetInstance().GetVideoContent();
+            var videoContent = SettingsManager.Instance.GetVideoContent();
             _downloadAudio = videoContent.DownloadAudio;
             _downloadVideo = videoContent.DownloadVideo;
             _downloadDanmaku = videoContent.DownloadDanmaku;
             _downloadSubtitle = videoContent.DownloadSubtitle;
             _downloadCover = videoContent.DownloadCover;
 
-            directory = SettingsManager.GetInstance().GetSaveVideoRootPath();
+            directory = SettingsManager.Instance.GetSaveVideoRootPath();
         }
         else
         {
@@ -193,10 +196,10 @@ public class AddToDownloadService
                 _downloadDanmaku = result.Parameters.GetValue<bool>("downloadDanmaku");
                 _downloadSubtitle = result.Parameters.GetValue<bool>("downloadSubtitle");
                 _downloadCover = result.Parameters.GetValue<bool>("downloadCover");
-            });
+            }).ConfigureAwait(true);
         }
 
-        if (directory == string.Empty)
+        if (string.IsNullOrEmpty(directory))
         {
             return null;
         }
@@ -205,7 +208,7 @@ public class AddToDownloadService
         if (!Directory.Exists(Directory.GetDirectoryRoot(directory)))
         {
             var alert = new AlertService(dialogService);
-            await alert.ShowError(DictionaryResource.GetString("DriveNotFound"));
+            await alert.ShowError(DictionaryResource.GetString("DriveNotFound")).ConfigureAwait(true);
 
             directory = string.Empty;
         }
@@ -237,6 +240,8 @@ public class AddToDownloadService
     /// <returns>添加的数量</returns>
     public async Task<int> AddToDownload(IEventAggregator eventAggregator, IDialogService? dialogService, string? directory, bool isAll = false)
     {
+        ArgumentNullException.ThrowIfNull(eventAggregator);
+
         if (string.IsNullOrEmpty(directory))
         {
             return -1;
@@ -353,7 +358,7 @@ public class AddToDownloadService
                     {
                         // eventAggregator.GetEvent<MessageEvent>().Publish($"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloaded")}");
                         // isDownloaded = true;
-                        var repeatDownloadStrategy = SettingsManager.GetInstance().GetRepeatDownloadStrategy();
+                        var repeatDownloadStrategy = SettingsManager.Instance.GetRepeatDownloadStrategy();
                         switch (repeatDownloadStrategy)
                         {
                             case RepeatDownloadStrategy.Ask:
@@ -368,9 +373,9 @@ public class AddToDownloadService
 
                                         if (dialogService != null)
                                         {
-                                            await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; });
+                                            await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; }).ConfigureAwait(true);
                                         }
-                                    });
+                                    }).ConfigureAwait(true);
 
                                     if (result == ButtonResult.OK)
                                     {
@@ -410,8 +415,8 @@ public class AddToDownloadService
 
                 // 视频分区
                 var zoneId = -1;
-                var zoneList = VideoZone.Instance().GetZones();
-                var zone = zoneList.Find(it => it.Id == _videoInfoView?.TypeId);
+                var zoneList = VideoZone.Instance().Zones;
+                var zone = zoneList.FirstOrDefault(it => it.Id == _videoInfoView?.TypeId);
                 if (zone != null)
                 {
                     if (zone.ParentId == 0)
@@ -420,7 +425,7 @@ public class AddToDownloadService
                     }
                     else
                     {
-                        var zoneParent = zoneList.Find(it => it.Id == zone.ParentId);
+                        var zoneParent = zoneList.FirstOrDefault(it => it.Id == zone.ParentId);
                         if (zoneParent != null)
                         {
                             zoneId = zoneParent.Id;
@@ -436,8 +441,8 @@ public class AddToDownloadService
                 }
 
                 // 文件路径
-                var fileNameParts = SettingsManager.GetInstance().GetFileNameParts();
-                var fileName = FileName.Builder(fileNameParts)
+                var fileNameParts = SettingsManager.Instance.GetFileNameParts();
+                var fileName = FileNameBuilder.Create(fileNameParts)
                     .SetSection(Format.FormatFileName(sectionName))
                     .SetMainTitle(Format.FormatFileName(_videoInfoView.Title))
                     .SetPageTitle(Format.FormatFileName(page.Name))
@@ -445,10 +450,10 @@ public class AddToDownloadService
                     .SetAudioQuality(page.AudioQualityFormat)
                     .SetVideoQuality(videoQuality.QualityFormat)
                     .SetVideoCodec(
-                        videoQuality.SelectedVideoCodec.Contains("AVC") ? "AVC" :
-                        videoQuality.SelectedVideoCodec.Contains("HEVC") ? "HEVC" :
-                        videoQuality.SelectedVideoCodec.Contains("Dolby") ? "Dolby Vision" :
-                        videoQuality.SelectedVideoCodec.Contains("AV1") ? "AV1" : "")
+                        videoQuality.SelectedVideoCodec.Contains("AVC", StringComparison.Ordinal) ? "AVC" :
+                        videoQuality.SelectedVideoCodec.Contains("HEVC", StringComparison.Ordinal) ? "HEVC" :
+                        videoQuality.SelectedVideoCodec.Contains("Dolby", StringComparison.Ordinal) ? "Dolby Vision" :
+                        videoQuality.SelectedVideoCodec.Contains("AV1", StringComparison.Ordinal) ? "AV1" : "")
                     .SetVideoPublishTime(page.PublishTime)
                     .SetAvid(page.Avid)
                     .SetBvid(page.Bvid)
@@ -457,7 +462,7 @@ public class AddToDownloadService
                     .SetUpName(Format.FormatFileName(ownerName));
 
                 // 序号设置
-                var orderFormat = SettingsManager.GetInstance().GetOrderFormat();
+                var orderFormat = SettingsManager.Instance.GetOrderFormat();
                 switch (orderFormat)
                 {
                     case OrderFormat.Natural:
@@ -471,7 +476,7 @@ public class AddToDownloadService
                 // 合成绝对路径
                 var filePath = Path.Combine(directory, fileName.RelativePath());
 
-                if (SettingsManager.GetInstance().IsRepeatFileAutoAddNumberSuffix())
+                if (SettingsManager.Instance.IsRepeatFileAutoAddNumberSuffix())
                 {
                     // 如果存在同名文件，自动重命名
                     // todo 如果重新下载呢。还没想好
@@ -570,7 +575,7 @@ public class AddToDownloadService
                     PlayUrl = page.PlayUrl,
                 };
 
-                if (SettingsManager.GetInstance().GetVideoContent()
+                if (SettingsManager.Instance.GetVideoContent()
                         .GenerateMovieMetadata && _downloadVideo)
                 {
                     downloadingItem.Metadata = BuildMovieMetadata(page);
@@ -597,25 +602,27 @@ public class AddToDownloadService
         {
             Title = page.Name,
             Plot = _videoInfoView?.Description ?? string.Empty,
-            Year = page.OriginalPublishTime.Year.ToString(),
-            Premiered = page.OriginalPublishTime.ToString("yyyy-MM-dd"),
-            BilibiliId = new UniqueId("bilibili", page.Bvid),
-            Actors = new List<Actor> { new(page.Owner?.Name ?? string.Empty, (page.Owner?.Mid ?? -1).ToString()) },
-            Genres = _videoInfoView?.VideoZone?.Split(">")?.ToList() ?? new List<string>(),
-            Tags = page.LazyTags?.Value ?? new List<string>(),
-            Ratings = score != null
-                ? new List<Rating>
-                {
-                    new()
-                    {
-                        IsDefault = true,
-                        Max = 10,
-                        Name = "bilibili",
-                        Value = score.Value
-                    }
-                }
-                : new List<Rating>()
+            Year = page.OriginalPublishTime.Year.ToString(CultureInfo.InvariantCulture),
+            Premiered = page.OriginalPublishTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            BilibiliId = new UniqueId("bilibili", page.Bvid)
         };
+
+        metadata.Actors.Add(new Actor(page.Owner?.Name ?? string.Empty, (page.Owner?.Mid ?? -1).ToString(CultureInfo.InvariantCulture)));
+        foreach (var genre in _videoInfoView?.VideoZone?.Split(">") ?? Array.Empty<string>())
+        {
+            metadata.Genres.Add(genre);
+        }
+
+        foreach (var tag in page.LazyTags?.Value ?? Enumerable.Empty<string>())
+        {
+            metadata.Tags.Add(tag);
+        }
+
+        if (score != null)
+        {
+            metadata.Ratings.Add(new Rating("bilibili", score.Value, isDefault: true));
+        }
+
         return metadata;
     }
 }

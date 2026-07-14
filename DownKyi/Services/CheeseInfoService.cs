@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Avalonia.Threading;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Cheese;
@@ -14,7 +15,7 @@ using DownKyi.ViewModels.PageViewModels;
 
 namespace DownKyi.Services;
 
-public class CheeseInfoService : IInfoService
+internal class CheeseInfoService : IInfoService
 {
     private readonly CheeseView? _cheeseView;
 
@@ -42,7 +43,7 @@ public class CheeseInfoService : IInfoService
     /// 获取视频剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoPage> GetVideoPages(System.Threading.CancellationToken cancellationToken = default)
+    public IList<VideoPage> GetVideoPages(System.Threading.CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var pages = new List<VideoPage>();
@@ -103,11 +104,11 @@ public class CheeseInfoService : IInfoService
             }
 
             // 文件命名中的时间格式
-            var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
+            var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(episode.ReleaseDate);
-            page.PublishTime = dateTime.ToString(timeFormat);
+            page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
             page.OriginalPublishTime = dateTime;
             pages.Add(page);
         }
@@ -119,7 +120,7 @@ public class CheeseInfoService : IInfoService
     /// 获取视频章节与剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoSection>? GetVideoSections(bool noUgc = false, System.Threading.CancellationToken cancellationToken = default)
+    public IList<VideoSection>? GetVideoSections(bool noUgc = false, System.Threading.CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return null;
@@ -131,8 +132,9 @@ public class CheeseInfoService : IInfoService
     /// <param name="page"></param>
     public void GetVideoStream(VideoPage page, System.Threading.CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var playUrl = VideoStream.GetCheesePlayUrl(page.Avid, page.Bvid, page.Cid, page.EpisodeId, cancellationToken: cancellationToken);
+        var playUrl = VideoStreamApi.GetCheesePlayUrl(page.Avid, page.Bvid, page.Cid, page.EpisodeId, cancellationToken: cancellationToken);
         Dispatcher.UIThread.Invoke(() => { Utils.VideoPageInfo(playUrl, page); });
     }
 

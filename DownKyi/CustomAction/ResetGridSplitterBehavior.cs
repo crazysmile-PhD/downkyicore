@@ -7,7 +7,7 @@ using Avalonia.Xaml.Interactivity;
 
 namespace DownKyi.CustomAction;
 
-public class ResetGridSplitterBehavior : Behavior<GridSplitter>
+internal class ResetGridSplitterBehavior : Behavior<GridSplitter>
 {
     private Dictionary<int, GridLength> _originalColumnWidths = new();
     private Dictionary<int, GridLength> _originalRowHeights = new();

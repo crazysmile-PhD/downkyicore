@@ -5,7 +5,8 @@ namespace DownKyi.Core.Aria2cNet.Client;
 /// </summary>
 public enum HowChangePosition
 {
-    POS_SET = 1,
-    POS_CUR,
-    POS_END
+    None = 0,
+    PosSet = 1,
+    PosCurrent,
+    PosEnd
 }

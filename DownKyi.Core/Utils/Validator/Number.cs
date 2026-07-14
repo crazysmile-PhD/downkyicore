@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace DownKyi.Core.Utils.Validator;
@@ -11,7 +12,7 @@ public static class Number
     /// <returns></returns>
     public static long GetInt(string value)
     {
-        return IsInt(value) ? long.Parse(value) : -1;
+        return IsInt(value) ? long.Parse(value, CultureInfo.InvariantCulture) : -1;
     }
 
     /// <summary>

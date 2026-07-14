@@ -10,7 +10,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class VideoPage : BindableBase
+internal class VideoPage : BindableBase
 {
     public PlayUrl? PlayUrl { get; set; }
 
@@ -64,7 +64,7 @@ public class VideoPage : BindableBase
     public ObservableCollection<string> AudioQualityFormatList
     {
         get => audioQualityFormatList;
-        set => SetProperty(ref audioQualityFormatList, value);
+        internal set => SetProperty(ref audioQualityFormatList, value);
     }
 
     private string audioQualityFormat = string.Empty;
@@ -81,12 +81,12 @@ public class VideoPage : BindableBase
         }
     }
 
-    private List<VideoQuality> videoQualityList = new();
+    private IList<VideoQuality> videoQualityList = new List<VideoQuality>();
 
-    public List<VideoQuality> VideoQualityList
+    public IList<VideoQuality> VideoQualityList
     {
         get => videoQualityList;
-        set => SetProperty(ref videoQualityList, value);
+        internal set => SetProperty(ref videoQualityList, value);
     }
 
     private VideoQuality videoQuality = new();

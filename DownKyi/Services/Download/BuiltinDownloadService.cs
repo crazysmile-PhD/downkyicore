@@ -23,7 +23,7 @@ using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace DownKyi.Services.Download;
 
-public class BuiltinDownloadService : DownloadService, IDownloadService
+internal class BuiltinDownloadService : DownloadService, IDownloadService
 {
     public BuiltinDownloadService(ImmutableObservableCollection<DownloadingItem> downloadingList,
         ImmutableObservableCollection<DownloadedItem> downloadedList,
@@ -42,6 +42,8 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// <returns></returns>
     public override string? DownloadAudio(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         var downloadAudio = BaseDownloadAudio(downloading);
 
         return DownloadVideo(downloading, downloadAudio);
@@ -72,7 +74,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
         {
             Id = downloadVideo.Id,
             Codecs = downloadVideo.Codecs,
-            BaseUrl = downloadVideo.BaseUrl,
+            BaseAddress = downloadVideo.BaseUrl,
             BackupUrl = downloadVideo.BackupUrl,
             ExpectedSize = downloadVideo.ExpectedSize
         });
@@ -94,9 +96,9 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
 
         // 下载链接
         var urls = new List<string>();
-        if (downloadVideo.BaseUrl != null)
+        if (downloadVideo.BaseAddress != null)
         {
-            urls.Add(downloadVideo.BaseUrl);
+            urls.Add(downloadVideo.BaseAddress);
         }
 
         if (downloadVideo.BackupUrl != null)
@@ -105,14 +107,14 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
         }
 
         // 路径
-        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/");
+        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/", StringComparison.Ordinal);
         var temp = downloading.DownloadBase.FilePath.Split('/');
         //string path = downloading.DownloadBase.FilePath.Replace(temp[temp.Length - 1], "");
         var path = downloading.DownloadBase.FilePath.TrimEnd(temp[^1].ToCharArray());
 
         // 下载文件名
         var fileName = Guid.NewGuid().ToString("N");
-        var key = $"{downloadVideo.Id}_{downloadVideo.Codecs}";
+        var key = VideoPlayUrlBasic.CreateDownloadKey(downloadVideo.Id, downloadVideo.Codecs);
 
         // 老版本数据库没有这一项，会变成null
         if (downloading.Downloading.DownloadedFiles == null)
@@ -120,11 +122,11 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             downloading.Downloading.DownloadedFiles = new List<string>();
         }
 
-        if (downloading.Downloading.DownloadFiles.ContainsKey(key))
+        if (downloading.Downloading.DownloadFiles.TryGetValue(key, out var existingFileName))
         {
             // 如果存在，表示下载过，
             // 则继续使用上次下载的文件名
-            fileName = downloading.Downloading.DownloadFiles[key];
+            fileName = existingFileName;
 
             // 还要检查一下文件有没有被人删掉，删掉的话重新下载
             // 如果下载视频之后音频文件被人删了。此时gid还是视频的，会下错文件
@@ -141,17 +143,8 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
                 PersistDownloadingState(downloading);
             }
         }
-        else
+        else if (downloading.Downloading.DownloadFiles.TryAdd(key, fileName))
         {
-            // 记录本次下载的文件
-            try
-            {
-                downloading.Downloading.DownloadFiles.Add(key, fileName);
-            }
-            catch (ArgumentException)
-            {
-            }
-
             // Gid最好能是每个文件单独存储，现在复用有可能会混
             // 不过好消息是下载是按固定顺序的，而且下载了两个音频会混流不过
             downloading.Downloading.Gid = null;
@@ -159,15 +152,15 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
         }
 
         // 启用https
-        var useSsl = SettingsManager.GetInstance().GetUseSsl();
+        var useSsl = SettingsManager.Instance.GetUseSsl();
         if (useSsl == AllowStatus.Yes)
         {
             for (var i = 0; i < urls.Count; i++)
             {
                 var url = urls[i];
-                if (url.StartsWith("http://"))
+                if (url.StartsWith("http://", StringComparison.Ordinal))
                 {
-                    urls[i] = url.Replace("http://", "https://");
+                    urls[i] = url.Replace("http://", "https://", StringComparison.Ordinal);
                 }
             }
         }
@@ -176,9 +169,9 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             for (var i = 0; i < urls.Count; i++)
             {
                 var url = urls[i];
-                if (url.StartsWith("https://"))
+                if (url.StartsWith("https://", StringComparison.Ordinal))
                 {
-                    urls[i] = url.Replace("https://", "http://");
+                    urls[i] = url.Replace("https://", "http://", StringComparison.Ordinal);
                 }
             }
         }
@@ -241,7 +234,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// </summary>
     /// <param name="downloading"></param>
     /// <returns></returns>
-    public override List<string> DownloadSubtitle(DownloadingItem downloading)
+    public override IReadOnlyList<string> DownloadSubtitle(DownloadingItem downloading)
     {
         return BaseDownloadSubtitle(downloading);
     }
@@ -290,6 +283,7 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
     /// <exception cref="OperationCanceledException"></exception>
     protected override void Pause(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
         CancellationToken?.ThrowIfCancellationRequested();
 
         downloading.DownloadStatusTitle = DictionaryResource.GetString("Pausing");
@@ -341,17 +335,17 @@ public class BuiltinDownloadService : DownloadService, IDownloadService
             {
                 { "cookie", LoginHelper.GetLoginInfoCookiesString() }
             },
-            UserAgent = SettingsManager.GetInstance().GetUserAgent(),
+            UserAgent = SettingsManager.Instance.GetUserAgent(),
             Referer = "https://www.bilibili.com",
         };
 
-        if (SettingsManager.GetInstance().GetIsHttpProxy() == AllowStatus.Yes)
+        if (SettingsManager.Instance.GetIsHttpProxy() == AllowStatus.Yes)
         {
-            requestConfiguration.Proxy = new WebProxy(SettingsManager.GetInstance().GetHttpProxy(),
-                SettingsManager.GetInstance().GetHttpProxyListenPort());
+            requestConfiguration.Proxy = new WebProxy(SettingsManager.Instance.GetHttpProxy(),
+                SettingsManager.Instance.GetHttpProxyListenPort());
         }
 
-        var split = SettingsManager.GetInstance().GetSplit();
+        var split = SettingsManager.Instance.GetSplit();
         var downloadOpt = new DownloadConfiguration
         {
             ChunkCount = split,

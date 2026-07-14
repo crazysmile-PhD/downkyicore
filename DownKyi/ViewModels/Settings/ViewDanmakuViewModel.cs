@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Media;
@@ -11,7 +12,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Settings;
 
-public class ViewDanmakuViewModel : ViewModelBase
+internal class ViewDanmakuViewModel : ViewModelBase
 {
     public const string Tag = "PageSettingsDanmaku";
 
@@ -59,9 +60,9 @@ public class ViewDanmakuViewModel : ViewModelBase
         set => SetProperty(ref _screenHeight, value);
     }
 
-    private List<string> _fonts = new();
+    private IReadOnlyList<string> _fonts = Array.Empty<string>();
 
-    public List<string> Fonts
+    public IReadOnlyList<string> Fonts
     {
         get => _fonts;
         set => SetProperty(ref _fonts, value);
@@ -114,12 +115,7 @@ public class ViewDanmakuViewModel : ViewModelBase
         #region 属性初始化
 
         // 弹幕字体
-        Fonts = new List<string>();
-        var fontCollection = FontManager.Current.SystemFonts.Select(x => x.Name);
-        foreach (var font in fontCollection)
-        {
-            Fonts.Add(font);
-        }
+        Fonts = FontManager.Current.SystemFonts.Select(x => x.Name).ToList();
 
         #endregion
     }
@@ -135,25 +131,25 @@ public class ViewDanmakuViewModel : ViewModelBase
         _isOnNavigatedTo = true;
 
         // 屏蔽顶部弹幕
-        var danmakuTopFilter = SettingsManager.GetInstance().GetDanmakuTopFilter();
+        var danmakuTopFilter = SettingsManager.Instance.GetDanmakuTopFilter();
         TopFilter = danmakuTopFilter == AllowStatus.Yes;
 
         // 屏蔽底部弹幕
-        var danmakuBottomFilter = SettingsManager.GetInstance().GetDanmakuBottomFilter();
+        var danmakuBottomFilter = SettingsManager.Instance.GetDanmakuBottomFilter();
         BottomFilter = danmakuBottomFilter == AllowStatus.Yes;
 
         // 屏蔽滚动弹幕
-        var danmakuScrollFilter = SettingsManager.GetInstance().GetDanmakuScrollFilter();
+        var danmakuScrollFilter = SettingsManager.Instance.GetDanmakuScrollFilter();
         ScrollFilter = danmakuScrollFilter == AllowStatus.Yes;
 
         // 分辨率-宽
-        ScreenWidth = SettingsManager.GetInstance().GetDanmakuScreenWidth();
+        ScreenWidth = SettingsManager.Instance.GetDanmakuScreenWidth();
 
         // 分辨率-高
-        ScreenHeight = SettingsManager.GetInstance().GetDanmakuScreenHeight();
+        ScreenHeight = SettingsManager.Instance.GetDanmakuScreenHeight();
 
         // 弹幕字体
-        var danmakuFont = SettingsManager.GetInstance().GetDanmakuFontName();
+        var danmakuFont = SettingsManager.Instance.GetDanmakuFontName();
         if (danmakuFont != null && Fonts.Contains(danmakuFont))
         {
             // 只有系统中存在当前设置的字体，才能显示
@@ -161,13 +157,13 @@ public class ViewDanmakuViewModel : ViewModelBase
         }
 
         // 弹幕字体大小
-        FontSize = SettingsManager.GetInstance().GetDanmakuFontSize();
+        FontSize = SettingsManager.Instance.GetDanmakuFontSize();
 
         // 弹幕限制行数
-        LineCount = SettingsManager.GetInstance().GetDanmakuLineCount();
+        LineCount = SettingsManager.Instance.GetDanmakuLineCount();
 
         // 弹幕布局算法
-        var layoutAlgorithm = SettingsManager.GetInstance().GetDanmakuLayoutAlgorithm();
+        var layoutAlgorithm = SettingsManager.Instance.GetDanmakuLayoutAlgorithm();
         SetLayoutAlgorithm(layoutAlgorithm);
 
         _isOnNavigatedTo = false;
@@ -187,7 +183,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     {
         var isTopFilter = TopFilter ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.GetInstance().SetDanmakuTopFilter(isTopFilter);
+        var isSucceed = SettingsManager.Instance.SetDanmakuTopFilter(isTopFilter);
         PublishTip(isSucceed);
     }
 
@@ -203,7 +199,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     {
         var isBottomFilter = BottomFilter ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.GetInstance().SetDanmakuBottomFilter(isBottomFilter);
+        var isSucceed = SettingsManager.Instance.SetDanmakuBottomFilter(isBottomFilter);
         PublishTip(isSucceed);
     }
 
@@ -219,7 +215,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     {
         var isScrollFilter = ScrollFilter ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = SettingsManager.GetInstance().SetDanmakuScrollFilter(isScrollFilter);
+        var isSucceed = SettingsManager.Instance.SetDanmakuScrollFilter(isScrollFilter);
         PublishTip(isSucceed);
     }
 
@@ -237,7 +233,7 @@ public class ViewDanmakuViewModel : ViewModelBase
         var width = (int)Number.GetInt(parameter);
         ScreenWidth = width;
 
-        var isSucceed = SettingsManager.GetInstance().SetDanmakuScreenWidth(ScreenWidth);
+        var isSucceed = SettingsManager.Instance.SetDanmakuScreenWidth(ScreenWidth);
         PublishTip(isSucceed);
     }
 
@@ -255,7 +251,7 @@ public class ViewDanmakuViewModel : ViewModelBase
         var height = (int)Number.GetInt(parameter);
         ScreenHeight = height;
 
-        var isSucceed = SettingsManager.GetInstance().SetDanmakuScreenHeight(ScreenHeight);
+        var isSucceed = SettingsManager.Instance.SetDanmakuScreenHeight(ScreenHeight);
         PublishTip(isSucceed);
     }
 
@@ -270,7 +266,7 @@ public class ViewDanmakuViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteFontSelectCommand(string parameter)
     {
-        var isSucceed = SettingsManager.GetInstance().SetDanmakuFontName(parameter);
+        var isSucceed = SettingsManager.Instance.SetDanmakuFontName(parameter);
         PublishTip(isSucceed);
     }
 
@@ -288,7 +284,7 @@ public class ViewDanmakuViewModel : ViewModelBase
         var fontSize = (int)Number.GetInt(parameter);
         FontSize = fontSize;
 
-        var isSucceed = SettingsManager.GetInstance().SetDanmakuFontSize(FontSize);
+        var isSucceed = SettingsManager.Instance.SetDanmakuFontSize(FontSize);
         PublishTip(isSucceed);
     }
 
@@ -306,7 +302,7 @@ public class ViewDanmakuViewModel : ViewModelBase
         var lineCount = (int)Number.GetInt(parameter);
         LineCount = lineCount;
 
-        var isSucceed = SettingsManager.GetInstance().SetDanmakuLineCount(LineCount);
+        var isSucceed = SettingsManager.Instance.SetDanmakuLineCount(LineCount);
         PublishTip(isSucceed);
     }
 
@@ -328,7 +324,7 @@ public class ViewDanmakuViewModel : ViewModelBase
             _ => DanmakuLayoutAlgorithm.Sync
         };
 
-        var isSucceed = SettingsManager.GetInstance().SetDanmakuLayoutAlgorithm(layoutAlgorithm);
+        var isSucceed = SettingsManager.Instance.SetDanmakuLayoutAlgorithm(layoutAlgorithm);
         PublishTip(isSucceed);
 
         if (isSucceed)

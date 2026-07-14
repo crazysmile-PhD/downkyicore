@@ -26,7 +26,11 @@ internal static class TestDataIsolation
                 Directory.Delete(Root, recursive: true);
             }
         }
-        catch
+        catch (IOException)
+        {
+            // Process exit is best effort; resource-specific tests detect retained handles.
+        }
+        catch (UnauthorizedAccessException)
         {
             // Process exit is best effort; resource-specific tests detect retained handles.
         }

@@ -1,10 +1,11 @@
 using System;
+using System.Globalization;
 using System.Reflection;
 using System.Text.RegularExpressions;
 
 namespace DownKyi.Models;
 
-public class AppInfo
+internal class AppInfo
 {
     public string Name { get; } = "哔哩下载姬";
     public int VersionCode { get; }
@@ -50,7 +51,7 @@ public class AppInfo
             var i = 2;
             foreach (var item in parts)
             {
-                code += int.Parse(item) * (int)Math.Pow(100, i);
+                code += int.Parse(item, CultureInfo.InvariantCulture) * (int)Math.Pow(100, i);
                 i--;
             }
         }

@@ -16,6 +16,7 @@
     <PackageVersion Include="Google.Protobuf" Version="3.35.1" />
     <PackageVersion Include="Grpc.Tools" Version="2.82.0" />
     <PackageVersion Include="Microsoft.Data.Sqlite.Core" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="QRCoder" Version="1.8.0" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlcipher" Version="2.1.11" />

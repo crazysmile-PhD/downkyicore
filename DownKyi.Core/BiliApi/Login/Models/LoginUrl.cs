@@ -18,6 +18,6 @@ namespace DownKyi.Core.BiliApi.Login.Models
     public class LoginUrl : BaseModel
     {
         [JsonProperty("qrcode_key")] public string? QrcodeKey { get; set; }
-        [JsonProperty("url")] public string? Url { get; set; }
+        [JsonProperty("url")] public string? QrCodeAddress { get; set; }
     }
 }

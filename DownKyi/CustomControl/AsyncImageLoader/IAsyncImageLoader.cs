@@ -4,7 +4,7 @@ using Avalonia.Media.Imaging;
 
 namespace DownKyi.CustomControl.AsyncImageLoader;
 
-public interface IAsyncImageLoader : IDisposable
+internal interface IAsyncImageLoader : IDisposable
 {
     /// <summary>
     ///     Loads image

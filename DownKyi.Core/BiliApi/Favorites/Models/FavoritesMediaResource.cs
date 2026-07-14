@@ -18,6 +18,6 @@ public class FavoritesMediaResourceOrigin : BaseModel
 public class FavoritesMediaResource : BaseModel
 {
     [JsonProperty("info")] public FavoritesMetaInfo Info { get; set; } = new();
-    [JsonProperty("medias")] public List<FavoritesMedia> Medias { get; set; } = new();
+    [JsonProperty("medias")] public IReadOnlyList<FavoritesMedia> Medias { get; set; } = Array.Empty<FavoritesMedia>();
     [JsonProperty("has_more")] public bool HasMore { get; set; }
 }

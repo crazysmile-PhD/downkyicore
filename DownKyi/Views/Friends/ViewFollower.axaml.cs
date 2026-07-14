@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views.Friends;
 
-public partial class ViewFollower : UserControl
+internal partial class ViewFollower : UserControl
 {
     public ViewFollower()
     {

@@ -7,4 +7,4 @@ namespace DownKyi.Utils.DataAnnotations;
 /// 当实体类属性为【对象】时，以 JSON 形式映射存储
 /// </summary>
 [AttributeUsage(AttributeTargets.Property)]
-public class JsonMapAttribute : Attribute { }
+internal sealed class JsonMapAttribute : Attribute { }

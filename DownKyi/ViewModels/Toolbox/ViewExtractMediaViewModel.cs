@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -12,7 +13,7 @@ using Prism.Events;
 
 namespace DownKyi.ViewModels.Toolbox;
 
-public class ViewExtractMediaViewModel : ViewModelBase
+internal class ViewExtractMediaViewModel : ViewModelBase
 {
     public const string Tag = "PageToolboxExtractMedia";
 
@@ -29,9 +30,9 @@ public class ViewExtractMediaViewModel : ViewModelBase
         set => SetProperty(ref _videoPathsStr, value);
     }
 
-    private string[] _videoPaths = null!;
+    private IReadOnlyList<string> _videoPaths = Array.Empty<string>();
 
-    public string[] VideoPaths
+    public IReadOnlyList<string> VideoPaths
     {
         get => _videoPaths;
         set
@@ -78,7 +79,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
             return;
         }
 
-        VideoPaths = await DialogUtils.SelectMultiVideoFile() ?? Array.Empty<string>();
+        VideoPaths = await DialogUtils.SelectMultiVideoFile().ConfigureAwait(true) ?? Array.Empty<string>();
     }
 
     // 提取音频事件
@@ -97,7 +98,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
             return;
         }
 
-        if (VideoPaths.Length <= 0)
+        if (VideoPaths.Count <= 0)
         {
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipNoSelectedVideo"));
             return;
@@ -113,11 +114,11 @@ public class ViewExtractMediaViewModel : ViewModelBase
                 // 音频文件名
                 var audioFileName = item.Remove(item.Length - 4, 4) + ".aac";
                 // 执行提取音频程序
-                FFMpeg.Instance.ExtractAudio(item, audioFileName, output => { Status += output + "\n"; });
+                FfmpegProcessor.Instance.ExtractAudio(item, audioFileName, output => { Status += output + "\n"; });
             }
 
             _isExtracting = false;
-        });
+        }).ConfigureAwait(true);
     }
 
     // 提取视频事件
@@ -136,7 +137,7 @@ public class ViewExtractMediaViewModel : ViewModelBase
             return;
         }
 
-        if (VideoPaths.Length <= 0)
+        if (VideoPaths.Count <= 0)
         {
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipNoSeletedVideo"));
             return;
@@ -152,11 +153,11 @@ public class ViewExtractMediaViewModel : ViewModelBase
                 // 视频文件名
                 var videoFileName = item.Remove(item.Length - 4, 4) + "_onlyVideo.mp4";
                 // 执行提取视频程序
-                FFMpeg.Instance.ExtractVideo(item, videoFileName, new Action<string>((output) => { Status += output + "\n"; }));
+                FfmpegProcessor.Instance.ExtractVideo(item, videoFileName, new Action<string>((output) => { Status += output + "\n"; }));
             }
 
             _isExtracting = false;
-        });
+        }).ConfigureAwait(true);
     }
 
     // Status改变事件

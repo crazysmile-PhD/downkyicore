@@ -22,6 +22,6 @@ namespace DownKyi.Core.BiliApi.History.Models
         [JsonProperty("count")]
         public int Count { get; set; }
         [JsonProperty("list")]
-        public List<ToViewList> List { get; set; } = new();
+        public IReadOnlyList<ToViewList> List { get; set; } = Array.Empty<ToViewList>();
     }
 }

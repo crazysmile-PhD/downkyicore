@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using DownKyi.Core.Settings;
+using DownKyi.CustomControl;
 using DownKyi.Services.Video;
 using DownKyi.ViewModels.PageViewModels;
 
@@ -7,7 +9,31 @@ namespace DownKyi.Tests;
 public sealed class VideoSelectionStateTests
 {
     [Fact]
-    public void GetPagesForScope_ReturnsOnlySelectedPages_ForSelectedItemScope()
+    public void PagerEventsPreserveVetoAndCountSemantics()
+    {
+        var pager = new CustomPagerViewModel(1, 3);
+        CancelEventArgs? changing = null;
+        var countChanged = false;
+
+        pager.CurrentChanging += (_, e) =>
+        {
+            changing = e;
+            e.Cancel = true;
+        };
+        pager.CountChanged += (_, _) => countChanged = true;
+
+        pager.Current = 2;
+        pager.Count = 4;
+
+        Assert.NotNull(changing);
+        Assert.True(changing.Cancel);
+        Assert.Equal(2, pager.ProposedCurrent);
+        Assert.Equal(1, pager.Current);
+        Assert.True(countChanged);
+    }
+
+    [Fact]
+    public void GetPagesForScopeReturnsOnlySelectedPagesForSelectedItemScope()
     {
         var sections = CreateSections();
 
@@ -17,7 +43,7 @@ public sealed class VideoSelectionStateTests
     }
 
     [Fact]
-    public void GetPagesForScope_ReturnsSelectedSectionPages_ForCurrentSectionScope()
+    public void GetPagesForScopeReturnsSelectedSectionPagesForCurrentSectionScope()
     {
         var sections = CreateSections();
 
@@ -27,7 +53,7 @@ public sealed class VideoSelectionStateTests
     }
 
     [Fact]
-    public void GetPagesForScope_ReturnsAllPages_ForAllScope()
+    public void GetPagesForScopeReturnsAllPagesForAllScope()
     {
         var sections = CreateSections();
 
@@ -37,7 +63,7 @@ public sealed class VideoSelectionStateTests
     }
 
     [Fact]
-    public void ApplySelectedPages_UpdatesSectionSelectionByCid()
+    public void ApplySelectedPagesUpdatesSectionSelectionByCid()
     {
         var section = CreateSections()[0];
 

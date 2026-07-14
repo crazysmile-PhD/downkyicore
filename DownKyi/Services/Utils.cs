@@ -28,10 +28,10 @@ internal static class Utils
         page.PlayUrl = playUrl;
 
         // 获取设置
-        var userInfo = SettingsManager.GetInstance().GetUserInfo();
-        var defaultQuality = SettingsManager.GetInstance().GetQuality();
-        var videoCodecs = SettingsManager.GetInstance().GetVideoCodecs();
-        var defaultAudioQuality = SettingsManager.GetInstance().GetAudioQuality();
+        var userInfo = SettingsManager.Instance.GetUserInfo();
+        var defaultQuality = SettingsManager.Instance.GetQuality();
+        var videoCodecs = SettingsManager.Instance.GetVideoCodecs();
+        var defaultAudioQuality = SettingsManager.Instance.GetAudioQuality();
 
         // 未登录时，最高仅720P
         if (userInfo.Mid == -1)
@@ -93,8 +93,9 @@ internal static class Utils
             {
                 Quality = playUrl.Quality,
                 QualityFormat = qns.First(x => x.Id == playUrl.Quality).Name,
-                VideoCodecList = new(codeIds.Where(x => x.Id == playUrl.VideoCodecid)
-                .Select(x => x.Name).ToList()),
+                VideoCodecList = codeIds.Where(x => x.Id == playUrl.VideoCodecid)
+                    .Select(x => x.Name)
+                    .ToList(),
                 SelectedVideoCodec = codeIds.First(x => x.Id == playUrl.VideoCodecid).Name
             };
 
@@ -218,7 +219,7 @@ internal static class Utils
             if (videoQualityExist == null)
             {
                 var videoCodecList = new List<string>();
-                if (codecName != string.Empty)
+                if (!string.IsNullOrEmpty(codecName))
                 {
                     ListHelper.AddUnique(videoCodecList, codecName);
                 }
@@ -233,12 +234,11 @@ internal static class Utils
             }
             else
             {
-                if (!videoQualityList[videoQualityList.IndexOf(videoQualityExist)].VideoCodecList
-                        .Exists(t => t.Equals(codecName)))
+                if (!videoQualityExist.VideoCodecList.Any(t => t.Equals(codecName, System.StringComparison.Ordinal)))
                 {
-                    if (codecName != string.Empty)
+                    if (!string.IsNullOrEmpty(codecName))
                     {
-                        videoQualityList[videoQualityList.IndexOf(videoQualityExist)].VideoCodecList.Add(codecName);
+                        videoQualityExist.VideoCodecList.Add(codecName);
                     }
                 }
             }
@@ -278,11 +278,9 @@ internal static class Utils
                 // 上面的foreach不会选中HEVC编码，
                 // 而杜比视界只有HEVC编码，
                 // 因此这里再判断并设置一次
-                if (videoQualityList[videoQualityList.IndexOf(selectedVideoQuality)].SelectedVideoCodec == null &&
-                    videoQualityList[videoQualityList.IndexOf(selectedVideoQuality)].VideoCodecList.Count() > 0)
+                if (selectedVideoQuality.SelectedVideoCodec == null && selectedVideoQuality.VideoCodecList.Count > 0)
                 {
-                    videoQualityList[videoQualityList.IndexOf(selectedVideoQuality)].SelectedVideoCodec =
-                        videoQualityList[videoQualityList.IndexOf(selectedVideoQuality)].VideoCodecList[0];
+                    selectedVideoQuality.SelectedVideoCodec = selectedVideoQuality.VideoCodecList[0];
                 }
             }
         }

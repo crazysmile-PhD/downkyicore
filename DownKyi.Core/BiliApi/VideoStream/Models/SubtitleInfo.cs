@@ -8,5 +8,5 @@ public class SubtitleInfo : BaseModel
     [JsonProperty("allow_submit")] public bool AllowSubmit { get; set; }
     [JsonProperty("lan")] public string Lan { get; set; } = string.Empty;
     [JsonProperty("lan_doc")] public string LanDoc { get; set; } = string.Empty;
-    [JsonProperty("subtitles")] public List<Subtitle> Subtitles { get; set; } = new();
+    [JsonProperty("subtitles")] public IReadOnlyList<Subtitle> Subtitles { get; set; } = Array.Empty<Subtitle>();
 }

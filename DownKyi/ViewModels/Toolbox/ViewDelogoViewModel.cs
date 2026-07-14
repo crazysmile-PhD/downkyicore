@@ -29,12 +29,12 @@ using Path = System.IO.Path;
 
 namespace DownKyi.ViewModels.Toolbox;
 
-public class ViewDelogoViewModel : ViewModelBase
+internal class ViewDelogoViewModel : ViewModelBase
 {
     public const string Tag = "PageToolboxDelogo";
 
     // 是否正在执行去水印任务
-    private bool _isDelogo = false;
+    private bool _isDelogo;
 
     private IImage _source = null!;
 
@@ -132,7 +132,7 @@ public class ViewDelogoViewModel : ViewModelBase
     }
 
 
-    public List<SolidColorBrush> AvailableColors { get; }
+    public IReadOnlyList<SolidColorBrush> AvailableColors { get; }
 
 
     private SolidColorBrush _selectedColor = null!;
@@ -152,7 +152,7 @@ public class ViewDelogoViewModel : ViewModelBase
         VideoPath = string.Empty;
 
 
-        AvailableColors = new(){
+        AvailableColors = new[]{
             new SolidColorBrush(Colors.Red),
             new SolidColorBrush(Colors.Green),
             new SolidColorBrush(Colors.Blue),
@@ -183,14 +183,15 @@ public class ViewDelogoViewModel : ViewModelBase
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
-        VideoPath = await DialogUtils.SelectVideoFile();
+        VideoPath = await DialogUtils.SelectVideoFile().ConfigureAwait(true);
         if (!string.IsNullOrEmpty(VideoPath))
         {
             try
             {
-                Source = new Bitmap(await FFMpeg.Instance.ExtractVideoFrame(VideoPath, TimeSpan.FromSeconds(1)));
+                Source = new Bitmap(await FfmpegProcessor.Instance.ExtractVideoFrame(VideoPath, TimeSpan.FromSeconds(1)).ConfigureAwait(true));
             }
-            catch (Exception e)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                or InvalidOperationException or System.ComponentModel.Win32Exception)
             {
                 LogManager.Error(nameof(ViewDelogoViewModel), e);
             }
@@ -251,7 +252,7 @@ public class ViewDelogoViewModel : ViewModelBase
         {
             // 执行去水印程序
             _isDelogo = true;
-            FFMpeg.Instance.Delogo
+            FfmpegProcessor.Instance.Delogo
             (
                 VideoPath,
                 newFileName,
@@ -261,7 +262,7 @@ public class ViewDelogoViewModel : ViewModelBase
                 _logoHeight,
                 output => { Status += output + "\n"; });
             _isDelogo = false;
-        });
+        }).ConfigureAwait(true);
     }
 
     // Status改变事件

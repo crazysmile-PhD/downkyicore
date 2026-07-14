@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.Aria2cNet.Client;
@@ -11,7 +12,7 @@ using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
 
-public static class DownloadTaskFileService
+internal static class DownloadTaskFileService
 {
     private const string Tag = nameof(DownloadTaskFileService);
     private static readonly string[] MediaExtensions = { ".mp4", ".aac", ".mp3", ".flac" };
@@ -21,13 +22,15 @@ public static class DownloadTaskFileService
 
     public static async Task CancelActiveDownloadAsync(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         downloading.Downloading.DownloadStatus = DownloadStatus.Pause;
 
         try
         {
             downloading.DownloadService?.CancelAsync();
         }
-        catch (Exception e)
+        catch (InvalidOperationException e)
         {
             LogManager.Debug(Tag, $"Cancel builtin downloader failed: {e.Message}");
         }
@@ -49,7 +52,11 @@ public static class DownloadTaskFileService
             await AriaClient.RemoveDownloadResultAsync(gid).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
             removed = true;
         }
-        catch (Exception e)
+        catch (TimeoutException e)
+        {
+            LogManager.Debug(Tag, $"Cancel aria downloader failed: {e.Message}");
+        }
+        catch (HttpRequestException e)
         {
             LogManager.Debug(Tag, $"Cancel aria downloader failed: {e.Message}");
         }
@@ -89,6 +96,8 @@ public static class DownloadTaskFileService
 
     public static IReadOnlyCollection<string> GetGeneratedFiles(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         return GetGeneratedFiles(
             downloading.DownloadBase?.FilePath,
             downloading.Downloading.DownloadFiles?.Values);
@@ -157,9 +166,13 @@ public static class DownloadTaskFileService
                 AddWithTempFiles(files, subtitle);
             }
         }
-        catch (Exception e)
+        catch (IOException e)
         {
             LogManager.Debug(Tag, $"Enumerate subtitle variants failed: {e.Message}");
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            LogManager.Debug(Tag, $"Enumerate subtitle variants was denied: {e.Message}");
         }
     }
 
@@ -205,12 +218,22 @@ public static class DownloadTaskFileService
 
                 return;
             }
-            catch (Exception e) when (attempt < 4)
+            catch (IOException e) when (attempt < 4)
             {
                 LogManager.Debug(Tag, $"Delete generated file retry {attempt + 1}: {e.Message}");
                 await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception e)
+            catch (UnauthorizedAccessException e) when (attempt < 4)
+            {
+                LogManager.Debug(Tag, $"Delete generated file retry {attempt + 1}: {e.Message}");
+                await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
+            }
+            catch (IOException e)
+            {
+                LogManager.Error(Tag, e);
+                return;
+            }
+            catch (UnauthorizedAccessException e)
             {
                 LogManager.Error(Tag, e);
                 return;

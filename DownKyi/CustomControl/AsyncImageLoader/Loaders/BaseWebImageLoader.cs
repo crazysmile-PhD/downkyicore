@@ -8,7 +8,7 @@ using Avalonia.Platform;
 
 namespace DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
-public class BaseWebImageLoader : IAsyncImageLoader
+internal class BaseWebImageLoader : IAsyncImageLoader
 {
     private readonly ParametrizedLogger? _logger;
     private readonly bool _shouldDisposeHttpClient;
@@ -57,10 +57,9 @@ public class BaseWebImageLoader : IAsyncImageLoader
     /// <returns>Bitmap</returns>
     protected virtual async Task<Bitmap?> LoadAsync(string url)
     {
-        var internalOrCachedBitmap =
-            await LoadFromLocalAsync(url).ConfigureAwait(false)
-            ?? await LoadFromInternalAsync(url).ConfigureAwait(false)
-            ?? await LoadFromGlobalCache(url).ConfigureAwait(false);
+        var internalOrCachedBitmap = LoadFromLocal(url)
+                                     ?? LoadFromInternal(url)
+                                     ?? LoadFromGlobalCache(url);
         if (internalOrCachedBitmap != null) return internalOrCachedBitmap;
 
         try
@@ -73,7 +72,22 @@ public class BaseWebImageLoader : IAsyncImageLoader
             await SaveToGlobalCache(url, externalBytes).ConfigureAwait(false);
             return bitmap;
         }
-        catch (Exception e)
+        catch (HttpRequestException e)
+        {
+            _logger?.Log(this, "Failed to resolve image: {RequestUri}\nException: {Exception}", url, e);
+            return null;
+        }
+        catch (IOException e)
+        {
+            _logger?.Log(this, "Failed to resolve image: {RequestUri}\nException: {Exception}", url, e);
+            return null;
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            _logger?.Log(this, "Failed to resolve image: {RequestUri}\nException: {Exception}", url, e);
+            return null;
+        }
+        catch (ArgumentException e)
         {
             _logger?.Log(this, "Failed to resolve image: {RequestUri}\nException: {Exception}", url, e);
 
@@ -86,9 +100,9 @@ public class BaseWebImageLoader : IAsyncImageLoader
     /// </summary>
     /// <param name="url"></param>
     /// <returns></returns>
-    private Task<Bitmap?> LoadFromLocalAsync(string url)
+    private static Bitmap? LoadFromLocal(string url)
     {
-        return Task.FromResult(File.Exists(url) ? new Bitmap(url) : null);
+        return File.Exists(url) ? new Bitmap(url) : null;
     }
 
     /// <summary>
@@ -98,27 +112,41 @@ public class BaseWebImageLoader : IAsyncImageLoader
     /// </summary>
     /// <param name="url">Target url</param>
     /// <returns>Bitmap</returns>
-    protected virtual Task<Bitmap?> LoadFromInternalAsync(string url)
+    protected virtual Bitmap? LoadFromInternal(string url)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+
         try
         {
-            var uri = url.StartsWith("/")
+            var uri = url.StartsWith('/')
                 ? new Uri(url, UriKind.Relative)
                 : new Uri(url, UriKind.RelativeOrAbsolute);
 
             if (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
-                return Task.FromResult<Bitmap?>(null);
+                return null;
 
             if (uri is { IsAbsoluteUri: true, IsFile: true })
-                return Task.FromResult(new Bitmap(uri.LocalPath))!;
+                return new Bitmap(uri.LocalPath);
 
-            return Task.FromResult(new Bitmap(AssetLoader.Open(uri)))!;
+            return new Bitmap(AssetLoader.Open(uri));
         }
-        catch (Exception e)
+        catch (UriFormatException e)
         {
             _logger?.Log(this,
                 "Failed to resolve image from request with uri: {RequestUri}\nException: {Exception}", url, e);
-            return Task.FromResult<Bitmap?>(null);
+            return null;
+        }
+        catch (IOException e)
+        {
+            _logger?.Log(this,
+                "Failed to resolve image from request with uri: {RequestUri}\nException: {Exception}", url, e);
+            return null;
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            _logger?.Log(this,
+                "Failed to resolve image from request with uri: {RequestUri}\nException: {Exception}", url, e);
+            return null;
         }
     }
 
@@ -132,9 +160,15 @@ public class BaseWebImageLoader : IAsyncImageLoader
     {
         try
         {
-            return await HttpClient.GetByteArrayAsync(url).ConfigureAwait(false);
+            return await HttpClient.GetByteArrayAsync(new Uri(url, UriKind.Absolute)).ConfigureAwait(false);
         }
-        catch (Exception e)
+        catch (HttpRequestException e)
+        {
+            _logger?.Log(this,
+                "Failed to resolve image from request with uri: {RequestUri}\nException: {Exception}", url, e);
+            return null;
+        }
+        catch (InvalidOperationException e)
         {
             _logger?.Log(this,
                 "Failed to resolve image from request with uri: {RequestUri}\nException: {Exception}", url, e);
@@ -147,10 +181,10 @@ public class BaseWebImageLoader : IAsyncImageLoader
     /// </summary>
     /// <param name="url">Target url</param>
     /// <returns>Bitmap</returns>
-    protected virtual Task<Bitmap?> LoadFromGlobalCache(string url)
+    protected virtual Bitmap? LoadFromGlobalCache(string url)
     {
         // Current implementation does not provide global caching
-        return Task.FromResult<Bitmap?>(null);
+        return null;
     }
 
     /// <summary>
@@ -174,4 +208,5 @@ public class BaseWebImageLoader : IAsyncImageLoader
     {
         if (disposing && _shouldDisposeHttpClient) HttpClient.Dispose();
     }
+
 }

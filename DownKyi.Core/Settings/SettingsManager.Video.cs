@@ -15,9 +15,6 @@ public partial class SettingsManager
     // 设置优先下载音质
     private const int AudioQuality = 30280;
 
-    // 设置首选视频解析方式
-    private const int VideoParseType = 0;
-
     // 是否下载flv视频后转码为mp4
     private const AllowStatus IsTranscodingFlvToMp4 = AllowStatus.Yes;
 
@@ -148,11 +145,7 @@ public partial class SettingsManager
     /// <summary>
     /// 获取首选视频解析方式
     /// </summary>
-    /// <returns></returns>
-    public int GetVideoParseType()
-    {
-        return _appSettings.Video.VideoParseType;
-    }
+    public int VideoParseType => _appSettings.Video.VideoParseType;
 
     /// <summary>
     /// 设置首选视频解析方式
@@ -258,7 +251,7 @@ public partial class SettingsManager
     /// 获取历史下载目录
     /// </summary>
     /// <returns></returns>
-    public List<string> GetHistoryVideoRootPaths()
+    public IReadOnlyList<string> GetHistoryVideoRootPaths()
     {
         if (_appSettings.Video.HistoryVideoRootPaths == null)
         {
@@ -275,7 +268,7 @@ public partial class SettingsManager
     /// </summary>
     /// <param name="historyPaths"></param>
     /// <returns></returns>
-    public bool SetHistoryVideoRootPaths(List<string> historyPaths)
+    public bool SetHistoryVideoRootPaths(IReadOnlyList<string> historyPaths)
     {
         return SetProperty(
             _appSettings.Video.HistoryVideoRootPaths,
@@ -345,7 +338,7 @@ public partial class SettingsManager
     /// 获取文件命名格式
     /// </summary>
     /// <returns></returns>
-    public List<FileNamePart> GetFileNameParts()
+    public IReadOnlyList<FileNamePart> GetFileNameParts()
     {
         if (_appSettings.Video.FileNameParts == null || _appSettings.Video.FileNameParts.Count == 0)
         {
@@ -362,7 +355,7 @@ public partial class SettingsManager
     /// </summary>
     /// <param name="fileNameParts"></param>
     /// <returns></returns>
-    public bool SetFileNameParts(List<FileNamePart>? fileNameParts)
+    public bool SetFileNameParts(IReadOnlyList<FileNamePart>? fileNameParts)
     {
         var parts = fileNameParts is { Count: > 0 } ? fileNameParts : _fileNameParts;
         return SetProperty(
@@ -377,8 +370,7 @@ public partial class SettingsManager
     /// <returns></returns>
     public string GetFileNamePartTimeFormat()
     {
-        if (_appSettings.Video.FileNamePartTimeFormat == null ||
-            _appSettings.Video.FileNamePartTimeFormat == string.Empty)
+        if (string.IsNullOrEmpty(_appSettings.Video.FileNamePartTimeFormat))
         {
             // 第一次获取，先设置默认值
             SetFileNamePartTimeFormat(FileNamePartTimeFormat);

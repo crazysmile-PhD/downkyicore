@@ -14,7 +14,7 @@ public sealed class DownloadStorageResumeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void AddDownloading_PreservesResumeIdentityFilesAndPausedStateAcrossReopen()
+    public void AddDownloadingPreservesResumeIdentityFilesAndPausedStateAcrossReopen()
     {
         Directory.CreateDirectory(_directory);
         var database = Path.Combine(_directory, "download.db");
@@ -27,15 +27,12 @@ public sealed class DownloadStorageResumeTests : IDisposable
                 Id = taskId,
                 Gid = ariaGid,
                 DownloadStatus = DownloadStatus.Pause,
-                DownloadFiles = new Dictionary<string, string>
-                {
-                    ["video"] = "video.m4s",
-                    ["audio"] = "audio.m4s"
-                },
-                DownloadedFiles = new List<string> { "cover" },
                 Progress = 42.5f
             }
         };
+        item.Downloading.DownloadFiles["video"] = "video.m4s";
+        item.Downloading.DownloadFiles["audio"] = "audio.m4s";
+        item.Downloading.DownloadedFiles.Add("cover");
         item.DownloadBase.Id = taskId;
         item.DownloadBase.FilePath = Path.Combine(_directory, "episode-01");
 
@@ -46,6 +43,13 @@ public sealed class DownloadStorageResumeTests : IDisposable
 
         using (var reopenedStorage = new DownloadStorageService(database))
         {
+            var restored = Assert.Single(reopenedStorage.GetDownloading());
+            Assert.Equal(ariaGid, restored.Downloading.Gid);
+            Assert.Equal("video.m4s", restored.Downloading.DownloadFiles["video"]);
+            Assert.Equal("audio.m4s", restored.Downloading.DownloadFiles["audio"]);
+            Assert.Equal("cover", Assert.Single(restored.Downloading.DownloadedFiles));
+            Assert.Equal(DownloadStatus.Pause, restored.Downloading.DownloadStatus);
+            Assert.Equal(42.5f, restored.Downloading.Progress);
         }
 
         using var connection = new SqliteConnection($"Data Source={database};Mode=ReadOnly");

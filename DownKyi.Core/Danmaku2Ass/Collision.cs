@@ -29,6 +29,8 @@ public class Collision
     /// <returns></returns>
     public Tuple<int, float> Detect(Display display)
     {
+        ArgumentNullException.ThrowIfNull(display);
+
         var beyonds = new List<float>();
         for (var i = 0; i < leaves.Count; i++)
         {

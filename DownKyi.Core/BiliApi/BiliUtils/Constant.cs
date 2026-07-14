@@ -40,7 +40,7 @@ public static class Constant
     /// 获取支持的视频画质
     /// </summary>
     /// <returns></returns>
-    public static List<Quality> GetResolutions()
+    public static IReadOnlyList<Quality> GetResolutions()
     {
         // 使用深复制，
         // 保证外部修改list后，
@@ -52,7 +52,7 @@ public static class Constant
     /// 获取视频编码代码
     /// </summary>
     /// <returns></returns>
-    public static List<Quality> GetCodecIds()
+    public static IReadOnlyList<Quality> GetCodecIds()
     {
         // 使用深复制，
         // 保证外部修改list后，
@@ -64,7 +64,7 @@ public static class Constant
     /// 获取支持的视频音质
     /// </summary>
     /// <returns></returns>
-    public static List<Quality> GetAudioQualities()
+    public static IReadOnlyList<Quality> GetAudioQualities()
     {
         // 使用深复制，
         // 保证外部修改list后，

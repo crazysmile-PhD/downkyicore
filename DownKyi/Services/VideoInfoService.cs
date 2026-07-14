@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using Avalonia.Threading;
@@ -16,7 +17,7 @@ using VideoPage = DownKyi.ViewModels.PageViewModels.VideoPage;
 
 namespace DownKyi.Services;
 
-public class VideoInfoService : IInfoService
+internal class VideoInfoService : IInfoService
 {
     private readonly VideoView? _videoView;
     private readonly CancellationToken _cancellationToken;
@@ -46,7 +47,7 @@ public class VideoInfoService : IInfoService
     /// 获取视频剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoPage>? GetVideoPages(CancellationToken cancellationToken = default)
+    public IList<VideoPage>? GetVideoPages(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (_videoView?.Pages == null)
@@ -76,7 +77,7 @@ public class VideoInfoService : IInfoService
             else
             {
                 //name = page.part;
-                if (page.Part == "")
+                if (string.IsNullOrEmpty(page.Part))
                 {
                     // 如果page.part为空字符串
                     name = $"{_videoView.Title}-P{order}";
@@ -119,12 +120,12 @@ public class VideoInfoService : IInfoService
             }
 
             // 文件命名中的时间格式
-            var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
+            var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(_videoView.Pubdate);
             videoPage.OriginalPublishTime = dateTime;
-            videoPage.PublishTime = dateTime.ToString(timeFormat);
+            videoPage.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
 
             videoPages.Add(videoPage);
         }
@@ -136,7 +137,7 @@ public class VideoInfoService : IInfoService
     /// 获取视频章节与剧集
     /// </summary>
     /// <returns></returns>
-    public List<VideoSection>? GetVideoSections(bool noUgc = false, CancellationToken cancellationToken = default)
+    public IList<VideoSection>? GetVideoSections(bool noUgc = false, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!(_videoView?.UgcSeason?.Sections?.Count > 0)) return null;
@@ -149,7 +150,7 @@ public class VideoInfoService : IInfoService
             return videoSections;
         }
 
-        var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
+        var timeFormat = SettingsManager.Instance.GetFileNamePartTimeFormat();
         var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);
 
         foreach (var section in _videoView.UgcSeason.Sections)
@@ -227,7 +228,7 @@ public class VideoInfoService : IInfoService
                 Duration = "N/A",
                 Owner = owner,
                 Page = p.Page,
-                PublishTime = dateTime.ToString(timeFormat),
+                PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture),
                 OriginalPublishTime = dateTime,
                 LazyTags = new Lazy<List<string>>(() =>
                 {
@@ -263,7 +264,7 @@ public class VideoInfoService : IInfoService
             })
         };
         var dateTime = startTime.AddSeconds(episode.Arc.Ctime);
-        page.PublishTime = dateTime.ToString(timeFormat);
+        page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
         page.OriginalPublishTime = dateTime;
         return page;
     }
@@ -274,11 +275,12 @@ public class VideoInfoService : IInfoService
     /// <param name="page"></param>
     public void GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var playUrl = SettingsManager.GetInstance().GetVideoParseType() switch
+        var playUrl = SettingsManager.Instance.VideoParseType switch
         {
-            0 => VideoStream.GetVideoPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken),
-            1 => VideoStream.GetVideoPlayUrlWebPage(page.Avid, page.Bvid, page.Cid, page.Page, cancellationToken),
+            0 => VideoStreamApi.GetVideoPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken),
+            1 => VideoStreamApi.GetVideoPlayUrlWebPage(page.Avid, page.Bvid, page.Cid, page.Page, cancellationToken),
             _ => null
         };
 
@@ -303,11 +305,11 @@ public class VideoInfoService : IInfoService
 
         // 分区
         var videoZone = string.Empty;
-        var zoneList = VideoZone.Instance().GetZones();
-        var zone = zoneList.Find(it => it.Id == videoView.Tid);
+        var zoneList = VideoZone.Instance().Zones;
+        var zone = zoneList.FirstOrDefault(it => it.Id == videoView.Tid);
         if (zone != null)
         {
-            var zoneParent = zoneList.Find(it => it.Id == zone.ParentId);
+            var zoneParent = zoneList.FirstOrDefault(it => it.Id == zone.ParentId);
             if (zoneParent != null)
             {
                 videoZone = zoneParent.Name + ">" + zone.Name;
@@ -347,7 +349,7 @@ public class VideoInfoService : IInfoService
 
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(videoView.Pubdate);
-            videoInfoView.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss");
+            videoInfoView.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
 
             videoInfoView.PlayNumber = Format.FormatNumber(videoView.Stat.View);
             videoInfoView.DanmakuNumber = Format.FormatNumber(videoView.Stat.Danmaku);

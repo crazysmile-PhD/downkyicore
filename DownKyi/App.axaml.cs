@@ -12,11 +12,14 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using DownKyi.Application.Lifetime;
+using DownKyi.Composition;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
+using DownKyi.Desktop.Composition;
 using DownKyi.Models;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
@@ -35,30 +38,37 @@ using DownKyi.Views.Friends;
 using DownKyi.Views.Settings;
 using DownKyi.Views.Toolbox;
 using DownKyi.Views.UserSpace;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Prism.DryIoc;
+using Prism.Events;
 using Prism.Ioc;
+using Prism.Navigation.Regions;
+using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 using ViewSeasonsSeries = DownKyi.Views.ViewSeasonsSeries;
 using ViewSeasonsSeriesViewModel = DownKyi.ViewModels.ViewSeasonsSeriesViewModel;
 
 namespace DownKyi;
 
-public partial class App : PrismApplication
+internal partial class App : PrismApplication, IDisposable
 {
+    private bool _disposed;
     public const string RepoOwner = "crazysmile-PhD";
     public const string RepoName = "downkyicore";
 
-    public static ImmutableObservableCollection<DownloadingItem> DownloadingList { get; set; } = new();
-    public static ImmutableObservableCollection<DownloadedItem> DownloadedList { get; set; } = new();
-    public new static App Current => (App)Application.Current!;
-    public new MainWindow MainWindow => Container.Resolve<MainWindow>();
-    public IClassicDesktopStyleApplicationLifetime? AppLife;
+    public static ImmutableObservableCollection<DownloadingItem> DownloadingList { get; private set; } = new();
+    public static ImmutableObservableCollection<DownloadedItem> DownloadedList { get; private set; } = new();
+    public new static App Current => (App)Avalonia.Application.Current!;
+    public new MainWindow MainWindow => _host?.Services.GetRequiredService<MainWindow>()
+        ?? throw new InvalidOperationException("The application host has not been created.");
+    public IClassicDesktopStyleApplicationLifetime? AppLife { get; private set; }
 #if !DEBUG
     private static Mutex? _mutex;
 #endif
 
     // 下载服务
     private IDownloadService? _downloadService;
-    private readonly CancellationTokenSource _startupCancellation = new();
+    private IHost? _host;
     private Task? _downloadStartupTask;
 
     public override void Initialize()
@@ -96,7 +106,6 @@ public partial class App : PrismApplication
     {
         containerRegistry.RegisterSingleton<DownloadStorageService>();
 
-        containerRegistry.RegisterSingleton<MainWindow>();
         containerRegistry.RegisterSingleton<IDialogService, DialogService>();
         containerRegistry.Register<IDialogWindow, DialogWindow>();
         // pages
@@ -157,7 +166,12 @@ public partial class App : PrismApplication
 
     protected override AvaloniaObject CreateShell()
     {
-        var shell = Container.Resolve<MainWindow>();
+        _host = DownKyiHost.Create(services => services.AddLegacyDesktopShell(
+            Container.Resolve<IRegionManager>(),
+            Container.Resolve<IEventAggregator>(),
+            Container.Resolve<IDialogService>()));
+        var shell = _host.Services.GetRequiredService<MainWindow>();
+        shell.AttachLegacyRegion();
         if (!Design.IsDesignMode)
         {
             Dispatcher.UIThread.Post(StartDownloadBootstrap, DispatcherPriority.Background);
@@ -168,7 +182,7 @@ public partial class App : PrismApplication
 
     protected override void OnInitialized()
     {
-        ThemeHelper.SetTheme(SettingsManager.GetInstance().GetThemeMode());
+        ThemeHelper.SetTheme(SettingsManager.Instance.GetThemeMode());
         // var regionManager = Container.Resolve<IRegionManager>();
         // regionManager.RegisterViewWithRegion("ContentRegion", typeof(ViewIndex));
         // regionManager.RegisterViewWithRegion("DownloadManagerContentRegion", typeof(ViewDownloading));
@@ -188,33 +202,39 @@ public partial class App : PrismApplication
     private void StartDownloadBootstrap()
     {
         RunStorageMaintenance();
-        _downloadStartupTask ??= LoadDownloadStateAndStartServiceAsync(_startupCancellation.Token);
+        _downloadStartupTask ??= StartHostAndDownloadServiceAsync(GetShutdownToken());
     }
 
     private void RunStorageMaintenance()
     {
+        var cancellationToken = GetShutdownToken();
         _ = Task.Run(async () =>
         {
             try
             {
-                await StorageManager.RunMaintenanceAsync(_startupCancellation.Token);
+                await StorageManager.RunMaintenanceAsync(cancellationToken).ConfigureAwait(true);
             }
             catch (OperationCanceledException)
             {
             }
-            catch (Exception e)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 LogManager.Error(nameof(StorageManager), e);
             }
         });
     }
 
-    private async Task LoadDownloadStateAndStartServiceAsync(CancellationToken cancellationToken)
+    private async Task StartHostAndDownloadServiceAsync(CancellationToken cancellationToken)
     {
         try
         {
+            if (_host != null)
+            {
+                await _host.StartAsync(cancellationToken).ConfigureAwait(true);
+            }
+
             var downloadStorageService = Container.Resolve<DownloadStorageService>();
-            var downloadState = await LoadDownloadStateAsync(downloadStorageService, cancellationToken);
+            var downloadState = await LoadDownloadStateAsync(downloadStorageService, cancellationToken).ConfigureAwait(true);
 
             cancellationToken.ThrowIfCancellationRequested();
             DownloadingList.AddRange(downloadState.DownloadingItems);
@@ -223,14 +243,15 @@ public partial class App : PrismApplication
             _downloadService = CreateDownloadService();
             if (_downloadService != null)
             {
-                await _downloadService.StartAsync(cancellationToken);
+                await _downloadService.StartAsync(cancellationToken).ConfigureAwait(true);
             }
         }
         catch (OperationCanceledException)
         {
             // App 正在关闭时允许取消。
         }
-        catch (Exception e)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
+            or Microsoft.Data.Sqlite.SqliteException)
         {
             LogManager.Error(nameof(App), e);
         }
@@ -243,17 +264,17 @@ public partial class App : PrismApplication
         var downloadingItemsTask = downloadStorageService.GetDownloadingAsync(cancellationToken);
         var downloadedItemsTask = downloadStorageService.GetDownloadedAsync(cancellationToken);
 
-        await Task.WhenAll(downloadingItemsTask, downloadedItemsTask);
+        await Task.WhenAll(downloadingItemsTask, downloadedItemsTask).ConfigureAwait(true);
 
         return new DownloadStartupState(
-            downloadingItemsTask.Result,
-            downloadedItemsTask.Result);
+            await downloadingItemsTask.ConfigureAwait(true),
+            await downloadedItemsTask.ConfigureAwait(true));
     }
 
     private IDownloadService? CreateDownloadService()
     {
         var dialogService = Container.Resolve<IDialogService>();
-        return SettingsManager.GetInstance().GetDownloader() switch
+        return SettingsManager.Instance.GetDownloader() switch
         {
             Core.Settings.Downloader.BuiltIn => new BuiltinDownloadService(DownloadingList, DownloadedList, dialogService),
             Core.Settings.Downloader.Aria => new AriaDownloadService(DownloadingList, DownloadedList, dialogService),
@@ -316,35 +337,37 @@ public partial class App : PrismApplication
                 LogManager.Info(nameof(App), "Application exit cleanup timed out.");
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is AggregateException or ObjectDisposedException)
         {
             LogManager.Error(nameof(App), ex);
         }
         finally
         {
-            _startupCancellation.Dispose();
-#if !DEBUG
-            try
-            {
-                _mutex?.ReleaseMutex();
-            }
-            catch (ApplicationException)
-            {
-                // The process is exiting; only avoid masking the original shutdown path.
-            }
-
-            _mutex?.Dispose();
-            _mutex = null;
-#endif
+            Dispose();
         }
     }
 
     private async Task OnExitAsync()
     {
-        _startupCancellation.Cancel();
+        if (_host != null)
+        {
+            await _host.Services
+                .GetRequiredService<ApplicationCancellation>()
+                .RequestShutdownAsync()
+                .ConfigureAwait(false);
+            using var hostStopTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            try
+            {
+                await _host.StopAsync(hostStopTimeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (hostStopTimeout.IsCancellationRequested)
+            {
+                LogManager.Info(nameof(App), "Application host cleanup timed out.");
+            }
+        }
 
         // 强制落盘设置（防止防抖延迟期间退出导致配置丢失）
-        SettingsManager.GetInstance().Flush();
+        SettingsManager.Instance.Flush();
 
         if (_downloadStartupTask != null)
         {
@@ -365,6 +388,45 @@ public partial class App : PrismApplication
         await LogManager.FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
     }
 
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (!disposing)
+        {
+            return;
+        }
+
+        _downloadService?.Dispose();
+        _downloadService = null;
+        BiliWebClient.DisposeSharedResources();
+        _host?.Dispose();
+        _host = null;
+#if !DEBUG
+        try
+        {
+            _mutex?.ReleaseMutex();
+        }
+        catch (ApplicationException)
+        {
+            // The process is exiting; only avoid masking the original shutdown path.
+        }
+
+        _mutex?.Dispose();
+        _mutex = null;
+#endif
+    }
+
     private void NativeMenuItem_OnClick(object? sender, EventArgs e)
     {
         AppLife?.Shutdown();
@@ -379,7 +441,13 @@ public partial class App : PrismApplication
         return $@"Global\DownKyi-{RepoOwner}-{RepoName}-{hash}";
     }
 
+    private CancellationToken GetShutdownToken()
+    {
+        return _host?.Services.GetRequiredService<ApplicationCancellation>().ShutdownToken
+            ?? throw new InvalidOperationException("The application cancellation service has not been created.");
+    }
+
     private sealed record DownloadStartupState(
-        List<DownloadingItem> DownloadingItems,
-        List<DownloadedItem> DownloadedItems);
+        IReadOnlyList<DownloadingItem> DownloadingItems,
+        IReadOnlyList<DownloadedItem> DownloadedItems);
 }

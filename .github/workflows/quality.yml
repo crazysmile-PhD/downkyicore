@@ -39,6 +39,7 @@ jobs:
         os:
           - windows-latest
           - ubuntu-latest
+          - macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -48,16 +49,16 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }}
-      - name: Build with warnings as errors
+      - name: Build with all warnings as errors
         run: >
           dotnet build ${{ env.SOLUTION_FILE }}
           -c Release
           --no-restore
           --no-incremental
-          -warnaserror
           -p:TreatWarningsAsErrors=true
           -p:CodeAnalysisTreatWarningsAsErrors=true
           -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
           -p:EnforceCodeStyleInBuild=true
           -p:UseSharedCompilation=false
       - name: Test

@@ -105,6 +105,6 @@ public class UserInfoWallet : BaseModel
 [JsonObject]
 public class Wbi
 {
-    [JsonProperty("img_url")] public string ImgUrl { get; set; } = string.Empty;
-    [JsonProperty("sub_url")] public string SubUrl { get; set; } = string.Empty;
+    [JsonProperty("img_url")] public string ImageAddress { get; set; } = string.Empty;
+    [JsonProperty("sub_url")] public string SubAddress { get; set; } = string.Empty;
 }

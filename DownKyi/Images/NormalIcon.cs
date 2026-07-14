@@ -2,7 +2,7 @@
 
 namespace DownKyi.Images;
 
-public class NormalIcon
+internal class NormalIcon
 {
     private static NormalIcon? _instance;
 

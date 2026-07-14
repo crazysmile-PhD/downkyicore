@@ -2,7 +2,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-public class TabRightBanner : BindableBase
+internal class TabRightBanner : BindableBase
 {
     public int Id { get; set; }
 

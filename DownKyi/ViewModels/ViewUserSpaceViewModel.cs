@@ -17,7 +17,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewUserSpaceViewModel : ViewModelBase
+internal class ViewUserSpaceViewModel : ViewModelBase
 {
     public const string Tag = "PageUserSpace";
 
@@ -161,7 +161,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
     public ObservableCollection<TabLeftBanner> TabLeftBanners
     {
         get => _tabLeftBanners;
-        set => SetProperty(ref _tabLeftBanners, value);
+        private set => SetProperty(ref _tabLeftBanners, value);
     }
 
     private ObservableCollection<TabRightBanner> _tabRightBanners = new();
@@ -169,7 +169,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
     public ObservableCollection<TabRightBanner> TabRightBanners
     {
         get => _tabRightBanners;
-        set => SetProperty(ref _tabRightBanners, value);
+        private set => SetProperty(ref _tabRightBanners, value);
     }
 
     private int _selectedRightBanner;
@@ -243,7 +243,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
 
         var param = new NavigationParameters
         {
-            { "object", banner.Object },
+            { "object", banner.NavigationData },
             { "mid", mid },
         };
 
@@ -397,7 +397,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
                 // 没有数据
                 isNoData = true;
             }
-        });
+        }).ConfigureAwait(true);
 
         // 是否获取到数据
         if (isNoData)
@@ -432,13 +432,13 @@ public class ViewUserSpaceViewModel : ViewModelBase
         ContentVisibility = true;
 
         // 投稿视频
-        List<SpacePublicationListTypeVideoZone>? publicationTypes = null;
-        await Task.Run(() => { publicationTypes = Core.BiliApi.Users.UserSpace.GetPublicationType(mid); });
+        IReadOnlyList<SpacePublicationListTypeVideoZone>? publicationTypes = null;
+        await Task.Run(() => { publicationTypes = Core.BiliApi.Users.UserSpace.GetPublicationType(mid); }).ConfigureAwait(true);
         if (publicationTypes is { Count: > 0 })
         {
             TabLeftBanners.Add(new TabLeftBanner
             {
-                Object = publicationTypes,
+                NavigationData = publicationTypes,
                 Id = 0,
                 Icon = NormalIcon.Instance().VideoUp,
                 IconColor = "#FF02B5DA",
@@ -457,7 +457,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
         //{
         //    TabLeftBanners.Add(new TabLeftBanner
         //    {
-        //        Object = channelList,
+        //        NavigationData = channelList,
         //        Id = 1,
         //        Icon = NormalIcon.Instance().Channel,
         //        IconColor = "#FF23C9ED",
@@ -467,12 +467,12 @@ public class ViewUserSpaceViewModel : ViewModelBase
 
         // 合集和列表
         SpaceSeasonsSeries? seasonsSeries = null;
-        await Task.Run(() => { seasonsSeries = Core.BiliApi.Users.UserSpace.GetSeasonsSeries(mid, 1, 20); });
+        await Task.Run(() => { seasonsSeries = Core.BiliApi.Users.UserSpace.GetSeasonsSeries(mid, 1, 20); }).ConfigureAwait(true);
         if (seasonsSeries is { Page.Total: > 0 })
         {
             TabLeftBanners.Add(new TabLeftBanner
             {
-                Object = seasonsSeries,
+                NavigationData = seasonsSeries,
                 Id = 2,
                 Icon = NormalIcon.Instance().Channel,
                 IconColor = "#FF23C9ED",
@@ -485,7 +485,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
 
         // 关系状态数
         UserRelationStat? relationStat = null;
-        await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(mid); });
+        await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(mid); }).ConfigureAwait(true);
         if (relationStat != null)
         {
             TabRightBanners.Add(new TabRightBanner
@@ -510,7 +510,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
 
         // UP主状态数，需要任意用户登录，否则不会返回任何数据
         UpStat? upStat = null;
-        await Task.Run(() => { upStat = UserStatus.GetUpStat(mid); });
+        await Task.Run(() => { upStat = UserStatus.GetUpStat(mid); }).ConfigureAwait(true);
         if (upStat is { Archive: not null, Article: not null })
         {
             TabRightBanners.Add(new TabRightBanner
@@ -523,12 +523,6 @@ public class ViewUserSpaceViewModel : ViewModelBase
                 Count = Format.FormatNumber(upStat.Likes)
             });
 
-            long archiveView = 0;
-            if (upStat?.Archive != null)
-            {
-                archiveView = upStat.Archive.View;
-            }
-
             TabRightBanners.Add(new TabRightBanner
             {
                 Id = 3,
@@ -536,14 +530,8 @@ public class ViewUserSpaceViewModel : ViewModelBase
                 LabelColor = DictionaryResource.GetColor("ColorTextGrey"),
                 CountColor = DictionaryResource.GetColor("ColorTextDark"),
                 Label = DictionaryResource.GetString("ArchiveViewCount"),
-                Count = Format.FormatNumber(archiveView)
+                Count = Format.FormatNumber(upStat.Archive.View)
             });
-
-            long articleView = 0;
-            if (upStat?.Article != null)
-            {
-                articleView = upStat.Article.View;
-            }
 
             TabRightBanners.Add(new TabRightBanner
             {
@@ -552,7 +540,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
                 LabelColor = DictionaryResource.GetColor("ColorTextGrey"),
                 CountColor = DictionaryResource.GetColor("ColorTextDark"),
                 Label = DictionaryResource.GetString("ArticleViewCount"),
-                Count = Format.FormatNumber(articleView)
+                Count = Format.FormatNumber(upStat.Article.View)
             });
         }
     }
@@ -563,6 +551,7 @@ public class ViewUserSpaceViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         // 根据传入参数不同执行不同任务

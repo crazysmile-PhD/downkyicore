@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Logging;
@@ -11,15 +12,18 @@ using DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
 namespace DownKyi.CustomControl.AsyncImageLoader;
 
-public static class ImageBrushLoader
+internal static class ImageBrushLoader
 {
-    private static readonly ParametrizedLogger? Logger;
-    public static IAsyncImageLoader AsyncImageLoader { get; set; } = new DiskCachedWebImageLoader(Path.Combine(StorageManager.GetCache(), "Images"));
+    private static readonly ParametrizedLogger? Logger =
+        Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);
+    public static readonly AttachedProperty<string?> SourceProperty =
+        AvaloniaProperty.RegisterAttached<ImageBrush, string?>("Source", typeof(ImageLoader));
+    public static IAsyncImageLoader AsyncImageLoader { get; set; } = CreateDefaultLoader();
 
-    static ImageBrushLoader()
+    private static DiskCachedWebImageLoader CreateDefaultLoader()
     {
         SourceProperty.Changed.AddClassHandler<ImageBrush>(OnSourceChanged);
-        Logger = Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);
+        return new DiskCachedWebImageLoader(Path.Combine(StorageManager.GetCache(), "Images"));
     }
 
     private static void OnSourceChanged(ImageBrush imageBrush, AvaloniaPropertyChangedEventArgs args)
@@ -48,15 +52,23 @@ public static class ImageBrushLoader
                     var scale = await Dispatcher.UIThread.InvokeAsync(() => App.Current.MainWindow.DesktopScaling);
                     var actualWidth = Convert.ToInt32(width * scale);
                     var actualHeight = Convert.ToInt32(height * scale);
-                    bitmap = (await AsyncImageLoader.ProvideImageAsync(newValue))?.CreateScaledBitmap(new PixelSize(actualWidth, actualHeight));
+                    bitmap = (await AsyncImageLoader.ProvideImageAsync(newValue).ConfigureAwait(true))?.CreateScaledBitmap(new PixelSize(actualWidth, actualHeight));
                 }
                 else
                 {
-                    bitmap = await AsyncImageLoader.ProvideImageAsync(newValue);
+                    bitmap = await AsyncImageLoader.ProvideImageAsync(newValue).ConfigureAwait(true);
                 }
             }
         }
-        catch (Exception e)
+        catch (HttpRequestException e)
+        {
+            Logger?.Log("ImageBrushLoader", "ImageBrushLoader image resolution failed: {0}", e);
+        }
+        catch (IOException e)
+        {
+            Logger?.Log("ImageBrushLoader", "ImageBrushLoader image resolution failed: {0}", e);
+        }
+        catch (InvalidOperationException e)
         {
             Logger?.Log("ImageBrushLoader", "ImageBrushLoader image resolution failed: {0}", e);
         }
@@ -67,15 +79,15 @@ public static class ImageBrushLoader
         SetIsLoading(imageBrush, false);
     }
 
-    public static readonly AttachedProperty<string?> SourceProperty = AvaloniaProperty.RegisterAttached<ImageBrush, string?>("Source", typeof(ImageLoader));
-
     public static string? GetSource(ImageBrush element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(SourceProperty);
     }
 
     public static void SetSource(ImageBrush element, string? value)
     {
+        ArgumentNullException.ThrowIfNull(element);
         element.SetValue(SourceProperty, value);
     }
 
@@ -83,6 +95,7 @@ public static class ImageBrushLoader
 
     public static bool GetIsLoading(ImageBrush element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(IsLoadingProperty);
     }
 
@@ -95,11 +108,13 @@ public static class ImageBrushLoader
 
     public static int GetWidth(ImageBrush element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(WidthProperty);
     }
 
     public static void SetWidth(ImageBrush element, int value)
     {
+        ArgumentNullException.ThrowIfNull(element);
         element.SetValue(WidthProperty, value);
     }
 
@@ -107,11 +122,13 @@ public static class ImageBrushLoader
 
     public static int GetHeight(ImageBrush element)
     {
+        ArgumentNullException.ThrowIfNull(element);
         return element.GetValue(HeightProperty);
     }
 
     public static void SetHeight(ImageBrush element, int value)
     {
+        ArgumentNullException.ThrowIfNull(element);
         element.SetValue(HeightProperty, value);
     }
 }

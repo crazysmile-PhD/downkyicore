@@ -24,20 +24,20 @@ public class PlayUrl : BaseModel
     // format
     // timelength
     // accept_format
-    [JsonProperty("accept_description")] public List<string> AcceptDescription { get; set; } = new();
+    [JsonProperty("accept_description")] public IReadOnlyList<string> AcceptDescription { get; set; } = Array.Empty<string>();
 
-    [JsonProperty("accept_quality")] public List<int> AcceptQuality { get; set; } = new();
+    [JsonProperty("accept_quality")] public IReadOnlyList<int> AcceptQuality { get; set; } = Array.Empty<int>();
 
     // video_codecid
     // seek_param
     // seek_type
-    [JsonProperty("durl")] public List<PlayUrlDurl> Durl { get; set; } = new();
+    [JsonProperty("durl")] public IReadOnlyList<PlayUrlDurl> Durl { get; set; } = Array.Empty<PlayUrlDurl>();
     [JsonProperty("dash")] public PlayUrlDash Dash { get; set; } = new();
 
     [JsonProperty("quality")] public int Quality { get; set; }
 
     [JsonProperty("video_codecid")] public int VideoCodecid { get; set; }
 
-    [JsonProperty("support_formats")] public List<PlayUrlSupportFormat> SupportFormats { get; set; } = new();
+    [JsonProperty("support_formats")] public IReadOnlyList<PlayUrlSupportFormat> SupportFormats { get; set; } = Array.Empty<PlayUrlSupportFormat>();
     // high_format
 }

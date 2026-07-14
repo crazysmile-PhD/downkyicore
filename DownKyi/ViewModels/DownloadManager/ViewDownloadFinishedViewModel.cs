@@ -17,7 +17,7 @@ using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.DownloadManager;
 
-public class ViewDownloadFinishedViewModel : ViewModelBase
+internal class ViewDownloadFinishedViewModel : ViewModelBase
 {
     public const string Tag = "PageDownloadManagerDownloadFinished";
 
@@ -30,7 +30,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
     public ImmutableObservableCollection<DownloadedItem> DownloadedList
     {
         get => _downloadedList;
-        set => SetProperty(ref _downloadedList, value);
+        private set => SetProperty(ref _downloadedList, value);
     }
 
     private int _finishedSortBy;
@@ -54,7 +54,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
         DownloadedList = App.DownloadedList;
         _downloadStorageService = downloadStorageService;
 
-        var finishedSort = SettingsManager.GetInstance().GetDownloadFinishedSort();
+        var finishedSort = SettingsManager.Instance.GetDownloadFinishedSort();
         FinishedSortBy = finishedSort switch
         {
             DownloadFinishedSort.DownloadAsc => 0,
@@ -87,22 +87,22 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
             case 0:
                 App.SortDownloadedList(DownloadFinishedSort.DownloadAsc);
                 // 更新设置
-                SettingsManager.GetInstance().SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
+                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
             case 1:
                 App.SortDownloadedList(DownloadFinishedSort.DownloadDesc);
                 // 更新设置
-                SettingsManager.GetInstance().SetDownloadFinishedSort(DownloadFinishedSort.DownloadDesc);
+                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadDesc);
                 break;
             case 2:
                 App.SortDownloadedList(DownloadFinishedSort.Number);
                 // 更新设置
-                SettingsManager.GetInstance().SetDownloadFinishedSort(DownloadFinishedSort.Number);
+                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.Number);
                 break;
             default:
                 App.SortDownloadedList(DownloadFinishedSort.DownloadAsc);
                 // 更新设置
-                SettingsManager.GetInstance().SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
+                SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
         }
     }
@@ -119,7 +119,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
         try
         {
             var alertService = new AlertService(DialogService);
-            var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"));
+            var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete")).ConfigureAwait(true);
             if (result != ButtonResult.OK)
             {
                 return;
@@ -132,10 +132,11 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
             _downloadStorageService.ClearDownloaded();
             App.PropertyChangeAsync(() => { App.DownloadedList.Clear(); });
         }
-        catch (Exception e)
+        catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or IOException
+            or UnauthorizedAccessException or InvalidOperationException)
         {
             var alertService = new AlertService(DialogService);
-            await alertService.ShowError(e.Message);
+            await alertService.ShowError(e.Message).ConfigureAwait(true);
         }
     }
 
@@ -157,7 +158,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
         var fileInfo = new FileInfo(videoPath);
         if (File.Exists(fileInfo.FullName))
         {
-            await PlatformHelper.Open(fileInfo.FullName);
+            await PlatformHelper.Open(fileInfo.FullName).ConfigureAwait(true);
         }
         else
         {
@@ -172,7 +173,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
     public DownKyiAsyncDelegateCommand<DownloadedItem> OpenFolderCommand => _openFolderCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteOpenFolderCommand);
 
 
-    private static readonly IReadOnlyDictionary<string, string[]> FileSuffixMap = new Dictionary<string, string[]>
+    private static readonly Dictionary<string, string[]> FileSuffixMap = new()
     {
         { "downloadVideo", new[] { ".mp4", ".flv" } },
         { "downloadAudio", new[] { ".aac", ".mp3" } },
@@ -202,7 +203,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
             var videoPath = $"{downloadedItem.DownloadBase.FilePath}{suffix}";
             var fileInfo = new FileInfo(videoPath);
             if (!File.Exists(fileInfo.FullName) || fileInfo.DirectoryName == null) continue;
-            await PlatformHelper.OpenFolder(fileInfo.DirectoryName, EventAggregator);
+            await PlatformHelper.OpenFolder(fileInfo.DirectoryName, EventAggregator).ConfigureAwait(true);
             return;
         }
 
@@ -225,7 +226,7 @@ public class ViewDownloadFinishedViewModel : ViewModelBase
         }
 
         var alertService = new AlertService(DialogService);
-        var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2);
+        var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2).ConfigureAwait(true);
         if (result != ButtonResult.OK)
         {
             return;

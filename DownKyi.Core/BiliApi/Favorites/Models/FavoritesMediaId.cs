@@ -12,13 +12,13 @@ public class FavoritesMediaIdOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public List<FavoritesMediaId> Data { get; set; } = new();
+    [JsonProperty("data")] public IReadOnlyList<FavoritesMediaId> Data { get; set; } = Array.Empty<FavoritesMediaId>();
 }
 
 public class FavoritesMediaId : BaseModel
 {
     [JsonProperty("id")] public long Id { get; set; }
     [JsonProperty("type")] public int Type { get; set; }
-    [JsonProperty("bv_id")] public string BvId { get; set; } = string.Empty;
+    [JsonProperty("bv_id")] public string LegacyBvid { get; set; } = string.Empty;
     [JsonProperty("bvid")] public string Bvid { get; set; } = string.Empty;
 }

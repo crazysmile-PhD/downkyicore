@@ -30,6 +30,8 @@ public static class LoginHelper
 
     public static string BuildCookieHeader(IEnumerable<DownKyiCookie> cookies)
     {
+        ArgumentNullException.ThrowIfNull(cookies);
+
         var order = new List<string>();
         var deduplicated = new Dictionary<string, DownKyiCookie>(StringComparer.OrdinalIgnoreCase);
 
@@ -76,11 +78,11 @@ public static class LoginHelper
     /// <summary>
     /// 保存登录的cookies到文件
     /// </summary>
-    /// <param name="url"></param>
+    /// <param name="redirectUri"></param>
     /// <returns></returns>
-    public static bool SaveLoginInfoCookies(string url)
+    public static bool SaveLoginInfoCookies(Uri redirectUri)
     {
-        var cookies = ObjectHelper.ParseCookie(url);
+        var cookies = ObjectHelper.ParseCookie(redirectUri);
 
         return SaveLoginInfoCookies(cookies);
     }
@@ -90,7 +92,7 @@ public static class LoginHelper
     /// </summary>
     /// <param name="cookies"></param>
     /// <returns></returns>
-    public static bool SaveLoginInfoCookies(List<DownKyiCookie> cookies)
+    public static bool SaveLoginInfoCookies(IReadOnlyList<DownKyiCookie> cookies)
     {
         var tempFile = LocalLoginInfo + "-" + Guid.NewGuid().ToString("N");
 
@@ -102,9 +104,15 @@ public static class LoginHelper
                 File.Copy(tempFile, LocalLoginInfo, true);
                 // Encryptor.EncryptFile(tempFile, LOCAL_LOGIN_INFO, password);
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 Console.PrintLine("SaveLoginInfoCookies()发生异常: {0}", e);
+                LogManager.Error(e);
+                return false;
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Console.PrintLine("SaveLoginInfoCookies()没有写入权限: {0}", e);
                 LogManager.Error(e);
                 return false;
             }
@@ -134,7 +142,7 @@ public static class LoginHelper
     /// 获得登录的cookies，结果会被缓存到内存中，直到下次写操作使缓存失效
     /// </summary>
     /// <returns></returns>
-    public static List<DownKyiCookie> GetLoginInfoCookies()
+    public static IReadOnlyList<DownKyiCookie> GetLoginInfoCookies()
     {
         // 先尝试从缓存读取
         CacheLock.EnterReadLock();
@@ -178,9 +186,15 @@ public static class LoginHelper
                         cookie.Domain))
                     .ToList();
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 Console.PrintLine("GetLoginInfoCookies()发生异常: {0}", e);
+                LogManager.Error(e);
+                return new List<DownKyiCookie>();
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Console.PrintLine("GetLoginInfoCookies()没有读取权限: {0}", e);
                 LogManager.Error(e);
                 return new List<DownKyiCookie>();
             }
@@ -245,7 +259,7 @@ public static class LoginHelper
             // 注销后使缓存立即失效
             InvalidateCache();
 
-            SettingsManager.GetInstance().SetUserInfo(new UserInfoSettings
+            SettingsManager.Instance.SetUserInfo(new UserInfoSettings
             {
                 Mid = -1,
                 Name = "",

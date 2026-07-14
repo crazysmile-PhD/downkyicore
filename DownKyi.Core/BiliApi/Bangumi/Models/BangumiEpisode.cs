@@ -28,7 +28,7 @@ public class BangumiEpisode : BaseModel
     // release_date
     // rights
     [JsonProperty("share_copy")] public string ShareCopy { get; set; } = string.Empty;
-    [JsonProperty("share_url")] public string ShareUrl { get; set; } = string.Empty;
+    [JsonProperty("share_url")] public string ShareAddress { get; set; } = string.Empty;
 
     [JsonProperty("short_link")] public string ShortLink { get; set; } = string.Empty;
 

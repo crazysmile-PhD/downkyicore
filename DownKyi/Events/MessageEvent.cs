@@ -2,6 +2,6 @@ using Prism.Events;
 
 namespace DownKyi.Events;
 
-public class MessageEvent : PubSubEvent<string>
+internal class MessageEvent : PubSubEvent<string>
 {
 }

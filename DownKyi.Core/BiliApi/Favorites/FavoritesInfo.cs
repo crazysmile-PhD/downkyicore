@@ -32,7 +32,7 @@ public static class FavoritesInfo
     /// <param name="pn">页码</param>
     /// <param name="ps">每页项数</param>
     /// <returns></returns>
-    public static List<FavoritesMetaInfo>? GetCreatedFavorites(long mid, int pn, int ps, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<FavoritesMetaInfo>? GetCreatedFavorites(long mid, int pn, int ps, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/v3/fav/folder/created/list?up_mid={mid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
@@ -51,7 +51,7 @@ public static class FavoritesInfo
     /// </summary>
     /// <param name="mid">目标用户UID</param>
     /// <returns></returns>
-    public static List<FavoritesMetaInfo> GetAllCreatedFavorites(long mid, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<FavoritesMetaInfo> GetAllCreatedFavorites(long mid, CancellationToken cancellationToken = default)
     {
         var result = new List<FavoritesMetaInfo>();
 
@@ -81,7 +81,7 @@ public static class FavoritesInfo
     /// <param name="pn">页码</param>
     /// <param name="ps">每页项数</param>
     /// <returns></returns>
-    public static List<FavoritesMetaInfo>? GetCollectedFavorites(long mid, int pn, int ps, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<FavoritesMetaInfo>? GetCollectedFavorites(long mid, int pn, int ps, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/v3/fav/folder/collected/list?up_mid={mid}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
@@ -100,7 +100,7 @@ public static class FavoritesInfo
     /// </summary>
     /// <param name="mid">目标用户UID</param>
     /// <returns></returns>
-    public static List<FavoritesMetaInfo> GetAllCollectedFavorites(long mid, CancellationToken cancellationToken = default)
+    public static IReadOnlyList<FavoritesMetaInfo> GetAllCollectedFavorites(long mid, CancellationToken cancellationToken = default)
     {
         var result = new List<FavoritesMetaInfo>();
 

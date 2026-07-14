@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace DownKyi.Core.BiliApi.BiliUtils;
 
 public static class DanmakuSender
@@ -75,7 +77,7 @@ public static class DanmakuSender
 
         var result = "";
         uint tc; // = 0x00;
-        var hashcode = Crc32(i.ToString());
+        var hashcode = Crc32(i.ToString(CultureInfo.InvariantCulture));
         tc = (uint)(hashcode & 0xff ^ index[2]);
 
         if (!(tc <= 57 && tc >= 48))
@@ -84,7 +86,7 @@ public static class DanmakuSender
             return resultArray;
         }
 
-        result += (tc - 48).ToString();
+        result += (tc - 48).ToString(CultureInfo.InvariantCulture);
         hashcode = Crctable[index[2]] ^ (hashcode >> 8);
         tc = (uint)(hashcode & 0xff ^ index[1]);
 
@@ -94,7 +96,7 @@ public static class DanmakuSender
             return resultArray;
         }
 
-        result += (tc - 48).ToString();
+        result += (tc - 48).ToString(CultureInfo.InvariantCulture);
         hashcode = Crctable[index[1]] ^ (hashcode >> 8);
         tc = (uint)(hashcode & 0xff ^ index[0]);
 
@@ -104,7 +106,7 @@ public static class DanmakuSender
             return resultArray;
         }
 
-        result += (tc - 48).ToString();
+        result += (tc - 48).ToString(CultureInfo.InvariantCulture);
         //hashcode = crctable[index[0]] ^ (hashcode >> 8);
 
         resultArray[0] = 1;
@@ -135,7 +137,7 @@ public static class DanmakuSender
 
         for (i = 0; i < 100000000; i++)
         {
-            var lastindex = Crc32LastIndex(i.ToString());
+            var lastindex = Crc32LastIndex(i.ToString(CultureInfo.InvariantCulture));
             if (lastindex != index[3]) continue;
             deepCheckData = DeepCheck(i, index);
             if ((int)deepCheckData[0] != 0)
@@ -144,6 +146,8 @@ public static class DanmakuSender
             }
         }
 
-        return i == 100000000 ? "-1" : $"{i}{deepCheckData[1]}";
+        return i == 100000000
+            ? "-1"
+            : string.Create(CultureInfo.InvariantCulture, $"{i}{deepCheckData[1]}");
     }
 }

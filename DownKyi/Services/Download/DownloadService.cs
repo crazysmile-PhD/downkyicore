@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
@@ -23,31 +24,35 @@ using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Data.Sqlite;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Services.Download;
 
-public abstract class DownloadService
+internal abstract class DownloadService : IDisposable
 {
-    protected string Tag = "DownloadService";
+    private bool _disposed;
+    protected string Tag { get; set; } = "DownloadService";
 
     // protected TaskbarIcon _notifyIcon;
-    protected readonly IDialogService? DialogService;
-    protected readonly ImmutableObservableCollection<DownloadingItem> DownloadingList;
-    protected readonly ImmutableObservableCollection<DownloadedItem> DownloadedList;
+    protected IDialogService? DialogService { get; }
+    protected ImmutableObservableCollection<DownloadingItem> DownloadingList { get; }
+    protected ImmutableObservableCollection<DownloadedItem> DownloadedList { get; }
 
-    protected Task? WorkTask;
-    protected CancellationTokenSource? TokenSource;
-    protected CancellationToken? CancellationToken;
-    protected readonly List<Task> DownloadingTasks = new();
+    protected Task? WorkTask { get; set; }
+    protected CancellationTokenSource? TokenSource { get; set; }
+    protected CancellationToken? CancellationToken { get; set; }
+    private readonly List<Task> _downloadingTasks = new();
 
     protected const int Retry = 5;
     protected const string NullMark = "<null>";
 
-    protected readonly DownloadStorageService DownloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
+    private static DownloadStorageService DownloadStorageService =>
+        (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
 
     protected void EnsureDownloadIsActive(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
         CancellationToken?.ThrowIfCancellationRequested();
         if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause || !DownloadingList.Contains(downloading))
         {
@@ -61,7 +66,7 @@ public abstract class DownloadService
         {
             DownloadStorageService.UpdateDownloading(downloading);
         }
-        catch (Exception e)
+        catch (SqliteException e)
         {
             LogManager.Debug(Tag, $"Persist downloading state failed: {e.Message}");
         }
@@ -98,9 +103,13 @@ public abstract class DownloadService
                     File.Delete(path);
                 }
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 LogManager.Debug(Tag, $"Delete invalid media file failed: {e.Message}");
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                LogManager.Debug(Tag, $"Delete invalid media file was denied: {e.Message}");
             }
         }
     }
@@ -112,15 +121,17 @@ public abstract class DownloadService
     /// <param name="downloadedList"></param>
     /// <param name="dialogService"></param>
     /// <returns></returns>
-    public DownloadService(ImmutableObservableCollection<DownloadingItem> downloadingList, ImmutableObservableCollection<DownloadedItem> downloadedList, IDialogService? dialogService)
+    protected DownloadService(ImmutableObservableCollection<DownloadingItem> downloadingList, ImmutableObservableCollection<DownloadedItem> downloadedList, IDialogService? dialogService)
     {
         DownloadingList = downloadingList;
         DownloadedList = downloadedList;
         DialogService = dialogService;
     }
 
-    protected PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
+    protected static PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingAudio");
@@ -131,7 +142,7 @@ public abstract class DownloadService
         downloading.SpeedDisplay = string.Empty;
 
         // 如果没有Dash，返回null
-        if (downloading.PlayUrl == null || downloading.PlayUrl.Dash == null)
+        if (downloading.PlayUrl?.Dash == null)
         {
             return null;
         }
@@ -157,30 +168,24 @@ public abstract class DownloadService
             }
         }
 
-        // 避免Dolby==null及其它未知情况，直接使用异常捕获
-        try
+        if (downloading.AudioCodec.Id == 30250 &&
+            downloading.PlayUrl.Dash.Dolby?.Audio is { Count: > 0 } dolbyAudio)
         {
-            // Dolby Atmos
-            if (downloading.AudioCodec.Id == 30250)
-            {
-                downloadAudio = downloading.PlayUrl.Dash.Dolby.Audio[0];
-            }
-
-            // Hi-Res无损
-            if (downloading.AudioCodec.Id == 30251)
-            {
-                downloadAudio = downloading.PlayUrl.Dash.Flac.Audio;
-            }
+            downloadAudio = dolbyAudio[0];
         }
-        catch (Exception)
+
+        if (downloading.AudioCodec.Id == 30251 && downloading.PlayUrl.Dash.Flac?.Audio is { } flacAudio)
         {
+            downloadAudio = flacAudio;
         }
 
         return downloadAudio;
     }
 
-    protected VideoPlayUrlBasic? BaseDownloadVideo(DownloadingItem downloading)
+    protected static VideoPlayUrlBasic? BaseDownloadVideo(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingVideo");
@@ -202,7 +207,7 @@ public abstract class DownloadService
                         BackupUrl = video.BackupUrl,
                         Codecs = video.Codecs,
                         Id = video.Id,
-                        BaseUrl = video.BaseUrl
+                        BaseUrl = video.BaseAddress
                     };
                 }
             }
@@ -210,22 +215,36 @@ public abstract class DownloadService
 
         if (downloading?.PlayUrl?.Durl?.Count > 0)
         {
-            var durl = downloading.PlayUrl.Durl.First();
-            return new VideoPlayUrlBasic
-            {
-                BackupUrl = durl.BackupUrl,
-                BaseUrl = durl.Url,
-                Codecs = downloading.PlayUrl.VideoCodecid.GetHashCode().ToString(),
-                Id = downloading.DownloadBase.Bvid.GetHashCode(),
-                ExpectedSize = durl.Size
-            };
+            return CreateDurlDownloadDescriptor(downloading.PlayUrl.Durl);
         }
 
         return null;
     }
 
+    internal static VideoPlayUrlBasic? CreateDurlDownloadDescriptor(IEnumerable<PlayUrlDurl> durls)
+    {
+        ArgumentNullException.ThrowIfNull(durls);
+
+        var durl = durls.OrderBy(item => item.Order).FirstOrDefault();
+        if (durl == null)
+        {
+            return null;
+        }
+
+        return new VideoPlayUrlBasic
+        {
+            BackupUrl = durl.BackupUrl,
+            BaseUrl = durl.SourceAddress,
+            Codecs = "durl",
+            Id = durl.Order,
+            ExpectedSize = durl.Size
+        };
+    }
+
     protected string? BaseDownloadCover(DownloadingItem downloading, string? coverUrl, string fileName)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingCover");
@@ -251,9 +270,19 @@ public abstract class DownloadService
         {
             throw;
         }
-        catch (Exception e)
+        catch (HttpRequestException e)
         {
             Console.PrintLine($"{Tag}.DownloadCover()发生异常: {0}", e);
+            LogManager.Error($"{Tag}.DownloadCover()", e);
+        }
+        catch (IOException e)
+        {
+            Console.PrintLine($"{Tag}.DownloadCover()发生IO异常: {0}", e);
+            LogManager.Error($"{Tag}.DownloadCover()", e);
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            Console.PrintLine($"{Tag}.DownloadCover()没有写入权限: {0}", e);
             LogManager.Error($"{Tag}.DownloadCover()", e);
         }
 
@@ -262,6 +291,8 @@ public abstract class DownloadService
 
     protected string BaseDownloadDanmaku(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingDanmaku");
@@ -274,15 +305,14 @@ public abstract class DownloadService
         var assFile = $"{downloading.DownloadBase?.FilePath}.ass";
 
         // 记录本次下载的文件
-        if (!downloading.Downloading.DownloadFiles.ContainsKey("danmaku"))
+        if (downloading.Downloading.DownloadFiles.TryAdd("danmaku", assFile))
         {
-            downloading.Downloading.DownloadFiles.Add("danmaku", assFile);
             PersistDownloadingState(downloading);
         }
 
-        var screenWidth = SettingsManager.GetInstance().GetDanmakuScreenWidth();
-        var screenHeight = SettingsManager.GetInstance().GetDanmakuScreenHeight();
-        //if (SettingsManager.GetInstance().IsCustomDanmakuResolution() != AllowStatus.YES)
+        var screenWidth = SettingsManager.Instance.GetDanmakuScreenWidth();
+        var screenHeight = SettingsManager.Instance.GetDanmakuScreenHeight();
+        //if (SettingsManager.Instance.IsCustomDanmakuResolution() != AllowStatus.YES)
         //{
         //    if (downloadingEntity.Width > 0 && downloadingEntity.Height > 0)
         //    {
@@ -297,21 +327,21 @@ public abstract class DownloadService
             Title = title,
             ScreenWidth = screenWidth,
             ScreenHeight = screenHeight,
-            FontName = SettingsManager.GetInstance().GetDanmakuFontName(),
-            BaseFontSize = SettingsManager.GetInstance().GetDanmakuFontSize(),
-            LineCount = SettingsManager.GetInstance().GetDanmakuLineCount(),
+            FontName = SettingsManager.Instance.GetDanmakuFontName(),
+            BaseFontSize = SettingsManager.Instance.GetDanmakuFontSize(),
+            LineCount = SettingsManager.Instance.GetDanmakuLineCount(),
             LayoutAlgorithm =
-                SettingsManager.GetInstance().GetDanmakuLayoutAlgorithm().ToString("G").ToLower(), // async/sync
+                GetDanmakuLayoutAlgorithmValue(SettingsManager.Instance.GetDanmakuLayoutAlgorithm()), // async/sync
             TuneDuration = 0,
             DropOffset = 0,
             BottomMargin = 0,
             CustomOffset = 0
         };
 
-        var bilibili = Core.Danmaku2Ass.Bilibili.GetInstance();
-        bilibili.SetTopFilter(SettingsManager.GetInstance().GetDanmakuTopFilter() == AllowStatus.Yes);
-        bilibili.SetBottomFilter(SettingsManager.GetInstance().GetDanmakuBottomFilter() == AllowStatus.Yes);
-        bilibili.SetScrollFilter(SettingsManager.GetInstance().GetDanmakuScrollFilter() == AllowStatus.Yes);
+        var bilibili = Core.Danmaku2Ass.BilibiliDanmakuConverter.Instance;
+        bilibili.SetTopFilter(SettingsManager.Instance.GetDanmakuTopFilter() == AllowStatus.Yes);
+        bilibili.SetBottomFilter(SettingsManager.Instance.GetDanmakuBottomFilter() == AllowStatus.Yes);
+        bilibili.SetScrollFilter(SettingsManager.Instance.GetDanmakuScrollFilter() == AllowStatus.Yes);
         var downloadBase = downloading.DownloadBase ?? throw new InvalidOperationException("DownloadBase is required to download danmaku.");
         bilibili.Create(downloadBase.Avid, downloadBase.Cid, subtitleConfig, assFile, CancellationToken.GetValueOrDefault());
 
@@ -319,8 +349,10 @@ public abstract class DownloadService
     }
 
 
-    protected List<string> BaseDownloadSubtitle(DownloadingItem downloading)
+    protected IReadOnlyList<string> BaseDownloadSubtitle(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingSubtitle");
@@ -331,7 +363,7 @@ public abstract class DownloadService
 
         var srtFiles = new List<string>();
 
-        var subRipTexts = VideoStream.GetSubtitle(
+        var subRipTexts = VideoStreamApi.GetSubtitle(
             downloading.DownloadBase.Avid,
             downloading.DownloadBase.Bvid,
             downloading.DownloadBase.Cid,
@@ -351,9 +383,14 @@ public abstract class DownloadService
 
                 srtFiles.Add(srtFile);
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 Console.PrintLine($"{Tag}.DownloadSubtitle()发生异常: {0}", e);
+                LogManager.Error($"{Tag}.DownloadSubtitle()", e);
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Console.PrintLine($"{Tag}.DownloadSubtitle()没有写入权限: {0}", e);
                 LogManager.Error($"{Tag}.DownloadSubtitle()", e);
             }
         }
@@ -372,6 +409,8 @@ public abstract class DownloadService
 
     protected void GenerateNfoFile(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         var metadata = downloading.Metadata;
         if (metadata == null) return;
 
@@ -382,7 +421,15 @@ public abstract class DownloadService
             using var writer = XmlWriter.Create(filePath, settings);
             WriteMovieMetadata(writer, metadata);
         }
-        catch (Exception e)
+        catch (IOException e)
+        {
+            LogManager.Error($"{Tag}.GenerateNfoFile()", e);
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            LogManager.Error($"{Tag}.GenerateNfoFile()", e);
+        }
+        catch (XmlException e)
         {
             LogManager.Error($"{Tag}.GenerateNfoFile()", e);
         }
@@ -430,7 +477,7 @@ public abstract class DownloadService
             writer.WriteStartElement("rating");
             writer.WriteAttributeString("name", rating.Name);
             writer.WriteAttributeString("max", rating.Max.ToString(CultureInfo.InvariantCulture));
-            writer.WriteAttributeString("default", rating.IsDefault.ToString().ToLowerInvariant());
+            writer.WriteAttributeString("default", rating.IsDefault ? "true" : "false");
             writer.WriteString(rating.Value.ToString(CultureInfo.InvariantCulture));
             writer.WriteEndElement();
         }
@@ -440,8 +487,10 @@ public abstract class DownloadService
     }
 
 
-    protected string? BaseMixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
+    protected static string? BaseMixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("MixedFlow");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingVideo");
@@ -458,7 +507,7 @@ public abstract class DownloadService
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
         if (videoUid == null)
         {
-            finalFile = SettingsManager.GetInstance().GetIsTranscodingAacToMp3() == AllowStatus.Yes
+            finalFile = SettingsManager.Instance.GetIsTranscodingAacToMp3() == AllowStatus.Yes
                 ? $"{downloading.DownloadBase.FilePath}.mp3"
                 : downloading.AudioCodec.Id == 30251
                     ? $"{downloading.DownloadBase.FilePath}.flac"
@@ -466,7 +515,7 @@ public abstract class DownloadService
         }
 
         // 合并音视频
-        FFMpeg.Instance.MergeVideo(audioUid, videoUid, finalFile);
+        FfmpegProcessor.Instance.MergeVideo(audioUid, videoUid, finalFile);
 
         // 获取文件大小
         if (File.Exists(finalFile))
@@ -483,7 +532,7 @@ public abstract class DownloadService
     }
 
 
-    private string ConcatVideos(DownloadingItem downloading, List<string> videoUids)
+    private static string ConcatVideos(DownloadingItem downloading, List<string> videoUids)
     {
         downloading.DownloadStatusTitle = DictionaryResource.GetString("ConcatVideos");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingVideo");
@@ -491,7 +540,7 @@ public abstract class DownloadService
         downloading.SpeedDisplay = string.Empty;
 
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
-        FFMpeg.Instance.ConcatVideos(videoUids, finalFile, (x) => { });
+        FfmpegProcessor.Instance.ConcatVideos(videoUids, finalFile, (x) => { });
         if (File.Exists(finalFile))
         {
             var info = new FileInfo(finalFile);
@@ -508,6 +557,8 @@ public abstract class DownloadService
 
     protected void BaseParse(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("Parsing");
         downloading.DownloadContent = string.Empty;
@@ -532,21 +583,21 @@ public abstract class DownloadService
         switch (downloading.Downloading.PlayStreamType)
         {
             case PlayStreamType.Video:
-                playUrl = downloading.PlayUrl ?? SettingsManager.GetInstance().GetVideoParseType() switch
+                playUrl = downloading.PlayUrl ?? SettingsManager.Instance.VideoParseType switch
                 {
-                    0 => VideoStream.GetVideoPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
+                    0 => VideoStreamApi.GetVideoPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         cancellationToken: CancellationToken.GetValueOrDefault()),
-                    1 => VideoStream.GetVideoPlayUrlWebPage(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
+                    1 => VideoStreamApi.GetVideoPlayUrlWebPage(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         downloading.DownloadBase.Page, CancellationToken.GetValueOrDefault()),
                     _ => throw new ArgumentException("Invalid video parse type. Valid values are: 0 (WebAPI) or 1 (WebPage).")
                 };
                 break;
             case PlayStreamType.Bangumi:
-                playUrl = downloading.PlayUrl ?? VideoStream.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid,
+                playUrl = downloading.PlayUrl ?? VideoStreamApi.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid,
                     downloading.DownloadBase.Cid, cancellationToken: CancellationToken.GetValueOrDefault());
                 break;
             case PlayStreamType.Cheese:
-                playUrl = downloading.PlayUrl ?? VideoStream.GetCheesePlayUrl(downloading.DownloadBase.Avid,
+                playUrl = downloading.PlayUrl ?? VideoStreamApi.GetCheesePlayUrl(downloading.DownloadBase.Avid,
                     downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                     downloading.DownloadBase.EpisodeId, cancellationToken: CancellationToken.GetValueOrDefault());
                 break;
@@ -563,7 +614,7 @@ public abstract class DownloadService
         downloading.PlayUrl = playUrl;
     }
 
-    private readonly SemaphoreSlim _downloadSemaphore = new(SettingsManager.GetInstance()
+    private readonly SemaphoreSlim _downloadSemaphore = new(SettingsManager.Instance
         .GetMaxCurrentDownloads());
 
     /// <summary>
@@ -579,29 +630,29 @@ public abstract class DownloadService
         {
             try
             {
-                DownloadingTasks.RemoveAll((m) => m.IsCompleted);
+                _downloadingTasks.RemoveAll(task => task.IsCompleted);
 
                 foreach (var downloading in DownloadingList)
                 {
                     if (downloading.Downloading.DownloadStatus is not (DownloadStatus.NotStarted or DownloadStatus.WaitForDownload))
                         continue;
 
-                    await _downloadSemaphore.WaitAsync(CancellationToken.Value);
+                    await _downloadSemaphore.WaitAsync(CancellationToken.Value).ConfigureAwait(true);
                     //这里需要立刻设置状态，否则如果SingleDownload没有及时执行，会重复创建任务
                     downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
                     PersistDownloadingState(downloading);
-                    DownloadingTasks.Add(SingleDownload(downloading).ContinueWith(_ => _downloadSemaphore.Release()));
+                    _downloadingTasks.Add(RunSingleDownloadAsync(downloading));
                 }
+            }
+            catch (ObjectDisposedException e)
+            {
+                Console.PrintLine($"{Tag}.DoWork()资源已释放: {0}", e);
+                LogManager.Error($"{Tag}.DoWork() ObjectDisposedException", e);
             }
             catch (InvalidOperationException e)
             {
                 Console.PrintLine($"{Tag}.DoWork()发生InvalidOperationException异常: {0}", e);
                 LogManager.Error($"{Tag}.DoWork() InvalidOperationException", e);
-            }
-            catch (Exception e)
-            {
-                Console.PrintLine($"{Tag}.DoWork()发生异常: {0}", e);
-                LogManager.Error($"{Tag}.DoWork()", e);
             }
 
             // 判断是否该结束线程，若为true，跳出while循环
@@ -621,14 +672,37 @@ public abstract class DownloadService
             lastDownloadingCount = DownloadingList.Count;
 
             // 降低CPU占用
-            await Task.Delay(500);
+            await Task.Delay(500).ConfigureAwait(true);
         }
 
-        await Task.WhenAny(Task.WhenAll(DownloadingTasks), Task.Delay(30000));
-        foreach (var tsk in DownloadingTasks.FindAll((m) => !m.IsCompleted))
+        await Task.WhenAny(Task.WhenAll(_downloadingTasks), Task.Delay(30000)).ConfigureAwait(true);
+        foreach (var tsk in _downloadingTasks.FindAll(task => !task.IsCompleted))
         {
             Console.PrintLine($"{Tag}.DoWork() 任务结束超时");
             LogManager.Debug($"{Tag}.DoWork()", "任务结束超时");
+        }
+    }
+
+    private static string GetDanmakuLayoutAlgorithmValue(DanmakuLayoutAlgorithm algorithm)
+    {
+        return algorithm switch
+        {
+            DanmakuLayoutAlgorithm.None => "none",
+            DanmakuLayoutAlgorithm.Async => "async",
+            DanmakuLayoutAlgorithm.Sync => "sync",
+            _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, "Unsupported danmaku layout algorithm.")
+        };
+    }
+
+    private async Task RunSingleDownloadAsync(DownloadingItem downloading)
+    {
+        try
+        {
+            await SingleDownload(downloading).ConfigureAwait(true);
+        }
+        finally
+        {
+            _downloadSemaphore.Release();
         }
     }
 
@@ -640,7 +714,7 @@ public abstract class DownloadService
     private async Task SingleDownload(DownloadingItem downloading)
     {
         // 路径
-        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/");
+        downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/", StringComparison.Ordinal);
         var temp = downloading.DownloadBase.FilePath.Split('/');
         //string path = downloading.DownloadBase.FilePath.Replace(temp[temp.Length - 1], "");
         var path = downloading.DownloadBase.FilePath.TrimEnd(temp[temp.Length - 1].ToCharArray());
@@ -652,13 +726,23 @@ public abstract class DownloadService
             {
                 Directory.CreateDirectory(path);
             }
-            catch (Exception e)
+            catch (IOException e)
             {
                 Console.PrintLine(Tag, e.ToString());
                 LogManager.Debug(Tag, e.Message);
 
                 var alertService = new AlertService(DialogService);
-                await alertService.ShowError($"{path}{DictionaryResource.GetString("DirectoryError")}");
+                await alertService.ShowError($"{path}{DictionaryResource.GetString("DirectoryError")}").ConfigureAwait(true);
+
+                return;
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Console.PrintLine(Tag, e.ToString());
+                LogManager.Debug(Tag, e.Message);
+
+                var alertService = new AlertService(DialogService);
+                await alertService.ShowError($"{path}{DictionaryResource.GetString("DirectoryError")}").ConfigureAwait(true);
 
                 return;
             }
@@ -782,7 +866,7 @@ public abstract class DownloadService
                             }
 
                             retryCount++;
-                            await Task.Delay(1000);
+                            await Task.Delay(1000).ConfigureAwait(true);
                         }
 
                         if (downloadStatus.Values.Any(x => x.Result == NullMark))
@@ -818,7 +902,7 @@ public abstract class DownloadService
 
 
                 //nfo
-                if (SettingsManager.GetInstance()
+                if (SettingsManager.Instance
                     .GetVideoContent().GenerateMovieMetadata)
                 {
                     GenerateNfoFile(downloading);
@@ -834,7 +918,7 @@ public abstract class DownloadService
                 // 暂停
                 Pause(downloading);
 
-                List<string>? outputSubtitles = null;
+                IReadOnlyList<string>? outputSubtitles = null;
                 // 如果需要下载字幕
                 if (downloading.DownloadBase.NeedDownloadContent["downloadSubtitle"])
                 {
@@ -944,11 +1028,11 @@ public abstract class DownloadService
                     DownloadingList.Remove(downloading);
 
                     // 下载完成列表排序
-                    var finishedSort = SettingsManager.GetInstance().GetDownloadFinishedSort();
+                    var finishedSort = SettingsManager.Instance.GetDownloadFinishedSort();
                     App.SortDownloadedList(finishedSort);
                 });
                 // _notifyIcon.ShowBalloonTip(DictionaryResource.GetString("DownloadSuccess"), $"{downloadedItem.DownloadBase.Name}", BalloonIcon.Info);
-            });
+            }).ConfigureAwait(true);
         }
         catch (OperationCanceledException e)
         {
@@ -964,6 +1048,8 @@ public abstract class DownloadService
     /// <param name="downloading"></param>
     protected void DownloadFailed(DownloadingItem downloading)
     {
+        ArgumentNullException.ThrowIfNull(downloading);
+
         downloading.DownloadStatusTitle = DictionaryResource.GetString("DownloadFailed");
         downloading.DownloadContent = string.Empty;
         downloading.DownloadingFileSize = string.Empty;
@@ -981,7 +1067,7 @@ public abstract class DownloadService
     /// </summary>
     /// <param name="coverUrl"></param>
     /// <returns></returns>
-    protected string GetImageExtension(string? coverUrl)
+    private static string GetImageExtension(string? coverUrl)
     {
         if (coverUrl == null)
         {
@@ -997,9 +1083,9 @@ public abstract class DownloadService
     /// <summary>
     /// 下载完成后的操作
     /// </summary>
-    protected void AfterDownload()
+    private static void AfterDownload()
     {
-        var operation = SettingsManager.GetInstance().GetAfterDownloadOperation();
+        var operation = SettingsManager.Instance.GetAfterDownloadOperation();
         switch (operation)
         {
             case AfterDownloadOperation.None:
@@ -1030,9 +1116,12 @@ public abstract class DownloadService
     protected async Task BaseEndTask()
     {
         // 结束任务
-        TokenSource?.Cancel();
+        if (TokenSource != null)
+        {
+            await TokenSource.CancelAsync().ConfigureAwait(true);
+        }
 
-        if (WorkTask != null) await WorkTask;
+        if (WorkTask != null) await WorkTask.ConfigureAwait(true);
 
         //先简单等待一下
 
@@ -1065,6 +1154,31 @@ public abstract class DownloadService
         }
     }
 
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (!disposing)
+        {
+            return;
+        }
+
+        TokenSource?.Cancel();
+        TokenSource?.Dispose();
+        TokenSource = null;
+        _downloadSemaphore.Dispose();
+    }
+
     /// <summary>
     /// 启动基本下载服务
     /// </summary>
@@ -1084,11 +1198,10 @@ public abstract class DownloadService
     public abstract string? DownloadAudio(DownloadingItem downloading);
     public abstract string? DownloadVideo(DownloadingItem downloading);
     public abstract string DownloadDanmaku(DownloadingItem downloading);
-    public abstract List<string> DownloadSubtitle(DownloadingItem downloading);
+    public abstract IReadOnlyList<string> DownloadSubtitle(DownloadingItem downloading);
     public abstract string? DownloadCover(DownloadingItem downloading, string? coverUrl, string fileName);
     public abstract string? MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid);
 
     protected abstract void Pause(DownloadingItem downloading);
-
     #endregion
 }

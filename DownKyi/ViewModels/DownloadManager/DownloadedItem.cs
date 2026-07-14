@@ -4,7 +4,7 @@ using DownKyi.Utils;
 
 namespace DownKyi.ViewModels.DownloadManager;
 
-public class DownloadedItem : DownloadBaseItem
+internal class DownloadedItem : DownloadBaseItem
 {
     public DownloadedItem()
     {

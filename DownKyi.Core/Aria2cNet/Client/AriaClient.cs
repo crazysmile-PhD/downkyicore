@@ -12,7 +12,7 @@ namespace DownKyi.Core.Aria2cNet.Client;
 /// </summary>
 public static class AriaClient
 {
-    private static readonly string JSONRPC = "2.0";
+    private const string JSONRPC = "2.0";
     private const string LOCAL_HOST = "http://localhost";
     private const string TOKEN = "downkyi";
     private const int LISTEN_PORT = 35076;
@@ -39,7 +39,7 @@ public static class AriaClient
     /// <param name="dir"></param>
     /// <param name="outFile"></param>
     /// <returns></returns>
-    public static async Task<AriaAddUri> AddUriAsync(List<string> uris, AriaSendOption option, int position = -1)
+    public static async Task<AriaAddUri> AddUriAsync(IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
@@ -59,7 +59,7 @@ public static class AriaClient
             Method = "aria2.addUri",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaAddUri>(ariaSend);
+        return await GetRpcResponseAsync<AriaAddUri>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -89,7 +89,7 @@ public static class AriaClient
     /// <param name="uris"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public static async Task<AriaAddTorrent> AddTorrentAsync(string torrent, List<string> uris, AriaSendOption option, int position = -1)
+    public static async Task<AriaAddTorrent> AddTorrentAsync(string torrent, IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
@@ -110,7 +110,7 @@ public static class AriaClient
             Method = "aria2.addTorrent",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaAddTorrent>(ariaSend);
+        return await GetRpcResponseAsync<AriaAddTorrent>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -134,7 +134,7 @@ public static class AriaClient
     /// <param name="uris"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public static async Task<AriaAddMetalink> AddMetalinkAsync(string metalink, List<string> uris, AriaSendOption option, int position = -1)
+    public static async Task<AriaAddMetalink> AddMetalinkAsync(string metalink, IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
@@ -155,7 +155,7 @@ public static class AriaClient
             Method = "aria2.addMetalink",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaAddMetalink>(ariaSend);
+        return await GetRpcResponseAsync<AriaAddMetalink>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -180,7 +180,7 @@ public static class AriaClient
             Method = "aria2.remove",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaRemove>(ariaSend);
+        return await GetRpcResponseAsync<AriaRemove>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -205,7 +205,7 @@ public static class AriaClient
             Method = "aria2.forceRemove",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaRemove>(ariaSend);
+        return await GetRpcResponseAsync<AriaRemove>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -232,7 +232,7 @@ public static class AriaClient
             Method = "aria2.pause",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaPause>(ariaSend);
+        return await GetRpcResponseAsync<AriaPause>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -253,7 +253,7 @@ public static class AriaClient
             Method = "aria2.pauseAll",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaPause>(ariaSend);
+        return await GetRpcResponseAsync<AriaPause>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -278,7 +278,7 @@ public static class AriaClient
             Method = "aria2.forcePause",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaPause>(ariaSend);
+        return await GetRpcResponseAsync<AriaPause>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -299,7 +299,7 @@ public static class AriaClient
             Method = "aria2.forcePauseAll",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaPause>(ariaSend);
+        return await GetRpcResponseAsync<AriaPause>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -323,7 +323,7 @@ public static class AriaClient
             Method = "aria2.unpause",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaPause>(ariaSend);
+        return await GetRpcResponseAsync<AriaPause>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -344,7 +344,7 @@ public static class AriaClient
             Method = "aria2.unpauseAll",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaPause>(ariaSend);
+        return await GetRpcResponseAsync<AriaPause>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -372,7 +372,7 @@ public static class AriaClient
             Method = "aria2.tellStatus",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaTellStatus>(ariaSend);
+        return await GetRpcResponseAsync<AriaTellStatus>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -396,7 +396,7 @@ public static class AriaClient
             Method = "aria2.getUris",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaGetUris>(ariaSend);
+        return await GetRpcResponseAsync<AriaGetUris>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -420,7 +420,7 @@ public static class AriaClient
             Method = "aria2.getFiles",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaGetFiles>(ariaSend);
+        return await GetRpcResponseAsync<AriaGetFiles>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -445,7 +445,7 @@ public static class AriaClient
             Method = "aria2.getPeers",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaGetPeers>(ariaSend);
+        return await GetRpcResponseAsync<AriaGetPeers>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -469,7 +469,7 @@ public static class AriaClient
             Method = "aria2.getServers",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaGetServers>(ariaSend);
+        return await GetRpcResponseAsync<AriaGetServers>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -491,7 +491,7 @@ public static class AriaClient
             Method = "aria2.tellActive",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaTellStatusList>(ariaSend);
+        return await GetRpcResponseAsync<AriaTellStatusList>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -533,7 +533,7 @@ public static class AriaClient
             Method = "aria2.tellWaiting",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaTellStatusList>(ariaSend);
+        return await GetRpcResponseAsync<AriaTellStatusList>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -565,7 +565,7 @@ public static class AriaClient
             Method = "aria2.tellStopped",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaTellStatusList>(ariaSend);
+        return await GetRpcResponseAsync<AriaTellStatusList>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -596,7 +596,7 @@ public static class AriaClient
             "token:" + token,
             gid,
             pos,
-            how.ToString("G")
+            GetChangePositionValue(how)
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -605,7 +605,19 @@ public static class AriaClient
             Method = "aria2.changePosition",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaChangePosition>(ariaSend);
+        return await GetRpcResponseAsync<AriaChangePosition>(ariaSend).ConfigureAwait(false);
+    }
+
+    internal static string GetChangePositionValue(HowChangePosition how)
+    {
+        return how switch
+        {
+            HowChangePosition.None => nameof(HowChangePosition.None),
+            HowChangePosition.PosSet => "POS_SET",
+            HowChangePosition.PosCurrent => "POS_CUR",
+            HowChangePosition.PosEnd => "POS_END",
+            _ => throw new ArgumentOutOfRangeException(nameof(how), how, "Unknown aria2 change-position mode.")
+        };
     }
 
     /// <summary>
@@ -633,7 +645,7 @@ public static class AriaClient
     /// <param name="addUris"></param>
     /// <param name="position"></param>
     /// <returns></returns>
-    public static async Task<AriaChangeUri> ChangeUriAsync(string gid, int fileIndex, List<string> delUris, List<string> addUris, int position = -1)
+    public static async Task<AriaChangeUri> ChangeUriAsync(string gid, int fileIndex, IReadOnlyList<string> delUris, IReadOnlyList<string> addUris, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
@@ -655,7 +667,7 @@ public static class AriaClient
             Method = "aria2.changePosition",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaChangeUri>(ariaSend);
+        return await GetRpcResponseAsync<AriaChangeUri>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -682,7 +694,7 @@ public static class AriaClient
             Method = "aria2.getOption",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaGetOption>(ariaSend);
+        return await GetRpcResponseAsync<AriaGetOption>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -719,7 +731,7 @@ public static class AriaClient
             Method = "aria2.changeOption",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaChangeOption>(ariaSend);
+        return await GetRpcResponseAsync<AriaChangeOption>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -747,7 +759,7 @@ public static class AriaClient
             Method = "aria2.getGlobalOption",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaGetOption>(ariaSend);
+        return await GetRpcResponseAsync<AriaGetOption>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -783,7 +795,7 @@ public static class AriaClient
             Method = "aria2.changeGlobalOption",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaChangeOption>(ariaSend);
+        return await GetRpcResponseAsync<AriaChangeOption>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -804,7 +816,7 @@ public static class AriaClient
             Method = "aria2.getGlobalStat",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaGetGlobalStat>(ariaSend);
+        return await GetRpcResponseAsync<AriaGetGlobalStat>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -825,7 +837,7 @@ public static class AriaClient
             Method = "aria2.purgeDownloadResult",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaRemove>(ariaSend);
+        return await GetRpcResponseAsync<AriaRemove>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -848,7 +860,7 @@ public static class AriaClient
             Method = "aria2.removeDownloadResult",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaRemove>(ariaSend);
+        return await GetRpcResponseAsync<AriaRemove>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -869,7 +881,7 @@ public static class AriaClient
             Method = "aria2.getVersion",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaVersion>(ariaSend);
+        return await GetRpcResponseAsync<AriaVersion>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -892,7 +904,7 @@ public static class AriaClient
             Method = "aria2.getSessionInfo",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaGetSessionInfo>(ariaSend);
+        return await GetRpcResponseAsync<AriaGetSessionInfo>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -913,7 +925,7 @@ public static class AriaClient
             Method = "aria2.shutdown",
             Params = ariaParams
         };
-        var re = await GetRpcResponseAsync<AriaShutdown>(ariaSend);
+        var re = await GetRpcResponseAsync<AriaShutdown>(ariaSend).ConfigureAwait(false);
         return re;
     }
 
@@ -937,7 +949,7 @@ public static class AriaClient
             Method = "aria2.forceShutdown",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaShutdown>(ariaSend);
+        return await GetRpcResponseAsync<AriaShutdown>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -958,7 +970,7 @@ public static class AriaClient
             Method = "aria2.saveSession",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaSaveSession>(ariaSend);
+        return await GetRpcResponseAsync<AriaSaveSession>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -970,7 +982,7 @@ public static class AriaClient
     /// </summary>
     /// <param name="systemMulticallMathods"></param>
     /// <returns></returns>
-    public static async Task<List<SystemMulticall>> MulticallAsync(List<SystemMulticallMathod> systemMulticallMathods)
+    public static async Task<List<SystemMulticall>> MulticallAsync(IReadOnlyList<SystemMulticallMathod> systemMulticallMathods)
     {
         List<object> ariaParams = new List<object>
         {
@@ -983,7 +995,7 @@ public static class AriaClient
             Method = "system.multicall",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<List<SystemMulticall>>(ariaSend);
+        return await GetRpcResponseAsync<List<SystemMulticall>>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1000,7 +1012,7 @@ public static class AriaClient
             Jsonrpc = JSONRPC,
             Method = "system.listMethods"
         };
-        return await GetRpcResponseAsync<SystemListMethods>(ariaSend);
+        return await GetRpcResponseAsync<SystemListMethods>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1017,7 +1029,7 @@ public static class AriaClient
             Jsonrpc = JSONRPC,
             Method = "system.listNotifications"
         };
-        return await GetRpcResponseAsync<SystemListNotifications>(ariaSend);
+        return await GetRpcResponseAsync<SystemListNotifications>(ariaSend).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1069,7 +1081,7 @@ public static class AriaClient
         await Task.Run(() =>
         {
             result = Request(GetRpcUri(), sendJson);
-        });
+        }).ConfigureAwait(false);
         if (result == null) { return new T(); }
 
         // 反序列化
@@ -1093,10 +1105,10 @@ public static class AriaClient
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, url);
+            using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Content = new StringContent(parameters, Encoding.UTF8, "application/json");
 
-            var response = HttpClient.Send(request);
+            using var response = HttpClient.Send(request);
             response.EnsureSuccessStatusCode();
 
             using var reader = new StreamReader(response.Content.ReadAsStream(), Encoding.UTF8);
@@ -1120,12 +1132,6 @@ public static class AriaClient
         catch (IOException e)
         {
             Console.PrintLine("Request()发生IO异常: {0}", e);
-            LogManager.Error("AriaClient", e);
-            return Request(url, parameters, retry - 1);
-        }
-        catch (Exception e)
-        {
-            Console.PrintLine("Request()发生其他异常: {0}", e);
             LogManager.Error("AriaClient", e);
             return Request(url, parameters, retry - 1);
         }

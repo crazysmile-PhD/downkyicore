@@ -8,7 +8,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 namespace DownKyi.ViewModels;
 
-public sealed class ImmutableObservableCollection<T> : IList<T>, IList, INotifyCollectionChanged, INotifyPropertyChanged
+internal sealed class ImmutableObservableCollection<T> : IList<T>, IList, INotifyCollectionChanged, INotifyPropertyChanged
 {
     private ImmutableList<T> _items;
 
@@ -84,23 +84,9 @@ public sealed class ImmutableObservableCollection<T> : IList<T>, IList, INotifyC
 
     public int Add(object? value)
     {
-#nullable disable
-        T obj;
-        try
-        {
-            obj = (T)value;
-        }
-        catch (InvalidCastException ex)
-        {
-            throw new ArgumentException(
-                $"Value cannot be cast to type {typeof(T).Name}.",
-                nameof(value), ex);
-        }
-        this.Add(obj);
+        Add(CastValue(value));
         return this.Count - 1;
     }
-
-#nullable restore
 
     public void Clear()
     {
@@ -143,20 +129,7 @@ public sealed class ImmutableObservableCollection<T> : IList<T>, IList, INotifyC
         get => this[index];
         set
         {
-#nullable disable
-            T obj;
-            try
-            {
-                obj = (T)value;
-            }
-            catch (InvalidCastException ex)
-            {
-                throw new ArgumentException(
-                    $"Value cannot be cast to type {typeof(T).Name}.",
-                    nameof(value), ex);
-            }
-            this[index] = obj;
-#nullable restore
+            this[index] = CastValue(value);
         }
     }
 
@@ -198,7 +171,7 @@ public sealed class ImmutableObservableCollection<T> : IList<T>, IList, INotifyC
         }
     }
 
-    private bool HasSingleTarget(NotifyCollectionChangedEventHandler? handler)
+    private static bool HasSingleTarget(NotifyCollectionChangedEventHandler? handler)
     {
         if (handler == null)
             return true;
@@ -209,6 +182,23 @@ public sealed class ImmutableObservableCollection<T> : IList<T>, IList, INotifyC
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    private static T CastValue(object? value)
+    {
+        if (value is T item)
+        {
+            return item;
+        }
+
+        if (value is null && default(T) is null)
+        {
+            return default!;
+        }
+
+        throw new ArgumentException(
+            $"Value cannot be cast to type {typeof(T).Name}.",
+            nameof(value));
     }
 
     public void AddRange(IEnumerable<T> items)

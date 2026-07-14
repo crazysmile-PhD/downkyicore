@@ -4,7 +4,7 @@ using Avalonia.Input.Platform;
 
 namespace DownKyi.Utils;
 
-public static class ClipboardManager
+internal static class ClipboardManager
 {
     private static readonly Window Window = App.Current.MainWindow;
     private static readonly IClipboard? Clipboard = Window.Clipboard;
@@ -13,7 +13,7 @@ public static class ClipboardManager
     {
         if (Clipboard != null)
         {
-            await Clipboard.SetTextAsync(text);
+            await Clipboard.SetTextAsync(text).ConfigureAwait(true);
         }
     }
 }

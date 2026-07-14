@@ -4,7 +4,7 @@ using Prism.Dialogs;
 
 namespace DownKyi.PrismExtension.Dialog;
 
-public interface IDialogService : Prism.Dialogs.IDialogService
+internal interface IDialogService : Prism.Dialogs.IDialogService
 {
     public Task ShowDialogAsync(string name, IDialogParameters? parameters, Action<IDialogResult>? callback = null,
         string? windowName = null);

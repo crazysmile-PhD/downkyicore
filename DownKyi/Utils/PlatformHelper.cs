@@ -10,7 +10,7 @@ using Prism.Events;
 
 namespace DownKyi.Utils;
 
-public static class PlatformHelper
+internal static class PlatformHelper
 {
     /// <summary>
     /// 打开文件夹
@@ -27,7 +27,7 @@ public static class PlatformHelper
             return;
         }
 
-        var openFolder = await topLevel.StorageProvider.TryGetFolderFromPathAsync(new Uri(folder));
+        var openFolder = await topLevel.StorageProvider.TryGetFolderFromPathAsync(new Uri(folder)).ConfigureAwait(true);
         if (openFolder == null)
         {
             LogManager.Error(nameof(PlatformHelper), "无法获取文件夹路径");
@@ -35,7 +35,7 @@ public static class PlatformHelper
             return;
         }
 
-        _ = await BclLauncher.LaunchFileAsync(openFolder);
+        _ = await BclLauncher.LaunchFileAsync(openFolder).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -53,7 +53,7 @@ public static class PlatformHelper
             return;
         }
 
-        var openFolder = await topLevel.StorageProvider.TryGetFileFromPathAsync(new Uri(filename));
+        var openFolder = await topLevel.StorageProvider.TryGetFileFromPathAsync(new Uri(filename)).ConfigureAwait(true);
         if (openFolder == null)
         {
             LogManager.Error(nameof(PlatformHelper), "无法获取文件路径");
@@ -61,7 +61,7 @@ public static class PlatformHelper
             return;
         }
 
-        _ = await BclLauncher.LaunchFileAsync(openFolder);
+        _ = await BclLauncher.LaunchFileAsync(openFolder).ConfigureAwait(true);
     }
 
     public static async Task OpenUrl(string url, IEventAggregator? eventAggregator = null)
@@ -74,7 +74,7 @@ public static class PlatformHelper
             return;
         }
 
-        _ = await BclLauncher.LaunchUriAsync(new Uri(url));
+        _ = await BclLauncher.LaunchUriAsync(new Uri(url)).ConfigureAwait(true);
     }
 
     // https://github.com/AvaloniaUI/Avalonia/pull/19713 avalonia12才修复 暂时使用本地hack
@@ -142,7 +142,7 @@ public static class PlatformHelper
 
         private static string EscapeForShell(string input) => Regex
             .Replace(input, "(?=[`~!#&*()|;'<>])", "\\")
-            .Replace("\"", "\\\\\\\"");
+            .Replace("\"", "\\\\\\\"", StringComparison.Ordinal);
 
         private static void ShellExecRaw(string cmd, bool waitForExit = true)
         {

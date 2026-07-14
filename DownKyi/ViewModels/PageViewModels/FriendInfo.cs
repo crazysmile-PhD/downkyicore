@@ -6,9 +6,9 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class FriendInfo : BindableBase
+internal class FriendInfo : BindableBase
 {
-    protected readonly IEventAggregator EventAggregator;
+    protected IEventAggregator EventAggregator { get; }
 
     public FriendInfo(IEventAggregator eventAggregator)
     {

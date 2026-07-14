@@ -7,7 +7,7 @@ using Avalonia.Xaml.Interactivity;
 
 namespace DownKyi.CustomAction;
 
-public class InfiniteScrollBehavior : Behavior<ListBox>
+internal class InfiniteScrollBehavior : Behavior<ListBox>
 {
     private bool _isExecuting;
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using Avalonia.Media.Imaging;
@@ -14,14 +15,14 @@ using FavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
 
 namespace DownKyi.Services;
 
-public class FavoritesService : IFavoritesService
+internal class FavoritesService : IFavoritesService
 {
     /// <summary>
     /// 获取收藏夹元数据
     /// </summary>
     /// <param name="mediaId"></param>
     /// <returns></returns>
-    public Favorites? GetFavorites(long mediaId, CancellationToken cancellationToken = default)
+    public FavoritesPageItem? GetFavorites(long mediaId, CancellationToken cancellationToken = default)
     {
         var favoritesMetaInfo = FavoritesInfo.GetFavoritesInfo(mediaId, cancellationToken);
         if (favoritesMetaInfo == null)
@@ -36,7 +37,7 @@ public class FavoritesService : IFavoritesService
         var upName = favoritesMetaInfo.Upper?.Name ?? string.Empty;
 
         // 为Favorites赋值
-        var favorites = new Favorites();
+        var favorites = new FavoritesPageItem();
         App.PropertyChangeAsync(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -46,7 +47,7 @@ public class FavoritesService : IFavoritesService
 
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(favoritesMetaInfo.Ctime);
-            favorites.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss");
+            favorites.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
 
             favorites.PlayNumber = Format.FormatNumber(favoritesMetaInfo.CntInfo.Play);
             favorites.LikeNumber = Format.FormatNumber(favoritesMetaInfo.CntInfo.ThumbUp);
@@ -100,9 +101,11 @@ public class FavoritesService : IFavoritesService
     /// <param name="result"></param>
     /// <param name="eventAggregator"></param>
     /// <param name="cancellationToken"></param>
-    public void GetFavoritesMediaList(List<FavoritesMedia> medias, ObservableCollection<ViewModels.PageViewModels.FavoritesMedia> result, IEventAggregator eventAggregator,
+    public void GetFavoritesMediaList(IReadOnlyList<FavoritesMedia> medias, ObservableCollection<ViewModels.PageViewModels.FavoritesMedia> result, IEventAggregator eventAggregator,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(medias);
+
         var order = 0;
         var mappedMedias = new List<ViewModels.PageViewModels.FavoritesMedia>();
         foreach (var media in medias)
@@ -124,11 +127,11 @@ public class FavoritesService : IFavoritesService
 
             // 创建时间
             var dateCTime = startTime.AddSeconds(media.Ctime);
-            var ctime = dateCTime.ToString("yyyy-MM-dd");
+            var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
             // 收藏时间
             var dateFavTime = startTime.AddSeconds(media.FavTime);
-            var favTime = dateFavTime.ToString("yyyy-MM-dd");
+            var favTime = dateFavTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
             mappedMedias.Add(new ViewModels.PageViewModels.FavoritesMedia(eventAggregator)
             {
@@ -183,7 +186,7 @@ public class FavoritesService : IFavoritesService
         foreach (var item in favorites)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString() });
+            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString(CultureInfo.CurrentCulture) });
         }
 
         App.PropertyChangeAsync(() =>
@@ -219,7 +222,7 @@ public class FavoritesService : IFavoritesService
         foreach (var item in favorites)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString() });
+            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString(CultureInfo.CurrentCulture) });
         }
 
         App.PropertyChangeAsync(() =>

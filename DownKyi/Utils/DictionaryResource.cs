@@ -1,11 +1,10 @@
 using System.Collections.Generic;
-using Avalonia;
 using Avalonia.Media;
 using Avalonia.Threading;
 
 namespace DownKyi.Utils;
 
-public static class DictionaryResource
+internal static class DictionaryResource
 {
     /// <summary>
     /// 从资源获取颜色的16进制字符串
@@ -17,7 +16,10 @@ public static class DictionaryResource
         var obj = Dispatcher.UIThread.Invoke(() =>
         {
             object? obj = null;
-            Application.Current?.TryGetResource(resourceKey, Application.Current.ActualThemeVariant, out obj);
+            Avalonia.Application.Current?.TryGetResource(
+                resourceKey,
+                Avalonia.Application.Current.ActualThemeVariant,
+                out obj);
             return obj;
         });
         return obj == null ? "#00000000" : ((Color)obj).ToString();
@@ -33,7 +35,10 @@ public static class DictionaryResource
         var obj = Dispatcher.UIThread.Invoke(() =>
         {
             object? obj = null;
-            Application.Current?.TryGetResource(resourceKey, Application.Current.ActualThemeVariant, out obj);
+            Avalonia.Application.Current?.TryGetResource(
+                resourceKey,
+                Avalonia.Application.Current.ActualThemeVariant,
+                out obj);
             return obj;
         });
         return obj == null ? "" : (string)obj;
@@ -44,7 +49,10 @@ public static class DictionaryResource
         var obj = Dispatcher.UIThread.Invoke(() =>
         {
             object? obj = null;
-            Application.Current?.TryGetResource(resourceKey, Application.Current.ActualThemeVariant, out obj);
+            Avalonia.Application.Current?.TryGetResource(
+                resourceKey,
+                Avalonia.Application.Current.ActualThemeVariant,
+                out obj);
             return obj;
         });
         return obj is T value

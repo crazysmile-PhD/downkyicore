@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views;
 
-public partial class ViewDownloadManager : UserControl
+internal partial class ViewDownloadManager : UserControl
 {
     public ViewDownloadManager()
     {

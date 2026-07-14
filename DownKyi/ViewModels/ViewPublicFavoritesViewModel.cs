@@ -20,11 +20,12 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewPublicFavoritesViewModel : ViewModelBase
+internal class ViewPublicFavoritesViewModel : ViewModelBase
 {
     public const string Tag = "PagePublicFavorites";
 
-    private CancellationTokenSource _tokenSource = null!;
+    private readonly IFavoritesService _favoritesService;
+    private CancellationTokenSource? _tokenSource;
 
     #region 页面属性申明
 
@@ -52,9 +53,9 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _downloadManage, value);
     }
 
-    private Favorites _favorites = null!;
+    private FavoritesPageItem _favorites = null!;
 
-    public Favorites Favorites
+    public FavoritesPageItem Favorites
     {
         get => _favorites;
         set => SetProperty(ref _favorites, value);
@@ -65,7 +66,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     public RangeObservableCollection<FavoritesMedia> FavoritesMedias
     {
         get => _favoritesMedias;
-        set => SetProperty(ref _favoritesMedias, value);
+        private set => SetProperty(ref _favoritesMedias, value);
     }
 
     private bool _contentVisibility;
@@ -127,10 +128,18 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
 
     #endregion
 
-    public ViewPublicFavoritesViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(
-        eventAggregator)
+    public ViewPublicFavoritesViewModel(IEventAggregator eventAggregator, IDialogService dialogService)
+        : this(eventAggregator, dialogService, new FavoritesService())
+    {
+    }
+
+    internal ViewPublicFavoritesViewModel(
+        IEventAggregator eventAggregator,
+        IDialogService dialogService,
+        IFavoritesService favoritesService) : base(eventAggregator)
     {
         DialogService = dialogService;
+        _favoritesService = favoritesService;
 
         #region 属性初始化
 
@@ -226,7 +235,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     private async Task ExecuteCopyCoverUrlCommand()
     {
         // 复制封面url到剪贴板
-        await ClipboardManager.SetText(Favorites.CoverUrl);
+        await ClipboardManager.SetText(Favorites.CoverUrl).ConfigureAwait(true);
         LogManager.Info(Tag, "复制封面url到剪贴板");
     }
 
@@ -279,7 +288,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -307,9 +316,9 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(videoInfoService);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -348,11 +357,11 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     /// <summary>
     /// 更新页面
     /// </summary>
-    private void UpdateView(IFavoritesService favoritesService, long favoritesId, CancellationToken cancellationToken)
+    private void UpdateView(long favoritesId, CancellationToken cancellationToken)
     {
         LoadingVisibility = true;
 
-        var favorites = favoritesService.GetFavorites(favoritesId, cancellationToken);
+        var favorites = _favoritesService.GetFavorites(favoritesId, cancellationToken);
         if (favorites == null)
         {
             LogManager.Debug(Tag, "Favorites is null.");
@@ -383,7 +392,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
             MediaNoDataVisibility = false;
         }
 
-        favoritesService.GetFavoritesMediaList(medias, FavoritesMedias, EventAggregator, cancellationToken);
+        _favoritesService.GetFavoritesMediaList(medias, FavoritesMedias, EventAggregator, cancellationToken);
     }
 
     /// <summary>
@@ -392,6 +401,7 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
         RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync));
     }
@@ -408,16 +418,28 @@ public class ViewPublicFavoritesViewModel : ViewModelBase
             }
 
             InitView();
+            var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
             await Task.Run(() =>
             {
-                var cancellationToken = _tokenSource.Token;
-
-                UpdateView(new FavoritesService(), parameter, cancellationToken);
-            }, (_tokenSource = new CancellationTokenSource()).Token);
+                UpdateView(parameter, cancellationToken);
+            }, cancellationToken).ConfigureAwait(true);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
         {
             LogManager.Error(nameof(ViewPublicFavoritesViewModel), e);
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _tokenSource?.Cancel();
+            _tokenSource?.Dispose();
+            _tokenSource = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

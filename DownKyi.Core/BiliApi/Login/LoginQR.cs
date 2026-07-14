@@ -47,12 +47,20 @@ public static class LoginQr
     {
         try
         {
-            var loginUrl = GetLoginUrl()?.Data?.Url;
-            return GetLoginQrCode(loginUrl);
+            var loginAddress = GetLoginUrl()?.Data?.QrCodeAddress;
+            return Uri.TryCreate(loginAddress, UriKind.Absolute, out var loginUri)
+                ? GetLoginQrCode(loginUri)
+                : null;
         }
-        catch (Exception e)
+        catch (ArgumentException e)
         {
             Console.PrintLine("GetLoginQrCode()发生异常: {0}", e);
+            LogManager.Error("LoginQR", e);
+            return null;
+        }
+        catch (InvalidOperationException e)
+        {
+            Console.PrintLine("GetLoginQrCode()状态无效: {0}", e);
             LogManager.Error("LoginQR", e);
             return null;
         }
@@ -61,13 +69,13 @@ public static class LoginQr
     /// <summary>
     /// 根据输入url生成二维码
     /// </summary>
-    /// <param name="url"></param>
+    /// <param name="loginUri"></param>
     /// <returns></returns>
-    public static Bitmap? GetLoginQrCode(string? url)
+    public static Bitmap? GetLoginQrCode(Uri? loginUri)
     {
-        if (url == null) return null;
+        if (loginUri == null) return null;
         // 设置的参数影响app能否成功扫码
-        var qrCode = QrCode.EncodeQrCode(url, 11, 10, null, 0, 0, false);
+        var qrCode = QrCode.EncodeQrCode(loginUri.AbsoluteUri, 11, 10, null, 0, 0, false);
 
         return qrCode;
     }

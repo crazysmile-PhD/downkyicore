@@ -43,10 +43,15 @@ public class LogInfo
     /// <summary>
     /// 请求路径
     /// </summary>
-    public string RequestUrl { get; set; } = string.Empty;
+    public string RequestAddress { get; set; } = string.Empty;
 
     /// <summary>
     /// 客户端代理
     /// </summary>
     public string UserAgent { get; set; } = string.Empty;
+}
+
+public sealed class LogEventArgs(LogInfo info) : EventArgs
+{
+    public LogInfo Info { get; } = info;
 }

@@ -7,7 +7,7 @@ namespace DownKyi.PrismExtension.Common;
 /// <summary>
 /// Helper class for MVVM.
 /// </summary>
-public static class MvvmHelpers
+internal static class MvvmHelpers
 {
     /// <summary>
     /// Sets the AutoWireViewModel property to true for the <paramref name="viewOrViewModel"/>.
@@ -41,6 +41,8 @@ public static class MvvmHelpers
     /// <param name="action">The <see cref="Action{T}"/> to perform.</param>
     public static void ViewAndViewModelAction<T>(object view, Action<T> action) where T : class
     {
+        ArgumentNullException.ThrowIfNull(action);
+
         if (view is T viewAsT)
             action(viewAsT);
 

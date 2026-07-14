@@ -3,7 +3,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-public class VideoQuality : BindableBase
+internal class VideoQuality : BindableBase
 {
     private int _quality;
 
@@ -21,12 +21,12 @@ public class VideoQuality : BindableBase
         set => SetProperty(ref _qualityFormat, value);
     }
 
-    private List<string> _videoCodecList = new();
+    private IList<string> _videoCodecList = new List<string>();
 
-    public List<string> VideoCodecList
+    public IList<string> VideoCodecList
     {
         get => _videoCodecList;
-        set => SetProperty(ref _videoCodecList, value);
+        internal set => SetProperty(ref _videoCodecList, value);
     }
 
     private string _selectedVideoCodec = string.Empty;

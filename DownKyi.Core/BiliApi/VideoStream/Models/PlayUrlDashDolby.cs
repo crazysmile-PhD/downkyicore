@@ -7,5 +7,5 @@ public class PlayUrlDashDolby : BaseModel
 {
     // type
     [JsonProperty("audio")]
-    public List<PlayUrlDashVideo> Audio { get; set; } = new();
+    public IReadOnlyList<PlayUrlDashVideo> Audio { get; set; } = Array.Empty<PlayUrlDashVideo>();
 }

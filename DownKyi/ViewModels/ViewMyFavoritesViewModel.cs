@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,14 +25,14 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewMyFavoritesViewModel : ViewModelBase
+internal class ViewMyFavoritesViewModel : ViewModelBase
 {
     public const string Tag = "PageMyFavorites";
 
     //private readonly IDialogService dialogService;
 
-    private CancellationTokenSource _tokenSource1 = null!;
-    private CancellationTokenSource _tokenSource2 = null!;
+    private CancellationTokenSource? _tokenSource1;
+    private CancellationTokenSource? _tokenSource2;
 
     private long _mid = -1;
 
@@ -132,7 +134,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
     public RangeObservableCollection<TabHeader> TabHeaders
     {
         get => _tabHeaders;
-        set => SetProperty(ref _tabHeaders, value);
+        private set => SetProperty(ref _tabHeaders, value);
     }
 
     private int _selectTabId;
@@ -164,7 +166,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
     public RangeObservableCollection<FavoritesMedia> Medias
     {
         get => _medias;
-        set => SetProperty(ref _medias, value);
+        private set => SetProperty(ref _medias, value);
     }
 
     private bool _isSelectAll;
@@ -274,9 +276,9 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         MediaContentVisibility = false;
 
         // 页面选择
-        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle) / VideoNumberInPage));
-        Pager.CurrentChanged += OnCurrentChanged_Pager;
-        Pager.CountChanged += OnCountChanged_Pager;
+        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
     }
 
@@ -364,7 +366,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -390,9 +392,9 @@ public class ViewMyFavoritesViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(videoInfoService);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -405,21 +407,19 @@ public class ViewMyFavoritesViewModel : ViewModelBase
             : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
     }
 
-    private void OnCountChanged_Pager(int count)
+    private void OnCountChangedPager(object? sender, EventArgs e)
     {
     }
 
-    private bool OnCurrentChanged_Pager(int old, int current)
+    private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
     {
         if (!IsEnabled)
         {
-            //Pager.Current = old;
-            return false;
+            e.Cancel = true;
+            return;
         }
 
-        RunFireAndForget(UpdateFavoritesMediaListAsync(current), nameof(UpdateFavoritesMediaListAsync));
-
-        return true;
+        RunFireAndForget(UpdateFavoritesMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateFavoritesMediaListAsync));
     }
 
     private async Task UpdateFavoritesMediaListAsync(int current)
@@ -437,11 +437,10 @@ public class ViewMyFavoritesViewModel : ViewModelBase
             IsEnabled = false;
 
             var tab = TabHeaders[SelectTabId];
+            var cancellationToken = ReplaceCancellationSource(ref _tokenSource2);
 
             await Task.Run(() =>
             {
-                var cancellationToken = _tokenSource2.Token;
-
                 var medias = FavoritesResource.GetFavoritesMedia(tab.Id, current, VideoNumberInPage, cancellationToken);
                 if (medias == null || medias.Count == 0)
                 {
@@ -457,9 +456,10 @@ public class ViewMyFavoritesViewModel : ViewModelBase
 
                 var service = new FavoritesService();
                 service.GetFavoritesMediaList(medias, Medias, EventAggregator, cancellationToken);
-            }, (_tokenSource2 = new CancellationTokenSource()).Token);
+            }, cancellationToken).ConfigureAwait(true);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
         {
             LogManager.Error(nameof(ViewMyFavoritesViewModel), e);
         }
@@ -499,6 +499,7 @@ public class ViewMyFavoritesViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
         RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync));
     }
@@ -515,15 +516,14 @@ public class ViewMyFavoritesViewModel : ViewModelBase
             }
 
             InitView();
+            var cancellationToken = ReplaceCancellationSource(ref _tokenSource1);
 
             await Task.Run(() =>
             {
-                var cancellationToken = _tokenSource1.Token;
-
                 var service = new FavoritesService();
                 service.GetCreatedFavorites(_mid, TabHeaders, cancellationToken);
                 service.GetCollectedFavorites(_mid, TabHeaders, cancellationToken);
-            }, (_tokenSource1 = new CancellationTokenSource()).Token);
+            }, cancellationToken).ConfigureAwait(true);
 
             if (TabHeaders.Count == 0)
             {
@@ -543,14 +543,30 @@ public class ViewMyFavoritesViewModel : ViewModelBase
 
             // 页面选择
             Pager = new CustomPagerViewModel(1,
-                (int)Math.Ceiling(double.Parse(TabHeaders[0].SubTitle) / VideoNumberInPage));
-            Pager.CurrentChanged += OnCurrentChanged_Pager;
-            Pager.CountChanged += OnCountChanged_Pager;
+            (int)Math.Ceiling(double.Parse(TabHeaders[0].SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
+            Pager.CurrentChanging += OnCurrentChangedPager;
+            Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
         {
             LogManager.Error(nameof(ViewMyFavoritesViewModel), e);
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _tokenSource1?.Cancel();
+            _tokenSource1?.Dispose();
+            _tokenSource1 = null;
+            _tokenSource2?.Cancel();
+            _tokenSource2?.Dispose();
+            _tokenSource2 = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

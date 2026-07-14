@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using DownKyi.Events;
 using DownKyi.Utils;
@@ -9,7 +10,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
 {
-    public class ViewToolboxViewModel : ViewModelBase
+    internal class ViewToolboxViewModel : ViewModelBase
     {
         public const string Tag = "PageToolbox";
 
@@ -17,9 +18,9 @@ namespace DownKyi.ViewModels
 
         #region 页面属性申明
 
-        private List<TabHeader> _tabHeaders = new();
+        private IReadOnlyList<TabHeader> _tabHeaders = Array.Empty<TabHeader>();
 
-        public List<TabHeader> TabHeaders
+        public IReadOnlyList<TabHeader> TabHeaders
         {
             get => _tabHeaders;
             set => SetProperty(ref _tabHeaders, value);

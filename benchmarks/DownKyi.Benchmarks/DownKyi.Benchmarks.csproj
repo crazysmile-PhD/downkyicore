@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\DownKyi.Core\DownKyi.Core.csproj" />
+    <ProjectReference Include="..\DownKyi.BenchmarkCases\DownKyi.BenchmarkCases.csproj" />
   </ItemGroup>
 
 </Project>

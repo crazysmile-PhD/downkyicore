@@ -3,7 +3,6 @@ using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 
 namespace DownKyi.Core.Tests;
 
-[Collection(WebClientTestCollection.Name)]
 public sealed class WebClientTests : IDisposable
 {
     public WebClientTests()
@@ -12,7 +11,7 @@ public sealed class WebClientTests : IDisposable
     }
 
     [Fact]
-    public void RequestWeb_ThrowsClearHttpRequestException_WhenRetriesAreExhausted()
+    public void RequestWebThrowsClearHttpRequestExceptionWhenRetriesAreExhausted()
     {
         var calls = 0;
         BiliWebClient.SendOverrideForTests = (_, _) =>
@@ -28,12 +27,12 @@ public sealed class WebClientTests : IDisposable
                 cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(1, calls);
-        Assert.Contains("Request failed after 1 attempts", exception.Message);
-        Assert.Contains("https://example.com/getLogin", exception.Message);
+        Assert.Contains("Request failed after 1 attempts", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("https://example.com/getLogin", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void RequestWeb_DoesNotRetry_WhenCancellationIsAlreadyRequested()
+    public void RequestWebDoesNotRetryWhenCancellationIsAlreadyRequested()
     {
         var calls = 0;
         using var cancellationTokenSource = new CancellationTokenSource();
@@ -58,7 +57,7 @@ public sealed class WebClientTests : IDisposable
     }
 
     [Fact]
-    public void RequestWeb_DoesNotRetry_WhenSendIsCanceled()
+    public void RequestWebDoesNotRetryWhenSendIsCanceled()
     {
         var calls = 0;
         BiliWebClient.SendOverrideForTests = (_, _) =>
@@ -77,7 +76,7 @@ public sealed class WebClientTests : IDisposable
     }
 
     [Fact]
-    public void BuildRequestUrl_AppendsEncodedQueryParameters()
+    public void BuildRequestUrlAppendsEncodedQueryParameters()
     {
         var url = BiliWebClient.BuildRequestUrlForTests(
             "https://example.com/api?existing=true",
@@ -89,6 +88,15 @@ public sealed class WebClientTests : IDisposable
             });
 
         Assert.Equal("https://example.com/api?existing=true&keyword=a+b&empty=", url);
+    }
+
+    [Fact]
+    public void RequestWebRejectsNullUrl()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            BiliWebClient.RequestWeb(
+                null!,
+                cancellationToken: TestContext.Current.CancellationToken));
     }
 
     public void Dispose()

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using DownKyi.Core.BiliApi.Users;
@@ -16,7 +18,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Friends;
 
-public class ViewFollowingViewModel : ViewModelBase
+internal class ViewFollowingViewModel : ViewModelBase
 {
     public const string Tag = "PageFriendsFollowing";
 
@@ -105,7 +107,7 @@ public class ViewFollowingViewModel : ViewModelBase
     public ObservableCollection<TabHeader> TabHeaders
     {
         get => _tabHeaders;
-        set => SetProperty(ref _tabHeaders, value);
+        private set => SetProperty(ref _tabHeaders, value);
     }
 
     private int _selectTabId;
@@ -137,7 +139,7 @@ public class ViewFollowingViewModel : ViewModelBase
     public ObservableCollection<FriendInfo> Contents
     {
         get => _contents;
-        set => SetProperty(ref _contents, value);
+        private set => SetProperty(ref _contents, value);
     }
 
     #endregion
@@ -180,9 +182,9 @@ public class ViewFollowingViewModel : ViewModelBase
         }
 
         // 页面选择
-        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle) / NumberInPage));
-        Pager.CurrentChanged += OnCurrentChanged_Pager;
-        Pager.CountChanged += OnCountChanged_Pager;
+        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / NumberInPage));
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
     }
 
@@ -222,36 +224,36 @@ public class ViewFollowingViewModel : ViewModelBase
     {
         TabHeaders.Clear();
 
-        var userInfo = SettingsManager.GetInstance().GetUserInfo();
+        var userInfo = SettingsManager.Instance.GetUserInfo();
         if (userInfo != null && userInfo.Mid == _mid)
         {
             // 用户的关系状态数
             UserRelationStat? relationStat = null;
-            await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(_mid); });
+            await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(_mid); }).ConfigureAwait(true);
             if (relationStat != null)
             {
                 TabHeaders.Add(new TabHeader
                 {
                     Id = -1,
                     Title = DictionaryResource.GetString("AllFollowing"),
-                    SubTitle = relationStat.Following.ToString()
+                    SubTitle = relationStat.Following.ToString(CultureInfo.CurrentCulture)
                 });
                 TabHeaders.Add(new TabHeader
                 {
                     Id = -2,
                     Title = DictionaryResource.GetString("WhisperFollowing"),
-                    SubTitle = relationStat.Whisper.ToString()
+                    SubTitle = relationStat.Whisper.ToString(CultureInfo.CurrentCulture)
                 });
             }
 
             // 用户的关注分组
-            List<FollowingGroup>? followingGroup = null;
-            await Task.Run(() => { followingGroup = UserRelation.GetFollowingGroup(); });
+            IReadOnlyList<FollowingGroup>? followingGroup = null;
+            await Task.Run(() => { followingGroup = UserRelation.GetFollowingGroup(); }).ConfigureAwait(true);
             if (followingGroup != null)
             {
                 foreach (var tag in followingGroup)
                 {
-                    TabHeaders.Add(new TabHeader { Id = tag.TagId, Title = tag.Name, SubTitle = tag.Count.ToString() });
+                    TabHeaders.Add(new TabHeader { Id = tag.TagId, Title = tag.Name, SubTitle = tag.Count.ToString(CultureInfo.CurrentCulture) });
                 }
             }
         }
@@ -259,14 +261,14 @@ public class ViewFollowingViewModel : ViewModelBase
         {
             // 用户的关系状态数
             UserRelationStat? relationStat = null;
-            await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(_mid); });
+            await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(_mid); }).ConfigureAwait(true);
             if (relationStat != null)
             {
                 TabHeaders.Add(new TabHeader
                 {
                     Id = -1,
                     Title = DictionaryResource.GetString("AllFollowing"),
-                    SubTitle = relationStat.Following.ToString()
+                    SubTitle = relationStat.Following.ToString(CultureInfo.CurrentCulture)
                 });
             }
         }
@@ -275,7 +277,7 @@ public class ViewFollowingViewModel : ViewModelBase
         LoadingVisibility = false;
     }
 
-    private void LoadContent(List<RelationFollowInfo> contents)
+    private void LoadContent(IReadOnlyList<RelationFollowInfo> contents)
     {
         InnerContentVisibility = true;
         ContentLoadingVisibility = false;
@@ -288,7 +290,7 @@ public class ViewFollowingViewModel : ViewModelBase
 
     private async Task<bool> LoadAllFollowings(int pn, int ps)
     {
-        List<RelationFollowInfo>? contents = null;
+        IReadOnlyList<RelationFollowInfo>? contents = null;
         await Task.Run(() =>
         {
             var data = UserRelation.GetFollowings(_mid, pn, ps);
@@ -303,14 +305,14 @@ public class ViewFollowingViewModel : ViewModelBase
             }
 
             LoadContent(contents);
-        });
+        }).ConfigureAwait(true);
 
         return contents != null;
     }
 
     private async Task<bool> LoadWhispers(int pn, int ps)
     {
-        List<RelationFollowInfo>? contents = null;
+        IReadOnlyList<RelationFollowInfo>? contents = null;
         await Task.Run(() =>
         {
             contents = UserRelation.GetWhispers(pn, ps);
@@ -320,14 +322,14 @@ public class ViewFollowingViewModel : ViewModelBase
             }
 
             LoadContent(contents);
-        });
+        }).ConfigureAwait(true);
 
         return contents != null;
     }
 
     private async Task<bool> LoadFollowingGroupContent(long tagId, int pn, int ps)
     {
-        List<RelationFollowInfo>? contents = null;
+        IReadOnlyList<RelationFollowInfo>? contents = null;
         await Task.Run(() =>
         {
             contents = UserRelation.GetFollowingGroupContent(tagId, pn, ps);
@@ -337,7 +339,7 @@ public class ViewFollowingViewModel : ViewModelBase
             }
 
             LoadContent(contents);
-        });
+        }).ConfigureAwait(true);
 
         return contents != null;
     }
@@ -357,9 +359,9 @@ public class ViewFollowingViewModel : ViewModelBase
 
         var isSucceed = tab.Id switch
         {
-            -1 => await LoadAllFollowings(current, NumberInPage),
-            -2 => await LoadWhispers(current, NumberInPage),
-            _ => await LoadFollowingGroupContent(tab.Id, current, NumberInPage)
+            -1 => await LoadAllFollowings(current, NumberInPage).ConfigureAwait(true),
+            -2 => await LoadWhispers(current, NumberInPage).ConfigureAwait(true),
+            _ => await LoadFollowingGroupContent(tab.Id, current, NumberInPage).ConfigureAwait(true)
         };
 
         if (isSucceed)
@@ -378,21 +380,19 @@ public class ViewFollowingViewModel : ViewModelBase
         IsEnabled = true;
     }
 
-    private void OnCountChanged_Pager(int count)
+    private void OnCountChangedPager(object? sender, EventArgs e)
     {
     }
 
-    private bool OnCurrentChanged_Pager(int old, int current)
+    private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
     {
         if (!IsEnabled)
         {
-            //Pager.Current = old;
-            return false;
+            e.Cancel = true;
+            return;
         }
 
-        RunFireAndForget(UpdateContentAsync(current), nameof(UpdateContentAsync));
-
-        return true;
+        RunFireAndForget(UpdateContentAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateContentAsync));
     }
 
     /// <summary>
@@ -401,6 +401,7 @@ public class ViewFollowingViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         // 传入mid
@@ -422,7 +423,7 @@ public class ViewFollowingViewModel : ViewModelBase
             {
                 InitView();
                 // 初始化左侧列表
-                await InitLeftTable();
+                await InitLeftTable().ConfigureAwait(true);
                 // 进入页面时显示的设置项
                 SelectTabId = 0;
             }

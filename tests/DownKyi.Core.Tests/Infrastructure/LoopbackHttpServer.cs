@@ -55,7 +55,8 @@ internal sealed class LoopbackHttpServer : IAsyncDisposable
 
     private async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
     {
-        await using var stream = client.GetStream();
+        var stream = client.GetStream();
+        await using var streamLifetime = stream.ConfigureAwait(false);
         using var reader = new StreamReader(
             stream,
             Encoding.ASCII,
@@ -128,6 +129,7 @@ internal sealed class LoopbackHttpServer : IAsyncDisposable
         }
         finally
         {
+            _listener.Dispose();
             _shutdown.Dispose();
         }
     }

@@ -23,7 +23,7 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewMyHistoryViewModel : ViewModelBase
+internal class ViewMyHistoryViewModel : ViewModelBase
 {
     public const string Tag = "PageMyHistory";
 
@@ -72,7 +72,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
     public RangeObservableCollection<HistoryMedia> Medias
     {
         get => _medias;
-        set => SetProperty(ref _medias, value);
+        private set => SetProperty(ref _medias, value);
     }
 
     private bool _isSelectAll;
@@ -248,14 +248,14 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
     public DownKyiAsyncDelegateCommand LoadMoreCommand => new(ExecuteLoadMoreCommand);
 
-    private long _nextMax = 0;
+    private long _nextMax;
 
-    private long _nextViewAt = 0;
+    private long _nextViewAt;
 
     private async Task ExecuteLoadMoreCommand()
     {
         if (NoDataVisibility || _isLoadingPage || !_hasMoreHistory) return;
-        await LoadHistoryPageAsync(reset: false, _loadCancellation?.Token ?? CancellationToken.None);
+        await LoadHistoryPageAsync(reset: false, _loadCancellation?.Token ?? CancellationToken.None).ConfigureAwait(true);
     }
     /// <summary>
     /// 添加所有视频到下载列表事件
@@ -272,7 +272,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
         var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
 
         // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService);
+        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
 
         // 视频计数
         var i = 0;
@@ -310,9 +310,9 @@ public class ViewMyHistoryViewModel : ViewModelBase
                 addToDownloadService.GetVideo();
                 addToDownloadService.ParseVideo(service);
                 // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory);
+                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
             }
-        });
+        }).ConfigureAwait(true);
 
         if (directory == null)
         {
@@ -327,14 +327,17 @@ public class ViewMyHistoryViewModel : ViewModelBase
 
     private async Task UpdateHistoryMediaListAsync()
     {
-        _loadCancellation?.Cancel();
+        if (_loadCancellation != null)
+        {
+            await _loadCancellation.CancelAsync().ConfigureAwait(true);
+        }
         _loadCancellation?.Dispose();
         _loadCancellation = new CancellationTokenSource();
 
         _nextMax = 0;
         _nextViewAt = 0;
         _hasMoreHistory = true;
-        await LoadHistoryPageAsync(reset: true, _loadCancellation.Token);
+        await LoadHistoryPageAsync(reset: true, _loadCancellation.Token).ConfigureAwait(true);
     }
 
     private async Task LoadHistoryPageAsync(bool reset, CancellationToken cancellationToken)
@@ -347,8 +350,8 @@ public class ViewMyHistoryViewModel : ViewModelBase
         try
         {
             var result = await Task.Run(() =>
-                History.GetHistory(_nextMax, _nextViewAt, VideoNumberInPage, cancellationToken: cancellationToken),
-                cancellationToken);
+                HistoryApi.GetHistory(_nextMax, _nextViewAt, VideoNumberInPage, cancellationToken: cancellationToken),
+                cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
 
             var medias = result?.List?
@@ -415,6 +418,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
@@ -449,7 +453,7 @@ public class ViewMyHistoryViewModel : ViewModelBase
         history.History.Business switch
         {
             "archive" => $"https://www.bilibili.com/video/{history.History.Bvid}",
-            "pgc" => history.Uri,
+            "pgc" => history.Address,
             _ => "https://www.bilibili.com"
         };
 
@@ -504,5 +508,17 @@ public class ViewMyHistoryViewModel : ViewModelBase
             PartdescVisibility = !string.IsNullOrEmpty(history.NewDesc),
             UpAndTagVisibility = history.History.Business == "archive"
         };
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _loadCancellation?.Cancel();
+            _loadCancellation?.Dispose();
+            _loadCancellation = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

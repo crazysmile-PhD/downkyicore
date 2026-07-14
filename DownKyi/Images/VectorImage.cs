@@ -2,7 +2,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.Images;
 
-public class VectorImage : BindableBase
+internal class VectorImage : BindableBase
 {
     private double _width;
 

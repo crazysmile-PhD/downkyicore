@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
@@ -18,11 +19,11 @@ using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-public class ViewMySpaceViewModel : ViewModelBase
+internal class ViewMySpaceViewModel : ViewModelBase
 {
     public const string Tag = "PageMySpace";
 
-    private CancellationTokenSource _tokenSource = null!;
+    private CancellationTokenSource? _tokenSource;
 
     // mid
     private long _mid = -1;
@@ -258,7 +259,7 @@ public class ViewMySpaceViewModel : ViewModelBase
     public ObservableCollection<SpaceItem> StatusList
     {
         get => _statusList;
-        set => SetProperty(ref _statusList, value);
+        private set => SetProperty(ref _statusList, value);
     }
 
     private ObservableCollection<SpaceItem> _packageList = new();
@@ -266,7 +267,7 @@ public class ViewMySpaceViewModel : ViewModelBase
     public ObservableCollection<SpaceItem> PackageList
     {
         get => _packageList;
-        set => SetProperty(ref _packageList, value);
+        private set => SetProperty(ref _packageList, value);
     }
 
     private int _selectedStatus = -1;
@@ -529,11 +530,10 @@ public class ViewMySpaceViewModel : ViewModelBase
         string? headerUri = null;
         Uri? sexUri = null;
         Uri? levelUri = null;
+        var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
 
         await Task.Run(() =>
         {
-            var cancellationToken = _tokenSource.Token;
-
             // 背景图片
             var spaceSettings = Core.BiliApi.Users.UserSpace.GetSpaceSettings(_mid);
             toutuUri = spaceSettings != null ? $"https://i0.hdslb.com/{spaceSettings.Toutu.Limg}" : "avares://DownKyi/Resources/backgound/9-绿荫秘境.png";
@@ -592,7 +592,7 @@ public class ViewMySpaceViewModel : ViewModelBase
                 MaxExp = myInfo.LevelExp.NextExp;
                 ExpProgress = myInfo.LevelExp.CurrentExp;
                 // 节操值
-                StatusList[4].Subtitle = myInfo.Moral.ToString();
+                StatusList[4].Subtitle = myInfo.Moral.ToString(CultureInfo.CurrentCulture);
                 // 封禁状态                   
                 if (myInfo.Silence == 0)
                 {
@@ -614,7 +614,7 @@ public class ViewMySpaceViewModel : ViewModelBase
             {
                 isCancel = true;
             }
-        }, (_tokenSource = new CancellationTokenSource()).Token);
+        }, cancellationToken).ConfigureAwait(true);
 
         // 是否该结束线程
         if (isCancel)
@@ -664,23 +664,23 @@ public class ViewMySpaceViewModel : ViewModelBase
                 ContentVisibility = true;
 
                 // 硬币
-                Coin = navData.Money == 0 ? "0.0" : navData.Money.ToString("F1");
+                Coin = navData.Money == 0 ? "0.0" : navData.Money.ToString("F1", CultureInfo.CurrentCulture);
                 // B币
-                Money = navData.Wallet.BcoinBalance == 0 ? "0.0" : navData.Wallet.BcoinBalance.ToString("F1");
+                Money = navData.Wallet.BcoinBalance == 0 ? "0.0" : navData.Wallet.BcoinBalance.ToString("F1", CultureInfo.CurrentCulture);
             }
 
             //用户的关系状态数
             var relationStat = UserStatus.GetUserRelationStat(_mid);
             if (relationStat == null) return;
             // 关注数
-            StatusList[0].Subtitle = relationStat.Following.ToString();
+            StatusList[0].Subtitle = relationStat.Following.ToString(CultureInfo.CurrentCulture);
             // 悄悄关注数
-            StatusList[1].Subtitle = relationStat.Whisper.ToString();
+            StatusList[1].Subtitle = relationStat.Whisper.ToString(CultureInfo.CurrentCulture);
             // 粉丝数
-            StatusList[2].Subtitle = relationStat.Follower.ToString();
+            StatusList[2].Subtitle = relationStat.Follower.ToString(CultureInfo.CurrentCulture);
             // 黑名单数
-            StatusList[3].Subtitle = relationStat.Black.ToString();
-        });
+            StatusList[3].Subtitle = relationStat.Black.ToString(CultureInfo.CurrentCulture);
+        }).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -689,6 +689,7 @@ public class ViewMySpaceViewModel : ViewModelBase
     /// <param name="navigationContext"></param>
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
+        ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
 
         // 根据传入参数不同执行不同任务
@@ -702,5 +703,17 @@ public class ViewMySpaceViewModel : ViewModelBase
 
         InitView();
         RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync));
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            _tokenSource?.Cancel();
+            _tokenSource?.Dispose();
+            _tokenSource = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

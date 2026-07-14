@@ -4,7 +4,7 @@ using Avalonia.Data.Converters;
 
 namespace DownKyi.Converter
 {
-    public class CountConverter : IValueConverter
+    internal class CountConverter : IValueConverter
     {
         public int Count { get; set; }
 

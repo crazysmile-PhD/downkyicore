@@ -4,20 +4,21 @@ namespace DownKyi.Tests;
 
 public sealed class DownloadTaskFileServiceTests : IDisposable
 {
+    private static readonly string[] GeneratedFileNames = { "video-stream.mp4", "audio-stream.aac" };
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(),
         "downkyi-file-lifecycle-tests",
         Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void GetGeneratedFiles_IncludesMediaAssetsAndResumeSidecars()
+    public void GetGeneratedFilesIncludesMediaAssetsAndResumeSidecars()
     {
         Directory.CreateDirectory(_directory);
         var basePath = Path.Combine(_directory, "episode-01");
 
         var files = DownloadTaskFileService.GetGeneratedFiles(
             basePath,
-            new[] { "video-stream.mp4", "audio-stream.aac" });
+            GeneratedFileNames);
 
         Assert.Contains(Path.GetFullPath(Path.Combine(_directory, "video-stream.mp4.aria2")), files);
         Assert.Contains(Path.GetFullPath(Path.Combine(_directory, "audio-stream.aac.download")), files);
@@ -27,7 +28,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteFilesAsync_RemovesPartialFilesAndResumeSidecars()
+    public async Task DeleteFilesAsyncRemovesPartialFilesAndResumeSidecars()
     {
         Directory.CreateDirectory(_directory);
         var files = new[]
@@ -45,17 +46,23 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteFilesAsync_DoesNotDeleteWhenAlreadyCanceled()
+    public async Task DeleteFilesAsyncDoesNotDeleteWhenAlreadyCanceled()
     {
         Directory.CreateDirectory(_directory);
         var file = CreateFile("video.mp4.aria2", "resume metadata");
         using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             DownloadTaskFileService.DeleteFilesAsync(new[] { file }, cancellation.Token));
 
         Assert.True(File.Exists(file));
+    }
+
+    [Fact]
+    public void GetGeneratedFilesRejectsNullTask()
+    {
+        Assert.Throws<ArgumentNullException>(() => DownloadTaskFileService.GetGeneratedFiles(null!));
     }
 
     private string CreateFile(string name, string contents)

@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace DownKyi.Views.Dialogs;
 
-public partial class NewVersionAvailableDialog : UserControl
+internal partial class NewVersionAvailableDialog : UserControl
 {
     public NewVersionAvailableDialog()
     {

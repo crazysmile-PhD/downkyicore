@@ -30,7 +30,7 @@ public class VideoView : BaseModel
     [JsonProperty("desc")] public string Desc { get; set; } = string.Empty;
     [JsonProperty("state")] public int State { get; set; }
     [JsonProperty("duration")] public long Duration { get; set; }
-    [JsonProperty("redirect_url")] public string RedirectUrl { get; set; } = string.Empty;
+    [JsonProperty("redirect_url")] public string RedirectAddress { get; set; } = string.Empty;
 
     [JsonProperty("mission_id")] public long MissionId { get; set; }
 
@@ -43,11 +43,11 @@ public class VideoView : BaseModel
     [JsonProperty("dimension")] public Dimension Dimension { get; set; } = new();
     [JsonProperty("season_id")] public long SeasonId { get; set; }
 
-    [JsonProperty("festival_jump_url")] public string FestivalJumpUrl { get; set; } = string.Empty;
+    [JsonProperty("festival_jump_url")] public string FestivalJumpAddress { get; set; } = string.Empty;
 
     //[JsonProperty("no_cache")]
     //public bool no_cache { get; set; }
-    [JsonProperty("pages")] public List<VideoPage> Pages { get; set; } = new();
+    [JsonProperty("pages")] public IReadOnlyList<VideoPage> Pages { get; set; } = Array.Empty<VideoPage>();
     [JsonProperty("subtitle")] public VideoSubtitle Subtitle { get; set; } = new();
 
     [JsonProperty("ugc_season")] public UgcSeason? UgcSeason { get; set; }

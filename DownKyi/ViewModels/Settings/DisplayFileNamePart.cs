@@ -3,7 +3,7 @@ using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.Settings;
 
-public class DisplayFileNamePart : BindableBase
+internal class DisplayFileNamePart : BindableBase
 {
     public FileNamePart Id { get; set; }
 

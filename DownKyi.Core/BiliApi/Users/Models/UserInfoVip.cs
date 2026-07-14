@@ -18,7 +18,7 @@ public class UserInfoVip : BaseModel
     [JsonProperty("nickname_color")] public string NicknameColor { get; set; } = string.Empty;
 
     // role
-    [JsonProperty("avatar_subscript_url")] public string AvatarSubscriptUrl { get; set; } = string.Empty;
+    [JsonProperty("avatar_subscript_url")] public string AvatarSubscriptAddress { get; set; } = string.Empty;
 }
 
 public class UserInfoVipLabel : BaseModel

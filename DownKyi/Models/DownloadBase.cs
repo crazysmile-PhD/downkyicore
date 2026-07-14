@@ -6,7 +6,7 @@ using DownKyi.Core.BiliApi.BiliUtils;
 namespace DownKyi.Models;
 
 [Description("下载项的基础信息")]
-public class DownloadBase
+internal class DownloadBase
 {
     public DownloadBase()
     {
@@ -28,7 +28,7 @@ public class DownloadBase
     public string Id { get; set; } = string.Empty;
 
     // 需要下载的内容
-    public Dictionary<string, bool> NeedDownloadContent { get; set; }
+    public IDictionary<string, bool> NeedDownloadContent { get; internal set; }
 
     // 视频的id
     public string Bvid { get; set; } = string.Empty;

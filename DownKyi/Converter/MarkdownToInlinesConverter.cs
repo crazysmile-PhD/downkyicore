@@ -9,8 +9,9 @@ using Avalonia.Media;
 
 namespace DownKyi.Converter;
 
-public class MarkdownToInlinesConverter : IValueConverter
+internal class MarkdownToInlinesConverter : IValueConverter
 {
+    private static readonly string[] LineSeparators = { "\r\n", "\n" };
     private static readonly Dictionary<int, (double FontSize, FontWeight Weight)> HeaderStyles = new()
     {
         [1] = (24, FontWeight.Bold),  // #
@@ -18,12 +19,12 @@ public class MarkdownToInlinesConverter : IValueConverter
         [3] = (16, FontWeight.Bold),  // ###
         [4] = (14, FontWeight.SemiBold) // ####
     };
-    private bool TryParseHeader(string line, out int level, out string text)
+    private static bool TryParseHeader(string line, out int level, out string text)
     {
         level = 0;
         text = string.Empty;
 
-        if (!line.StartsWith("#")) return false;
+        if (!line.StartsWith('#')) return false;
 
         level = line.TakeWhile(c => c == '#').Count();
         if (level == 0 || level > 6) return false;
@@ -37,7 +38,7 @@ public class MarkdownToInlinesConverter : IValueConverter
         if (value is not string markdown) return null;
 
         var inlines = new List<Inline>();
-        var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        var lines = markdown.Split(LineSeparators, StringSplitOptions.None);
 
         foreach (var line in lines)
         {
@@ -47,7 +48,7 @@ public class MarkdownToInlinesConverter : IValueConverter
                 continue;
             }
 
-            if (line.TrimStart().StartsWith("<!--") && line.TrimEnd().EndsWith("-->")) continue;
+            if (line.TrimStart().StartsWith("<!--", StringComparison.Ordinal) && line.TrimEnd().EndsWith("-->", StringComparison.Ordinal)) continue;
 
 
             if (TryParseHeader(line, out var headerLevel, out var headerText))
@@ -59,7 +60,7 @@ public class MarkdownToInlinesConverter : IValueConverter
                     FontWeight = style.Weight
                 });
             }
-            else if (line.Contains("**"))
+            else if (line.Contains("**", StringComparison.Ordinal))
             {
                 var parts = Regex.Split(line, @"\*\*(.*?)\*\*");
                 for (int i = 0; i < parts.Length; i++)
@@ -70,9 +71,9 @@ public class MarkdownToInlinesConverter : IValueConverter
                         inlines.Add(new Run(parts[i]));
                 }
             }
-            else if (line.StartsWith("- "))
+            else if (line.StartsWith("- ", StringComparison.Ordinal))
             {
-                inlines.Add(new Run("• " + line.Substring(2)) { FontSize = 14 });
+                inlines.Add(new Run(string.Concat("• ", line.AsSpan(2))) { FontSize = 14 });
             }
             else
             {

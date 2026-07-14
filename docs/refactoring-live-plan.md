@@ -1,9 +1,9 @@
 # DownKyi Core Live Refactoring Plan
 
 Status: active
-Last updated: 2026-07-10
-Current group: PR 02
-Next branch: `refactor/pr-02-host-composition`
+Last updated: 2026-07-12
+Current group: PR 03-06
+Next branch: `refactor/pr-03-06-download-domain-store`
 
 This file contains only unfinished work. Completed items are removed in the same PR that finishes them; newly discovered debt is added immediately with an owning PR or phase.
 
@@ -18,27 +18,7 @@ This file contains only unfinished work. Completed items are removed in the same
 - A group may contain multiple ordered commits, but it must not be split into smaller public PRs or combined with another numbered range.
 - The next group starts only after the previous group has completed its full scope and passed build, tests, data compatibility checks, documentation updates, and `git diff --check`.
 
-## Active Next: PR 02 - Project Boundaries And Host Composition
-
-Branch: `refactor/pr-02-host-composition`
-
-- Create `src/DownKyi.Domain`, `src/DownKyi.Application`, `src/DownKyi.Infrastructure`, and `src/DownKyi.Desktop` without moving legacy resources prematurely.
-- Add `Microsoft.Extensions.Hosting` and one explicit composition root.
-- Define the shared cancellation policy, typed result, and error model.
-- Make the real composition root independently testable so MainWindow and key ViewModels can resolve without Prism global `ContainerLocator` state.
-- Extend architecture tests to enforce package and namespace restrictions for every new project.
-- Preserve existing database, settings, login, portable-mode, and aria2 session paths.
-- Document every temporary bridge with its deletion PR; no permanent legacy adapter is allowed.
-- Set repository defaults to `EnableNETAnalyzers=true`, `AnalysisMode=All`, `EnforceCodeStyleInBuild=true`, and transitional `CodeAnalysisTreatWarningsAsErrors=false`.
-- Capture the complete pre-fix CA diagnostic inventory by rule, count, project, file, category, and compatibility risk.
-- Remove all unapproved `NoWarn`, pragma disables, `SuppressMessage`, global suppressions, analyzer exclusions, nullable disables, and `none` / `silent` analyzer severities.
-- Fix analyzer findings in separate commits ordered by security/correctness, async/resource/threading, performance/allocation, public API/collection design, then naming/globalization/style.
-- Preserve the external-protocol hash exception only where a contract test proves it is required; document why it is not a password or trust primitive.
-- Promote each fully cleaned rule to `error` in `.editorconfig`; finish with zero unhandled CA warnings and default `CodeAnalysisTreatWarningsAsErrors=true`.
-- Make local and CI analyzer settings identical and add required Windows, Linux, and macOS build or smoke coverage.
-- Publish a before/after analyzer report and update maintenance, live plan, knowledge graph, and quality workflow in this same PR.
-
-## PR 03-06 - Download Domain And SQLite Store
+## Active Next: PR 03-06 - Download Domain And SQLite Store
 
 Branch: `refactor/pr-03-06-download-domain-store`
 
@@ -67,7 +47,7 @@ Branch: `refactor/pr-07-15-download-runtime`
 - Replace `BiliApiRequest` catch-and-return-null behavior with typed failures visible to UI and diagnostics.
 - Add source-generated JSON contexts and fixed API contract samples for success, missing data, rejected code, HTML, and malformed JSON.
 - Make incomplete stream cleanup atomic; a Content-Length failure must not leave a file that can be mistaken for completed media.
-- Give every DURL segment a stable download key containing `DURL.Order` or an explicit segment index; never use `Bvid.GetHashCode()` or codec `GetHashCode()` as segment identity.
+
 - Sort all DURL inputs by `Order` before queueing or merging.
 - For multi-segment DURL output, skip stream copy and rebuild timestamps, keyframes, and MP4 indexes through hardware encoding with CPU `libx264 + aac` fallback.
 - Make concat return an explicit success result and validate output with ffprobe: video stream exists, duration is positive and close to summed segments, and middle/tail seeks decode successfully.
@@ -94,6 +74,7 @@ Branch: `refactor/pr-16-24-media-ui-lifecycle`
 Branch: `refactor/pr-25-29-remove-legacy`
 
 - Replace Prism/DryIoc with Microsoft DI, a thin typed router, dialog coordinator, and explicit event streams.
+- Delete `LegacyDesktopComposition`, `MainWindow.AttachLegacyRegion`, and the deferred Prism region attachment after typed navigation owns the shell.
 - Remove string navigation tags, EventAggregator, Prism commands, region navigation, and global container lookup.
 - Delete old download inheritance, `DownloadStorageService`, custom aria2 duplication, SettingsManager singleton, static App collections, console wrapper, dead utilities, old comments, and obsolete packages immediately after new owners pass migration tests.
 - Add CI rules that reject new `App.Current`, `Container.Resolve`, `Thread.Sleep`, synchronous async waits, empty catches, `new HttpClient`, mutable static collections, and ViewModel `Task.Run` in the new architecture.

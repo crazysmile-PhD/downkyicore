@@ -8,5 +8,5 @@ public class VideoContentSettings
     public bool DownloadSubtitle { get; set; } = true;
     public bool DownloadCover { get; set; } = true;
 
-    public bool GenerateMovieMetadata { get; set; } = false;
+    public bool GenerateMovieMetadata { get; set; }
 }
