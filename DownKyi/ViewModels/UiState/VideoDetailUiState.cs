@@ -1,4 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using DownKyi.Images;
+using DownKyi.ViewModels.PageViewModels;
 
 namespace DownKyi.ViewModels.UiState;
 
@@ -12,6 +14,27 @@ internal enum VideoDetailDisplayState
 
 internal sealed partial class VideoDetailUiState : ObservableObject
 {
+    [ObservableProperty]
+    private string? _inputText;
+
+    [ObservableProperty]
+    private string _inputSearchText = string.Empty;
+
+    [ObservableProperty]
+    private VectorImage _downloadManage = ButtonIcon.Instance().DownloadManage;
+
+    [ObservableProperty]
+    private VideoInfoView? _videoInfoView;
+
+    [ObservableProperty]
+    private bool _isSelectAll;
+
+    [ObservableProperty]
+    private int _gridResetVersion;
+
+    [ObservableProperty]
+    private VideoPage? _selectedVideoPage;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsBusy))]
     [NotifyPropertyChangedFor(nameof(IsContentVisible))]

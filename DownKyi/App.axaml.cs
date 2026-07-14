@@ -35,6 +35,7 @@ using DownKyi.Services.Media;
 using DownKyi.Services.Migration;
 using DownKyi.Services.Toolbox;
 using DownKyi.Services.UserSpace;
+using DownKyi.Services.Video;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.Dialogs;
@@ -119,6 +120,8 @@ internal partial class App : PrismApplication, IDisposable
         containerRegistry.RegisterSingleton<DownloadStorageService>();
         containerRegistry.RegisterSingleton<DownloadListState>();
         containerRegistry.RegisterSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
+        containerRegistry.Register<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
+        containerRegistry.RegisterSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();
         containerRegistry.RegisterSingleton<IContentDownloadCoordinator, ContentDownloadCoordinator>();
         containerRegistry.RegisterSingleton<IPersonalMediaCoordinator, PersonalMediaCoordinator>();
         containerRegistry.RegisterSingleton<ILegacyUpgradeCoordinator, LegacyUpgradeCoordinator>();

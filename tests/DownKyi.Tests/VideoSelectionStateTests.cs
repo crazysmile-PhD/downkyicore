@@ -91,6 +91,19 @@ public sealed class VideoSelectionStateTests
     }
 
     [Fact]
+    public void SelectInputPageMarksMatchingSectionAndOriginalPage()
+    {
+        var page = new VideoPage { Cid = 42, Bvid = "BV17x411w7KC" };
+        var section = new VideoSection { Id = 1, VideoPages = [page] };
+
+        var selected = VideoSelectionState.SelectInputPage([section], "BV17x411w7KC");
+
+        Assert.Same(page, selected);
+        Assert.True(section.IsSelected);
+        Assert.True(page.IsSelected);
+    }
+
+    [Fact]
     public void ApplyVisibleSelectionDeltaPreservesSelectionsFromAnotherSection()
     {
         var oldSectionPage = new VideoPage { Cid = 101, IsSelected = true };

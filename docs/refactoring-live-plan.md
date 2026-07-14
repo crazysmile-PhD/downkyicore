@@ -23,7 +23,6 @@ This file contains only unfinished work. Completed items are removed in the same
 Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
 - Move collection parsing, video parsing, selection, plan building, duplicate policy, and queueing into Application use cases; BV/AV/bangumi/course entry resolution, cancellable detail/stream result coordination, directory-cancel/add coordination, and single-source video search projection are complete.
-- Continue CommunityToolkit.Mvvm adoption after the video-detail `Idle`/`Busy`/`Content`/`Empty` state model; `ViewVideoDetailViewModel` no longer owns a cloned section/page cache, Avalonia `DataGrid`/splitter behavior, or background API mutation, but still has about 756 lines and must retain only binding state, commands, navigation, and result projection.
 - Move notifications, dialogs, and navigation behind Desktop interfaces; clipboard and file-picker boundaries are complete and their static helpers are deleted.
 - Reduce `App.axaml.cs` to XAML, Host, shell, start, and stop; static download collections, storage lookup, history paging, backend creation, and runtime lifecycle are removed, while Prism registration and the legacy composition bridge still remain.
 - Replace `SettingsManager.Instance` with an injected `ISettingsStore`, immutable validated snapshots, schema migration, debounced atomic writes, and explicit async shutdown flush; 26 production files still reference the singleton.

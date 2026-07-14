@@ -48,7 +48,7 @@
                     VerticalContentAlignment="Center"
                     BorderThickness="0"
                     FontSize="12"
-                    Text="{Binding InputText,UpdateSourceTrigger=PropertyChanged,Mode=TwoWay}">
+                    Text="{Binding UiState.InputText,UpdateSourceTrigger=PropertyChanged,Mode=TwoWay}">
                     <TextBox.KeyBindings>
                         <KeyBinding Command="{Binding InputCommand}" Gesture="Enter" />
                     </TextBox.KeyBindings>
@@ -75,10 +75,10 @@
                 Theme="{StaticResource ImageBtnStyle}">
                 <ContentControl>
                     <Path
-                        Width="{Binding DownloadManage.Width}"
-                        Height="{Binding DownloadManage.Height}"
-                        Data="{Binding DownloadManage.Data}"
-                        Fill="{Binding DownloadManage.Fill}"
+                        Width="{Binding UiState.DownloadManage.Width}"
+                        Height="{Binding UiState.DownloadManage.Height}"
+                        Data="{Binding UiState.DownloadManage.Data}"
+                        Fill="{Binding UiState.DownloadManage.Fill}"
                         Stretch="Uniform" />
                 </ContentControl>
             </Button>
@@ -104,10 +104,9 @@
                     MaxWidth="300"
                     VerticalAlignment="Top"
                     DockPanel.Dock="Left"
-                    asyncImageLoader:ImageLoader.Source="{Binding VideoInfoView.CoverUrl}">
+                    asyncImageLoader:ImageLoader.Source="{Binding UiState.VideoInfoView.CoverUrl}">
                     <Image.ContextMenu>
                         <ContextMenu>
-                            <!-- <MenuItem Command="{Binding CopyCoverCommand}" Header="{DynamicResource CopyCover}" /> -->
                             <MenuItem Command="{Binding CopyCoverUrlCommand}" Header="{DynamicResource CopyCoverUrl}" />
                         </ContextMenu>
                     </Image.ContextMenu>
@@ -127,7 +126,7 @@
                                 FontSize="16"
                                 FontWeight="Bold"
                                 Foreground="{DynamicResource BrushTextDark}"
-                                Text="{Binding VideoInfoView.Title}"
+                                Text="{Binding UiState.VideoInfoView.Title}"
                                 TextTrimming="CharacterEllipsis" />
                             <StackPanel
                                 Grid.Row="1"
@@ -136,9 +135,9 @@
                                 <TextBlock
                                     Margin="0,0,10,0"
                                     Foreground="{DynamicResource BrushTextGrey}"
-                                    Text="{Binding VideoInfoView.VideoZone}" />
+                                    Text="{Binding UiState.VideoInfoView.VideoZone}" />
                                 <TextBlock Foreground="{DynamicResource BrushTextGrey}"
-                                           Text="{Binding VideoInfoView.CreateTime}" />
+                                           Text="{Binding UiState.VideoInfoView.CreateTime}" />
                             </StackPanel>
 
                             <StackPanel Grid.Row="2" VerticalAlignment="Center" Orientation="Horizontal">
@@ -146,7 +145,7 @@
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
-                                        Text="{Binding VideoInfoView.PlayNumber}" />
+                                        Text="{Binding UiState.VideoInfoView.PlayNumber}" />
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
@@ -156,7 +155,7 @@
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
-                                        Text="{Binding VideoInfoView.DanmakuNumber}" />
+                                        Text="{Binding UiState.VideoInfoView.DanmakuNumber}" />
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
@@ -166,7 +165,7 @@
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
-                                        Text="{Binding VideoInfoView.LikeNumber}" />
+                                        Text="{Binding UiState.VideoInfoView.LikeNumber}" />
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
@@ -176,7 +175,7 @@
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
-                                        Text="{Binding VideoInfoView.CoinNumber}" />
+                                        Text="{Binding UiState.VideoInfoView.CoinNumber}" />
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
@@ -186,7 +185,7 @@
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
-                                        Text="{Binding VideoInfoView.FavoriteNumber}" />
+                                        Text="{Binding UiState.VideoInfoView.FavoriteNumber}" />
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
@@ -196,7 +195,7 @@
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
-                                        Text="{Binding VideoInfoView.ShareNumber}" />
+                                        Text="{Binding UiState.VideoInfoView.ShareNumber}" />
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
@@ -206,7 +205,7 @@
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
-                                        Text="{Binding VideoInfoView.ReplyNumber}" />
+                                        Text="{Binding UiState.VideoInfoView.ReplyNumber}" />
                                     <TextBlock
                                         FontSize="12"
                                         Foreground="{DynamicResource BrushTextGrey}"
@@ -227,7 +226,7 @@
                             <Image
                                 Width="48"
                                 Height="48"
-                                asyncImageLoader:ImageLoader.Source="{Binding VideoInfoView.UpHeader}">
+                                asyncImageLoader:ImageLoader.Source="{Binding UiState.VideoInfoView.UpHeader}">
                                 <Image.Clip>
                                     <EllipseGeometry
                                         Center="24,24"
@@ -240,7 +239,7 @@
                                 HorizontalAlignment="Center"
                                 FontSize="12"
                                 Foreground="{DynamicResource BrushTextDark}"
-                                Text="{Binding VideoInfoView.UpName}"
+                                Text="{Binding UiState.VideoInfoView.UpName}"
                                 TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                     </Grid>
@@ -252,7 +251,7 @@
                             Background="{x:Null}"
                             FontSize="12"
                             Foreground="{DynamicResource BrushTextDark}"
-                            Text="{Binding VideoInfoView.Description}"
+                            Text="{Binding UiState.VideoInfoView.Description}"
                             TextWrapping="WrapWithOverflow" />
                     </ScrollViewer>
                 </Grid>
@@ -293,7 +292,7 @@
                               ShowsPreview="True"
                               ResizeDirection="Rows">
                     <Interaction.Behaviors>
-                        <behavior:ResetGridSplitterBehavior ResetVersion="{Binding GridResetVersion}" />
+                        <behavior:ResetGridSplitterBehavior ResetVersion="{Binding UiState.GridResetVersion}" />
                     </Interaction.Behaviors>
                 </GridSplitter>
                 <DataGrid
@@ -306,7 +305,7 @@
                     IsReadOnly="True"
                     ItemsSource="{ReflectionBinding ElementName=NameVideoSections, Path=SelectedItem.VideoPages, Mode=TwoWay}"
                     SelectionMode="Extended"
-                    SelectedItem="{Binding SelectedVideoPage, Mode=TwoWay}">
+                    SelectedItem="{Binding UiState.SelectedVideoPage, Mode=TwoWay}">
                     <DataGrid.ColumnHeaderTheme>
                         <ControlTheme TargetType="{x:Type DataGridColumnHeader}">
                             <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -391,7 +390,7 @@
                         </ControlTheme>
                     </DataGrid.ColumnHeaderTheme>
                     <Interaction.Behaviors>
-                        <behavior:VideoPageSelectionBehavior IsSelectAll="{Binding IsSelectAll, Mode=TwoWay}" />
+                        <behavior:VideoPageSelectionBehavior IsSelectAll="{Binding UiState.IsSelectAll, Mode=TwoWay}" />
                         <behavior:ScrollIntoViewBehavior />
                     </Interaction.Behaviors>
                     <DataGrid.Columns>
@@ -500,7 +499,7 @@
                         Command="{Binding SelectAllCommand}"
                         Content="{DynamicResource SelectAll}"
                         Foreground="{DynamicResource BrushTextDark}"
-                        IsChecked="{Binding IsSelectAll, Mode=TwoWay}" />
+                        IsChecked="{Binding UiState.IsSelectAll, Mode=TwoWay}" />
                     <Button
                         Grid.Column="1"
                         HorizontalAlignment="Left"
@@ -524,7 +523,7 @@
                         VerticalAlignment="Top"
                         VerticalContentAlignment="Center"
                         PlaceholderText="{DynamicResource SearchVideoByName}"
-                        Text="{Binding Path=InputSearchText, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                        Text="{Binding Path=UiState.InputSearchText, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
                         TextWrapping="Wrap">
                         <TextBox.KeyBindings>
                             <KeyBinding Command="{Binding InputSearchCommand}" Gesture="Enter" />

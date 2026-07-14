@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.Settings;
 using DownKyi.ViewModels.PageViewModels;
 
@@ -43,6 +44,27 @@ internal static class VideoSelectionState
         {
             page.IsSelected = isSelected;
         }
+    }
+
+    public static VideoPage? SelectInputPage(IEnumerable<VideoSection> sections, string input)
+    {
+        ArgumentNullException.ThrowIfNull(sections);
+        var avid = ParseEntrance.GetAvId(input);
+        var bvid = ParseEntrance.GetBvId(input);
+        foreach (var section in sections)
+        {
+            section.IsSelected = true;
+            var page = section.VideoPages.FirstOrDefault(item => item.Avid == avid || item.Bvid == bvid);
+            if (page == null)
+            {
+                continue;
+            }
+
+            page.IsSelected = true;
+            return page;
+        }
+
+        return null;
     }
 
     public static void ApplyVisibleSelectionDelta(

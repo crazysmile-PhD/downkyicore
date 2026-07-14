@@ -62,7 +62,8 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "ViewVideoDetailViewModel.cs"),
             Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "PageViewModels", "VideoSection.cs"),
             Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "PageViewModels", "VideoPage.cs"),
-            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "PageViewModels", "VideoQuality.cs")
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "PageViewModels", "VideoQuality.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "Services", "Video", "VideoDetailWorkflowCoordinator.cs")
         };
         var source = string.Join(Environment.NewLine, paths.Select(File.ReadAllText));
 
@@ -90,6 +91,48 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.DoesNotContain("ResetGridSplitterBehavior", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("VideoPageSelectionBehavior", viewSource, StringComparison.Ordinal);
         Assert.Contains("ResetGridSplitterBehavior", viewSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VideoDetailViewModelRetainsOnlyBindingCommandsNavigationAndProjection()
+    {
+        var viewModelPath = Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "ViewVideoDetailViewModel.cs");
+        var viewModelSource = File.ReadAllText(viewModelPath);
+        var workflowSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Video",
+            "VideoDetailWorkflowCoordinator.cs"));
+        var downloadSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Video",
+            "VideoDetailDownloadCoordinator.cs"));
+        var viewSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Views",
+            "ViewVideoDetail.axaml"));
+
+        Assert.True(File.ReadLines(viewModelPath).Count() <= 425, "Video-detail ViewModel exceeded its size budget.");
+        Assert.Contains("IVideoDetailWorkflowCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IVideoDetailDownloadCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("VideoParseCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("VideoSearchState", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IAddToDownloadServiceFactory", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("CancellationTokenSource", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Regex.Replace", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("VideoParseCoordinator", workflowSource, StringComparison.Ordinal);
+        Assert.Contains("VideoSearchState", workflowSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadAddCoordinator", downloadSource, StringComparison.Ordinal);
+        Assert.Contains("UiState.VideoInfoView", viewSource, StringComparison.Ordinal);
+        Assert.Contains("UiState.IsSelectAll", viewSource, StringComparison.Ordinal);
     }
 
     [Fact]

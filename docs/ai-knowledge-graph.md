@@ -678,7 +678,9 @@ id: viewmodel.video-detail
 type: viewmodel
 paths:
   - DownKyi/ViewModels/ViewVideoDetailViewModel.cs
-responsibility: Exposes video-detail binding state and wires parse, selection, and add-to-download commands.
+  - DownKyi/ViewModels/UiState/VideoDetailUiState.cs
+  - DownKyi/Views/ViewVideoDetail.axaml
+responsibility: Wires video-detail commands, navigation, and UI result projection while one CommunityToolkit state object exposes mutually consistent bindings.
 inbound:
   - viewmodel.main-window
 outbound:
@@ -686,16 +688,19 @@ outbound:
   - service.video-parse-coordinator
   - service.video-selection-state
   - service.video-search-state
+  - service.video-detail-workflow
   - service.download-add
   - service.desktop-platform-boundaries
 contracts:
   - Keep UI state and command wiring here; keep pure parsing and selection rules in services.
   - Canceling directory selection must not enqueue download work.
   - `Idle`, `Busy`, `Content`, and `Empty` are one mutually exclusive CommunityToolkit state model.
+  - Input, video metadata, selected page, select-all, splitter reset, and display mode bindings are owned by the same generated state object.
   - Ordinary row clicks toggle selection; repeated clicks clear the item and select-all has an explicit clear-selection peer.
   - Avalonia `DataGrid` selection and splitter reset mechanics live in View behaviors; this ViewModel exposes only selection intent and a scalar reset version.
   - Search filtering projects from one shallow source of the original `VideoPage` objects; clearing a search must preserve parsed stream, quality, and selection mutations.
   - Only the current operation generation may project detail/stream results or restore display state; canceled work cannot overwrite a newer request.
+  - The ViewModel remains at or below 425 lines and cannot regain parse-service construction, search-source ownership, cancellation-source ownership, or download-service construction.
 hazards:
   - This file historically accumulated unrelated parsing, selection, and download orchestration logic.
   - Reintroducing a complete cached section/page object graph duplicates memory and can restore stale parsed or selected state.
@@ -704,6 +709,7 @@ tests:
   - test.video-selection-state
   - test.video-search-state
   - test.download-add
+  - test.video-detail-download
 ```
 
 ### service.video-input-resolver
@@ -726,6 +732,32 @@ hazards:
   - Divergence between parse and download input handling causes "can parse but cannot download" bugs.
 tests:
   - test.video-input-resolver
+```
+
+### service.video-detail-workflow
+
+```yaml
+id: service.video-detail-workflow
+type: coordinator
+paths:
+  - DownKyi/Services/Video/VideoDetailWorkflowCoordinator.cs
+responsibility: Owns the current normalized input, cancellable operation generation, parse-service lifetime, and shallow search source for the video-detail page.
+inbound:
+  - viewmodel.video-detail
+outbound:
+  - service.video-input-resolver
+  - service.video-parse-coordinator
+  - service.video-selection-state
+  - service.video-search-state
+contracts:
+  - Starting another detail, parse, or add operation cancels and invalidates the previous generation.
+  - Only a current operation can load or return detail and stream results.
+  - Reset clears the cached info service, current input, and search source without mutating a bound page graph from a worker thread.
+hazards:
+  - Disposing the workflow while work is active must cancel it before releasing the cancellation source.
+tests:
+  - test.video-parse-coordinator
+  - test.architecture-boundaries
 ```
 
 ### service.desktop-platform-boundaries
@@ -896,9 +928,9 @@ paths:
   - DownKyi/Services/VideoInfoService.cs
   - DownKyi/Services/BangumiInfoService.cs
   - DownKyi/Services/CheeseInfoService.cs
-responsibility: Chooses the correct info service, builds complete detail/stream results in background work, and coordinates refresh/cancellation before UI projection.
+responsibility: Chooses the correct info service, builds complete detail/stream results in background work, and owns one cancellable operation generation plus search-source lifetime before UI projection.
 inbound:
-  - viewmodel.video-detail
+  - service.video-detail-workflow
 outbound:
   - service.info-services
 contracts:
@@ -906,6 +938,7 @@ contracts:
   - Info-service selection must follow VideoInputResolver results.
   - Info services return data and never dispatch to Avalonia; the ViewModel projects a complete result on the UI dispatcher.
   - A service is cached only after its operation succeeds, and reuse is limited to the exact input string.
+  - Starting another detail, parse, or add operation cancels the previous generation; only the current generation can return projectable results.
 hazards:
   - Caching before cancellation checks or across a different input can leak stale service state into a later parse.
 tests:
@@ -1049,7 +1082,8 @@ type: service
 paths:
   - DownKyi/Services/Download/AddToDownloadService.cs
   - DownKyi/Services/Download/AddToDownloadServiceFactory.cs
-  - DownKyi/Services/Download/DownloadAddCoordinator.cs
+  - src/DownKyi.Application/Downloads/DownloadAddCoordinator.cs
+  - DownKyi/Services/Video/VideoDetailDownloadCoordinator.cs
   - DownKyi/Services/Media/ContentDownloadCoordinator.cs
 responsibility: Converts selected parsed media into download tasks, centralizes legacy per-item info-service parsing, handles duplicate decisions, and writes queue state.
 inbound:
@@ -1068,12 +1102,14 @@ contracts:
   - Video and bangumi info-service construction is selected by an explicit enum; ViewModels do not duplicate parse/add loops.
   - Directory selection returning null means user canceled; no task should be queued.
   - Existing downloaded/downloading records must be checked before inserting duplicates.
-  - ViewModels receive `IAddToDownloadServiceFactory`; the add service receives list/storage owners explicitly and cannot resolve them through App.
+  - Video-detail receives `IVideoDetailDownloadCoordinator`; remaining legacy media ViewModels receive the factory until their add flows move behind the shared coordinator.
+  - The add service receives list/storage owners explicitly and cannot resolve them through App.
 hazards:
   - Running add logic on stale VideoInfoView snapshots can enqueue wrong media.
   - Duplicate dialog paths can accidentally remove completed records.
 tests:
   - test.download-add
+  - test.video-detail-download
 ```
 
 ### service.download-list-state
@@ -1890,12 +1926,24 @@ test.video-search-state:
 test.video-parse-coordinator:
   paths:
     - tests/DownKyi.Tests/VideoParseCoordinatorTests.cs
+    - tests/DownKyi.Tests/VideoDetailWorkflowCoordinatorTests.cs
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
     - detail results are complete before they are returned for UI projection
     - cancellation prevents section/page reads and prevents a canceled service from entering the cache
     - stream parsing returns detached results and does not mutate bound `VideoPage` objects on worker threads
     - video info services do not dispatch through `App` or Avalonia
+    - a newer operation cancels the previous generation and stale results cannot project
+    - detail search reuses original page objects after the complete result is returned
+
+test.video-detail-download:
+  paths:
+    - tests/DownKyi.Tests/VideoDetailDownloadCoordinatorTests.cs
+    - tests/DownKyi.Application.Tests/DownloadAddCoordinatorTests.cs
+  guards:
+    - pre-canceled add work cannot create a download service or open directory selection
+    - unsupported input cannot create a download service
+    - canceling directory selection does not invoke queue insertion
 ```
 
 ## Backlog Nodes
