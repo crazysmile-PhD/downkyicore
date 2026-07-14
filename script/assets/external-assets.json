@@ -49,14 +49,18 @@
         "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-08-13-30/ffmpeg-N-125505-gc57660fb18-linuxarm64-gpl.tar.xz",
         "sha256": "e7f52bcc7a42fef23a104b75b87462ba3588aa168f937115471b5200eed7ccb2"
       },
-      "osx-x64": {
-        "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1767299902_N-122320-g38e89fe502/ffmpeg.zip",
-        "sha256": "6f0736d424b7426f8cbb7bba5c5448d94c976c138c669593b1f40ba534ed192f"
-      },
-      "osx-arm64": {
-        "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783164229_N-125450-gfad2e0bc50/ffmpeg.zip",
-        "sha256": "b5ce8b77f8c0686e4f68a46f8e4d094fe7e6f4ded50bcfacd9944ad1efdf66e9"
-      }
+        "osx-x64": {
+          "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1767299902_N-122320-g38e89fe502/ffmpeg.zip",
+          "sha256": "6f0736d424b7426f8cbb7bba5c5448d94c976c138c669593b1f40ba534ed192f",
+          "ffprobeUrl": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1767299902_N-122320-g38e89fe502/ffprobe.zip",
+          "ffprobeSha256": "46852ce00ae6f722ed30be269f310ea96c106a4246f2905d3147c5e02293081c"
+        },
+        "osx-arm64": {
+          "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783164229_N-125450-gfad2e0bc50/ffmpeg.zip",
+          "sha256": "b5ce8b77f8c0686e4f68a46f8e4d094fe7e6f4ded50bcfacd9944ad1efdf66e9",
+          "ffprobeUrl": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783164229_N-125450-gfad2e0bc50/ffprobe.zip",
+          "ffprobeSha256": "fadcf23296a4b57921c70d6d7d8b9930a4c8d4e0658b8e696f188bae1dcc47d8"
+        }
     }
   }
 }

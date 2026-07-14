@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
@@ -12,7 +11,7 @@ namespace DownKyi.Core.Aria2cNet.Server
     public static class AriaServer
     {
         public static int ListenPort { get; private set; } // 服务器端口
-        private static Process? Server;
+        private static readonly AriaProcessSupervisor ProcessSupervisor = new();
 
         /// <summary>
         /// 启动aria2c服务器
@@ -192,28 +191,7 @@ namespace DownKyi.Core.Aria2cNet.Server
 
         private static async Task<bool> WaitForExitOrKillAsync(TimeSpan timeout)
         {
-            var server = Server;
-            if (server == null)
-            {
-                return true;
-            }
-
-            try
-            {
-                if (!server.HasExited)
-                {
-                    await server.WaitForExitAsync().WaitAsync(timeout).ConfigureAwait(false);
-                }
-
-                Server = null;
-                return true;
-            }
-            catch (TimeoutException)
-            {
-                KillProcess(server, "aria2c did not exit before timeout.");
-                Server = null;
-                return false;
-            }
+            return await ProcessSupervisor.WaitForExitOrKillAsync(timeout).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -222,14 +200,6 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// <returns></returns>
         public static async Task<bool> ForceCloseServerAsync(TimeSpan? timeout = null)
         {
-            //await Task.Run(() =>
-            //{
-            //    if (Server == null) { return; }
-
-            //    Server.Kill();
-            //    Server = null; // 将Server指向null
-            //});
-            //return true;
             try
             {
                 var waitTimeout = timeout ?? TimeSpan.FromSeconds(3);
@@ -273,134 +243,19 @@ namespace DownKyi.Core.Aria2cNet.Server
             }
         }
 
-        /// <summary>
-        /// 关闭aria2c服务器
-        /// </summary>
-        /// <returns></returns>
-        public static bool CloseServer()
-        {
-            try
-            {
-                var result = AriaClient.ShutdownAsync().GetAwaiter().GetResult();
-                if (result?.Result != "OK")
-                {
-                    return false;
-                }
-
-                WaitForExitOrKillAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
-                return true;
-            }
-            catch (InvalidOperationException e)
-            {
-                Console.PrintLine("CloseServer()发生异常: {0}", e);
-                LogManager.Error("AriaServer", e);
-                return false;
-            }
-            catch (Newtonsoft.Json.JsonException e)
-            {
-                Console.PrintLine("CloseServer()响应格式无效: {0}", e);
-                LogManager.Error("AriaServer", e);
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// 强制关闭aria2c服务器
-        /// </summary>
-        /// <returns></returns>
-        public static bool ForceCloseServer()
-        {
-            try
-            {
-                var result = AriaClient.ForceShutdownAsync().GetAwaiter().GetResult();
-                return result?.Result == "OK";
-            }
-            catch (InvalidOperationException e)
-            {
-                Console.PrintLine("ForceCloseServer()发生异常: {0}", e);
-                LogManager.Error("AriaServer", e);
-                return false;
-            }
-            catch (Newtonsoft.Json.JsonException e)
-            {
-                Console.PrintLine("ForceCloseServer()响应格式无效: {0}", e);
-                LogManager.Error("AriaServer", e);
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// 杀死Aria进程
-        /// </summary>
-        /// <param name="processName"></param>
-        /// <returns></returns>
-        public static bool KillServer(string processName = "aria2c")
-        {
-            Process[] processes = Process.GetProcessesByName(processName);
-            foreach (var process in processes)
-            {
-                try
-                {
-                    process.Kill();
-                }
-                catch (InvalidOperationException e)
-                {
-                    Console.PrintLine("KillServer()发生异常: {0}", e);
-                    LogManager.Error("AriaServer", e);
-                }
-                catch (Win32Exception e)
-                {
-                    Console.PrintLine("KillServer()进程终止失败: {0}", e);
-                    LogManager.Error("AriaServer", e);
-                }
-            }
-
-            return true;
-        }
-
-        private static void KillProcess(Process process, string reason)
-        {
-            try
-            {
-                LogManager.Error("AriaServer", new TimeoutException(reason));
-                if (!process.HasExited)
-                {
-                    process.Kill();
-                }
-            }
-            catch (InvalidOperationException e)
-            {
-                Console.PrintLine("KillProcess()发生异常: {0}", e);
-                LogManager.Error("AriaServer", e);
-            }
-            catch (Win32Exception e)
-            {
-                Console.PrintLine("KillProcess()进程终止失败: {0}", e);
-                LogManager.Error("AriaServer", e);
-            }
-        }
-
         public static bool KillTrackedServer(string reason)
         {
-            var server = Server;
-            if (server == null)
-            {
-                return true;
-            }
-
-            KillProcess(server, reason);
-            Server = null;
-            return true;
+            return ProcessSupervisor.Kill(reason);
         }
 
         internal static void SetTrackedServerForTests(Process? process)
         {
-            Server = process;
+            ProcessSupervisor.SetTrackedProcessForTests(process);
         }
 
         internal static bool HasTrackedServerForTests()
         {
-            return Server != null;
+            return ProcessSupervisor.HasTrackedProcess;
         }
 
         internal static string GetLogLevelArgument(AriaConfigLogLevel logLevel)
@@ -433,7 +288,7 @@ namespace DownKyi.Core.Aria2cNet.Server
             DataReceivedEventHandler output)
         {
             var p = new Process();
-            Server = p;
+            ProcessSupervisor.Track(p);
 
             p.StartInfo.FileName = exe;
             p.StartInfo.Arguments = arg;
@@ -457,8 +312,17 @@ namespace DownKyi.Core.Aria2cNet.Server
             p.OutputDataReceived += output;
             p.ErrorDataReceived += output;
 
-            // 启动线程
-            p.Start();
+            try
+            {
+                p.Start();
+            }
+            catch
+            {
+                ProcessSupervisor.SetTrackedProcessForTests(null);
+                p.Dispose();
+                throw;
+            }
+
             p.BeginOutputReadLine();
             p.BeginErrorReadLine();
         }

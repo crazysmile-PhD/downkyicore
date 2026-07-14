@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Xml;
 using DownKyi.Core.BiliApi;
@@ -42,8 +43,10 @@ internal abstract class DownloadService : IDisposable
     protected Task? WorkTask { get; set; }
     protected CancellationTokenSource? TokenSource { get; set; }
     protected CancellationToken? CancellationToken { get; set; }
-    private readonly List<Task> _downloadingTasks = new();
-    private readonly List<Task> _persistenceTasks = new();
+    private readonly Lock _queueLock = new();
+    private readonly HashSet<DownloadingItem> _queuedDownloads = [];
+    private Channel<DownloadingItem>? _downloadQueue;
+    private Task[] _downloadWorkers = [];
 
     protected const int Retry = 5;
     protected const string NullMark = "<null>";
@@ -79,16 +82,6 @@ internal abstract class DownloadService : IDisposable
         }
         catch (OperationCanceledException) when (CancellationToken?.IsCancellationRequested == true)
         {
-        }
-    }
-
-    protected void PersistDownloadingState(DownloadingItem downloading)
-    {
-        var persistenceTask = PersistDownloadingStateAsync(downloading);
-        lock (_persistenceTasks)
-        {
-            _persistenceTasks.RemoveAll(task => task.IsCompleted);
-            _persistenceTasks.Add(persistenceTask);
         }
     }
 
@@ -259,6 +252,131 @@ internal abstract class DownloadService : IDisposable
             Id = durl.Order,
             ExpectedSize = durl.Size
         };
+    }
+
+    public Task<string?> DownloadAudioAsync(DownloadingItem downloading)
+    {
+        ArgumentNullException.ThrowIfNull(downloading);
+        return DownloadMediaAsync(downloading, BaseDownloadAudio(downloading));
+    }
+
+    public Task<string?> DownloadVideoAsync(DownloadingItem downloading)
+    {
+        ArgumentNullException.ThrowIfNull(downloading);
+        var descriptor = BaseDownloadVideo(downloading);
+        return descriptor == null
+            ? Task.FromResult<string?>(null)
+            : DownloadMediaAsync(downloading, new PlayUrlDashVideo
+            {
+                Id = descriptor.Id,
+                Codecs = descriptor.Codecs,
+                BaseAddress = descriptor.BaseUrl,
+                BackupUrl = descriptor.BackupUrl,
+                ExpectedSize = descriptor.ExpectedSize
+            });
+    }
+
+    private async Task<string?> DownloadMediaAsync(
+        DownloadingItem downloading,
+        PlayUrlDashVideo? media)
+    {
+        if (media == null)
+        {
+            return null;
+        }
+
+        EnsureDownloadIsActive(downloading);
+        var urls = new List<string>();
+        if (!string.IsNullOrWhiteSpace(media.BaseAddress))
+        {
+            urls.Add(media.BaseAddress);
+        }
+
+        urls.AddRange(media.BackupUrl.Where(url => !string.IsNullOrWhiteSpace(url)));
+        if (urls.Count == 0)
+        {
+            return NullMark;
+        }
+
+        var normalizedBasePath = downloading.DownloadBase.FilePath
+            .Replace('\\', Path.DirectorySeparatorChar)
+            .Replace('/', Path.DirectorySeparatorChar);
+        var path = Path.GetDirectoryName(normalizedBasePath);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return NullMark;
+        }
+
+        var fileName = Guid.NewGuid().ToString("N");
+        var key = VideoPlayUrlBasic.CreateDownloadKey(media.Id, media.Codecs);
+        downloading.Downloading.DownloadedFiles ??= [];
+        if (downloading.Downloading.DownloadFiles.TryGetValue(key, out var existingFileName))
+        {
+            fileName = existingFileName;
+            var cachedFile = Path.Combine(path, fileName);
+            if (downloading.Downloading.DownloadedFiles.Contains(key) &&
+                IsDownloadedMediaFileUsable(cachedFile, media.ExpectedSize))
+            {
+                return cachedFile;
+            }
+
+            if (downloading.Downloading.DownloadedFiles.Remove(key))
+            {
+                DeleteInvalidDownloadedMediaFile(cachedFile);
+                await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+            }
+        }
+        else if (downloading.Downloading.DownloadFiles.TryAdd(key, fileName))
+        {
+            downloading.Downloading.Gid = null;
+            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+        }
+
+        NormalizeTransferSchemes(urls, SettingsManager.Instance.GetUseSsl() == AllowStatus.Yes);
+        var targetFile = Path.Combine(path, fileName);
+        var outcome = await TransferAsync(
+            downloading,
+            urls,
+            path,
+            fileName,
+            media.ExpectedSize).ConfigureAwait(true);
+        if (outcome == DownloadTransferOutcome.Succeeded &&
+            IsDownloadedMediaFileUsable(targetFile, media.ExpectedSize))
+        {
+            if (!downloading.Downloading.DownloadedFiles.Contains(key))
+            {
+                downloading.Downloading.DownloadedFiles.Add(key);
+            }
+
+            downloading.Downloading.Gid = null;
+            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+            return targetFile;
+        }
+
+        if (outcome != DownloadTransferOutcome.Paused)
+        {
+            downloading.Downloading.Gid = null;
+            DeleteInvalidDownloadedMediaFile(targetFile);
+            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+        }
+
+        return NullMark;
+    }
+
+    private static void NormalizeTransferSchemes(List<string> urls, bool useSsl)
+    {
+        for (var index = 0; index < urls.Count; index++)
+        {
+            var url = urls[index];
+            if (useSsl && url.StartsWith("http://", StringComparison.Ordinal))
+            {
+                urls[index] = "https://" + url["http://".Length..];
+            }
+            else if (!useSsl && url.StartsWith("https://", StringComparison.Ordinal))
+            {
+                urls[index] = "http://" + url["https://".Length..];
+            }
+        }
     }
 
     protected async Task<string?> BaseDownloadCoverAsync(
@@ -513,7 +631,11 @@ internal abstract class DownloadService : IDisposable
     }
 
 
-    protected static string? BaseMixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
+    protected static async Task<string?> BaseMixedFlowAsync(
+        DownloadingItem downloading,
+        string? audioUid,
+        string? videoUid,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -541,7 +663,14 @@ internal abstract class DownloadService : IDisposable
         }
 
         // 合并音视频
-        FfmpegProcessor.Instance.MergeVideo(audioUid, videoUid, finalFile);
+        var succeeded = await FfmpegProcessor.Instance
+            .MergeVideoAsync(audioUid, videoUid, finalFile, cancellationToken)
+            .ConfigureAwait(true);
+        if (!succeeded)
+        {
+            downloading.FileSize = Format.FormatFileSize(0);
+            return null;
+        }
 
         // 获取文件大小
         if (File.Exists(finalFile))
@@ -558,7 +687,10 @@ internal abstract class DownloadService : IDisposable
     }
 
 
-    private static string ConcatVideos(DownloadingItem downloading, List<string> videoUids)
+    private static async Task<FfmpegOperationResult> ConcatDurlVideosAsync(
+        DownloadingItem downloading,
+        IReadOnlyList<DurlDownloadResult> downloads,
+        CancellationToken cancellationToken)
     {
         downloading.DownloadStatusTitle = DictionaryResource.GetString("ConcatVideos");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingVideo");
@@ -566,10 +698,19 @@ internal abstract class DownloadService : IDisposable
         downloading.SpeedDisplay = string.Empty;
 
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
-        FfmpegProcessor.Instance.ConcatVideos(videoUids, finalFile, (x) => { });
-        if (File.Exists(finalFile))
+        var segments = downloads
+            .OrderBy(download => download.Durl.Order)
+            .Select(download => new FfmpegConcatSegment(
+                download.Durl.Order,
+                download.FilePath,
+                TimeSpan.FromMilliseconds(download.Durl.Length)))
+            .ToArray();
+        var result = await FfmpegProcessor.Instance
+            .ConcatDurlVideosAsync(segments, finalFile, cancellationToken: cancellationToken)
+            .ConfigureAwait(true);
+        if (result.Succeeded && result.OutputPath != null)
         {
-            var info = new FileInfo(finalFile);
+            var info = new FileInfo(result.OutputPath);
             downloading.FileSize = Format.FormatFileSize(info.Length);
         }
         else
@@ -577,8 +718,10 @@ internal abstract class DownloadService : IDisposable
             downloading.FileSize = Format.FormatFileSize(0);
         }
 
-        return finalFile;
+        return result;
     }
+
+    private sealed record DurlDownloadResult(PlayUrlDurl Durl, string FilePath);
 
 
     protected async Task BaseParseAsync(DownloadingItem downloading)
@@ -640,72 +783,73 @@ internal abstract class DownloadService : IDisposable
         downloading.PlayUrl = playUrl;
     }
 
-    private readonly SemaphoreSlim _downloadSemaphore = new(SettingsManager.Instance
-        .GetMaxCurrentDownloads());
-
     /// <summary>
     /// 执行任务
     /// </summary>
     protected async Task DoWork()
     {
-        // 上次循环时正在下载的数量
+        var queue = _downloadQueue ?? throw new InvalidOperationException("Download queue is not initialized.");
         var lastDownloadingCount = 0;
-
-        while (CancellationToken.HasValue &&
-               !CancellationToken.Value.IsCancellationRequested)
+        var cancellationToken = CancellationToken.GetValueOrDefault();
+        try
         {
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
-                _downloadingTasks.RemoveAll(task => task.IsCompleted);
-
                 foreach (var downloading in DownloadingList)
                 {
-                    if (downloading.Downloading.DownloadStatus is not (DownloadStatus.NotStarted or DownloadStatus.WaitForDownload))
+                    if (downloading.Downloading.DownloadStatus is not (
+                            DownloadStatus.NotStarted or DownloadStatus.WaitForDownload) ||
+                        !TryMarkQueued(downloading))
+                    {
                         continue;
+                    }
 
-                    await _downloadSemaphore.WaitAsync(CancellationToken.Value).ConfigureAwait(true);
-                    //这里需要立刻设置状态，否则如果SingleDownload没有及时执行，会重复创建任务
-                    downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
-                    await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
-                    _downloadingTasks.Add(RunSingleDownloadAsync(downloading));
+                    try
+                    {
+                        await queue.Writer.WriteAsync(downloading, cancellationToken).ConfigureAwait(true);
+                    }
+                    catch
+                    {
+                        UnmarkQueued(downloading);
+                        throw;
+                    }
                 }
-            }
-            catch (ObjectDisposedException e)
-            {
-                Console.PrintLine($"{Tag}.DoWork()资源已释放: {0}", e);
-                LogManager.Error($"{Tag}.DoWork() ObjectDisposedException", e);
-            }
-            catch (InvalidOperationException e)
-            {
-                Console.PrintLine($"{Tag}.DoWork()发生InvalidOperationException异常: {0}", e);
-                LogManager.Error($"{Tag}.DoWork() InvalidOperationException", e);
-            }
 
-            // 判断是否该结束线程，若为true，跳出while循环
-            if (CancellationToken?.IsCancellationRequested == true)
-            {
-                Console.PrintLine($"{Tag}.DoWork() 下载服务结束，跳出while循环");
-                LogManager.Debug($"{Tag}.DoWork()", "下载服务结束");
-                break;
+                if (lastDownloadingCount > 0 && DownloadingList.Count == 0 && DownloadedList.Count > 0)
+                {
+                    AfterDownload();
+                }
+
+                lastDownloadingCount = DownloadingList.Count;
+                await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken).ConfigureAwait(true);
             }
-
-            // 判断下载列表中的视频是否全部下载完成
-            if (lastDownloadingCount > 0 && DownloadingList.Count == 0 && DownloadedList.Count > 0)
-            {
-                AfterDownload();
-            }
-
-            lastDownloadingCount = DownloadingList.Count;
-
-            // 降低CPU占用
-            await Task.Delay(500).ConfigureAwait(true);
         }
-
-        await Task.WhenAny(Task.WhenAll(_downloadingTasks), Task.Delay(30000)).ConfigureAwait(true);
-        foreach (var tsk in _downloadingTasks.FindAll(task => !task.IsCompleted))
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            Console.PrintLine($"{Tag}.DoWork() 任务结束超时");
-            LogManager.Debug($"{Tag}.DoWork()", "任务结束超时");
+        }
+        catch (InvalidOperationException e)
+        {
+            LogManager.Error($"{Tag}.DoWork()", e);
+        }
+        finally
+        {
+            queue.Writer.TryComplete();
+        }
+    }
+
+    private bool TryMarkQueued(DownloadingItem downloading)
+    {
+        lock (_queueLock)
+        {
+            return _queuedDownloads.Add(downloading);
+        }
+    }
+
+    private void UnmarkQueued(DownloadingItem downloading)
+    {
+        lock (_queueLock)
+        {
+            _queuedDownloads.Remove(downloading);
         }
     }
 
@@ -720,15 +864,43 @@ internal abstract class DownloadService : IDisposable
         };
     }
 
-    private async Task RunSingleDownloadAsync(DownloadingItem downloading)
+    private async Task DownloadWorkerAsync(ChannelReader<DownloadingItem> reader, CancellationToken cancellationToken)
     {
         try
         {
-            await SingleDownload(downloading).ConfigureAwait(true);
+            await foreach (var downloading in reader.ReadAllAsync(cancellationToken).ConfigureAwait(true))
+            {
+                try
+                {
+                    if (!DownloadingList.Contains(downloading) ||
+                        downloading.Downloading.DownloadStatus is not (
+                            DownloadStatus.NotStarted or DownloadStatus.WaitForDownload))
+                    {
+                        continue;
+                    }
+
+                    downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
+                    await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+                    await SingleDownload(downloading).ConfigureAwait(true);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
+                    or HttpRequestException or Newtonsoft.Json.JsonException)
+                {
+                    LogManager.Error($"{Tag}.DownloadWorker", e);
+                    await DownloadFailedAsync(downloading).ConfigureAwait(true);
+                }
+                finally
+                {
+                    UnmarkQueued(downloading);
+                }
+            }
         }
-        finally
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _downloadSemaphore.Release();
         }
     }
 
@@ -776,7 +948,6 @@ internal abstract class DownloadService : IDisposable
 
         try
         {
-            await Task.Run(async () =>
             {
                 // 初始化
                 downloading.DownloadStatusTitle = string.Empty;
@@ -801,7 +972,7 @@ internal abstract class DownloadService : IDisposable
                     {
                         for (var i = 0; i < Retry; i++)
                         {
-                            audioUid = DownloadAudio(downloading);
+                            audioUid = await DownloadAudioAsync(downloading).ConfigureAwait(true);
                             if (audioUid != null && audioUid != NullMark)
                             {
                                 break;
@@ -824,7 +995,7 @@ internal abstract class DownloadService : IDisposable
                         //videoUid = DownloadVideo(downloading);
                         for (var i = 0; i < Retry; i++)
                         {
-                            videoUid = DownloadVideo(downloading);
+                            videoUid = await DownloadVideoAsync(downloading).ConfigureAwait(true);
                             if (videoUid != null && videoUid != NullMark)
                             {
                                 break;
@@ -845,7 +1016,7 @@ internal abstract class DownloadService : IDisposable
                     if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"] ||
                         downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
                     {
-                        outputMedia = MixedFlow(downloading, audioUid, videoUid);
+                        outputMedia = await MixedFlowAsync(downloading, audioUid, videoUid).ConfigureAwait(true);
                     }
 
                     // 检测音频、视频是否下载成功
@@ -859,43 +1030,54 @@ internal abstract class DownloadService : IDisposable
                         isMediaSuccess = File.Exists(outputMedia);
                     }
                 }
-                else if (downloading.PlayUrl.Durl != null)
+                else if (downloading.PlayUrl.Durl.Count > 0)
                 {
                     if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"] ||
                         downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
                     {
-                        var durls = downloading.PlayUrl.Durl.ToList();
+                        var durls = downloading.PlayUrl.Durl
+                            .OrderBy(durl => durl.Order)
+                            .ToList();
                         var downloadStatus = durls
-                            .Select((durl, index) => new { Durl = durl, Index = index })
-                            .ToDictionary(x => x.Index, x => new { Durl = x.Durl, Result = string.Empty });
-
-                        for (int i = 0; i < durls.Count; i++)
+                            .Select(durl => new DurlDownloadResult(durl, NullMark))
+                            .ToArray();
+                        var originalDurls = downloading.PlayUrl.Durl;
+                        try
                         {
-                            downloading.PlayUrl.Durl = new List<PlayUrlDurl> { durls[i] };
-                            var result = DownloadVideo(downloading);
-                            downloadStatus[i] = new { Durl = durls[i], Result = result ?? NullMark };
-                        }
-
-                        int retryCount = 0;
-                        while (retryCount < Retry && downloadStatus.Values
-                                   .Any(x => x.Result == NullMark))
-                        {
-                            var toRetry = downloadStatus
-                                .Where(x => retryCount == 0 || x.Value.Result == NullMark)
-                                .ToList();
-
-                            foreach (var item in toRetry)
+                            for (var retryCount = 0; retryCount < Retry; retryCount++)
                             {
-                                downloading.PlayUrl.Durl = new List<PlayUrlDurl> { item.Value.Durl };
-                                var result = DownloadVideo(downloading);
-                                downloadStatus[item.Key] = new { item.Value.Durl, Result = result ?? NullMark };
-                            }
+                                for (var index = 0; index < downloadStatus.Length; index++)
+                                {
+                                    if (downloadStatus[index].FilePath != NullMark)
+                                    {
+                                        continue;
+                                    }
 
-                            retryCount++;
-                            await Task.Delay(1000).ConfigureAwait(true);
+                                    downloading.PlayUrl.Durl = new[] { downloadStatus[index].Durl };
+                                    var result = await DownloadVideoAsync(downloading).ConfigureAwait(true);
+                                    downloadStatus[index] = downloadStatus[index] with
+                                    {
+                                        FilePath = result ?? NullMark
+                                    };
+                                }
+
+                                if (downloadStatus.All(download => download.FilePath != NullMark))
+                                {
+                                    break;
+                                }
+
+                                await Task.Delay(
+                                        TimeSpan.FromSeconds(1),
+                                        CancellationToken.GetValueOrDefault())
+                                    .ConfigureAwait(true);
+                            }
+                        }
+                        finally
+                        {
+                            downloading.PlayUrl.Durl = originalDurls;
                         }
 
-                        if (downloadStatus.Values.Any(x => x.Result == NullMark))
+                        if (downloadStatus.Any(download => download.FilePath == NullMark))
                         {
                             await DownloadFailedAsync(downloading).ConfigureAwait(true);
                             return;
@@ -905,14 +1087,19 @@ internal abstract class DownloadService : IDisposable
 
                         if (durls.Count > 1)
                         {
-                            var output = ConcatVideos(downloading, downloadStatus.Values
-                                .Select(x => x.Result).ToList());
-
-                            isMediaSuccess = File.Exists(output);
+                            var concatResult = await ConcatDurlVideosAsync(
+                                    downloading,
+                                    downloadStatus,
+                                    CancellationToken.GetValueOrDefault())
+                                .ConfigureAwait(true);
+                            isMediaSuccess = concatResult.Succeeded;
                         }
                         else
                         {
-                            var outputMedia = MixedFlow(downloading, null, downloadStatus.First().Value.Result);
+                            var outputMedia = await MixedFlowAsync(
+                                downloading,
+                                null,
+                                downloadStatus[0].FilePath).ConfigureAwait(true);
                             isMediaSuccess = File.Exists(outputMedia);
                         }
                     }
@@ -924,6 +1111,11 @@ internal abstract class DownloadService : IDisposable
                     }
 
                     Pause(downloading);
+                }
+                else
+                {
+                    await DownloadFailedAsync(downloading).ConfigureAwait(true);
+                    return;
                 }
 
 
@@ -1065,7 +1257,7 @@ internal abstract class DownloadService : IDisposable
                     App.SortDownloadedList(finishedSort);
                 });
                 // _notifyIcon.ShowBalloonTip(DictionaryResource.GetString("DownloadSuccess"), $"{downloadedItem.DownloadBase.Name}", BalloonIcon.Info);
-            }).ConfigureAwait(true);
+            }
         }
         catch (OperationCanceledException e)
         {
@@ -1156,13 +1348,19 @@ internal abstract class DownloadService : IDisposable
 
         if (WorkTask != null) await WorkTask.ConfigureAwait(true);
 
-        Task[] persistenceTasks;
-        lock (_persistenceTasks)
+        try
         {
-            persistenceTasks = [.. _persistenceTasks];
+            await Task.WhenAll(_downloadWorkers)
+                .WaitAsync(TimeSpan.FromSeconds(30))
+                .ConfigureAwait(true);
         }
-
-        await Task.WhenAll(persistenceTasks).ConfigureAwait(true);
+        catch (TimeoutException e)
+        {
+            LogManager.Error($"{Tag}.DownloadWorkers", e);
+        }
+        catch (OperationCanceledException) when (TokenSource?.IsCancellationRequested == true)
+        {
+        }
 
         //先简单等待一下
 
@@ -1217,7 +1415,6 @@ internal abstract class DownloadService : IDisposable
         TokenSource?.Cancel();
         TokenSource?.Dispose();
         TokenSource = null;
-        _downloadSemaphore.Dispose();
     }
 
     /// <summary>
@@ -1227,25 +1424,53 @@ internal abstract class DownloadService : IDisposable
     {
         TokenSource = new CancellationTokenSource();
         CancellationToken = TokenSource.Token;
-        // _notifyIcon = new TaskbarIcon();
-        // _notifyIcon.IconSource = new BitmapImage(new Uri("pack://application:,,,/Resources/favicon.ico"));
-
+        var workerCount = Math.Max(1, SettingsManager.Instance.GetMaxCurrentDownloads());
+        _downloadQueue = Channel.CreateBounded<DownloadingItem>(new BoundedChannelOptions(
+            Math.Max(32, workerCount * 8))
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = workerCount == 1,
+            SingleWriter = true
+        });
+        _downloadWorkers = Enumerable.Range(0, workerCount)
+            .Select(_ => Task.Run(() => DownloadWorkerAsync(_downloadQueue.Reader, TokenSource.Token)))
+            .ToArray();
         WorkTask = Task.Run(DoWork);
     }
 
     #region 抽象接口函数
 
-    public abstract Task ParseAsync(DownloadingItem downloading);
-    public abstract string? DownloadAudio(DownloadingItem downloading);
-    public abstract string? DownloadVideo(DownloadingItem downloading);
-    public abstract Task<string> DownloadDanmakuAsync(DownloadingItem downloading);
-    public abstract Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading);
-    public abstract Task<string?> DownloadCoverAsync(
+    public Task ParseAsync(DownloadingItem downloading) => BaseParseAsync(downloading);
+    public Task<string> DownloadDanmakuAsync(DownloadingItem downloading) => BaseDownloadDanmakuAsync(downloading);
+    public Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading) =>
+        BaseDownloadSubtitleAsync(downloading);
+    public Task<string?> DownloadCoverAsync(
         DownloadingItem downloading,
         string? coverUrl,
-        string fileName);
-    public abstract string? MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid);
+        string fileName) => BaseDownloadCoverAsync(downloading, coverUrl, fileName);
+    public async Task<string?> MixedFlowAsync(DownloadingItem downloading, string? audioUid, string? videoUid)
+    {
+        EnsureDownloadIsActive(downloading);
+        return await BaseMixedFlowAsync(
+            downloading,
+            audioUid,
+            videoUid,
+            CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
+    }
 
+    protected abstract Task<DownloadTransferOutcome> TransferAsync(
+        DownloadingItem downloading,
+        IReadOnlyList<string> urls,
+        string path,
+        string localFileName,
+        long expectedBytes);
     protected abstract void Pause(DownloadingItem downloading);
     #endregion
+}
+
+internal enum DownloadTransferOutcome
+{
+    Failed,
+    Succeeded,
+    Paused
 }

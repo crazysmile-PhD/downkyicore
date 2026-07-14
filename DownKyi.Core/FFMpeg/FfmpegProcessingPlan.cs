@@ -9,6 +9,17 @@ internal enum FfmpegConcatStrategy
 
 internal static class FfmpegProcessingPlan
 {
+    private static readonly IReadOnlyList<FfmpegConcatStrategy> DurlWithoutHardware = new[]
+    {
+        FfmpegConcatStrategy.CpuEncoder
+    };
+
+    private static readonly IReadOnlyList<FfmpegConcatStrategy> DurlWithHardware = new[]
+    {
+        FfmpegConcatStrategy.HardwareEncoder,
+        FfmpegConcatStrategy.CpuEncoder
+    };
+
     private static readonly IReadOnlyList<FfmpegConcatStrategy> WithoutHardware = new[]
     {
         FfmpegConcatStrategy.StreamCopy,
@@ -23,8 +34,16 @@ internal static class FfmpegProcessingPlan
     };
 
     public static IReadOnlyList<FfmpegConcatStrategy> BuildConcatPlan(
-        FfmpegHardwareEncoderProfile? hardwareEncoder)
+        FfmpegHardwareEncoderProfile? hardwareEncoder,
+        bool allowStreamCopy = true)
     {
+        if (!allowStreamCopy)
+        {
+            return hardwareEncoder == null
+                ? DurlWithoutHardware
+                : DurlWithHardware;
+        }
+
         return hardwareEncoder == null
             ? WithoutHardware
             : WithHardware;

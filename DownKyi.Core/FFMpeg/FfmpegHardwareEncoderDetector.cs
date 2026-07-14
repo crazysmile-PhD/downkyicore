@@ -1,5 +1,3 @@
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -10,15 +8,33 @@ internal sealed record FfmpegHardwareEncoderProfile(
     FfmpegHardwareAcceleration Mode,
     string DisplayName,
     string EncoderName,
-    string OutputArguments);
+    IReadOnlyList<string> OutputArguments);
 
 internal static class FfmpegHardwareEncoderDetector
 {
     private const string Tag = "FfmpegHardwareEncoderDetector";
     private static readonly char[] EncoderLineSeparators = { '\r', '\n' };
-    private static readonly Lazy<HashSet<string>> AvailableEncoders = new(LoadAvailableEncoders);
+    private static readonly TimeSpan DetectionTimeout = TimeSpan.FromSeconds(5);
+    private static readonly Lazy<Task<HashSet<string>>> AvailableEncoders = new(LoadAvailableEncodersAsync);
+    private static readonly IReadOnlyList<string> NvidiaArguments =
+        Array.AsReadOnly(new[] { "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23" });
+    private static readonly IReadOnlyList<string> IntelQsvArguments =
+        Array.AsReadOnly(new[] { "-c:v", "h264_qsv", "-global_quality", "23" });
+    private static readonly IReadOnlyList<string> AmdAmfArguments =
+        Array.AsReadOnly(new[] { "-c:v", "h264_amf", "-quality", "balanced" });
+    private static readonly IReadOnlyList<string> VaapiArguments = Array.AsReadOnly(new[]
+    {
+        "-vaapi_device", GetVaapiDevice(),
+        "-vf", "format=nv12,hwupload",
+        "-c:v", "h264_vaapi",
+        "-qp", "23"
+    });
+    private static readonly IReadOnlyList<string> VideoToolboxArguments =
+        Array.AsReadOnly(new[] { "-c:v", "h264_videotoolbox", "-b:v", "6M" });
 
-    public static FfmpegHardwareEncoderProfile? Select(FfmpegHardwareAcceleration mode)
+    public static async Task<FfmpegHardwareEncoderProfile?> SelectAsync(
+        FfmpegHardwareAcceleration mode,
+        CancellationToken cancellationToken = default)
     {
         if (mode == FfmpegHardwareAcceleration.Disabled)
         {
@@ -29,9 +45,12 @@ internal static class FfmpegHardwareEncoderDetector
             ? GetAutoCandidates()
             : GetManualCandidates(mode);
 
+        var availableEncoders = await AvailableEncoders.Value
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
         foreach (var candidate in candidates)
         {
-            if (AvailableEncoders.Value.Contains(candidate.EncoderName))
+            if (availableEncoders.Contains(candidate.EncoderName))
             {
                 LogManager.Info(Tag, $"Selected FFmpeg hardware encoder: {candidate.DisplayName}");
                 return candidate;
@@ -83,7 +102,7 @@ internal static class FfmpegHardwareEncoderDetector
             FfmpegHardwareAcceleration.NvidiaNvenc,
             "NVIDIA NVENC",
             "h264_nvenc",
-            "-c:v h264_nvenc -preset p4 -cq 23 -pix_fmt yuv420p");
+            NvidiaArguments);
     }
 
     private static FfmpegHardwareEncoderProfile IntelQsv()
@@ -92,7 +111,7 @@ internal static class FfmpegHardwareEncoderDetector
             FfmpegHardwareAcceleration.IntelQsv,
             "Intel QSV",
             "h264_qsv",
-            "-c:v h264_qsv -global_quality 23");
+            IntelQsvArguments);
     }
 
     private static FfmpegHardwareEncoderProfile AmdAmf()
@@ -101,7 +120,7 @@ internal static class FfmpegHardwareEncoderDetector
             FfmpegHardwareAcceleration.AmdAmf,
             "AMD AMF",
             "h264_amf",
-            "-c:v h264_amf -quality balanced");
+            AmdAmfArguments);
     }
 
     private static FfmpegHardwareEncoderProfile Vaapi()
@@ -110,7 +129,7 @@ internal static class FfmpegHardwareEncoderDetector
             FfmpegHardwareAcceleration.Vaapi,
             "Linux VAAPI",
             "h264_vaapi",
-            $"-vaapi_device {GetVaapiDevice()} -vf format=nv12,hwupload -c:v h264_vaapi -qp 23");
+            VaapiArguments);
     }
 
     private static FfmpegHardwareEncoderProfile VideoToolbox()
@@ -119,12 +138,21 @@ internal static class FfmpegHardwareEncoderDetector
             FfmpegHardwareAcceleration.VideoToolbox,
             "macOS VideoToolbox",
             "h264_videotoolbox",
-            "-c:v h264_videotoolbox -b:v 6M");
+            VideoToolboxArguments);
     }
 
-    private static HashSet<string> LoadAvailableEncoders()
+    private static async Task<HashSet<string>> LoadAvailableEncodersAsync()
     {
-        var output = RunFfmpeg("-hide_banner -encoders");
+        var processRunner = new FfmpegProcessRunner();
+        var result = await processRunner.RunAsync(
+                new FfmpegCommand(
+                    FfmpegExecutableLocator.Ffmpeg,
+                    ["-hide_banner", "-encoders"],
+                    "detect-hardware-encoders"),
+                DetectionTimeout,
+                CancellationToken.None)
+            .ConfigureAwait(false);
+        var output = result.StandardOutput + Environment.NewLine + result.StandardError;
         var encoders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var line in output.Split(EncoderLineSeparators, StringSplitOptions.RemoveEmptyEntries))
@@ -143,59 +171,6 @@ internal static class FfmpegHardwareEncoderDetector
     private static bool IsKnownHardwareEncoder(string encoder)
     {
         return encoder is "h264_nvenc" or "h264_qsv" or "h264_amf" or "h264_vaapi" or "h264_videotoolbox";
-    }
-
-    private static string RunFfmpeg(string arguments)
-    {
-        try
-        {
-            using var process = new Process();
-            process.StartInfo = new ProcessStartInfo
-            {
-                FileName = GetFfmpegExecutable(),
-                Arguments = arguments,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            process.Start();
-            var output = process.StandardOutput.ReadToEnd();
-            var error = process.StandardError.ReadToEnd();
-            if (!process.WaitForExit(5000))
-            {
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch (InvalidOperationException)
-                {
-                }
-                catch (Win32Exception)
-                {
-                }
-            }
-
-            return output + Environment.NewLine + error;
-        }
-        catch (Win32Exception e)
-        {
-            LogManager.Error(Tag, e);
-            return string.Empty;
-        }
-        catch (InvalidOperationException e)
-        {
-            LogManager.Error(Tag, e);
-            return string.Empty;
-        }
-    }
-
-    private static string GetFfmpegExecutable()
-    {
-        var fileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffmpeg.exe" : "ffmpeg";
-        var bundledPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg", fileName);
-        return File.Exists(bundledPath) ? bundledPath : "ffmpeg";
     }
 
     private static string GetVaapiDevice()

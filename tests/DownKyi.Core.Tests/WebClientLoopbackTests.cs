@@ -1,4 +1,5 @@
 using System.Net;
+using DownKyi.Core.BiliApi;
 using DownKyi.Core.Tests.Infrastructure;
 using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 
@@ -20,7 +21,7 @@ public sealed class WebClientLoopbackTests : IDisposable
         var server = new LoopbackHttpServer(_ => new LoopbackResponse(statusCode));
         await using var serverLifetime = server.ConfigureAwait(false);
 
-        Assert.Throws<HttpRequestException>(() =>
+        Assert.Throws<BilibiliHttpRequestException>(() =>
             BiliWebClient.RequestWeb(
                 server.Url.ToString(),
                 retry: 1,
@@ -35,15 +36,14 @@ public sealed class WebClientLoopbackTests : IDisposable
         var server = new LoopbackHttpServer(_ => new LoopbackResponse(HttpStatusCode.OK));
         await using var serverLifetime = server.ConfigureAwait(false);
 
-        var exception = Assert.Throws<HttpRequestException>(() =>
+        var exception = Assert.Throws<BilibiliHttpRequestException>(() =>
             BiliWebClient.RequestWeb(
                 server.Url.ToString(),
                 retry: 2,
                 cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(2, server.RequestCount);
-        Assert.Contains("Request failed after 2 attempts", exception.Message, StringComparison.Ordinal);
-        Assert.IsType<HttpRequestException>(exception.InnerException);
+        Assert.Equal(BilibiliHttpFailureKind.EmptyResponse, exception.FailureKind);
     }
 
     [Fact]
@@ -91,14 +91,13 @@ public sealed class WebClientLoopbackTests : IDisposable
             new LoopbackResponse(HttpStatusCode.OK, body));
         await using var serverLifetime = server.ConfigureAwait(false);
 
-        var result = DownKyi.Core.BiliApi.BiliApiRequest.RequestJson<Dictionary<string, object>>(
-            server.Url.ToString(),
-            referer: null,
-            operationName: "test",
-            logTag: nameof(WebClientLoopbackTests),
-            cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Null(result);
+        Assert.Throws<DownKyi.Core.BiliApi.BilibiliApiResponseException>(() =>
+            DownKyi.Core.BiliApi.BiliApiRequest.RequestJson<Dictionary<string, object>>(
+                server.Url.ToString(),
+                referer: null,
+                operationName: "test",
+                logTag: nameof(WebClientLoopbackTests),
+                cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -118,6 +117,34 @@ public sealed class WebClientLoopbackTests : IDisposable
 
         await Assert.ThrowsAnyAsync<IOException>(async () =>
             await response.CopyToAsync(Stream.Null, TestContext.Current.CancellationToken).ConfigureAwait(true)).ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task DownloadFileRemovesPartialOutputWhenContentLengthDoesNotMatch()
+    {
+        var server = new LoopbackHttpServer(_ =>
+            new LoopbackResponse(
+                HttpStatusCode.OK,
+                "partial",
+                ContentLength: 128));
+        await using var serverLifetime = server.ConfigureAwait(false);
+        var output = Path.Combine(Path.GetTempPath(), $"downkyi-partial-{Guid.NewGuid():N}.bin");
+
+        try
+        {
+            Assert.ThrowsAny<IOException>(() => BiliWebClient.DownloadFile(
+                server.Url.ToString(),
+                output,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+            Assert.False(File.Exists(output));
+            Assert.False(File.Exists($"{output}.download"));
+        }
+        finally
+        {
+            File.Delete(output);
+            File.Delete($"{output}.download");
+        }
     }
 
     public void Dispose()

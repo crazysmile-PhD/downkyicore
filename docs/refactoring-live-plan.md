@@ -2,8 +2,8 @@
 
 Status: active
 Last updated: 2026-07-13
-Current group: PR 07-15
-Next branch: `refactor/pr-07-15-download-runtime`
+Current group: PR 16-24
+Next branch: `refactor/pr-16-24-media-ui-lifecycle`
 
 This file contains only unfinished work. Completed items are removed in the same PR that finishes them; newly discovered debt is added immediately with an owning PR or phase.
 
@@ -18,30 +18,7 @@ This file contains only unfinished work. Completed items are removed in the same
 - A group may contain multiple ordered commits, but it must not be split into smaller public PRs or combined with another numbered range.
 - The next group starts only after the previous group has completed its full scope and passed build, tests, data compatibility checks, documentation updates, and `git diff --check`.
 
-## Active Next: PR 07-15 - Download, FFmpeg, Aria2, And HTTP Runtime
-
-Branch: `refactor/pr-07-15-download-runtime`
-
-- Build a bounded download orchestrator, fixed workers, per-task cancellation, global shutdown, staged pipeline, and atomic finalize.
-- Unify built-in, local aria2, and custom aria2 behind transfer backends; remove duplicate custom aria2 flow after takeover.
-- Preserve resume files on pause and remove media plus `.aria2` / `.download` sidecars on delete.
-- Replace static aria2 process state with a process supervisor and bounded shutdown.
-- Separate FFmpeg command generation from execution; add capability caching, timeout/cancellation, structured stderr, and bounded transcode concurrency.
-- Keep the enforced processing order: stream copy, available hardware encoder, CPU fallback.
-- Replace static WebClient with one typed Bilibili client based on `IHttpClientFactory`.
-- Make 401/403/schema failures non-retryable, honor `Retry-After` for 429, and keep cancellation non-retryable.
-- Replace `BiliApiRequest` catch-and-return-null behavior with typed failures visible to UI and diagnostics.
-- Add source-generated JSON contexts and fixed API contract samples for success, missing data, rejected code, HTML, and malformed JSON.
-- Make incomplete stream cleanup atomic; a Content-Length failure must not leave a file that can be mistaken for completed media.
-- Remove the tracked synchronous persistence compatibility bridge after built-in and aria2 callbacks become async; state transitions must await the store and high-rate progress must use the bounded write-behind boundary.
-
-- Sort all DURL inputs by `Order` before queueing or merging.
-- For multi-segment DURL output, skip stream copy and rebuild timestamps, keyframes, and MP4 indexes through hardware encoding with CPU `libx264 + aac` fallback.
-- Make concat return an explicit success result and validate output with ffprobe: video stream exists, duration is positive and close to summed segments, and middle/tail seeks decode successfully.
-- Delete invalid concat output and mark the download failed; callers must not accept `File.Exists(output)` as completion.
-- Add regression fixtures proving multi-segment temporary files are unique and merged MP4 output can seek near the middle and tail.
-
-## PR 16-24 - Media Use Cases, ViewModels, And App Lifecycle
+## Active Next: PR 16-24 - Media Use Cases, ViewModels, And App Lifecycle
 
 Branch: `refactor/pr-16-24-media-ui-lifecycle`
 

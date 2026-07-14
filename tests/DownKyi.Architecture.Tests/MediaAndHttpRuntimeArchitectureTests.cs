@@ -1,0 +1,72 @@
+namespace DownKyi.Architecture.Tests;
+
+public sealed class MediaAndHttpRuntimeArchitectureTests
+{
+    private static readonly string RepositoryRoot = FindRepositoryRoot();
+
+    [Fact]
+    public void FfmpegRuntimeDoesNotRestoreSynchronousProcessWaits()
+    {
+        var runtimeDirectory = Path.Combine(RepositoryRoot, "DownKyi.Core", "FFMpeg");
+        var forbidden = new[]
+        {
+            "WaitForExit(",
+            ".ReadToEnd()",
+            "Monitor.Wait",
+            ".GetAwaiter().GetResult()"
+        };
+        var violations = Directory
+            .EnumerateFiles(runtimeDirectory, "*.cs", SearchOption.TopDirectoryOnly)
+            .SelectMany(path => forbidden
+                .Where(token => File.ReadAllText(path).Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{Path.GetRelativePath(RepositoryRoot, path)} -> {token}"))
+            .ToArray();
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
+    }
+
+    [Fact]
+    public void DesktopHostRegistersTheTypedBilibiliClient()
+    {
+        var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+        var registrationSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "BiliApi",
+            "BilibiliHttpClientRegistration.cs"));
+
+        Assert.Contains("AddDownKyiBilibiliHttpClient()", appSource, StringComparison.Ordinal);
+        Assert.Contains("AddHttpClient<BilibiliHttpClient>", registrationSource, StringComparison.Ordinal);
+        Assert.Contains("ConfigurePrimaryHttpMessageHandler", registrationSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BilibiliApiBoundaryUsesTypedFailuresInsteadOfNullFallbacks()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "BiliApi",
+            "BiliApiRequest.cs"));
+
+        Assert.Contains("BilibiliApiResponseException", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("return null", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("return default", source, StringComparison.Ordinal);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "DownKyi.sln")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate the repository root.");
+    }
+}

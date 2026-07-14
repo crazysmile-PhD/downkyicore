@@ -458,7 +458,9 @@ id: core.web-client
 type: core
 paths:
   - DownKyi.Core/BiliApi/WebClient.cs
-responsibility: Builds Bilibili HTTP requests, applies cookies/buvid/referer, and performs cancellation-aware retries.
+  - DownKyi.Core/BiliApi/BilibiliHttpClient.cs
+  - DownKyi.Core/BiliApi/BilibiliHttpClientRegistration.cs
+responsibility: Uses one IHttpClientFactory-managed typed client to build Bilibili requests, apply cookies/buvid/referer, and perform bounded cancellation-aware retries; WebClient is the temporary legacy facade.
 inbound:
   - core.bili-api
 outbound:
@@ -469,9 +471,11 @@ contracts:
   - Retry exhaustion throws HttpRequestException.
   - HTTP 200 with an empty body is a failed request, not a valid payload.
   - Cancellation is never swallowed by retry.
+  - HTTP 401/403 and rejected API schemas are non-retryable; HTTP 429 honors Retry-After with a bounded delay.
+  - JSON metadata uses source-generated System.Text.Json contexts; legacy endpoint DTO materialization remains Newtonsoft-compatible.
   - Sanitized URLs are used in diagnostics.
 hazards:
-  - Returning empty strings from this layer hides root-cause network failures.
+  - Synchronous legacy endpoint signatures keep the WebClient facade alive until PR 16-24 moves callers to cancellable use cases; do not add new facade callers.
   - Cookie handling must not be emitted to console or public logs.
 tests:
   - test.web-client
@@ -525,17 +529,19 @@ outbound:
   - external.ffmpeg
   - core.logging
 contracts:
+  - A bounded Channel and fixed workers own queue consumption; global shutdown and per-task cancellation cannot create unbounded transfer tasks.
+  - Built-in and aria2 backends share key generation, resume path selection, integrity checks, and awaited persistence; CustomAria only selects the shared aria backend.
   - Incomplete, empty, HTML/JSON error, and sidecar files are not valid completed media.
-  - Canceled/deleted downloads should clean partial files and aria2 metadata.
-  - Target in PR 07-15: each multi-segment DURL has a unique key derived from stable segment order or index.
-  - Target in PR 07-15: DURL merge input is sorted by Order and success requires ffprobe stream, duration, and seek/decode validation.
-  - Target in PR 07-15: multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; stream copy is not a valid first strategy.
+  - Pause and app shutdown preserve resumable partial files; explicit deletion removes media plus `.aria2` and `.download` sidecars.
+  - Each multi-segment DURL key includes stable `DURL.Order`; BVID, codec, and runtime hash codes are not segment identities.
+  - DURL merge input is sorted by Order and success requires ffprobe stream, duration, and middle/tail seek-decode validation.
+  - Multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; hardware failure falls back to `libx264 + aac`.
+  - State transitions await persistence; high-rate progress uses the bounded write-behind boundary.
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
   - Blocking waits in download lifecycle can freeze UI or prevent process exit.
   - Resume behavior depends on preserving partial files while delete behavior must remove them.
   - aria2 process cleanup is platform-sensitive.
-  - Synchronous aria2 callbacks still use a tracked persistence bridge; PR 07-15 owns its removal after callback async conversion.
   - Reusing Id+codec or runtime GetHashCode values across DURL segments overwrites temporary files and can produce non-seekable MP4 output.
 tests:
   - test.download-file-integrity
@@ -643,15 +649,19 @@ inbound:
 outbound:
   - external.process
 contracts:
-  - Stream copy is preferred when possible.
+  - Stream copy may be used for ordinary compatible merge operations, but never for multi-segment DURL concat.
   - Hardware encode failure must fall back to CPU for success rate.
-  - Release packages must include cross-platform ffmpeg binaries with checksums.
+  - Multi-segment completion is accepted only after ffprobe verifies a video stream, positive expected duration, and decodable middle/tail seeks.
+  - Command generation is separate from the async process runner; every process has cancellation, a timeout, captured stderr, and process-tree cleanup.
+  - Hardware encoder discovery is cached and runs through the same bounded async process runner.
+  - Release packages must include cross-platform ffmpeg and ffprobe binaries with checksums.
   - FFmpeg concurrency state belongs to the singleton runtime instance; every operation, including frame extraction, must enter and release the same bounded slot gate.
 hazards:
   - GPU encoder flags differ across OS/GPU/driver.
   - Full transcode can spike CPU and memory during batch downloads.
 tests:
   - test.ffmpeg-command-selection
+  - test.durl-seekability
 ```
 
 ### external.aria2
@@ -671,6 +681,7 @@ outbound:
 contracts:
   - RPC server startup/shutdown must be cancellation-aware.
   - Split, max connection, min split size, and limits should match settings.
+  - Only the tracked aria2 child process may be terminated; shutdown is bounded and never kills unrelated aria2 processes by name.
 hazards:
   - Orphaned aria2 processes prevent clean app exit and lock output files.
   - Temporary `.aria2` files must be removed when user deletes a task.
@@ -729,7 +740,7 @@ contracts:
   - Compatibility flags are review hints and never authorize mechanical API or schema changes.
   - Every assembly explicitly declares `CLSCompliant(false)` through `Directory.Build.props`; `CA1014` is enforced without claiming unverified CLS compatibility.
   - The full solution has zero unhandled CA diagnostics; all 77 cleaned rules and the global analyzer warning policy are blocking errors.
-  - Windows Release build/tests and local `linux-x64`/`osx-x64` cross-RID builds are verified; native Linux/macOS tests run only on their CI matrix runners.
+  - Windows Release build/tests and local Windows x86, Linux x64/arm64, and macOS x64/arm64 cross-RID builds are verified; native Linux/macOS tests run only on their CI matrix runners.
   - Parameterless singleton, settings, zone-list, and log-directory getters use properties. These types are application components shared across project boundaries, not a supported package API; internal call sites must use the properties so analyzer-clean API shape does not depend on compatibility wrappers.
   - The request-preparation benchmark deserializes to `JsonElement`, avoiding artificial public DTO contracts that exist only for measurement. The advanced-image wrapper remains private. `FfmpegHardwareAccelerationItem` is namespace-level and public because Avalonia-visible ViewModel properties expose it for option display and selection.
   - Async command event notification uses the standard protected `OnCanExecuteChanged` raiser. Dialog ViewModels call the protected `CloseDialog` action; it invokes Prism's `RequestClose` listener and is not itself an event.
@@ -812,15 +823,16 @@ Rule: cancel means no task, no background add, no storage write.
 
 ```mermaid
 flowchart TD
-    Queue["DownloadingList item"] --> Runtime["DownloadService.DoWork"]
+    Queue["DownloadingList item"] --> Channel["Bounded Channel"]
+    Channel --> Runtime["Fixed Download Workers"]
     Runtime --> Choice{"Downloader setting"}
     Choice --> Builtin["BuiltinDownloadService"]
     Choice --> Aria["AriaDownloadService"]
-    Choice --> CustomAria["CustomAriaDownloadService"]
+    Choice --> CustomAria["CustomAriaDownloadService (shared Aria backend)"]
     Builtin --> Integrity["DownloadFileIntegrity"]
     Aria --> Integrity
     CustomAria --> Integrity
-    Integrity -->|valid| FFmpeg["FFmpeg merge/copy/GPU fallback"]
+    Integrity -->|valid| FFmpeg["FFmpeg command runner + bounded gate"]
     Integrity -->|invalid| Retry["retry or fail visibly"]
     FFmpeg --> Complete["DownloadedList + downloaded table"]
     Retry --> Logs["sanitized diagnostics"]
@@ -835,6 +847,8 @@ test.web-client:
   paths:
     - tests/DownKyi.Core.Tests/WebClientTests.cs
     - tests/DownKyi.Core.Tests/WebClientLoopbackTests.cs
+    - tests/DownKyi.Core.Tests/BilibiliHttpClientTests.cs
+    - tests/DownKyi.Core.Tests/BiliApiContractSampleTests.cs
     - tests/DownKyi.Core.Tests/Infrastructure/LoopbackHttpServer.cs
   guards:
     - retry exhaustion throws HttpRequestException
@@ -845,6 +859,7 @@ test.web-client:
     - slow-response cancellation is not retried
     - cancellation is not retried or swallowed
     - query parameter URL building stays stable
+    - typed client registration, Retry-After handling, and API failure contracts remain explicit
 
 test.download-add:
   paths:
@@ -892,6 +907,17 @@ test.ffmpeg-command-selection:
     - stream copy runs before hardware encoding
     - CPU fallback remains last and is never removed when hardware is unavailable
 
+test.durl-seekability:
+  paths:
+    - tests/DownKyi.Core.Tests/FfmpegConcatRuntimeTests.cs
+    - tests/DownKyi.Core.Tests/FfmpegMediaValidatorTests.cs
+    - tests/DownKyi.Core.Tests/FfmpegSeekabilityIntegrationTests.cs
+    - tests/DownKyi.Tests/DurlDownloadIdentityTests.cs
+  guards:
+    - DURL segment identity includes stable order and merge input is sorted
+    - invalid or non-seekable output is removed and cannot be finalized
+    - a real multi-segment MP4 decodes after middle and tail seeks
+
 test.process-cleanup:
   paths:
     - tests/DownKyi.Core.Tests/AriaServerProcessTests.cs
@@ -918,6 +944,8 @@ test.architecture-boundaries:
   paths:
     - tests/DownKyi.Architecture.Tests/ProjectDependencyTests.cs
     - tests/DownKyi.Architecture.Tests/RootViewArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/DownloadRuntimeArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
     - production project references remain acyclic
     - target Domain/Application/Infrastructure/Desktop dependency direction is enforced
@@ -927,6 +955,8 @@ test.architecture-boundaries:
     - every temporary legacy bridge names the PR that deletes it
     - Host-independent root XAML cannot use Prism ViewModelLocator or RegionManager attached properties
     - production C# cannot reference Prism ContainerLocator directly
+    - download and FFmpeg runtime cannot restore synchronous async/process waits
+    - Host composition must register the typed Bilibili client and API parsing cannot return null fallbacks
 
 test.ui-smoke:
   paths:

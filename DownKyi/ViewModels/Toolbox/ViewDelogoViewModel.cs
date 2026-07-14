@@ -188,7 +188,8 @@ internal class ViewDelogoViewModel : ViewModelBase
         {
             try
             {
-                Source = new Bitmap(await FfmpegProcessor.Instance.ExtractVideoFrame(VideoPath, TimeSpan.FromSeconds(1)).ConfigureAwait(true));
+                Source = new Bitmap(await FfmpegProcessor.Instance
+                    .ExtractVideoFrameAsync(VideoPath, TimeSpan.FromSeconds(1)).ConfigureAwait(true));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException
                 or InvalidOperationException or System.ComponentModel.Win32Exception)
@@ -248,21 +249,22 @@ internal class ViewDelogoViewModel : ViewModelBase
         var newFileName = VideoPath.Insert(VideoPath.Length - 4, "_delogo");
         Status = string.Empty;
 
-        await Task.Run(() =>
+        _isDelogo = true;
+        try
         {
-            // 执行去水印程序
-            _isDelogo = true;
-            FfmpegProcessor.Instance.Delogo
-            (
+            await FfmpegProcessor.Instance.DelogoAsync(
                 VideoPath,
                 newFileName,
                 _logoX,
                 _logoY,
                 _logoWidth,
                 _logoHeight,
-                output => { Status += output + "\n"; });
+                output => { Status += output + "\n"; }).ConfigureAwait(true);
+        }
+        finally
+        {
             _isDelogo = false;
-        }).ConfigureAwait(true);
+        }
     }
 
     // Status改变事件

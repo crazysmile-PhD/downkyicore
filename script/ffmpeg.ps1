@@ -51,8 +51,13 @@ $ffmpeg = Get-ChildItem -LiteralPath $extractDir -Recurse -File -Filter "ffmpeg.
 if ($null -eq $ffmpeg) {
     throw "ffmpeg.exe not found in $archive"
 }
+$ffprobe = Get-ChildItem -LiteralPath $extractDir -Recurse -File -Filter "ffprobe.exe" | Select-Object -First 1
+if ($null -eq $ffprobe) {
+    throw "ffprobe.exe not found in $archive"
+}
 
 Copy-Item -LiteralPath $ffmpeg.FullName -Destination (Join-Path $destDir "ffmpeg.exe") -Force
+Copy-Item -LiteralPath $ffprobe.FullName -Destination (Join-Path $destDir "ffprobe.exe") -Force
 
 $extractRoot = (Resolve-Path -LiteralPath $extractDir).Path
 $current = $ffmpeg.Directory

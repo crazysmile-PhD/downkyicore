@@ -1,4 +1,5 @@
 using System.Net;
+using DownKyi.Core.BiliApi;
 using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 
 namespace DownKyi.Core.Tests;
@@ -20,15 +21,14 @@ public sealed class WebClientTests : IDisposable
             throw new HttpRequestException("network unavailable");
         };
 
-        var exception = Assert.Throws<HttpRequestException>(() =>
+        var exception = Assert.Throws<BilibiliHttpRequestException>(() =>
             BiliWebClient.RequestWeb(
                 "https://example.com/getLogin",
                 retry: 1,
                 cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(1, calls);
-        Assert.Contains("Request failed after 1 attempts", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("https://example.com/getLogin", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(BilibiliHttpFailureKind.Transport, exception.FailureKind);
     }
 
     [Fact]

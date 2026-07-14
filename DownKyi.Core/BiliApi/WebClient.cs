@@ -13,17 +13,30 @@ public static class WebClient
 {
     private static readonly SocketsHttpHandler SocketsHandler = CreateSocketsHandler();
     private static readonly HttpClient HttpClient = CreateHttpClient(SocketsHandler);
+    private static BilibiliHttpClient _client = new(HttpClient);
     private static int _resourcesDisposed;
     private static string? _bvuid3 = string.Empty;
     private static string? _bvuid4 = string.Empty;
     internal static Func<HttpRequestMessage, CancellationToken, HttpResponseMessage>? SendOverrideForTests { get; set; }
 
+    public static void Configure(BilibiliHttpClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        Volatile.Write(ref _client, client);
+    }
+
     private static HttpClient CreateHttpClient(SocketsHttpHandler socketsHandler)
     {
         var httpClient = new HttpClient(socketsHandler, disposeHandler: false);
+        ConfigureDefaults(httpClient);
+        return httpClient;
+    }
+
+    internal static void ConfigureDefaults(HttpClient httpClient)
+    {
+        ArgumentNullException.ThrowIfNull(httpClient);
         httpClient.DefaultRequestHeaders.Add("User-Agent", SettingsManager.Instance.GetUserAgent());
         httpClient.DefaultRequestHeaders.Add("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
-        return httpClient;
     }
 
     public static void DisposeSharedResources()
@@ -37,7 +50,7 @@ public static class WebClient
         SocketsHandler.Dispose();
     }
 
-    private static SocketsHttpHandler CreateSocketsHandler()
+    internal static SocketsHttpHandler CreateSocketsHandler()
     {
         var socketsHandler = new SocketsHttpHandler
         {
@@ -93,7 +106,7 @@ public static class WebClient
     {
         const string url = "https://api.bilibili.com/x/frontend/finger/spi";
         var response = RequestWeb(url, cancellationToken: cancellationToken);
-        var spi = JsonSerializer.Deserialize<SpiOrigin>(response);
+        var spi = JsonSerializer.Deserialize(response, BilibiliWebJsonContext.Default.SpiOrigin);
         _bvuid3 = spi?.Data?.Bvuid3;
         _bvuid4 = spi?.Data?.Bvuid4;
     }
@@ -109,62 +122,30 @@ public static class WebClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(requestAddress);
 
-        Exception? lastError = null;
         var attempts = Math.Max(1, retry);
-        for (var attempt = 1; attempt <= attempts; attempt++)
+        try
         {
-            try
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrEmpty(_bvuid3) && requestAddress != "https://api.bilibili.com/x/frontend/finger/spi")
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (string.IsNullOrEmpty(_bvuid3) && requestAddress != "https://api.bilibili.com/x/frontend/finger/spi")
-                {
-                    GetBuvid(cancellationToken);
-                }
-
-                using var request = BuildRequest(requestAddress, referer, method, parameters, json);
-                using var response = SendRequest(request, cancellationToken);
-                response.EnsureSuccessStatusCode();
-
-                using var stream = response.Content.ReadAsStream(cancellationToken);
-                using var reader = new StreamReader(stream);
-                var content = reader.ReadToEnd();
-                if (string.IsNullOrWhiteSpace(content))
-                {
-                    throw new HttpRequestException(
-                        $"Request returned an empty response: {LogManager.SanitizeForDiagnostics(requestAddress)}");
-                }
-
-                return content;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (HttpRequestException e)
-            {
-                lastError = e;
-                LogManager.Error(nameof(RequestWeb), e);
-            }
-            catch (IOException e)
-            {
-                lastError = e;
-                LogManager.Error(nameof(RequestWeb), e);
-            }
-            catch (InvalidOperationException e)
-            {
-                lastError = e;
-                LogManager.Error(nameof(RequestWeb), e);
+                GetBuvid(cancellationToken);
             }
 
-            if (attempt < attempts)
-            {
-                WaitBeforeRetry(attempt, cancellationToken);
-            }
+            return Volatile.Read(ref _client).Send(
+                () => BuildRequest(requestAddress, referer, method, parameters, json),
+                attempts,
+                SendOverrideForTests,
+                cancellationToken);
         }
-
-        throw new HttpRequestException(
-            $"Request failed after {attempts} attempts: {LogManager.SanitizeForDiagnostics(requestAddress)}",
-            lastError);
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException)
+        {
+            LogManager.Error(nameof(RequestWeb), e);
+            throw;
+        }
     }
 
     internal static void ResetBuvidForTests()
@@ -189,7 +170,7 @@ public static class WebClient
 
     internal static TimeSpan GetRetryDelayForTests(int attempt)
     {
-        return GetRetryDelay(attempt);
+        return BilibiliHttpClient.GetBackoff(attempt);
     }
 
     internal static string BuildRequestUrlForTests(string url, string method, Dictionary<string, object?>? parameters)
@@ -255,12 +236,6 @@ public static class WebClient
         return request;
     }
 
-    private static HttpResponseMessage SendRequest(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        return SendOverrideForTests?.Invoke(request, cancellationToken)
-               ?? HttpClient.Send(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-    }
-
     private static string BuildRequestUrl(string url, string method, Dictionary<string, object?>? parameters)
     {
         if (method == "POST" || parameters == null || parameters.Count == 0)
@@ -276,29 +251,46 @@ public static class WebClient
             : $"{url}?{query}";
     }
 
-    private static void WaitBeforeRetry(int attempt, CancellationToken cancellationToken)
-    {
-        var delay = GetRetryDelay(attempt);
-        if (delay <= TimeSpan.Zero)
-        {
-            return;
-        }
-
-        cancellationToken.WaitHandle.WaitOne(delay);
-        cancellationToken.ThrowIfCancellationRequested();
-    }
-
-    private static TimeSpan GetRetryDelay(int attempt)
-    {
-        var delayMilliseconds = Math.Clamp(attempt * 250, 250, 2000);
-        return TimeSpan.FromMilliseconds(delayMilliseconds);
-    }
-
     public static void DownloadFile(string sourceAddress, string destFile, string? referer = null, CancellationToken cancellationToken = default)
     {
-        using var fs = File.Create(destFile);
-        using var stream = RequestStream(sourceAddress, referer, cancellationToken: cancellationToken);
-        stream.CopyTo(fs);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceAddress);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destFile);
+        var temporaryFile = $"{destFile}.download";
+        try
+        {
+            using (var output = new FileStream(
+                       temporaryFile,
+                       FileMode.Create,
+                       FileAccess.Write,
+                       FileShare.None,
+                       bufferSize: 81920,
+                       FileOptions.SequentialScan))
+            using (var input = RequestStream(sourceAddress, referer, cancellationToken: cancellationToken))
+            {
+                input.CopyTo(output);
+                output.Flush(flushToDisk: true);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporaryFile, destFile, overwrite: true);
+        }
+        catch
+        {
+            try
+            {
+                File.Delete(temporaryFile);
+            }
+            catch (IOException e)
+            {
+                LogManager.Debug(nameof(DownloadFile), $"Temporary download cleanup failed: {e.Message}");
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                LogManager.Debug(nameof(DownloadFile), $"Temporary download cleanup was denied: {e.Message}");
+            }
+
+            throw;
+        }
     }
 
     public static Stream RequestStream(string requestAddress, string? referer = null, string method = "GET", CancellationToken cancellationToken = default)
@@ -323,7 +315,8 @@ public static class WebClient
             }
         }
 
-        var response = HttpClient.Send(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var response = Volatile.Read(ref _client)
+            .SendResponse(request, SendOverrideForTests, cancellationToken);
         try
         {
             response.EnsureSuccessStatusCode();

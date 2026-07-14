@@ -106,19 +106,22 @@ internal class ViewExtractMediaViewModel : ViewModelBase
 
         Status = string.Empty;
 
-        await Task.Run(() =>
+        _isExtracting = true;
+        try
         {
-            _isExtracting = true;
             foreach (var item in VideoPaths)
             {
-                // 音频文件名
                 var audioFileName = item.Remove(item.Length - 4, 4) + ".aac";
-                // 执行提取音频程序
-                FfmpegProcessor.Instance.ExtractAudio(item, audioFileName, output => { Status += output + "\n"; });
+                await FfmpegProcessor.Instance.ExtractAudioAsync(
+                    item,
+                    audioFileName,
+                    output => { Status += output + "\n"; }).ConfigureAwait(true);
             }
-
+        }
+        finally
+        {
             _isExtracting = false;
-        }).ConfigureAwait(true);
+        }
     }
 
     // 提取视频事件
@@ -145,19 +148,22 @@ internal class ViewExtractMediaViewModel : ViewModelBase
 
         Status = string.Empty;
 
-        await Task.Run(() =>
+        _isExtracting = true;
+        try
         {
-            _isExtracting = true;
             foreach (var item in VideoPaths)
             {
-                // 视频文件名
                 var videoFileName = item.Remove(item.Length - 4, 4) + "_onlyVideo.mp4";
-                // 执行提取视频程序
-                FfmpegProcessor.Instance.ExtractVideo(item, videoFileName, new Action<string>((output) => { Status += output + "\n"; }));
+                await FfmpegProcessor.Instance.ExtractVideoAsync(
+                    item,
+                    videoFileName,
+                    output => { Status += output + "\n"; }).ConfigureAwait(true);
             }
-
+        }
+        finally
+        {
             _isExtracting = false;
-        }).ConfigureAwait(true);
+        }
     }
 
     // Status改变事件
