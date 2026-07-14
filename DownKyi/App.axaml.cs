@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -71,12 +70,8 @@ internal partial class App : PrismApplication, IDisposable
     private static Mutex? _mutex;
 #endif
 
-    // 下载服务
-    private IDownloadService? _downloadService;
-    private DownloadListState _downloadLists = null!;
     private IHost? _host;
     private Task? _downloadStartupTask;
-    private Task? _downloadHistoryTask;
     private Task? _shutdownTask;
 
     public override void Initialize()
@@ -181,18 +176,22 @@ internal partial class App : PrismApplication, IDisposable
 
     protected override AvaloniaObject CreateShell()
     {
-        _downloadLists = Container.Resolve<DownloadListState>();
+        var downloadLists = Container.Resolve<DownloadListState>();
         _host = DownKyiHost.Create(services =>
         {
             services.AddDownKyiBilibiliHttpClient();
             services.AddSingleton<IHostedService, StorageMaintenanceHostedService>();
-            services.AddSingleton(_downloadLists);
+            services.AddSingleton(downloadLists);
+            services.AddSingleton(Container.Resolve<DownloadStorageService>());
             services.AddSingleton(Container.Resolve<IAddToDownloadServiceFactory>());
             services.AddLegacyDesktopShell(
                 Container.Resolve<IRegionManager>(),
                 Container.Resolve<IEventAggregator>(),
                 Container.Resolve<IDialogService>(),
                 Container.Resolve<IClipboardService>());
+            services.AddSingleton<IDownloadRuntimeFactory, DownloadRuntimeFactory>();
+            services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
+            services.AddSingleton<IHostedService, DownloadBootstrapHostedService>();
         });
         WebClient.Configure(_host.Services.GetRequiredService<BilibiliHttpClient>());
         var shell = _host.Services.GetRequiredService<MainWindow>();
@@ -226,30 +225,16 @@ internal partial class App : PrismApplication, IDisposable
 
     private void StartDownloadBootstrap()
     {
-        _downloadStartupTask ??= StartHostAndDownloadServiceAsync(GetShutdownToken());
+        _downloadStartupTask ??= StartHostAsync(GetShutdownToken());
     }
 
-    private async Task StartHostAndDownloadServiceAsync(CancellationToken cancellationToken)
+    private async Task StartHostAsync(CancellationToken cancellationToken)
     {
         try
         {
             if (_host != null)
             {
                 await _host.StartAsync(cancellationToken).ConfigureAwait(true);
-            }
-
-            var downloadStorageService = Container.Resolve<DownloadStorageService>();
-            var downloadState = await LoadDownloadStateAsync(downloadStorageService, cancellationToken).ConfigureAwait(true);
-
-            cancellationToken.ThrowIfCancellationRequested();
-            _downloadLists.Downloading.AddRange(downloadState.DownloadingItems);
-            _downloadLists.Downloaded.AddRange(downloadState.DownloadedItems);
-            _downloadHistoryTask = LoadRemainingDownloadHistoryAsync(downloadStorageService, cancellationToken);
-
-            _downloadService = CreateDownloadService();
-            if (_downloadService != null)
-            {
-                await _downloadService.StartAsync(cancellationToken).ConfigureAwait(true);
             }
         }
         catch (OperationCanceledException)
@@ -261,56 +246,6 @@ internal partial class App : PrismApplication, IDisposable
         {
             LogManager.Error(nameof(App), e);
         }
-    }
-
-    private static async Task<DownloadStartupState> LoadDownloadStateAsync(
-        DownloadStorageService downloadStorageService,
-        CancellationToken cancellationToken)
-    {
-        var downloadingItemsTask = downloadStorageService.GetDownloadingAsync(cancellationToken);
-        var downloadedItemsTask = downloadStorageService.GetRecentDownloadedAsync(100, cancellationToken);
-
-        await Task.WhenAll(downloadingItemsTask, downloadedItemsTask).ConfigureAwait(true);
-
-        return new DownloadStartupState(
-            await downloadingItemsTask.ConfigureAwait(true),
-            await downloadedItemsTask.ConfigureAwait(true));
-    }
-
-    private async Task LoadRemainingDownloadHistoryAsync(
-        DownloadStorageService downloadStorageService,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var allItems = await downloadStorageService.GetDownloadedAsync(cancellationToken).ConfigureAwait(true);
-            cancellationToken.ThrowIfCancellationRequested();
-            var loadedIds = _downloadLists.Downloaded
-                .Select(item => item.DownloadBase.Id)
-                .ToHashSet(StringComparer.Ordinal);
-            _downloadLists.Downloaded.AddRange(allItems.Where(item => loadedIds.Add(item.DownloadBase.Id)));
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
-        {
-            LogManager.Error(nameof(DownloadStorageService), exception);
-        }
-    }
-
-    private IDownloadService? CreateDownloadService()
-    {
-        var dialogService = Container.Resolve<IDialogService>();
-        var downloadStorageService = Container.Resolve<DownloadStorageService>();
-        return SettingsManager.Instance.GetDownloader() switch
-        {
-            Core.Settings.Downloader.BuiltIn => new BuiltinDownloadService(_downloadLists, downloadStorageService, dialogService),
-            Core.Settings.Downloader.Aria => new AriaDownloadService(_downloadLists, downloadStorageService, dialogService),
-            Core.Settings.Downloader.CustomAria => new CustomAriaDownloadService(_downloadLists, downloadStorageService, dialogService),
-            _ => null
-        };
     }
 
     private void OnExit(object sender, ControlledApplicationLifetimeExitEventArgs e)
@@ -347,16 +282,6 @@ internal partial class App : PrismApplication, IDisposable
             cleanupTasks.Add(_downloadStartupTask);
         }
 
-        if (_downloadHistoryTask != null)
-        {
-            cleanupTasks.Add(_downloadHistoryTask);
-        }
-
-        if (_downloadService != null)
-        {
-            cleanupTasks.Add(_downloadService.EndAsync());
-        }
-
         var cleanup = Task.WhenAll(cleanupTasks);
         if (await Task.WhenAny(cleanup, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false) == cleanup)
         {
@@ -376,17 +301,9 @@ internal partial class App : PrismApplication, IDisposable
         await LogManager.FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
     }
 
-    private static async Task StopHostAsync(IHost host)
+    private static Task StopHostAsync(IHost host)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        try
-        {
-            await host.StopAsync(timeout.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
-        {
-            LogManager.Info(nameof(App), "Application host cleanup timed out.");
-        }
+        return host.StopAsync(CancellationToken.None);
     }
 
     public void Dispose()
@@ -408,8 +325,6 @@ internal partial class App : PrismApplication, IDisposable
             return;
         }
 
-        _downloadService?.Dispose();
-        _downloadService = null;
         BiliWebClient.DisposeSharedResources();
         _host?.Dispose();
         _host = null;
@@ -449,7 +364,4 @@ internal partial class App : PrismApplication, IDisposable
             ?? throw new InvalidOperationException("The application cancellation service has not been created.");
     }
 
-    private sealed record DownloadStartupState(
-        IReadOnlyList<DownloadingItem> DownloadingItems,
-        IReadOnlyList<DownloadedItem> DownloadedItems);
 }

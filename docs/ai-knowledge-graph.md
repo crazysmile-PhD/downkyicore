@@ -79,6 +79,7 @@ flowchart TD
     WebClient["core.web-client\nDownKyi.Core/BiliApi/WebClient.cs"]
     LegacySettings["core.legacy-settings-migration\nLegacySettingsDecryptor.cs"]
     DownloadAdd["service.download-add\nAddToDownloadService + DownloadAddCoordinator"]
+    DownloadBootstrap["service.download-bootstrap\nDownloadBootstrapHostedService"]
     DownloadService["service.download-runtime\nDownloadService and implementations"]
     DownloadDomain["core.download-domain\nimmutable task aggregate"]
     StoreContract["service.application-contracts\nIDownloadTaskStore"]
@@ -120,8 +121,9 @@ flowchart TD
     VideoVm -->|calls| DownloadAdd
     DownloadAdd -->|persists| Storage
     DownloadAdd -->|queues| DownloadService
-    App -->|loads startup state| Storage
-    App -->|starts background service| DownloadService
+    Host -->|starts and stops| DownloadBootstrap
+    DownloadBootstrap -->|loads startup state| Storage
+    DownloadBootstrap -->|starts and stops| DownloadService
     DownloadService -->|persists| Storage
     DownloadService -->|executes optional| Aria
     DownloadService -->|executes| FFmpeg
@@ -173,21 +175,22 @@ type: app
 paths:
   - DownKyi/App.axaml.cs
   - DownKyi/Composition/LegacyDesktopComposition.cs
-responsibility: Bridges legacy Prism registrations into the Host, shows the shell, and coordinates download bootstrap and exit cleanup.
+responsibility: Bridges legacy Prism registrations into the Host, shows the shell, and coordinates bounded Host-level exit cleanup.
 inbound:
   - app.program
 outbound:
   - app.host-composition
   - ui.main-window
-  - service.download-runtime
+  - service.download-bootstrap
   - service.download-list-state
   - core.storage
   - core.logging
 contracts:
   - UI shell should appear before heavy download state and service startup finish.
   - The Host is created with default configuration sources disabled and must not redirect database, settings, login, portable-mode, or aria2 session paths.
-  - Download startup and shutdown must be cancellation-aware.
+  - Download startup and shutdown are delegated to a Host-owned IHostedService and must remain cancellation-aware.
   - MainWindow defers final close until one idempotent bounded shutdown task has canceled Host/download work and flushed settings/logs; Exit never synchronously waits on a Task.
+  - Host stop shares the outer five-second cleanup budget; a shorter nested timeout must not interrupt resumable-state persistence before the outer fallback runs.
   - Storage retention maintenance is an IHostedService and cannot be an App-owned fire-and-forget Task.
   - `DownloadListState` owns one stable downloading/history collection pair shared by Prism, Host services, and ViewModels; App must not expose static list properties.
   - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
@@ -195,7 +198,6 @@ contracts:
 hazards:
   - Any synchronous database, aria2, or file scan here directly hurts startup time.
   - Exit cleanup can leave aria2 running if cancellation and timeout paths drift; the tracked-process timeout fallback must remain bounded.
-  - Download bootstrap still keeps too much orchestration in App; PR 16-24 owns the remaining move.
   - `LegacyDesktopComposition` and `MainWindow.AttachLegacyRegion` still bridge Prism global region state; PR 25-29 owns deletion after typed navigation takes over.
 tests:
   - test.ui-smoke
@@ -216,6 +218,7 @@ outbound:
   - core.domain-contracts
   - service.application-contracts
   - core.infrastructure
+  - service.download-bootstrap
 contracts:
   - `DisableDefaults=true` prevents implicit configuration, logging, environment, and path side effects during composition.
   - Host stop signals the shared application shutdown token before services are disposed.
@@ -631,7 +634,7 @@ paths:
   - DownKyi/ViewModels/DownloadManager
 responsibility: Owns the stable observable downloading/history collection identities used by bootstrap, runtime, migration, and download-manager views.
 inbound:
-  - app.application
+  - service.download-bootstrap
   - service.download-add
   - service.download-runtime
 outbound: []
@@ -644,6 +647,39 @@ hazards:
   - Dispatching resource lookup without an initialized Application can deadlock parallel tests and early startup.
 tests:
   - test.download-list-state
+  - test.ui-smoke
+  - test.architecture-boundaries
+```
+
+### service.download-bootstrap
+
+```yaml
+id: service.download-bootstrap
+type: hosted-service
+paths:
+  - DownKyi/Services/Download/DownloadBootstrapHostedService.cs
+  - DownKyi/Services/Download/DownloadRuntimeFactory.cs
+  - DownKyi/Platform/IUiDispatcher.cs
+  - DownKyi/Platform/AvaloniaUiDispatcher.cs
+responsibility: Restores persisted download projections, pages history, selects the configured backend, and owns download runtime start/stop inside the Host lifecycle.
+inbound:
+  - app.host-composition
+outbound:
+  - core.storage
+  - service.download-list-state
+  - service.download-runtime
+contracts:
+  - Shell construction completes before Host startup performs database reads or starts a downloader backend.
+  - Startup restores every unfinished task and the newest 100 history items before loading remaining history in the background.
+  - Observable collection mutation crosses the explicit `IUiDispatcher` boundary; the hosted service cannot reference Avalonia Dispatcher directly.
+  - Runtime creation is isolated behind `IDownloadRuntimeFactory`, and Host stop awaits runtime recovery plus any outstanding history load together.
+  - Host shutdown does not impose a shorter cancellation deadline than the App-level bounded cleanup fallback.
+  - Cancellation must not turn active persisted rows into abandoned `Downloading` state; runtime shutdown owns resumable-state recovery.
+hazards:
+  - Starting storage or aria2 work during shell construction regresses first-window latency.
+  - Disposing the selected backend before its asynchronous shutdown recovery completes can corrupt resume state.
+tests:
+  - test.download-bootstrap
   - test.ui-smoke
   - test.architecture-boundaries
 ```
@@ -664,7 +700,7 @@ paths:
   - DownKyi/Services/Download/DownloadShutdownCoordinator.cs
 responsibility: Executes queued downloads, updates UI state, verifies file integrity, cleans partial files, and finalizes media.
 inbound:
-  - app.application
+  - service.download-bootstrap
   - service.download-add
 outbound:
   - core.storage
@@ -710,7 +746,7 @@ paths:
   - DownKyi.Core/Storage/Database/SqliteDatabase.cs
 responsibility: Projects immutable tasks into temporary legacy UI models and owns app data directories, portable mode, and storage paths; SQLite persistence itself belongs to core.infrastructure.
 inbound:
-  - app.application
+  - service.download-bootstrap
   - service.download-add
   - service.download-runtime
 outbound:
@@ -947,7 +983,9 @@ sequenceDiagram
     participant OS as OS process
     participant Program as Program
     participant App as App.axaml.cs
+    participant Host as Microsoft Host
     participant Shell as MainWindow
+    participant Bootstrap as DownloadBootstrapHostedService
     participant Projection as DownloadStorageService
     participant Store as SqliteDownloadTaskStore
     participant Runtime as DownloadService
@@ -956,12 +994,15 @@ sequenceDiagram
     Program->>App: BuildAvaloniaApp()
     App->>App: RegisterTypes()
     App->>Shell: CreateShell()
-    App-->>Projection: load unfinished + newest history page
+    App-->>Host: StartAsync after shell creation
+    Host->>Bootstrap: StartAsync
+    Bootstrap->>Projection: load unfinished + newest history page
     Projection->>Store: async keyset queries
     Store-->>Projection: immutable tasks
-    Projection-->>App: legacy UI projections
-    App-->>Projection: load remaining history after first screen
-    App-->>Runtime: StartAsync()
+    Projection-->>Bootstrap: legacy UI projections
+    Bootstrap-->>Shell: project through IUiDispatcher
+    Bootstrap-->>Projection: load remaining history in background
+    Bootstrap->>Runtime: StartAsync()
 ```
 
 Rule: create the shell first, restore every unfinished task plus at most 100 recent history items, then page remaining history after the first screen; aria2 startup cannot block shell construction.
@@ -1054,6 +1095,17 @@ test.download-list-state:
     - sort and replacement preserve the collection object used by bindings and workers
     - self-replacement snapshots before clearing
     - App has no static downloading/history collections and download runtime has no App service locator
+
+test.download-bootstrap:
+  paths:
+    - tests/DownKyi.Tests/DownloadBootstrapHostedServiceTests.cs
+    - tests/DownKyi.Architecture.Tests/AppLifecycleArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/DownloadRuntimeArchitectureTests.cs
+  guards:
+    - Host start restores download projections and starts the selected runtime
+    - Host stop awaits runtime shutdown and remaining history work together
+    - App cannot regain storage reads, backend creation, or runtime ownership
+    - UI projection remains behind IUiDispatcher
 
 test.download-file-integrity:
   paths:

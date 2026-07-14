@@ -77,6 +77,23 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
     }
 
+    [Fact]
+    public void DownloadBootstrapUsesExplicitRuntimeAndUiBoundaries()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Download",
+            "DownloadBootstrapHostedService.cs"));
+
+        Assert.Contains("IDownloadRuntimeFactory", source, StringComparison.Ordinal);
+        Assert.Contains("IUiDispatcher", source, StringComparison.Ordinal);
+        Assert.Contains("Task.WhenAll(stopTasks)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dispatcher.UIThread", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Container.Resolve", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

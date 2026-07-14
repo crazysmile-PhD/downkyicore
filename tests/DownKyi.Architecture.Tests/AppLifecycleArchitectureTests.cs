@@ -53,6 +53,22 @@ public sealed class AppLifecycleArchitectureTests
         Assert.Contains("DownloadListState", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void HostOwnsDownloadBootstrapAndRuntimeLifecycle()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+
+        Assert.Contains("DownloadBootstrapHostedService", source, StringComparison.Ordinal);
+        Assert.Contains("host.StopAsync(CancellationToken.None)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoadDownloadStateAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoadRemainingHistoryAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoadRemainingDownloadHistoryAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateDownloadService", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetDownloadingAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetDownloadedAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("_downloadService", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
