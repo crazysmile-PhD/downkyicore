@@ -23,6 +23,7 @@ namespace DownKyi.ViewModels;
 internal class ViewMyToViewVideoViewModel : ViewModelBase
 {
     public const string Tag = "PageMyToView";
+    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
 
     private CancellationTokenSource? _tokenSource;
 
@@ -102,10 +103,15 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
 
     #endregion
 
-    public ViewMyToViewVideoViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(
+    public ViewMyToViewVideoViewModel(
+        IEventAggregator eventAggregator,
+        IDialogService dialogService,
+        IAddToDownloadServiceFactory addToDownloadServiceFactory) : base(
         eventAggregator)
     {
         DialogService = dialogService;
+        _addToDownloadServiceFactory = addToDownloadServiceFactory
+            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
 
         #region 属性初始化
 
@@ -246,7 +252,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // 稍后再看里只有视频
-        var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
+        var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
 
         // 选择文件夹
         var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);

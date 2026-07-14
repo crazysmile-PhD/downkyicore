@@ -22,10 +22,10 @@ namespace DownKyi.Services.Download;
 internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
 {
     public BuiltinDownloadService(
-        ImmutableObservableCollection<DownloadingItem> downloadingList,
-        ImmutableObservableCollection<DownloadedItem> downloadedList,
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService,
         IDialogService? dialogService)
-        : base(downloadingList, downloadedList, dialogService)
+        : base(downloadLists, downloadStorageService, dialogService)
     {
         Tag = nameof(BuiltinDownloadService);
     }

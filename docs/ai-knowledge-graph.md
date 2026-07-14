@@ -173,13 +173,14 @@ type: app
 paths:
   - DownKyi/App.axaml.cs
   - DownKyi/Composition/LegacyDesktopComposition.cs
-responsibility: Bridges legacy Prism registrations into the Host, shows the shell, owns global download projections, and coordinates startup and exit cleanup.
+responsibility: Bridges legacy Prism registrations into the Host, shows the shell, and coordinates download bootstrap and exit cleanup.
 inbound:
   - app.program
 outbound:
   - app.host-composition
   - ui.main-window
   - service.download-runtime
+  - service.download-list-state
   - core.storage
   - core.logging
 contracts:
@@ -188,13 +189,13 @@ contracts:
   - Download startup and shutdown must be cancellation-aware.
   - MainWindow defers final close until one idempotent bounded shutdown task has canceled Host/download work and flushed settings/logs; Exit never synchronously waits on a Task.
   - Storage retention maintenance is an IHostedService and cannot be an App-owned fire-and-forget Task.
-  - Global downloading/downloaded lists are shared UI state and must be mutated on the UI thread.
+  - `DownloadListState` owns one stable downloading/history collection pair shared by Prism, Host services, and ViewModels; App must not expose static list properties.
   - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
   - UI continuations use the Avalonia context; background and Core continuations do not depend on it.
 hazards:
   - Any synchronous database, aria2, or file scan here directly hurts startup time.
   - Exit cleanup can leave aria2 running if cancellation and timeout paths drift; the tracked-process timeout fallback must remain bounded.
-  - Download bootstrap and static UI projections still keep too much ownership in App; PR 16-24 owns the remaining move.
+  - Download bootstrap still keeps too much orchestration in App; PR 16-24 owns the remaining move.
   - `LegacyDesktopComposition` and `MainWindow.AttachLegacyRegion` still bridge Prism global region state; PR 25-29 owns deletion after typed navigation takes over.
 tests:
   - test.ui-smoke
@@ -599,6 +600,7 @@ id: service.download-add
 type: service
 paths:
   - DownKyi/Services/Download/AddToDownloadService.cs
+  - DownKyi/Services/Download/AddToDownloadServiceFactory.cs
   - DownKyi/Services/Download/DownloadAddCoordinator.cs
 responsibility: Converts selected parsed media into download tasks, handles duplicate decisions, and writes queue state.
 inbound:
@@ -607,14 +609,43 @@ inbound:
 outbound:
   - core.storage
   - service.download-runtime
+  - service.download-list-state
 contracts:
   - Directory selection returning null means user canceled; no task should be queued.
   - Existing downloaded/downloading records must be checked before inserting duplicates.
+  - ViewModels receive `IAddToDownloadServiceFactory`; the add service receives list/storage owners explicitly and cannot resolve them through App.
 hazards:
   - Running add logic on stale VideoInfoView snapshots can enqueue wrong media.
   - Duplicate dialog paths can accidentally remove completed records.
 tests:
   - test.download-add
+```
+
+### service.download-list-state
+
+```yaml
+id: service.download-list-state
+type: ui-state
+paths:
+  - DownKyi/Services/Download/DownloadListState.cs
+  - DownKyi/ViewModels/DownloadManager
+responsibility: Owns the stable observable downloading/history collection identities used by bootstrap, runtime, migration, and download-manager views.
+inbound:
+  - app.application
+  - service.download-add
+  - service.download-runtime
+outbound: []
+contracts:
+  - Sorting and replacement mutate the existing collection instance so XAML bindings and runtime references never diverge.
+  - Collection mutation is projected on the UI thread by the calling desktop boundary.
+  - Headless construction must not synchronously wait on an uninitialized Avalonia dispatcher.
+hazards:
+  - Replacing the collection object disconnects existing views and download workers.
+  - Dispatching resource lookup without an initialized Application can deadlock parallel tests and early startup.
+tests:
+  - test.download-list-state
+  - test.ui-smoke
+  - test.architecture-boundaries
 ```
 
 ### service.download-runtime
@@ -637,6 +668,7 @@ inbound:
   - service.download-add
 outbound:
   - core.storage
+  - service.download-list-state
   - external.aria2
   - external.ffmpeg
   - core.logging
@@ -649,6 +681,7 @@ contracts:
   - DURL merge input is sorted by Order and success requires ffprobe stream, duration, and middle/tail seek-decode validation.
   - Multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; hardware failure falls back to `libx264 + aac`.
   - State transitions await persistence; high-rate progress uses the bounded write-behind boundary.
+  - Runtime receives `DownloadListState` and `DownloadStorageService` through construction; it cannot resolve either through App/Prism.
   - Shutdown cancellation while dispatch waits for capacity cannot skip fixed-worker drain or resumable-state recovery; active `Downloading` rows return to `WaitForDownload` and are persisted before exit completes.
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
@@ -1011,6 +1044,16 @@ test.download-add:
   guards:
     - canceling directory selection does not call add
     - selected directory reaches add service
+
+test.download-list-state:
+  paths:
+    - tests/DownKyi.Tests/DownloadListStateTests.cs
+    - tests/DownKyi.Architecture.Tests/AppLifecycleArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/DownloadRuntimeArchitectureTests.cs
+  guards:
+    - sort and replacement preserve the collection object used by bindings and workers
+    - self-replacement snapshots before clearing
+    - App has no static downloading/history collections and download runtime has no App service locator
 
 test.download-file-integrity:
   paths:

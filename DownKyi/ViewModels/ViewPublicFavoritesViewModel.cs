@@ -27,6 +27,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
 
     private readonly IFavoritesService _favoritesService;
     private readonly IClipboardService _clipboardService;
+    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private CancellationTokenSource? _tokenSource;
 
     #region 页面属性申明
@@ -133,8 +134,9 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     public ViewPublicFavoritesViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        IClipboardService clipboardService)
-        : this(eventAggregator, dialogService, new FavoritesService(), clipboardService)
+        IClipboardService clipboardService,
+        IAddToDownloadServiceFactory addToDownloadServiceFactory)
+        : this(eventAggregator, dialogService, new FavoritesService(), clipboardService, addToDownloadServiceFactory)
     {
     }
 
@@ -142,11 +144,14 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         IEventAggregator eventAggregator,
         IDialogService dialogService,
         IFavoritesService favoritesService,
-        IClipboardService clipboardService) : base(eventAggregator)
+        IClipboardService clipboardService,
+        IAddToDownloadServiceFactory addToDownloadServiceFactory) : base(eventAggregator)
     {
         DialogService = dialogService;
         _favoritesService = favoritesService;
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
+        _addToDownloadServiceFactory = addToDownloadServiceFactory
+            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
 
         #region 属性初始化
 
@@ -292,7 +297,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // 收藏夹里只有视频
-        var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
+        var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
 
         // 选择文件夹
         var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);

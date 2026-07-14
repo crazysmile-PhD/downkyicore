@@ -41,6 +41,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     private readonly VideoParseCoordinator _parseCoordinator = new();
     private readonly VideoSearchState _videoSearchState = new();
     private readonly IClipboardService _clipboardService;
+    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private CancellationTokenSource? _operationCancellation;
     private int _operationVersion;
 
@@ -109,9 +110,12 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     public ViewVideoDetailViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        IClipboardService clipboardService) : base(eventAggregator, dialogService)
+        IClipboardService clipboardService,
+        IAddToDownloadServiceFactory addToDownloadServiceFactory) : base(eventAggregator, dialogService)
     {
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
+        _addToDownloadServiceFactory = addToDownloadServiceFactory
+            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
         // 下载管理按钮
         DownloadManage = ButtonIcon.Instance().DownloadManage;
         DownloadManage.Height = 24;
@@ -666,7 +670,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
             return;
         }
 
-        var addToDownloadService = new AddToDownloadService(playStreamType.Value);
+        var addToDownloadService = _addToDownloadServiceFactory.Create(playStreamType.Value);
         var videoInfoView = VideoInfoView;
         if (videoInfoView == null)
         {

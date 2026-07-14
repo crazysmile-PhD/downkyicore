@@ -30,6 +30,7 @@ namespace DownKyi.ViewModels
     internal class ViewPublicationViewModel : ViewModelBase
     {
         public const string Tag = "PagePublication";
+        private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
 
         private CancellationTokenSource? _tokenSource;
 
@@ -138,10 +139,15 @@ namespace DownKyi.ViewModels
 
         #endregion
 
-        public ViewPublicationViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(
+        public ViewPublicationViewModel(
+            IEventAggregator eventAggregator,
+            IDialogService dialogService,
+            IAddToDownloadServiceFactory addToDownloadServiceFactory) : base(
             eventAggregator)
         {
             DialogService = dialogService;
+            _addToDownloadServiceFactory = addToDownloadServiceFactory
+                ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
 
             #region 属性初始化
 
@@ -317,7 +323,7 @@ namespace DownKyi.ViewModels
         private async Task AddToDownloadAsync(bool isOnlySelected)
         {
             // 收藏夹里只有视频
-            var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
+            var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
 
             // 选择文件夹
             var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);

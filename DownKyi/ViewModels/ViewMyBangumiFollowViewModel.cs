@@ -28,6 +28,7 @@ namespace DownKyi.ViewModels;
 internal class ViewMyBangumiFollowViewModel : ViewModelBase
 {
     public const string Tag = "PageMyBangumiFollow";
+    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
 
     private CancellationTokenSource? _tokenSource;
 
@@ -144,10 +145,15 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
 
     #endregion
 
-    public ViewMyBangumiFollowViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(
+    public ViewMyBangumiFollowViewModel(
+        IEventAggregator eventAggregator,
+        IDialogService dialogService,
+        IAddToDownloadServiceFactory addToDownloadServiceFactory) : base(
         eventAggregator)
     {
         DialogService = dialogService;
+        _addToDownloadServiceFactory = addToDownloadServiceFactory
+            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
 
         #region 属性初始化
 
@@ -337,7 +343,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // 订阅里只有BANGUMI类型
-        var addToDownloadService = new AddToDownloadService(PlayStreamType.Bangumi);
+        var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Bangumi);
 
         // 选择文件夹
         var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);

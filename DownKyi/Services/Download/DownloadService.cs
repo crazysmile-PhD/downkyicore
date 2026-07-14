@@ -37,8 +37,10 @@ internal abstract class DownloadService : IDisposable
 
     // protected TaskbarIcon _notifyIcon;
     protected IDialogService? DialogService { get; }
+    protected DownloadListState DownloadLists { get; }
     protected ImmutableObservableCollection<DownloadingItem> DownloadingList { get; }
     protected ImmutableObservableCollection<DownloadedItem> DownloadedList { get; }
+    private DownloadStorageService DownloadStorageService { get; }
 
     protected Task? WorkTask { get; set; }
     protected CancellationTokenSource? TokenSource { get; set; }
@@ -50,9 +52,6 @@ internal abstract class DownloadService : IDisposable
 
     protected const int Retry = 5;
     protected const string NullMark = "<null>";
-
-    private static DownloadStorageService DownloadStorageService =>
-        (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
 
     protected void EnsureDownloadIsActive(DownloadingItem downloading)
     {
@@ -130,14 +129,19 @@ internal abstract class DownloadService : IDisposable
     /// <summary>
     /// 初始化
     /// </summary>
-    /// <param name="downloadingList"></param>
-    /// <param name="downloadedList"></param>
+    /// <param name="downloadLists"></param>
+    /// <param name="downloadStorageService"></param>
     /// <param name="dialogService"></param>
     /// <returns></returns>
-    protected DownloadService(ImmutableObservableCollection<DownloadingItem> downloadingList, ImmutableObservableCollection<DownloadedItem> downloadedList, IDialogService? dialogService)
+    protected DownloadService(
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService,
+        IDialogService? dialogService)
     {
-        DownloadingList = downloadingList;
-        DownloadedList = downloadedList;
+        DownloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        DownloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        DownloadingList = downloadLists.Downloading;
+        DownloadedList = downloadLists.Downloaded;
         DialogService = dialogService;
     }
 
@@ -1254,7 +1258,7 @@ internal abstract class DownloadService : IDisposable
 
                     // 下载完成列表排序
                     var finishedSort = SettingsManager.Instance.GetDownloadFinishedSort();
-                    App.SortDownloadedList(finishedSort);
+                    DownloadLists.SortDownloaded(finishedSort);
                 });
                 // _notifyIcon.ShowBalloonTip(DictionaryResource.GetString("DownloadSuccess"), $"{downloadedItem.DownloadBase.Name}", BalloonIcon.Info);
             }
@@ -1351,7 +1355,6 @@ internal abstract class DownloadService : IDisposable
 
     private async Task PersistShutdownStateAsync()
     {
-        var downloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
         foreach (var item in DownloadingList)
         {
             switch (item.Downloading.DownloadStatus)
@@ -1372,7 +1375,7 @@ internal abstract class DownloadService : IDisposable
 
             item.SpeedDisplay = string.Empty;
 
-            await downloadStorageService.UpdateDownloadingAsync(item).ConfigureAwait(true);
+            await DownloadStorageService.UpdateDownloadingAsync(item).ConfigureAwait(true);
         }
     }
 

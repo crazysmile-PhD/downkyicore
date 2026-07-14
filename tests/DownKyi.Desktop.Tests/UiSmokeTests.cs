@@ -5,11 +5,13 @@ using Avalonia.Xaml.Interactivity;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Lifetime;
 using DownKyi.Composition;
+using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Storage;
 using DownKyi.CustomAction;
 using DownKyi.Desktop.Composition;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
+using DownKyi.Services.Download;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.Views;
@@ -39,11 +41,15 @@ public sealed class UiSmokeTests
         var regionManager = new RegionManager();
         var eventAggregator = new EventAggregator();
         var dialogService = new DesktopDialogService(prismContainer);
-        using var host = DownKyiHost.Create(services => services.AddLegacyDesktopShell(
-            regionManager,
-            eventAggregator,
-            dialogService,
-            new StubClipboardService()));
+        using var host = DownKyiHost.Create(services =>
+        {
+            services.AddSingleton<IAddToDownloadServiceFactory>(new StubAddToDownloadServiceFactory());
+            services.AddLegacyDesktopShell(
+                regionManager,
+                eventAggregator,
+                dialogService,
+                new StubClipboardService());
+        });
 
         await host.StartAsync(TestContext.Current.CancellationToken);
         try
@@ -167,6 +173,19 @@ public sealed class UiSmokeTests
 
     private sealed class SmokeTestApplication : Avalonia.Application
     {
+    }
+
+    private sealed class StubAddToDownloadServiceFactory : IAddToDownloadServiceFactory
+    {
+        public AddToDownloadService Create(PlayStreamType streamType)
+        {
+            throw new NotSupportedException();
+        }
+
+        public AddToDownloadService Create(string id, PlayStreamType streamType)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class StubClipboardService : IClipboardService

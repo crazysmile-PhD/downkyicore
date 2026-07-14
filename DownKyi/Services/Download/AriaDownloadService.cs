@@ -29,19 +29,19 @@ internal class AriaDownloadService : DownloadService, IDownloadService
     private readonly bool _ownsAriaServer;
 
     public AriaDownloadService(
-        ImmutableObservableCollection<DownloadingItem> downloadingList,
-        ImmutableObservableCollection<DownloadedItem> downloadedList,
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService,
         IDialogService? dialogService)
-        : this(downloadingList, downloadedList, dialogService, ownsAriaServer: true)
+        : this(downloadLists, downloadStorageService, dialogService, ownsAriaServer: true)
     {
     }
 
     protected AriaDownloadService(
-        ImmutableObservableCollection<DownloadingItem> downloadingList,
-        ImmutableObservableCollection<DownloadedItem> downloadedList,
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService,
         IDialogService? dialogService,
         bool ownsAriaServer)
-        : base(downloadingList, downloadedList, dialogService)
+        : base(downloadLists, downloadStorageService, dialogService)
     {
         _ownsAriaServer = ownsAriaServer;
         Tag = ownsAriaServer ? nameof(AriaDownloadService) : nameof(CustomAriaDownloadService);

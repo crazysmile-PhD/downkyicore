@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -64,8 +63,6 @@ internal partial class App : PrismApplication, IDisposable
     public const string RepoOwner = "crazysmile-PhD";
     public const string RepoName = "downkyicore";
 
-    public static ImmutableObservableCollection<DownloadingItem> DownloadingList { get; private set; } = new();
-    public static ImmutableObservableCollection<DownloadedItem> DownloadedList { get; private set; } = new();
     public new static App Current => (App)Avalonia.Application.Current!;
     public new MainWindow MainWindow => _host?.Services.GetRequiredService<MainWindow>()
         ?? throw new InvalidOperationException("The application host has not been created.");
@@ -76,6 +73,7 @@ internal partial class App : PrismApplication, IDisposable
 
     // 下载服务
     private IDownloadService? _downloadService;
+    private DownloadListState _downloadLists = null!;
     private IHost? _host;
     private Task? _downloadStartupTask;
     private Task? _downloadHistoryTask;
@@ -118,6 +116,8 @@ internal partial class App : PrismApplication, IDisposable
         containerRegistry.RegisterSingleton<IClock, SystemClock>();
         containerRegistry.RegisterSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
         containerRegistry.RegisterSingleton<DownloadStorageService>();
+        containerRegistry.RegisterSingleton<DownloadListState>();
+        containerRegistry.RegisterSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
         containerRegistry.RegisterSingleton<IClipboardService, AvaloniaClipboardService>();
         containerRegistry.RegisterSingleton<IFilePickerService, AvaloniaFilePickerService>();
 
@@ -181,10 +181,13 @@ internal partial class App : PrismApplication, IDisposable
 
     protected override AvaloniaObject CreateShell()
     {
+        _downloadLists = Container.Resolve<DownloadListState>();
         _host = DownKyiHost.Create(services =>
         {
             services.AddDownKyiBilibiliHttpClient();
             services.AddSingleton<IHostedService, StorageMaintenanceHostedService>();
+            services.AddSingleton(_downloadLists);
+            services.AddSingleton(Container.Resolve<IAddToDownloadServiceFactory>());
             services.AddLegacyDesktopShell(
                 Container.Resolve<IRegionManager>(),
                 Container.Resolve<IEventAggregator>(),
@@ -239,8 +242,8 @@ internal partial class App : PrismApplication, IDisposable
             var downloadState = await LoadDownloadStateAsync(downloadStorageService, cancellationToken).ConfigureAwait(true);
 
             cancellationToken.ThrowIfCancellationRequested();
-            DownloadingList.AddRange(downloadState.DownloadingItems);
-            DownloadedList.AddRange(downloadState.DownloadedItems);
+            _downloadLists.Downloading.AddRange(downloadState.DownloadingItems);
+            _downloadLists.Downloaded.AddRange(downloadState.DownloadedItems);
             _downloadHistoryTask = LoadRemainingDownloadHistoryAsync(downloadStorageService, cancellationToken);
 
             _downloadService = CreateDownloadService();
@@ -274,7 +277,7 @@ internal partial class App : PrismApplication, IDisposable
             await downloadedItemsTask.ConfigureAwait(true));
     }
 
-    private static async Task LoadRemainingDownloadHistoryAsync(
+    private async Task LoadRemainingDownloadHistoryAsync(
         DownloadStorageService downloadStorageService,
         CancellationToken cancellationToken)
     {
@@ -282,10 +285,10 @@ internal partial class App : PrismApplication, IDisposable
         {
             var allItems = await downloadStorageService.GetDownloadedAsync(cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
-            var loadedIds = DownloadedList
+            var loadedIds = _downloadLists.Downloaded
                 .Select(item => item.DownloadBase.Id)
                 .ToHashSet(StringComparer.Ordinal);
-            DownloadedList.AddRange(allItems.Where(item => loadedIds.Add(item.DownloadBase.Id)));
+            _downloadLists.Downloaded.AddRange(allItems.Where(item => loadedIds.Add(item.DownloadBase.Id)));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -300,61 +303,14 @@ internal partial class App : PrismApplication, IDisposable
     private IDownloadService? CreateDownloadService()
     {
         var dialogService = Container.Resolve<IDialogService>();
+        var downloadStorageService = Container.Resolve<DownloadStorageService>();
         return SettingsManager.Instance.GetDownloader() switch
         {
-            Core.Settings.Downloader.BuiltIn => new BuiltinDownloadService(DownloadingList, DownloadedList, dialogService),
-            Core.Settings.Downloader.Aria => new AriaDownloadService(DownloadingList, DownloadedList, dialogService),
-            Core.Settings.Downloader.CustomAria => new CustomAriaDownloadService(DownloadingList, DownloadedList, dialogService),
+            Core.Settings.Downloader.BuiltIn => new BuiltinDownloadService(_downloadLists, downloadStorageService, dialogService),
+            Core.Settings.Downloader.Aria => new AriaDownloadService(_downloadLists, downloadStorageService, dialogService),
+            Core.Settings.Downloader.CustomAria => new CustomAriaDownloadService(_downloadLists, downloadStorageService, dialogService),
             _ => null
         };
-    }
-
-    /// <summary>
-    /// 下载完成列表排序
-    /// </summary>
-    /// <param name="finishedSort"></param>
-    public static void SortDownloadedList(DownloadFinishedSort finishedSort)
-    {
-        var list = DownloadedList.ToList();
-        switch (finishedSort)
-        {
-            case DownloadFinishedSort.DownloadAsc:
-                // 按下载先后排序
-                list.Sort((x, y) => x.Downloaded.FinishedTimestamp.CompareTo(y.Downloaded.FinishedTimestamp));
-                break;
-            case DownloadFinishedSort.DownloadDesc:
-                // 按下载先后排序
-                list.Sort((x, y) => y.Downloaded.FinishedTimestamp.CompareTo(x.Downloaded.FinishedTimestamp));
-                break;
-            case DownloadFinishedSort.Number:
-                // 按序号排序
-                list.Sort((x, y) =>
-                {
-                    var compare = string.Compare(x.MainTitle, y.MainTitle, StringComparison.Ordinal);
-                    return compare == 0 ? x.Order.CompareTo(y.Order) : compare;
-                });
-                break;
-            case DownloadFinishedSort.NotSet:
-            default:
-                break;
-        }
-
-        // 更新下载完成列表
-        // 如果有更好的方法再重写
-        DownloadedList.Clear();
-        list.ForEach(item => DownloadedList.Add(item));
-    }
-
-    public async Task RefreshDownloadedListAsync(CancellationToken cancellationToken = default)
-    {
-        // 重新获取下载完成列表
-        var downloadStorageService = Container.Resolve<DownloadStorageService>();
-        var downloadedItems = await downloadStorageService.GetDownloadedAsync(cancellationToken).ConfigureAwait(true);
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            DownloadedList.Clear();
-            DownloadedList.AddRange(downloadedItems);
-        });
     }
 
     private void OnExit(object sender, ControlledApplicationLifetimeExitEventArgs e)

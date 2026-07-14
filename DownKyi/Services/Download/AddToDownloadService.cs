@@ -34,7 +34,8 @@ internal class AddToDownloadService
     private IInfoService _videoInfoService = null!;
     private VideoInfoView? _videoInfoView;
     private IList<VideoSection>? _videoSections;
-    private DownloadStorageService _downloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
+    private readonly DownloadListState _downloadLists;
+    private readonly DownloadStorageService _downloadStorageService;
 
     // 下载内容
     private bool _downloadAudio = true;
@@ -47,8 +48,15 @@ internal class AddToDownloadService
     /// 添加下载
     /// </summary>
     /// <param name="streamType"></param>
-    public AddToDownloadService(PlayStreamType streamType)
+    /// <param name="downloadLists"></param>
+    /// <param name="downloadStorageService"></param>
+    public AddToDownloadService(
+        PlayStreamType streamType,
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService)
     {
+        _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         switch (streamType)
         {
             case PlayStreamType.Video:
@@ -70,8 +78,16 @@ internal class AddToDownloadService
     /// </summary>
     /// <param name="id"></param>
     /// <param name="streamType"></param>
-    public AddToDownloadService(string id, PlayStreamType streamType)
+    /// <param name="downloadLists"></param>
+    /// <param name="downloadStorageService"></param>
+    public AddToDownloadService(
+        string id,
+        PlayStreamType streamType,
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService)
     {
+        _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         switch (streamType)
         {
             case PlayStreamType.Video:
@@ -306,7 +322,7 @@ internal class AddToDownloadService
                 var isDownloading = false;
 
 
-                foreach (var item in App.DownloadingList.Concat(addedItems))
+                foreach (var item in _downloadLists.Downloading.Concat(addedItems))
                 {
                     if (item.DownloadBase == null)
                     {
@@ -338,7 +354,7 @@ internal class AddToDownloadService
 
                 // TODO 如果存在下载完成列表，弹出选择框是否再次下载
                 var isDownloaded = false;
-                foreach (var item in App.DownloadedList)
+                foreach (var item in _downloadLists.Downloaded)
                 {
                     if (item.DownloadBase == null)
                     {
@@ -380,7 +396,7 @@ internal class AddToDownloadService
                                     if (result == ButtonResult.OK)
                                     {
                                         await _downloadStorageService.RemoveDownloadedAsync(item).ConfigureAwait(true);
-                                        App.PropertyChangeAsync(() => App.DownloadedList.Remove(item));
+                                        _downloadLists.Downloaded.Remove(item);
                                         isDownloaded = false;
                                     }
                                     else
@@ -585,7 +601,7 @@ internal class AddToDownloadService
 
         if (addedItems.Count > 0)
         {
-            App.PropertyChangeAsync(() => App.DownloadingList.AddRange(addedItems));
+            _downloadLists.Downloading.AddRange(addedItems);
         }
 
         return addedItems.Count;

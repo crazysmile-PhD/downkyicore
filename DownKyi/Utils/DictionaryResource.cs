@@ -13,12 +13,18 @@ internal static class DictionaryResource
     /// <returns></returns>
     public static string GetColor(string resourceKey)
     {
+        var application = Avalonia.Application.Current;
+        if (application == null)
+        {
+            return "#00000000";
+        }
+
         var obj = Dispatcher.UIThread.Invoke(() =>
         {
             object? obj = null;
-            Avalonia.Application.Current?.TryGetResource(
+            application.TryGetResource(
                 resourceKey,
-                Avalonia.Application.Current.ActualThemeVariant,
+                application.ActualThemeVariant,
                 out obj);
             return obj;
         });
@@ -32,12 +38,18 @@ internal static class DictionaryResource
     /// <returns></returns>
     public static string GetString(string resourceKey)
     {
+        var application = Avalonia.Application.Current;
+        if (application == null)
+        {
+            return string.Empty;
+        }
+
         var obj = Dispatcher.UIThread.Invoke(() =>
         {
             object? obj = null;
-            Avalonia.Application.Current?.TryGetResource(
+            application.TryGetResource(
                 resourceKey,
-                Avalonia.Application.Current.ActualThemeVariant,
+                application.ActualThemeVariant,
                 out obj);
             return obj;
         });
@@ -46,12 +58,14 @@ internal static class DictionaryResource
 
     public static T Get<T>(string resourceKey)
     {
+        var application = Avalonia.Application.Current
+            ?? throw new KeyNotFoundException($"Resource '{resourceKey}' is unavailable before application initialization.");
         var obj = Dispatcher.UIThread.Invoke(() =>
         {
             object? obj = null;
-            Avalonia.Application.Current?.TryGetResource(
+            application.TryGetResource(
                 resourceKey,
-                Avalonia.Application.Current.ActualThemeVariant,
+                application.ActualThemeVariant,
                 out obj);
             return obj;
         });

@@ -42,6 +42,17 @@ public sealed class AppLifecycleArchitectureTests
         Assert.Contains("await App.Current.RequestShutdownAsync()", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AppDoesNotOwnGlobalDownloadCollections()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+
+        Assert.DoesNotContain("static ImmutableObservableCollection", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadingList { get;", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadedList { get;", source, StringComparison.Ordinal);
+        Assert.Contains("DownloadListState", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

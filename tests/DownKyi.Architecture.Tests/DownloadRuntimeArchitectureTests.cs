@@ -58,6 +58,25 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.DoesNotContain("void PersistDownloadingState(", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void DownloadRuntimeUsesInjectedListAndStorageOwners()
+    {
+        var directory = Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download");
+        var violations = Directory.EnumerateFiles(directory, "*.cs", SearchOption.TopDirectoryOnly)
+            .Select(path => new
+            {
+                Path = path,
+                Source = File.ReadAllText(path)
+            })
+            .Where(file => file.Source.Contains("App.Current.Container.Resolve", StringComparison.Ordinal)
+                || file.Source.Contains("App.DownloadingList", StringComparison.Ordinal)
+                || file.Source.Contains("App.DownloadedList", StringComparison.Ordinal))
+            .Select(file => Path.GetRelativePath(RepositoryRoot, file.Path))
+            .ToArray();
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

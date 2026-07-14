@@ -7,10 +7,10 @@ namespace DownKyi.Services.Download;
 internal sealed class CustomAriaDownloadService : AriaDownloadService
 {
     public CustomAriaDownloadService(
-        ImmutableObservableCollection<DownloadingItem> downloadingList,
-        ImmutableObservableCollection<DownloadedItem> downloadedList,
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService,
         IDialogService? dialogService)
-        : base(downloadingList, downloadedList, dialogService, ownsAriaServer: false)
+        : base(downloadLists, downloadStorageService, dialogService, ownsAriaServer: false)
     {
     }
 }

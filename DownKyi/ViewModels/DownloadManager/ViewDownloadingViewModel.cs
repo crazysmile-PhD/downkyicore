@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -32,12 +33,17 @@ namespace DownKyi.ViewModels.DownloadManager
 
         #endregion
 
-        public ViewDownloadingViewModel(IEventAggregator eventAggregator, IDialogService dialogService, DownloadStorageService downloadStorageService) : base(
+        public ViewDownloadingViewModel(
+            IEventAggregator eventAggregator,
+            IDialogService dialogService,
+            DownloadStorageService downloadStorageService,
+            DownloadListState downloadLists) : base(
             eventAggregator, dialogService)
         {
-            _downloadStorageService = downloadStorageService;
+            _downloadStorageService = downloadStorageService
+                ?? throw new ArgumentNullException(nameof(downloadStorageService));
             // 初始化DownloadingList
-            DownloadingList = App.DownloadingList;
+            DownloadingList = (downloadLists ?? throw new ArgumentNullException(nameof(downloadLists))).Downloading;
         }
 
         #region 命令申明
@@ -185,7 +191,7 @@ namespace DownKyi.ViewModels.DownloadManager
         private async Task DeleteDownloadingItemAsync(DownloadingItem downloadingItem)
         {
             downloadingItem.Downloading.DownloadStatus = DownloadStatus.Pause;
-            App.PropertyChangeAsync(() => App.DownloadingList.Remove(downloadingItem));
+            DownloadingList.Remove(downloadingItem);
             await DownloadTaskFileService.CancelActiveDownloadAsync(downloadingItem).ConfigureAwait(true);
             await _downloadStorageService.RemoveDownloadingAsync(downloadingItem, true).ConfigureAwait(true);
             await DownloadTaskFileService.DeleteGeneratedFilesAsync(downloadingItem).ConfigureAwait(true);

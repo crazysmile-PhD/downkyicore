@@ -22,6 +22,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     public const string Tag = "PageDownloadManagerDownloadFinished";
 
     private DownloadStorageService _downloadStorageService;
+    private readonly DownloadListState _downloadLists;
 
     #region 页面属性申明
 
@@ -46,13 +47,15 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     public ViewDownloadFinishedViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        DownloadStorageService downloadStorageService
+        DownloadStorageService downloadStorageService,
+        DownloadListState downloadLists
     ) : base(eventAggregator,
         dialogService)
     {
         // 初始化DownloadedList
-        DownloadedList = App.DownloadedList;
-        _downloadStorageService = downloadStorageService;
+        _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        DownloadedList = downloadLists.Downloaded;
+        _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
 
         var finishedSort = SettingsManager.Instance.GetDownloadFinishedSort();
         FinishedSortBy = finishedSort switch
@@ -62,7 +65,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             DownloadFinishedSort.Number => 2,
             _ => 0
         };
-        App.SortDownloadedList(finishedSort);
+        _downloadLists.SortDownloaded(finishedSort);
     }
 
     #region 命令申明
@@ -85,22 +88,22 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         switch (index)
         {
             case 0:
-                App.SortDownloadedList(DownloadFinishedSort.DownloadAsc);
+                _downloadLists.SortDownloaded(DownloadFinishedSort.DownloadAsc);
                 // 更新设置
                 SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
             case 1:
-                App.SortDownloadedList(DownloadFinishedSort.DownloadDesc);
+                _downloadLists.SortDownloaded(DownloadFinishedSort.DownloadDesc);
                 // 更新设置
                 SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadDesc);
                 break;
             case 2:
-                App.SortDownloadedList(DownloadFinishedSort.Number);
+                _downloadLists.SortDownloaded(DownloadFinishedSort.Number);
                 // 更新设置
                 SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.Number);
                 break;
             default:
-                App.SortDownloadedList(DownloadFinishedSort.DownloadAsc);
+                _downloadLists.SortDownloaded(DownloadFinishedSort.DownloadAsc);
                 // 更新设置
                 SettingsManager.Instance.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
@@ -130,7 +133,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             // 因此遍历删除
             // DownloadingList中元素被删除后不能继续遍历
             await _downloadStorageService.ClearDownloadedAsync().ConfigureAwait(true);
-            App.PropertyChangeAsync(() => { App.DownloadedList.Clear(); });
+            DownloadedList.Clear();
         }
         catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or IOException
             or UnauthorizedAccessException or InvalidOperationException)
@@ -232,7 +235,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             return;
         }
 
-        App.DownloadedList.Remove(downloadedItem);
+        DownloadedList.Remove(downloadedItem);
         await _downloadStorageService.RemoveDownloadedAsync(downloadedItem).ConfigureAwait(true);
     }
 

@@ -29,6 +29,7 @@ namespace DownKyi.ViewModels;
 internal class ViewSeasonsSeriesViewModel : ViewModelBase
 {
     public const string Tag = "PageSeasonsSeries";
+    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
 
     private CancellationTokenSource? tokenSource;
 
@@ -131,10 +132,15 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
 
     #endregion
 
-    public ViewSeasonsSeriesViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(
+    public ViewSeasonsSeriesViewModel(
+        IEventAggregator eventAggregator,
+        IDialogService dialogService,
+        IAddToDownloadServiceFactory addToDownloadServiceFactory) : base(
         eventAggregator)
     {
         DialogService = dialogService;
+        _addToDownloadServiceFactory = addToDownloadServiceFactory
+            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
 
         #region 属性初始化
 
@@ -273,7 +279,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // 频道里只有视频
-        var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
+        var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
 
         // 选择文件夹
         var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);

@@ -25,6 +25,7 @@ internal class ViewUpgradingDialogViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogLoading";
     private readonly DownloadStorageService _downloadStorageService;
+    private readonly DownloadListState _downloadLists;
 
     #region 页面属性申明
 
@@ -72,9 +73,13 @@ internal class ViewUpgradingDialogViewModel : BaseDialogViewModel
 
     #endregion
 
-    public ViewUpgradingDialogViewModel(DownloadStorageService downloadStorageService)
+    public ViewUpgradingDialogViewModel(
+        DownloadStorageService downloadStorageService,
+        DownloadListState downloadLists)
     {
-        _downloadStorageService = downloadStorageService;
+        _downloadStorageService = downloadStorageService
+            ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         Message = "数据迁移中、请不要关闭软件";
     }
 
@@ -451,7 +456,8 @@ internal class ViewUpgradingDialogViewModel : BaseDialogViewModel
                     RestartVisible = true;
                     SetMessage("下载信息迁移完成");
                 });
-                await App.Current.RefreshDownloadedListAsync().ConfigureAwait(true);
+                var downloadedItems = await _downloadStorageService.GetDownloadedAsync().ConfigureAwait(true);
+                await Dispatcher.UIThread.InvokeAsync(() => _downloadLists.ReplaceDownloaded(downloadedItems));
             }
             catch (Exception e) when (IsMigrationException(e))
             {

@@ -26,6 +26,7 @@ namespace DownKyi.ViewModels;
 internal class ViewMyHistoryViewModel : ViewModelBase
 {
     public const string Tag = "PageMyHistory";
+    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
 
     // 每页视频数量，暂时在此写死，以后在设置中增加选项
     private const int VideoNumberInPage = 30;
@@ -109,10 +110,15 @@ internal class ViewMyHistoryViewModel : ViewModelBase
 
     #endregion
 
-    public ViewMyHistoryViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(
+    public ViewMyHistoryViewModel(
+        IEventAggregator eventAggregator,
+        IDialogService dialogService,
+        IAddToDownloadServiceFactory addToDownloadServiceFactory) : base(
         eventAggregator)
     {
         DialogService = dialogService;
+        _addToDownloadServiceFactory = addToDownloadServiceFactory
+            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
 
         #region 属性初始化
 
@@ -269,7 +275,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         // BANGUMI类型
-        var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
+        var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
 
         // 选择文件夹
         var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
