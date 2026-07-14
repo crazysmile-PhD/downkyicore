@@ -118,12 +118,12 @@ internal class BaseWebImageLoader : IAsyncImageLoader
 
         try
         {
+            if (ImageSourceUriResolver.ResolveExternal(url) != null)
+                return null;
+
             var uri = url.StartsWith('/')
                 ? new Uri(url, UriKind.Relative)
                 : new Uri(url, UriKind.RelativeOrAbsolute);
-
-            if (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
-                return null;
 
             if (uri is { IsAbsoluteUri: true, IsFile: true })
                 return new Bitmap(uri.LocalPath);
@@ -148,6 +148,12 @@ internal class BaseWebImageLoader : IAsyncImageLoader
                 "Failed to resolve image from request with uri: {RequestUri}\nException: {Exception}", url, e);
             return null;
         }
+        catch (InvalidOperationException e)
+        {
+            _logger?.Log(this,
+                "Failed to resolve image from request with uri: {RequestUri}\nException: {Exception}", url, e);
+            return null;
+        }
     }
 
     /// <summary>
@@ -158,9 +164,13 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     /// <returns>Image bytes</returns>
     protected virtual async Task<byte[]?> LoadDataFromExternalAsync(string url)
     {
+        var uri = ImageSourceUriResolver.ResolveExternal(url);
+        if (uri == null)
+            return null;
+
         try
         {
-            return await HttpClient.GetByteArrayAsync(new Uri(url, UriKind.Absolute)).ConfigureAwait(false);
+            return await HttpClient.GetByteArrayAsync(uri).ConfigureAwait(false);
         }
         catch (HttpRequestException e)
         {

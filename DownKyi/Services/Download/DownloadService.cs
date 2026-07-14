@@ -1340,33 +1340,18 @@ internal abstract class DownloadService : IDisposable
     /// </summary>
     protected async Task BaseEndTask()
     {
-        // 结束任务
-        if (TokenSource != null)
-        {
-            await TokenSource.CancelAsync().ConfigureAwait(true);
-        }
+        await DownloadShutdownCoordinator.StopAsync(
+            TokenSource,
+            WorkTask,
+            _downloadWorkers,
+            TimeSpan.FromSeconds(30),
+            e => LogManager.Error($"{Tag}.DownloadWorkers", e),
+            PersistShutdownStateAsync).ConfigureAwait(true);
+    }
 
-        if (WorkTask != null) await WorkTask.ConfigureAwait(true);
-
-        try
-        {
-            await Task.WhenAll(_downloadWorkers)
-                .WaitAsync(TimeSpan.FromSeconds(30))
-                .ConfigureAwait(true);
-        }
-        catch (TimeoutException e)
-        {
-            LogManager.Error($"{Tag}.DownloadWorkers", e);
-        }
-        catch (OperationCanceledException) when (TokenSource?.IsCancellationRequested == true)
-        {
-        }
-
-        //先简单等待一下
-
-        // 下载数据存储服务
+    private async Task PersistShutdownStateAsync()
+    {
         var downloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
-        // 保存数据
         foreach (var item in DownloadingList)
         {
             switch (item.Downloading.DownloadStatus)
@@ -1377,9 +1362,7 @@ internal abstract class DownloadService : IDisposable
                 case DownloadStatus.Pause:
                     break;
                 case DownloadStatus.Downloading:
-                    // TODO 添加设置让用户选择重启后是否自动开始下载
                     item.Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
-                    //item.Downloading.DownloadStatus = DownloadStatus.PAUSE;
                     break;
                 case DownloadStatus.DownloadSucceed:
                 case DownloadStatus.DownloadFailed:

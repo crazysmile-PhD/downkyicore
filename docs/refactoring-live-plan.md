@@ -1,7 +1,7 @@
 # DownKyi Core Live Refactoring Plan
 
 Status: active
-Last updated: 2026-07-13
+Last updated: 2026-07-14
 Current group: PR 16-24
 Next branch: `refactor/pr-16-24-media-ui-lifecycle`
 
@@ -27,7 +27,7 @@ Branch: `refactor/pr-16-24-media-ui-lifecycle`
 - Continue CommunityToolkit.Mvvm adoption after the video-detail `Idle`/`Busy`/`Content`/`Empty` state model; ViewModels should contain only binding state, commands, navigation, and result projection.
 - Move notifications, dialogs, and navigation behind Desktop interfaces; clipboard and file-picker boundaries are complete and their static helpers are deleted.
 - Reduce `App.axaml.cs` to XAML, Host, shell, start, and stop; remove static download collections and service locator calls.
-- Move the remaining download bootstrap and projection ownership out of `App.axaml.cs`; storage maintenance and bounded async shutdown are now Host-owned/awaited.
+- Move the remaining download bootstrap and projection ownership out of `App.axaml.cs`; storage maintenance and bounded async shutdown are Host-owned/awaited, and shutdown cancellation now drains workers before resumable-state recovery.
 
 ## PR 25-29 - Remove Prism And Legacy Architecture
 

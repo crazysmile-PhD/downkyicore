@@ -69,6 +69,7 @@ flowchart TD
     ApplicationLayer["service.application-contracts\nsrc/DownKyi.Application"]
     Infrastructure["core.infrastructure\nsrc/DownKyi.Infrastructure"]
     MainWindow["ui.main-window\nDownKyi/Views/MainWindow.axaml"]
+    AsyncImage["ui.async-image-loader\nCustomControl/AsyncImageLoader"]
     MainVm["viewmodel.main-window\nDownKyi/ViewModels/MainWindowViewModel.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
     Resolver["service.video-input-resolver\nsrc/DownKyi.Application/Media"]
@@ -108,6 +109,7 @@ flowchart TD
     Storage -->|projects legacy UI| DownloadDomain
     Storage -->|calls| StoreContract
     MainWindow -->|binds| MainVm
+    MainWindow -->|renders remote artwork| AsyncImage
     MainVm -->|navigates| VideoVm
     VideoVm -->|calls| Resolver
     VideoVm -->|calls| Parser
@@ -573,6 +575,7 @@ paths:
   - DownKyi/Services/Download/DownloadTaskFileService.cs
   - DownKyi/Services/Download/DownloadFileIntegrity.cs
   - DownKyi/Services/Download/DownloadDiagnosticLogger.cs
+  - DownKyi/Services/Download/DownloadShutdownCoordinator.cs
 responsibility: Executes queued downloads, updates UI state, verifies file integrity, cleans partial files, and finalizes media.
 inbound:
   - app.application
@@ -591,9 +594,11 @@ contracts:
   - DURL merge input is sorted by Order and success requires ffprobe stream, duration, and middle/tail seek-decode validation.
   - Multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; hardware failure falls back to `libx264 + aac`.
   - State transitions await persistence; high-rate progress uses the bounded write-behind boundary.
+  - Shutdown cancellation while dispatch waits for capacity cannot skip fixed-worker drain or resumable-state recovery; active `Downloading` rows return to `WaitForDownload` and are persisted before exit completes.
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
   - Blocking waits in download lifecycle can freeze UI or prevent process exit.
+  - Letting an expected shutdown `OperationCanceledException` escape before state recovery leaves rows stored as active and prevents clean resume after restart.
   - Resume behavior depends on preserving partial files while delete behavior must remove them.
   - aria2 process cleanup is platform-sensitive.
   - Reusing Id+codec or runtime GetHashCode values across DURL segments overwrites temporary files and can produce non-seekable MP4 output.
@@ -742,6 +747,34 @@ hazards:
 tests:
   - test.fake-http-download
   - test.process-cleanup
+```
+
+### ui.async-image-loader
+
+```yaml
+id: ui.async-image-loader
+type: ui-service
+paths:
+  - DownKyi/CustomControl/AsyncImageLoader/Loaders/AdvancedImage.axaml.cs
+  - DownKyi/CustomControl/AsyncImageLoader/Loaders/BaseWebImageLoader.cs
+  - DownKyi/CustomControl/AsyncImageLoader/Loaders/ImageSourceUriResolver.cs
+responsibility: Resolves Avalonia assets, local images, and remote artwork without faulting asynchronous bindings.
+inbound:
+  - ui.main-window
+  - viewmodel.video-detail
+outbound:
+  - Avalonia.Platform.AssetLoader
+  - System.Net.Http.HttpClient
+contracts:
+  - URI scheme access is allowed only after absolute-URI validation.
+  - Protocol-relative image addresses are normalized to HTTPS only at the image-loader boundary; raw Bilibili wire-model strings remain unchanged.
+  - Ordinary relative sources remain Avalonia asset candidates and are never sent as HTTP requests.
+  - Malformed, unavailable, unauthorized, or missing image sources return `null` so the control can retain its fallback instead of faulting the binding task.
+hazards:
+  - Treating `//host/path` as an Avalonia relative asset can throw before remote fallback begins.
+  - Globally rewriting API address fields would alter external wire contracts and cache identity.
+tests:
+  - test.image-loader
 ```
 
 ### workflow.strict-pr-ci
@@ -931,10 +964,21 @@ test.download-file-integrity:
 test.download-lifecycle:
   paths:
     - tests/DownKyi.Tests/DownloadTaskFileServiceTests.cs
+    - tests/DownKyi.Tests/DownloadShutdownCoordinatorTests.cs
   guards:
     - generated file discovery includes media, assets, and resume sidecars
     - deleting a task removes partial files and resume sidecars
     - cancellation before deletion preserves resume data
+    - shutdown cancellation while dispatch waits still drains workers and runs state recovery exactly once
+    - unexpected dispatch failures recover state before they propagate
+
+test.image-loader:
+  paths:
+    - tests/DownKyi.Tests/ImageSourceUriResolverTests.cs
+  guards:
+    - protocol-relative image sources use HTTPS without faulting the loader
+    - ordinary relative image sources do not become external HTTP requests
+    - missing Avalonia assets fail gracefully when the asset service is unavailable
 
 test.storage-resume:
   paths:
