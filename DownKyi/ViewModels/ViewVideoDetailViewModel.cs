@@ -42,6 +42,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     private string _input = string.Empty;
 
     private readonly VideoParseCoordinator _parseCoordinator = new();
+    private readonly VideoSearchState _videoSearchState = new();
     private readonly IClipboardService _clipboardService;
     private CancellationTokenSource? _operationCancellation;
 
@@ -89,8 +90,6 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         private set => SetProperty(ref _videoSections, value);
     }
 
-    public RangeObservableCollection<VideoSection> CaCheVideoSections { get; private set; }
-
     private bool _isSelectAll;
 
     public bool IsSelectAll
@@ -116,7 +115,6 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
         VideoSections = new RangeObservableCollection<VideoSection>();
-        CaCheVideoSections = new RangeObservableCollection<VideoSection>();
     }
 
     private CancellationToken ResetOperationCancellation()
@@ -212,30 +210,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     /// </summary>
     private Task ExecuteInputSearchCommandAsync()
     {
-        if (string.IsNullOrEmpty(InputSearchText))
-        {
-            foreach (var section in VideoSections)
-            {
-                var cache = CaCheVideoSections.FirstOrDefault(e => e.Id == section.Id);
-                if (cache != null)
-                {
-                    section.VideoPages = cache.VideoPages;
-                }
-            }
-        }
-        else
-        {
-            foreach (var section in VideoSections)
-            {
-                var cache = CaCheVideoSections.FirstOrDefault(e => e.Id == section.Id);
-
-                if (cache == null) continue;
-
-                var pages = cache.VideoPages.Where(e => e.Name.Contains(InputSearchText, StringComparison.Ordinal)).ToList();
-                section.VideoPages = pages;
-            }
-        }
-
+        _videoSearchState.Apply(InputSearchText);
         return Task.CompletedTask;
     }
 
@@ -620,7 +595,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         ResetGridBehavior.ResetGrid();
         SetDisplayState(VideoDetailDisplayState.Busy);
         VideoSections.ReplaceRange(Array.Empty<VideoSection>());
-        CaCheVideoSections.ReplaceRange(Array.Empty<VideoSection>());
+        _videoSearchState.Clear();
         _parseCoordinator.Reset();
     }
 
@@ -656,7 +631,6 @@ internal class ViewVideoDetailViewModel : ViewModelBase
             LogManager.Debug(Tag, "videoSections is not exist.");
 
             var pages = videoInfoService.GetVideoPages(cancellationToken) ?? new List<VideoPage>();
-            var cachePages = pages.Select(page => page.CloneForCache()).ToList();
             var defaultSections = new[]
             {
                 new VideoSection
@@ -667,21 +641,10 @@ internal class ViewVideoDetailViewModel : ViewModelBase
                     VideoPages = pages
                 }
             };
-            var defaultCacheSections = new[]
-            {
-                new VideoSection
-                {
-                    Id = 0,
-                    Title = "default",
-                    IsSelected = true,
-                    VideoPages = cachePages
-                }
-            };
-
             PropertyChangeAsync(() =>
             {
+                _videoSearchState.Reset(defaultSections);
                 VideoSections.ReplaceRange(defaultSections);
-                CaCheVideoSections.ReplaceRange(defaultCacheSections);
 
                 // 自动定位到合集中对应的视频位置
                 AutoLocateAndSelectVideoPosition();
@@ -689,11 +652,10 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         }
         else
         {
-            var videoSectionsData = videoSections.Select(section => section.CloneForCache()).ToList();
             PropertyChangeAsync(() =>
             {
+                _videoSearchState.Reset(videoSections);
                 VideoSections.ReplaceRange(videoSections);
-                CaCheVideoSections.ReplaceRange(videoSectionsData);
 
                 // 自动定位到合集中对应的视频位置
                 AutoLocateAndSelectVideoPosition();

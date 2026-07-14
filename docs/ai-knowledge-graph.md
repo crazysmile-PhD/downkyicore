@@ -350,6 +350,7 @@ outbound:
   - service.video-input-resolver
   - service.video-parse-coordinator
   - service.video-selection-state
+  - service.video-search-state
   - service.download-add
   - service.desktop-platform-boundaries
 contracts:
@@ -357,12 +358,14 @@ contracts:
   - Canceling directory selection must not enqueue download work.
   - `Idle`, `Busy`, `Content`, and `Empty` are one mutually exclusive CommunityToolkit state model.
   - Ordinary row clicks toggle selection; repeated clicks clear the item and select-all has an explicit clear-selection peer.
+  - Search filtering projects from one shallow source of the original `VideoPage` objects; clearing a search must preserve parsed stream, quality, and selection mutations.
 hazards:
   - This file historically accumulated unrelated parsing, selection, and download orchestration logic.
-  - Any JSON clone/deep-copy pattern here is a performance and schema-fragility smell.
+  - Reintroducing a complete cached section/page object graph duplicates memory and can restore stale parsed or selected state.
 tests:
   - test.video-input-resolver
   - test.video-selection-state
+  - test.video-search-state
   - test.download-add
 ```
 
@@ -477,6 +480,26 @@ hazards:
   - Direct ObservableCollection mutation from background threads can destabilize UI.
 tests:
   - test.video-selection-state
+```
+
+### service.video-search-state
+
+```yaml
+id: service.video-search-state
+type: service
+paths:
+  - DownKyi/Services/Video/VideoSearchState.cs
+responsibility: Maintains the original page references for each video section and applies a visible search projection without cloning the media graph.
+inbound:
+  - viewmodel.video-detail
+outbound: []
+contracts:
+  - Reset captures one shallow source list per section; filters and clears always reuse the same `VideoPage` instances.
+  - Search uses explicit ordinal matching and never mutates parsed stream, quality, or selection values.
+hazards:
+  - Deep-copying pages creates stale parallel state and increases memory for large collections.
+tests:
+  - test.video-search-state
 ```
 
 ### core.bili-api
@@ -1055,6 +1078,7 @@ test.architecture-boundaries:
     - production C# cannot reference Prism ContainerLocator directly
     - download and FFmpeg runtime cannot restore synchronous async/process waits
     - Host composition must register the typed Bilibili client and API parsing cannot return null fallbacks
+    - video-detail search cannot restore `CaCheVideoSections`, `CloneForCache`, or another cloned media graph
 
 test.ui-smoke:
   paths:
@@ -1154,6 +1178,13 @@ test.video-selection-state:
     - tests/DownKyi.Tests/VideoSelectionStateTests.cs
   guards:
     - page/section selection behavior is deterministic
+
+test.video-search-state:
+  paths:
+    - tests/DownKyi.Tests/VideoSearchStateTests.cs
+  guards:
+    - filtering reuses original page instances instead of cloning the media graph
+    - clearing a filter preserves selection and parsed state changes
 ```
 
 ## Backlog Nodes

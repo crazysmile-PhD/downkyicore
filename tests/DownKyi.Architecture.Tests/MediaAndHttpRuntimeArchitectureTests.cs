@@ -54,6 +54,23 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.DoesNotContain("return default", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void VideoDetailSearchDoesNotMaintainAClonedMediaGraph()
+    {
+        var paths = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "ViewVideoDetailViewModel.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "PageViewModels", "VideoSection.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "PageViewModels", "VideoPage.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "PageViewModels", "VideoQuality.cs")
+        };
+        var source = string.Join(Environment.NewLine, paths.Select(File.ReadAllText));
+
+        Assert.DoesNotContain("CaCheVideoSections", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("CloneForCache", source, StringComparison.Ordinal);
+        Assert.Contains("VideoSearchState", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

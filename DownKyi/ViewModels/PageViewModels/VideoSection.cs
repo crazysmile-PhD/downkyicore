@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
@@ -30,16 +29,5 @@ internal class VideoSection : BindableBase
     {
         get => _videoPages;
         internal set => SetProperty(ref _videoPages, value);
-    }
-
-    public VideoSection CloneForCache()
-    {
-        return new VideoSection
-        {
-            Id = Id,
-            Title = Title,
-            IsSelected = IsSelected,
-            VideoPages = VideoPages.Select(page => page.CloneForCache()).ToList()
-        };
     }
 }

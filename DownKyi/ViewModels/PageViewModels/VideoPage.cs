@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
@@ -99,39 +98,6 @@ internal class VideoPage : BindableBase
 
     [JsonIgnore]
     public Lazy<List<string>> LazyTags { get; set; } = new(() => new());
-
-    public VideoPage CloneForCache()
-    {
-        var qualityList = VideoQualityList.Select(quality => quality.CloneForCache()).ToList();
-        var selectedQuality = qualityList.FirstOrDefault(quality =>
-            quality.Quality == VideoQuality.Quality &&
-            quality.QualityFormat == VideoQuality.QualityFormat) ?? VideoQuality.CloneForCache();
-
-        return new VideoPage
-        {
-            PlayUrl = PlayUrl,
-            Avid = Avid,
-            Bvid = Bvid,
-            Cid = Cid,
-            EpisodeId = EpisodeId,
-            Owner = Owner,
-            PublishTime = PublishTime,
-            OriginalPublishTime = OriginalPublishTime,
-            FirstFrame = FirstFrame,
-            Page = Page,
-            IsSelected = IsSelected,
-            Order = Order,
-            Name = Name,
-            Duration = Duration,
-            AudioQualityFormatList = new ObservableCollection<string>(AudioQualityFormatList),
-            AudioQualityFormat = AudioQualityFormat,
-            VideoQualityList = qualityList,
-            VideoQuality = selectedQuality,
-            LazyTags = new Lazy<List<string>>(() =>
-                LazyTags.IsValueCreated ? LazyTags.Value.ToList() : new List<string>())
-        };
-    }
-
     #region
 
     // 视频画质选择事件
