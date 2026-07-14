@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -7,7 +6,6 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using Avalonia.Controls;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Commands;
@@ -15,7 +13,6 @@ using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.CustomAction;
 using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Services;
@@ -98,7 +95,13 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         set => SetProperty(ref _isSelectAll, value);
     }
 
-    public ResetGridSplitterBehavior ResetGridBehavior { get; set; } = new();
+    private int _gridResetVersion;
+
+    public int GridResetVersion
+    {
+        get => _gridResetVersion;
+        private set => SetProperty(ref _gridResetVersion, value);
+    }
 
     #endregion
 
@@ -321,108 +324,30 @@ internal class ViewVideoDetailViewModel : ViewModelBase
         NavigateToView.NavigateToViewUserSpace(EventAggregator, Tag, VideoInfoView.UpperMid);
     }
 
-    // 视频章节选择事件
-    private DelegateCommand<object>? _videoSectionsCommand;
-
-    public DelegateCommand<object> VideoSectionsCommand => _videoSectionsCommand ??= new DelegateCommand<object>(ExecuteVideoSectionsCommand);
-
-    /// <summary>
-    /// 视频章节选择事件
-    /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteVideoSectionsCommand(object parameter)
-    {
-        if (parameter is not DataGrid grid)
-        {
-            return;
-        }
-
-        var selectedSection = VideoSelectionState.GetSelectedSection(VideoSections);
-        if (selectedSection?.VideoPages == null)
-        {
-            IsSelectAll = false;
-            return;
-        }
-
-        var selectedPages = VideoSelectionState.GetSelectedPages(selectedSection);
-        foreach (var page in selectedPages)
-        {
-            grid.SelectedItems.Add(page);
-        }
-
-        IsSelectAll = VideoSelectionState.IsAllSelected(selectedSection, selectedPages.Count);
-    }
-
-    // 视频page选择事件
-    private DelegateCommand<IList>? _videoPagesCommand;
-
-    public DelegateCommand<IList> VideoPagesCommand => _videoPagesCommand ??= new DelegateCommand<IList>(ExecuteVideoPagesCommand);
-
-    /// <summary>
-    /// 视频page选择事件
-    /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteVideoPagesCommand(IList parameter)
-    {
-        if (!(parameter is IList videoPages))
-        {
-            return;
-        }
-
-        var section = VideoSelectionState.GetSelectedSection(VideoSections);
-
-        if (section == null)
-        {
-            return;
-        }
-
-        VideoSelectionState.ApplySelectedPages(section, parameter.Cast<VideoPage>());
-        IsSelectAll = VideoSelectionState.IsAllSelected(section, videoPages.Count);
-    }
-
     // 全选事件
-    private DelegateCommand<object>? _selectAllCommand;
-    public DelegateCommand<object> SelectAllCommand => _selectAllCommand ??= new DelegateCommand<object>(ExecuteSelectAllCommand);
+    private DelegateCommand? _selectAllCommand;
+    public DelegateCommand SelectAllCommand => _selectAllCommand ??= new DelegateCommand(ExecuteSelectAllCommand);
 
     /// <summary>
     /// 全选事件
     /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteSelectAllCommand(object parameter)
+    private void ExecuteSelectAllCommand()
     {
-        if (parameter is not DataGrid dataGrid)
-        {
-            return;
-        }
-
         var section = VideoSelectionState.GetSelectedSection(VideoSections);
         VideoSelectionState.SetAllSelected(section, IsSelectAll);
-        if (IsSelectAll)
-        {
-            dataGrid.SelectAll();
-        }
-        else
-        {
-            dataGrid.SelectedIndex = -1;
-        }
     }
 
-    private DelegateCommand<object>? _clearSelectionCommand;
+    private DelegateCommand? _clearSelectionCommand;
 
-    public DelegateCommand<object> ClearSelectionCommand =>
-        _clearSelectionCommand ??= new DelegateCommand<object>(ExecuteClearSelectionCommand);
+    public DelegateCommand ClearSelectionCommand =>
+        _clearSelectionCommand ??= new DelegateCommand(ExecuteClearSelectionCommand);
 
-    private void ExecuteClearSelectionCommand(object parameter)
+    private void ExecuteClearSelectionCommand()
     {
         VideoSelectionState.SetAllSelected(
             VideoSelectionState.GetSelectedSection(VideoSections),
             isSelected: false);
         IsSelectAll = false;
-        if (parameter is DataGrid dataGrid)
-        {
-            dataGrid.SelectedItems.Clear();
-            dataGrid.SelectedIndex = -1;
-        }
     }
 
 
@@ -592,7 +517,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     private void InitView()
     {
         LogManager.Debug(Tag, "初始化页面元素");
-        ResetGridBehavior.ResetGrid();
+        GridResetVersion++;
         SetDisplayState(VideoDetailDisplayState.Busy);
         VideoSections.ReplaceRange(Array.Empty<VideoSection>());
         _videoSearchState.Clear();
@@ -703,7 +628,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
                     {
                         // 选中对应的视频页面
                         page.IsSelected = true;
-                        // 设置SelectedVideoPage以触发DataGrid的SelectedItem变化和滚动操作
+                        // Trigger the selected-item binding and scroll behavior.
                         SelectedVideoPage = page;
                         return;
                     }

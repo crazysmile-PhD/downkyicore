@@ -1,23 +1,33 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Xaml.Interactivity;
 
 namespace DownKyi.CustomAction;
 
-internal class ResetGridSplitterBehavior : Behavior<GridSplitter>
+internal sealed class ResetGridSplitterBehavior : Behavior<GridSplitter>
 {
-    private Dictionary<int, GridLength> _originalColumnWidths = new();
-    private Dictionary<int, GridLength> _originalRowHeights = new();
+    public static readonly StyledProperty<int> ResetVersionProperty =
+        AvaloniaProperty.Register<ResetGridSplitterBehavior, int>(nameof(ResetVersion));
+
+    private readonly Dictionary<int, GridLength> _originalColumnWidths = new();
+    private readonly Dictionary<int, GridLength> _originalRowHeights = new();
     private Grid? _parentGrid;
+
+    public int ResetVersion
+    {
+        get => GetValue(ResetVersionProperty);
+        set => SetValue(ResetVersionProperty, value);
+    }
 
     protected override void OnAttached()
     {
         base.OnAttached();
         var gridSplitter = AssociatedObject;
         _parentGrid = gridSplitter?.Parent as Grid;
+        _originalColumnWidths.Clear();
+        _originalRowHeights.Clear();
 
         if (_parentGrid != null)
         {
@@ -31,15 +41,19 @@ internal class ResetGridSplitterBehavior : Behavior<GridSplitter>
                 _originalRowHeights[i] = _parentGrid.RowDefinitions[i].Height;
             }
         }
-
     }
 
-    private void OnRefreshRequested(object sender, EventArgs e)
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
-        ResetGrid();
+        ArgumentNullException.ThrowIfNull(change);
+        base.OnPropertyChanged(change);
+        if (change.Property == ResetVersionProperty)
+        {
+            ResetGrid();
+        }
     }
 
-    public void ResetGrid()
+    private void ResetGrid()
     {
         if (_parentGrid != null)
         {
@@ -60,6 +74,4 @@ internal class ResetGridSplitterBehavior : Behavior<GridSplitter>
         base.OnDetachedFromVisualTree();
         ResetGrid();
     }
-
-
 }

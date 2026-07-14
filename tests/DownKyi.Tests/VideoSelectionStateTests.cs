@@ -90,6 +90,29 @@ public sealed class VideoSelectionStateTests
         Assert.All(section.VideoPages, page => Assert.False(page.IsSelected));
     }
 
+    [Fact]
+    public void ApplyVisibleSelectionDeltaPreservesSelectionsFromAnotherSection()
+    {
+        var oldSectionPage = new VideoPage { Cid = 101, IsSelected = true };
+        var visiblePage = new VideoPage { Cid = 201, IsSelected = false };
+        IReadOnlySet<VideoPage> visiblePages = new HashSet<VideoPage> { visiblePage };
+
+        VideoSelectionState.ApplyVisibleSelectionDelta(
+            visiblePages,
+            [oldSectionPage],
+            [visiblePage]);
+
+        Assert.True(oldSectionPage.IsSelected);
+        Assert.True(visiblePage.IsSelected);
+
+        VideoSelectionState.ApplyVisibleSelectionDelta(
+            visiblePages,
+            [visiblePage],
+            []);
+
+        Assert.False(visiblePage.IsSelected);
+    }
+
     private static List<VideoSection> CreateSections()
     {
         return new List<VideoSection>

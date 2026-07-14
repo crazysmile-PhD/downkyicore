@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using DownKyi.Core.Settings;
@@ -41,6 +42,26 @@ internal static class VideoSelectionState
         foreach (var page in section.VideoPages)
         {
             page.IsSelected = isSelected;
+        }
+    }
+
+    public static void ApplyVisibleSelectionDelta(
+        IReadOnlySet<VideoPage> visiblePages,
+        IEnumerable<VideoPage> removedPages,
+        IEnumerable<VideoPage> addedPages)
+    {
+        ArgumentNullException.ThrowIfNull(visiblePages);
+        ArgumentNullException.ThrowIfNull(removedPages);
+        ArgumentNullException.ThrowIfNull(addedPages);
+
+        foreach (var page in removedPages.Where(visiblePages.Contains))
+        {
+            page.IsSelected = false;
+        }
+
+        foreach (var page in addedPages.Where(visiblePages.Contains))
+        {
+            page.IsSelected = true;
         }
     }
 

@@ -1,13 +1,17 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Xaml.Interactivity;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Lifetime;
 using DownKyi.Composition;
 using DownKyi.Core.Storage;
+using DownKyi.CustomAction;
 using DownKyi.Desktop.Composition;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.ViewModels;
+using DownKyi.ViewModels.PageViewModels;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Prism.Container.DryIoc;
@@ -26,13 +30,11 @@ public sealed class UiSmokeTests
         ContainerLocator.ResetContainer();
         AssertPrismContainerIsUninitialized();
 
-        var builder = AppBuilder
-            .Configure<SmokeTestApplication>()
-            .UseHeadless(new AvaloniaHeadlessPlatformOptions());
-        builder.SetupWithoutStarting();
+        EnsureHeadlessApplication();
 
         var app = Assert.IsType<SmokeTestApplication>(Avalonia.Application.Current);
         app.Initialize();
+        AssertVideoPageSelectionBehavior();
         var prismContainer = new DryIocContainerExtension();
         var regionManager = new RegionManager();
         var eventAggregator = new EventAggregator();
@@ -98,6 +100,42 @@ public sealed class UiSmokeTests
         Assert.True(cancellation.ShutdownToken.IsCancellationRequested);
     }
 
+    private static void AssertVideoPageSelectionBehavior()
+    {
+        var firstPage = new VideoPage { Cid = 1, IsSelected = true };
+        var secondPage = new VideoPage { Cid = 2 };
+        var dataGrid = new DataGrid
+        {
+            ItemsSource = new[] { firstPage },
+            SelectionMode = DataGridSelectionMode.Extended
+        };
+        var behaviors = Interaction.GetBehaviors(dataGrid);
+        var behavior = new VideoPageSelectionBehavior();
+        behaviors.Add(behavior);
+
+        try
+        {
+            Assert.Contains(firstPage, dataGrid.SelectedItems.Cast<VideoPage>());
+            Assert.True(behavior.IsSelectAll);
+
+            dataGrid.ItemsSource = new[] { secondPage };
+            secondPage.IsSelected = true;
+
+            Assert.True(firstPage.IsSelected);
+            Assert.Contains(secondPage, dataGrid.SelectedItems.Cast<VideoPage>());
+            Assert.True(behavior.IsSelectAll);
+
+            secondPage.IsSelected = false;
+
+            Assert.Empty(dataGrid.SelectedItems);
+            Assert.False(behavior.IsSelectAll);
+        }
+        finally
+        {
+            behaviors.Remove(behavior);
+        }
+    }
+
     private static string[] GetUserDataPaths()
     {
         return
@@ -112,6 +150,19 @@ public sealed class UiSmokeTests
     private static void AssertPrismContainerIsUninitialized()
     {
         Assert.Throws<InvalidOperationException>(() => ContainerLocator.Container);
+    }
+
+    private static void EnsureHeadlessApplication()
+    {
+        if (Avalonia.Application.Current != null)
+        {
+            return;
+        }
+
+        AppBuilder
+            .Configure<SmokeTestApplication>()
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions())
+            .SetupWithoutStarting();
     }
 
     private sealed class SmokeTestApplication : Avalonia.Application

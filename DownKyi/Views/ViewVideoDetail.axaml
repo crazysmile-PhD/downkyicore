@@ -275,10 +275,6 @@
                             </ItemsPanelTemplate>
                         </ListBox.ItemsPanel>
                         <Interaction.Behaviors>
-                            <EventTriggerBehavior EventName="SelectionChanged">
-                                <InvokeCommandAction Command="{Binding VideoSectionsCommand}"
-                                                     CommandParameter="{Binding #NameVideoPages}" />
-                            </EventTriggerBehavior>
                             <DataTriggerBehavior Binding="{Binding VideoSections.Count}" Value="0">
                                 <ChangePropertyAction PropertyName="Height" Value="0" />
                             </DataTriggerBehavior>
@@ -295,8 +291,11 @@
 
                 <GridSplitter Grid.Row="1"
                               ShowsPreview="True"
-                              behavior:GridSplitterExtensions.ResetGridBehavior="{Binding ResetGridBehavior}"
-                              ResizeDirection="Rows" />
+                              ResizeDirection="Rows">
+                    <Interaction.Behaviors>
+                        <behavior:ResetGridSplitterBehavior ResetVersion="{Binding GridResetVersion}" />
+                    </Interaction.Behaviors>
+                </GridSplitter>
                 <DataGrid
                     x:Name="NameVideoPages"
                     Grid.Row="2"
@@ -392,6 +391,7 @@
                         </ControlTheme>
                     </DataGrid.ColumnHeaderTheme>
                     <Interaction.Behaviors>
+                        <behavior:VideoPageSelectionBehavior IsSelectAll="{Binding IsSelectAll, Mode=TwoWay}" />
                         <behavior:ScrollIntoViewBehavior />
                     </Interaction.Behaviors>
                     <DataGrid.Columns>
@@ -498,7 +498,6 @@
                         HorizontalAlignment="Left"
                         VerticalAlignment="Top"
                         Command="{Binding SelectAllCommand}"
-                        CommandParameter="{Binding #NameVideoPages}"
                         Content="{DynamicResource SelectAll}"
                         Foreground="{DynamicResource BrushTextDark}"
                         IsChecked="{Binding IsSelectAll, Mode=TwoWay}" />
@@ -507,7 +506,6 @@
                         HorizontalAlignment="Left"
                         VerticalAlignment="Top"
                         Command="{Binding ClearSelectionCommand}"
-                        CommandParameter="{Binding #NameVideoPages}"
                         Content="{DynamicResource ClearSelection}"
                         FontSize="12"
                         Theme="{StaticResource BtnStyle}"

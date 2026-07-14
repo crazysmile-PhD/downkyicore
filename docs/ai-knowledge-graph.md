@@ -358,6 +358,7 @@ contracts:
   - Canceling directory selection must not enqueue download work.
   - `Idle`, `Busy`, `Content`, and `Empty` are one mutually exclusive CommunityToolkit state model.
   - Ordinary row clicks toggle selection; repeated clicks clear the item and select-all has an explicit clear-selection peer.
+  - Avalonia `DataGrid` selection and splitter reset mechanics live in View behaviors; this ViewModel exposes only selection intent and a scalar reset version.
   - Search filtering projects from one shallow source of the original `VideoPage` objects; clearing a search must preserve parsed stream, quality, and selection mutations.
 hazards:
   - This file historically accumulated unrelated parsing, selection, and download orchestration logic.
@@ -476,10 +477,37 @@ inbound:
 outbound: []
 contracts:
   - Selection state should be deterministic and unit-testable without Avalonia UI.
+  - Selection deltas affect only pages still visible in the current section; an ItemsSource swap must not clear another section's selections.
 hazards:
   - Direct ObservableCollection mutation from background threads can destabilize UI.
 tests:
   - test.video-selection-state
+```
+
+### ui.video-page-selection
+
+```yaml
+id: ui.video-page-selection
+type: behavior
+paths:
+  - DownKyi/CustomAction/VideoPageSelectionBehavior.cs
+  - DownKyi/CustomAction/ResetGridSplitterBehavior.cs
+  - DownKyi/Views/ViewVideoDetail.axaml
+responsibility: Maps pointer, keyboard, checkbox, select-all, section changes, and splitter reset bindings to Avalonia controls.
+inbound:
+  - viewmodel.video-detail
+outbound:
+  - service.video-selection-state
+contracts:
+  - The original `VideoPage.IsSelected` values are the durable UI selection source; DataGrid `SelectedItems` is only a synchronized projection.
+  - Switching ItemsSource preserves selections owned by the previous section.
+  - Behavior properties update bound scalar state without placing Avalonia controls or behavior objects in the ViewModel.
+hazards:
+  - Treating DataGrid selection clearing during an ItemsSource swap as a user action loses cross-section selections.
+tests:
+  - test.video-selection-state
+  - test.ui-smoke
+  - test.architecture-boundaries
 ```
 
 ### service.video-search-state
@@ -1079,6 +1107,7 @@ test.architecture-boundaries:
     - download and FFmpeg runtime cannot restore synchronous async/process waits
     - Host composition must register the typed Bilibili client and API parsing cannot return null fallbacks
     - video-detail search cannot restore `CaCheVideoSections`, `CloneForCache`, or another cloned media graph
+    - video-detail ViewModel cannot own `DataGrid`, Avalonia control, or behavior instances
 
 test.ui-smoke:
   paths:
@@ -1097,6 +1126,7 @@ test.composition-root:
   guards:
     - the real Host starts and stops without Prism global container state
     - Host stop signals the shared application shutdown token
+    - video-page selection behavior synchronizes model/Grid state and preserves another section's selections
     - the shell and key ViewModels resolve from the same service provider
 
 test.domain-results:

@@ -71,6 +71,27 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("VideoSearchState", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void VideoDetailViewModelDoesNotOwnAvaloniaControls()
+    {
+        var viewModelSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "ViewVideoDetailViewModel.cs"));
+        var viewSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Views",
+            "ViewVideoDetail.axaml"));
+
+        Assert.DoesNotContain("Avalonia.Controls", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DataGrid", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResetGridSplitterBehavior", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("VideoPageSelectionBehavior", viewSource, StringComparison.Ordinal);
+        Assert.Contains("ResetGridSplitterBehavior", viewSource, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
