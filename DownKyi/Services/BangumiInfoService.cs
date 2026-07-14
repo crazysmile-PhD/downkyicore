@@ -4,12 +4,12 @@ using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
-using Avalonia.Threading;
 using DownKyi.Core.BiliApi.Bangumi;
 using DownKyi.Core.BiliApi.Bangumi.Models;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.VideoStream;
+using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Utils;
@@ -263,12 +263,11 @@ internal class BangumiInfoService : IInfoService
     /// 获取视频流的信息，从VideoPage返回
     /// </summary>
     /// <param name="page"></param>
-    public void GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
+    public PlayUrl? GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var playUrl = VideoStreamApi.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken);
-        Dispatcher.UIThread.Invoke(() => Utils.VideoPageInfo(playUrl, page));
+        return VideoStreamApi.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken);
     }
 
     /// <summary>
@@ -299,33 +298,25 @@ internal class BangumiInfoService : IInfoService
             upName = "";
         }
 
-        // 为videoInfoView赋值
-        var videoInfoView = new VideoInfoView();
-        App.PropertyChangeAsync(() =>
+        var videoInfoView = new VideoInfoView
         {
-            videoInfoView.CoverUrl = coverUrl ?? string.Empty;
-
-            videoInfoView.Title = _bangumiSeason.Title;
-
-            // 分区id
-            videoInfoView.TypeId = BangumiType.TypeId[_bangumiSeason.Type];
-
-            videoInfoView.VideoZone = DictionaryResource.GetString(BangumiType.Type[_bangumiSeason.Type]);
-
-            videoInfoView.PlayNumber = Format.FormatNumber(_bangumiSeason.Stat.Views);
-            videoInfoView.DanmakuNumber = Format.FormatNumber(_bangumiSeason.Stat.Danmakus);
-            videoInfoView.LikeNumber = Format.FormatNumber(_bangumiSeason.Stat.Likes);
-            videoInfoView.CoinNumber = Format.FormatNumber(_bangumiSeason.Stat.Coins);
-            videoInfoView.FavoriteNumber = Format.FormatNumber(_bangumiSeason.Stat.Favorites);
-            videoInfoView.ShareNumber = Format.FormatNumber(_bangumiSeason.Stat.Share);
-            videoInfoView.ReplyNumber = Format.FormatNumber(_bangumiSeason.Stat.Reply);
-            videoInfoView.Description = _bangumiSeason.Evaluate;
-
-            videoInfoView.Score = _bangumiSeason.Rating?.Score;
-            videoInfoView.UpName = upName;
-            videoInfoView.UpHeader = _bangumiSeason.UpInfo?.Avatar ?? string.Empty;
-            videoInfoView.UpperMid = _bangumiSeason.UpInfo?.Mid ?? -1;
-        });
+            CoverUrl = coverUrl ?? string.Empty,
+            Title = _bangumiSeason.Title,
+            TypeId = BangumiType.TypeId[_bangumiSeason.Type],
+            VideoZone = DictionaryResource.GetString(BangumiType.Type[_bangumiSeason.Type]),
+            PlayNumber = Format.FormatNumber(_bangumiSeason.Stat.Views),
+            DanmakuNumber = Format.FormatNumber(_bangumiSeason.Stat.Danmakus),
+            LikeNumber = Format.FormatNumber(_bangumiSeason.Stat.Likes),
+            CoinNumber = Format.FormatNumber(_bangumiSeason.Stat.Coins),
+            FavoriteNumber = Format.FormatNumber(_bangumiSeason.Stat.Favorites),
+            ShareNumber = Format.FormatNumber(_bangumiSeason.Stat.Share),
+            ReplyNumber = Format.FormatNumber(_bangumiSeason.Stat.Reply),
+            Description = _bangumiSeason.Evaluate,
+            Score = _bangumiSeason.Rating?.Score,
+            UpName = upName,
+            UpHeader = _bangumiSeason.UpInfo?.Avatar ?? string.Empty,
+            UpperMid = _bangumiSeason.UpInfo?.Mid ?? -1
+        };
 
         return videoInfoView;
     }

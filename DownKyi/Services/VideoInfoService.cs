@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
-using Avalonia.Threading;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.Video;
 using DownKyi.Core.BiliApi.Video.Models;
 using DownKyi.Core.BiliApi.VideoStream;
+using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
@@ -273,7 +273,7 @@ internal class VideoInfoService : IInfoService
     /// 获取视频流的信息，从VideoPage返回
     /// </summary>
     /// <param name="page"></param>
-    public void GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
+    public PlayUrl? GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
@@ -284,7 +284,7 @@ internal class VideoInfoService : IInfoService
             _ => null
         };
 
-        Dispatcher.UIThread.Invoke(() => { Utils.VideoPageInfo(playUrl, page); });
+        return playUrl;
     }
 
     /// <summary>
@@ -335,35 +335,27 @@ internal class VideoInfoService : IInfoService
             upName = "";
         }
 
-        // 为videoInfoView赋值
-        var videoInfoView = new VideoInfoView();
-        App.PropertyChangeAsync(() =>
+        var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);
+        var dateTime = startTime.AddSeconds(videoView.Pubdate);
+        var videoInfoView = new VideoInfoView
         {
-            videoInfoView.CoverUrl = coverUrl ?? string.Empty;
-            videoInfoView.Title = videoView.Title;
-
-            // 分区id
-            videoInfoView.TypeId = videoView.Tid;
-
-            videoInfoView.VideoZone = videoZone;
-
-            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
-            var dateTime = startTime.AddSeconds(videoView.Pubdate);
-            videoInfoView.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
-
-            videoInfoView.PlayNumber = Format.FormatNumber(videoView.Stat.View);
-            videoInfoView.DanmakuNumber = Format.FormatNumber(videoView.Stat.Danmaku);
-            videoInfoView.LikeNumber = Format.FormatNumber(videoView.Stat.Like);
-            videoInfoView.CoinNumber = Format.FormatNumber(videoView.Stat.Coin);
-            videoInfoView.FavoriteNumber = Format.FormatNumber(videoView.Stat.Favorite);
-            videoInfoView.ShareNumber = Format.FormatNumber(videoView.Stat.Share);
-            videoInfoView.ReplyNumber = Format.FormatNumber(videoView.Stat.Reply);
-            videoInfoView.Description = videoView.Desc;
-            videoInfoView.UpHeader = videoView.Owner?.Face ?? string.Empty;
-            videoInfoView.UpperMid = videoView.Owner?.Mid ?? -1;
-
-            videoInfoView.UpName = upName;
-        });
+            CoverUrl = coverUrl ?? string.Empty,
+            Title = videoView.Title,
+            TypeId = videoView.Tid,
+            VideoZone = videoZone,
+            CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture),
+            PlayNumber = Format.FormatNumber(videoView.Stat.View),
+            DanmakuNumber = Format.FormatNumber(videoView.Stat.Danmaku),
+            LikeNumber = Format.FormatNumber(videoView.Stat.Like),
+            CoinNumber = Format.FormatNumber(videoView.Stat.Coin),
+            FavoriteNumber = Format.FormatNumber(videoView.Stat.Favorite),
+            ShareNumber = Format.FormatNumber(videoView.Stat.Share),
+            ReplyNumber = Format.FormatNumber(videoView.Stat.Reply),
+            Description = videoView.Desc,
+            UpHeader = videoView.Owner?.Face ?? string.Empty,
+            UpperMid = videoView.Owner?.Mid ?? -1,
+            UpName = upName
+        };
 
         return videoInfoView;
     }

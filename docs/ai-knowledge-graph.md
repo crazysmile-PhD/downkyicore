@@ -360,6 +360,7 @@ contracts:
   - Ordinary row clicks toggle selection; repeated clicks clear the item and select-all has an explicit clear-selection peer.
   - Avalonia `DataGrid` selection and splitter reset mechanics live in View behaviors; this ViewModel exposes only selection intent and a scalar reset version.
   - Search filtering projects from one shallow source of the original `VideoPage` objects; clearing a search must preserve parsed stream, quality, and selection mutations.
+  - Only the current operation generation may project detail/stream results or restore display state; canceled work cannot overwrite a newer request.
 hazards:
   - This file historically accumulated unrelated parsing, selection, and download orchestration logic.
   - Reintroducing a complete cached section/page object graph duplicates memory and can restore stale parsed or selected state.
@@ -450,7 +451,7 @@ paths:
   - DownKyi/Services/VideoInfoService.cs
   - DownKyi/Services/BangumiInfoService.cs
   - DownKyi/Services/CheeseInfoService.cs
-responsibility: Chooses the correct info service and coordinates refresh/cancellation for parsed video detail data.
+responsibility: Chooses the correct info service, builds complete detail/stream results in background work, and coordinates refresh/cancellation before UI projection.
 inbound:
   - viewmodel.video-detail
 outbound:
@@ -458,10 +459,13 @@ outbound:
 contracts:
   - Cancellation must propagate to Bili API calls.
   - Info-service selection must follow VideoInputResolver results.
+  - Info services return data and never dispatch to Avalonia; the ViewModel projects a complete result on the UI dispatcher.
+  - A service is cached only after its operation succeeds, and reuse is limited to the exact input string.
 hazards:
-  - Caching the wrong info service across input kinds can leak stale state.
+  - Caching before cancellation checks or across a different input can leak stale service state into a later parse.
 tests:
   - test.video-input-resolver
+  - test.video-parse-coordinator
 ```
 
 ### service.video-selection-state
@@ -945,6 +949,8 @@ sequenceDiagram
     VM->>Parser: parse with cancellation
     Parser->>API: request JSON/text
     API-->>Parser: parsed data or visible failure
+    Parser-->>VM: complete detail/stream result
+    VM->>VM: verify operation generation and project on UI dispatcher
     VM->>Add: add selected media
     Add->>Add: ask directory
     alt user cancels
@@ -1215,6 +1221,16 @@ test.video-search-state:
   guards:
     - filtering reuses original page instances instead of cloning the media graph
     - clearing a filter preserves selection and parsed state changes
+
+test.video-parse-coordinator:
+  paths:
+    - tests/DownKyi.Tests/VideoParseCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - detail results are complete before they are returned for UI projection
+    - cancellation prevents section/page reads and prevents a canceled service from entering the cache
+    - stream parsing returns detached results and does not mutate bound `VideoPage` objects on worker threads
+    - video info services do not dispatch through `App` or Avalonia
 ```
 
 ## Backlog Nodes

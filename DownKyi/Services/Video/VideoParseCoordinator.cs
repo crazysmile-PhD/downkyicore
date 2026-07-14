@@ -1,91 +1,169 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Media;
+using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.ViewModels.PageViewModels;
 
 namespace DownKyi.Services.Video;
 
 internal sealed class VideoParseCoordinator
 {
+    private readonly Func<string, CancellationToken, IInfoService?> _serviceFactory;
+    private readonly object _serviceSync = new();
     private IInfoService? _infoService;
+    private string? _infoServiceInput;
 
-    public IInfoService? GetInfoService(string input, bool refresh, CancellationToken cancellationToken)
+    public VideoParseCoordinator()
+        : this(CreateInfoService)
+    {
+    }
+
+    internal VideoParseCoordinator(Func<string, CancellationToken, IInfoService?> serviceFactory)
+    {
+        _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
+    }
+
+    private IInfoService? AcquireInfoService(string input, bool refresh, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_infoService != null && !refresh)
+        if (!refresh)
         {
-            return _infoService;
+            lock (_serviceSync)
+            {
+                if (_infoService != null && string.Equals(_infoServiceInput, input, StringComparison.Ordinal))
+                {
+                    return _infoService;
+                }
+            }
         }
 
-        _infoService = CreateInfoService(input, cancellationToken);
-        return _infoService;
+        return _serviceFactory(input, cancellationToken);
     }
 
     public void Reset()
     {
-        _infoService = null;
+        lock (_serviceSync)
+        {
+            _infoService = null;
+            _infoServiceInput = null;
+        }
     }
 
-    public Task ExecuteAsync(
+    public Task<VideoDetailParseResult> LoadDetailAsync(
         string input,
         bool refresh,
-        Action<IInfoService, CancellationToken> action,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(action);
-        return Task.Run(() =>
-        {
-            var service = GetInfoService(input, refresh, cancellationToken);
-            if (service != null)
-            {
-                action(service, cancellationToken);
-            }
-        }, cancellationToken);
+        return Task.Run(() => LoadDetail(input, refresh, cancellationToken), cancellationToken);
     }
 
-    public Task ExecutePageAsync(
+    private VideoDetailParseResult LoadDetail(
+        string input,
+        bool refresh,
+        CancellationToken cancellationToken)
+    {
+        var service = AcquireInfoService(input, refresh, cancellationToken);
+        if (service == null)
+        {
+            return VideoDetailParseResult.Empty;
+        }
+
+        var videoInfoView = service.GetVideoView(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (videoInfoView == null)
+        {
+            return VideoDetailParseResult.Empty;
+        }
+
+        var videoSections = service.GetVideoSections(false, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (videoSections != null)
+        {
+            var result = new VideoDetailParseResult(videoInfoView, videoSections.ToArray());
+            CommitInfoService(input, service, cancellationToken);
+            return result;
+        }
+
+        var pages = service.GetVideoPages(cancellationToken) ?? new List<VideoPage>();
+        cancellationToken.ThrowIfCancellationRequested();
+        VideoSection[] defaultSections =
+        [
+            new VideoSection
+            {
+                Id = 0,
+                Title = "default",
+                IsSelected = true,
+                VideoPages = pages
+            }
+        ];
+        var defaultResult = new VideoDetailParseResult(videoInfoView, defaultSections);
+        CommitInfoService(input, service, cancellationToken);
+        return defaultResult;
+    }
+
+    public Task<VideoStreamParseResult?> LoadPageStreamAsync(
         string input,
         VideoPage page,
         bool refresh,
-        Action<IInfoService, VideoPage, CancellationToken> action,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(page);
-        ArgumentNullException.ThrowIfNull(action);
         return Task.Run(() =>
         {
-            var service = GetInfoService(input, refresh, cancellationToken);
-            if (service != null)
+            var service = AcquireInfoService(input, refresh, cancellationToken);
+            if (service == null)
             {
-                action(service, page, cancellationToken);
+                return null;
             }
+
+            var result = new VideoStreamParseResult(page, service.GetVideoStream(page, cancellationToken));
+            CommitInfoService(input, service, cancellationToken);
+            return result;
         }, cancellationToken);
     }
 
-    public Task ExecutePagesAsync(
+    public Task<IReadOnlyList<VideoStreamParseResult>> LoadPageStreamsAsync(
         string input,
         IReadOnlyList<VideoPage> pages,
-        Action<IInfoService, VideoPage, CancellationToken> action,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(pages);
-        ArgumentNullException.ThrowIfNull(action);
         return Task.Run(() =>
         {
-            var service = GetInfoService(input, refresh: false, cancellationToken);
+            var service = AcquireInfoService(input, refresh: false, cancellationToken);
             if (service == null)
             {
-                return;
+                return (IReadOnlyList<VideoStreamParseResult>)Array.Empty<VideoStreamParseResult>();
             }
 
+            var results = new List<VideoStreamParseResult>(pages.Count);
             foreach (var page in pages)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                action(service, page, cancellationToken);
+                var playUrl = service.GetVideoStream(page, cancellationToken);
+                results.Add(new VideoStreamParseResult(page, playUrl));
             }
+
+            CommitInfoService(input, service, cancellationToken);
+            return results;
         }, cancellationToken);
+    }
+
+    private void CommitInfoService(
+        string input,
+        IInfoService infoService,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_serviceSync)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _infoService = infoService;
+            _infoServiceInput = input;
+        }
     }
 
     internal static IInfoService? CreateInfoService(string input, CancellationToken cancellationToken)
@@ -99,3 +177,12 @@ internal sealed class VideoParseCoordinator
         };
     }
 }
+
+internal sealed record VideoDetailParseResult(
+    VideoInfoView? VideoInfoView,
+    IReadOnlyList<VideoSection> VideoSections)
+{
+    public static VideoDetailParseResult Empty { get; } = new(null, Array.Empty<VideoSection>());
+}
+
+internal sealed record VideoStreamParseResult(VideoPage Page, PlayUrl? PlayUrl);

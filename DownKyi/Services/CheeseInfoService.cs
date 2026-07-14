@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using Avalonia.Threading;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Cheese;
 using DownKyi.Core.BiliApi.Cheese.Models;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.VideoStream;
+using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
@@ -130,12 +130,11 @@ internal class CheeseInfoService : IInfoService
     /// 获取视频流的信息，从VideoPage返回
     /// </summary>
     /// <param name="page"></param>
-    public void GetVideoStream(VideoPage page, System.Threading.CancellationToken cancellationToken = default)
+    public PlayUrl? GetVideoStream(VideoPage page, System.Threading.CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var playUrl = VideoStreamApi.GetCheesePlayUrl(page.Avid, page.Bvid, page.Cid, page.EpisodeId, cancellationToken: cancellationToken);
-        Dispatcher.UIThread.Invoke(() => { Utils.VideoPageInfo(playUrl, page); });
+        return VideoStreamApi.GetCheesePlayUrl(page.Avid, page.Bvid, page.Cid, page.EpisodeId, cancellationToken: cancellationToken);
     }
 
     /// <summary>
@@ -166,34 +165,25 @@ internal class CheeseInfoService : IInfoService
             upName = "";
         }
 
-        // 为videoInfoView赋值
-        var videoInfoView = new VideoInfoView();
-        App.PropertyChangeAsync(() =>
+        var videoInfoView = new VideoInfoView
         {
-            videoInfoView.CoverUrl = coverUrl ?? string.Empty;
-
-            videoInfoView.Title = _cheeseView.Title;
-
-            // 分区id
-            // 课堂的type id B站没有定义，这里自定义为-10
-            videoInfoView.TypeId = -10;
-
-            videoInfoView.VideoZone = DictionaryResource.GetString("Cheese");
-            videoInfoView.CreateTime = "";
-
-            videoInfoView.PlayNumber = Format.FormatNumber(_cheeseView.Stat.Play);
-            videoInfoView.DanmakuNumber = Format.FormatNumber(0);
-            videoInfoView.LikeNumber = Format.FormatNumber(0);
-            videoInfoView.CoinNumber = Format.FormatNumber(0);
-            videoInfoView.FavoriteNumber = Format.FormatNumber(0);
-            videoInfoView.ShareNumber = Format.FormatNumber(0);
-            videoInfoView.ReplyNumber = Format.FormatNumber(0);
-            videoInfoView.Description = _cheeseView.Subtitle;
-
-            videoInfoView.UpName = upName;
-            videoInfoView.UpHeader = _cheeseView.UpInfo?.Avatar ?? string.Empty;
-            videoInfoView.UpperMid = _cheeseView.UpInfo?.Mid ?? -1;
-        });
+            CoverUrl = coverUrl ?? string.Empty,
+            Title = _cheeseView.Title,
+            TypeId = -10,
+            VideoZone = DictionaryResource.GetString("Cheese"),
+            CreateTime = string.Empty,
+            PlayNumber = Format.FormatNumber(_cheeseView.Stat.Play),
+            DanmakuNumber = Format.FormatNumber(0),
+            LikeNumber = Format.FormatNumber(0),
+            CoinNumber = Format.FormatNumber(0),
+            FavoriteNumber = Format.FormatNumber(0),
+            ShareNumber = Format.FormatNumber(0),
+            ReplyNumber = Format.FormatNumber(0),
+            Description = _cheeseView.Subtitle,
+            UpName = upName,
+            UpHeader = _cheeseView.UpInfo?.Avatar ?? string.Empty,
+            UpperMid = _cheeseView.UpInfo?.Mid ?? -1
+        };
 
         return videoInfoView;
     }

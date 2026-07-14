@@ -92,6 +92,32 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("ResetGridSplitterBehavior", viewSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void VideoDetailServicesDoNotQueuePartiallyBuiltViews()
+    {
+        var servicePaths = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi", "Services", "VideoInfoService.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "Services", "BangumiInfoService.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "Services", "CheeseInfoService.cs")
+        };
+
+        foreach (var path in servicePaths)
+        {
+            var source = File.ReadAllText(path);
+            Assert.DoesNotContain("App.PropertyChangeAsync", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("Dispatcher.UIThread", source, StringComparison.Ordinal);
+        }
+
+        var viewModelSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "ViewVideoDetailViewModel.cs"));
+        Assert.Contains("LoadDetailAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("UiDispatcher.InvokeAsync", viewModelSource, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

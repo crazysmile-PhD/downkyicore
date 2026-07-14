@@ -153,7 +153,7 @@ internal class AddToDownloadService
             foreach (var page in section.VideoPages)
             {
                 // 执行解析任务
-                videoInfoService.GetVideoStream(page);
+                Utils.VideoPageInfo(videoInfoService.GetVideoStream(page), page);
             }
         }
     }
@@ -286,7 +286,7 @@ internal class AddToDownloadService
                 while (page.VideoQuality == null && retry < 5)
                 {
                     // 执行解析任务
-                    _videoInfoService.GetVideoStream(page);
+                    Utils.VideoPageInfo(_videoInfoService.GetVideoStream(page), page);
                     retry++;
                 }
 

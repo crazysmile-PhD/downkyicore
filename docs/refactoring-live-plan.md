@@ -22,9 +22,9 @@ This file contains only unfinished work. Completed items are removed in the same
 
 Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
-- Move collection parsing, video parsing, selection, plan building, duplicate policy, and queueing into Application use cases; BV/AV/bangumi/course entry resolution, directory-cancel/add coordination, and single-source video search projection are complete.
+- Move collection parsing, video parsing, selection, plan building, duplicate policy, and queueing into Application use cases; BV/AV/bangumi/course entry resolution, cancellable detail/stream result coordination, directory-cancel/add coordination, and single-source video search projection are complete.
 - Replace ViewModel `Task.Run` calls with page-specific cancellable use cases; 32 active call sites remain, excluding comments, after video-detail and user-space loading moved to coordinators.
-- Continue CommunityToolkit.Mvvm adoption after the video-detail `Idle`/`Busy`/`Content`/`Empty` state model; `ViewVideoDetailViewModel` no longer owns a cloned section/page cache or Avalonia `DataGrid`/splitter behavior, but still has about 733 lines and must retain only binding state, commands, navigation, and result projection.
+- Continue CommunityToolkit.Mvvm adoption after the video-detail `Idle`/`Busy`/`Content`/`Empty` state model; `ViewVideoDetailViewModel` no longer owns a cloned section/page cache, Avalonia `DataGrid`/splitter behavior, or background API mutation, but still has about 756 lines and must retain only binding state, commands, navigation, and result projection.
 - Move notifications, dialogs, and navigation behind Desktop interfaces; clipboard and file-picker boundaries are complete and their static helpers are deleted.
 - Reduce `App.axaml.cs` to XAML, Host, shell, start, and stop; remove static download collections and service locator calls.
 - Move the remaining download bootstrap and projection ownership out of `App.axaml.cs`; storage maintenance and bounded async shutdown are Host-owned/awaited, and shutdown cancellation now drains workers before resumable-state recovery.
