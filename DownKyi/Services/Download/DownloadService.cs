@@ -44,6 +44,7 @@ internal abstract class DownloadService : IDisposable
     private DownloadStorageService DownloadStorageService { get; }
     private IUiDispatcher UiDispatcher { get; }
     protected DownloadDiagnosticLogger DiagnosticLogger { get; }
+    protected FfmpegProcessor FfmpegProcessor { get; }
     protected SettingsManager Settings { get; }
 
     protected Task? WorkTask { get; set; }
@@ -143,7 +144,8 @@ internal abstract class DownloadService : IDisposable
         IDialogService? dialogService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
-        DownloadDiagnosticLogger diagnosticLogger)
+        DownloadDiagnosticLogger diagnosticLogger,
+        FfmpegProcessor ffmpegProcessor)
     {
         DownloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         DownloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
@@ -153,6 +155,7 @@ internal abstract class DownloadService : IDisposable
         UiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         Settings = settingsStore?.Settings ?? throw new ArgumentNullException(nameof(settingsStore));
         DiagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
+        FfmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
     }
 
     protected static PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
@@ -677,7 +680,7 @@ internal abstract class DownloadService : IDisposable
         }
 
         // 合并音视频
-        var succeeded = await FfmpegProcessor.Instance
+        var succeeded = await FfmpegProcessor
             .MergeVideoAsync(audioUid, videoUid, finalFile, cancellationToken)
             .ConfigureAwait(true);
         if (!succeeded)
@@ -701,7 +704,7 @@ internal abstract class DownloadService : IDisposable
     }
 
 
-    private static async Task<FfmpegOperationResult> ConcatDurlVideosAsync(
+    private async Task<FfmpegOperationResult> ConcatDurlVideosAsync(
         DownloadingItem downloading,
         IReadOnlyList<DurlDownloadResult> downloads,
         CancellationToken cancellationToken)
@@ -719,7 +722,7 @@ internal abstract class DownloadService : IDisposable
                 download.FilePath,
                 TimeSpan.FromMilliseconds(download.Durl.Length)))
             .ToArray();
-        var result = await FfmpegProcessor.Instance
+        var result = await FfmpegProcessor
             .ConcatDurlVideosAsync(segments, finalFile, cancellationToken: cancellationToken)
             .ConfigureAwait(true);
         if (result.Succeeded && result.OutputPath != null)

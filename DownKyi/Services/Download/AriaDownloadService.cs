@@ -12,6 +12,7 @@ using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Client.Entity;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi.Login;
+using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
@@ -35,7 +36,8 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         IDialogService? dialogService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
-        DownloadDiagnosticLogger diagnosticLogger)
+        DownloadDiagnosticLogger diagnosticLogger,
+        FfmpegProcessor ffmpegProcessor)
         : this(
             downloadLists,
             downloadStorageService,
@@ -43,6 +45,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
             uiDispatcher,
             settingsStore,
             diagnosticLogger,
+            ffmpegProcessor,
             ownsAriaServer: true)
     {
     }
@@ -54,8 +57,16 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
+        FfmpegProcessor ffmpegProcessor,
         bool ownsAriaServer)
-        : base(downloadLists, downloadStorageService, dialogService, uiDispatcher, settingsStore, diagnosticLogger)
+        : base(
+            downloadLists,
+            downloadStorageService,
+            dialogService,
+            uiDispatcher,
+            settingsStore,
+            diagnosticLogger,
+            ffmpegProcessor)
     {
         _ownsAriaServer = ownsAriaServer;
         Tag = ownsAriaServer ? nameof(AriaDownloadService) : nameof(CustomAriaDownloadService);

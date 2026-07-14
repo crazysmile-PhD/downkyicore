@@ -1,4 +1,5 @@
 using DownKyi.Application.Desktop;
+using DownKyi.Core.FFMpeg;
 using DownKyi.ViewModels.Toolbox;
 using Prism.Events;
 
@@ -9,7 +10,11 @@ public sealed class ViewExtractMediaViewModelTests
     [Fact]
     public void VideoPathsPreservesBindingNameAndDisplayText()
     {
-        using var viewModel = new ViewExtractMediaViewModel(new EventAggregator(), new StubFilePickerService())
+        using var settings = new TestSettingsStore();
+        using var viewModel = new ViewExtractMediaViewModel(
+            new EventAggregator(),
+            new StubFilePickerService(),
+            new FfmpegProcessor(settings.Store))
         {
             VideoPaths = new[] { "first.mp4", "second.mp4" }
         };

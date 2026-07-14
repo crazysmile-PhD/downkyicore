@@ -1,3 +1,4 @@
+using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
@@ -14,7 +15,8 @@ internal sealed class CustomAriaDownloadService : AriaDownloadService
         IDialogService? dialogService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
-        DownloadDiagnosticLogger diagnosticLogger)
+        DownloadDiagnosticLogger diagnosticLogger,
+        FfmpegProcessor ffmpegProcessor)
         : base(
             downloadLists,
             downloadStorageService,
@@ -22,6 +24,7 @@ internal sealed class CustomAriaDownloadService : AriaDownloadService
             uiDispatcher,
             settingsStore,
             diagnosticLogger,
+            ffmpegProcessor,
             ownsAriaServer: false)
     {
     }

@@ -1,6 +1,7 @@
 using System;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi;
+using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Desktop.Composition;
 using DownKyi.Platform;
@@ -32,6 +33,7 @@ internal static class LegacyDesktopComposition
             services.AddDownKyiBilibiliHttpClient();
             services.AddSingleton<IHostedService, StorageMaintenanceHostedService>();
             services.AddSingleton(downloadLists);
+            services.AddSingleton(container.Resolve<FfmpegProcessor>());
             services.AddSingleton(container.Resolve<DownloadStorageService>());
             services.AddSingleton(container.Resolve<IAddToDownloadServiceFactory>());
             services.AddLegacyDesktopShell(

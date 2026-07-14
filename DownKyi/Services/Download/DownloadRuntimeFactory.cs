@@ -1,4 +1,5 @@
 using System;
+using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Platform;
 using DownloaderSetting = DownKyi.Core.Settings.Downloader;
@@ -17,6 +18,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     private readonly DownloadStorageService _downloadStorageService;
     private readonly IDialogService _dialogService;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
+    private readonly FfmpegProcessor _ffmpegProcessor;
     private readonly ISettingsStore _settingsStore;
     private readonly IUiDispatcher _uiDispatcher;
 
@@ -26,7 +28,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         IDialogService dialogService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
-        DownloadDiagnosticLogger diagnosticLogger)
+        DownloadDiagnosticLogger diagnosticLogger,
+        FfmpegProcessor ffmpegProcessor)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService
@@ -35,6 +38,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
+        _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
     }
 
     public IDownloadService? Create()
@@ -47,21 +51,24 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _dialogService,
                 _uiDispatcher,
                 _settingsStore,
-                _diagnosticLogger),
+                _diagnosticLogger,
+                _ffmpegProcessor),
             DownloaderSetting.Aria => new AriaDownloadService(
                 _downloadLists,
                 _downloadStorageService,
                 _dialogService,
                 _uiDispatcher,
                 _settingsStore,
-                _diagnosticLogger),
+                _diagnosticLogger,
+                _ffmpegProcessor),
             DownloaderSetting.CustomAria => new CustomAriaDownloadService(
                 _downloadLists,
                 _downloadStorageService,
                 _dialogService,
                 _uiDispatcher,
                 _settingsStore,
-                _diagnosticLogger),
+                _diagnosticLogger,
+                _ffmpegProcessor),
             _ => null
         };
     }

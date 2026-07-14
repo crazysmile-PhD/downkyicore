@@ -1434,6 +1434,8 @@ outbound:
 contracts:
   - Stream copy may be used for ordinary compatible merge operations, but never for multi-segment DURL concat.
   - Hardware encode failure must fall back to CPU for success rate.
+  - Prism creates one `FfmpegProcessor` and Host receives that same instance; downloads and toolbox operations share one concurrency gate.
+  - `FfmpegProcessor.Instance` is forbidden because separate or implicit owners can exceed the configured CPU/GPU concurrency.
   - Multi-segment completion is accepted only after ffprobe verifies a video stream, positive expected duration, and decodable middle/tail seeks.
   - Command generation is separate from the async process runner; every process has cancellation, a timeout, captured stderr, and process-tree cleanup.
   - Hardware encoder discovery is cached and runs through the same bounded async process runner.

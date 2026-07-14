@@ -7,22 +7,21 @@ public sealed class FfmpegProcessor
 {
     private const string Tag = nameof(FfmpegProcessor);
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromHours(2);
-    private static readonly FfmpegProcessor InstanceValue = new();
     private readonly AsyncConcurrencyGate _operationGate;
     private readonly FfmpegConcatRuntime _concatRuntime;
     private readonly FfmpegProcessRunner _processRunner;
+    private readonly SettingsManager _settings;
 
-    private FfmpegProcessor()
+    public FfmpegProcessor(ISettingsStore settingsStore)
     {
+        _settings = settingsStore?.Settings ?? throw new ArgumentNullException(nameof(settingsStore));
         _processRunner = new FfmpegProcessRunner();
-        _operationGate = new AsyncConcurrencyGate(SettingsManager.Instance.GetFfmpegMaxParallelJobs);
+        _operationGate = new AsyncConcurrencyGate(_settings.GetFfmpegMaxParallelJobs);
         _concatRuntime = new FfmpegConcatRuntime(
             _processRunner,
             new FfmpegMediaValidator(_processRunner),
-            SettingsManager.Instance.GetFfmpegMaxParallelJobs);
+            _settings.GetFfmpegMaxParallelJobs);
     }
-
-    public static FfmpegProcessor Instance => InstanceValue;
 
     public async Task<FfmpegOperationResult> ConcatDurlVideosAsync(
         IReadOnlyList<FfmpegConcatSegment> segments,
@@ -31,7 +30,7 @@ public sealed class FfmpegProcessor
         CancellationToken cancellationToken = default)
     {
         var encoder = await FfmpegHardwareEncoderDetector.SelectAsync(
-                SettingsManager.Instance.GetFfmpegHardwareAcceleration(),
+                _settings.GetFfmpegHardwareAcceleration(),
                 cancellationToken)
             .ConfigureAwait(false);
         return await _concatRuntime.ConcatAsync(
@@ -62,7 +61,7 @@ public sealed class FfmpegProcessor
                 audioPath,
                 videoPath,
                 temporaryOutput,
-                SettingsManager.Instance.GetIsTranscodingAacToMp3() == AllowStatus.Yes),
+                _settings.GetIsTranscodingAacToMp3() == AllowStatus.Yes),
             destination,
             action: null,
             cancellationToken).ConfigureAwait(false);

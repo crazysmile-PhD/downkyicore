@@ -21,6 +21,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     // 是否正在执行任务
     private bool _isExtracting;
     private readonly IFilePickerService _filePickerService;
+    private readonly FfmpegProcessor _ffmpegProcessor;
 
     #region 页面属性申明
 
@@ -56,9 +57,11 @@ internal class ViewExtractMediaViewModel : ViewModelBase
 
     public ViewExtractMediaViewModel(
         IEventAggregator eventAggregator,
-        IFilePickerService filePickerService) : base(eventAggregator)
+        IFilePickerService filePickerService,
+        FfmpegProcessor ffmpegProcessor) : base(eventAggregator)
     {
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
+        _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
         #region 属性初始化
 
         VideoPaths = Array.Empty<string>();
@@ -117,7 +120,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
             foreach (var item in VideoPaths)
             {
                 var audioFileName = item.Remove(item.Length - 4, 4) + ".aac";
-                await FfmpegProcessor.Instance.ExtractAudioAsync(
+                await _ffmpegProcessor.ExtractAudioAsync(
                     item,
                     audioFileName,
                     output => { Status += output + "\n"; }).ConfigureAwait(true);
@@ -159,7 +162,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
             foreach (var item in VideoPaths)
             {
                 var videoFileName = item.Remove(item.Length - 4, 4) + "_onlyVideo.mp4";
-                await FfmpegProcessor.Instance.ExtractVideoAsync(
+                await _ffmpegProcessor.ExtractVideoAsync(
                     item,
                     videoFileName,
                     output => { Status += output + "\n"; }).ConfigureAwait(true);

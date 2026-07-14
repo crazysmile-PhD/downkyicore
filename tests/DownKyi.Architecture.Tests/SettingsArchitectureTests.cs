@@ -31,6 +31,7 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi", "Services", "Media", "ContentDownloadCoordinator.cs")]
     [InlineData("DownKyi", "Services", "Video", "VideoParseCoordinator.cs")]
     [InlineData("DownKyi", "Services", "Video", "VideoDetailWorkflowCoordinator.cs")]
+    [InlineData("DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs")]
     public void MigratedApplicationOwnersDoNotReachIntoTheSettingsSingleton(params string[] pathParts)
     {
         var source = File.ReadAllText(Path.Combine([RepositoryRoot, .. pathParts]));
@@ -58,6 +59,18 @@ public sealed class SettingsArchitectureTests
 
         Assert.Contains("MainWindow(MainWindowViewModel viewModel, ISettingsStore settingsStore)", source, StringComparison.Ordinal);
         Assert.DoesNotContain("public MainWindow()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FfmpegProcessorIsOneInjectedCompositionOwner()
+    {
+        var processorSource = ReadSource("DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs");
+        var prismSource = ReadSource("DownKyi", "Composition", "LegacyPrismComposition.cs");
+        var hostSource = ReadSource("DownKyi", "Composition", "LegacyDesktopComposition.cs");
+
+        Assert.DoesNotContain("FfmpegProcessor.Instance", processorSource, StringComparison.Ordinal);
+        Assert.Contains("RegisterSingleton<FfmpegProcessor>()", prismSource, StringComparison.Ordinal);
+        Assert.Contains("container.Resolve<FfmpegProcessor>()", hostSource, StringComparison.Ordinal);
     }
 
     private static string ReadSource(params string[] pathParts)

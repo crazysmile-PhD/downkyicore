@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Login;
+using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
@@ -28,8 +29,16 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
         IDialogService? dialogService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
-        DownloadDiagnosticLogger diagnosticLogger)
-        : base(downloadLists, downloadStorageService, dialogService, uiDispatcher, settingsStore, diagnosticLogger)
+        DownloadDiagnosticLogger diagnosticLogger,
+        FfmpegProcessor ffmpegProcessor)
+        : base(
+            downloadLists,
+            downloadStorageService,
+            dialogService,
+            uiDispatcher,
+            settingsStore,
+            diagnosticLogger,
+            ffmpegProcessor)
     {
         Tag = nameof(BuiltinDownloadService);
     }

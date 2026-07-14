@@ -1,6 +1,7 @@
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Time;
+using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.Infrastructure.Downloads;
@@ -44,6 +45,7 @@ internal static class LegacyPrismComposition
         containerRegistry.RegisterInstance(new SqliteDownloadTaskStoreOptions(StorageManager.GetDbPath()));
         containerRegistry.RegisterSingleton<IClock, SystemClock>();
         containerRegistry.RegisterSingleton<ISettingsStore, SettingsStore>();
+        containerRegistry.RegisterSingleton<FfmpegProcessor>();
         containerRegistry.RegisterSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
         containerRegistry.RegisterSingleton<DownloadStorageService>();
         containerRegistry.RegisterSingleton<DownloadListState>();

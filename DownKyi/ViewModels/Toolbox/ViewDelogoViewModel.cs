@@ -37,6 +37,7 @@ internal class ViewDelogoViewModel : ViewModelBase
     // 是否正在执行去水印任务
     private bool _isDelogo;
     private readonly IFilePickerService _filePickerService;
+    private readonly FfmpegProcessor _ffmpegProcessor;
 
     private IImage _source = null!;
 
@@ -149,9 +150,11 @@ internal class ViewDelogoViewModel : ViewModelBase
 
     public ViewDelogoViewModel(
         IEventAggregator eventAggregator,
-        IFilePickerService filePickerService) : base(eventAggregator)
+        IFilePickerService filePickerService,
+        FfmpegProcessor ffmpegProcessor) : base(eventAggregator)
     {
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
+        _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
         #region 属性初始化
 
         VideoPath = string.Empty;
@@ -193,7 +196,7 @@ internal class ViewDelogoViewModel : ViewModelBase
         {
             try
             {
-                Source = new Bitmap(await FfmpegProcessor.Instance
+                Source = new Bitmap(await _ffmpegProcessor
                     .ExtractVideoFrameAsync(VideoPath, TimeSpan.FromSeconds(1)).ConfigureAwait(true));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException
@@ -257,7 +260,7 @@ internal class ViewDelogoViewModel : ViewModelBase
         _isDelogo = true;
         try
         {
-            await FfmpegProcessor.Instance.DelogoAsync(
+            await _ffmpegProcessor.DelogoAsync(
                 VideoPath,
                 newFileName,
                 _logoX,
