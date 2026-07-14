@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Threading;
 
 namespace DownKyi.Core.BiliApi.BiliUtils;
 
@@ -121,6 +122,12 @@ public static class DanmakuSender
     /// <returns></returns>
     public static string FindDanmakuSender(string userId)
     {
+        return FindDanmakuSender(userId, CancellationToken.None);
+    }
+
+    public static string FindDanmakuSender(string userId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         var deepCheckData = new object[2];
 
         var index = new int[4];
@@ -137,6 +144,11 @@ public static class DanmakuSender
 
         for (i = 0; i < 100000000; i++)
         {
+            if ((i & 0xFFF) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             var lastindex = Crc32LastIndex(i.ToString(CultureInfo.InvariantCulture));
             if (lastindex != index[3]) continue;
             deepCheckData = DeepCheck(i, index);
@@ -146,6 +158,7 @@ public static class DanmakuSender
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         return i == 100000000
             ? "-1"
             : string.Create(CultureInfo.InvariantCulture, $"{i}{deepCheckData[1]}");

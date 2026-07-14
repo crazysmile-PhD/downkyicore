@@ -118,6 +118,35 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("UiDispatcher.InvokeAsync", viewModelSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BiliHelperCpuWorkIsCancellableAndOutsideTheViewModel()
+    {
+        var viewModelSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "Toolbox",
+            "ViewBiliHelperViewModel.cs"));
+        var coordinatorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Toolbox",
+            "BiliHelperCoordinator.cs"));
+        var coreSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "BiliApi",
+            "BiliUtils",
+            "DanmakuSender.cs"));
+
+        Assert.DoesNotContain("Task.Run", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IBiliHelperCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("cancellationToken.ThrowIfCancellationRequested()", coreSource, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

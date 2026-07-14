@@ -1,8 +1,9 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Commands;
-using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.Logging;
+using DownKyi.Services.Toolbox;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Events;
@@ -13,6 +14,8 @@ namespace DownKyi.ViewModels.Toolbox;
 internal class ViewBiliHelperViewModel : ViewModelBase
 {
     public const string Tag = "PageToolboxBiliHelper";
+    private readonly IBiliHelperCoordinator _coordinator;
+    private CancellationTokenSource? _lookupCancellation;
 
     #region 页面属性申明
 
@@ -50,8 +53,11 @@ internal class ViewBiliHelperViewModel : ViewModelBase
 
     #endregion
 
-    public ViewBiliHelperViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewBiliHelperViewModel(
+        IEventAggregator eventAggregator,
+        IBiliHelperCoordinator coordinator) : base(eventAggregator)
     {
+        _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         #region 属性初始化
 
         #endregion
@@ -67,25 +73,15 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     /// <summary>
     /// 输入avid事件
     /// </summary>
-    private async Task ExecuteAvidCommand(string? parameter)
+    private Task ExecuteAvidCommand(string? parameter)
     {
-        if (string.IsNullOrEmpty(parameter))
+        var bvid = _coordinator.ConvertAvidToBvid(parameter);
+        if (bvid != null)
         {
-            return;
+            Bvid = bvid;
         }
 
-        if (!ParseEntrance.IsAvId(parameter))
-        {
-            return;
-        }
-
-        var avid = ParseEntrance.GetAvId(parameter);
-        if (avid == -1)
-        {
-            return;
-        }
-
-        await Task.Run(() => { Bvid = BvId.Av2Bv(avid); }).ConfigureAwait(true);
+        return Task.CompletedTask;
     }
 
     // 输入bvid事件
@@ -97,23 +93,15 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     /// 输入bvid事件
     /// </summary>
     /// <param name="parameter"></param>
-    private async Task ExecuteBvidCommand(string? parameter)
+    private Task ExecuteBvidCommand(string? parameter)
     {
-        if (string.IsNullOrEmpty(parameter))
+        var avid = _coordinator.ConvertBvidToAvid(parameter);
+        if (avid != null)
         {
-            return;
+            Avid = avid;
         }
 
-        if (!ParseEntrance.IsBvId(parameter))
-        {
-            return;
-        }
-
-        await Task.Run(() =>
-        {
-            var avid = BvId.Bv2Av(parameter);
-            Avid = $"av{avid}";
-        }).ConfigureAwait(true);
+        return Task.CompletedTask;
     }
 
     // 访问网页事件
@@ -140,21 +128,29 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteFindDanmakuSenderCommand()
     {
-        await Task.Run(() =>
+        var cancellationToken = ReplaceCancellationSource(ref _lookupCancellation);
+        try
         {
-            try
+            var userMid = await _coordinator
+                .FindDanmakuSenderAsync(DanmakuUserId, cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_lookupCancellation?.Token == cancellationToken)
             {
-                UserMid = DanmakuSender.FindDanmakuSender(DanmakuUserId);
+                UserMid = userMid;
             }
-            catch (Exception e) when (e is ArgumentException or FormatException
-                or InvalidOperationException or OverflowException)
-            {
-                UserMid = null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception e) when (e is ArgumentException or FormatException
+            or InvalidOperationException or OverflowException)
+        {
+            UserMid = null;
 
-                Console.PrintLine("FindDanmakuSenderCommand()发生异常: {0}", e);
-                LogManager.Error(Tag, e);
-            }
-        }).ConfigureAwait(true);
+            Console.PrintLine("FindDanmakuSenderCommand()发生异常: {0}", e);
+            LogManager.Error(Tag, e);
+        }
     }
 
     // 访问用户空间事件
@@ -177,4 +173,14 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     }
 
     #endregion
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            CancelAndDispose(ref _lookupCancellation);
+        }
+
+        base.Dispose(disposing);
+    }
 }

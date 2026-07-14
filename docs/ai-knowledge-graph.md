@@ -72,6 +72,8 @@ flowchart TD
     AsyncImage["ui.async-image-loader\nCustomControl/AsyncImageLoader"]
     MainVm["viewmodel.main-window\nDownKyi/ViewModels/MainWindowViewModel.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
+    BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
+    BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
     Resolver["service.video-input-resolver\nsrc/DownKyi.Application/Media"]
     Parser["service.video-parse-coordinator\nDownKyi/Services/Video/VideoParseCoordinator.cs"]
     InfoServices["service.info-services\nVideo/Bangumi/Cheese services"]
@@ -112,6 +114,8 @@ flowchart TD
     MainWindow -->|binds| MainVm
     MainWindow -->|renders remote artwork| AsyncImage
     MainVm -->|navigates| VideoVm
+    BiliHelperVm -->|calls| BiliHelper
+    BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
     VideoVm -->|calls| Parser
     Parser -->|calls| InfoServices
@@ -422,6 +426,55 @@ tests:
   - test.ui-smoke
 ```
 
+### viewmodel.bili-helper
+
+```yaml
+id: viewmodel.bili-helper
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/Toolbox/ViewBiliHelperViewModel.cs
+responsibility: Binds AV/BV conversion, danmaku sender lookup, and external navigation results to the Bili Helper page.
+inbound:
+  - typed or legacy navigation
+outbound:
+  - service.bili-helper
+  - service.desktop-platform-boundaries
+contracts:
+  - The ViewModel never creates background CPU work directly; it awaits the injected coordinator.
+  - Starting a new lookup or disposing the page cancels the previous operation and prevents stale result projection.
+hazards:
+  - Assigning a canceled lookup result after a newer request overwrites the current user input result.
+tests:
+  - test.bili-helper
+  - test.architecture-boundaries
+```
+
+### service.bili-helper
+
+```yaml
+id: service.bili-helper
+type: service
+paths:
+  - DownKyi/Services/Toolbox/BiliHelperCoordinator.cs
+  - DownKyi.Core/BiliApi/BiliUtils/BvId.cs
+  - DownKyi.Core/BiliApi/BiliUtils/DanmakuSender.cs
+responsibility: Validates AV/BV conversion inputs and runs the expensive danmaku-sender reverse lookup outside the UI thread with cancellation.
+inbound:
+  - viewmodel.bili-helper
+outbound:
+  - core.bili-api
+contracts:
+  - Invalid or empty AV/BV input leaves the existing UI value unchanged.
+  - The public synchronous danmaku lookup remains compatible, while the coordinator always uses the cancellation-aware overload.
+  - The coordinator passes caller cancellation into both Task scheduling and the core CPU loop.
+hazards:
+  - Danmaku sender reversal can inspect up to 100,000,000 candidates; running it on the UI thread freezes the application.
+  - A cancellation check only before Task.Run cannot stop a search already consuming CPU; the core loop must poll the token.
+tests:
+  - test.bili-helper
+  - test.architecture-boundaries
+```
+
 ### viewmodel.user-space
 
 ```yaml
@@ -550,6 +603,7 @@ responsibility: Wraps Bilibili API endpoints, response parsing, and shared reque
 inbound:
   - service.info-services
   - service.download-runtime
+  - service.bili-helper
 outbound:
   - core.web-client
   - core.logging
@@ -1086,6 +1140,17 @@ test.download-add:
     - canceling directory selection does not call add
     - selected directory reaches add service
 
+test.bili-helper:
+  paths:
+    - tests/DownKyi.Tests/BiliHelperCoordinatorTests.cs
+    - tests/DownKyi.Core.Tests/DanmakuSenderTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - supported AV/BV identifiers round-trip without background UI mutation
+    - invalid identifiers do not produce fabricated values
+    - danmaku sender lookup preserves cancellation before and during CPU search
+    - Bili Helper ViewModel cannot regain direct Task.Run calls
+
 test.download-list-state:
   paths:
     - tests/DownKyi.Tests/DownloadListStateTests.cs
@@ -1209,6 +1274,7 @@ test.architecture-boundaries:
     - Host composition must register the typed Bilibili client and API parsing cannot return null fallbacks
     - video-detail search cannot restore `CaCheVideoSections`, `CloneForCache`, or another cloned media graph
     - video-detail ViewModel cannot own `DataGrid`, Avalonia control, or behavior instances
+    - Bili Helper CPU work cannot move back into the ViewModel or lose core-loop cancellation
 
 test.ui-smoke:
   paths:
