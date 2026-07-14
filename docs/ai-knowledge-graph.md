@@ -1103,6 +1103,36 @@ tests:
   - test.architecture-boundaries
 ```
 
+### service.legacy-upgrade
+
+```yaml
+id: service.legacy-upgrade
+type: migration-service
+paths:
+  - DownKyi/Services/Migration/LegacyUpgradeCoordinator.cs
+  - DownKyi/ViewModels/Dialogs/ViewUpgradingDialogViewModel.cs
+responsibility: Converts legacy NRBF login/download data into current storage while the dialog owns only progress, cancellation, result projection, and restart state.
+inbound:
+  - app.application
+outbound:
+  - core.storage
+  - service.download-list-state
+contracts:
+  - Closing or disposing the dialog cancels migration; cancellation is rethrown by the coordinator and never reported as data corruption.
+  - Missing legacy login data does not skip an independently present legacy download database.
+  - A malformed legacy login payload is logged and isolated; it cannot prevent an independently present download database from migrating.
+  - Each legacy SQLite connection is validated, read, and disposed before the source database is deleted, moved, or renamed.
+  - Valid records are persisted in bounded batches; one malformed record is logged and skipped without discarding the rest of its batch.
+  - Failed databases are preserved under a collision-resistant backup name and UI diagnostics reveal only the backup filename, never a full personal path.
+  - The dialog cannot own NRBF, SQLite, storage lookup, worker scheduling, or dispatcher code.
+hazards:
+  - Deleting the source database before every batch is committed loses user download history.
+  - Retrying after partial writes must remain idempotent through the current storage upsert contract.
+tests:
+  - test.legacy-upgrade
+  - test.architecture-boundaries
+```
+
 ### service.download-bootstrap
 
 ```yaml
@@ -1611,6 +1641,16 @@ test.user-space-pages:
     - core user-space account/stat APIs preserve cancellation through the HTTP boundary
     - publication batching, pager cleanup, directory cancellation ordering, and click-toggle selection remain stable
 
+test.legacy-upgrade:
+  paths:
+    - tests/DownKyi.Tests/LegacyUpgradeViewModelTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - closing the upgrade dialog cancels an active migration
+    - successful migration replaces the existing downloaded projection and exposes restart state
+    - migration, storage, worker, and dispatcher implementation cannot return to the dialog ViewModel
+    - legacy database ownership is scoped and migration diagnostics do not use Console
+
 test.download-list-state:
   paths:
     - tests/DownKyi.Tests/DownloadListStateTests.cs
@@ -1738,6 +1778,7 @@ test.architecture-boundaries:
     - account network and cookie work cannot move back into index/login ViewModels
     - friend relation API work cannot move back into ViewModels or per-item dispatcher posts
     - season/series loading and add work cannot move back into the ViewModel or bypass directory cancellation
+    - legacy upgrade migration cannot move NRBF, SQLite, storage lookup, Task.Run, or Dispatcher work back into the dialog ViewModel
 
 test.ui-smoke:
   paths:

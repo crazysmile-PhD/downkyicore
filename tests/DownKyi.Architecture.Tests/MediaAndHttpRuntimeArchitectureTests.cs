@@ -414,6 +414,38 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         }
     }
 
+    [Fact]
+    public void LegacyUpgradeDialogDelegatesMigrationAndOwnsCancellation()
+    {
+        var viewModelSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "Dialogs",
+            "ViewUpgradingDialogViewModel.cs"));
+        var coordinatorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Migration",
+            "LegacyUpgradeCoordinator.cs"));
+
+        Assert.Contains("ILegacyUpgradeCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("CancellationTokenSource", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("CancelUpgrade();", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Task.Run", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("NrbfDecoder", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("SqliteDatabase", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("StorageManager", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dispatcher.UIThread", viewModelSource, StringComparison.Ordinal);
+
+        Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("using var database", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("AddDownloadedBatchAsync", coordinatorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Console.", coordinatorSource, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

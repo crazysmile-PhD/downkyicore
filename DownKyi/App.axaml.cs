@@ -32,6 +32,7 @@ using DownKyi.Services.Account;
 using DownKyi.Services.Download;
 using DownKyi.Services.Friends;
 using DownKyi.Services.Media;
+using DownKyi.Services.Migration;
 using DownKyi.Services.Toolbox;
 using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
@@ -120,6 +121,7 @@ internal partial class App : PrismApplication, IDisposable
         containerRegistry.RegisterSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
         containerRegistry.RegisterSingleton<IContentDownloadCoordinator, ContentDownloadCoordinator>();
         containerRegistry.RegisterSingleton<IPersonalMediaCoordinator, PersonalMediaCoordinator>();
+        containerRegistry.RegisterSingleton<ILegacyUpgradeCoordinator, LegacyUpgradeCoordinator>();
         containerRegistry.RegisterSingleton<IFavoritesService, FavoritesService>();
         containerRegistry.RegisterSingleton<IFavoritesCoordinator, FavoritesCoordinator>();
         containerRegistry.RegisterSingleton<IBiliHelperCoordinator, BiliHelperCoordinator>();
