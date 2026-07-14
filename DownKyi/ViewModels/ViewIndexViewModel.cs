@@ -1,16 +1,13 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Core.BiliApi.Users;
-using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Settings.Models;
-using DownKyi.Core.Storage;
 using DownKyi.Images;
 using DownKyi.Services;
+using DownKyi.Services.Account;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Events;
@@ -22,6 +19,8 @@ namespace DownKyi.ViewModels;
 internal class ViewIndexViewModel : ViewModelBase
 {
     public const string Tag = "PageIndex";
+    private readonly IUserSessionCoordinator _userSessionCoordinator;
+    private CancellationTokenSource? _userRefreshCancellation;
 
     private bool _loginPanelVisibility;
 
@@ -97,8 +96,12 @@ internal class ViewIndexViewModel : ViewModelBase
     }
 
 
-    public ViewIndexViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewIndexViewModel(
+        IEventAggregator eventAggregator,
+        IUserSessionCoordinator userSessionCoordinator) : base(eventAggregator)
     {
+        _userSessionCoordinator = userSessionCoordinator
+            ?? throw new ArgumentNullException(nameof(userSessionCoordinator));
         _loginPanelVisibility = true;
         Header = "avares://DownKyi/Resources/default_header.jpg";
 
@@ -117,7 +120,6 @@ internal class ViewIndexViewModel : ViewModelBase
         Toolbox = ButtonIcon.Instance().Toolbox;
         Toolbox.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-        RunFireAndForget(UpdateUserInfoAsync(), nameof(UpdateUserInfoAsync));
     }
 
     // 输入确认事件
@@ -222,60 +224,31 @@ internal class ViewIndexViewModel : ViewModelBase
     }
 
 
-    private static async Task<UserInfoForNavigation?> GetUserInfo()
-    {
-        UserInfoForNavigation? userInfo = null;
-        await Task.Run(() =>
-        {
-            // 获取用户信息
-            userInfo = UserInfo.GetUserInfoForNavigation();
-            if (userInfo != null)
-            {
-                SettingsManager.Instance.SetUserInfo(new UserInfoSettings
-                {
-                    Mid = userInfo.Mid,
-                    Name = userInfo.Name,
-                    IsLogin = userInfo.IsLogin,
-                    IsVip = userInfo.VipStatus == 1,
-                    ImgKey = userInfo.Wbi.ImageAddress.Split('/').ToList().Last().Split('.')[0],
-                    SubKey = userInfo.Wbi.SubAddress.Split('/').ToList().Last().Split('.')[0],
-                });
-            }
-            else
-            {
-                SettingsManager.Instance.SetUserInfo(new UserInfoSettings
-                {
-                    Mid = -1,
-                    Name = "",
-                    IsLogin = false,
-                    IsVip = false,
-                });
-            }
-        }).ConfigureAwait(true);
-        return userInfo;
-    }
-
     /// <summary>
     /// 更新用户登录信息
     /// </summary>
-    private async Task UpdateUserInfoAsync(bool isBackgroud = false)
+    private async Task UpdateUserInfoAsync(bool isBackground = false)
     {
+        var cancellationToken = ReplaceCancellationSource(ref _userRefreshCancellation);
+        var updateUi = !isBackground || !LoginPanelVisibility;
         try
         {
-            if (isBackgroud)
+            if (updateUi)
             {
-                // 获取用户信息
-                await GetUserInfo().ConfigureAwait(true);
+                LoginPanelVisibility = false;
+            }
+
+            var snapshot = await _userSessionCoordinator
+                .RefreshAsync(cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_userRefreshCancellation?.Token != cancellationToken || !updateUi)
+            {
                 return;
             }
 
-            LoginPanelVisibility = false;
-
-            // 获取用户信息
-            var userInfo = await GetUserInfo().ConfigureAwait(true);
-
             // 检查本地是否存在login文件，没有则说明未登录
-            if (!File.Exists(StorageManager.GetLogin()))
+            if (!snapshot.HasLoginFile)
             {
                 LoginPanelVisibility = true;
                 Header = "avares://DownKyi/Resources/default_header.jpg";
@@ -285,11 +258,11 @@ internal class ViewIndexViewModel : ViewModelBase
 
             LoginPanelVisibility = true;
 
-            if (userInfo != null)
+            if (snapshot.UserInfo != null)
             {
-                Header = userInfo.Face ?? "avares://DownKyi/Resources/default_header.jpg";
+                Header = snapshot.UserInfo.Face ?? "avares://DownKyi/Resources/default_header.jpg";
 
-                UserName = userInfo.Name;
+                UserName = snapshot.UserInfo.Name;
             }
             else
             {
@@ -297,12 +270,20 @@ internal class ViewIndexViewModel : ViewModelBase
                 UserName = null;
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
-            or FormatException or System.Security.Cryptography.CryptographicException
+            or FormatException or System.Net.Http.HttpRequestException
+            or System.Security.Cryptography.CryptographicException
             or Newtonsoft.Json.JsonException)
         {
             Console.PrintLine("UpdateUserInfo()发生异常: {0}", e);
             LogManager.Error(Tag, e);
+            if (updateUi && _userRefreshCancellation?.Token == cancellationToken)
+            {
+                LoginPanelVisibility = true;
+            }
         }
     }
 
@@ -337,5 +318,15 @@ internal class ViewIndexViewModel : ViewModelBase
                 RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync));
                 break;
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            CancelAndDispose(ref _userRefreshCancellation);
+        }
+
+        base.Dispose(disposing);
     }
 }

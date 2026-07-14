@@ -71,6 +71,9 @@ flowchart TD
     MainWindow["ui.main-window\nDownKyi/Views/MainWindow.axaml"]
     AsyncImage["ui.async-image-loader\nCustomControl/AsyncImageLoader"]
     MainVm["viewmodel.main-window\nDownKyi/ViewModels/MainWindowViewModel.cs"]
+    IndexVm["viewmodel.index\nViewIndexViewModel.cs"]
+    LoginVm["viewmodel.login\nViewLoginViewModel.cs"]
+    AccountSession["service.account-session\nServices/Account"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
     BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
     BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
@@ -113,7 +116,12 @@ flowchart TD
     Storage -->|calls| StoreContract
     MainWindow -->|binds| MainVm
     MainWindow -->|renders remote artwork| AsyncImage
+    MainVm -->|navigates| IndexVm
+    MainVm -->|navigates| LoginVm
     MainVm -->|navigates| VideoVm
+    IndexVm -->|refreshes| AccountSession
+    LoginVm -->|polls and persists| AccountSession
+    AccountSession -->|calls| BiliApi
     BiliHelperVm -->|calls| BiliHelper
     BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
@@ -332,6 +340,8 @@ responsibility: Owns main window commands, clipboard debounce, navigation entry 
 inbound:
   - ui.main-window
 outbound:
+  - viewmodel.index
+  - viewmodel.login
   - viewmodel.video-detail
   - core.logging
 contracts:
@@ -342,6 +352,82 @@ hazards:
   - Background clipboard work can outlive the window if cancellation is not wired.
 tests:
   - test.ui-smoke
+```
+
+### viewmodel.index
+
+```yaml
+id: viewmodel.index
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewIndexViewModel.cs
+responsibility: Binds the home search entry, user header state, and navigation commands without performing account network work.
+inbound:
+  - viewmodel.main-window
+outbound:
+  - service.account-session
+  - viewmodel.video-detail
+contracts:
+  - Construction does not start user API work; the first `start` navigation performs exactly one refresh.
+  - A newer navigation refresh cancels the previous operation and stale results cannot change the header or login state.
+  - Background settings refresh does not clear or rewrite the search input.
+hazards:
+  - Starting refresh in both the constructor and navigation doubles startup requests and delays first interaction.
+  - A failed foreground refresh must restore login-panel visibility instead of leaving the panel hidden.
+tests:
+  - test.account-session
+  - test.ui-smoke
+  - test.architecture-boundaries
+```
+
+### viewmodel.login
+
+```yaml
+id: viewmodel.login
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewLoginViewModel.cs
+responsibility: Projects QR login state, messages, and navigation while delegating blocking account operations.
+inbound:
+  - viewmodel.index
+outbound:
+  - service.account-session
+contracts:
+  - Restarting, leaving, or disposing the page cancels the active QR generation/poll operation.
+  - QR bitmap and bound-state mutation stay on the UI dispatcher; synchronous HTTP and cookie-file writes do not.
+hazards:
+  - Wrapping the entire UI workflow in Task.Run causes cross-thread UI/event access and hides cancellation ownership.
+tests:
+  - test.account-session
+  - test.architecture-boundaries
+```
+
+### service.account-session
+
+```yaml
+id: service.account-session
+type: service
+paths:
+  - DownKyi/Services/Account/UserSessionCoordinator.cs
+  - DownKyi/Services/Account/LoginCoordinator.cs
+responsibility: Runs synchronous account API and cookie persistence operations away from the UI thread and returns cancellable snapshots/results.
+inbound:
+  - viewmodel.index
+  - viewmodel.login
+outbound:
+  - core.bili-api
+  - core.legacy-settings-migration
+contracts:
+  - Caller cancellation is checked before and after every synchronous network or file operation.
+  - Navigation user data maps to the existing `UserInfoSettings` schema without changing keys or login-file location.
+  - WBI key extraction accepts absolute and protocol-relative addresses and strips query/fragment suffixes using ordinal parsing.
+hazards:
+  - Legacy synchronous Bilibili calls cannot abort an in-flight socket request yet; cancellation prevents later persistence and stale UI projection.
+  - SettingsManager remains a compatibility dependency until injected settings snapshots replace it in PR 16-24.
+tests:
+  - test.account-session
+  - test.ui-smoke
+  - test.architecture-boundaries
 ```
 
 ### viewmodel.video-detail
@@ -604,6 +690,7 @@ inbound:
   - service.info-services
   - service.download-runtime
   - service.bili-helper
+  - service.account-session
 outbound:
   - core.web-client
   - core.logging
@@ -1151,6 +1238,20 @@ test.bili-helper:
     - danmaku sender lookup preserves cancellation before and during CPU search
     - Bili Helper ViewModel cannot regain direct Task.Run calls
 
+test.account-session:
+  paths:
+    - tests/DownKyi.Tests/UserSessionCoordinatorTests.cs
+    - tests/DownKyi.Tests/LoginCoordinatorTests.cs
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - constructing ViewIndexViewModel performs no account API work
+    - missing and logged-in navigation users map to the unchanged settings schema
+    - WBI keys remain stable for absolute and protocol-relative image addresses
+    - pre-canceled login work cannot start a network request
+    - the real Host resolves ViewIndexViewModel with its injected session coordinator
+    - index and login ViewModels cannot regain direct Task.Run calls
+
 test.download-list-state:
   paths:
     - tests/DownKyi.Tests/DownloadListStateTests.cs
@@ -1275,6 +1376,7 @@ test.architecture-boundaries:
     - video-detail search cannot restore `CaCheVideoSections`, `CloneForCache`, or another cloned media graph
     - video-detail ViewModel cannot own `DataGrid`, Avalonia control, or behavior instances
     - Bili Helper CPU work cannot move back into the ViewModel or lose core-loop cancellation
+    - account network and cookie work cannot move back into index/login ViewModels
 
 test.ui-smoke:
   paths:

@@ -147,6 +147,34 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("cancellationToken.ThrowIfCancellationRequested()", coreSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AccountNetworkWorkIsCancellableAndOutsideViewModels()
+    {
+        var viewModelPaths = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "ViewIndexViewModel.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "ViewModels", "ViewLoginViewModel.cs")
+        };
+        var coordinatorPaths = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi", "Services", "Account", "UserSessionCoordinator.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi", "Services", "Account", "LoginCoordinator.cs")
+        };
+
+        foreach (var path in viewModelPaths)
+        {
+            Assert.DoesNotContain("Task.Run", File.ReadAllText(path), StringComparison.Ordinal);
+        }
+
+        var coordinatorSource = string.Join(
+            Environment.NewLine,
+            coordinatorPaths.Select(File.ReadAllText));
+        Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("IUserSessionCoordinator", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("ILoginCoordinator", coordinatorSource, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

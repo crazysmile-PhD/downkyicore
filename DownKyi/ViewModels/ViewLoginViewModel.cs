@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Logging;
 using DownKyi.Events;
+using DownKyi.Services.Account;
 using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Events;
@@ -17,6 +18,7 @@ internal class ViewLoginViewModel : ViewModelBase
 {
     public const string Tag = "PageLogin";
 
+    private readonly ILoginCoordinator _loginCoordinator;
     private CancellationTokenSource? _tokenSource;
 
     #region 页面属性申明
@@ -47,8 +49,11 @@ internal class ViewLoginViewModel : ViewModelBase
 
     #endregion
 
-    public ViewLoginViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewLoginViewModel(
+        IEventAggregator eventAggregator,
+        ILoginCoordinator loginCoordinator) : base(eventAggregator)
     {
+        _loginCoordinator = loginCoordinator ?? throw new ArgumentNullException(nameof(loginCoordinator));
     }
 
     private DelegateCommand? _backSpaceCommand;
@@ -79,7 +84,9 @@ internal class ViewLoginViewModel : ViewModelBase
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var loginUrl = LoginQr.GetLoginUrl();
+            var loginUrl = await _loginCoordinator
+                .RequestLoginUrlAsync(cancellationToken)
+                .ConfigureAwait(true);
             if (loginUrl == null)
             {
                 return;
@@ -107,7 +114,7 @@ internal class ViewLoginViewModel : ViewModelBase
 
             await GetLoginStatusAsync(loginUrl.Data.QrcodeKey, cancellationToken).ConfigureAwait(true);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
@@ -127,7 +134,9 @@ internal class ViewLoginViewModel : ViewModelBase
         while (true)
         {
             await Task.Delay(1000, cancellationToken).ConfigureAwait(true);
-            var loginStatus = LoginQr.GetLoginStatus(oauthKey);
+            var loginStatus = await _loginCoordinator
+                .GetLoginStatusAsync(oauthKey, cancellationToken)
+                .ConfigureAwait(true);
             if (loginStatus == null)
             {
                 continue;
@@ -165,7 +174,9 @@ internal class ViewLoginViewModel : ViewModelBase
                     try
                     {
                         var redirectUri = new Uri(loginStatus.Data.RedirectAddress, UriKind.Absolute);
-                        var isSucceed = LoginHelper.SaveLoginInfoCookies(redirectUri);
+                        var isSucceed = await _loginCoordinator
+                            .SaveLoginCookiesAsync(redirectUri, cancellationToken)
+                            .ConfigureAwait(true);
                         if (!isSucceed)
                         {
                             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginFailed"));
@@ -204,9 +215,7 @@ internal class ViewLoginViewModel : ViewModelBase
             previous.Dispose();
         }
 
-        RunFireAndForget(
-            Task.Run(() => LoginAsync(replacement.Token), replacement.Token),
-            $"{Tag}.LoginAsync");
+        RunFireAndForget(LoginAsync(replacement.Token), $"{Tag}.LoginAsync");
     }
 
 

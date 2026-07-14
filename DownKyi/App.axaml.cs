@@ -28,6 +28,7 @@ using DownKyi.Models;
 using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
+using DownKyi.Services.Account;
 using DownKyi.Services.Download;
 using DownKyi.Services.Toolbox;
 using DownKyi.Utils;
@@ -115,6 +116,8 @@ internal partial class App : PrismApplication, IDisposable
         containerRegistry.RegisterSingleton<DownloadListState>();
         containerRegistry.RegisterSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
         containerRegistry.RegisterSingleton<IBiliHelperCoordinator, BiliHelperCoordinator>();
+        containerRegistry.RegisterSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
+        containerRegistry.RegisterSingleton<ILoginCoordinator, LoginCoordinator>();
         containerRegistry.RegisterSingleton<IClipboardService, AvaloniaClipboardService>();
         containerRegistry.RegisterSingleton<IFilePickerService, AvaloniaFilePickerService>();
 

@@ -1,6 +1,7 @@
 using System;
 using DownKyi.Application.Desktop;
 using DownKyi.PrismExtension.Dialog;
+using DownKyi.Services.Account;
 using DownKyi.ViewModels;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,6 +30,7 @@ internal static class LegacyDesktopComposition
         services.AddSingleton(eventAggregator);
         services.AddSingleton(dialogService);
         services.AddSingleton(clipboardService);
+        services.AddSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddTransient<ViewIndexViewModel>();
         services.AddTransient<ViewVideoDetailViewModel>();
