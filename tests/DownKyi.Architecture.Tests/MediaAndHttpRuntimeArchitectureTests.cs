@@ -353,10 +353,16 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "DownKyi",
             "ViewModels",
             "ViewMySpaceViewModel.cs");
+        var bangumiPath = Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "ViewMyBangumiFollowViewModel.cs");
         var viewModelSource = string.Join(
             Environment.NewLine,
             File.ReadAllText(publicationPath),
-            File.ReadAllText(mySpacePath));
+            File.ReadAllText(mySpacePath),
+            File.ReadAllText(bangumiPath));
         var coordinatorSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "DownKyi",
@@ -373,13 +379,16 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("CurrentChanging -=", File.ReadAllText(publicationPath), StringComparison.Ordinal);
         Assert.Contains("LoadMyProfileAsync", File.ReadAllText(mySpacePath), StringComparison.Ordinal);
         Assert.Contains("LoadMyStatsAsync", File.ReadAllText(mySpacePath), StringComparison.Ordinal);
+        Assert.Contains("LoadBangumiFollowPageAsync", File.ReadAllText(bangumiPath), StringComparison.Ordinal);
         Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
 
-        var publicationSource = File.ReadAllText(publicationPath);
-        var directoryCancellation = publicationSource.IndexOf("if (directory == null)", StringComparison.Ordinal);
-        var addCall = publicationSource.IndexOf("_downloadCoordinator.AddAsync(", StringComparison.Ordinal);
-        Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
+        foreach (var source in new[] { File.ReadAllText(publicationPath), File.ReadAllText(bangumiPath) })
+        {
+            var directoryCancellation = source.IndexOf("if (directory == null)", StringComparison.Ordinal);
+            var addCall = source.IndexOf("_downloadCoordinator.AddAsync(", StringComparison.Ordinal);
+            Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
+        }
 
         var publicationView = File.ReadAllText(Path.Combine(
             RepositoryRoot,
@@ -387,6 +396,12 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "Views",
             "ViewPublication.axaml"));
         Assert.Contains("SelectionMode=\"Multiple,Toggle\"", publicationView, StringComparison.Ordinal);
+        var bangumiView = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Views",
+            "ViewMyBangumiFollow.axaml"));
+        Assert.Contains("SelectionMode=\"Multiple,Toggle\"", bangumiView, StringComparison.Ordinal);
 
         foreach (var apiPath in new[]
                  {

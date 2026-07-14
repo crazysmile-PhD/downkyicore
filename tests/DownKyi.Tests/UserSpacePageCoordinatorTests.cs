@@ -1,3 +1,4 @@
+using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Services.UserSpace;
 using Prism.Events;
 
@@ -41,5 +42,21 @@ public sealed class UserSpacePageCoordinatorTests
 
         await Assert.ThrowsAsync<TaskCanceledException>(
             () => coordinator.LoadMyStatsAsync(42, cancellation.Token));
+    }
+
+    [Fact]
+    public async Task PreCanceledBangumiLoadDoesNotStartApiWork()
+    {
+        var coordinator = new UserSpacePageCoordinator();
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() => coordinator.LoadBangumiFollowPageAsync(
+            42,
+            BangumiType.ANIME,
+            1,
+            15,
+            new EventAggregator(),
+            cancellation.Token));
     }
 }

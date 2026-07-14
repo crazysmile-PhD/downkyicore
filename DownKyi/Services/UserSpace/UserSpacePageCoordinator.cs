@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Users;
+using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Utils;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
@@ -39,6 +40,10 @@ internal sealed record MySpaceStatsSnapshot(
     string? Follower,
     string? Black);
 
+internal sealed record BangumiFollowPageSnapshot(
+    IReadOnlyList<BangumiFollowMedia> Medias,
+    int PageCount);
+
 internal interface IUserSpacePageCoordinator
 {
     Task<IReadOnlyList<PublicationMedia>> LoadPublicationPageAsync(
@@ -52,6 +57,14 @@ internal interface IUserSpacePageCoordinator
     Task<MySpaceProfileSnapshot?> LoadMyProfileAsync(long mid, CancellationToken cancellationToken);
 
     Task<MySpaceStatsSnapshot> LoadMyStatsAsync(long mid, CancellationToken cancellationToken);
+
+    Task<BangumiFollowPageSnapshot> LoadBangumiFollowPageAsync(
+        long mid,
+        BangumiType type,
+        int page,
+        int pageSize,
+        IEventAggregator eventAggregator,
+        CancellationToken cancellationToken);
 }
 
 internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
@@ -168,5 +181,62 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
                 relation?.Follower.ToString(CultureInfo.CurrentCulture),
                 relation?.Black.ToString(CultureInfo.CurrentCulture));
         }, cancellationToken);
+    }
+
+    public Task<BangumiFollowPageSnapshot> LoadBangumiFollowPageAsync(
+        long mid,
+        BangumiType type,
+        int page,
+        int pageSize,
+        IEventAggregator eventAggregator,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(eventAggregator);
+        return Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var response = BiliUserSpace.GetBangumiFollow(mid, type, page, pageSize, cancellationToken);
+            if (response?.List == null || response.List.Count == 0)
+            {
+                return new BangumiFollowPageSnapshot(Array.Empty<BangumiFollowMedia>(), 1);
+            }
+
+            var medias = new List<BangumiFollowMedia>(response.List.Count);
+            foreach (var item in response.List)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                medias.Add(new BangumiFollowMedia(eventAggregator)
+                {
+                    MediaId = item.MediaId,
+                    SeasonId = item.SeasonId,
+                    Title = item.Title,
+                    SeasonTypeName = item.SeasonTypeName,
+                    Area = item.Areas?.Count > 0 ? item.Areas[0].Name : string.Empty,
+                    Badge = item.Badge,
+                    Cover = NormalizeImageAddress(item.Cover),
+                    Evaluate = item.Evaluate,
+                    IndexShow = item.NewEp?.IndexShow ?? string.Empty,
+                    Progress = string.IsNullOrEmpty(item.Progress)
+                        ? DictionaryResource.GetString("BangumiNotWatched")
+                        : item.Progress
+                });
+            }
+
+            return new BangumiFollowPageSnapshot(
+                medias,
+                Math.Max(1, (int)Math.Ceiling((double)response.Total / pageSize)));
+        }, cancellationToken);
+    }
+
+    private static string NormalizeImageAddress(string? address)
+    {
+        if (string.IsNullOrEmpty(address))
+        {
+            return "avares://DownKyi/Resources/video-placeholder.png";
+        }
+
+        return address.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+            ? address
+            : $"https:{address}";
     }
 }

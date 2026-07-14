@@ -833,7 +833,9 @@ type: viewmodel
 paths:
   - DownKyi/ViewModels/ViewPublicationViewModel.cs
   - DownKyi/ViewModels/ViewMySpaceViewModel.cs
+  - DownKyi/ViewModels/ViewMyBangumiFollowViewModel.cs
   - DownKyi/Views/ViewPublication.axaml
+  - DownKyi/Views/ViewMyBangumiFollow.axaml
 responsibility: Projects publication pages and the signed-in user's profile/statistics while owning pager, selection, navigation, and visibility state.
 inbound:
   - viewmodel.user-space
@@ -843,8 +845,8 @@ outbound:
   - service.download-add
 contracts:
   - ViewModels never perform user-space API work or mutate bindings from worker threads.
-  - Publication results use one `AddRange` notification and ordinary clicks toggle independent selections.
-  - Replacing/leaving a publication pager detaches handlers and cancels page/download work.
+  - Publication and bangumi-follow results use one `AddRange` notification and ordinary clicks toggle independent selections.
+  - Replacing/leaving publication or bangumi pagers detaches handlers and cancels page/download work.
   - My-space renders the primary profile first; balance/relation failure does not hide an already loaded profile.
   - Canceling publication directory selection returns before media parsing.
 hazards:
@@ -873,7 +875,7 @@ inbound:
 outbound:
   - core.bili-api
 contracts:
-  - Publication, settings, my-info, navigation-info, and relation-stat requests pass cancellation to the HTTP boundary.
+  - Publication, bangumi-follow, settings, my-info, navigation-info, and relation-stat requests pass cancellation to the HTTP boundary.
   - Pre-canceled requests cannot start API work and mapping checks cancellation between publication items.
   - Profile and statistics are separate operations so secondary API latency does not delay first content.
 hazards:
@@ -1604,8 +1606,8 @@ test.user-space-pages:
     - tests/DownKyi.Tests/UserSpacePageCoordinatorTests.cs
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
-    - pre-canceled publication, profile, and statistics requests cannot start API work
-    - publication/my-space ViewModels cannot regain Task.Run, App dispatch, or worker-thread binding mutation
+    - pre-canceled publication, bangumi-follow, profile, and statistics requests cannot start API work
+    - publication, bangumi-follow, and my-space ViewModels cannot regain Task.Run, App dispatch, or worker-thread binding mutation
     - core user-space account/stat APIs preserve cancellation through the HTTP boundary
     - publication batching, pager cleanup, directory cancellation ordering, and click-toggle selection remain stable
 

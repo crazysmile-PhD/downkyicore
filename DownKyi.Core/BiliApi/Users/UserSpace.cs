@@ -412,7 +412,12 @@ public static class UserSpace
     /// <param name="pn">页码</param>
     /// <param name="ps">每页项数</param>
     /// <returns></returns>
-    public static BangumiFollowData? GetBangumiFollow(long mid, BangumiType type, int pn, int ps)
+    public static BangumiFollowData? GetBangumiFollow(
+        long mid,
+        BangumiType type,
+        int pn,
+        int ps,
+        CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/space/bangumi/follow/list?vmid={mid}&type={type:D}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
@@ -420,7 +425,8 @@ public static class UserSpace
             url,
             referer,
             nameof(GetBangumiFollow),
-            "UserSpace");
+            "UserSpace",
+            cancellationToken);
 
         return bangumiFollow?.Data;
     }
