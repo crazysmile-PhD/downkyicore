@@ -18,7 +18,7 @@ public static class UserSpace
     /// </summary>
     /// <param name="mid"></param>
     /// <returns></returns>
-    public static SpaceSettings? GetSpaceSettings(long mid)
+    public static SpaceSettings? GetSpaceSettings(long mid, CancellationToken cancellationToken = default)
     {
         var url = $"https://space.bilibili.com/ajax/settings/getSettings?mid={mid}";
         const string referer = "https://www.bilibili.com";
@@ -26,7 +26,8 @@ public static class UserSpace
             url,
             referer,
             nameof(GetSpaceSettings),
-            "UserSpace");
+            "UserSpace",
+            cancellationToken);
 
         return settings is not { Status: true } ? null : settings.Data;
     }
@@ -111,7 +112,14 @@ public static class UserSpace
     /// <param name="tid">视频分区</param>
     /// <param name="keyword">搜索关键词</param>
     /// <returns></returns>
-    public static SpacePublicationList? GetPublication(long mid, int pn, int ps, long tid = 0, PublicationOrder order = PublicationOrder.PUBDATE, string keyword = "")
+    public static SpacePublicationList? GetPublication(
+        long mid,
+        int pn,
+        int ps,
+        long tid = 0,
+        PublicationOrder order = PublicationOrder.PUBDATE,
+        string keyword = "",
+        CancellationToken cancellationToken = default)
     {
         var parameters = new Dictionary<string, object?>
         {
@@ -136,7 +144,7 @@ public static class UserSpace
 
         try
         {
-            var response = WebClient.RequestWeb(url, referer);
+            var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
             // 忽略play的值为“--”时的类型错误
             var settings = new JsonSerializerSettings
             {

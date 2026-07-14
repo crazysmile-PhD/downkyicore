@@ -16,7 +16,7 @@ public static class UserInfo
     /// 导航栏用户信息
     /// </summary>
     /// <returns></returns>
-    public static UserInfoForNavigation? GetUserInfoForNavigation()
+    public static UserInfoForNavigation? GetUserInfoForNavigation(CancellationToken cancellationToken = default)
     {
         const string url = "https://api.bilibili.com/x/web-interface/nav";
         const string referer = "https://www.bilibili.com";
@@ -24,7 +24,8 @@ public static class UserInfo
             url,
             referer,
             nameof(GetUserInfoForNavigation),
-            "UserInfo");
+            "UserInfo",
+            cancellationToken);
 
         return userInfo?.Data;
     }
@@ -65,7 +66,7 @@ public static class UserInfo
     /// 本用户详细信息
     /// </summary>
     /// <returns></returns>
-    public static MyInfo? GetMyInfo()
+    public static MyInfo? GetMyInfo(CancellationToken cancellationToken = default)
     {
         const string url = "https://api.bilibili.com/x/space/myinfo";
         const string referer = "https://www.bilibili.com";
@@ -73,7 +74,8 @@ public static class UserInfo
             url,
             referer,
             nameof(GetMyInfo),
-            "UserInfo");
+            "UserInfo",
+            cancellationToken);
 
         return myInfo?.Data;
     }

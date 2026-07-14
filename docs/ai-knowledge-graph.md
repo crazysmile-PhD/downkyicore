@@ -82,6 +82,8 @@ flowchart TD
     Favorites["service.favorites\nFavoritesCoordinator.cs"]
     PersonalMediaVms["viewmodel.personal-media\nHistory/Watch-later ViewModels"]
     PersonalMedia["service.personal-media\nPersonalMediaCoordinator.cs"]
+    UserSpacePageVms["viewmodel.user-space-pages\nPublication/My-space ViewModels"]
+    UserSpacePages["service.user-space-pages\nUserSpacePageCoordinator.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
     BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
     BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
@@ -140,6 +142,9 @@ flowchart TD
     PersonalMediaVms -->|loads snapshots| PersonalMedia
     PersonalMedia -->|calls| BiliApi
     PersonalMediaVms -->|queues selected media| DownloadAdd
+    UserSpacePageVms -->|loads snapshots| UserSpacePages
+    UserSpacePages -->|calls| BiliApi
+    UserSpacePageVms -->|queues publications| DownloadAdd
     BiliHelperVm -->|calls| BiliHelper
     BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
@@ -820,6 +825,65 @@ tests:
   - test.architecture-boundaries
 ```
 
+### viewmodel.user-space-pages
+
+```yaml
+id: viewmodel.user-space-pages
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewPublicationViewModel.cs
+  - DownKyi/ViewModels/ViewMySpaceViewModel.cs
+  - DownKyi/Views/ViewPublication.axaml
+responsibility: Projects publication pages and the signed-in user's profile/statistics while owning pager, selection, navigation, and visibility state.
+inbound:
+  - viewmodel.user-space
+  - viewmodel.main-window
+outbound:
+  - service.user-space-pages
+  - service.download-add
+contracts:
+  - ViewModels never perform user-space API work or mutate bindings from worker threads.
+  - Publication results use one `AddRange` notification and ordinary clicks toggle independent selections.
+  - Replacing/leaving a publication pager detaches handlers and cancels page/download work.
+  - My-space renders the primary profile first; balance/relation failure does not hide an already loaded profile.
+  - Canceling publication directory selection returns before media parsing.
+hazards:
+  - Per-item dispatcher calls stutter on large publication pages and can project stale rows after navigation.
+  - Worker-thread mutation of profile properties and `StatusList` is unsafe for Avalonia bindings.
+  - Binding status flags must be assigned both true and false; retaining an old false value hides a newly bound account.
+tests:
+  - test.user-space-pages
+  - test.download-add
+  - test.architecture-boundaries
+```
+
+### service.user-space-pages
+
+```yaml
+id: service.user-space-pages
+type: service
+paths:
+  - DownKyi/Services/UserSpace/UserSpacePageCoordinator.cs
+  - DownKyi.Core/BiliApi/Users/UserSpace.cs
+  - DownKyi.Core/BiliApi/Users/UserInfo.cs
+  - DownKyi.Core/BiliApi/Users/UserStatus.cs
+responsibility: Loads publication, signed-in profile, balance, and relation data off the UI thread and returns immutable snapshots.
+inbound:
+  - viewmodel.user-space-pages
+outbound:
+  - core.bili-api
+contracts:
+  - Publication, settings, my-info, navigation-info, and relation-stat requests pass cancellation to the HTTP boundary.
+  - Pre-canceled requests cannot start API work and mapping checks cancellation between publication items.
+  - Profile and statistics are separate operations so secondary API latency does not delay first content.
+hazards:
+  - `Services.UserSpace` and the core `UserSpace` API share a name; use an explicit alias at the boundary.
+  - Legacy custom publication JSON handling remains because Bilibili sometimes returns `"--"` for play counts.
+tests:
+  - test.user-space-pages
+  - test.architecture-boundaries
+```
+
 ### service.video-parse-coordinator
 
 ```yaml
@@ -991,6 +1055,7 @@ inbound:
   - viewmodel.seasons-series
   - viewmodel.favorites
   - viewmodel.personal-media
+  - viewmodel.user-space-pages
   - other viewmodels that support add-to-download
 outbound:
   - core.storage
@@ -1533,6 +1598,16 @@ test.personal-media:
     - history mapping accepts archive/pgc, rejects unsupported business types, and normalizes protocol-relative covers
     - personal-media ViewModels cannot regain Task.Run or per-item App dispatcher projection
     - load-more command identity, directory cancellation ordering, batch projection, and click-toggle selection remain stable
+
+test.user-space-pages:
+  paths:
+    - tests/DownKyi.Tests/UserSpacePageCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - pre-canceled publication, profile, and statistics requests cannot start API work
+    - publication/my-space ViewModels cannot regain Task.Run, App dispatch, or worker-thread binding mutation
+    - core user-space account/stat APIs preserve cancellation through the HTTP boundary
+    - publication batching, pager cleanup, directory cancellation ordering, and click-toggle selection remain stable
 
 test.download-list-state:
   paths:

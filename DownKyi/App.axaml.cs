@@ -127,6 +127,7 @@ internal partial class App : PrismApplication, IDisposable
         containerRegistry.RegisterSingleton<ILoginCoordinator, LoginCoordinator>();
         containerRegistry.RegisterSingleton<IFriendRelationCoordinator, FriendRelationCoordinator>();
         containerRegistry.RegisterSingleton<ISeasonsSeriesCoordinator, SeasonsSeriesCoordinator>();
+        containerRegistry.RegisterSingleton<IUserSpacePageCoordinator, UserSpacePageCoordinator>();
         containerRegistry.RegisterSingleton<IClipboardService, AvaloniaClipboardService>();
         containerRegistry.RegisterSingleton<IFilePickerService, AvaloniaFilePickerService>();
 

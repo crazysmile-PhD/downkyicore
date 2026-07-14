@@ -340,6 +340,65 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         }
     }
 
+    [Fact]
+    public void UserSpacePagesUseCancellableSnapshotsWithoutWorkerThreadUiMutation()
+    {
+        var publicationPath = Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "ViewPublicationViewModel.cs");
+        var mySpacePath = Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "ViewMySpaceViewModel.cs");
+        var viewModelSource = string.Join(
+            Environment.NewLine,
+            File.ReadAllText(publicationPath),
+            File.ReadAllText(mySpacePath));
+        var coordinatorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "UserSpace",
+            "UserSpacePageCoordinator.cs"));
+
+        Assert.DoesNotContain("Task.Run", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("App.PropertyChangeAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("PropertyChangeAsync(", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IUserSpacePageCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IContentDownloadCoordinator", File.ReadAllText(publicationPath), StringComparison.Ordinal);
+        Assert.Contains("Medias.AddRange", File.ReadAllText(publicationPath), StringComparison.Ordinal);
+        Assert.Contains("CurrentChanging -=", File.ReadAllText(publicationPath), StringComparison.Ordinal);
+        Assert.Contains("LoadMyProfileAsync", File.ReadAllText(mySpacePath), StringComparison.Ordinal);
+        Assert.Contains("LoadMyStatsAsync", File.ReadAllText(mySpacePath), StringComparison.Ordinal);
+        Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
+
+        var publicationSource = File.ReadAllText(publicationPath);
+        var directoryCancellation = publicationSource.IndexOf("if (directory == null)", StringComparison.Ordinal);
+        var addCall = publicationSource.IndexOf("_downloadCoordinator.AddAsync(", StringComparison.Ordinal);
+        Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
+
+        var publicationView = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Views",
+            "ViewPublication.axaml"));
+        Assert.Contains("SelectionMode=\"Multiple,Toggle\"", publicationView, StringComparison.Ordinal);
+
+        foreach (var apiPath in new[]
+                 {
+                     Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserSpace.cs"),
+                     Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserInfo.cs"),
+                     Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserStatus.cs")
+                 })
+        {
+            Assert.Contains("CancellationToken cancellationToken = default", File.ReadAllText(apiPath), StringComparison.Ordinal);
+        }
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
