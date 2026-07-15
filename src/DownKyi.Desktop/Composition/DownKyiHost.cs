@@ -15,6 +15,7 @@ public static class DownKyiHost
             DisableDefaults = true
         });
 
+        builder.Services.AddLogging();
         builder.Services.AddSingleton<ApplicationCancellation>();
         builder.Services.AddSingleton<IClock, SystemClock>();
         builder.Services.AddSingleton<IHostedService>(services =>

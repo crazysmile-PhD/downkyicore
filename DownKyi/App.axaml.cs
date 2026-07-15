@@ -53,6 +53,7 @@ using DownKyi.Views.Toolbox;
 using DownKyi.Views.UserSpace;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Prism.DryIoc;
 using Prism.Events;
 using Prism.Ioc;
@@ -77,6 +78,9 @@ internal partial class App : PrismApplication, IDisposable
 #endif
 
     private IHost? _host;
+    private ApplicationLogProvider? _logProvider;
+    private ILoggerFactory? _loggerFactory;
+    private ILogger<App>? _logger;
     private Task? _downloadStartupTask;
     private Task? _shutdownTask;
 
@@ -91,12 +95,17 @@ internal partial class App : PrismApplication, IDisposable
 #endif
 
         AvaloniaXamlLoader.Load(this);
-        Dispatcher.UIThread.UnhandledException += (_, e) => { LogManager.Error("[Program crash]", e.Exception); };
+        Dispatcher.UIThread.UnhandledException += (_, e) =>
+        {
+            _logger?.LogCriticalMessage("Unhandled UI exception.", e.Exception);
+        };
 
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
-            var exception = e.ExceptionObject as Exception;
-            LogManager.Error("[Program crash]", exception!);
+            if (e.ExceptionObject is Exception exception)
+            {
+                _logger?.LogCriticalMessage("Unhandled application exception.", exception);
+            }
         };
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -106,13 +115,27 @@ internal partial class App : PrismApplication, IDisposable
             AppLife = desktop;
         }
 
-        LogManager.Info(nameof(App), $"Application initialized. Version={new AppInfo().VersionName}; Portable={StorageManager.IsPortableMode()}");
-
         base.Initialize();
+        _logger?.LogInformationMessage(
+            $"Application initialized. Version={new AppInfo().VersionName}; Portable={StorageManager.IsPortableMode()}");
     }
 
     protected override void RegisterTypes(IContainerRegistry containerRegistry)
     {
+        _logProvider = new ApplicationLogProvider(new ApplicationLogOptions(StorageManager.GetLogsDir()));
+        _loggerFactory = LoggerFactory.Create(builder =>
+        {
+#if DEBUG
+            builder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
+#else
+            builder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Information);
+#endif
+            builder.AddProvider(_logProvider);
+        });
+        _logger = _loggerFactory.CreateLogger<App>();
+        containerRegistry.RegisterInstance<IApplicationLogService>(_logProvider);
+        containerRegistry.RegisterInstance<ILoggerFactory>(_loggerFactory);
+        containerRegistry.Register(typeof(ILogger<>), typeof(Logger<>));
         containerRegistry.RegisterLegacyApplication();
     }
 
@@ -161,7 +184,7 @@ internal partial class App : PrismApplication, IDisposable
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
             or Microsoft.Data.Sqlite.SqliteException)
         {
-            LogManager.Error(nameof(App), e);
+            _logger?.LogErrorMessage("Application Host startup failed.", e);
         }
     }
 
@@ -169,7 +192,7 @@ internal partial class App : PrismApplication, IDisposable
     {
         if (_shutdownTask is { IsCompleted: false })
         {
-            LogManager.Info(nameof(App), "Application lifetime exited before asynchronous cleanup completed.");
+            _logger?.LogWarningMessage("Application lifetime exited before asynchronous cleanup completed.");
         }
 
         Dispose();
@@ -206,16 +229,23 @@ internal partial class App : PrismApplication, IDisposable
         }
         else
         {
-            LogManager.Info(nameof(App), "Application cleanup timed out; killing the tracked aria2 process.");
+            _logger?.LogWarningMessage("Application cleanup timed out; killing the tracked aria2 process.");
             AriaServer.KillTrackedServer("application exit cleanup timed out.");
             _ = cleanup.ContinueWith(
-                task => LogManager.Error(nameof(App), task.Exception!.GetBaseException()),
+                task => _logger?.LogErrorMessage(
+                    "Application cleanup failed after the shutdown timeout.",
+                    task.Exception!.GetBaseException()),
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted,
                 TaskScheduler.Default);
         }
 
-        await LogManager.FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+        if (_logProvider != null)
+        {
+            using var flushCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await _logProvider.FlushAsync(flushCancellation.Token).ConfigureAwait(false);
+            await _logProvider.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private static Task StopHostAsync(IHost host)
@@ -244,6 +274,11 @@ internal partial class App : PrismApplication, IDisposable
 
         _host?.Dispose();
         _host = null;
+        _loggerFactory?.Dispose();
+        _loggerFactory = null;
+        _logProvider?.Dispose();
+        _logProvider = null;
+        _logger = null;
 #if !DEBUG
         try
         {

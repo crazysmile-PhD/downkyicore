@@ -2,6 +2,7 @@ using System;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.FFMpeg;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Desktop.Composition;
 using DownKyi.Platform;
@@ -14,6 +15,7 @@ using DownKyi.ViewModels;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Prism.Events;
 using Prism.Ioc;
 using Prism.Navigation.Regions;
@@ -28,8 +30,12 @@ internal static class LegacyDesktopComposition
         ArgumentNullException.ThrowIfNull(container);
         var downloadLists = container.Resolve<DownloadListState>();
         var settingsStore = container.Resolve<ISettingsStore>();
+        var loggerFactory = container.Resolve<ILoggerFactory>();
+        var logService = container.Resolve<IApplicationLogService>();
         return DownKyiHost.Create(services =>
         {
+            services.AddSingleton(loggerFactory);
+            services.AddSingleton(logService);
             services.AddDownKyiBilibiliHttpClient(settingsStore);
             services.AddSingleton<IHostedService, StorageMaintenanceHostedService>();
             services.AddSingleton(downloadLists);

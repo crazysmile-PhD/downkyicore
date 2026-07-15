@@ -238,6 +238,7 @@ contracts:
   - App cannot contain concrete service, navigation, or dialog registration; `LegacyPrismComposition` is the only temporary Prism registration owner.
   - Download runtime construction and hosted-service wiring stay in `LegacyDesktopComposition`, not App.
   - App startup, Host services, and shutdown share one injected `ISettingsStore`; shutdown flush must not block the UI thread.
+  - App creates one `ApplicationLogProvider`; Prism and Host typed loggers share its `ILoggerFactory`, while shutdown awaits provider flush and async disposal.
   - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
   - UI continuations use the Avalonia context; background and Core continuations do not depend on it.
 hazards:
@@ -265,7 +266,8 @@ outbound:
   - core.infrastructure
   - service.download-bootstrap
 contracts:
-  - `DisableDefaults=true` prevents implicit configuration, logging, environment, and path side effects during composition.
+  - `DisableDefaults=true` prevents implicit configuration, environment, and path side effects; `AddLogging()` explicitly enables typed loggers without adding an implicit console or file provider.
+  - Production composition supplies the App-owned logger factory/provider, while isolated Host tests receive the same `ILogger<T>` contract with no filesystem sink.
   - Host stop signals the shared application shutdown token before services are disposed.
   - Only this target-architecture project references Microsoft.Extensions.Hosting.
 hazards:
@@ -1980,11 +1982,15 @@ test.ui-smoke:
 test.composition-root:
   paths:
     - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+    - tests/DownKyi.Tests/LoggingCompositionTests.cs
+    - tests/DownKyi.Architecture.Tests/AppLifecycleArchitectureTests.cs
   guards:
     - the real Host starts and stops without Prism global container state
     - Host stop signals the shared application shutdown token
     - video-page selection behavior synchronizes model/Grid state and preserves another section's selections
     - the shell and key ViewModels resolve from the same service provider
+    - Prism and Host resolve typed loggers from the same factory in production composition
+    - App crash/shutdown and About log-management paths cannot return to static LogManager
 
 test.domain-results:
   paths:

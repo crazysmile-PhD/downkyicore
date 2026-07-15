@@ -10,6 +10,7 @@ using DownKyi.Models;
 using DownKyi.Services;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
 using Prism.Events;
@@ -23,6 +24,8 @@ internal class ViewAboutViewModel : ViewModelBase
     public const string Tag = "PageSettingsAbout";
 
     private readonly ISettingsStore _settingsStore;
+    private readonly IApplicationLogService _logService;
+    private readonly ILogger<ViewAboutViewModel> _logger;
     private bool _isOnNavigatedTo;
 
     #region 页面属性申明
@@ -64,10 +67,14 @@ internal class ViewAboutViewModel : ViewModelBase
     public ViewAboutViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        ISettingsStore settingsStore) : base(eventAggregator,
+        ISettingsStore settingsStore,
+        IApplicationLogService logService,
+        ILogger<ViewAboutViewModel> logger) : base(eventAggregator,
         dialogService)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logService = logService ?? throw new ArgumentNullException(nameof(logService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         var app = new AppInfo();
@@ -165,8 +172,9 @@ internal class ViewAboutViewModel : ViewModelBase
 
     private async Task ExecuteOpenLogsCommand()
     {
-        await LogManager.FlushAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
-        await PlatformHelper.OpenFolder(LogManager.LogDirectory, EventAggregator).ConfigureAwait(true);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await _logService.FlushAsync(cancellation.Token).ConfigureAwait(true);
+        await PlatformHelper.OpenFolder(_logService.LogDirectory, EventAggregator).ConfigureAwait(true);
     }
 
     // 导出脱敏诊断日志事件
@@ -179,14 +187,14 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         try
         {
-            var diagnosticLog = await LogManager.ExportDiagnosticLogAsync().ConfigureAwait(true);
+            var diagnosticLog = await _logService.ExportDiagnosticLogAsync().ConfigureAwait(true);
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("DiagnosticLogExported"));
             await PlatformHelper.Open(diagnosticLog, EventAggregator).ConfigureAwait(true);
         }
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
             or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Diagnostic log export failed.", e);
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("DiagnosticLogExportFailed"));
         }
     }

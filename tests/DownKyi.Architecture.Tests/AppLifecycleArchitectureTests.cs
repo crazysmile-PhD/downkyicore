@@ -94,6 +94,38 @@ public sealed class AppLifecycleArchitectureTests
         Assert.Contains("RegisterDialog", compositionSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ApplicationLoggingUsesOneProviderAcrossPrismAndHostComposition()
+    {
+        var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+        var aboutSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "Settings",
+            "ViewAboutViewModel.cs"));
+        var legacyHostSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyDesktopComposition.cs"));
+        var hostSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "src",
+            "DownKyi.Desktop",
+            "Composition",
+            "DownKyiHost.cs"));
+
+        Assert.Contains("new ApplicationLogProvider", appSource, StringComparison.Ordinal);
+        Assert.Contains("RegisterInstance<IApplicationLogService>", appSource, StringComparison.Ordinal);
+        Assert.Contains("RegisterInstance<ILoggerFactory>", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LogManager.", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LogManager.", aboutSource, StringComparison.Ordinal);
+        Assert.Contains("services.AddSingleton(loggerFactory)", legacyHostSource, StringComparison.Ordinal);
+        Assert.Contains("services.AddSingleton(logService)", legacyHostSource, StringComparison.Ordinal);
+        Assert.Contains("builder.Services.AddLogging()", hostSource, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
