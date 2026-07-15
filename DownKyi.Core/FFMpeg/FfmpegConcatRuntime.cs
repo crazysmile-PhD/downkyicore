@@ -1,4 +1,5 @@
 using DownKyi.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Core.FFMpeg;
 
@@ -18,20 +19,22 @@ public sealed record FfmpegOperationResult(
 
 internal sealed class FfmpegConcatRuntime
 {
-    private const string Tag = nameof(FfmpegConcatRuntime);
     private static readonly TimeSpan ConcatTimeout = TimeSpan.FromHours(2);
     private readonly AsyncConcurrencyGate _concurrencyGate;
     private readonly IFfmpegMediaValidator _mediaValidator;
     private readonly IFfmpegProcessRunner _processRunner;
+    private readonly ILogger<FfmpegConcatRuntime> _logger;
 
     public FfmpegConcatRuntime(
         IFfmpegProcessRunner processRunner,
         IFfmpegMediaValidator mediaValidator,
-        Func<int> maxConcurrencyProvider)
+        Func<int> maxConcurrencyProvider,
+        ILogger<FfmpegConcatRuntime> logger)
     {
         _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
         _mediaValidator = mediaValidator ?? throw new ArgumentNullException(nameof(mediaValidator));
         _concurrencyGate = new AsyncConcurrencyGate(maxConcurrencyProvider);
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<FfmpegOperationResult> ConcatAsync(
@@ -97,7 +100,7 @@ internal sealed class FfmpegConcatRuntime
                         .ConfigureAwait(false);
                     if (!validation.IsValid)
                     {
-                        LogManager.Info(Tag, $"FFmpeg output rejected. reason={validation.FailureReason}");
+                        _logger.LogInformationMessage($"FFmpeg output rejected. reason={validation.FailureReason}");
                         continue;
                     }
 
@@ -116,13 +119,13 @@ internal sealed class FfmpegConcatRuntime
         }
         catch (IOException e)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("FFmpeg concat output could not be finalized.", e);
             DeleteFile(outputFile);
             return FfmpegOperationResult.Failure("FFmpeg output could not be finalized.");
         }
         catch (UnauthorizedAccessException e)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("FFmpeg concat output finalization was denied.", e);
             DeleteFile(outputFile);
             return FfmpegOperationResult.Failure("FFmpeg output could not be finalized.");
         }
@@ -138,17 +141,16 @@ internal sealed class FfmpegConcatRuntime
         return $"file '{normalizedPath.Replace("'", "'\\''", StringComparison.Ordinal)}'";
     }
 
-    private static void LogProcessResult(FfmpegCommand command, FfmpegProcessResult result)
+    private void LogProcessResult(FfmpegCommand command, FfmpegProcessResult result)
     {
         var error = string.IsNullOrWhiteSpace(result.StandardError)
             ? "none"
             : result.StandardError.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "unknown";
-        LogManager.Info(
-            Tag,
+        _logger.LogInformationMessage(
             $"FFmpeg operation completed. operation={command.Operation}; exitCode={result.ExitCode}; timedOut={result.TimedOut}; error={error}");
     }
 
-    private static void DeleteSourceSegments(IEnumerable<FfmpegConcatSegment> segments)
+    private void DeleteSourceSegments(IEnumerable<FfmpegConcatSegment> segments)
     {
         foreach (var segment in segments)
         {
@@ -158,7 +160,7 @@ internal sealed class FfmpegConcatRuntime
         }
     }
 
-    private static void DeleteFile(string file)
+    private void DeleteFile(string file)
     {
         try
         {
@@ -169,11 +171,11 @@ internal sealed class FfmpegConcatRuntime
         }
         catch (IOException e)
         {
-            LogManager.Debug(Tag, $"FFmpeg cleanup failed: {e.Message}");
+            _logger.LogDebugMessage($"FFmpeg cleanup failed: {e.Message}");
         }
         catch (UnauthorizedAccessException e)
         {
-            LogManager.Debug(Tag, $"FFmpeg cleanup was denied: {e.Message}");
+            _logger.LogDebugMessage($"FFmpeg cleanup was denied: {e.Message}");
         }
     }
 }

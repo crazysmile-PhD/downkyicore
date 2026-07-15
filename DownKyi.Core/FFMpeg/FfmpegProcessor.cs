@@ -1,28 +1,35 @@
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Core.FFMpeg;
 
 public sealed class FfmpegProcessor
 {
-    private const string Tag = nameof(FfmpegProcessor);
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromHours(2);
     private readonly AsyncConcurrencyGate _operationGate;
     private readonly FfmpegConcatRuntime _concatRuntime;
     private readonly FfmpegProcessRunner _processRunner;
     private readonly ISettingsStore _settingsStore;
+    private readonly ILogger<FfmpegProcessor> _logger;
+    private readonly FfmpegHardwareEncoderDetector _hardwareEncoderDetector;
 
-    public FfmpegProcessor(ISettingsStore settingsStore)
+    public FfmpegProcessor(ISettingsStore settingsStore, ILoggerFactory loggerFactory)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
         _settingsStore = settingsStore;
+        _logger = loggerFactory.CreateLogger<FfmpegProcessor>();
         _processRunner = new FfmpegProcessRunner();
+        _hardwareEncoderDetector = new FfmpegHardwareEncoderDetector(
+            loggerFactory.CreateLogger<FfmpegHardwareEncoderDetector>());
         _operationGate = new AsyncConcurrencyGate(
             () => _settingsStore.Current.Video.FfmpegMaxParallelJobs);
         _concatRuntime = new FfmpegConcatRuntime(
             _processRunner,
             new FfmpegMediaValidator(_processRunner),
-            () => _settingsStore.Current.Video.FfmpegMaxParallelJobs);
+            () => _settingsStore.Current.Video.FfmpegMaxParallelJobs,
+            loggerFactory.CreateLogger<FfmpegConcatRuntime>());
     }
 
     public async Task<FfmpegOperationResult> ConcatDurlVideosAsync(
@@ -31,7 +38,7 @@ public sealed class FfmpegProcessor
         Action<string>? action = null,
         CancellationToken cancellationToken = default)
     {
-        var encoder = await FfmpegHardwareEncoderDetector.SelectAsync(
+        var encoder = await _hardwareEncoderDetector.SelectAsync(
                 _settingsStore.Current.Video.FfmpegHardwareAcceleration,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -184,12 +191,12 @@ public sealed class FfmpegProcessor
         }
         catch (IOException e)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("FFmpeg output finalization failed.", e);
             return false;
         }
         catch (UnauthorizedAccessException e)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("FFmpeg output finalization was denied.", e);
             return false;
         }
         finally
@@ -198,7 +205,7 @@ public sealed class FfmpegProcessor
         }
     }
 
-    private static void LogResult(FfmpegProcessResult result, string operation, Action<string>? action)
+    private void LogResult(FfmpegProcessResult result, string operation, Action<string>? action)
     {
         var diagnostic = string.IsNullOrWhiteSpace(result.StandardError)
             ? $"FFmpeg {operation}: exit={result.ExitCode}; timedOut={result.TimedOut}"
@@ -206,16 +213,16 @@ public sealed class FfmpegProcessor
         action?.Invoke(diagnostic);
         if (result.Succeeded)
         {
-            LogManager.Info(Tag, $"FFmpeg operation completed. operation={operation}; exit={result.ExitCode}");
+            _logger.LogInformationMessage($"FFmpeg operation completed. operation={operation}; exit={result.ExitCode}");
         }
         else
         {
-            LogManager.Error(Tag, new InvalidOperationException(
-                $"FFmpeg operation failed. operation={operation}; exit={result.ExitCode}; timedOut={result.TimedOut}"));
+            _logger.LogErrorMessage(
+                $"FFmpeg operation failed. operation={operation}; exit={result.ExitCode}; timedOut={result.TimedOut}");
         }
     }
 
-    private static void DeleteInput(string? file)
+    private void DeleteInput(string? file)
     {
         if (!string.IsNullOrWhiteSpace(file))
         {
@@ -223,7 +230,7 @@ public sealed class FfmpegProcessor
         }
     }
 
-    private static void DeleteFile(string file)
+    private void DeleteFile(string file)
     {
         try
         {
@@ -234,11 +241,11 @@ public sealed class FfmpegProcessor
         }
         catch (IOException e)
         {
-            LogManager.Debug(Tag, $"FFmpeg cleanup failed: {e.Message}");
+            _logger.LogDebugMessage($"FFmpeg cleanup failed: {e.Message}");
         }
         catch (UnauthorizedAccessException e)
         {
-            LogManager.Debug(Tag, $"FFmpeg cleanup was denied: {e.Message}");
+            _logger.LogDebugMessage($"FFmpeg cleanup was denied: {e.Message}");
         }
     }
 }

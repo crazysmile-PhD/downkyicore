@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Core.FFMpeg;
 
@@ -10,12 +11,12 @@ internal sealed record FfmpegHardwareEncoderProfile(
     string EncoderName,
     IReadOnlyList<string> OutputArguments);
 
-internal static class FfmpegHardwareEncoderDetector
+internal sealed class FfmpegHardwareEncoderDetector
 {
-    private const string Tag = "FfmpegHardwareEncoderDetector";
     private static readonly char[] EncoderLineSeparators = { '\r', '\n' };
     private static readonly TimeSpan DetectionTimeout = TimeSpan.FromSeconds(5);
-    private static readonly Lazy<Task<HashSet<string>>> AvailableEncoders = new(LoadAvailableEncodersAsync);
+    private readonly Lazy<Task<HashSet<string>>> _availableEncoders;
+    private readonly ILogger<FfmpegHardwareEncoderDetector> _logger;
     private static readonly IReadOnlyList<string> NvidiaArguments =
         Array.AsReadOnly(new[] { "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23" });
     private static readonly IReadOnlyList<string> IntelQsvArguments =
@@ -32,7 +33,13 @@ internal static class FfmpegHardwareEncoderDetector
     private static readonly IReadOnlyList<string> VideoToolboxArguments =
         Array.AsReadOnly(new[] { "-c:v", "h264_videotoolbox", "-b:v", "6M" });
 
-    public static async Task<FfmpegHardwareEncoderProfile?> SelectAsync(
+    public FfmpegHardwareEncoderDetector(ILogger<FfmpegHardwareEncoderDetector> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _availableEncoders = new Lazy<Task<HashSet<string>>>(LoadAvailableEncodersAsync);
+    }
+
+    public async Task<FfmpegHardwareEncoderProfile?> SelectAsync(
         FfmpegHardwareAcceleration mode,
         CancellationToken cancellationToken = default)
     {
@@ -45,21 +52,21 @@ internal static class FfmpegHardwareEncoderDetector
             ? GetAutoCandidates()
             : GetManualCandidates(mode);
 
-        var availableEncoders = await AvailableEncoders.Value
+        var availableEncoders = await _availableEncoders.Value
             .WaitAsync(cancellationToken)
             .ConfigureAwait(false);
         foreach (var candidate in candidates)
         {
             if (availableEncoders.Contains(candidate.EncoderName))
             {
-                LogManager.Info(Tag, $"Selected FFmpeg hardware encoder: {candidate.DisplayName}");
+                _logger.LogInformationMessage($"Selected FFmpeg hardware encoder: {candidate.DisplayName}");
                 return candidate;
             }
         }
 
         if (mode != FfmpegHardwareAcceleration.Auto && mode != FfmpegHardwareAcceleration.NotSet)
         {
-            LogManager.Info(Tag, $"Requested FFmpeg hardware encoder is unavailable: {mode}");
+            _logger.LogInformationMessage($"Requested FFmpeg hardware encoder is unavailable: {mode}");
         }
 
         return null;
@@ -141,7 +148,7 @@ internal static class FfmpegHardwareEncoderDetector
             VideoToolboxArguments);
     }
 
-    private static async Task<HashSet<string>> LoadAvailableEncodersAsync()
+    private async Task<HashSet<string>> LoadAvailableEncodersAsync()
     {
         var processRunner = new FfmpegProcessRunner();
         var result = await processRunner.RunAsync(
@@ -164,7 +171,8 @@ internal static class FfmpegHardwareEncoderDetector
             }
         }
 
-        LogManager.Info(Tag, $"Detected FFmpeg hardware encoders: {string.Join(",", encoders.Where(IsKnownHardwareEncoder))}");
+        _logger.LogInformationMessage(
+            $"Detected FFmpeg hardware encoders: {string.Join(",", encoders.Where(IsKnownHardwareEncoder))}");
         return encoders;
     }
 

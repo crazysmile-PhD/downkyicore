@@ -26,6 +26,28 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     }
 
     [Fact]
+    public void FfmpegRuntimeUsesInjectedTypedLogging()
+    {
+        var runtimeDirectory = Path.Combine(RepositoryRoot, "DownKyi.Core", "FFMpeg");
+        var runtimeFiles = Directory
+            .EnumerateFiles(runtimeDirectory, "*.cs", SearchOption.TopDirectoryOnly)
+            .ToArray();
+        var violations = runtimeFiles
+            .Where(path => File.ReadAllText(path).Contains("LogManager.", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .ToArray();
+        var processorSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegProcessor.cs"));
+        var concatSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegConcatRuntime.cs"));
+        var detectorSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegHardwareEncoderDetector.cs"));
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
+        Assert.Contains("ILoggerFactory loggerFactory", processorSource, StringComparison.Ordinal);
+        Assert.Contains("ILogger<FfmpegConcatRuntime> logger", concatSource, StringComparison.Ordinal);
+        Assert.Contains("ILogger<FfmpegHardwareEncoderDetector> logger", detectorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("static class FfmpegHardwareEncoderDetector", detectorSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DesktopHostRegistersTheTypedBilibiliClient()
     {
         var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
