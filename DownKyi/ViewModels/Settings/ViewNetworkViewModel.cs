@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using DownKyi.Application.Lifetime;
 using DownKyi.Commands;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Settings;
@@ -23,6 +24,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     public const string Tag = "PageSettingsNetwork";
 
     private readonly ISettingsStore _settingsStore;
+    private readonly IApplicationLifecycle _applicationLifecycle;
     private readonly ILogger<ViewNetworkViewModel> _logger;
     private bool _isOnNavigatedTo;
 
@@ -314,10 +316,13 @@ internal class ViewNetworkViewModel : ViewModelBase
         IEventAggregator eventAggregator,
         IDialogService dialogService,
         ISettingsStore settingsStore,
+        IApplicationLifecycle applicationLifecycle,
         ILogger<ViewNetworkViewModel> logger) : base(eventAggregator,
         dialogService)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _applicationLifecycle = applicationLifecycle
+            ?? throw new ArgumentNullException(nameof(applicationLifecycle));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
@@ -539,14 +544,7 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            await App.Current.RequestShutdownAsync().ConfigureAwait(true);
-            App.Current.AppLife?.Shutdown();
-            // var dir = AppDomain.CurrentDomain.SetupInformation.ApplicationBase;
-            // todo 暂时去掉自动重启,多平台需要不同实现
-            // if (dir != null)
-            // {
-            //     Process.Start($"{dir}/DownKyi");
-            // }
+            await RestartApplicationAsync().ConfigureAwait(true);
         }
     }
 
@@ -606,8 +604,7 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            await App.Current.RequestShutdownAsync().ConfigureAwait(true);
-            App.Current.AppLife?.Shutdown();
+            await RestartApplicationAsync().ConfigureAwait(true);
         }
     }
 
@@ -653,8 +650,7 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            await App.Current.RequestShutdownAsync().ConfigureAwait(true);
-            App.Current.AppLife?.Shutdown();
+            await RestartApplicationAsync().ConfigureAwait(true);
         }
     }
 
@@ -833,8 +829,15 @@ internal class ViewNetworkViewModel : ViewModelBase
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
         if (result == ButtonResult.OK)
         {
-            await App.Current.RequestShutdownAsync().ConfigureAwait(true);
-            App.Current.AppLife?.Shutdown();
+            await RestartApplicationAsync().ConfigureAwait(true);
+        }
+    }
+
+    private async Task RestartApplicationAsync()
+    {
+        if (!await _applicationLifecycle.RestartAsync().ConfigureAwait(true))
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish("无法重新启动应用，请查看日志");
         }
     }
 

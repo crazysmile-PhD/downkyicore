@@ -77,7 +77,9 @@ public sealed class SettingsArchitectureTests
     {
         var source = ReadSource("DownKyi", "Views", "MainWindow.axaml.cs");
 
-        Assert.Contains("MainWindow(MainWindowViewModel viewModel, ISettingsStore settingsStore)", source, StringComparison.Ordinal);
+        Assert.Contains("MainWindowViewModel viewModel", source, StringComparison.Ordinal);
+        Assert.Contains("ISettingsStore settingsStore", source, StringComparison.Ordinal);
+        Assert.Contains("IApplicationLifecycle applicationLifecycle", source, StringComparison.Ordinal);
         Assert.DoesNotContain("public MainWindow()", source, StringComparison.Ordinal);
     }
 

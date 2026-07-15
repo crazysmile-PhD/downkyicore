@@ -1,9 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -15,7 +10,6 @@ using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
 using DownKyi.Application.Time;
 using DownKyi.Composition;
-using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -29,7 +23,6 @@ using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Account;
-using DownKyi.Services.Download;
 using DownKyi.Services.Friends;
 using DownKyi.Services.Media;
 using DownKyi.Services.Migration;
@@ -69,26 +62,24 @@ internal partial class App : PrismApplication, IDisposable
     public const string RepoOwner = "crazysmile-PhD";
     public const string RepoName = "downkyicore";
 
-    public new static App Current => (App)Avalonia.Application.Current!;
-    public new MainWindow MainWindow => _host?.Services.GetRequiredService<MainWindow>()
-        ?? throw new InvalidOperationException("The application host has not been created.");
-    public IClassicDesktopStyleApplicationLifetime? AppLife { get; private set; }
 #if !DEBUG
-    private static Mutex? _mutex;
+    private SingleInstanceGuard? _singleInstanceGuard;
 #endif
 
     private IHost? _host;
+    private AvaloniaApplicationLifecycle? _applicationLifecycle;
     private ApplicationLogProvider? _logProvider;
     private ILoggerFactory? _loggerFactory;
     private ILogger<App>? _logger;
-    private Task? _downloadStartupTask;
-    private Task? _shutdownTask;
 
     public override void Initialize()
     {
 #if !DEBUG
-        _mutex = new Mutex(true, BuildSingleInstanceMutexName(), out var createdNew);
-        if (!createdNew)
+        if (!SingleInstanceGuard.TryAcquire(
+                RepoOwner,
+                RepoName,
+                AppContext.BaseDirectory,
+                out _singleInstanceGuard))
         {
             Environment.Exit(0);
         }
@@ -112,7 +103,6 @@ internal partial class App : PrismApplication, IDisposable
         {
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
             desktop.Exit += OnExit!;
-            AppLife = desktop;
         }
 
         base.Initialize();
@@ -143,8 +133,22 @@ internal partial class App : PrismApplication, IDisposable
     protected override AvaloniaObject CreateShell()
     {
         _host = Container.CreateLegacyDesktopHost();
+        _applicationLifecycle = Container.Resolve<IApplicationLifecycle>() as AvaloniaApplicationLifecycle
+            ?? throw new InvalidOperationException("The Avalonia lifecycle adapter is not registered.");
+        _applicationLifecycle.AttachHost(_host);
+        var desktopContext = Container.Resolve<AvaloniaDesktopContext>();
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktopContext.AttachLifetime(desktop);
+        }
+        else
+        {
+            throw new InvalidOperationException("DownKyi requires a classic desktop lifetime.");
+        }
+
         WebClient.Configure(_host.Services.GetRequiredService<BilibiliHttpClient>());
         var shell = _host.Services.GetRequiredService<MainWindow>();
+        desktopContext.AttachMainWindow(shell);
         shell.AttachLegacyRegion();
         if (!Design.IsDesignMode)
         {
@@ -165,94 +169,12 @@ internal partial class App : PrismApplication, IDisposable
 
     private void StartDownloadBootstrap()
     {
-        _downloadStartupTask ??= StartHostAsync(GetShutdownToken());
-    }
-
-    private async Task StartHostAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (_host != null)
-            {
-                await _host.StartAsync(cancellationToken).ConfigureAwait(true);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // App 正在关闭时允许取消。
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
-            or Microsoft.Data.Sqlite.SqliteException)
-        {
-            _logger?.LogErrorMessage("Application Host startup failed.", e);
-        }
+        _ = _applicationLifecycle?.StartHostAsync();
     }
 
     private void OnExit(object sender, ControlledApplicationLifetimeExitEventArgs e)
     {
-        if (_shutdownTask is { IsCompleted: false })
-        {
-            _logger?.LogWarningMessage("Application lifetime exited before asynchronous cleanup completed.");
-        }
-
         Dispose();
-    }
-
-    internal Task RequestShutdownAsync()
-    {
-        return _shutdownTask ??= ShutdownCoreAsync();
-    }
-
-    private async Task ShutdownCoreAsync()
-    {
-        var cleanupTasks = new List<Task>();
-        if (_host != null)
-        {
-            await _host.Services
-                .GetRequiredService<ApplicationCancellation>()
-                .RequestShutdownAsync()
-                .ConfigureAwait(false);
-            cleanupTasks.Add(StopHostAsync(_host));
-        }
-
-        cleanupTasks.Add(Container.Resolve<ISettingsStore>().FlushAsync());
-
-        if (_downloadStartupTask != null)
-        {
-            cleanupTasks.Add(_downloadStartupTask);
-        }
-
-        var cleanup = Task.WhenAll(cleanupTasks);
-        if (await Task.WhenAny(cleanup, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false) == cleanup)
-        {
-            await cleanup.ConfigureAwait(false);
-        }
-        else
-        {
-            _logger?.LogWarningMessage("Application cleanup timed out; killing the tracked aria2 process.");
-            _host?.Services
-                .GetService<AriaServer>()?
-                .KillTrackedServer("application exit cleanup timed out.");
-            _ = cleanup.ContinueWith(
-                task => _logger?.LogErrorMessage(
-                    "Application cleanup failed after the shutdown timeout.",
-                    task.Exception!.GetBaseException()),
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted,
-                TaskScheduler.Default);
-        }
-
-        if (_logProvider != null)
-        {
-            using var flushCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            await _logProvider.FlushAsync(flushCancellation.Token).ConfigureAwait(false);
-            await _logProvider.DisposeAsync().ConfigureAwait(false);
-        }
-    }
-
-    private static Task StopHostAsync(IHost host)
-    {
-        return host.StopAsync(CancellationToken.None);
     }
 
     public void Dispose()
@@ -276,45 +198,24 @@ internal partial class App : PrismApplication, IDisposable
 
         _host?.Dispose();
         _host = null;
+        _applicationLifecycle = null;
         _loggerFactory?.Dispose();
         _loggerFactory = null;
         _logProvider?.Dispose();
         _logProvider = null;
         _logger = null;
 #if !DEBUG
-        try
-        {
-            _mutex?.ReleaseMutex();
-        }
-        catch (ApplicationException)
-        {
-            // The process is exiting; only avoid masking the original shutdown path.
-        }
-
-        _mutex?.Dispose();
-        _mutex = null;
+        _singleInstanceGuard?.Dispose();
+        _singleInstanceGuard = null;
 #endif
     }
 
     private async void NativeMenuItem_OnClick(object? sender, EventArgs e)
     {
-        await RequestShutdownAsync().ConfigureAwait(true);
-        AppLife?.Shutdown();
-    }
-
-    private static string BuildSingleInstanceMutexName()
-    {
-        var installPath = Path.GetFullPath(AppContext.BaseDirectory)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            .ToUpperInvariant();
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(installPath)).AsSpan(0, 8));
-        return $@"Global\DownKyi-{RepoOwner}-{RepoName}-{hash}";
-    }
-
-    private CancellationToken GetShutdownToken()
-    {
-        return _host?.Services.GetRequiredService<ApplicationCancellation>().ShutdownToken
-            ?? throw new InvalidOperationException("The application cancellation service has not been created.");
+        if (_applicationLifecycle != null)
+        {
+            await _applicationLifecycle.ExitAsync().ConfigureAwait(true);
+        }
     }
 
 }

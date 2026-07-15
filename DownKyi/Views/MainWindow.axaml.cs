@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using DownKyi.Application.Lifetime;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
 using DownKyi.ViewModels;
@@ -12,15 +13,21 @@ namespace DownKyi.Views;
 internal partial class MainWindow : Window
 {
     private const string ContentRegionName = "ContentRegion";
+    private readonly IApplicationLifecycle _applicationLifecycle;
     private readonly ISettingsStore _settingsStore;
     private WindowSettings _windowSettings;
     private bool _closeConfirmed;
     private bool _closeInProgress;
 
-    public MainWindow(MainWindowViewModel viewModel, ISettingsStore settingsStore)
+    public MainWindow(
+        MainWindowViewModel viewModel,
+        ISettingsStore settingsStore,
+        IApplicationLifecycle applicationLifecycle)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _applicationLifecycle = applicationLifecycle
+            ?? throw new ArgumentNullException(nameof(applicationLifecycle));
         InitializeComponent();
         var window = _settingsStore.Current.Window;
         _windowSettings = new WindowSettings
@@ -100,10 +107,7 @@ internal partial class MainWindow : Window
 
     private async Task CompleteCloseAsync()
     {
-        if (Avalonia.Application.Current is App app)
-        {
-            await app.RequestShutdownAsync().ConfigureAwait(true);
-        }
+        await _applicationLifecycle.RequestShutdownAsync().ConfigureAwait(true);
 
         _closeConfirmed = true;
         Close();

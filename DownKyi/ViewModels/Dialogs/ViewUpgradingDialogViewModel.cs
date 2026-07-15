@@ -1,12 +1,12 @@
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Lifetime;
+using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Services.Download;
 using DownKyi.Services.Migration;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
 using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
@@ -15,6 +15,7 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
 {
     public const string Tag = "DialogLoading";
     private readonly DownloadListState _downloadLists;
+    private readonly IApplicationLifecycle _applicationLifecycle;
     private readonly ILogger<ViewUpgradingDialogViewModel> _logger;
     private readonly ILegacyUpgradeCoordinator _upgradeCoordinator;
     private CancellationTokenSource? _upgradeCancellation;
@@ -43,17 +44,21 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
         set => SetProperty(ref _restartedVisible, value);
     }
 
-    private DelegateCommand? _restartCommand;
+    private DownKyiAsyncDelegateCommand? _restartCommand;
 
-    public DelegateCommand RestartCommand => _restartCommand ??= new DelegateCommand(ExecuteRestart);
+    public DownKyiAsyncDelegateCommand RestartCommand =>
+        _restartCommand ??= new DownKyiAsyncDelegateCommand(ExecuteRestartAsync, _logger);
 
     public ViewUpgradingDialogViewModel(
         ILegacyUpgradeCoordinator upgradeCoordinator,
         DownloadListState downloadLists,
+        IApplicationLifecycle applicationLifecycle,
         ILogger<ViewUpgradingDialogViewModel> logger)
     {
         _upgradeCoordinator = upgradeCoordinator ?? throw new ArgumentNullException(nameof(upgradeCoordinator));
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        _applicationLifecycle = applicationLifecycle
+            ?? throw new ArgumentNullException(nameof(applicationLifecycle));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Message = "数据迁移中，请不要关闭软件";
     }
@@ -119,16 +124,13 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
         }
     }
 
-    private void ExecuteRestart()
+    private async Task ExecuteRestartAsync()
     {
-        var executablePath = Process.GetCurrentProcess().MainModule?.FileName;
-        if (executablePath == null)
+        if (!await _applicationLifecycle.RestartAsync().ConfigureAwait(true))
         {
-            return;
+            Message = "无法重新启动应用，请查看日志";
+            RestartVisible = true;
         }
-
-        Process.Start(executablePath);
-        App.Current.AppLife?.Shutdown();
     }
 
     private void CancelUpgrade()

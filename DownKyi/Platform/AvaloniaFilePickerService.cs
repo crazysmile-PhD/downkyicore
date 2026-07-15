@@ -15,6 +15,12 @@ internal sealed class AvaloniaFilePickerService : IFilePickerService
     {
         new("video") { Patterns = new[] { "*.mp4" }, MimeTypes = new[] { "video/mp4" } }
     };
+    private readonly AvaloniaDesktopContext _desktopContext;
+
+    public AvaloniaFilePickerService(AvaloniaDesktopContext desktopContext)
+    {
+        _desktopContext = desktopContext ?? throw new ArgumentNullException(nameof(desktopContext));
+    }
 
     public async Task<string?> SelectFolderAsync(CancellationToken cancellationToken = default)
     {
@@ -43,7 +49,7 @@ internal sealed class AvaloniaFilePickerService : IFilePickerService
         return await SelectVideoFilesAsync(allowMultiple: true, cancellationToken).ConfigureAwait(true);
     }
 
-    private static async Task<IReadOnlyList<string>> SelectVideoFilesAsync(
+    private async Task<IReadOnlyList<string>> SelectVideoFilesAsync(
         bool allowMultiple,
         CancellationToken cancellationToken)
     {
@@ -66,9 +72,9 @@ internal sealed class AvaloniaFilePickerService : IFilePickerService
             .ToArray();
     }
 
-    private static IStorageProvider GetStorageProvider()
+    private IStorageProvider GetStorageProvider()
     {
-        return App.Current.MainWindow.StorageProvider
+        return _desktopContext.MainWindow.StorageProvider
                ?? throw new InvalidOperationException("Missing StorageProvider instance.");
     }
 }

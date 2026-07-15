@@ -14,6 +14,9 @@ internal static class ThemeHelper
             ThemeMode.Light => ThemeVariant.Light,
             _ => ThemeVariant.Dark
         };
-        App.Current.RequestedThemeVariant = themeVariant;
+        if (Avalonia.Application.Current is { } application)
+        {
+            application.RequestedThemeVariant = themeVariant;
+        }
     }
 }

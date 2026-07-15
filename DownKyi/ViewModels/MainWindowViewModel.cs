@@ -9,8 +9,8 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Events;
 using DownKyi.Models;
+using DownKyi.Platform;
 using DownKyi.Services;
-using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
@@ -31,12 +31,11 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
     private readonly IDialogService _dialogService;
     private readonly ISettingsStore _settingsStore;
+    private readonly IClipboardMonitor _clipboardMonitor;
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
 
     private const string ContentRegion = nameof(ContentRegion);
-
-    private ClipboardListener? _clipboardListener;
 
     private bool _messageVisibility;
     private string? _oldMessage;
@@ -94,12 +93,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
         _lifetimeCancellation.Cancel();
 
-        if (_clipboardListener != null)
-        {
-            _clipboardListener.Changed -= ClipboardListenerOnChanged;
-            _clipboardListener.Dispose();
-            _clipboardListener = null;
-        }
+        _clipboardMonitor.Changed -= ClipboardMonitorOnChanged;
 
         _clipboardDebounceCancellation?.Cancel();
         _clipboardDebounceCancellation?.Dispose();
@@ -134,12 +128,14 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         IEventAggregator eventAggregator,
         IDialogService dialogService,
         ISettingsStore settingsStore,
+        IClipboardMonitor clipboardMonitor,
         ILogger<MainWindowViewModel> logger)
     {
         _eventAggregator = eventAggregator;
         _regionManager = regionManager;
         _dialogService = dialogService;
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _clipboardMonitor = clipboardMonitor ?? throw new ArgumentNullException(nameof(clipboardMonitor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region MyRegion
@@ -188,8 +184,8 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             }
             Upgrade();
             _ = CheckForUpdatesAsync();
-            _clipboardListener = new ClipboardListener(App.Current.MainWindow);
-            _clipboardListener.Changed += ClipboardListenerOnChanged;
+            _clipboardMonitor.Changed -= ClipboardMonitorOnChanged;
+            _clipboardMonitor.Changed += ClipboardMonitorOnChanged;
             var param = new NavigationParameters
             {
                 { "Parent", "" },
@@ -224,7 +220,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
     #region 剪贴板
 
-    private void ClipboardListenerOnChanged(object? sender, ClipboardChangedEventArgs e)
+    private void ClipboardMonitorOnChanged(object? sender, ClipboardTextChangedEventArgs e)
     {
         var isListenClipboard = _settingsStore.Current.Basic.IsListenClipboard;
         if (isListenClipboard != AllowStatus.Yes)

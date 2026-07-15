@@ -1,3 +1,4 @@
+using DownKyi.Application.Lifetime;
 using DownKyi.Models;
 using DownKyi.Services.Download;
 using DownKyi.Services.Migration;
@@ -17,6 +18,7 @@ public sealed class LegacyUpgradeViewModelTests
         using var viewModel = new ViewUpgradingDialogViewModel(
             coordinator,
             new DownloadListState(),
+            new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
 
         viewModel.OnDialogOpened(new DialogParameters());
@@ -39,6 +41,7 @@ public sealed class LegacyUpgradeViewModelTests
         using var viewModel = new ViewUpgradingDialogViewModel(
             new CompletedLegacyUpgradeCoordinator(item),
             state,
+            new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
 
         viewModel.OnDialogOpened(new DialogParameters());
@@ -83,6 +86,27 @@ public sealed class LegacyUpgradeViewModelTests
             return Task.FromResult(new LegacyUpgradeResult(
                 LegacyUpgradeOutcome.Completed,
                 [item]));
+        }
+    }
+
+    private sealed class StubApplicationLifecycle : IApplicationLifecycle
+    {
+        public Task RequestShutdownAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task ExitAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> RestartAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(true);
         }
     }
 }

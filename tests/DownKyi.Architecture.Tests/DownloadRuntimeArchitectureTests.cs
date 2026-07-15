@@ -194,15 +194,19 @@ public sealed class DownloadRuntimeArchitectureTests
             "DownKyi",
             "Composition",
             "LegacyDesktopComposition.cs"));
-        var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+        var lifecycleSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Platform",
+            "AvaloniaApplicationLifecycle.cs"));
 
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
         Assert.Contains("sealed class AriaServer", serverSource, StringComparison.Ordinal);
         Assert.DoesNotContain("static class AriaServer", serverSource, StringComparison.Ordinal);
         Assert.Contains("ILoggerFactory loggerFactory", serverSource, StringComparison.Ordinal);
         Assert.Contains("AddSingleton<AriaServer>()", compositionSource, StringComparison.Ordinal);
-        Assert.Contains("GetService<AriaServer>()", appSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("AriaServer.KillTrackedServer", appSource, StringComparison.Ordinal);
+        Assert.Contains("GetService<AriaServer>()", lifecycleSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AriaServer.KillTrackedServer", lifecycleSource, StringComparison.Ordinal);
     }
 
     [Fact]

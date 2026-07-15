@@ -14,10 +14,14 @@ namespace DownKyi.Platform;
 
 internal sealed class AvaloniaPlatformLauncher : IPlatformLauncher
 {
+    private readonly AvaloniaDesktopContext _desktopContext;
     private readonly ILogger<AvaloniaPlatformLauncher> _logger;
 
-    public AvaloniaPlatformLauncher(ILogger<AvaloniaPlatformLauncher> logger)
+    public AvaloniaPlatformLauncher(
+        AvaloniaDesktopContext desktopContext,
+        ILogger<AvaloniaPlatformLauncher> logger)
     {
+        _desktopContext = desktopContext ?? throw new ArgumentNullException(nameof(desktopContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -54,7 +58,7 @@ internal sealed class AvaloniaPlatformLauncher : IPlatformLauncher
 
         try
         {
-            var topLevel = TopLevel.GetTopLevel(App.Current.MainWindow);
+            var topLevel = TopLevel.GetTopLevel(_desktopContext.MainWindow);
             if (topLevel == null)
             {
                 _logger.LogWarningMessage("The desktop storage provider is unavailable.");

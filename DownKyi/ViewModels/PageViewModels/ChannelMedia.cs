@@ -92,7 +92,6 @@ internal class ChannelMedia : BindableBase
         NavigateToView.NavigationView(EventAggregator, ViewVideoDetailViewModel.Tag, tag,
             $"{ParseEntrance.VideoUrl}{Bvid}");
         //string url = "https://www.bilibili.com/video/" + tag;
-        //System.Diagnostics.Process.Start(url);
     }
 
     #endregion

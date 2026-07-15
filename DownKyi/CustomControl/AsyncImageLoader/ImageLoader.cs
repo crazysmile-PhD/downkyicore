@@ -71,7 +71,8 @@ internal static class ImageLoader
                 await Task.Delay(10, cts.Token).ConfigureAwait(true);
                 if (sender.DesiredSize.Width != 0 && sender.DesiredSize.Height != 0)
                 {
-                    var scale = Dispatcher.UIThread.Invoke(() => App.Current.MainWindow.DesktopScaling);
+                    var scale = await Dispatcher.UIThread.InvokeAsync(
+                        () => (TopLevel.GetTopLevel(sender) as Window)?.DesktopScaling ?? 1d);
                     var actualWidth = Convert.ToInt32(sender.DesiredSize.Width * scale);
                     var actualHeight = Convert.ToInt32(sender.DesiredSize.Height * scale);
                     return (await AsyncImageLoader.ProvideImageAsync(url).ConfigureAwait(true))?.CreateScaledBitmap(new PixelSize(actualWidth, actualHeight));

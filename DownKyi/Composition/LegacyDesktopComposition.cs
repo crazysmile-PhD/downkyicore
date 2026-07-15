@@ -1,5 +1,6 @@
 using System;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Lifetime;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.FFMpeg;
@@ -50,7 +51,9 @@ internal static class LegacyDesktopComposition
                 container.Resolve<IDialogService>(),
                 container.Resolve<IClipboardService>(),
                 container.Resolve<IPlatformLauncher>(),
-                settingsStore);
+                settingsStore,
+                container.Resolve<IApplicationLifecycle>(),
+                container.Resolve<IClipboardMonitor>());
             services.AddSingleton<DownloadDiagnosticLogger>();
             services.AddSingleton<IDownloadRuntimeFactory, DownloadRuntimeFactory>();
             services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
@@ -65,7 +68,9 @@ internal static class LegacyDesktopComposition
         IDialogService dialogService,
         IClipboardService clipboardService,
         IPlatformLauncher platformLauncher,
-        ISettingsStore settingsStore)
+        ISettingsStore settingsStore,
+        IApplicationLifecycle applicationLifecycle,
+        IClipboardMonitor clipboardMonitor)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(regionManager);
@@ -74,6 +79,8 @@ internal static class LegacyDesktopComposition
         ArgumentNullException.ThrowIfNull(clipboardService);
         ArgumentNullException.ThrowIfNull(platformLauncher);
         ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(applicationLifecycle);
+        ArgumentNullException.ThrowIfNull(clipboardMonitor);
 
         services.AddSingleton(regionManager);
         services.AddSingleton(eventAggregator);
@@ -81,6 +88,8 @@ internal static class LegacyDesktopComposition
         services.AddSingleton(clipboardService);
         services.AddSingleton(platformLauncher);
         services.AddSingleton(settingsStore);
+        services.AddSingleton(applicationLifecycle);
+        services.AddSingleton(clipboardMonitor);
         services.AddSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
         services.AddTransient<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         services.AddSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();

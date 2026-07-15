@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-07-14
+Last reviewed: 2026-07-15
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -64,6 +64,7 @@ tests:
 flowchart TD
     Program["app.program\nDownKyi/Program.cs"]
     App["app.application\nDownKyi/App.axaml.cs"]
+    Lifecycle["service.application-lifecycle\nIApplicationLifecycle + Avalonia adapter"]
     Host["app.host-composition\nsrc/DownKyi.Desktop/Composition/DownKyiHost.cs"]
     Domain["core.domain-contracts\nsrc/DownKyi.Domain"]
     ApplicationLayer["service.application-contracts\nsrc/DownKyi.Application"]
@@ -113,7 +114,9 @@ flowchart TD
     AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
 
     Program -->|calls| App
+    Program -->|runs restart helper| Lifecycle
     App -->|creates| Host
+    App -->|attaches Host and shell| Lifecycle
     Host -->|injects| MainWindow
     Host -->|registers| ApplicationLayer
     Host -->|registers| Infrastructure
@@ -127,6 +130,7 @@ flowchart TD
     Storage -->|projects legacy UI| DownloadDomain
     Storage -->|calls| StoreContract
     MainWindow -->|binds| MainVm
+    MainWindow -->|awaits close cleanup| Lifecycle
     MainWindow -->|renders remote artwork| AsyncImage
     MainVm -->|navigates| IndexVm
     MainVm -->|navigates| LoginVm
@@ -152,10 +156,13 @@ flowchart TD
     VideoVm -->|calls| Resolver
     VideoVm -->|calls| Parser
     SettingsVms -->|reads and writes| Settings
+    SettingsVms -->|requests restart| Lifecycle
     Parser -->|calls| InfoServices
     InfoServices -->|calls| BiliApi
     BiliApi -->|calls| WebClient
-    App -->|flushes on shutdown| Settings
+    Lifecycle -->|stops| Host
+    Lifecycle -->|flushes on shutdown| Settings
+    Lifecycle -->|flushes on shutdown| Logs
     VideoVm -->|reads| Settings
     Settings -->|migrates old format through| LegacySettings
     VideoVm -->|calls| DownloadAdd
@@ -193,18 +200,20 @@ id: app.program
 type: app
 paths:
   - DownKyi/Program.cs
-responsibility: Builds the Avalonia AppBuilder and starts the classic desktop lifetime.
+responsibility: Runs the internal restart-helper mode when requested, otherwise builds the Avalonia AppBuilder and starts the classic desktop lifetime.
 inbound:
   - external.os-process
 outbound:
   - app.application
 contracts:
   - Do not run Avalonia-dependent code before AppMain/lifetime initialization.
+  - Restart-helper mode waits asynchronously for the old process, relaunches without helper arguments, and never initializes Avalonia or acquires the single-instance guard.
   - Debug-only developer tooling must not enter Release output.
 hazards:
   - Avalonia major upgrades often change AppBuilder extension methods.
 tests:
   - test.ui-smoke
+  - test.application-lifetime
 ```
 
 ### app.application
@@ -216,11 +225,12 @@ paths:
   - DownKyi/App.axaml.cs
   - DownKyi/Composition/LegacyDesktopComposition.cs
   - DownKyi/Composition/LegacyPrismComposition.cs
-responsibility: Keeps App focused on XAML, shell, Host start/stop, and bounded exit cleanup while named compatibility composition owns temporary Prism and legacy Desktop wiring.
+responsibility: Keeps App focused on XAML initialization, composition attachment, shell creation, and final resource disposal while named lifecycle and compatibility owners handle operational work.
 inbound:
   - app.program
 outbound:
   - app.host-composition
+  - service.application-lifecycle
   - ui.main-window
   - service.download-bootstrap
   - service.download-list-state
@@ -231,14 +241,14 @@ contracts:
   - UI shell should appear before heavy download state and service startup finish.
   - The Host is created with default configuration sources disabled and must not redirect database, settings, login, portable-mode, or aria2 session paths.
   - Download startup and shutdown are delegated to a Host-owned IHostedService and must remain cancellation-aware.
-  - MainWindow defers final close until one idempotent bounded shutdown task has canceled Host/download work and flushed settings/logs; Exit never synchronously waits on a Task.
+  - MainWindow defers final close through `IApplicationLifecycle`; App cannot own the cleanup Task, restart process, main-window service locator, Mutex naming, or Host stop implementation.
   - Host stop shares the outer five-second cleanup budget; a shorter nested timeout must not interrupt resumable-state persistence before the outer fallback runs.
   - Storage retention maintenance is an IHostedService and cannot be an App-owned fire-and-forget Task.
   - `DownloadListState` owns one stable downloading/history collection pair shared by Prism, Host services, and ViewModels; App must not expose static list properties.
   - App cannot contain concrete service, navigation, or dialog registration; `LegacyPrismComposition` is the only temporary Prism registration owner.
   - Download runtime construction and hosted-service wiring stay in `LegacyDesktopComposition`, not App.
-  - App startup, Host services, and shutdown share one injected `ISettingsStore`; shutdown flush must not block the UI thread.
-  - App creates one `ApplicationLogProvider`; Prism and Host typed loggers share its `ILoggerFactory`, while shutdown awaits provider flush and async disposal.
+  - App startup, Host services, and lifecycle adapter share one injected `ISettingsStore`; shutdown flush must not block the UI thread.
+  - App creates one `ApplicationLogProvider`; Prism and Host typed loggers share its `ILoggerFactory`, while the lifecycle adapter awaits provider flush before App disposes the provider.
   - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
   - UI continuations use the Avalonia context; background and Core continuations do not depend on it.
 hazards:
@@ -248,6 +258,46 @@ hazards:
 tests:
   - test.ui-smoke
   - test.composition-root
+```
+
+### service.application-lifecycle
+
+```yaml
+id: service.application-lifecycle
+type: service
+paths:
+  - src/DownKyi.Application/Lifetime/IApplicationLifecycle.cs
+  - DownKyi/Platform/AvaloniaApplicationLifecycle.cs
+  - DownKyi/Platform/AvaloniaDesktopContext.cs
+  - DownKyi/Platform/ProcessRestartLauncher.cs
+  - DownKyi/Platform/SingleInstanceGuard.cs
+responsibility: Owns idempotent Host startup/shutdown, bounded cleanup, settings/log flush, desktop exit, restart handoff, attached main-window access, and per-install single-instance guarding.
+inbound:
+  - app.program
+  - app.application
+  - ui.main-window
+  - viewmodel.settings-pages
+  - legacy upgrade dialog
+outbound:
+  - app.host-composition
+  - core.settings
+  - core.logging
+  - external.aria2
+  - external.os-process
+contracts:
+  - Shutdown cancellation is requested once; Host stop, startup completion, and settings flush share one five-second budget before tracked aria2 fallback.
+  - Repeated shutdown calls return the same Task and never synchronously wait.
+  - Restart launches a non-shell helper before cleanup; helper failure keeps the current process alive, while success waits for the old process and its Mutex to exit before relaunch.
+  - Framework-dependent execution preserves the managed entry assembly argument; packaged execution relaunches the current executable directly.
+  - Single-instance identity is stable per absolute install directory and contains only a truncated SHA-256 path hash, not the personal path.
+  - ViewModels cannot access `App.Current`, Avalonia lifetime objects, or `System.Diagnostics.Process` for lifecycle work.
+hazards:
+  - Bypassing the helper can race the old process Mutex and make restart appear to do nothing.
+  - Moving cleanup back into App or a ViewModel recreates untestable shutdown paths and can leave resumable tasks active.
+tests:
+  - test.application-lifetime
+  - test.composition-root
+  - test.architecture-boundaries
 ```
 
 ### app.host-composition
@@ -379,9 +429,11 @@ outbound:
   - viewmodel.login
   - viewmodel.video-detail
   - core.logging
+  - service.desktop-platform-boundaries
 contracts:
   - Commands should be cached properties, not rebuilt on every getter call.
   - Clipboard detection must be debounced and cancellation-aware.
+  - Clipboard polling comes from the injected desktop monitor; the ViewModel cannot construct a listener from a global MainWindow.
   - Automatic update checks carry the window lifetime token; closing the window cancels network work and expected shutdown cancellation is not reported as an error.
   - Update failures use the injected typed logger and never include a repository response body or request URL.
 hazards:
@@ -747,7 +799,7 @@ contracts:
   - All five pages receive `ISettingsStore` through construction and cannot access `SettingsManager.Instance`.
   - Existing setting getter/setter behavior, persisted JSON names, and enum values remain unchanged during the compatibility migration.
 hazards:
-  - `ViewNetworkViewModel` still owns restart prompts and direct application shutdown calls in addition to binding state; lifecycle extraction remains PR 16-24 work.
+  - `ViewNetworkViewModel` still owns option-list construction, validation feedback, and repeated restart-prompt orchestration in addition to binding state.
 tests:
   - test.architecture-boundaries
 ```
@@ -808,7 +860,7 @@ type: service
 paths:
   - src/DownKyi.Application/Desktop
   - DownKyi/Platform
-responsibility: Keeps clipboard, file/folder picker, and external file/folder/URI launch contracts independent of Avalonia while Desktop adapters own MainWindow, StorageProvider, process launch, and diagnostics.
+responsibility: Keeps lifecycle, clipboard, file/folder picker, and external launch contracts independent of Avalonia while Desktop adapters own attached MainWindow access, StorageProvider, process launch, and diagnostics.
 inbound:
   - viewmodel.video-detail
   - legacy toolbox/settings/dialog viewmodels
@@ -822,6 +874,8 @@ contracts:
   - Disk-space probes use the complete platform path; low-level helpers propagate typed failures and the injected ViewModel logger owns redacted diagnostics.
   - Delayed DataGrid scrolling invalidates stale requests by version and cannot retain a disposable cancellation source in an Avalonia behavior.
   - Host smoke injects a fake clipboard and resolves key ViewModels without initializing Prism ContainerLocator.
+  - Platform adapters receive `AvaloniaDesktopContext`; they cannot recover MainWindow through `App.Current`.
+  - Clipboard polling is one disposable injected monitor, starts with its first subscriber, and stops after its final subscriber.
 hazards:
   - Notifications, dialogs, and navigation still use Prism/EventAggregator; PR 16-24 introduces Desktop contracts and PR 25-29 deletes the Prism adapters.
 tests:
@@ -1420,7 +1474,7 @@ contracts:
   - Production consumers cannot reach through `SettingsManager.Instance`; only the private store implementation may own the compatibility manager until PR 25-29 deletes its singleton constructor.
   - `ISettingsStore` exposes only validated immutable `Current`, typed `Update`, explicit flush, and disposal contracts; it cannot expose the mutable manager.
   - Basic, network, video, danmaku, and about settings pages use the same injected owner for reads and writes.
-  - MainWindow has no parameterless singleton fallback; Host composition supplies both its ViewModel and settings owner.
+  - MainWindow has no parameterless singleton fallback; Host composition supplies its ViewModel, settings owner, and application lifecycle.
   - Video, bangumi, and cheese info services receive settings from their parse/add coordinator; manually constructed info services cannot fall back to global state.
   - User-space navigation compares the target MID with the user from its injected settings owner; it cannot inspect process-global settings.
   - Logout deletes the existing login file, invalidates the in-memory cookie cache, and resets the user through the caller's injected settings owner.
@@ -1618,7 +1672,7 @@ contracts:
   - `VideoStreamApi` is the static Bilibili playback/subtitle API facade; it is not a `System.IO.Stream`. xUnit nonparallel fixtures use `...TestGroup` types while retaining their collection-name constants.
   - Favorites API models map `bv_id` to `LegacyBvid` and `bvid` to `Bvid`; both wire fields remain distinct and are covered by a JSON contract test.
   - Download diagnostic IDs use uppercase truncated SHA-256 values. NFO boolean attributes use explicit lowercase literals, and FFmpeg cleanup errors go only through the shared injected logger rather than duplicate terminal output.
-  - Aria2, clipboard, logging, and pager notifications use standard `EventHandler` contracts. Pager veto semantics use `CancelEventArgs` plus `ProposedCurrent`; `ClipboardListener` remains desktop-internal.
+  - Aria2, clipboard, logging, and pager notifications use standard `EventHandler` contracts. Pager veto semantics use `CancelEventArgs` plus `ProposedCurrent`; `AvaloniaClipboardMonitor` remains desktop-internal.
   - DURL descriptors are selected from an `Order`-sorted list and use `Order` plus the literal codec marker `durl` to form stable download keys; BVID and codec hashes are prohibited as segment identity.
   - Role-specific names replace namespace collisions: `HistoryApi`, `DynamicApi`, `FileNameBuilder`, `FfmpegProcessor`, `BilibiliDanmakuConverter`, `FavoritesPageItem`, and `ThemedDialog`. Bilibili protobuf danmaku parsing lives under `DownKyi.Core.BiliApi.DanmakuApi`.
   - Executable-only application/UI types are internal. BenchmarkDotNet cases are the deliberate exception: public, non-sealed types live in `DownKyi.BenchmarkCases`, while the executable runner remains internal and discovers the case assembly explicitly.
@@ -2057,9 +2111,19 @@ test.download-domain:
 test.application-lifetime:
   paths:
     - tests/DownKyi.Application.Tests/ApplicationCancellationTests.cs
+    - tests/DownKyi.Tests/AvaloniaApplicationLifecycleTests.cs
+    - tests/DownKyi.Tests/ProcessRestartLauncherTests.cs
+    - tests/DownKyi.Tests/SingleInstanceGuardTests.cs
+    - tests/DownKyi.Architecture.Tests/AppLifecycleArchitectureTests.cs
   guards:
     - application shutdown cancels every linked operation
     - caller cancellation does not cancel unrelated work or global shutdown
+    - lifecycle shutdown is idempotent, stops Host-owned work, and flushes settings/log state once
+    - a known hosted-service stop failure is logged but cannot strand the main window in a canceled close
+    - a restart-helper launch failure leaves the current application running
+    - helper arguments accept only one positive parent PID and use `ProcessStartInfo.ArgumentList`
+    - single-instance names are stable per install, do not expose the install path, and can be reacquired after disposal
+    - ViewModels cannot regain App, desktop lifetime, or process-restart ownership
 
 test.infrastructure-clock:
   paths:

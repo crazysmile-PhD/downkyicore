@@ -1,5 +1,6 @@
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
+using DownKyi.Application.Lifetime;
 using DownKyi.Application.Time;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Settings;
@@ -65,6 +66,10 @@ internal static class LegacyPrismComposition
         containerRegistry.RegisterSingleton<IFriendRelationCoordinator, FriendRelationCoordinator>();
         containerRegistry.RegisterSingleton<ISeasonsSeriesCoordinator, SeasonsSeriesCoordinator>();
         containerRegistry.RegisterSingleton<IUserSpacePageCoordinator, UserSpacePageCoordinator>();
+        containerRegistry.RegisterSingleton<AvaloniaDesktopContext>();
+        containerRegistry.RegisterSingleton<IProcessRestartLauncher, ProcessRestartLauncher>();
+        containerRegistry.RegisterSingleton<IApplicationLifecycle, AvaloniaApplicationLifecycle>();
+        containerRegistry.RegisterSingleton<IClipboardMonitor, AvaloniaClipboardMonitor>();
         containerRegistry.RegisterSingleton<IClipboardService, AvaloniaClipboardService>();
         containerRegistry.RegisterSingleton<IFilePickerService, AvaloniaFilePickerService>();
         containerRegistry.RegisterSingleton<IPlatformLauncher, AvaloniaPlatformLauncher>();

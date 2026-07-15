@@ -10,6 +10,7 @@ using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.CustomAction;
 using DownKyi.Desktop.Composition;
+using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Download;
@@ -54,7 +55,9 @@ public sealed class UiSmokeTests
                 dialogService,
                 new StubClipboardService(),
                 new StubPlatformLauncher(),
-                settingsStore);
+                settingsStore,
+                new StubApplicationLifecycle(),
+                new StubClipboardMonitor());
         });
 
         try
@@ -212,6 +215,40 @@ public sealed class UiSmokeTests
         public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubClipboardMonitor : IClipboardMonitor
+    {
+        public event EventHandler<ClipboardTextChangedEventArgs>? Changed
+        {
+            add { }
+            remove { }
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class StubApplicationLifecycle : IApplicationLifecycle
+    {
+        public Task RequestShutdownAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task ExitAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> RestartAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(true);
         }
     }
 
