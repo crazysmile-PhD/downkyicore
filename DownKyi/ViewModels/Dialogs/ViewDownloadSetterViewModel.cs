@@ -1,15 +1,18 @@
 using System;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
 using Prism.Events;
@@ -22,6 +25,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     private readonly IEventAggregator _eventAggregator;
     private readonly IFilePickerService _filePickerService;
     private readonly ISettingsStore _settingsStore;
+    private readonly ILogger<ViewDownloadSetterViewModel> _logger;
 
     // 历史文件夹的数量
     private const int MaxDirectoryListCount = 20;
@@ -65,9 +69,21 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         {
             SetProperty(ref _directory, value);
 
-            if (string.IsNullOrEmpty(_directory)) return;
-            DriveName = _directory[..1].ToUpperInvariant();
-            DriveNameFreeSpace = Format.FormatFileSize(HardDisk.GetHardDiskFreeSpace(DriveName));
+            if (string.IsNullOrEmpty(_directory) || !Path.IsPathFullyQualified(_directory))
+            {
+                return;
+            }
+
+            DriveName = Path.GetPathRoot(_directory) ?? _directory;
+            try
+            {
+                DriveNameFreeSpace = Format.FormatFileSize(HardDisk.GetHardDiskFreeSpace(_directory));
+            }
+            catch (Exception e) when (e is DriveNotFoundException or IOException or UnauthorizedAccessException)
+            {
+                DriveNameFreeSpace = Format.FormatFileSize(0);
+                _logger.LogErrorMessage("Available download disk space could not be read.", e);
+            }
         }
     }
 
@@ -140,11 +156,13 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     public ViewDownloadSetterViewModel(
         IEventAggregator eventAggregator,
         IFilePickerService filePickerService,
-        ISettingsStore settingsStore)
+        ISettingsStore settingsStore,
+        ILogger<ViewDownloadSetterViewModel> logger)
     {
         _eventAggregator = eventAggregator;
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
 

@@ -1,4 +1,6 @@
 using System;
+using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -132,23 +134,36 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteCheckUpdateCommand()
     {
-        var service = new VersionCheckerService(App.RepoOwner, App.RepoName, _isReceiveBetaVersion);
-        var release = await service.GetLatestReleaseAsync().ConfigureAwait(true);
-        if (GitHubRelease.IsNullOrEmpty(release))
+        try
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish("检查失败，请稍后重试~");
-            return;
-        }
+            var service = new VersionCheckerService(App.RepoOwner, App.RepoName, _isReceiveBetaVersion);
+            var release = await service.GetLatestReleaseAsync().ConfigureAwait(true);
+            if (GitHubRelease.IsNullOrEmpty(release))
+            {
+                EventAggregator.GetEvent<MessageEvent>().Publish("检查失败，请稍后重试~");
+                return;
+            }
 
-        if (service.IsNewVersionAvailable(release!.TagName))
-        {
-            var dialogService = DialogService ?? throw new InvalidOperationException("Dialog service is not available.");
-            await dialogService.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
-                DialogParameters { { "release", release } }).ConfigureAwait(true);
+            if (service.IsNewVersionAvailable(release!.TagName))
+            {
+                var dialogService = DialogService ?? throw new InvalidOperationException("Dialog service is not available.");
+                await dialogService.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
+                    DialogParameters { { "release", release } }).ConfigureAwait(true);
+            }
+            else
+            {
+                EventAggregator.GetEvent<MessageEvent>().Publish("已是最新版~");
+            }
         }
-        else
+        catch (OperationCanceledException)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish("已是最新版~");
+            _logger.LogWarningMessage("Manual update check timed out.");
+            EventAggregator.GetEvent<MessageEvent>().Publish("检查超时，请稍后重试~");
+        }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or JsonException)
+        {
+            _logger.LogErrorMessage("Manual update check failed.", e);
+            EventAggregator.GetEvent<MessageEvent>().Publish("检查失败，请稍后重试~");
         }
     }
 

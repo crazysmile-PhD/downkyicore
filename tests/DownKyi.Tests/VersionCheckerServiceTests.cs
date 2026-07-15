@@ -64,4 +64,15 @@ public class VersionCheckerServiceTests
 
         Assert.True(service.IsNewVersionAvailable("v99.0.0"));
     }
+
+    [Fact]
+    public async Task LatestReleaseCheckPreservesPreCanceledRequest()
+    {
+        var service = new VersionCheckerService("owner", "repo");
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            service.GetLatestReleaseAsync(cancellationToken: cancellation.Token));
+    }
 }

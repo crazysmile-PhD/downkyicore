@@ -12,6 +12,7 @@ using DownKyi.Models;
 using DownKyi.Services;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
 using Prism.Events;
@@ -30,6 +31,8 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
     private readonly IDialogService _dialogService;
     private readonly ISettingsStore _settingsStore;
+    private readonly ILogger<MainWindowViewModel> _logger;
+    private readonly CancellationTokenSource _lifetimeCancellation = new();
 
     private const string ContentRegion = nameof(ContentRegion);
 
@@ -89,6 +92,8 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             return;
         }
 
+        _lifetimeCancellation.Cancel();
+
         if (_clipboardListener != null)
         {
             _clipboardListener.Changed -= ClipboardListenerOnChanged;
@@ -102,6 +107,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         _messageCancellation?.Cancel();
         _messageCancellation?.Dispose();
         _messageCancellation = null;
+        _lifetimeCancellation.Dispose();
     }
 
     private void ExecutePointerPressed(PointerPressedEventArgs e)
@@ -127,12 +133,14 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         IRegionManager regionManager,
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        ISettingsStore settingsStore)
+        ISettingsStore settingsStore,
+        ILogger<MainWindowViewModel> logger)
     {
         _eventAggregator = eventAggregator;
         _regionManager = regionManager;
         _dialogService = dialogService;
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region MyRegion
 
@@ -268,17 +276,27 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             if (isAutoUpdate) return;
             var service = new VersionCheckerService(App.RepoOwner, App.RepoName,
                 about.IsReceiveBetaVersion == AllowStatus.Yes);
-            var release = await service.GetLatestReleaseAsync(about.SkipVersionOnLaunch).ConfigureAwait(true);
+            var release = await service
+                .GetLatestReleaseAsync(about.SkipVersionOnLaunch, _lifetimeCancellation.Token)
+                .ConfigureAwait(true);
             if (release != null && service.IsNewVersionAvailable(release.TagName))
             {
                 await _dialogService.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
                     DialogParameters { { "release", release }, { "enableSkipVersion", true } }).ConfigureAwait(true);
             }
         }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+        {
+            // Expected while the application window is closing.
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarningMessage("Automatic update check timed out.");
+        }
         catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or InvalidOperationException
             or System.Text.Json.JsonException)
         {
-            LogManager.Error(nameof(MainWindowViewModel), ex);
+            _logger.LogErrorMessage("Automatic update check failed.", ex);
         }
     }
 }

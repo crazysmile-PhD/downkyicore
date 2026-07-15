@@ -1,15 +1,15 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Xaml.Interactivity;
-using DownKyi.Core.Logging;
 
 namespace DownKyi.CustomAction;
 
 internal class ScrollIntoViewBehavior : Behavior<DataGrid>
 {
+    private int _selectionVersion;
+
     protected override void OnAttached()
     {
         base.OnAttached();
@@ -21,6 +21,7 @@ internal class ScrollIntoViewBehavior : Behavior<DataGrid>
 
     protected override void OnDetaching()
     {
+        Interlocked.Increment(ref _selectionVersion);
         base.OnDetaching();
         if (AssociatedObject != null)
         {
@@ -30,10 +31,11 @@ internal class ScrollIntoViewBehavior : Behavior<DataGrid>
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        _ = OnSelectionChangedAsync();
+        var selectionVersion = Interlocked.Increment(ref _selectionVersion);
+        _ = OnSelectionChangedAsync(selectionVersion);
     }
 
-    private async Task OnSelectionChangedAsync()
+    private async Task OnSelectionChangedAsync(int selectionVersion)
     {
         try
         {
@@ -44,23 +46,27 @@ internal class ScrollIntoViewBehavior : Behavior<DataGrid>
                 return;
             }
 
-            // 等待UI更新完成
             await Task.Delay(100).ConfigureAwait(true);
+            if (selectionVersion != Volatile.Read(ref _selectionVersion))
+            {
+                return;
+            }
 
-            // 使用UI线程异步执行滚动操作
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                // 直接使用DataGrid的ScrollIntoView方法滚动到选中项
-                dataGrid.ScrollIntoView(selectedItem, null);
+                if (selectionVersion == Volatile.Read(ref _selectionVersion)
+                    && ReferenceEquals(dataGrid, AssociatedObject))
+                {
+                    dataGrid.ScrollIntoView(selectedItem, null);
+                }
             });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            LogManager.Error(nameof(ScrollIntoViewBehavior), ex);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            LogManager.Error(nameof(ScrollIntoViewBehavior), ex);
         }
     }
+
 }

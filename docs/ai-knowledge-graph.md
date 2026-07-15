@@ -382,6 +382,8 @@ outbound:
 contracts:
   - Commands should be cached properties, not rebuilt on every getter call.
   - Clipboard detection must be debounced and cancellation-aware.
+  - Automatic update checks carry the window lifetime token; closing the window cancels network work and expected shutdown cancellation is not reported as an error.
+  - Update failures use the injected typed logger and never include a repository response body or request URL.
 hazards:
   - Recreating commands breaks command identity and can cause UI churn.
   - Background clipboard work can outlive the window if cancellation is not wired.
@@ -815,6 +817,8 @@ outbound:
 contracts:
   - Application interfaces contain no Avalonia, Prism, path-policy, or global App references.
   - Picker cancellation returns null or an empty list and never becomes a fake path.
+  - Disk-space probes use the complete platform path; low-level helpers propagate typed failures and the injected ViewModel logger owns redacted diagnostics.
+  - Delayed DataGrid scrolling invalidates stale requests by version and cannot retain a disposable cancellation source in an Avalonia behavior.
   - Host smoke injects a fake clipboard and resolves key ViewModels without initializing Prism ContainerLocator.
 hazards:
   - Notifications, dialogs, and navigation still use Prism/EventAggregator and remain in PR 16-24.
@@ -1957,6 +1961,7 @@ test.architecture-boundaries:
     - aria2 manager/server/process supervision cannot restore static LogManager, static server ownership, synchronous HTTP send, or recursive retry
     - settings validation/persistence and legacy migration cannot restore static LogManager, Console diagnostics, or duplicate low-level SQLite logging
     - Bilibili Core facades cannot log or print request data; injected account and user-space coordinators own sanitized outcome diagnostics
+    - migrated update, disk, cookie serialization, and delayed-scroll files cannot restore static or terminal diagnostics
 
 test.settings-store:
   paths:
