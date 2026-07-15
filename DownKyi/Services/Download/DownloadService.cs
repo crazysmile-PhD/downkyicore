@@ -27,6 +27,7 @@ using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Services.Download;
@@ -47,6 +48,7 @@ internal abstract class DownloadService : IDisposable
     protected FfmpegProcessor FfmpegProcessor { get; }
     protected ApplicationSettings Settings => SettingsStore.Current;
     protected ISettingsStore SettingsStore { get; }
+    protected ILogger Logger { get; }
 
     protected Task? WorkTask { get; set; }
     protected CancellationTokenSource? TokenSource { get; set; }
@@ -79,11 +81,11 @@ internal abstract class DownloadService : IDisposable
         }
         catch (SqliteException e)
         {
-            LogManager.Debug(Tag, $"Persist downloading state failed: {e.Message}");
+            Logger.LogDebugMessage($"Persist downloading state failed: {e.Message}");
         }
         catch (InvalidOperationException e)
         {
-            LogManager.Debug(Tag, $"Persist downloading state conflicted: {e.Message}");
+            Logger.LogDebugMessage($"Persist downloading state conflicted: {e.Message}");
         }
         catch (OperationCanceledException) when (CancellationToken?.IsCancellationRequested == true)
         {
@@ -99,7 +101,7 @@ internal abstract class DownloadService : IDisposable
         var result = DownloadFileIntegrity.Check(file, expectedBytes, receivedBytes, totalBytesToReceive);
         if (!result.IsUsable)
         {
-            LogManager.Info(Tag, result.Reason ?? "Downloaded media file is not usable.");
+            Logger.LogInformationMessage(result.Reason ?? "Downloaded media file is not usable.");
         }
 
         return result.IsUsable;
@@ -123,11 +125,11 @@ internal abstract class DownloadService : IDisposable
             }
             catch (IOException e)
             {
-                LogManager.Debug(Tag, $"Delete invalid media file failed: {e.Message}");
+                Logger.LogDebugMessage($"Delete invalid media file failed: {e.Message}");
             }
             catch (UnauthorizedAccessException e)
             {
-                LogManager.Debug(Tag, $"Delete invalid media file was denied: {e.Message}");
+                Logger.LogDebugMessage($"Delete invalid media file was denied: {e.Message}");
             }
         }
     }
@@ -146,7 +148,8 @@ internal abstract class DownloadService : IDisposable
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
-        FfmpegProcessor ffmpegProcessor)
+        FfmpegProcessor ffmpegProcessor,
+        ILogger logger)
     {
         DownloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         DownloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
@@ -157,6 +160,7 @@ internal abstract class DownloadService : IDisposable
         SettingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         DiagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         FfmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        Logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     protected static PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
@@ -432,17 +436,17 @@ internal abstract class DownloadService : IDisposable
         catch (HttpRequestException e)
         {
             Console.PrintLine($"{Tag}.DownloadCover()发生异常: {0}", e);
-            LogManager.Error($"{Tag}.DownloadCover()", e);
+            Logger.LogErrorMessage("Cover download failed.", e);
         }
         catch (IOException e)
         {
             Console.PrintLine($"{Tag}.DownloadCover()发生IO异常: {0}", e);
-            LogManager.Error($"{Tag}.DownloadCover()", e);
+            Logger.LogErrorMessage("Cover download timed out.", e);
         }
         catch (UnauthorizedAccessException e)
         {
             Console.PrintLine($"{Tag}.DownloadCover()没有写入权限: {0}", e);
-            LogManager.Error($"{Tag}.DownloadCover()", e);
+            Logger.LogErrorMessage("Cover download was denied.", e);
         }
 
         return null;
@@ -550,12 +554,12 @@ internal abstract class DownloadService : IDisposable
             catch (IOException e)
             {
                 Console.PrintLine($"{Tag}.DownloadSubtitle()发生异常: {0}", e);
-                LogManager.Error($"{Tag}.DownloadSubtitle()", e);
+                Logger.LogErrorMessage("Subtitle download failed.", e);
             }
             catch (UnauthorizedAccessException e)
             {
                 Console.PrintLine($"{Tag}.DownloadSubtitle()没有写入权限: {0}", e);
-                LogManager.Error($"{Tag}.DownloadSubtitle()", e);
+                Logger.LogErrorMessage("Subtitle download was denied.", e);
             }
         }
 
@@ -587,15 +591,15 @@ internal abstract class DownloadService : IDisposable
         }
         catch (IOException e)
         {
-            LogManager.Error($"{Tag}.GenerateNfoFile()", e);
+            Logger.LogErrorMessage("NFO generation failed.", e);
         }
         catch (UnauthorizedAccessException e)
         {
-            LogManager.Error($"{Tag}.GenerateNfoFile()", e);
+            Logger.LogErrorMessage("NFO generation was denied.", e);
         }
         catch (XmlException e)
         {
-            LogManager.Error($"{Tag}.GenerateNfoFile()", e);
+            Logger.LogErrorMessage("NFO generation produced invalid XML.", e);
         }
     }
 
@@ -849,7 +853,7 @@ internal abstract class DownloadService : IDisposable
         }
         catch (InvalidOperationException e)
         {
-            LogManager.Error($"{Tag}.DoWork()", e);
+            Logger.LogErrorMessage("Download work loop failed.", e);
         }
         finally
         {
@@ -910,7 +914,7 @@ internal abstract class DownloadService : IDisposable
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
                     or HttpRequestException or Newtonsoft.Json.JsonException)
                 {
-                    LogManager.Error($"{Tag}.DownloadWorker", e);
+                    Logger.LogErrorMessage("Download worker failed.", e);
                     await DownloadFailedAsync(downloading).ConfigureAwait(true);
                 }
                 finally
@@ -947,7 +951,7 @@ internal abstract class DownloadService : IDisposable
             catch (IOException e)
             {
                 Console.PrintLine(Tag, e.ToString());
-                LogManager.Debug(Tag, e.Message);
+                Logger.LogDebugMessage(e.Message);
 
                 var alertService = new AlertService(DialogService);
                 await alertService.ShowError($"{path}{DictionaryResource.GetString("DirectoryError")}").ConfigureAwait(true);
@@ -957,7 +961,7 @@ internal abstract class DownloadService : IDisposable
             catch (UnauthorizedAccessException e)
             {
                 Console.PrintLine(Tag, e.ToString());
-                LogManager.Debug(Tag, e.Message);
+                Logger.LogDebugMessage(e.Message);
 
                 var alertService = new AlertService(DialogService);
                 await alertService.ShowError($"{path}{DictionaryResource.GetString("DirectoryError")}").ConfigureAwait(true);
@@ -1281,7 +1285,7 @@ internal abstract class DownloadService : IDisposable
         catch (OperationCanceledException e)
         {
             Console.PrintLine(Tag, e.ToString());
-            LogManager.Debug(Tag, e.Message);
+            Logger.LogDebugMessage(e.Message);
             await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
         }
     }
@@ -1359,7 +1363,7 @@ internal abstract class DownloadService : IDisposable
             WorkTask,
             _downloadWorkers,
             TimeSpan.FromSeconds(30),
-            e => LogManager.Error($"{Tag}.DownloadWorkers", e),
+            e => Logger.LogErrorMessage("Download workers failed during shutdown.", e),
             PersistShutdownStateAsync).ConfigureAwait(true);
     }
 

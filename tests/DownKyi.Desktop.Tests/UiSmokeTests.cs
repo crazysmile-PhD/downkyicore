@@ -17,6 +17,7 @@ using DownKyi.ViewModels;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Prism.Container.DryIoc;
 using Prism.Events;
 using Prism.Ioc;
@@ -113,7 +114,9 @@ public sealed class UiSmokeTests
     public async Task StorageMaintenanceHostedServiceStopsWithApplicationCancellation()
     {
         using var cancellation = new ApplicationCancellation();
-        var service = new StorageMaintenanceHostedService(cancellation);
+        var service = new StorageMaintenanceHostedService(
+            cancellation,
+            NullLogger<StorageMaintenanceHostedService>.Instance);
 
         await service.StartAsync(TestContext.Current.CancellationToken);
         await service.StopAsync(TestContext.Current.CancellationToken);

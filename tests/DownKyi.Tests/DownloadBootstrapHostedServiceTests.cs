@@ -5,6 +5,7 @@ using DownKyi.Domain.Results;
 using DownKyi.Platform;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
@@ -21,7 +22,8 @@ public sealed class DownloadBootstrapHostedServiceTests
             listState,
             storage,
             new RecordingRuntimeFactory(runtime),
-            dispatcher);
+            dispatcher,
+            NullLogger<DownloadBootstrapHostedService>.Instance);
 
         await service.StartAsync(TestContext.Current.CancellationToken);
         await service.StopAsync(TestContext.Current.CancellationToken);

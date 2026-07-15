@@ -4,6 +4,7 @@ using DownKyi.Platform;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
@@ -16,7 +17,8 @@ internal sealed class CustomAriaDownloadService : AriaDownloadService
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
-        FfmpegProcessor ffmpegProcessor)
+        FfmpegProcessor ffmpegProcessor,
+        ILogger<CustomAriaDownloadService> logger)
         : base(
             downloadLists,
             downloadStorageService,
@@ -25,6 +27,7 @@ internal sealed class CustomAriaDownloadService : AriaDownloadService
             settingsStore,
             diagnosticLogger,
             ffmpegProcessor,
+            logger,
             ownsAriaServer: false)
     {
     }

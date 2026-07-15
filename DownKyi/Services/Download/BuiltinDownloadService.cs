@@ -17,6 +17,7 @@ using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
 using Downloader;
+using Microsoft.Extensions.Logging;
 using DownloadStatus = DownKyi.Models.DownloadStatus;
 
 namespace DownKyi.Services.Download;
@@ -30,7 +31,8 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
-        FfmpegProcessor ffmpegProcessor)
+        FfmpegProcessor ffmpegProcessor,
+        ILogger<BuiltinDownloadService> logger)
         : base(
             downloadLists,
             downloadStorageService,
@@ -38,7 +40,8 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             uiDispatcher,
             settingsStore,
             diagnosticLogger,
-            ffmpegProcessor)
+            ffmpegProcessor,
+            logger)
     {
         Tag = nameof(BuiltinDownloadService);
     }
@@ -153,7 +156,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             {
                 if (args.Error != null)
                 {
-                    LogManager.Error($"{Tag}.DownloadFileCompleted", args.Error);
+                    Logger.LogErrorMessage("Built-in download completion reported an error.", args.Error);
                 }
 
                 var succeeded = !args.Cancelled &&
@@ -201,13 +204,13 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             }
 
             DeleteInvalidDownloadedMediaFile(targetFile);
-            LogManager.Info(Tag, "Built-in transfer was incomplete; trying a backup endpoint.");
+            Logger.LogInformationMessage("Built-in transfer was incomplete; trying a backup endpoint.");
         }
 
         return DownloadTransferOutcome.Failed;
     }
 
-    private static async Task<bool> RunDownloadAsync(
+    private async Task<bool> RunDownloadAsync(
         Downloader.DownloadService downloader,
         string url,
         string targetFile,
@@ -228,7 +231,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
         }
         catch (Exception e) when (e is IOException or HttpRequestException or InvalidOperationException)
         {
-            LogManager.Error($"{nameof(BuiltinDownloadService)}.Transfer", e);
+            Logger.LogErrorMessage("Built-in transfer failed.", e);
             return false;
         }
     }

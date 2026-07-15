@@ -6,6 +6,7 @@ using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
@@ -14,16 +15,20 @@ internal sealed class DownloadDiagnosticLogger
     private static readonly TimeSpan SpeedLogInterval = TimeSpan.FromSeconds(30);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastSpeedLogTimes = new();
     private readonly ISettingsStore _settingsStore;
+    private readonly ILogger<DownloadDiagnosticLogger> _logger;
 
-    public DownloadDiagnosticLogger(ISettingsStore settingsStore)
+    public DownloadDiagnosticLogger(
+        ISettingsStore settingsStore,
+        ILogger<DownloadDiagnosticLogger> logger)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public void LogAriaServerConfig(string source, AriaConfig config)
     {
-        LogManager.Info(source,
-            "Aria config " +
+        _logger.LogInformationMessage(
+            $"source={source}; Aria config " +
             $"highSpeed={IsHighSpeedEnabled()}; " +
             $"maxTasks={config.MaxConcurrentDownloads}; " +
             $"split={config.Split}; " +
@@ -37,9 +42,11 @@ internal sealed class DownloadDiagnosticLogger
     public void LogAriaTaskStart(string source, string? gid, int urlCount)
     {
         var settings = _settingsStore.Current.Network;
-        LogManager.Info(source,
-            "Aria task started " +
-            $"task={ShortId(gid)}; " +
+        var taskId = ShortId(gid);
+        using var scope = _logger.BeginOperationScope(taskId, taskId);
+        _logger.LogInformationMessage(
+            $"source={source}; Aria task started " +
+            $"task={taskId}; " +
             $"highSpeed={IsHighSpeedEnabled()}; " +
             $"urlCount={urlCount}; " +
             $"split={settings.AriaSplit}; " +
@@ -51,9 +58,11 @@ internal sealed class DownloadDiagnosticLogger
 
     public void LogBuiltInTaskStart(string source, string taskId, int urlCount, int chunkCount, int parallelCount)
     {
-        LogManager.Info(source,
-            "Built-in task started " +
-            $"task={ShortId(taskId)}; " +
+        var safeTaskId = ShortId(taskId);
+        using var scope = _logger.BeginOperationScope(safeTaskId, safeTaskId);
+        _logger.LogInformationMessage(
+            $"source={source}; Built-in task started " +
+            $"task={safeTaskId}; " +
             $"highSpeed={IsHighSpeedEnabled()}; " +
             $"urlCount={urlCount}; " +
             $"chunkCount={chunkCount}; " +
@@ -71,9 +80,11 @@ internal sealed class DownloadDiagnosticLogger
         }
 
         _lastSpeedLogTimes[key] = now;
-        LogManager.Info(source,
-            "Download speed " +
-            $"task={ShortId(taskId)}; " +
+        var safeTaskId = ShortId(taskId);
+        using var scope = _logger.BeginOperationScope(safeTaskId, safeTaskId);
+        _logger.LogInformationMessage(
+            $"source={source}; Download speed " +
+            $"task={safeTaskId}; " +
             $"speed={Format.FormatSpeedWithBandwidth(bytesPerSecond)}; " +
             $"progress={Format.FormatFileSize(completedLength)}/{Format.FormatFileSize(totalLength)}");
     }

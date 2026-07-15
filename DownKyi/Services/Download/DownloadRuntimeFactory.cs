@@ -2,6 +2,7 @@ using System;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Platform;
+using Microsoft.Extensions.Logging;
 using DownloaderSetting = DownKyi.Core.Settings.Downloader;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
@@ -21,6 +22,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     private readonly FfmpegProcessor _ffmpegProcessor;
     private readonly ISettingsStore _settingsStore;
     private readonly IUiDispatcher _uiDispatcher;
+    private readonly ILoggerFactory _loggerFactory;
 
     public DownloadRuntimeFactory(
         DownloadListState downloadLists,
@@ -29,7 +31,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
-        FfmpegProcessor ffmpegProcessor)
+        FfmpegProcessor ffmpegProcessor,
+        ILoggerFactory loggerFactory)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService
@@ -39,6 +42,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
     }
 
     public IDownloadService? Create()
@@ -52,7 +56,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _uiDispatcher,
                 _settingsStore,
                 _diagnosticLogger,
-                _ffmpegProcessor),
+                _ffmpegProcessor,
+                _loggerFactory.CreateLogger<BuiltinDownloadService>()),
             DownloaderSetting.Aria => new AriaDownloadService(
                 _downloadLists,
                 _downloadStorageService,
@@ -60,7 +65,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _uiDispatcher,
                 _settingsStore,
                 _diagnosticLogger,
-                _ffmpegProcessor),
+                _ffmpegProcessor,
+                _loggerFactory.CreateLogger<AriaDownloadService>()),
             DownloaderSetting.CustomAria => new CustomAriaDownloadService(
                 _downloadLists,
                 _downloadStorageService,
@@ -68,7 +74,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _uiDispatcher,
                 _settingsStore,
                 _diagnosticLogger,
-                _ffmpegProcessor),
+                _ffmpegProcessor,
+                _loggerFactory.CreateLogger<CustomAriaDownloadService>()),
             _ => null
         };
     }

@@ -20,6 +20,7 @@ namespace DownKyi.ViewModels.DownloadManager
         public const string Tag = "PageDownloadManagerDownloading";
 
         private readonly DownloadStorageService _downloadStorageService;
+        private readonly DownloadTaskFileService _downloadTaskFileService;
 
         #region 页面属性申明
 
@@ -37,11 +38,14 @@ namespace DownKyi.ViewModels.DownloadManager
             IEventAggregator eventAggregator,
             IDialogService dialogService,
             DownloadStorageService downloadStorageService,
-            DownloadListState downloadLists) : base(
+            DownloadListState downloadLists,
+            DownloadTaskFileService downloadTaskFileService) : base(
             eventAggregator, dialogService)
         {
             _downloadStorageService = downloadStorageService
                 ?? throw new ArgumentNullException(nameof(downloadStorageService));
+            _downloadTaskFileService = downloadTaskFileService
+                ?? throw new ArgumentNullException(nameof(downloadTaskFileService));
             // 初始化DownloadingList
             DownloadingList = (downloadLists ?? throw new ArgumentNullException(nameof(downloadLists))).Downloading;
         }
@@ -192,9 +196,9 @@ namespace DownKyi.ViewModels.DownloadManager
         {
             downloadingItem.Downloading.DownloadStatus = DownloadStatus.Pause;
             DownloadingList.Remove(downloadingItem);
-            await DownloadTaskFileService.CancelActiveDownloadAsync(downloadingItem).ConfigureAwait(true);
+            await _downloadTaskFileService.CancelActiveDownloadAsync(downloadingItem).ConfigureAwait(true);
             await _downloadStorageService.RemoveDownloadingAsync(downloadingItem, true).ConfigureAwait(true);
-            await DownloadTaskFileService.DeleteGeneratedFilesAsync(downloadingItem).ConfigureAwait(true);
+            await _downloadTaskFileService.DeleteGeneratedFilesAsync(downloadingItem).ConfigureAwait(true);
         }
 
         #endregion

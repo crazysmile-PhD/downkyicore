@@ -23,6 +23,7 @@ using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
@@ -37,7 +38,8 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
-        FfmpegProcessor ffmpegProcessor)
+        FfmpegProcessor ffmpegProcessor,
+        ILogger logger)
         : this(
             downloadLists,
             downloadStorageService,
@@ -46,6 +48,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
             settingsStore,
             diagnosticLogger,
             ffmpegProcessor,
+            logger,
             ownsAriaServer: true)
     {
     }
@@ -58,6 +61,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
+        ILogger logger,
         bool ownsAriaServer)
         : base(
             downloadLists,
@@ -66,7 +70,8 @@ internal class AriaDownloadService : DownloadService, IDownloadService
             uiDispatcher,
             settingsStore,
             diagnosticLogger,
-            ffmpegProcessor)
+            ffmpegProcessor,
+            logger)
     {
         _ownsAriaServer = ownsAriaServer;
         Tag = ownsAriaServer ? nameof(AriaDownloadService) : nameof(CustomAriaDownloadService);
@@ -289,7 +294,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         catch (Exception e) when (e is TimeoutException or HttpRequestException or IOException
             or InvalidOperationException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            Logger.LogErrorMessage("Aria server shutdown failed.", e);
         }
 
         if (!await AriaServer.CloseServerAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true))

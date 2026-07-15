@@ -19,6 +19,7 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Dialogs;
 using Prism.Events;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
@@ -30,7 +31,7 @@ namespace DownKyi.Services.Download;
 /// </summary>
 internal class AddToDownloadService
 {
-    private readonly string Tag = "AddToDownloadService";
+    private readonly ILogger<AddToDownloadService> _logger;
     private IInfoService _videoInfoService = null!;
     private VideoInfoView? _videoInfoView;
     private IList<VideoSection>? _videoSections;
@@ -55,11 +56,13 @@ internal class AddToDownloadService
         PlayStreamType streamType,
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        ISettingsStore settingsStore)
+        ISettingsStore settingsStore,
+        ILogger<AddToDownloadService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
             case PlayStreamType.Video:
@@ -88,11 +91,13 @@ internal class AddToDownloadService
         PlayStreamType streamType,
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        ISettingsStore settingsStore)
+        ISettingsStore settingsStore,
+        ILogger<AddToDownloadService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
             case PlayStreamType.Video:
@@ -125,14 +130,14 @@ internal class AddToDownloadService
         _videoInfoView = _videoInfoService.GetVideoView();
         if (_videoInfoView == null)
         {
-            LogManager.Debug(Tag, "VideoInfoView is null.");
+            _logger.LogDebugMessage("VideoInfoView is null.");
             return;
         }
 
         _videoSections = _videoInfoService.GetVideoSections(true);
         if (_videoSections == null)
         {
-            LogManager.Debug(Tag, "videoSections is not exist.");
+            _logger.LogDebugMessage("Video sections do not exist.");
 
             _videoSections = new List<VideoSection>
             {

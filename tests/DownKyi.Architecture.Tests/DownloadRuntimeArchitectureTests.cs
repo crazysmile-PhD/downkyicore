@@ -109,6 +109,34 @@ public sealed class DownloadRuntimeArchitectureTests
     }
 
     [Fact]
+    public void DownloadRuntimeUsesInjectedTypedLoggingOnly()
+    {
+        var directory = Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download");
+        var violations = Directory.EnumerateFiles(directory, "*.cs", SearchOption.TopDirectoryOnly)
+            .Where(path => File.ReadAllText(path).Contains("LogManager.", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .ToArray();
+        var taskFileSource = File.ReadAllText(Path.Combine(directory, "DownloadTaskFileService.cs"));
+        var viewModelSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "DownloadManager",
+            "ViewDownloadingViewModel.cs"));
+        var compositionSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyPrismComposition.cs"));
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
+        Assert.Contains("sealed class DownloadTaskFileService", taskFileSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("static class DownloadTaskFileService", taskFileSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskFileService _downloadTaskFileService", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("RegisterSingleton<DownloadTaskFileService>()", compositionSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DownloadBootstrapUsesExplicitRuntimeAndUiBoundaries()
     {
         var source = File.ReadAllText(Path.Combine(

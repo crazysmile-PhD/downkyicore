@@ -1,10 +1,12 @@
 using DownKyi.Services.Download;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
 
 public sealed class DownloadTaskFileServiceTests : IDisposable
 {
     private static readonly string[] GeneratedFileNames = { "video-stream.mp4", "audio-stream.aac" };
+    private readonly DownloadTaskFileService _service = new(NullLogger<DownloadTaskFileService>.Instance);
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(),
         "downkyi-file-lifecycle-tests",
@@ -16,7 +18,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
         Directory.CreateDirectory(_directory);
         var basePath = Path.Combine(_directory, "episode-01");
 
-        var files = DownloadTaskFileService.GetGeneratedFiles(
+        var files = _service.GetGeneratedFiles(
             basePath,
             GeneratedFileNames);
 
@@ -38,7 +40,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
             CreateFile("audio.aac.download", "partial audio")
         };
 
-        await DownloadTaskFileService.DeleteFilesAsync(
+        await _service.DeleteFilesAsync(
             files,
             TestContext.Current.CancellationToken);
 
@@ -54,7 +56,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
         await cancellation.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            DownloadTaskFileService.DeleteFilesAsync(new[] { file }, cancellation.Token));
+            _service.DeleteFilesAsync(new[] { file }, cancellation.Token));
 
         Assert.True(File.Exists(file));
     }
@@ -62,7 +64,7 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
     [Fact]
     public void GetGeneratedFilesRejectsNullTask()
     {
-        Assert.Throws<ArgumentNullException>(() => DownloadTaskFileService.GetGeneratedFiles(null!));
+        Assert.Throws<ArgumentNullException>(() => _service.GetGeneratedFiles(null!));
     }
 
     private string CreateFile(string name, string contents)

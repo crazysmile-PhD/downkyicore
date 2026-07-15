@@ -1283,7 +1283,9 @@ contracts:
   - State transitions await persistence; high-rate progress uses the bounded write-behind boundary.
   - Runtime receives `DownloadListState` and `DownloadStorageService` through construction; it cannot resolve either through App/Prism.
   - Runtime factory, backends, workers, and diagnostic logger share the Host-injected `ISettingsStore`; no download service reads the global settings singleton.
-  - Download diagnostic throttling belongs to the injected runtime logger instance and cannot retain task IDs in process-wide static state.
+  - Runtime factory creates a typed backend logger, and every download/file-lifecycle/maintenance owner uses the shared provider; this directory cannot call static `LogManager`.
+  - Download diagnostic throttling belongs to the injected runtime logger instance; scopes contain only a SHA-256-derived short task ID and cannot retain raw task IDs in process-wide static state.
+  - `DownloadTaskFileService` is an injected instance so cancellation, sidecar cleanup, retry, and permission failures use the same logger without a static owner.
   - Shutdown cancellation while dispatch waits for capacity cannot skip fixed-worker drain or resumable-state recovery; active `Downloading` rows return to `WaitForDownload` and are persisted before exit completes.
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
@@ -1941,6 +1943,7 @@ test.architecture-boundaries:
     - Prism and Host composition must share one injected settings owner
     - the settings store retains immutable Current and typed Update contracts, explicit version migration, cancellation-aware flush, and atomic replacement
     - no production source can read through a mutable Settings facade, and `ISettingsStore` cannot expose `SettingsManager`
+    - download runtime and file cleanup cannot restore static LogManager or a static DownloadTaskFileService owner
 
 test.settings-store:
   paths:

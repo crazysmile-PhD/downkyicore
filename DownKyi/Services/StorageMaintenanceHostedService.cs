@@ -6,17 +6,22 @@ using DownKyi.Application.Lifetime;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services;
 
 internal sealed class StorageMaintenanceHostedService : IHostedService
 {
     private readonly ApplicationCancellation _applicationCancellation;
+    private readonly ILogger<StorageMaintenanceHostedService> _logger;
     private Task? _maintenanceTask;
 
-    public StorageMaintenanceHostedService(ApplicationCancellation applicationCancellation)
+    public StorageMaintenanceHostedService(
+        ApplicationCancellation applicationCancellation,
+        ILogger<StorageMaintenanceHostedService> logger)
     {
         _applicationCancellation = applicationCancellation;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -36,7 +41,7 @@ internal sealed class StorageMaintenanceHostedService : IHostedService
         await _maintenanceTask.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task RunMaintenanceAsync(CancellationToken cancellationToken)
+    private async Task RunMaintenanceAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -47,7 +52,7 @@ internal sealed class StorageMaintenanceHostedService : IHostedService
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            LogManager.Error(nameof(StorageManager), e);
+            _logger.LogErrorMessage("Storage maintenance failed.", e);
         }
     }
 }

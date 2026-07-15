@@ -9,6 +9,7 @@ using DownKyi.Platform;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
@@ -18,6 +19,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
     private readonly DownloadStorageService _downloadStorageService;
     private readonly IDownloadRuntimeFactory _downloadRuntimeFactory;
     private readonly IUiDispatcher _uiDispatcher;
+    private readonly ILogger<DownloadBootstrapHostedService> _logger;
     private IDownloadService? _downloadService;
     private Task? _historyLoadTask;
     private bool _disposed;
@@ -26,7 +28,8 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
         IDownloadRuntimeFactory downloadRuntimeFactory,
-        IUiDispatcher uiDispatcher)
+        IUiDispatcher uiDispatcher,
+        ILogger<DownloadBootstrapHostedService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService
@@ -34,6 +37,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         _downloadRuntimeFactory = downloadRuntimeFactory
             ?? throw new ArgumentNullException(nameof(downloadRuntimeFactory));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -60,7 +64,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or InvalidOperationException or SqliteException)
         {
-            LogManager.Error(nameof(DownloadBootstrapHostedService), exception);
+            _logger.LogErrorMessage("Download bootstrap failed.", exception);
         }
     }
 
@@ -117,7 +121,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or InvalidOperationException or SqliteException)
         {
-            LogManager.Error(nameof(DownloadStorageService), exception);
+            _logger.LogErrorMessage("Remaining download history load failed.", exception);
         }
     }
 
