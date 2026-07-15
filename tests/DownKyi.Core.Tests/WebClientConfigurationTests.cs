@@ -36,7 +36,7 @@ public sealed class WebClientConfigurationTests
 
         try
         {
-            var store = new SettingsStore(Path.Combine(directory, "settings.json"));
+            using var store = new SettingsStore(Path.Combine(directory, "settings.json"));
             store.Settings.SetUserAgent("DownKyi-Test-Agent");
             store.Settings.SetNetworkProxy(NetworkProxy.Custom);
             store.Settings.SetCustomProxy("http://127.0.0.1:18080");

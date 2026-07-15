@@ -10,17 +10,19 @@ public sealed class FfmpegProcessor
     private readonly AsyncConcurrencyGate _operationGate;
     private readonly FfmpegConcatRuntime _concatRuntime;
     private readonly FfmpegProcessRunner _processRunner;
-    private readonly SettingsManager _settings;
+    private readonly ISettingsStore _settingsStore;
 
     public FfmpegProcessor(ISettingsStore settingsStore)
     {
-        _settings = settingsStore?.Settings ?? throw new ArgumentNullException(nameof(settingsStore));
+        ArgumentNullException.ThrowIfNull(settingsStore);
+        _settingsStore = settingsStore;
         _processRunner = new FfmpegProcessRunner();
-        _operationGate = new AsyncConcurrencyGate(_settings.GetFfmpegMaxParallelJobs);
+        _operationGate = new AsyncConcurrencyGate(
+            () => _settingsStore.Current.Video.FfmpegMaxParallelJobs);
         _concatRuntime = new FfmpegConcatRuntime(
             _processRunner,
             new FfmpegMediaValidator(_processRunner),
-            _settings.GetFfmpegMaxParallelJobs);
+            () => _settingsStore.Current.Video.FfmpegMaxParallelJobs);
     }
 
     public async Task<FfmpegOperationResult> ConcatDurlVideosAsync(
@@ -30,7 +32,7 @@ public sealed class FfmpegProcessor
         CancellationToken cancellationToken = default)
     {
         var encoder = await FfmpegHardwareEncoderDetector.SelectAsync(
-                _settings.GetFfmpegHardwareAcceleration(),
+                _settingsStore.Current.Video.FfmpegHardwareAcceleration,
                 cancellationToken)
             .ConfigureAwait(false);
         return await _concatRuntime.ConcatAsync(
@@ -61,7 +63,7 @@ public sealed class FfmpegProcessor
                 audioPath,
                 videoPath,
                 temporaryOutput,
-                _settings.GetIsTranscodingAacToMp3() == AllowStatus.Yes),
+                _settingsStore.Current.Video.IsTranscodingAacToMp3 == AllowStatus.Yes),
             destination,
             action: null,
             cancellationToken).ConfigureAwait(false);

@@ -1362,8 +1362,11 @@ id: core.settings
 type: core
 paths:
   - DownKyi.Core/Settings/ISettingsStore.cs
+  - DownKyi.Core/Settings/ApplicationSettings.cs
   - DownKyi.Core/Settings/SettingsManager.cs
-responsibility: Owns the current settings instance, debounces atomic persistence, and exposes an injectable shutdown flush boundary while legacy consumers are migrated.
+  - DownKyi.Core/Settings/SettingsManager.Snapshot.cs
+  - DownKyi.Core/Settings/SettingsSchemaMigrator.cs
+responsibility: Publishes validated immutable settings snapshots, applies typed updates, migrates persisted schemas, and owns debounced atomic persistence plus shutdown flush.
 inbound:
   - app.application
   - app.host-composition
@@ -1391,9 +1394,16 @@ contracts:
   - User-space navigation compares the target MID with the user from its injected settings owner; it cannot inspect process-global settings.
   - Logout deletes the existing login file, invalidates the in-memory cookie cache, and resets the user through the caller's injected settings owner.
   - The persisted JSON property names, enum values, and storage path remain compatible with existing user settings.
+  - Schema migrations advance one explicit version at a time; schema zero preserves the historical DTO field names.
+  - A malformed settings file is moved to a unique `.invalid-*` backup before defaults can be written.
+  - A settings file from a newer schema is never overwritten by an older application.
+  - Updates publish a new immutable `ApplicationSettings` value; rejected enum, range, proxy, FFmpeg, danmaku, and window values are replaced with safe defaults before persistence.
+  - HTTP, WBI, logout, download planning/runtime, diagnostics, and FFmpeg consume validated snapshots instead of the mutable compatibility manager.
+  - Debounced and explicit flushes share one async write gate and replace the destination only after a complete UTF-8 temporary file is flushed.
   - Shutdown flush is awaited without synchronously blocking the UI thread.
 hazards:
-  - `SettingsManager` remains mutable and singleton-backed behind the compatibility facade; immutable validated snapshots and owner replacement remain PR 16-24 work.
+  - Low-risk UI, navigation, and media consumers still use the mutable `Settings` facade; PR 16-24 must move them to `Current` / `Update` before PR 25-29 deletes the compatibility manager.
+  - Synchronous disposal intentionally stops scheduled writes without flushing; application shutdown and owners that require persistence must call `FlushAsync` or `DisposeAsync`.
   - Timer callbacks and shutdown flush must not race into partial or non-atomic writes.
 tests:
   - test.settings-store
@@ -1416,7 +1426,7 @@ outbound:
 contracts:
   - This path is read-only and cannot encrypt new settings.
   - Invalid legacy payloads fail visibly to SettingsManager and never masquerade as valid JSON.
-  - Successful migration uses the existing atomic settings writer and preserves user values.
+  - Successful migration uses the existing atomic settings writer, advances through `SettingsSchemaMigrator`, and preserves user values.
 hazards:
   - DES is cryptographically broken and must never be reused for credentials, integrity, or new storage.
   - Deleting the reader before the migration support window closes loses old user settings.
@@ -1917,6 +1927,8 @@ test.architecture-boundaries:
     - migrated App, shell, ViewModels, dialogs, account session, video-detail, and settings-page owners cannot restore direct SettingsManager singleton access
     - no production source outside the compatibility settings owner can reference SettingsManager.Instance
     - Prism and Host composition must share one injected settings owner
+    - the settings store retains immutable Current and typed Update contracts, explicit version migration, cancellation-aware flush, and atomic replacement
+    - HTTP, WBI, login, download, diagnostics, and FFmpeg runtime cannot read through the mutable Settings facade
 
 test.settings-store:
   paths:
@@ -1925,6 +1937,11 @@ test.settings-store:
     - tests/DownKyi.Core.Tests/LoginHelperTests.cs
   guards:
     - an isolated settings owner flushes modified values to its assigned file
+    - schema-zero JSON and a real legacy DES AppSettings fixture migrate to the current schema without renaming persisted fields
+    - malformed input is preserved before defaults are atomically written, while future-schema files remain byte-for-byte unchanged
+    - immutable updates and legacy setters both pass through validation before values can be persisted
+    - a canceled flush leaves pending state available to the next successful flush, and async disposal flushes pending changes
+    - a new unmodified store does not write a defaults-only file; its first actual setting change does
     - tests never read or write the user's real settings path
     - user-space navigation routes the signed-in MID to My Space and other MIDs to public User Space using the injected owner
     - logout removes an isolated login file and clears only the injected settings owner

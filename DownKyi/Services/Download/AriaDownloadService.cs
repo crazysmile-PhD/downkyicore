@@ -84,6 +84,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var network = Settings.Network;
         if (_ownsAriaServer)
         {
             AriaClient.SetToken();
@@ -91,11 +92,11 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         }
         else
         {
-            AriaClient.SetToken(Settings.GetAriaToken());
-            AriaClient.SetHost(Settings.GetAriaHost());
+            AriaClient.SetToken(network.AriaToken);
+            AriaClient.SetHost(network.AriaHost);
         }
 
-        AriaClient.SetListenPort(Settings.GetAriaListenPort());
+        AriaClient.SetListenPort(network.AriaListenPort);
         if (_ownsAriaServer)
         {
             await StartAriaServerAsync(cancellationToken).ConfigureAwait(true);
@@ -183,6 +184,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
 
         if (gid == null)
         {
+            var network = Settings.Network;
             var option = new AriaSendOption
             {
                 Dir = path,
@@ -190,15 +192,15 @@ internal class AriaDownloadService : DownloadService, IDownloadService
                 Continue = "true",
                 AllowOverwrite = "true",
                 AutoFileRenaming = "false",
-                UserAgent = Settings.GetUserAgent(),
-                Split = Settings.GetAriaSplit().ToString(CultureInfo.InvariantCulture),
-                MaxConnectionPerServer = Settings.GetAriaMaxConnectionPerServer()
+                UserAgent = network.UserAgent,
+                Split = network.AriaSplit.ToString(CultureInfo.InvariantCulture),
+                MaxConnectionPerServer = network.AriaMaxConnectionPerServer
                     .ToString(CultureInfo.InvariantCulture),
-                MinSplitSize = $"{Settings.GetAriaMinSplitSize()}M"
+                MinSplitSize = $"{network.AriaMinSplitSize}M"
             };
-            if (Settings.GetIsAriaHttpProxy() == AllowStatus.Yes)
+            if (network.IsAriaHttpProxy == AllowStatus.Yes)
             {
-                option.HttpProxy = $"http://{Settings.GetAriaHttpProxy()}:{Settings.GetAriaHttpProxyListenPort()}";
+                option.HttpProxy = $"http://{network.AriaHttpProxy}:{network.AriaHttpProxyListenPort}";
             }
 
             var added = await AriaClient.AddUriAsync(urls.ToList(), option).ConfigureAwait(true);
@@ -221,25 +223,26 @@ internal class AriaDownloadService : DownloadService, IDownloadService
 
     private async Task StartAriaServerAsync(CancellationToken cancellationToken)
     {
+        var network = Settings.Network;
         var config = new AriaConfig
         {
-            ListenPort = Settings.GetAriaListenPort(),
+            ListenPort = network.AriaListenPort,
             Token = "downkyi",
-            LogLevel = Settings.GetAriaLogLevel(),
-            MaxConcurrentDownloads = Settings.GetMaxCurrentDownloads(),
-            MaxConnectionPerServer = Settings.GetAriaMaxConnectionPerServer(),
-            Split = Settings.GetAriaSplit(),
-            MinSplitSize = Settings.GetAriaMinSplitSize(),
-            MaxOverallDownloadLimit = Settings.GetAriaMaxOverallDownloadLimit() * 1024L,
-            MaxDownloadLimit = Settings.GetAriaMaxDownloadLimit() * 1024L,
+            LogLevel = network.AriaLogLevel,
+            MaxConcurrentDownloads = network.MaxCurrentDownloads,
+            MaxConnectionPerServer = network.AriaMaxConnectionPerServer,
+            Split = network.AriaSplit,
+            MinSplitSize = network.AriaMinSplitSize,
+            MaxOverallDownloadLimit = network.AriaMaxOverallDownloadLimit * 1024L,
+            MaxDownloadLimit = network.AriaMaxDownloadLimit * 1024L,
             ContinueDownload = true,
-            FileAllocation = Settings.GetAriaFileAllocation(),
+            FileAllocation = network.AriaFileAllocation,
             Headers =
             [
                 $"Cookie: {LoginHelper.GetLoginInfoCookiesString()}",
                 "Origin: https://www.bilibili.com",
                 "Referer: https://www.bilibili.com",
-                $"User-Agent: {Settings.GetUserAgent()}"
+                $"User-Agent: {network.UserAgent}"
             ]
         };
         DiagnosticLogger.LogAriaServerConfig(Tag, config);

@@ -33,7 +33,7 @@ public sealed class WbiSignTests
 
         try
         {
-            var store = new SettingsStore(Path.Combine(directory, "settings.json"));
+            using var store = new SettingsStore(Path.Combine(directory, "settings.json"));
             store.Settings.SetUserInfo(new UserInfoSettings
             {
                 ImgKey = "7cd084941338484aae1ad9425b84077c",

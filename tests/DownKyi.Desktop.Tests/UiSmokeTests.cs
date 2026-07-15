@@ -78,6 +78,7 @@ public sealed class UiSmokeTests
             finally
             {
                 prismContainer.Instance.Dispose();
+                await settingsStore.DisposeAsync();
                 if (Directory.Exists(settingsDirectory))
                 {
                     Directory.Delete(settingsDirectory, recursive: true);

@@ -1,7 +1,7 @@
 # DownKyi Core Live Refactoring Plan
 
 Status: active
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 Current group: PR 16-24
 Next branch: `refactor/pr-16-24-media-ui-lifecycle`
 
@@ -24,7 +24,7 @@ Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
 - Move collection parsing, video parsing, selection, plan building, duplicate policy, and queueing into Application use cases; BV/AV/bangumi/course entry resolution, cancellable detail/stream result coordination, directory-cancel/add coordination, and single-source video search projection are complete.
 - Move notifications, dialogs, and navigation behind Desktop interfaces; clipboard and file-picker boundaries are complete and their static helpers are deleted.
-- Complete the settings boundary after direct consumer migration: production code now receives one shared `ISettingsStore`, including Host-owned HTTP, WBI signing, account/logout, navigation, media/download runtime, settings pages, and FFmpeg; immutable validated snapshots, explicit schema versions/migrations, and non-blocking atomic persistence still remain.
+- Migrate the remaining low-risk UI, navigation, and media consumers from the temporary mutable `ISettingsStore.Settings` facade to typed `Current` / `Update`; validated immutable snapshots, explicit schema migration, invalid-file preservation, future-schema protection, atomic debounced persistence, and the HTTP/WBI/login/download/FFmpeg runtime migration are complete.
 - Replace static `LogManager` usage with injected `Microsoft.Extensions.Logging`, correlation/task/process context, one sensitive-data redactor, bounded recent-event diagnostics, rotation, export, and async shutdown flush; 42 production files still reference the static logger.
 
 ## PR 25-29 - Remove Prism And Legacy Architecture

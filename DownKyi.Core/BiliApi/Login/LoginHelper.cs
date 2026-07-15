@@ -267,12 +267,15 @@ public static class LoginHelper
             // 注销后使缓存立即失效
             InvalidateCache();
 
-            settingsStore.Settings.SetUserInfo(new UserInfoSettings
+            settingsStore.Update(settings => settings with
             {
-                Mid = -1,
-                Name = string.Empty,
-                IsLogin = false,
-                IsVip = false
+                User = new UserApplicationSettings(
+                    Mid: -1,
+                    Name: string.Empty,
+                    IsLogin: false,
+                    IsVip: false,
+                    ImgKey: string.Empty,
+                    SubKey: string.Empty)
             });
             return true;
         }

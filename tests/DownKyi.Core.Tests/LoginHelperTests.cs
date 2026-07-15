@@ -17,7 +17,7 @@ public sealed class LoginHelperTests
         {
             Directory.CreateDirectory(directory);
             await File.WriteAllTextAsync(loginPath, "test-login", TestContext.Current.CancellationToken);
-            var store = new SettingsStore(settingsPath);
+            using var store = new SettingsStore(settingsPath);
             store.Settings.SetUserInfo(new UserInfoSettings
             {
                 Mid = 42,

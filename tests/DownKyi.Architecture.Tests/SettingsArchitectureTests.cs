@@ -119,6 +119,48 @@ public sealed class SettingsArchitectureTests
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
     }
 
+    [Fact]
+    public void SettingsStoreKeepsTheValidatedSnapshotAndAtomicPersistenceContract()
+    {
+        var storeSource = ReadSource("DownKyi.Core", "Settings", "ISettingsStore.cs");
+        var managerSource = ReadSource("DownKyi.Core", "Settings", "SettingsManager.cs");
+        var migratorSource = ReadSource("DownKyi.Core", "Settings", "SettingsSchemaMigrator.cs");
+
+        Assert.Contains("ApplicationSettings Current", storeSource, StringComparison.Ordinal);
+        Assert.Contains("Update(Func<ApplicationSettings, ApplicationSettings>", storeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Task.Run", storeSource, StringComparison.Ordinal);
+        Assert.Contains("File.Replace", managerSource, StringComparison.Ordinal);
+        Assert.Contains("FlushAsync(CancellationToken", managerSource, StringComparison.Ordinal);
+        Assert.Contains("switch (settings.SchemaVersion)", migratorSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HighRiskRuntimeReadsValidatedSettingsSnapshots()
+    {
+        var sourcePaths = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "WebClient.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Login", "LoginHelper.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Sign", "WbiSign.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs")
+        }.Concat(Directory.EnumerateFiles(
+            Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download"),
+            "*.cs",
+            SearchOption.TopDirectoryOnly));
+        var violations = sourcePaths
+            .Where(path =>
+            {
+                var source = File.ReadAllText(path);
+                return source.Contains("settingsStore.Settings", StringComparison.Ordinal)
+                       || source.Contains("_settingsStore.Settings", StringComparison.Ordinal)
+                       || source.Contains("SettingsStore.Settings", StringComparison.Ordinal);
+            })
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .ToArray();
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
+    }
+
     private static string ReadSource(params string[] pathParts)
     {
         return File.ReadAllText(Path.Combine([RepositoryRoot, .. pathParts]));

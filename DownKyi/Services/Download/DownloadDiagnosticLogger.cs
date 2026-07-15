@@ -36,17 +36,17 @@ internal sealed class DownloadDiagnosticLogger
 
     public void LogAriaTaskStart(string source, string? gid, int urlCount)
     {
-        var settings = _settingsStore.Settings;
+        var settings = _settingsStore.Current.Network;
         LogManager.Info(source,
             "Aria task started " +
             $"task={ShortId(gid)}; " +
             $"highSpeed={IsHighSpeedEnabled()}; " +
             $"urlCount={urlCount}; " +
-            $"split={settings.GetAriaSplit()}; " +
-            $"maxConnectionPerServer={settings.GetAriaMaxConnectionPerServer()}; " +
-            $"minSplitSize={settings.GetAriaMinSplitSize()}MB; " +
-            $"globalLimit={settings.GetAriaMaxOverallDownloadLimit()}KB/s; " +
-            $"taskLimit={settings.GetAriaMaxDownloadLimit()}KB/s");
+            $"split={settings.AriaSplit}; " +
+            $"maxConnectionPerServer={settings.AriaMaxConnectionPerServer}; " +
+            $"minSplitSize={settings.AriaMinSplitSize}MB; " +
+            $"globalLimit={settings.AriaMaxOverallDownloadLimit}KB/s; " +
+            $"taskLimit={settings.AriaMaxDownloadLimit}KB/s");
     }
 
     public void LogBuiltInTaskStart(string source, string taskId, int urlCount, int chunkCount, int parallelCount)
@@ -80,7 +80,7 @@ internal sealed class DownloadDiagnosticLogger
 
     private bool IsHighSpeedEnabled()
     {
-        return _settingsStore.Settings.GetHighSpeedDownloadMode() == AllowStatus.Yes;
+        return _settingsStore.Current.Network.HighSpeedDownloadMode == AllowStatus.Yes;
     }
 
     private static string FormatLimit(long bytesPerSecond)

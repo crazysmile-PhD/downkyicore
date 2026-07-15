@@ -26,7 +26,7 @@ public static class WebClient
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(settingsStore);
-        httpClient.DefaultRequestHeaders.Add("User-Agent", settingsStore.Settings.GetUserAgent());
+        httpClient.DefaultRequestHeaders.Add("User-Agent", settingsStore.Current.Network.UserAgent);
         httpClient.DefaultRequestHeaders.Add("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
     }
 
@@ -40,7 +40,8 @@ public static class WebClient
             AutomaticDecompression = DecompressionMethods.All,
             ConnectTimeout = TimeSpan.FromSeconds(8)
         };
-        switch (settingsStore.Settings.GetNetworkProxy())
+        var network = settingsStore.Current.Network;
+        switch (network.NetworkProxy)
         {
             case NetworkProxy.None:
                 socketsHandler.UseProxy = false;
@@ -55,7 +56,7 @@ public static class WebClient
                     try
                     {
                         socketsHandler.UseProxy = true;
-                        socketsHandler.Proxy = new WebProxy(settingsStore.Settings.GetCustomProxy());
+                        socketsHandler.Proxy = new WebProxy(network.CustomNetworkProxy);
                     }
                     catch (UriFormatException e)
                     {

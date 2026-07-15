@@ -190,17 +190,18 @@ internal class AddToDownloadService
         var directory = string.Empty;
 
         // 是否使用默认下载目录
-        if (_settingsStore.Settings.GetIsUseSaveVideoRootPath() == AllowStatus.Yes)
+        var videoSettings = _settingsStore.Current.Video;
+        if (videoSettings.IsUseSaveVideoRootPath == AllowStatus.Yes)
         {
             // 下载内容
-            var videoContent = _settingsStore.Settings.GetVideoContent();
+            var videoContent = videoSettings.Content;
             _downloadAudio = videoContent.DownloadAudio;
             _downloadVideo = videoContent.DownloadVideo;
             _downloadDanmaku = videoContent.DownloadDanmaku;
             _downloadSubtitle = videoContent.DownloadSubtitle;
             _downloadCover = videoContent.DownloadCover;
 
-            directory = _settingsStore.Settings.GetSaveVideoRootPath();
+            directory = videoSettings.SaveVideoRootPath;
         }
         else
         {
@@ -277,6 +278,8 @@ internal class AddToDownloadService
         {
             return -1;
         }
+
+        var settings = _settingsStore.Current;
 
         // 视频计数
         var addedItems = new List<DownloadingItem>();
@@ -379,7 +382,7 @@ internal class AddToDownloadService
                     {
                         // eventAggregator.GetEvent<MessageEvent>().Publish($"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloaded")}");
                         // isDownloaded = true;
-                        var repeatDownloadStrategy = _settingsStore.Settings.GetRepeatDownloadStrategy();
+                        var repeatDownloadStrategy = settings.Basic.RepeatDownloadStrategy;
                         switch (repeatDownloadStrategy)
                         {
                             case RepeatDownloadStrategy.Ask:
@@ -459,7 +462,7 @@ internal class AddToDownloadService
                 }
 
                 // 文件路径
-                var fileNameParts = _settingsStore.Settings.GetFileNameParts();
+                var fileNameParts = settings.Video.FileNameParts;
                 var fileName = FileNameBuilder.Create(fileNameParts)
                     .SetSection(Format.FormatFileName(sectionName))
                     .SetMainTitle(Format.FormatFileName(_videoInfoView.Title))
@@ -480,7 +483,7 @@ internal class AddToDownloadService
                     .SetUpName(Format.FormatFileName(ownerName));
 
                 // 序号设置
-                var orderFormat = _settingsStore.Settings.GetOrderFormat();
+                var orderFormat = settings.Video.OrderFormat;
                 switch (orderFormat)
                 {
                     case OrderFormat.Natural:
@@ -494,7 +497,7 @@ internal class AddToDownloadService
                 // 合成绝对路径
                 var filePath = Path.Combine(directory, fileName.RelativePath());
 
-                if (_settingsStore.Settings.IsRepeatFileAutoAddNumberSuffix())
+                if (settings.Basic.RepeatFileAutoAddNumberSuffix)
                 {
                     // 如果存在同名文件，自动重命名
                     // todo 如果重新下载呢。还没想好
@@ -593,8 +596,7 @@ internal class AddToDownloadService
                     PlayUrl = page.PlayUrl,
                 };
 
-                if (_settingsStore.Settings.GetVideoContent()
-                        .GenerateMovieMetadata && _downloadVideo)
+                if (settings.Video.Content.GenerateMovieMetadata && _downloadVideo)
                 {
                     downloadingItem.Metadata = BuildMovieMetadata(page);
                 }

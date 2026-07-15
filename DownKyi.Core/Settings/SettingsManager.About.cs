@@ -1,6 +1,6 @@
 namespace DownKyi.Core.Settings;
 
-public partial class SettingsManager
+public sealed partial class SettingsManager
 {
     // 是否接收测试版更新
     private const AllowStatus IsReceiveBetaVersion = AllowStatus.No;
@@ -87,5 +87,4 @@ public partial class SettingsManager
         }
         return string.Empty;
     }
-
 }

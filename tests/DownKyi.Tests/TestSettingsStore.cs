@@ -17,6 +17,7 @@ internal sealed class TestSettingsStore : IDisposable
 
     public void Dispose()
     {
+        Store.Dispose();
         if (Directory.Exists(_directory))
         {
             Directory.Delete(_directory, recursive: true);

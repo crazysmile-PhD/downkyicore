@@ -45,7 +45,7 @@ internal abstract class DownloadService : IDisposable
     private IUiDispatcher UiDispatcher { get; }
     protected DownloadDiagnosticLogger DiagnosticLogger { get; }
     protected FfmpegProcessor FfmpegProcessor { get; }
-    protected SettingsManager Settings { get; }
+    protected ApplicationSettings Settings => SettingsStore.Current;
     protected ISettingsStore SettingsStore { get; }
 
     protected Task? WorkTask { get; set; }
@@ -155,7 +155,6 @@ internal abstract class DownloadService : IDisposable
         DialogService = dialogService;
         UiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         SettingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
-        Settings = settingsStore.Settings;
         DiagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         FfmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
     }
@@ -351,7 +350,7 @@ internal abstract class DownloadService : IDisposable
             await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
         }
 
-        NormalizeTransferSchemes(urls, Settings.GetUseSsl() == AllowStatus.Yes);
+        NormalizeTransferSchemes(urls, Settings.Network.UseSsl == AllowStatus.Yes);
         var targetFile = Path.Combine(path, fileName);
         var outcome = await TransferAsync(
             downloading,
@@ -470,8 +469,9 @@ internal abstract class DownloadService : IDisposable
             await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
         }
 
-        var screenWidth = Settings.GetDanmakuScreenWidth();
-        var screenHeight = Settings.GetDanmakuScreenHeight();
+        var danmakuSettings = Settings.Danmaku;
+        var screenWidth = danmakuSettings.ScreenWidth;
+        var screenHeight = danmakuSettings.ScreenHeight;
         //if (Settings.IsCustomDanmakuResolution() != AllowStatus.YES)
         //{
         //    if (downloadingEntity.Width > 0 && downloadingEntity.Height > 0)
@@ -487,11 +487,11 @@ internal abstract class DownloadService : IDisposable
             Title = title,
             ScreenWidth = screenWidth,
             ScreenHeight = screenHeight,
-            FontName = Settings.GetDanmakuFontName(),
-            BaseFontSize = Settings.GetDanmakuFontSize(),
-            LineCount = Settings.GetDanmakuLineCount(),
+            FontName = danmakuSettings.FontName,
+            BaseFontSize = danmakuSettings.FontSize,
+            LineCount = danmakuSettings.LineCount,
             LayoutAlgorithm =
-                GetDanmakuLayoutAlgorithmValue(Settings.GetDanmakuLayoutAlgorithm()), // async/sync
+                GetDanmakuLayoutAlgorithmValue(danmakuSettings.LayoutAlgorithm), // async/sync
             TuneDuration = 0,
             DropOffset = 0,
             BottomMargin = 0,
@@ -499,9 +499,9 @@ internal abstract class DownloadService : IDisposable
         };
 
         var bilibili = Core.Danmaku2Ass.BilibiliDanmakuConverter.Instance;
-        bilibili.SetTopFilter(Settings.GetDanmakuTopFilter() == AllowStatus.Yes);
-        bilibili.SetBottomFilter(Settings.GetDanmakuBottomFilter() == AllowStatus.Yes);
-        bilibili.SetScrollFilter(Settings.GetDanmakuScrollFilter() == AllowStatus.Yes);
+        bilibili.SetTopFilter(danmakuSettings.TopFilter == AllowStatus.Yes);
+        bilibili.SetBottomFilter(danmakuSettings.BottomFilter == AllowStatus.Yes);
+        bilibili.SetScrollFilter(danmakuSettings.ScrollFilter == AllowStatus.Yes);
         var downloadBase = downloading.DownloadBase ?? throw new InvalidOperationException("DownloadBase is required to download danmaku.");
         bilibili.Create(downloadBase.Avid, downloadBase.Cid, subtitleConfig, assFile, CancellationToken.GetValueOrDefault());
 
@@ -675,7 +675,7 @@ internal abstract class DownloadService : IDisposable
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
         if (videoUid == null)
         {
-            finalFile = Settings.GetIsTranscodingAacToMp3() == AllowStatus.Yes
+            finalFile = Settings.Video.IsTranscodingAacToMp3 == AllowStatus.Yes
                 ? $"{downloading.DownloadBase.FilePath}.mp3"
                 : downloading.AudioCodec.Id == 30251
                     ? $"{downloading.DownloadBase.FilePath}.flac"
@@ -772,7 +772,7 @@ internal abstract class DownloadService : IDisposable
         switch (downloading.Downloading.PlayStreamType)
         {
             case PlayStreamType.Video:
-                playUrl = downloading.PlayUrl ?? Settings.VideoParseType switch
+                playUrl = downloading.PlayUrl ?? Settings.Video.VideoParseType switch
                 {
                     0 => VideoStreamApi.GetVideoPlayUrl(SettingsStore, downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         cancellationToken: CancellationToken.GetValueOrDefault()),
@@ -1140,8 +1140,7 @@ internal abstract class DownloadService : IDisposable
 
 
                 //nfo
-                if (Settings
-                    .GetVideoContent().GenerateMovieMetadata)
+                if (Settings.Video.Content.GenerateMovieMetadata)
                 {
                     GenerateNfoFile(downloading);
                 }
@@ -1273,7 +1272,7 @@ internal abstract class DownloadService : IDisposable
                     DownloadingList.Remove(downloading);
 
                     // 下载完成列表排序
-                    var finishedSort = Settings.GetDownloadFinishedSort();
+                    var finishedSort = Settings.Basic.DownloadFinishedSort;
                     DownloadLists.SortDownloaded(finishedSort);
                 }).ConfigureAwait(true);
                 // _notifyIcon.ShowBalloonTip(DictionaryResource.GetString("DownloadSuccess"), $"{downloadedItem.DownloadBase.Name}", BalloonIcon.Info);
@@ -1330,7 +1329,7 @@ internal abstract class DownloadService : IDisposable
     /// </summary>
     private void AfterDownload()
     {
-        var operation = Settings.GetAfterDownloadOperation();
+        var operation = Settings.Basic.AfterDownload;
         switch (operation)
         {
             case AfterDownloadOperation.None:
@@ -1421,7 +1420,7 @@ internal abstract class DownloadService : IDisposable
     {
         TokenSource = new CancellationTokenSource();
         CancellationToken = TokenSource.Token;
-        var workerCount = Math.Max(1, Settings.GetMaxCurrentDownloads());
+        var workerCount = Math.Max(1, Settings.Network.MaxCurrentDownloads);
         _downloadQueue = Channel.CreateBounded<DownloadingItem>(new BoundedChannelOptions(
             Math.Max(32, workerCount * 8))
         {

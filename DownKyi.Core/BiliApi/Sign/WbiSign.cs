@@ -127,7 +127,7 @@ public static class WbiSign
 
     private static (string ImgKey, string SubKey) GetKey(ISettingsStore settingsStore)
     {
-        var user = settingsStore.Settings.GetUserInfo();
+        var user = settingsStore.Current.User;
 
         return (user.ImgKey, user.SubKey);
     }

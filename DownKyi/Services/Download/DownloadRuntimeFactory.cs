@@ -43,7 +43,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
 
     public IDownloadService? Create()
     {
-        return _settingsStore.Settings.GetDownloader() switch
+        return _settingsStore.Current.Network.Downloader switch
         {
             DownloaderSetting.BuiltIn => new BuiltinDownloadService(
                 _downloadLists,

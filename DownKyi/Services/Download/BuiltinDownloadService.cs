@@ -78,23 +78,24 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
         string localFileName,
         long expectedBytes)
     {
+        var network = Settings.Network;
         var requestConfiguration = new RequestConfiguration
         {
             Headers = new WebHeaderCollection
             {
                 { "cookie", LoginHelper.GetLoginInfoCookiesString() }
             },
-            UserAgent = Settings.GetUserAgent(),
+            UserAgent = network.UserAgent,
             Referer = "https://www.bilibili.com"
         };
-        if (Settings.GetIsHttpProxy() == AllowStatus.Yes)
+        if (network.IsHttpProxy == AllowStatus.Yes)
         {
             requestConfiguration.Proxy = new WebProxy(
-                Settings.GetHttpProxy(),
-                Settings.GetHttpProxyListenPort());
+                network.HttpProxy,
+                network.HttpProxyListenPort);
         }
 
-        var split = Settings.GetSplit();
+        var split = network.Split;
         var configuration = new DownloadConfiguration
         {
             ChunkCount = split,
