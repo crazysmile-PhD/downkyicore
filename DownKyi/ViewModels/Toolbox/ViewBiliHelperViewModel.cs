@@ -1,13 +1,14 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
+using DownKyi.Events;
 using DownKyi.Services.Toolbox;
-using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels.Toolbox;
 
@@ -15,6 +16,8 @@ internal class ViewBiliHelperViewModel : ViewModelBase
 {
     public const string Tag = "PageToolboxBiliHelper";
     private readonly IBiliHelperCoordinator _coordinator;
+    private readonly ILogger<ViewBiliHelperViewModel> _logger;
+    private readonly IPlatformLauncher _platformLauncher;
     private CancellationTokenSource? _lookupCancellation;
 
     #region 页面属性申明
@@ -55,9 +58,13 @@ internal class ViewBiliHelperViewModel : ViewModelBase
 
     public ViewBiliHelperViewModel(
         IEventAggregator eventAggregator,
-        IBiliHelperCoordinator coordinator) : base(eventAggregator)
+        IBiliHelperCoordinator coordinator,
+        IPlatformLauncher platformLauncher,
+        ILogger<ViewBiliHelperViewModel> logger) : base(eventAggregator)
     {
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         #endregion
@@ -114,8 +121,11 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteGotoWebCommand()
     {
-        var url = $"https://www.bilibili.com/video/{Bvid}";
-        await PlatformHelper.OpenUrl(url, EventAggregator).ConfigureAwait(true);
+        var uri = new Uri($"https://www.bilibili.com/video/{Bvid}");
+        if (!await _platformLauncher.OpenUriAsync(uri).ConfigureAwait(true))
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开视频页面");
+        }
     }
 
     // 查询弹幕发送者事件
@@ -147,9 +157,7 @@ internal class ViewBiliHelperViewModel : ViewModelBase
             or InvalidOperationException or OverflowException)
         {
             UserMid = null;
-
-            Console.PrintLine("FindDanmakuSenderCommand()发生异常: {0}", e);
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage($"Danmaku sender lookup failed ({e.GetType().Name}).");
         }
     }
 
@@ -168,8 +176,11 @@ internal class ViewBiliHelperViewModel : ViewModelBase
             return;
         }
 
-        var userSpace = $"https://space.bilibili.com/{UserMid}";
-        await PlatformHelper.OpenUrl(userSpace, EventAggregator).ConfigureAwait(true);
+        var userSpace = new Uri($"https://space.bilibili.com/{UserMid}");
+        if (!await _platformLauncher.OpenUriAsync(userSpace).ConfigureAwait(true))
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开用户空间");
+        }
     }
 
     #endregion

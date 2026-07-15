@@ -11,6 +11,7 @@ public sealed class LoggingMigrationArchitectureTests
     [InlineData("DownKyi/Services/VersionCheckerService.cs")]
     [InlineData("DownKyi/ViewModels/Dialogs/ViewDownloadSetterViewModel.cs")]
     [InlineData("DownKyi/ViewModels/MainWindowViewModel.cs")]
+    [InlineData("DownKyi/ViewModels/Toolbox/ViewBiliHelperViewModel.cs")]
     public void MigratedRuntimeFilesCannotRestoreStaticOrTerminalLogging(string relativePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -28,6 +29,7 @@ internal class ViewAboutViewModel : ViewModelBase
     private readonly ISettingsStore _settingsStore;
     private readonly IApplicationLogService _logService;
     private readonly ILogger<ViewAboutViewModel> _logger;
+    private readonly IPlatformLauncher _platformLauncher;
     private bool _isOnNavigatedTo;
 
     #region 页面属性申明
@@ -71,11 +73,13 @@ internal class ViewAboutViewModel : ViewModelBase
         IDialogService dialogService,
         ISettingsStore settingsStore,
         IApplicationLogService logService,
+        IPlatformLauncher platformLauncher,
         ILogger<ViewAboutViewModel> logger) : base(eventAggregator,
         dialogService)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logService = logService ?? throw new ArgumentNullException(nameof(logService));
+        _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
@@ -120,7 +124,7 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteAppNameCommand()
     {
-        await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases", EventAggregator).ConfigureAwait(true);
+        await OpenUriAsync($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases").ConfigureAwait(true);
     }
 
     // 检查更新事件
@@ -177,7 +181,7 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteFeedbackCommand()
     {
-        await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/issues", EventAggregator).ConfigureAwait(true);
+        await OpenUriAsync($"https://github.com/{App.RepoOwner}/{App.RepoName}/issues").ConfigureAwait(true);
     }
 
     // 打开日志目录事件
@@ -189,7 +193,10 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await _logService.FlushAsync(cancellation.Token).ConfigureAwait(true);
-        await PlatformHelper.OpenFolder(_logService.LogDirectory, EventAggregator).ConfigureAwait(true);
+        if (!await _platformLauncher.OpenFolderAsync(_logService.LogDirectory).ConfigureAwait(true))
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开日志文件夹");
+        }
     }
 
     // 导出脱敏诊断日志事件
@@ -204,7 +211,10 @@ internal class ViewAboutViewModel : ViewModelBase
         {
             var diagnosticLog = await _logService.ExportDiagnosticLogAsync().ConfigureAwait(true);
             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("DiagnosticLogExported"));
-            await PlatformHelper.Open(diagnosticLog, EventAggregator).ConfigureAwait(true);
+            if (!await _platformLauncher.OpenFileAsync(diagnosticLog).ConfigureAwait(true))
+            {
+                EventAggregator.GetEvent<MessageEvent>().Publish("无法打开诊断日志");
+            }
         }
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
             or InvalidOperationException or System.ComponentModel.Win32Exception)
@@ -264,7 +274,7 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteProtobufLicenseCommand()
     {
-        await PlatformHelper.OpenUrl("https://github.com/protocolbuffers/protobuf/blob/master/LICENSE").ConfigureAwait(true);
+        await OpenUriAsync("https://github.com/protocolbuffers/protobuf/blob/master/LICENSE").ConfigureAwait(true);
     }
 
     // Newtonsoft.Json许可证查看事件
@@ -277,7 +287,7 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteNewtonsoftLicenseCommand()
     {
-        await PlatformHelper.OpenUrl("https://licenses.nuget.org/MIT").ConfigureAwait(true);
+        await OpenUriAsync("https://licenses.nuget.org/MIT").ConfigureAwait(true);
     }
 
     // Prism.DryIoc许可证查看事件
@@ -290,7 +300,7 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecutePrismLicenseCommand()
     {
-        await PlatformHelper.OpenUrl("https://www.nuget.org/packages/Prism.DryIoc/8.1.97/license").ConfigureAwait(true);
+        await OpenUriAsync("https://www.nuget.org/packages/Prism.DryIoc/8.1.97/license").ConfigureAwait(true);
     }
 
     // QRCoder许可证查看事件
@@ -303,7 +313,7 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteQRCoderLicenseCommand()
     {
-        await PlatformHelper.OpenUrl("https://licenses.nuget.org/MIT").ConfigureAwait(true);
+        await OpenUriAsync("https://licenses.nuget.org/MIT").ConfigureAwait(true);
     }
 
     // System.Data.SQLite.Core许可证查看事件
@@ -316,7 +326,7 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteSQLiteLicenseCommand()
     {
-        await PlatformHelper.OpenUrl("https://www.sqlite.org/copyright.html").ConfigureAwait(true);
+        await OpenUriAsync("https://www.sqlite.org/copyright.html").ConfigureAwait(true);
     }
 
     // Aria2c许可证查看事件
@@ -329,7 +339,10 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteAriaLicenseCommand()
     {
-        await PlatformHelper.Open("aria2_COPYING.txt").ConfigureAwait(true);
+        if (!await _platformLauncher.OpenFileAsync("aria2_COPYING.txt").ConfigureAwait(true))
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开 aria2 许可文件");
+        }
     }
 
     // FFmpeg许可证查看事件
@@ -342,7 +355,18 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteFFmpegLicenseCommand()
     {
-        await PlatformHelper.Open("FFmpeg_LICENSE.txt").ConfigureAwait(true);
+        if (!await _platformLauncher.OpenFileAsync("FFmpeg_LICENSE.txt").ConfigureAwait(true))
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开 FFmpeg 许可文件");
+        }
+    }
+
+    private async Task OpenUriAsync(string value)
+    {
+        if (!await _platformLauncher.OpenUriAsync(new Uri(value)).ConfigureAwait(true))
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开网页");
+        }
     }
 
     #endregion

@@ -46,6 +46,42 @@ public sealed class DesktopPlatformBoundaryTests
         Assert.Contains("IFilePickerService, AvaloniaFilePickerService", compositionSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ViewModelsUseTheShellFreePlatformLauncherBoundary()
+    {
+        var viewModelDirectory = Path.Combine(RepositoryRoot, "DownKyi", "ViewModels");
+        var violations = Directory
+            .EnumerateFiles(viewModelDirectory, "*.cs", SearchOption.AllDirectories)
+            .Where(path => File.ReadAllText(path).Contains("PlatformHelper", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .ToArray();
+        var interfaceSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "src",
+            "DownKyi.Application",
+            "Desktop",
+            "IPlatformLauncher.cs"));
+        var adapterSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Platform",
+            "AvaloniaPlatformLauncher.cs"));
+        var compositionSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyPrismComposition.cs"));
+
+        Assert.Empty(violations);
+        Assert.DoesNotContain("Avalonia", interfaceSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Prism", interfaceSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("/bin/sh", adapterSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ShellExecRaw", adapterSource, StringComparison.Ordinal);
+        Assert.Contains("ArgumentList.Add(target)", adapterSource, StringComparison.Ordinal);
+        Assert.Contains("IPlatformLauncher, AvaloniaPlatformLauncher", compositionSource, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(RepositoryRoot, "DownKyi", "Utils", "PlatformHelper.cs")));
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

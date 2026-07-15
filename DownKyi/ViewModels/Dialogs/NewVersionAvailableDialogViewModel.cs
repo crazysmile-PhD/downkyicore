@@ -3,10 +3,10 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls.Documents;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Models;
-using DownKyi.Utils;
 using Prism.Commands;
 using Prism.Dialogs;
 
@@ -16,6 +16,7 @@ namespace DownKyi.ViewModels.Dialogs
     {
         public const string Tag = "NewVersionAvailable";
 
+        private readonly IPlatformLauncher _platformLauncher;
         private readonly ISettingsStore _settingsStore;
         private DownKyiAsyncDelegateCommand? _allowCommand;
 
@@ -24,15 +25,19 @@ namespace DownKyi.ViewModels.Dialogs
         public DelegateCommand SkipCurrentVersionCommand => _skipCurrentVersionCommand ??= new DelegateCommand(ExecuteSkipCurrentVersionCommand);
         public DownKyiAsyncDelegateCommand AllowCommand => _allowCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAllowCommand);
 
-        public NewVersionAvailableDialogViewModel(ISettingsStore settingsStore)
+        public NewVersionAvailableDialogViewModel(
+            ISettingsStore settingsStore,
+            IPlatformLauncher platformLauncher)
         {
             _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+            _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
         }
 
         private async Task ExecuteAllowCommand()
         {
             const ButtonResult result = ButtonResult.OK;
-            await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases/tag/{TagName}").ConfigureAwait(true);
+            var releaseUri = new Uri($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases/tag/{TagName}");
+            _ = await _platformLauncher.OpenUriAsync(releaseUri).ConfigureAwait(true);
             CloseDialog(new DialogResult(result));
         }
 

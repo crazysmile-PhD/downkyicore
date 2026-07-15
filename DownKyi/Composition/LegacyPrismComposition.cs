@@ -66,6 +66,7 @@ internal static class LegacyPrismComposition
         containerRegistry.RegisterSingleton<IUserSpacePageCoordinator, UserSpacePageCoordinator>();
         containerRegistry.RegisterSingleton<IClipboardService, AvaloniaClipboardService>();
         containerRegistry.RegisterSingleton<IFilePickerService, AvaloniaFilePickerService>();
+        containerRegistry.RegisterSingleton<IPlatformLauncher, AvaloniaPlatformLauncher>();
         containerRegistry.RegisterSingleton<IDialogService, DialogService>();
         containerRegistry.Register<IDialogWindow, DialogWindow>();
 

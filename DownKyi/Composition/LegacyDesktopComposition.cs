@@ -49,6 +49,7 @@ internal static class LegacyDesktopComposition
                 container.Resolve<IEventAggregator>(),
                 container.Resolve<IDialogService>(),
                 container.Resolve<IClipboardService>(),
+                container.Resolve<IPlatformLauncher>(),
                 settingsStore);
             services.AddSingleton<DownloadDiagnosticLogger>();
             services.AddSingleton<IDownloadRuntimeFactory, DownloadRuntimeFactory>();
@@ -63,6 +64,7 @@ internal static class LegacyDesktopComposition
         IEventAggregator eventAggregator,
         IDialogService dialogService,
         IClipboardService clipboardService,
+        IPlatformLauncher platformLauncher,
         ISettingsStore settingsStore)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -70,12 +72,14 @@ internal static class LegacyDesktopComposition
         ArgumentNullException.ThrowIfNull(eventAggregator);
         ArgumentNullException.ThrowIfNull(dialogService);
         ArgumentNullException.ThrowIfNull(clipboardService);
+        ArgumentNullException.ThrowIfNull(platformLauncher);
         ArgumentNullException.ThrowIfNull(settingsStore);
 
         services.AddSingleton(regionManager);
         services.AddSingleton(eventAggregator);
         services.AddSingleton(dialogService);
         services.AddSingleton(clipboardService);
+        services.AddSingleton(platformLauncher);
         services.AddSingleton(settingsStore);
         services.AddSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
         services.AddTransient<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();

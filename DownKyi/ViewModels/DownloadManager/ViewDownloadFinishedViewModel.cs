@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Events;
@@ -23,6 +24,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
 
     private DownloadStorageService _downloadStorageService;
     private readonly DownloadListState _downloadLists;
+    private readonly IPlatformLauncher _platformLauncher;
     private readonly ISettingsStore _settingsStore;
 
     #region 页面属性申明
@@ -50,13 +52,15 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         IDialogService dialogService,
         DownloadStorageService downloadStorageService,
         DownloadListState downloadLists,
-        ISettingsStore settingsStore
+        ISettingsStore settingsStore,
+        IPlatformLauncher platformLauncher
     ) : base(eventAggregator,
         dialogService)
     {
         // 初始化DownloadedList
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
         DownloadedList = downloadLists.Downloaded;
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
 
@@ -172,7 +176,11 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         var fileInfo = new FileInfo(videoPath);
         if (File.Exists(fileInfo.FullName))
         {
-            await PlatformHelper.Open(fileInfo.FullName).ConfigureAwait(true);
+            var opened = await _platformLauncher.OpenFileAsync(fileInfo.FullName).ConfigureAwait(true);
+            if (!opened)
+            {
+                EventAggregator.GetEvent<MessageEvent>().Publish("无法打开视频文件");
+            }
         }
         else
         {
@@ -217,7 +225,12 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             var videoPath = $"{downloadedItem.DownloadBase.FilePath}{suffix}";
             var fileInfo = new FileInfo(videoPath);
             if (!File.Exists(fileInfo.FullName) || fileInfo.DirectoryName == null) continue;
-            await PlatformHelper.OpenFolder(fileInfo.DirectoryName, EventAggregator).ConfigureAwait(true);
+            var opened = await _platformLauncher.OpenFolderAsync(fileInfo.DirectoryName).ConfigureAwait(true);
+            if (!opened)
+            {
+                EventAggregator.GetEvent<MessageEvent>().Publish("无法打开文件夹");
+            }
+
             return;
         }
 

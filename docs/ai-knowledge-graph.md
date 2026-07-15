@@ -808,7 +808,7 @@ type: service
 paths:
   - src/DownKyi.Application/Desktop
   - DownKyi/Platform
-responsibility: Keeps clipboard and file/folder picker contracts independent of Avalonia while Desktop adapters own MainWindow and StorageProvider access.
+responsibility: Keeps clipboard, file/folder picker, and external file/folder/URI launch contracts independent of Avalonia while Desktop adapters own MainWindow, StorageProvider, process launch, and diagnostics.
 inbound:
   - viewmodel.video-detail
   - legacy toolbox/settings/dialog viewmodels
@@ -817,6 +817,8 @@ outbound:
 contracts:
   - Application interfaces contain no Avalonia, Prism, path-policy, or global App references.
   - Picker cancellation returns null or an empty list and never becomes a fake path.
+  - External launch requests return success/failure, preserve cancellation, and log only redacted operational failures; ViewModels own localized user feedback.
+  - Linux launch uses `xdg-open` with `ProcessStartInfo.ArgumentList`; no path or URI is interpolated into `/bin/sh -c`.
   - Disk-space probes use the complete platform path; low-level helpers propagate typed failures and the injected ViewModel logger owns redacted diagnostics.
   - Delayed DataGrid scrolling invalidates stale requests by version and cannot retain a disposable cancellation source in an Avalonia behavior.
   - Host smoke injects a fake clipboard and resolves key ViewModels without initializing Prism ContainerLocator.
@@ -1962,6 +1964,7 @@ test.architecture-boundaries:
     - settings validation/persistence and legacy migration cannot restore static LogManager, Console diagnostics, or duplicate low-level SQLite logging
     - Bilibili Core facades cannot log or print request data; injected account and user-space coordinators own sanitized outcome diagnostics
     - migrated update, disk, cookie serialization, and delayed-scroll files cannot restore static or terminal diagnostics
+    - ViewModels cannot restore PlatformHelper, and the platform launcher cannot restore shell-string execution
 
 test.settings-store:
   paths:

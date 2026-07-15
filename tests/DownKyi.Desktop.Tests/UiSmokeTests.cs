@@ -53,6 +53,7 @@ public sealed class UiSmokeTests
                 eventAggregator,
                 dialogService,
                 new StubClipboardService(),
+                new StubPlatformLauncher(),
                 settingsStore);
         });
 
@@ -211,6 +212,24 @@ public sealed class UiSmokeTests
         public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubPlatformLauncher : IPlatformLauncher
+    {
+        public Task<bool> OpenFileAsync(string path, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> OpenFolderAsync(string path, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> OpenUriAsync(Uri uri, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(true);
         }
     }
 }
