@@ -1336,9 +1336,14 @@ tests:
 id: core.logging
 type: core
 paths:
+  - DownKyi.Core/Logging/ApplicationLogProvider.cs
+  - DownKyi.Core/Logging/ApplicationLogOptions.cs
+  - DownKyi.Core/Logging/ApplicationLogRecord.cs
+  - DownKyi.Core/Logging/IApplicationLogService.cs
+  - DownKyi.Core/Logging/SensitiveDataRedactor.cs
   - DownKyi.Core/Logging/LogManager.cs
   - DownKyi.Core/Logging/LogInfo.cs
-responsibility: Writes rotating logs, emits log events, exports sanitized diagnostic logs, and masks sensitive data.
+responsibility: Provides the Microsoft.Extensions.Logging sink, bounded asynchronous persistence, rotation/retention, recent-event diagnostics, export, and one sensitive-data redaction policy.
 inbound:
   - app.application
   - core.bili-api
@@ -1347,9 +1352,13 @@ outbound:
   - external.filesystem
 contracts:
   - Diagnostic export must redact cookies, tokens, sensitive URLs, and personal local paths.
-  - Flush should be available during shutdown.
+  - Accepted entries pass through one redactor before entering either the bounded recent-event buffer or the bounded writer queue.
+  - Every entry records timestamp, category, event ID, process ID, thread ID, and captured scope context.
+  - Explicit flush drains accepted entries, closes the active file handle so logs are immediately readable on Windows, and reports writer failures.
+  - Rotation is size/day based; startup retention bounds both age and file count.
+  - Async disposal drains accepted entries without a synchronous wait.
 hazards:
-  - Synchronous or unbounded logging can block shutdown and hide errors.
+  - `LogManager` remains an unbounded static compatibility writer until all production callers are migrated; it must not receive new call sites.
   - Console logging bypasses sanitization policy.
 tests:
   - test.diagnostic-log-redaction
@@ -1946,6 +1955,16 @@ test.settings-store:
     - tests never read or write the user's real settings path
     - user-space navigation routes the signed-in MID to My Space and other MIDs to public User Space using the injected owner
     - logout removes an isolated login file and clears only the injected settings owner
+
+test.diagnostic-log-redaction:
+  paths:
+    - tests/DownKyi.Core.Tests/ApplicationLogProviderTests.cs
+  guards:
+    - message, exception, and scope data share the same cookie, query-secret, email, account-ID, and personal-path redactor
+    - the recent-event buffer is bounded and diagnostic export includes only its retained entries
+    - accepted entries are drained by async disposal and explicit flush releases the current log file
+    - size rotation and age/count retention remain bounded
+    - writer initialization failures are visible to flush callers
 
 test.ui-smoke:
   paths:

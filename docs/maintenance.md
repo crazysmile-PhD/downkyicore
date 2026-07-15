@@ -68,6 +68,17 @@ PR 07-15 result: Release build completed with zero warnings, 161 tests passed in
 
 Settings changes must pass `SettingsStoreTests`, `SettingsArchitectureTests`, the Host smoke test, and the full Release build with `AnalysisMode=All`.
 
+## Logging Policy
+
+- New code receives `ILogger<T>` from composition and must not call static `LogManager` or write diagnostics directly to Console.
+- `ApplicationLogProvider` is the single file sink and redaction boundary. Do not create another log queue, file writer, or export sanitizer.
+- Logging scopes carry correlation, download-task, or child-process context; messages must not contain raw cookies, sensitive query values, account IDs, email addresses, or full personal paths.
+- The writer queue and recent-event buffer stay bounded. A full queue may drop an entry and increments the diagnostic drop counter; logging must never block a download or UI thread.
+- Application shutdown must await `FlushAsync` and `DisposeAsync`. Explicit flush also releases the active file handle so the Log page can open it immediately on Windows.
+- Writer initialization or persistence failures must reach the caller of `FlushAsync`; do not silently report a successful flush.
+
+Logging changes must pass `ApplicationLogProviderTests`, the Host smoke test, and the full Release build with `AnalysisMode=All`.
+
 ## Host Composition Policy
 
 - `src/DownKyi.Domain` is framework-free and owns typed result/error contracts.
