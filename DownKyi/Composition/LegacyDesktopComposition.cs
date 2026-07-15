@@ -1,5 +1,6 @@
 using System;
 using DownKyi.Application.Desktop;
+using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
@@ -38,6 +39,7 @@ internal static class LegacyDesktopComposition
             services.AddSingleton(logService);
             services.AddDownKyiBilibiliHttpClient(settingsStore);
             services.AddSingleton<IHostedService, StorageMaintenanceHostedService>();
+            services.AddSingleton<AriaServer>();
             services.AddSingleton(downloadLists);
             services.AddSingleton(container.Resolve<FfmpegProcessor>());
             services.AddSingleton(container.Resolve<DownloadStorageService>());

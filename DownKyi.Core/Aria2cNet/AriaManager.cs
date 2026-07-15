@@ -1,7 +1,7 @@
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Client.Entity;
 using DownKyi.Core.Logging;
-using Console = DownKyi.Core.Utils.Debugging.Console;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Core.Aria2cNet;
 
@@ -33,6 +33,12 @@ public sealed class AriaGlobalStatusEventArgs(long speed) : EventArgs
 public class AriaManager
 {
     private const int PollDelayMilliseconds = 500;
+    private readonly ILogger<AriaManager> _logger;
+
+    public AriaManager(ILogger<AriaManager> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
 
     // gid对应项目的状态
     public event EventHandler<AriaProgressEventArgs>? TellStatus;
@@ -118,14 +124,13 @@ public class AriaManager
             {
                 if (!string.IsNullOrEmpty(result.ErrorMessage))
                 {
-                    Console.PrintLine("ErrorMessage: " + result.ErrorMessage);
-                    LogManager.Error("AriaManager", result.ErrorMessage);
+                    _logger.LogErrorMessage($"aria2 reported a download failure: {result.ErrorMessage}");
                 }
 
                 var ariaRemove = await AriaClient.RemoveDownloadResultAsync(gid).ConfigureAwait(false);
                 if (ariaRemove?.Result != null)
                 {
-                    LogManager.Debug("AriaManager", ariaRemove.Result);
+                    _logger.LogDebugMessage("aria2 removed the failed download result.");
                 }
 
                 OnDownloadFinish(false, null, gid, result.ErrorMessage);

@@ -1,10 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.Aria2cNet;
@@ -29,6 +29,8 @@ namespace DownKyi.Services.Download;
 
 internal class AriaDownloadService : DownloadService, IDownloadService
 {
+    private readonly AriaServer _ariaServer;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly bool _ownsAriaServer;
 
     public AriaDownloadService(
@@ -39,6 +41,8 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
+        AriaServer ariaServer,
+        ILoggerFactory loggerFactory,
         ILogger logger)
         : this(
             downloadLists,
@@ -48,6 +52,8 @@ internal class AriaDownloadService : DownloadService, IDownloadService
             settingsStore,
             diagnosticLogger,
             ffmpegProcessor,
+            ariaServer,
+            loggerFactory,
             logger,
             ownsAriaServer: true)
     {
@@ -61,6 +67,8 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
+        AriaServer ariaServer,
+        ILoggerFactory loggerFactory,
         ILogger logger,
         bool ownsAriaServer)
         : base(
@@ -73,6 +81,8 @@ internal class AriaDownloadService : DownloadService, IDownloadService
             ffmpegProcessor,
             logger)
     {
+        _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _ownsAriaServer = ownsAriaServer;
         Tag = ownsAriaServer ? nameof(AriaDownloadService) : nameof(CustomAriaDownloadService);
     }
@@ -145,7 +155,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         }
 
         DiagnosticLogger.LogAriaTaskStart(Tag, activeGid, urls.Count);
-        var ariaManager = new AriaManager();
+        var ariaManager = new AriaManager(_loggerFactory.CreateLogger<AriaManager>());
         ariaManager.TellStatus += AriaTellStatus;
         var result = await ariaManager.GetDownloadStatusAsync(
             activeGid,
@@ -252,16 +262,16 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         };
         DiagnosticLogger.LogAriaServerConfig(Tag, config);
 
-        var errors = new StringBuilder();
-        await AriaServer.StartServerAsync(config, output =>
+        var errors = new ConcurrentQueue<string>();
+        await _ariaServer.StartServerAsync(config, output =>
         {
             if (!string.IsNullOrWhiteSpace(output))
             {
-                errors.AppendLine(output);
+                errors.Enqueue(output);
             }
         }).ConfigureAwait(true);
 
-        var message = errors.ToString();
+        var message = string.Join(Environment.NewLine, errors);
         if (message.Contains("ERROR", StringComparison.OrdinalIgnoreCase))
         {
             var alertService = new AlertService(DialogService);
@@ -297,9 +307,9 @@ internal class AriaDownloadService : DownloadService, IDownloadService
             Logger.LogErrorMessage("Aria server shutdown failed.", e);
         }
 
-        if (!await AriaServer.CloseServerAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true))
+        if (!await _ariaServer.CloseServerAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true))
         {
-            await AriaServer.ForceCloseServerAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
+            await _ariaServer.ForceCloseServerAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
         }
     }
 

@@ -1502,6 +1502,9 @@ contracts:
   - RPC server startup/shutdown must be cancellation-aware.
   - Split, max connection, min split size, and limits should match settings.
   - Only the tracked aria2 child process may be terminated; shutdown is bounded and never kills unrelated aria2 processes by name.
+  - Host owns one injected `AriaServer`; normal backend shutdown and App timeout cleanup must address that same tracked-process owner.
+  - Manager, server, and process-supervisor diagnostics use typed loggers from the shared application factory; `Aria2cNet` cannot call static `LogManager`.
+  - RPC requests use iterative asynchronous retry and cannot occupy a worker thread with synchronous `HttpClient.Send` or recursive retry.
 hazards:
   - Orphaned aria2 processes prevent clean app exit and lock output files.
   - Temporary `.aria2` files must be removed when user deletes a task.
@@ -1947,6 +1950,7 @@ test.architecture-boundaries:
     - no production source can read through a mutable Settings facade, and `ISettingsStore` cannot expose `SettingsManager`
     - download runtime and file cleanup cannot restore static LogManager or a static DownloadTaskFileService owner
     - FFmpeg processor, concat, and hardware detection cannot restore static LogManager or a static detector owner
+    - aria2 manager/server/process supervision cannot restore static LogManager, static server ownership, synchronous HTTP send, or recursive retry
 
 test.settings-store:
   paths:

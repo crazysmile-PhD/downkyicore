@@ -230,7 +230,9 @@ internal partial class App : PrismApplication, IDisposable
         else
         {
             _logger?.LogWarningMessage("Application cleanup timed out; killing the tracked aria2 process.");
-            AriaServer.KillTrackedServer("application exit cleanup timed out.");
+            _host?.Services
+                .GetService<AriaServer>()?
+                .KillTrackedServer("application exit cleanup timed out.");
             _ = cleanup.ContinueWith(
                 task => _logger?.LogErrorMessage(
                     "Application cleanup failed after the shutdown timeout.",

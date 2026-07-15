@@ -11,12 +11,15 @@ public sealed class DownloadRuntimeArchitectureTests
             Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download"),
             "*.cs",
             SearchOption.TopDirectoryOnly).Append(
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "Aria2cNet", "AriaManager.cs"));
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "Aria2cNet", "AriaManager.cs")).Append(
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "Aria2cNet", "Client", "AriaClient.cs"));
         var forbidden = new[]
         {
             ".GetAwaiter().GetResult()",
             ".Wait()",
-            "Task.Run(async"
+            "Task.Run(async",
+            "HttpClient.Send(",
+            "Request(url, parameters, retry - 1)"
         };
 
         var violations = files
@@ -134,6 +137,32 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.DoesNotContain("static class DownloadTaskFileService", taskFileSource, StringComparison.Ordinal);
         Assert.Contains("DownloadTaskFileService _downloadTaskFileService", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("RegisterSingleton<DownloadTaskFileService>()", compositionSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AriaRuntimeUsesOneInjectedServerAndTypedLogging()
+    {
+        var ariaDirectory = Path.Combine(RepositoryRoot, "DownKyi.Core", "Aria2cNet");
+        var violations = Directory
+            .EnumerateFiles(ariaDirectory, "*.cs", SearchOption.AllDirectories)
+            .Where(path => File.ReadAllText(path).Contains("LogManager.", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .ToArray();
+        var serverSource = File.ReadAllText(Path.Combine(ariaDirectory, "Server", "AriaServer.cs"));
+        var compositionSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyDesktopComposition.cs"));
+        var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
+        Assert.Contains("sealed class AriaServer", serverSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("static class AriaServer", serverSource, StringComparison.Ordinal);
+        Assert.Contains("ILoggerFactory loggerFactory", serverSource, StringComparison.Ordinal);
+        Assert.Contains("AddSingleton<AriaServer>()", compositionSource, StringComparison.Ordinal);
+        Assert.Contains("GetService<AriaServer>()", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AriaServer.KillTrackedServer", appSource, StringComparison.Ordinal);
     }
 
     [Fact]

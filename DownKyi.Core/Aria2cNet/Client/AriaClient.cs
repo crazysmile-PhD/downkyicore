@@ -1,9 +1,6 @@
-using System.Net;
 using System.Text;
 using DownKyi.Core.Aria2cNet.Client.Entity;
-using DownKyi.Core.Logging;
 using Newtonsoft.Json;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.Aria2cNet.Client;
 
@@ -1077,11 +1074,7 @@ public static class AriaClient
         // 转换为json字符串
         string sendJson = JsonConvert.SerializeObject(ariaSend, Formatting.Indented, jsonSetting);
         // 向服务器请求数据
-        string? result = null;
-        await Task.Run(() =>
-        {
-            result = Request(GetRpcUri(), sendJson);
-        }).ConfigureAwait(false);
+        var result = await RequestAsync(GetRpcUri(), sendJson).ConfigureAwait(false);
         if (result == null) { return new T(); }
 
         // 反序列化
@@ -1098,43 +1091,35 @@ public static class AriaClient
     /// <param name="parameters"></param>
     /// <param name="retry"></param>
     /// <returns></returns>
-    private static string? Request(string url, string parameters, int retry = 3)
+    private static async Task<string?> RequestAsync(string url, string parameters, int retry = 3)
     {
-        // 重试次数
-        if (retry <= 0) { return null; }
-
-        try
+        for (var attempt = 0; attempt < retry; attempt++)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Content = new StringContent(parameters, Encoding.UTF8, "application/json");
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(parameters, Encoding.UTF8, "application/json")
+                };
+                using var response = await HttpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
 
-            using var response = HttpClient.Send(request);
-            response.EnsureSuccessStatusCode();
+                return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is HttpRequestException or IOException)
+            {
+                if (attempt + 1 >= retry)
+                {
+                    return null;
+                }
 
-            using var reader = new StreamReader(response.Content.ReadAsStream(), Encoding.UTF8);
-            return reader.ReadToEnd();
+                await Task.Delay(TimeSpan.FromMilliseconds(150 * (attempt + 1))).ConfigureAwait(false);
+            }
         }
-        catch (HttpRequestException e) when (e.StatusCode != null)
-        {
-            if (e.Data["Response"] is not HttpResponseMessage response) { return null; }
 
-            using var reader = new StreamReader(response.Content.ReadAsStream(), Encoding.UTF8);
-            var html = reader.ReadToEnd();
-
-            return html;
-        }
-        catch (HttpRequestException e)
-        {
-            Console.PrintLine("Request()发生HTTP请求异常: {0}", e);
-            LogManager.Error("AriaClient", e);
-            return Request(url, parameters, retry - 1);
-        }
-        catch (IOException e)
-        {
-            Console.PrintLine("Request()发生IO异常: {0}", e);
-            LogManager.Error("AriaClient", e);
-            return Request(url, parameters, retry - 1);
-        }
+        return null;
     }
 
 }

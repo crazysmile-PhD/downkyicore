@@ -24,7 +24,7 @@ Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
 - Move collection parsing, video parsing, selection, plan building, duplicate policy, and queueing into Application use cases; BV/AV/bangumi/course entry resolution, cancellable detail/stream result coordination, directory-cancel/add coordination, and single-source video search projection are complete.
 - Move notifications, dialogs, and navigation behind Desktop interfaces; clipboard and file-picker boundaries are complete and their static helpers are deleted.
-- Replace the remaining static `LogManager` usage with injected `Microsoft.Extensions.Logging`; Prism/Host composition, App crash/shutdown, About log management, the complete download runtime/file-lifecycle/maintenance path, and the FFmpeg processor/concat/hardware-detection pipeline are migrated, with download task scopes using redacted short IDs; 37 production caller files still contain executable static logger references.
+- Replace the remaining static `LogManager` usage with injected `Microsoft.Extensions.Logging`; Prism/Host composition, App crash/shutdown, About log management, the complete download runtime/file-lifecycle/maintenance path, FFmpeg processor/concat/hardware detection, and aria2 manager/server/process supervision are migrated, with download task scopes using redacted short IDs; 33 production caller files still contain executable static logger references.
 
 ## PR 25-29 - Remove Prism And Legacy Architecture
 

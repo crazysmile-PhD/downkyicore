@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DownKyi.Core.Aria2cNet.Server;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Core.Tests;
 
@@ -8,22 +9,23 @@ public sealed class AriaServerProcessTests
     [Fact]
     public async Task KillTrackedServerTerminatesAndReleasesTrackedProcess()
     {
+        var server = new AriaServer(NullLoggerFactory.Instance);
         using var process = StartLongRunningProcess();
-        AriaServer.SetTrackedServerForTests(process);
+        server.SetTrackedServerForTests(process);
 
         try
         {
-            Assert.True(AriaServer.KillTrackedServer("test cleanup"));
+            Assert.True(server.KillTrackedServer("test cleanup"));
             await process
                 .WaitForExitAsync(TestContext.Current.CancellationToken)
                 .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken).ConfigureAwait(true);
 
             Assert.True(process.HasExited);
-            Assert.False(AriaServer.HasTrackedServerForTests());
+            Assert.False(server.HasTrackedServerForTests());
         }
         finally
         {
-            AriaServer.SetTrackedServerForTests(null);
+            server.SetTrackedServerForTests(null);
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);

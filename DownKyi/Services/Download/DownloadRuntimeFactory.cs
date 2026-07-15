@@ -1,4 +1,5 @@
 using System;
+using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Platform;
@@ -16,6 +17,7 @@ internal interface IDownloadRuntimeFactory
 internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
 {
     private readonly DownloadListState _downloadLists;
+    private readonly AriaServer _ariaServer;
     private readonly DownloadStorageService _downloadStorageService;
     private readonly IDialogService _dialogService;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
@@ -32,6 +34,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
+        AriaServer ariaServer,
         ILoggerFactory loggerFactory)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
@@ -42,6 +45,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
     }
 
@@ -66,6 +70,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _settingsStore,
                 _diagnosticLogger,
                 _ffmpegProcessor,
+                _ariaServer,
+                _loggerFactory,
                 _loggerFactory.CreateLogger<AriaDownloadService>()),
             DownloaderSetting.CustomAria => new CustomAriaDownloadService(
                 _downloadLists,
@@ -75,6 +81,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _settingsStore,
                 _diagnosticLogger,
                 _ffmpegProcessor,
+                _ariaServer,
+                _loggerFactory,
                 _loggerFactory.CreateLogger<CustomAriaDownloadService>()),
             _ => null
         };

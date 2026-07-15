@@ -1,3 +1,4 @@
+using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Platform;
@@ -18,6 +19,8 @@ internal sealed class CustomAriaDownloadService : AriaDownloadService
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
+        AriaServer ariaServer,
+        ILoggerFactory loggerFactory,
         ILogger<CustomAriaDownloadService> logger)
         : base(
             downloadLists,
@@ -27,6 +30,8 @@ internal sealed class CustomAriaDownloadService : AriaDownloadService
             settingsStore,
             diagnosticLogger,
             ffmpegProcessor,
+            ariaServer,
+            loggerFactory,
             logger,
             ownsAriaServer: false)
     {
