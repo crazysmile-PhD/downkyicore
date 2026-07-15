@@ -1,11 +1,11 @@
 using System;
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Utils;
 using DownKyi.Events;
 using DownKyi.Images;
@@ -157,7 +157,8 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         FolderIcon.Fill = DictionaryResource.GetColor("ColorPrimary");
 
         // 下载内容
-        var videoContent = _settingsStore.Settings.GetVideoContent();
+        var videoSettings = _settingsStore.Current.Video;
+        var videoContent = videoSettings.Content;
 
         DownloadAudio = videoContent.DownloadAudio;
         DownloadVideo = videoContent.DownloadVideo;
@@ -175,8 +176,8 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         }
 
         // 历史下载目录
-        DirectoryList = new ObservableCollection<string>(_settingsStore.Settings.GetHistoryVideoRootPaths());
-        var directory = _settingsStore.Settings.GetSaveVideoRootPath();
+        DirectoryList = new ObservableCollection<string>(videoSettings.HistoryVideoRootPaths);
+        var directory = videoSettings.SaveVideoRootPath;
         if (!DirectoryList.Contains(directory))
         {
             ListHelper.InsertUnique(DirectoryList, directory, 0);
@@ -185,7 +186,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         Directory = directory;
 
         // 是否使用默认下载目录
-        IsDefaultDownloadDirectory = _settingsStore.Settings.GetIsUseSaveVideoRootPath() == AllowStatus.Yes;
+        IsDefaultDownloadDirectory = videoSettings.IsUseSaveVideoRootPath == AllowStatus.Yes;
 
         #endregion
     }
@@ -380,17 +381,21 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
             return;
         }
 
-        // 设此文件夹为默认下载文件夹
-        _settingsStore.Settings.SetIsUseSaveVideoRootPath(IsDefaultDownloadDirectory ? AllowStatus.Yes : AllowStatus.No);
-
         // 将Directory移动到第一项
         // 如果直接在ComboBox中选择的就需要
         // 否则选中项不会在下次出现在第一项
         ListHelper.InsertUnique(DirectoryList, Directory, 0, ref _directory);
 
-        // 将更新后的DirectoryList写入历史中
-        _settingsStore.Settings.SetSaveVideoRootPath(Directory);
-        _settingsStore.Settings.SetHistoryVideoRootPaths(DirectoryList.ToList());
+        // 将更新后的目录设置一次写入，避免其他消费者看到半套状态
+        _settingsStore.Update(settings => settings with
+        {
+            Video = settings.Video with
+            {
+                IsUseSaveVideoRootPath = IsDefaultDownloadDirectory ? AllowStatus.Yes : AllowStatus.No,
+                SaveVideoRootPath = Directory,
+                HistoryVideoRootPaths = DirectoryList.ToImmutableArray()
+            }
+        });
 
         // 返回数据
         IDialogParameters parameters = new DialogParameters
@@ -413,16 +418,20 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     /// </summary>
     private void SetVideoContent()
     {
-        var videoContent = new VideoContentSettings
+        _settingsStore.Update(settings => settings with
         {
-            DownloadAudio = DownloadAudio,
-            DownloadVideo = DownloadVideo,
-            DownloadDanmaku = DownloadDanmaku,
-            DownloadSubtitle = DownloadSubtitle,
-            DownloadCover = DownloadCover
-        };
-
-        _settingsStore.Settings.SetVideoContent(videoContent);
+            Video = settings.Video with
+            {
+                Content = settings.Video.Content with
+                {
+                    DownloadAudio = DownloadAudio,
+                    DownloadVideo = DownloadVideo,
+                    DownloadDanmaku = DownloadDanmaku,
+                    DownloadSubtitle = DownloadSubtitle,
+                    DownloadCover = DownloadCover
+                }
+            }
+        });
     }
 
     /// <summary>

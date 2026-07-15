@@ -153,7 +153,7 @@ internal class ViewIndexViewModel : ViewModelBase
         else
         {
             // 进入用户空间
-            var userInfo = _settingsStore.Settings.GetUserInfo();
+            var userInfo = _settingsStore.Current.User;
             if (userInfo != null && userInfo.Mid != -1)
             {
                 NavigateToView.NavigationView(EventAggregator, ViewMySpaceViewModel.Tag, Tag, userInfo.Mid);

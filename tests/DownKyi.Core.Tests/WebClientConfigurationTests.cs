@@ -37,9 +37,15 @@ public sealed class WebClientConfigurationTests
         try
         {
             using var store = new SettingsStore(Path.Combine(directory, "settings.json"));
-            store.Settings.SetUserAgent("DownKyi-Test-Agent");
-            store.Settings.SetNetworkProxy(NetworkProxy.Custom);
-            store.Settings.SetCustomProxy("http://127.0.0.1:18080");
+            store.Update(settings => settings with
+            {
+                Network = settings.Network with
+                {
+                    UserAgent = "DownKyi-Test-Agent",
+                    NetworkProxy = NetworkProxy.Custom,
+                    CustomNetworkProxy = "http://127.0.0.1:18080"
+                }
+            });
 
             using var httpClient = new HttpClient();
             BiliWebClient.ConfigureDefaults(httpClient, store);

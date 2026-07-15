@@ -133,7 +133,7 @@ internal partial class App : PrismApplication, IDisposable
 
     protected override void OnInitialized()
     {
-        ThemeHelper.SetTheme(Container.Resolve<ISettingsStore>().Settings.GetThemeMode());
+        ThemeHelper.SetTheme(Container.Resolve<ISettingsStore>().Current.Basic.ThemeMode);
         // var regionManager = Container.Resolve<IRegionManager>();
         // regionManager.RegisterViewWithRegion("ContentRegion", typeof(ViewIndex));
         // regionManager.RegisterViewWithRegion("DownloadManagerContentRegion", typeof(ViewDownloading));

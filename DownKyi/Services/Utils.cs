@@ -5,7 +5,6 @@ using System.Linq;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Utils;
 using DownKyi.ViewModels.PageViewModels;
 
@@ -30,11 +29,11 @@ internal static class Utils
         page.PlayUrl = playUrl;
 
         // 获取设置
-        var settings = settingsStore.Settings;
-        var userInfo = settings.GetUserInfo();
-        var defaultQuality = settings.GetQuality();
-        var videoCodecs = settings.GetVideoCodecs();
-        var defaultAudioQuality = settings.GetAudioQuality();
+        var settings = settingsStore.Current;
+        var userInfo = settings.User;
+        var defaultQuality = settings.Video.Quality;
+        var videoCodecs = settings.Video.VideoCodecs;
+        var defaultAudioQuality = settings.Video.AudioQuality;
 
         // 未登录时，最高仅720P
         if (userInfo.Mid == -1)
@@ -179,7 +178,7 @@ internal static class Utils
     /// <param name="userInfo"></param>
     /// <param name="videoCodecs"></param>
     /// <returns></returns>
-    private static List<VideoQuality> GetVideoQualityList(PlayUrl playUrl, UserInfoSettings userInfo, int defaultQuality, int videoCodecs)
+    private static List<VideoQuality> GetVideoQualityList(PlayUrl playUrl, UserApplicationSettings userInfo, int defaultQuality, int videoCodecs)
     {
         var videoQualityList = new List<VideoQuality>();
         var codeIds = Constant.GetCodecIds();

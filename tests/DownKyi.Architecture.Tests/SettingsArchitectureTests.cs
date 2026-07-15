@@ -128,6 +128,7 @@ public sealed class SettingsArchitectureTests
 
         Assert.Contains("ApplicationSettings Current", storeSource, StringComparison.Ordinal);
         Assert.Contains("Update(Func<ApplicationSettings, ApplicationSettings>", storeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("SettingsManager Settings", storeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Run", storeSource, StringComparison.Ordinal);
         Assert.Contains("File.Replace", managerSource, StringComparison.Ordinal);
         Assert.Contains("FlushAsync(CancellationToken", managerSource, StringComparison.Ordinal);
@@ -135,19 +136,18 @@ public sealed class SettingsArchitectureTests
     }
 
     [Fact]
-    public void HighRiskRuntimeReadsValidatedSettingsSnapshots()
+    public void ProductionCodeCannotReachThroughTheMutableSettingsManager()
     {
-        var sourcePaths = new[]
+        var sourceRoots = new[]
         {
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "WebClient.cs"),
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Login", "LoginHelper.cs"),
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Sign", "WbiSign.cs"),
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs")
-        }.Concat(Directory.EnumerateFiles(
-            Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download"),
-            "*.cs",
-            SearchOption.TopDirectoryOnly));
-        var violations = sourcePaths
+            Path.Combine(RepositoryRoot, "DownKyi"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core"),
+            Path.Combine(RepositoryRoot, "src")
+        };
+        var violations = sourceRoots
+            .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
             .Where(path =>
             {
                 var source = File.ReadAllText(path);

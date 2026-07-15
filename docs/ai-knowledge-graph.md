@@ -1387,7 +1387,8 @@ outbound:
   - external.filesystem
 contracts:
   - Prism and Microsoft Host composition share the same store instance; they must not create competing settings owners.
-  - Production consumers cannot reach through `SettingsManager.Instance`; the compatibility owner is the only temporary reference.
+  - Production consumers cannot reach through `SettingsManager.Instance`; only the private store implementation may own the compatibility manager until PR 25-29 deletes its singleton constructor.
+  - `ISettingsStore` exposes only validated immutable `Current`, typed `Update`, explicit flush, and disposal contracts; it cannot expose the mutable manager.
   - Basic, network, video, danmaku, and about settings pages use the same injected owner for reads and writes.
   - MainWindow has no parameterless singleton fallback; Host composition supplies both its ViewModel and settings owner.
   - Video, bangumi, and cheese info services receive settings from their parse/add coordinator; manually constructed info services cannot fall back to global state.
@@ -1398,11 +1399,11 @@ contracts:
   - A malformed settings file is moved to a unique `.invalid-*` backup before defaults can be written.
   - A settings file from a newer schema is never overwritten by an older application.
   - Updates publish a new immutable `ApplicationSettings` value; rejected enum, range, proxy, FFmpeg, danmaku, and window values are replaced with safe defaults before persistence.
-  - HTTP, WBI, logout, download planning/runtime, diagnostics, and FFmpeg consume validated snapshots instead of the mutable compatibility manager.
+  - HTTP, WBI, logout, UI, navigation, media, download planning/runtime, diagnostics, and FFmpeg consume validated snapshots instead of the mutable compatibility manager.
   - Debounced and explicit flushes share one async write gate and replace the destination only after a complete UTF-8 temporary file is flushed.
   - Shutdown flush is awaited without synchronously blocking the UI thread.
 hazards:
-  - Low-risk UI, navigation, and media consumers still use the mutable `Settings` facade; PR 16-24 must move them to `Current` / `Update` before PR 25-29 deletes the compatibility manager.
+  - `SettingsManager.Instance` remains a private construction bridge inside `SettingsStore`; PR 25-29 must replace that owner without changing the user settings path or persisted schema.
   - Synchronous disposal intentionally stops scheduled writes without flushing; application shutdown and owners that require persistence must call `FlushAsync` or `DisposeAsync`.
   - Timer callbacks and shutdown flush must not race into partial or non-atomic writes.
 tests:
@@ -1928,7 +1929,7 @@ test.architecture-boundaries:
     - no production source outside the compatibility settings owner can reference SettingsManager.Instance
     - Prism and Host composition must share one injected settings owner
     - the settings store retains immutable Current and typed Update contracts, explicit version migration, cancellation-aware flush, and atomic replacement
-    - HTTP, WBI, login, download, diagnostics, and FFmpeg runtime cannot read through the mutable Settings facade
+    - no production source can read through a mutable Settings facade, and `ISettingsStore` cannot expose `SettingsManager`
 
 test.settings-store:
   paths:

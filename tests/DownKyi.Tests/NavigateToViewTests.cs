@@ -1,4 +1,4 @@
-using DownKyi.Core.Settings.Models;
+using DownKyi.Core.Settings;
 using DownKyi.Events;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
@@ -14,11 +14,9 @@ public sealed class NavigateToViewTests
     public async Task UserSpaceNavigationUsesTheInjectedSignedInUser(long targetMid, string expectedView)
     {
         using var settings = new TestSettingsStore();
-        settings.Store.Settings.SetUserInfo(new UserInfoSettings
+        settings.Store.Update(current => current with
         {
-            Mid = 42,
-            IsLogin = true,
-            Name = "test-user"
+            User = current.User with { Mid = 42, IsLogin = true, Name = "test-user" }
         });
 
         var eventAggregator = new EventAggregator();

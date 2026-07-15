@@ -157,7 +157,7 @@ internal class ViewFollowerViewModel : ViewModelBase
                 Sign = item.Sign
             }));
 
-            var userInfo = _settingsStore.Settings.GetUserInfo();
+            var userInfo = _settingsStore.Current.User;
             if (userInfo != null && userInfo.Mid == _mid)
             {
                 Pager.Count = (int)Math.Ceiling((double)data.Total / NumberInPage);

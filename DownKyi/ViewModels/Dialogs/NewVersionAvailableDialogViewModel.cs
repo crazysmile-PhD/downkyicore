@@ -38,7 +38,10 @@ namespace DownKyi.ViewModels.Dialogs
 
         private void ExecuteSkipCurrentVersionCommand()
         {
-            _settingsStore.Settings.SetSkipVersionOnLaunch(NewVersion);
+            _settingsStore.Update(settings => settings with
+            {
+                About = settings.About with { SkipVersionOnLaunch = NewVersion }
+            });
             CloseDialog(new DialogResult());
         }
 

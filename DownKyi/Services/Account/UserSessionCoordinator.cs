@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Storage;
 
 namespace DownKyi.Services.Account;
@@ -35,34 +34,32 @@ internal sealed class UserSessionCoordinator : IUserSessionCoordinator
             cancellationToken.ThrowIfCancellationRequested();
             var userInfo = UserInfo.GetUserInfoForNavigation();
             cancellationToken.ThrowIfCancellationRequested();
-            _settingsStore.Settings.SetUserInfo(MapSettings(userInfo));
+            _settingsStore.Update(settings => settings with { User = MapSettings(userInfo) });
             cancellationToken.ThrowIfCancellationRequested();
             return new UserSessionSnapshot(userInfo, File.Exists(StorageManager.GetLogin()));
         }, cancellationToken);
     }
 
-    internal static UserInfoSettings MapSettings(UserInfoForNavigation? userInfo)
+    internal static UserApplicationSettings MapSettings(UserInfoForNavigation? userInfo)
     {
         if (userInfo == null)
         {
-            return new UserInfoSettings
-            {
-                Mid = -1,
-                Name = string.Empty,
-                IsLogin = false,
-                IsVip = false
-            };
+            return new UserApplicationSettings(
+                Mid: -1,
+                Name: string.Empty,
+                IsLogin: false,
+                IsVip: false,
+                ImgKey: string.Empty,
+                SubKey: string.Empty);
         }
 
-        return new UserInfoSettings
-        {
-            Mid = userInfo.Mid,
-            Name = userInfo.Name,
-            IsLogin = userInfo.IsLogin,
-            IsVip = userInfo.VipStatus == 1,
-            ImgKey = ExtractWbiKey(userInfo.Wbi.ImageAddress),
-            SubKey = ExtractWbiKey(userInfo.Wbi.SubAddress)
-        };
+        return new UserApplicationSettings(
+            userInfo.Mid,
+            userInfo.Name,
+            userInfo.IsLogin,
+            userInfo.VipStatus == 1,
+            ExtractWbiKey(userInfo.Wbi.ImageAddress),
+            ExtractWbiKey(userInfo.Wbi.SubAddress));
     }
 
     private static string ExtractWbiKey(string? address)

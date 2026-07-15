@@ -376,14 +376,15 @@ internal class ViewNetworkViewModel : ViewModelBase
         _isOnNavigatedTo = true;
 
         // 启用https
-        var useSsl = _settingsStore.Settings.GetUseSsl();
+        var network = _settingsStore.Current.Network;
+        var useSsl = network.UseSsl;
         UseSsl = useSsl == AllowStatus.Yes;
 
         // UserAgent
-        UserAgent = _settingsStore.Settings.GetUserAgent();
+        UserAgent = network.UserAgent;
 
         // 选择下载器
-        var downloader = _settingsStore.Settings.GetDownloader();
+        var downloader = network.Downloader;
         switch (downloader)
         {
             case Core.Settings.Downloader.NotSet:
@@ -399,69 +400,69 @@ internal class ViewNetworkViewModel : ViewModelBase
                 break;
         }
 
-        NetworkProxy = _settingsStore.Settings.GetNetworkProxy();
+        NetworkProxy = network.NetworkProxy;
 
-        CustomNetworkProxy = _settingsStore.Settings.GetCustomProxy();
+        CustomNetworkProxy = network.CustomNetworkProxy;
 
-        HighSpeedDownloadMode = _settingsStore.Settings.GetHighSpeedDownloadMode() == AllowStatus.Yes;
+        HighSpeedDownloadMode = network.HighSpeedDownloadMode == AllowStatus.Yes;
 
         // builtin同时下载数
-        SelectedMaxCurrentDownload = _settingsStore.Settings.GetMaxCurrentDownloads();
+        SelectedMaxCurrentDownload = network.MaxCurrentDownloads;
 
         // builtin最大线程数
-        SelectedSplit = _settingsStore.Settings.GetSplit();
+        SelectedSplit = network.Split;
 
         // 是否开启builtin http代理
-        var isHttpProxy = _settingsStore.Settings.GetIsHttpProxy();
+        var isHttpProxy = network.IsHttpProxy;
         IsHttpProxy = isHttpProxy == AllowStatus.Yes;
 
         // builtin的http代理的地址
-        HttpProxy = _settingsStore.Settings.GetHttpProxy();
+        HttpProxy = network.HttpProxy;
 
         // builtin的http代理的端口
-        HttpProxyPort = _settingsStore.Settings.GetHttpProxyListenPort();
+        HttpProxyPort = network.HttpProxyListenPort;
 
         // Aria服务器host
-        AriaHost = _settingsStore.Settings.GetAriaHost();
+        AriaHost = network.AriaHost;
 
         // Aria服务器端口
-        AriaListenPort = _settingsStore.Settings.GetAriaListenPort();
+        AriaListenPort = network.AriaListenPort;
 
         // Aria服务器Token
-        AriaToken = _settingsStore.Settings.GetAriaToken();
+        AriaToken = network.AriaToken;
 
         // Aria的日志等级
-        var ariaLogLevel = _settingsStore.Settings.GetAriaLogLevel();
+        var ariaLogLevel = network.AriaLogLevel;
         SelectedAriaLogLevel = ariaLogLevel.ToString("G");
 
         // Aria同时下载数
-        SelectedAriaMaxConcurrentDownload = _settingsStore.Settings.GetMaxCurrentDownloads();
+        SelectedAriaMaxConcurrentDownload = network.MaxCurrentDownloads;
 
         // Aria最大线程数
-        SelectedAriaSplit = _settingsStore.Settings.GetAriaSplit();
+        SelectedAriaSplit = network.AriaSplit;
 
-        SelectedAriaMaxConnectionPerServer = _settingsStore.Settings.GetAriaMaxConnectionPerServer();
+        SelectedAriaMaxConnectionPerServer = network.AriaMaxConnectionPerServer;
 
-        SelectedAriaMinSplitSize = _settingsStore.Settings.GetAriaMinSplitSize();
+        SelectedAriaMinSplitSize = network.AriaMinSplitSize;
 
         // Aria下载速度限制
-        AriaMaxOverallDownloadLimit = _settingsStore.Settings.GetAriaMaxOverallDownloadLimit();
+        AriaMaxOverallDownloadLimit = network.AriaMaxOverallDownloadLimit;
 
         // Aria下载单文件速度限制
-        AriaMaxDownloadLimit = _settingsStore.Settings.GetAriaMaxDownloadLimit();
+        AriaMaxDownloadLimit = network.AriaMaxDownloadLimit;
 
         // 是否开启Aria http代理
-        var isAriaHttpProxy = _settingsStore.Settings.GetIsAriaHttpProxy();
+        var isAriaHttpProxy = network.IsAriaHttpProxy;
         IsAriaHttpProxy = isAriaHttpProxy == AllowStatus.Yes;
 
         // Aria的http代理的地址
-        AriaHttpProxy = _settingsStore.Settings.GetAriaHttpProxy();
+        AriaHttpProxy = network.AriaHttpProxy;
 
         // Aria的http代理的端口
-        AriaHttpProxyPort = _settingsStore.Settings.GetAriaHttpProxyListenPort();
+        AriaHttpProxyPort = network.AriaHttpProxyListenPort;
 
         // Aria文件预分配
-        var ariaFileAllocation = _settingsStore.Settings.GetAriaFileAllocation();
+        var ariaFileAllocation = network.AriaFileAllocation;
         SelectedAriaFileAllocation = ariaFileAllocation.ToString("G");
 
         _isOnNavigatedTo = false;
@@ -481,7 +482,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     {
         var useSsl = UseSsl ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = _settingsStore.Settings.SetUseSsl(useSsl);
+        var isSucceed = UpdateNetwork(settings => settings with { UseSsl = useSsl }).UseSsl == useSsl;
         PublishTip(isSucceed);
     }
 
@@ -495,7 +496,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     /// </summary>
     private void ExecuteUserAgentCommand()
     {
-        var isSucceed = _settingsStore.Settings.SetUserAgent(UserAgent);
+        var isSucceed = UpdateNetwork(settings => settings with { UserAgent = UserAgent }).UserAgent == UserAgent;
         PublishTip(isSucceed);
     }
 
@@ -523,11 +524,11 @@ internal class ViewNetworkViewModel : ViewModelBase
                 downloader = Core.Settings.Downloader.CustomAria;
                 break;
             default:
-                downloader = _settingsStore.Settings.GetDownloader();
+                downloader = _settingsStore.Current.Network.Downloader;
                 break;
         }
 
-        var isSucceed = _settingsStore.Settings.SetDownloader(downloader);
+        var isSucceed = UpdateNetwork(settings => settings with { Downloader = downloader }).Downloader == downloader;
         PublishTip(isSucceed);
 
         var alertService = new AlertService(DialogService);
@@ -552,23 +553,34 @@ internal class ViewNetworkViewModel : ViewModelBase
 
     private void ExecuteHighSpeedDownloadModeCommand()
     {
-        var settings = _settingsStore.Settings;
         var highSpeedDownloadMode = HighSpeedDownloadMode ? AllowStatus.Yes : AllowStatus.No;
-        var isSucceed = settings.SetHighSpeedDownloadMode(highSpeedDownloadMode);
 
         if (HighSpeedDownloadMode)
         {
-            SelectedSplit = SettingsManager.HighSpeedBuiltInSplit;
-            SelectedAriaSplit = SettingsManager.HighSpeedAriaSplit;
-            SelectedAriaMaxConnectionPerServer = SettingsManager.HighSpeedAriaMaxConnectionPerServer;
-            SelectedAriaMinSplitSize = SettingsManager.HighSpeedAriaMinSplitSize;
-
-            isSucceed = isSucceed &&
-                        settings.SetSplit(SelectedSplit) &&
-                        settings.SetAriaSplit(SelectedAriaSplit) &&
-                        settings.SetAriaMaxConnectionPerServer(SelectedAriaMaxConnectionPerServer) &&
-                        settings.SetAriaMinSplitSize(SelectedAriaMinSplitSize);
+            SelectedSplit = ApplicationSettingsDefaults.HighSpeedBuiltInSplit;
+            SelectedAriaSplit = ApplicationSettingsDefaults.HighSpeedAriaSplit;
+            SelectedAriaMaxConnectionPerServer = ApplicationSettingsDefaults.HighSpeedAriaMaxConnectionPerServer;
+            SelectedAriaMinSplitSize = ApplicationSettingsDefaults.HighSpeedAriaMinSplitSize;
         }
+
+        var updated = UpdateNetwork(settings => settings with
+        {
+            HighSpeedDownloadMode = highSpeedDownloadMode,
+            Split = HighSpeedDownloadMode ? SelectedSplit : settings.Split,
+            AriaSplit = HighSpeedDownloadMode ? SelectedAriaSplit : settings.AriaSplit,
+            AriaMaxConnectionPerServer = HighSpeedDownloadMode
+                ? SelectedAriaMaxConnectionPerServer
+                : settings.AriaMaxConnectionPerServer,
+            AriaMinSplitSize = HighSpeedDownloadMode
+                ? SelectedAriaMinSplitSize
+                : settings.AriaMinSplitSize
+        });
+        var isSucceed = updated.HighSpeedDownloadMode == highSpeedDownloadMode
+                        && (!HighSpeedDownloadMode
+                            || updated.Split == SelectedSplit
+                            && updated.AriaSplit == SelectedAriaSplit
+                            && updated.AriaMaxConnectionPerServer == SelectedAriaMaxConnectionPerServer
+                            && updated.AriaMinSplitSize == SelectedAriaMinSplitSize);
 
         PublishTip(isSucceed);
     }
@@ -581,7 +593,10 @@ internal class ViewNetworkViewModel : ViewModelBase
     {
         if (obj is not NetworkProxy networkProxy) return;
         NetworkProxy = networkProxy;
-        var isSucceed = _settingsStore.Settings.SetNetworkProxy(networkProxy);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            NetworkProxy = networkProxy
+        }).NetworkProxy == networkProxy;
         PublishTip(isSucceed);
         var alertService = new AlertService(DialogService);
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
@@ -603,7 +618,10 @@ internal class ViewNetworkViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteCustomNetworkProxyCommand(string parameter)
     {
-        var isSucceed = _settingsStore.Settings.SetCustomProxy(parameter);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            CustomNetworkProxy = parameter
+        }).CustomNetworkProxy == parameter;
         PublishTip(isSucceed);
     }
 
@@ -621,7 +639,10 @@ internal class ViewNetworkViewModel : ViewModelBase
     {
         // SelectedMaxCurrentDownload = (int)parameter;
         if (parameter == null) return;
-        var isSucceed = _settingsStore.Settings.SetMaxCurrentDownloads(SelectedMaxCurrentDownload);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            MaxCurrentDownloads = SelectedMaxCurrentDownload
+        }).MaxCurrentDownloads == SelectedMaxCurrentDownload;
         PublishTip(isSucceed);
 
         var alertService = new AlertService(DialogService);
@@ -646,7 +667,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     {
         // SelectedSplit = (int)parameter;
 
-        var isSucceed = _settingsStore.Settings.SetSplit(SelectedSplit);
+        var isSucceed = UpdateNetwork(settings => settings with { Split = SelectedSplit }).Split == SelectedSplit;
         PublishTip(isSucceed);
     }
 
@@ -662,7 +683,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     {
         var isHttpProxy = IsHttpProxy ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = _settingsStore.Settings.SetIsHttpProxy(isHttpProxy);
+        var isSucceed = UpdateNetwork(settings => settings with { IsHttpProxy = isHttpProxy }).IsHttpProxy == isHttpProxy;
 
         PublishTip(isSucceed);
     }
@@ -678,7 +699,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteHttpProxyCommand(string parameter)
     {
-        var isSucceed = _settingsStore.Settings.SetHttpProxy(parameter);
+        var isSucceed = UpdateNetwork(settings => settings with { HttpProxy = parameter }).HttpProxy == parameter;
         PublishTip(isSucceed);
     }
 
@@ -696,7 +717,10 @@ internal class ViewNetworkViewModel : ViewModelBase
         var httpProxyPort = (int)Number.GetInt(parameter);
         HttpProxyPort = httpProxyPort;
 
-        var isSucceed = _settingsStore.Settings.SetHttpProxyListenPort(HttpProxyPort);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            HttpProxyListenPort = HttpProxyPort
+        }).HttpProxyListenPort == HttpProxyPort;
         PublishTip(isSucceed);
     }
 
@@ -712,7 +736,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     private void ExecuteAriaHostCommand(string parameter)
     {
         AriaHost = parameter;
-        var isSucceed = _settingsStore.Settings.SetAriaHost(AriaHost);
+        var isSucceed = UpdateNetwork(settings => settings with { AriaHost = AriaHost }).AriaHost == AriaHost;
         PublishTip(isSucceed);
     }
 
@@ -730,7 +754,10 @@ internal class ViewNetworkViewModel : ViewModelBase
         var listenPort = (int)Number.GetInt(parameter);
         AriaListenPort = listenPort;
 
-        var isSucceed = _settingsStore.Settings.SetAriaListenPort(AriaListenPort);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            AriaListenPort = AriaListenPort
+        }).AriaListenPort == AriaListenPort;
         PublishTip(isSucceed);
     }
 
@@ -746,7 +773,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     private void ExecuteAriaTokenCommand(string parameter)
     {
         AriaToken = parameter;
-        var isSucceed = _settingsStore.Settings.SetAriaToken(AriaToken);
+        var isSucceed = UpdateNetwork(settings => settings with { AriaToken = AriaToken }).AriaToken == AriaToken;
         PublishTip(isSucceed);
     }
 
@@ -771,7 +798,10 @@ internal class ViewNetworkViewModel : ViewModelBase
             _ => AriaConfigLogLevel.INFO
         };
 
-        var isSucceed = _settingsStore.Settings.SetAriaLogLevel(ariaLogLevel);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            AriaLogLevel = ariaLogLevel
+        }).AriaLogLevel == ariaLogLevel;
         PublishTip(isSucceed);
     }
 
@@ -790,7 +820,10 @@ internal class ViewNetworkViewModel : ViewModelBase
         if (parameter == null) return;
         SelectedAriaMaxConcurrentDownload = (int)parameter;
 
-        var isSucceed = _settingsStore.Settings.SetMaxCurrentDownloads(SelectedAriaMaxConcurrentDownload);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            MaxCurrentDownloads = SelectedAriaMaxConcurrentDownload
+        }).MaxCurrentDownloads == SelectedAriaMaxConcurrentDownload;
         PublishTip(isSucceed);
         var alertService = new AlertService(DialogService);
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
@@ -815,7 +848,10 @@ internal class ViewNetworkViewModel : ViewModelBase
         if (parameter == null) return;
         SelectedAriaSplit = (int)parameter;
 
-        var isSucceed = _settingsStore.Settings.SetAriaSplit(SelectedAriaSplit);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            AriaSplit = SelectedAriaSplit
+        }).AriaSplit == SelectedAriaSplit;
         PublishTip(isSucceed);
     }
 
@@ -829,8 +865,10 @@ internal class ViewNetworkViewModel : ViewModelBase
         if (parameter == null) return;
         SelectedAriaMaxConnectionPerServer = (int)parameter;
 
-        var isSucceed = _settingsStore.Settings
-            .SetAriaMaxConnectionPerServer(SelectedAriaMaxConnectionPerServer);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            AriaMaxConnectionPerServer = SelectedAriaMaxConnectionPerServer
+        }).AriaMaxConnectionPerServer == SelectedAriaMaxConnectionPerServer;
         PublishTip(isSucceed);
     }
 
@@ -844,7 +882,10 @@ internal class ViewNetworkViewModel : ViewModelBase
         if (parameter == null) return;
         SelectedAriaMinSplitSize = (int)parameter;
 
-        var isSucceed = _settingsStore.Settings.SetAriaMinSplitSize(SelectedAriaMinSplitSize);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            AriaMinSplitSize = SelectedAriaMinSplitSize
+        }).AriaMinSplitSize == SelectedAriaMinSplitSize;
         PublishTip(isSucceed);
     }
 
@@ -863,7 +904,10 @@ internal class ViewNetworkViewModel : ViewModelBase
         var downloadLimit = (int)Number.GetInt(parameter);
         AriaMaxOverallDownloadLimit = downloadLimit;
 
-        var isSucceed = _settingsStore.Settings.SetAriaMaxOverallDownloadLimit(AriaMaxOverallDownloadLimit);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            AriaMaxOverallDownloadLimit = AriaMaxOverallDownloadLimit
+        }).AriaMaxOverallDownloadLimit == AriaMaxOverallDownloadLimit;
         PublishTip(isSucceed);
     }
 
@@ -881,7 +925,10 @@ internal class ViewNetworkViewModel : ViewModelBase
         var downloadLimit = (int)Number.GetInt(parameter);
         AriaMaxDownloadLimit = downloadLimit;
 
-        var isSucceed = _settingsStore.Settings.SetAriaMaxDownloadLimit(AriaMaxDownloadLimit);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            AriaMaxDownloadLimit = AriaMaxDownloadLimit
+        }).AriaMaxDownloadLimit == AriaMaxDownloadLimit;
         PublishTip(isSucceed);
     }
 
@@ -897,7 +944,10 @@ internal class ViewNetworkViewModel : ViewModelBase
     {
         var isAriaHttpProxy = IsAriaHttpProxy ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = _settingsStore.Settings.SetIsAriaHttpProxy(isAriaHttpProxy);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            IsAriaHttpProxy = isAriaHttpProxy
+        }).IsAriaHttpProxy == isAriaHttpProxy;
         PublishTip(isSucceed);
     }
 
@@ -912,7 +962,10 @@ internal class ViewNetworkViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteAriaHttpProxyCommand(string parameter)
     {
-        var isSucceed = _settingsStore.Settings.SetAriaHttpProxy(parameter);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            AriaHttpProxy = parameter
+        }).AriaHttpProxy == parameter;
         PublishTip(isSucceed);
     }
 
@@ -930,7 +983,10 @@ internal class ViewNetworkViewModel : ViewModelBase
         var httpProxyPort = (int)Number.GetInt(parameter);
         AriaHttpProxyPort = httpProxyPort;
 
-        var isSucceed = _settingsStore.Settings.SetAriaHttpProxyListenPort(AriaHttpProxyPort);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            AriaHttpProxyListenPort = AriaHttpProxyPort
+        }).AriaHttpProxyListenPort == AriaHttpProxyPort;
         PublishTip(isSucceed);
     }
 
@@ -953,11 +1009,23 @@ internal class ViewNetworkViewModel : ViewModelBase
             _ => AriaConfigFileAllocation.PREALLOC
         };
 
-        var isSucceed = _settingsStore.Settings.SetAriaFileAllocation(ariaFileAllocation);
+        var isSucceed = UpdateNetwork(settings => settings with
+        {
+            AriaFileAllocation = ariaFileAllocation
+        }).AriaFileAllocation == ariaFileAllocation;
         PublishTip(isSucceed);
     }
 
     #endregion
+
+    private NetworkApplicationSettings UpdateNetwork(
+        Func<NetworkApplicationSettings, NetworkApplicationSettings> update)
+    {
+        return _settingsStore.Update(settings => settings with
+        {
+            Network = update(settings.Network)
+        }).Network;
+    }
 
     /// <summary>
     /// 发送需要显示的tip

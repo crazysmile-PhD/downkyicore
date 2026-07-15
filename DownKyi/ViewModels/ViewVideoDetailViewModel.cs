@@ -121,7 +121,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             LogManager.Debug(Tag, "Processing captured video input.");
             var result = await _workflow.LoadDetailAsync(operation).ConfigureAwait(true);
             await UiDispatcher.InvokeAsync(() => ApplyVideoDetailResult(result, operation.CancellationToken));
-            if (_workflow.IsCurrent(operation) && _settingsStore.Settings.GetIsAutoParseVideo() == AllowStatus.Yes)
+            if (_workflow.IsCurrent(operation) && _settingsStore.Current.Basic.IsAutoParseVideo == AllowStatus.Yes)
             {
                 RunFireAndForget(ExecuteParseAllVideoCommandAsync(), nameof(ExecuteParseAllVideoCommandAsync));
             }
@@ -180,7 +180,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
 
     private async Task ExecuteParseAllVideoCommandAsync()
     {
-        var parseScope = _settingsStore.Settings.GetParseScope();
+        var parseScope = _settingsStore.Current.Basic.ParseScope;
         if (parseScope != ParseScope.None)
         {
             await ExecuteParseAsync(parseScope).ConfigureAwait(true);
@@ -215,7 +215,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             }
 
             RestoreDisplayState();
-            if (parseScope != ParseScope.None && _settingsStore.Settings.GetIsAutoDownloadAll() == AllowStatus.Yes)
+            if (parseScope != ParseScope.None && _settingsStore.Current.Basic.IsAutoDownloadAll == AllowStatus.Yes)
             {
                 await AddToDownloadAsync(true).ConfigureAwait(true);
             }

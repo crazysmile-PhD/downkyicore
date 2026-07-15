@@ -22,7 +22,14 @@ internal partial class MainWindow : Window
         ArgumentNullException.ThrowIfNull(viewModel);
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         InitializeComponent();
-        _windowSettings = _settingsStore.Settings.GetWindowSettings().Clone();
+        var window = _settingsStore.Current.Window;
+        _windowSettings = new WindowSettings
+        {
+            Width = window.Width,
+            Height = window.Height,
+            X = window.X,
+            Y = window.Y
+        };
         ApplyWindowSettings();
         DataContext = viewModel;
     }
@@ -81,7 +88,14 @@ internal partial class MainWindow : Window
             _windowSettings.Y = Position.Y;
         }
 
-        _settingsStore.Settings.SettingWindowSettings(_windowSettings);
+        _settingsStore.Update(settings => settings with
+        {
+            Window = new WindowApplicationSettings(
+                _windowSettings.Width,
+                _windowSettings.Height,
+                _windowSettings.X,
+                _windowSettings.Y)
+        });
     }
 
     private async Task CompleteCloseAsync()
@@ -94,17 +108,4 @@ internal partial class MainWindow : Window
         _closeConfirmed = true;
         Close();
     }
-
-    // protected override void OnClosed(EventArgs e)
-    // {
-    //     base.OnClosed(e);
-    //
-    //     // 获取当前窗口的大小和位置
-    //     _windowSettings.Width = Width;
-    //     _windowSettings.Height = Height;
-    //     _windowSettings.X = Position.X;
-    //     _windowSettings.Y = Position.Y;
-    //
-    //     _settingsStore.Settings.SettingWindowSettings(_windowSettings);
-    // }
 }

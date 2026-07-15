@@ -125,7 +125,7 @@ internal class VideoInfoService : IInfoService
             }
 
             // 文件命名中的时间格式
-            var timeFormat = _settingsStore.Settings.GetFileNamePartTimeFormat();
+            var timeFormat = _settingsStore.Current.Video.FileNamePartTimeFormat;
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(_videoView.Pubdate);
@@ -155,7 +155,7 @@ internal class VideoInfoService : IInfoService
             return videoSections;
         }
 
-        var timeFormat = _settingsStore.Settings.GetFileNamePartTimeFormat();
+        var timeFormat = _settingsStore.Current.Video.FileNamePartTimeFormat;
         var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);
 
         foreach (var section in _videoView.UgcSeason.Sections)
@@ -282,7 +282,7 @@ internal class VideoInfoService : IInfoService
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var playUrl = _settingsStore.Settings.VideoParseType switch
+        var playUrl = _settingsStore.Current.Video.VideoParseType switch
         {
             0 => VideoStreamApi.GetVideoPlayUrl(
                 _settingsStore,

@@ -238,7 +238,7 @@ internal class ViewFollowingViewModel : ViewModelBase
         InitView();
         try
         {
-            var userInfo = _settingsStore.Settings.GetUserInfo();
+            var userInfo = _settingsStore.Current.User;
             var isCurrentUser = userInfo != null && userInfo.Mid == _mid;
             var overview = await _friendRelationCoordinator
                 .LoadFollowingOverviewAsync(_mid, isCurrentUser, cancellationToken)

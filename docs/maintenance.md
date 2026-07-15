@@ -57,7 +57,7 @@ PR 07-15 result: Release build completed with zero warnings, 161 tests passed in
 
 ## Settings Persistence Policy
 
-- `ISettingsStore.Current` is the validated immutable read contract. New runtime code must not reach through the temporary mutable `Settings` compatibility facade.
+- `ISettingsStore.Current` is the validated immutable read contract. The public mutable `SettingsManager` facade has been removed; production consumers must use `Current` and typed `Update` calls.
 - Correlated settings changes use one `Update` call. This prevents another consumer from observing half of a proxy, content-selection, or related multi-field update.
 - `SchemaVersion` advances only through `SettingsSchemaMigrator`, one explicit version at a time. A migration must preserve existing JSON property names unless a separately tested compatibility migration is approved.
 - Malformed settings are moved to a unique `.invalid-*` backup before safe defaults are persisted. Do not log the payload or its personal path.

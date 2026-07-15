@@ -169,7 +169,8 @@ internal class ViewBasicViewModel : ViewModelBase
         _isOnNavigatedTo = true;
 
         // 主题
-        var themeMode = _settingsStore.Settings.GetThemeMode();
+        var basic = _settingsStore.Current.Basic;
+        var themeMode = basic.ThemeMode;
         switch (themeMode)
         {
             case ThemeMode.Light:
@@ -184,31 +185,31 @@ internal class ViewBasicViewModel : ViewModelBase
         }
 
         // 下载完成后的操作
-        var afterDownload = _settingsStore.Settings.GetAfterDownloadOperation();
+        var afterDownload = basic.AfterDownload;
         SetAfterDownloadOperation(afterDownload);
 
         // 是否监听剪贴板
-        var isListenClipboard = _settingsStore.Settings.GetIsListenClipboard();
+        var isListenClipboard = basic.IsListenClipboard;
         ListenClipboard = isListenClipboard == AllowStatus.Yes;
 
         // 是否自动解析视频
-        var isAutoParseVideo = _settingsStore.Settings.GetIsAutoParseVideo();
+        var isAutoParseVideo = basic.IsAutoParseVideo;
         AutoParseVideo = isAutoParseVideo == AllowStatus.Yes;
 
         // 解析范围
-        var parseScope = _settingsStore.Settings.GetParseScope();
+        var parseScope = basic.ParseScope;
         SelectedParseScope = ParseScopes.FirstOrDefault(t => t.ParseScope == parseScope) ?? ParseScopes[0];
 
         // 解析后是否自动下载解析视频
-        var isAutoDownloadAll = _settingsStore.Settings.GetIsAutoDownloadAll();
+        var isAutoDownloadAll = basic.IsAutoDownloadAll;
         AutoDownloadAll = isAutoDownloadAll == AllowStatus.Yes;
 
         // 重复下载策略
-        var repeatDownloadStrategy = _settingsStore.Settings.GetRepeatDownloadStrategy();
+        var repeatDownloadStrategy = basic.RepeatDownloadStrategy;
         SelectedRepeatDownloadStrategy = RepeatDownloadStrategy.FirstOrDefault(t => t.RepeatDownloadStrategy == repeatDownloadStrategy) ?? RepeatDownloadStrategy[0];
 
         // 重复下载文件自动添加数字后缀
-        var repeatFileAutoAddNumberSuffix = _settingsStore.Settings.IsRepeatFileAutoAddNumberSuffix();
+        var repeatFileAutoAddNumberSuffix = basic.RepeatFileAutoAddNumberSuffix;
         RepeatFileAutoAddNumberSuffix = repeatFileAutoAddNumberSuffix;
 
         _isOnNavigatedTo = false;
@@ -234,7 +235,7 @@ internal class ViewBasicViewModel : ViewModelBase
             _ => ThemeMode.Default
         };
 
-        var isSucceed = _settingsStore.Settings.SetThemeMode(themeMode);
+        var isSucceed = UpdateBasic(settings => settings with { ThemeMode = themeMode }).ThemeMode == themeMode;
         PublishTip(isSucceed);
         ThemeHelper.SetTheme(themeMode);
     }
@@ -266,7 +267,7 @@ internal class ViewBasicViewModel : ViewModelBase
                 break;
         }
 
-        var isSucceed = _settingsStore.Settings.SetAfterDownloadOperation(afterDownload);
+        var isSucceed = UpdateBasic(settings => settings with { AfterDownload = afterDownload }).AfterDownload == afterDownload;
         PublishTip(isSucceed);
     }
 
@@ -282,7 +283,7 @@ internal class ViewBasicViewModel : ViewModelBase
     {
         var isListenClipboard = ListenClipboard ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = _settingsStore.Settings.SetIsListenClipboard(isListenClipboard);
+        var isSucceed = UpdateBasic(settings => settings with { IsListenClipboard = isListenClipboard }).IsListenClipboard == isListenClipboard;
         PublishTip(isSucceed);
     }
 
@@ -297,7 +298,7 @@ internal class ViewBasicViewModel : ViewModelBase
     {
         var isAutoParseVideo = AutoParseVideo ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = _settingsStore.Settings.SetIsAutoParseVideo(isAutoParseVideo);
+        var isSucceed = UpdateBasic(settings => settings with { IsAutoParseVideo = isAutoParseVideo }).IsAutoParseVideo == isAutoParseVideo;
         PublishTip(isSucceed);
     }
 
@@ -317,7 +318,7 @@ internal class ViewBasicViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = _settingsStore.Settings.SetParseScope(parseScope.ParseScope);
+        var isSucceed = UpdateBasic(settings => settings with { ParseScope = parseScope.ParseScope }).ParseScope == parseScope.ParseScope;
         PublishTip(isSucceed);
     }
 
@@ -333,7 +334,7 @@ internal class ViewBasicViewModel : ViewModelBase
     {
         var isAutoDownloadAll = AutoDownloadAll ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = _settingsStore.Settings.SetIsAutoDownloadAll(isAutoDownloadAll);
+        var isSucceed = UpdateBasic(settings => settings with { IsAutoDownloadAll = isAutoDownloadAll }).IsAutoDownloadAll == isAutoDownloadAll;
         PublishTip(isSucceed);
     }
 
@@ -343,7 +344,10 @@ internal class ViewBasicViewModel : ViewModelBase
 
     private void ExecuteRepeatFileAutoAddNumberSuffixCommand()
     {
-        var isSucceed = _settingsStore.Settings.IsRepeatFileAutoAddNumberSuffix(RepeatFileAutoAddNumberSuffix);
+        var isSucceed = UpdateBasic(settings => settings with
+        {
+            RepeatFileAutoAddNumberSuffix = RepeatFileAutoAddNumberSuffix
+        }).RepeatFileAutoAddNumberSuffix == RepeatFileAutoAddNumberSuffix;
         PublishTip(isSucceed);
     }
 
@@ -363,11 +367,23 @@ internal class ViewBasicViewModel : ViewModelBase
             return;
         }
 
-        var isSucceed = _settingsStore.Settings.SetRepeatDownloadStrategy(repeatDownloadStrategy.RepeatDownloadStrategy);
+        var isSucceed = UpdateBasic(settings => settings with
+        {
+            RepeatDownloadStrategy = repeatDownloadStrategy.RepeatDownloadStrategy
+        }).RepeatDownloadStrategy == repeatDownloadStrategy.RepeatDownloadStrategy;
         PublishTip(isSucceed);
     }
 
     #endregion
+
+    private BasicApplicationSettings UpdateBasic(
+        Func<BasicApplicationSettings, BasicApplicationSettings> update)
+    {
+        return _settingsStore.Update(settings => settings with
+        {
+            Basic = update(settings.Basic)
+        }).Basic;
+    }
 
     /// <summary>
     /// 设置下载完成后的操作

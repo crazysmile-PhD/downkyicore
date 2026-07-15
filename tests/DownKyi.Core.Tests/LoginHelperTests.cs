@@ -1,6 +1,5 @@
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Settings.Models;
 
 namespace DownKyi.Core.Tests;
 
@@ -18,12 +17,15 @@ public sealed class LoginHelperTests
             Directory.CreateDirectory(directory);
             await File.WriteAllTextAsync(loginPath, "test-login", TestContext.Current.CancellationToken);
             using var store = new SettingsStore(settingsPath);
-            store.Settings.SetUserInfo(new UserInfoSettings
+            store.Update(settings => settings with
             {
-                Mid = 42,
-                Name = "test-user",
-                IsLogin = true,
-                IsVip = true
+                User = settings.User with
+                {
+                    Mid = 42,
+                    Name = "test-user",
+                    IsLogin = true,
+                    IsVip = true
+                }
             });
 
             var result = LoginHelper.Logout(store, loginPath);
@@ -31,7 +33,7 @@ public sealed class LoginHelperTests
 
             Assert.True(result);
             Assert.False(File.Exists(loginPath));
-            var user = store.Settings.GetUserInfo();
+            var user = store.Current.User;
             Assert.Equal(-1, user.Mid);
             Assert.False(user.IsLogin);
             Assert.False(user.IsVip);

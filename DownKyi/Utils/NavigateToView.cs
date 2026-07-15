@@ -23,8 +23,8 @@ internal static class NavigateToView
         long mid)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
-        var userInfo = settingsStore.Settings.GetUserInfo();
-        if (userInfo != null && userInfo.Mid == mid)
+        var userInfo = settingsStore.Current.User;
+        if (userInfo.Mid == mid)
         {
             NavigationView(eventAggregator, ViewMySpaceViewModel.Tag, parentViewName, mid);
         }

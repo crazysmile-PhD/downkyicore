@@ -18,7 +18,10 @@ public sealed class SettingsStoreTests
 
             Assert.False(File.Exists(settingsPath));
 
-            store.Settings.SetThemeMode(ThemeMode.Dark);
+            store.Update(settings => settings with
+            {
+                Basic = settings.Basic with { ThemeMode = ThemeMode.Dark }
+            });
             await store.FlushAsync(TestContext.Current.CancellationToken);
             Assert.True(File.Exists(settingsPath));
         }
@@ -38,7 +41,10 @@ public sealed class SettingsStoreTests
         {
             using var store = new SettingsStore(settingsPath);
 
-            store.Settings.SetThemeMode(ThemeMode.Dark);
+            store.Update(settings => settings with
+            {
+                Basic = settings.Basic with { ThemeMode = ThemeMode.Dark }
+            });
             await store.FlushAsync(TestContext.Current.CancellationToken);
 
             await using var stream = File.OpenRead(settingsPath);
@@ -180,7 +186,10 @@ public sealed class SettingsStoreTests
                 futureSettings,
                 TestContext.Current.CancellationToken);
             using var store = new SettingsStore(settingsPath);
-            store.Settings.SetThemeMode(ThemeMode.Light);
+            store.Update(settings => settings with
+            {
+                Basic = settings.Basic with { ThemeMode = ThemeMode.Light }
+            });
             await store.FlushAsync(TestContext.Current.CancellationToken);
 
             Assert.Equal(
@@ -236,11 +245,12 @@ public sealed class SettingsStoreTests
 
         try
         {
-            using var store = new SettingsStore(settingsPath);
-            store.Settings.SetMaxCurrentDownloads(0);
+            using var manager = new SettingsManager(settingsPath);
+            using var store = new SettingsStore(manager);
+            manager.SetMaxCurrentDownloads(0);
 
             Assert.Equal(3, store.Current.Network.MaxCurrentDownloads);
-            Assert.Equal(3, store.Settings.GetMaxCurrentDownloads());
+            Assert.Equal(3, manager.GetMaxCurrentDownloads());
 
             await store.FlushAsync(TestContext.Current.CancellationToken);
         }
@@ -259,7 +269,10 @@ public sealed class SettingsStoreTests
         try
         {
             using var store = new SettingsStore(settingsPath);
-            store.Settings.SetThemeMode(ThemeMode.Dark);
+            store.Update(settings => settings with
+            {
+                Basic = settings.Basic with { ThemeMode = ThemeMode.Dark }
+            });
             using var cancellation = new CancellationTokenSource();
             await cancellation.CancelAsync();
 
@@ -285,7 +298,10 @@ public sealed class SettingsStoreTests
         try
         {
             var store = new SettingsStore(settingsPath);
-            store.Settings.SetThemeMode(ThemeMode.Dark);
+            store.Update(settings => settings with
+            {
+                Basic = settings.Basic with { ThemeMode = ThemeMode.Dark }
+            });
 
             await store.DisposeAsync().ConfigureAwait(true);
 

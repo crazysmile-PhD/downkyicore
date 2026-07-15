@@ -88,11 +88,12 @@ internal class ViewAboutViewModel : ViewModelBase
         _isOnNavigatedTo = true;
 
         // 是否接收测试版更新
-        var isReceiveBetaVersion = _settingsStore.Settings.GetIsReceiveBetaVersion();
+        var about = _settingsStore.Current.About;
+        var isReceiveBetaVersion = about.IsReceiveBetaVersion;
         IsReceiveBetaVersion = isReceiveBetaVersion == AllowStatus.Yes;
 
         // 是否在启动时自动检查更新
-        var isAutoUpdateWhenLaunch = _settingsStore.Settings.GetAutoUpdateWhenLaunch();
+        var isAutoUpdateWhenLaunch = about.AutoUpdateWhenLaunch;
         AutoUpdateWhenLaunch = isAutoUpdateWhenLaunch == AllowStatus.Yes;
 
         _isOnNavigatedTo = false;
@@ -202,7 +203,11 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         var isReceiveBetaVersion = IsReceiveBetaVersion ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = _settingsStore.Settings.SetIsReceiveBetaVersion(isReceiveBetaVersion);
+        var updated = _settingsStore.Update(settings => settings with
+        {
+            About = settings.About with { IsReceiveBetaVersion = isReceiveBetaVersion }
+        });
+        var isSucceed = updated.About.IsReceiveBetaVersion == isReceiveBetaVersion;
         PublishTip(isSucceed);
     }
 
@@ -218,7 +223,11 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         var isAutoUpdateWhenLaunch = AutoUpdateWhenLaunch ? AllowStatus.Yes : AllowStatus.No;
 
-        var isSucceed = _settingsStore.Settings.SetAutoUpdateWhenLaunch(isAutoUpdateWhenLaunch);
+        var updated = _settingsStore.Update(settings => settings with
+        {
+            About = settings.About with { AutoUpdateWhenLaunch = isAutoUpdateWhenLaunch }
+        });
+        var isSucceed = updated.About.AutoUpdateWhenLaunch == isAutoUpdateWhenLaunch;
         PublishTip(isSucceed);
     }
 

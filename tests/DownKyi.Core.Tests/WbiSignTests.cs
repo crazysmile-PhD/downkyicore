@@ -1,6 +1,5 @@
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Settings.Models;
 
 namespace DownKyi.Core.Tests;
 
@@ -34,10 +33,13 @@ public sealed class WbiSignTests
         try
         {
             using var store = new SettingsStore(Path.Combine(directory, "settings.json"));
-            store.Settings.SetUserInfo(new UserInfoSettings
+            store.Update(settings => settings with
             {
-                ImgKey = "7cd084941338484aae1ad9425b84077c",
-                SubKey = "4932caff0ff746eab6f01bf08b70ac45"
+                User = settings.User with
+                {
+                    ImgKey = "7cd084941338484aae1ad9425b84077c",
+                    SubKey = "4932caff0ff746eab6f01bf08b70ac45"
+                }
             });
             var parameters = new Dictionary<string, object?>
             {

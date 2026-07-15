@@ -4,8 +4,6 @@ public interface ISettingsStore : IDisposable, IAsyncDisposable
 {
     ApplicationSettings Current { get; }
 
-    SettingsManager Settings { get; }
-
     ApplicationSettings Update(Func<ApplicationSettings, ApplicationSettings> update);
 
     Task FlushAsync(CancellationToken cancellationToken = default);
@@ -14,6 +12,7 @@ public interface ISettingsStore : IDisposable, IAsyncDisposable
 public sealed class SettingsStore : ISettingsStore
 {
     private readonly object _updateLock = new();
+    private readonly SettingsManager _settings;
     private ApplicationSettings _current;
     private bool _isNormalizing;
     private int _disposeState;
@@ -30,20 +29,18 @@ public sealed class SettingsStore : ISettingsStore
 
     internal SettingsStore(SettingsManager settings)
     {
-        Settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         var validation = ApplicationSettingsValidator.Validate(settings.CreateInitialSnapshot());
         _current = validation.Settings;
-        Settings.Changed += RefreshSnapshot;
+        _settings.Changed += RefreshSnapshot;
         if (validation.Corrections.Length > 0)
         {
             LogCorrections(validation.Corrections);
-            Settings.ApplySnapshot(validation.Settings);
+            _settings.ApplySnapshot(validation.Settings);
         }
     }
 
     public ApplicationSettings Current => Volatile.Read(ref _current);
-
-    public SettingsManager Settings { get; }
 
     public ApplicationSettings Update(Func<ApplicationSettings, ApplicationSettings> update)
     {
@@ -58,7 +55,7 @@ public sealed class SettingsStore : ISettingsStore
                 LogCorrections(validation.Corrections);
             }
 
-            Settings.ApplySnapshot(validation.Settings);
+            _settings.ApplySnapshot(validation.Settings);
             Volatile.Write(ref _current, validation.Settings);
             return validation.Settings;
         }
@@ -66,7 +63,7 @@ public sealed class SettingsStore : ISettingsStore
 
     public Task FlushAsync(CancellationToken cancellationToken = default)
     {
-        return Settings.FlushAsync(cancellationToken);
+        return _settings.FlushAsync(cancellationToken);
     }
 
     public void Dispose()
@@ -76,8 +73,8 @@ public sealed class SettingsStore : ISettingsStore
             return;
         }
 
-        Settings.Changed -= RefreshSnapshot;
-        Settings.Dispose();
+        _settings.Changed -= RefreshSnapshot;
+        _settings.Dispose();
     }
 
     public async ValueTask DisposeAsync()
@@ -87,14 +84,14 @@ public sealed class SettingsStore : ISettingsStore
             return;
         }
 
-        Settings.Changed -= RefreshSnapshot;
+        _settings.Changed -= RefreshSnapshot;
         try
         {
-            await Settings.FlushAsync().ConfigureAwait(false);
+            await _settings.FlushAsync().ConfigureAwait(false);
         }
         finally
         {
-            await Settings.DisposeAsync().ConfigureAwait(false);
+            await _settings.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -102,7 +99,7 @@ public sealed class SettingsStore : ISettingsStore
     {
         lock (_updateLock)
         {
-            var validation = ApplicationSettingsValidator.Validate(Settings.CreateSnapshot());
+            var validation = ApplicationSettingsValidator.Validate(_settings.CreateSnapshot());
             if (validation.Corrections.Length > 0)
             {
                 LogCorrections(validation.Corrections);
@@ -111,7 +108,7 @@ public sealed class SettingsStore : ISettingsStore
                     _isNormalizing = true;
                     try
                     {
-                        Settings.ApplySnapshot(validation.Settings);
+                        _settings.ApplySnapshot(validation.Settings);
                     }
                     finally
                     {

@@ -60,7 +60,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         DownloadedList = downloadLists.Downloaded;
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
 
-        var finishedSort = _settingsStore.Settings.GetDownloadFinishedSort();
+        var finishedSort = _settingsStore.Current.Basic.DownloadFinishedSort;
         FinishedSortBy = finishedSort switch
         {
             DownloadFinishedSort.DownloadAsc => 0,
@@ -93,24 +93,32 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             case 0:
                 _downloadLists.SortDownloaded(DownloadFinishedSort.DownloadAsc);
                 // 更新设置
-                _settingsStore.Settings.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
+                SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
             case 1:
                 _downloadLists.SortDownloaded(DownloadFinishedSort.DownloadDesc);
                 // 更新设置
-                _settingsStore.Settings.SetDownloadFinishedSort(DownloadFinishedSort.DownloadDesc);
+                SetDownloadFinishedSort(DownloadFinishedSort.DownloadDesc);
                 break;
             case 2:
                 _downloadLists.SortDownloaded(DownloadFinishedSort.Number);
                 // 更新设置
-                _settingsStore.Settings.SetDownloadFinishedSort(DownloadFinishedSort.Number);
+                SetDownloadFinishedSort(DownloadFinishedSort.Number);
                 break;
             default:
                 _downloadLists.SortDownloaded(DownloadFinishedSort.DownloadAsc);
                 // 更新设置
-                _settingsStore.Settings.SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
+                SetDownloadFinishedSort(DownloadFinishedSort.DownloadAsc);
                 break;
         }
+    }
+
+    private void SetDownloadFinishedSort(DownloadFinishedSort sort)
+    {
+        _settingsStore.Update(settings => settings with
+        {
+            Basic = settings.Basic with { DownloadFinishedSort = sort }
+        });
     }
 
     // 清空下载完成列表事件

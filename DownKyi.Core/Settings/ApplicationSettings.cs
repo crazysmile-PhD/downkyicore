@@ -4,6 +4,29 @@ using DownKyi.Core.FileName;
 
 namespace DownKyi.Core.Settings;
 
+public static class ApplicationSettingsDefaults
+{
+    public const int HighSpeedBuiltInSplit = 16;
+    public const int HighSpeedAriaSplit = 16;
+    public const int HighSpeedAriaMaxConnectionPerServer = 16;
+    public const int HighSpeedAriaMinSplitSize = 1;
+
+    public static ImmutableArray<FileNamePart> FileNameParts { get; } =
+    [
+        FileNamePart.MainTitle,
+        FileNamePart.Slash,
+        FileNamePart.Section,
+        FileNamePart.Slash,
+        FileNamePart.Order,
+        FileNamePart.Hyphen,
+        FileNamePart.PageTitle,
+        FileNamePart.Hyphen,
+        FileNamePart.VideoQuality,
+        FileNamePart.Hyphen,
+        FileNamePart.VideoCodec
+    ];
+}
+
 public sealed record ApplicationSettings(
     int SchemaVersion,
     BasicApplicationSettings Basic,
@@ -182,6 +205,9 @@ internal static class ApplicationSettingsValidator
             IsTranscodingAacToMp3 = AllowValue(settings.Video.IsTranscodingAacToMp3, AllowStatus.Yes, "Video.IsTranscodingAacToMp3", corrections),
             FfmpegHardwareAcceleration = EnumValue(settings.Video.FfmpegHardwareAcceleration, FfmpegHardwareAcceleration.Auto, "Video.FfmpegHardwareAcceleration", corrections),
             FfmpegMaxParallelJobs = Range(settings.Video.FfmpegMaxParallelJobs, 1, 4, 1, "Video.FfmpegMaxParallelJobs", corrections),
+            FileNameParts = settings.Video.FileNameParts.IsDefaultOrEmpty
+                ? Corrected("Video.FileNameParts", ApplicationSettingsDefaults.FileNameParts, corrections)
+                : settings.Video.FileNameParts,
             FileNamePartTimeFormat = TextValue(settings.Video.FileNamePartTimeFormat, "yyyy-MM-dd", "Video.FileNamePartTimeFormat", corrections),
             OrderFormat = EnumValue(settings.Video.OrderFormat, OrderFormat.Natural, "Video.OrderFormat", corrections)
         };
