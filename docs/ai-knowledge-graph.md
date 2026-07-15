@@ -436,6 +436,7 @@ contracts:
   - Clipboard polling comes from the injected desktop monitor; the ViewModel cannot construct a listener from a global MainWindow.
   - Automatic update checks carry the window lifetime token; closing the window cancels network work and expected shutdown cancellation is not reported as an error.
   - Update failures use the injected typed logger and never include a repository response body or request URL.
+  - Shell notifications, dialogs, active-view lookup, startup routing, and clipboard URL routing use framework-neutral Desktop contracts; MainWindowViewModel cannot reference Prism events, regions, dialog types, or route tags.
 hazards:
   - Recreating commands breaks command identity and can cause UI churn.
   - Background clipboard work can outlive the window if cancellation is not wired.
@@ -460,6 +461,7 @@ contracts:
   - Construction does not start user API work; the first `start` navigation performs exactly one refresh.
   - A newer navigation refresh cancels the previous operation and stale results cannot change the header or login state.
   - Background settings refresh does not clear or rewrite the search input.
+  - Search input produces typed `AppNavigationRequest` values; SearchService and the index ViewModel cannot publish Prism navigation events.
 hazards:
   - Starting refresh in both the constructor and navigation doubles startup requests and delays first interaction.
   - A failed foreground refresh must restore login-panel visibility instead of leaving the panel hidden.
@@ -860,7 +862,7 @@ type: service
 paths:
   - src/DownKyi.Application/Desktop
   - DownKyi/Platform
-responsibility: Keeps lifecycle, clipboard, file/folder picker, and external launch contracts independent of Avalonia while Desktop adapters own attached MainWindow access, StorageProvider, process launch, and diagnostics.
+responsibility: Keeps lifecycle, notifications, dialogs, typed navigation, clipboard, file/folder picker, and external launch contracts independent of Avalonia while Desktop adapters own framework integration and diagnostics.
 inbound:
   - viewmodel.video-detail
   - legacy toolbox/settings/dialog viewmodels
@@ -876,9 +878,12 @@ contracts:
   - Host smoke injects a fake clipboard and resolves key ViewModels without initializing Prism ContainerLocator.
   - Platform adapters receive `AvaloniaDesktopContext`; they cannot recover MainWindow through `App.Current`.
   - Clipboard polling is one disposable injected monitor, starts with its first subscriber, and stops after its final subscriber.
+  - Every app route, nested region, and dialog has one enum value and one tested compatibility mapping; ViewModels never pass Prism region names or dialog tags through the new contracts.
+  - `DesktopNotificationService` publishes a typed event without depending on Prism; MainWindow owns presentation timing and UI dispatch.
 hazards:
-  - Notifications, dialogs, and navigation still use Prism/EventAggregator; PR 16-24 introduces Desktop contracts and PR 25-29 deletes the Prism adapters.
+  - Legacy ViewModels and page-item models still publish Prism events or call Prism dialogs/regions directly; PR 16-24 owns migration, and PR 25-29 deletes only the adapters after no callers remain.
 tests:
+  - test.desktop-interactions
   - test.architecture-boundaries
   - test.ui-smoke
 ```
@@ -2101,6 +2106,19 @@ test.composition-root:
     - the shell and key ViewModels resolve from the same service provider
     - Prism and Host resolve typed loggers from the same factory in production composition
     - App crash/shutdown and About log-management paths cannot return to static LogManager
+
+test.desktop-interactions:
+  paths:
+    - tests/DownKyi.Tests/DesktopInteractionServiceTests.cs
+    - tests/DownKyi.Architecture.Tests/DesktopInteractionArchitectureTests.cs
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+  guards:
+    - every typed route, nested region, and dialog maps to one distinct non-empty Prism compatibility name
+    - notification publication uses one framework-neutral typed event and rejects empty messages
+    - typed search routes signed-in and external user IDs without publishing NavigationEvent
+    - Application Desktop contracts cannot reference Prism or Avalonia
+    - MainWindowViewModel and SearchService cannot regain EventAggregator, RegionManager, Prism dialog, MessageEvent, or NavigationEvent dependencies
+    - production Prism adapters and all three contract instances resolve through both Prism and Host composition
 
 test.domain-results:
   paths:

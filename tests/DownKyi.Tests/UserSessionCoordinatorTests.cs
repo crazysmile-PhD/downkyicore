@@ -1,3 +1,4 @@
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Services.Account;
 using DownKyi.ViewModels;
@@ -15,6 +16,7 @@ public sealed class UserSessionCoordinatorTests
         var coordinator = new RecordingUserSessionCoordinator();
         using var viewModel = new ViewIndexViewModel(
             new EventAggregator(),
+            new StubNavigationService(),
             coordinator,
             settings.Store,
             NullLogger<ViewIndexViewModel>.Instance);
@@ -80,4 +82,26 @@ public sealed class UserSessionCoordinatorTests
         }
     }
 
+    private sealed class StubNavigationService : IAppNavigationService
+    {
+        public void Navigate(AppNavigationRequest request)
+        {
+        }
+
+        public void NavigateRegion(
+            AppNavigationRegion region,
+            AppRoute route,
+            IReadOnlyDictionary<string, object?>? parameters = null)
+        {
+        }
+
+        public void ClearRegion(AppNavigationRegion region)
+        {
+        }
+
+        public object? GetActiveView(AppNavigationRegion region)
+        {
+            return null;
+        }
+    }
 }

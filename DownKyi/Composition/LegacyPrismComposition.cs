@@ -75,6 +75,9 @@ internal static class LegacyPrismComposition
         containerRegistry.RegisterSingleton<IFilePickerService, AvaloniaFilePickerService>();
         containerRegistry.RegisterSingleton<IPlatformLauncher, AvaloniaPlatformLauncher>();
         containerRegistry.RegisterSingleton<IDialogService, DialogService>();
+        containerRegistry.RegisterSingleton<IUserNotificationService, DesktopNotificationService>();
+        containerRegistry.RegisterSingleton<IAppNavigationService, PrismNavigationService>();
+        containerRegistry.RegisterSingleton<IAppDialogService, PrismDialogService>();
         containerRegistry.Register<IDialogWindow, DialogWindow>();
 
         containerRegistry.RegisterForNavigation<ViewIndex>(ViewIndexViewModel.Tag);

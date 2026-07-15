@@ -57,7 +57,10 @@ public sealed class UiSmokeTests
                 new StubPlatformLauncher(),
                 settingsStore,
                 new StubApplicationLifecycle(),
-                new StubClipboardMonitor());
+                new StubClipboardMonitor(),
+                new DesktopNotificationService(),
+                new StubNavigationService(),
+                new StubAppDialogService());
         });
 
         try
@@ -249,6 +252,42 @@ public sealed class UiSmokeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(true);
+        }
+    }
+
+    private sealed class StubNavigationService : IAppNavigationService
+    {
+        public void Navigate(AppNavigationRequest request)
+        {
+        }
+
+        public void NavigateRegion(
+            AppNavigationRegion region,
+            AppRoute route,
+            IReadOnlyDictionary<string, object?>? parameters = null)
+        {
+        }
+
+        public void ClearRegion(AppNavigationRegion region)
+        {
+        }
+
+        public object? GetActiveView(AppNavigationRegion region)
+        {
+            return null;
+        }
+    }
+
+    private sealed class StubAppDialogService : IAppDialogService
+    {
+        public Task<AppDialogResult> ShowAsync(
+            AppDialogRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new AppDialogResult(
+                AppDialogOutcome.Canceled,
+                new Dictionary<string, object?>()));
         }
     }
 

@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Images;
@@ -19,6 +20,7 @@ namespace DownKyi.ViewModels;
 internal class ViewIndexViewModel : ViewModelBase
 {
     public const string Tag = "PageIndex";
+    private readonly IAppNavigationService _navigationService;
     private readonly IUserSessionCoordinator _userSessionCoordinator;
     private readonly ILogger<ViewIndexViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
@@ -100,10 +102,12 @@ internal class ViewIndexViewModel : ViewModelBase
 
     public ViewIndexViewModel(
         IEventAggregator eventAggregator,
+        IAppNavigationService navigationService,
         IUserSessionCoordinator userSessionCoordinator,
         ISettingsStore settingsStore,
         ILogger<ViewIndexViewModel> logger) : base(eventAggregator)
     {
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
         _userSessionCoordinator = userSessionCoordinator
             ?? throw new ArgumentNullException(nameof(userSessionCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -218,12 +222,12 @@ internal class ViewIndexViewModel : ViewModelBase
 
         _logger.LogDebugMessage("Processing search input.");
         InputText = Regex.Replace(InputText, @"[【]*[^【]*[^】]*[】 ]", "");
-        var searchService = new SearchService(_settingsStore);
-        var isSupport = searchService.BiliInput(InputText, Tag, EventAggregator);
+        var searchService = new SearchService(_settingsStore, _navigationService);
+        var isSupport = searchService.BiliInput(InputText, AppRoute.Index);
         if (!isSupport)
         {
             // 关键词搜索
-            searchService.SearchKey(InputText, Tag, EventAggregator);
+            SearchService.SearchKey(InputText, AppRoute.Index);
         }
 
         InputText = string.Empty;

@@ -53,7 +53,10 @@ internal static class LegacyDesktopComposition
                 container.Resolve<IPlatformLauncher>(),
                 settingsStore,
                 container.Resolve<IApplicationLifecycle>(),
-                container.Resolve<IClipboardMonitor>());
+                container.Resolve<IClipboardMonitor>(),
+                container.Resolve<IUserNotificationService>(),
+                container.Resolve<IAppNavigationService>(),
+                container.Resolve<IAppDialogService>());
             services.AddSingleton<DownloadDiagnosticLogger>();
             services.AddSingleton<IDownloadRuntimeFactory, DownloadRuntimeFactory>();
             services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
@@ -70,7 +73,10 @@ internal static class LegacyDesktopComposition
         IPlatformLauncher platformLauncher,
         ISettingsStore settingsStore,
         IApplicationLifecycle applicationLifecycle,
-        IClipboardMonitor clipboardMonitor)
+        IClipboardMonitor clipboardMonitor,
+        IUserNotificationService notificationService,
+        IAppNavigationService navigationService,
+        IAppDialogService appDialogService)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(regionManager);
@@ -81,6 +87,9 @@ internal static class LegacyDesktopComposition
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(applicationLifecycle);
         ArgumentNullException.ThrowIfNull(clipboardMonitor);
+        ArgumentNullException.ThrowIfNull(notificationService);
+        ArgumentNullException.ThrowIfNull(navigationService);
+        ArgumentNullException.ThrowIfNull(appDialogService);
 
         services.AddSingleton(regionManager);
         services.AddSingleton(eventAggregator);
@@ -90,6 +99,9 @@ internal static class LegacyDesktopComposition
         services.AddSingleton(settingsStore);
         services.AddSingleton(applicationLifecycle);
         services.AddSingleton(clipboardMonitor);
+        services.AddSingleton(notificationService);
+        services.AddSingleton(navigationService);
+        services.AddSingleton(appDialogService);
         services.AddSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
         services.AddTransient<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         services.AddSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();
