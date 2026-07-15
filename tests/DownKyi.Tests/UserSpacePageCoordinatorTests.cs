@@ -1,5 +1,6 @@
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Services.UserSpace;
+using Microsoft.Extensions.Logging.Abstractions;
 using Prism.Events;
 
 namespace DownKyi.Tests;
@@ -10,7 +11,7 @@ public sealed class UserSpacePageCoordinatorTests
     public async Task PreCanceledPublicationLoadDoesNotStartApiWork()
     {
         using var settings = new TestSettingsStore();
-        var coordinator = new UserSpacePageCoordinator(settings.Store);
+        var coordinator = CreateCoordinator(settings);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -27,7 +28,7 @@ public sealed class UserSpacePageCoordinatorTests
     public async Task PreCanceledProfileLoadDoesNotStartApiWork()
     {
         using var settings = new TestSettingsStore();
-        var coordinator = new UserSpacePageCoordinator(settings.Store);
+        var coordinator = CreateCoordinator(settings);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -39,7 +40,7 @@ public sealed class UserSpacePageCoordinatorTests
     public async Task PreCanceledStatsLoadDoesNotStartApiWork()
     {
         using var settings = new TestSettingsStore();
-        var coordinator = new UserSpacePageCoordinator(settings.Store);
+        var coordinator = CreateCoordinator(settings);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -51,7 +52,7 @@ public sealed class UserSpacePageCoordinatorTests
     public async Task PreCanceledBangumiLoadDoesNotStartApiWork()
     {
         using var settings = new TestSettingsStore();
-        var coordinator = new UserSpacePageCoordinator(settings.Store);
+        var coordinator = CreateCoordinator(settings);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -62,5 +63,12 @@ public sealed class UserSpacePageCoordinatorTests
             15,
             new EventAggregator(),
             cancellation.Token));
+    }
+
+    private static UserSpacePageCoordinator CreateCoordinator(TestSettingsStore settings)
+    {
+        return new UserSpacePageCoordinator(
+            settings.Store,
+            NullLogger<UserSpacePageCoordinator>.Instance);
     }
 }

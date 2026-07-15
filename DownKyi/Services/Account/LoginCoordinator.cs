@@ -3,6 +3,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.BiliApi.Login.Models;
+using DownKyi.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Account;
 
@@ -17,9 +19,25 @@ internal interface ILoginCoordinator
 
 internal sealed class LoginCoordinator : ILoginCoordinator
 {
+    private readonly ILogger<LoginCoordinator> _logger;
+
+    public LoginCoordinator(ILogger<LoginCoordinator> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
     public Task<LoginUrlOrigin?> RequestLoginUrlAsync(CancellationToken cancellationToken)
     {
-        return RunAsync(LoginQr.GetLoginUrl, cancellationToken);
+        return RunAsync(() =>
+        {
+            var result = LoginQr.GetLoginUrl();
+            if (result == null)
+            {
+                _logger.LogWarningMessage("Bilibili login URL could not be created.");
+            }
+
+            return result;
+        }, cancellationToken);
     }
 
     public Task<LoginStatus?> GetLoginStatusAsync(
@@ -27,13 +45,31 @@ internal sealed class LoginCoordinator : ILoginCoordinator
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrEmpty(qrcodeKey);
-        return RunAsync(() => LoginQr.GetLoginStatus(qrcodeKey), cancellationToken);
+        return RunAsync(() =>
+        {
+            var result = LoginQr.GetLoginStatus(qrcodeKey);
+            if (result == null)
+            {
+                _logger.LogWarningMessage("Bilibili login status could not be read.");
+            }
+
+            return result;
+        }, cancellationToken);
     }
 
     public Task<bool> SaveLoginCookiesAsync(Uri redirectUri, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(redirectUri);
-        return RunAsync(() => LoginHelper.SaveLoginInfoCookies(redirectUri), cancellationToken);
+        return RunAsync(() =>
+        {
+            var saved = LoginHelper.SaveLoginInfoCookies(redirectUri);
+            if (!saved)
+            {
+                _logger.LogWarningMessage("Bilibili login cookies could not be persisted.");
+            }
+
+            return saved;
+        }, cancellationToken);
     }
 
     private static Task<T> RunAsync<T>(Func<T> operation, CancellationToken cancellationToken)

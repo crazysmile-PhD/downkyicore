@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Web;
 using DownKyi.Core.BiliApi.Login;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 
@@ -58,11 +57,10 @@ public static class WebClient
                         socketsHandler.UseProxy = true;
                         socketsHandler.Proxy = new WebProxy(network.CustomNetworkProxy);
                     }
-                    catch (UriFormatException e)
+                    catch (UriFormatException)
                     {
                         socketsHandler.UseProxy = false;
                         socketsHandler.Proxy = null;
-                        LogManager.Error(nameof(WebClient), e);
                     }
                 }
                 break;
@@ -105,29 +103,17 @@ public static class WebClient
         ArgumentException.ThrowIfNullOrWhiteSpace(requestAddress);
 
         var attempts = Math.Max(1, retry);
-        try
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrEmpty(_bvuid3) && requestAddress != "https://api.bilibili.com/x/frontend/finger/spi")
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (string.IsNullOrEmpty(_bvuid3) && requestAddress != "https://api.bilibili.com/x/frontend/finger/spi")
-            {
-                GetBuvid(cancellationToken);
-            }
+            GetBuvid(cancellationToken);
+        }
 
-            return GetConfiguredClient().Send(
-                () => BuildRequest(requestAddress, referer, method, parameters, json),
-                attempts,
-                SendOverrideForTests,
-                cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException)
-        {
-            LogManager.Error(nameof(RequestWeb), e);
-            throw;
-        }
+        return GetConfiguredClient().Send(
+            () => BuildRequest(requestAddress, referer, method, parameters, json),
+            attempts,
+            SendOverrideForTests,
+            cancellationToken);
     }
 
     internal static void ResetBuvidForTests()
@@ -267,13 +253,13 @@ public static class WebClient
             {
                 File.Delete(temporaryFile);
             }
-            catch (IOException e)
+            catch (IOException)
             {
-                LogManager.Debug(nameof(DownloadFile), $"Temporary download cleanup failed: {e.Message}");
+                // Preserve the original download failure.
             }
-            catch (UnauthorizedAccessException e)
+            catch (UnauthorizedAccessException)
             {
-                LogManager.Debug(nameof(DownloadFile), $"Temporary download cleanup was denied: {e.Message}");
+                // Preserve the original download failure.
             }
 
             throw;

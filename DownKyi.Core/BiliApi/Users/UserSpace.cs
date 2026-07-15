@@ -1,11 +1,9 @@
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.Users;
 
@@ -174,16 +172,12 @@ public static class UserSpace
         {
             throw;
         }
-        catch (HttpRequestException e)
+        catch (HttpRequestException)
         {
-            Console.PrintLine("GetPublication()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
             return null;
         }
-        catch (JsonException e)
+        catch (JsonException)
         {
-            Console.PrintLine("GetPublication()JSON解析异常: {0}", e);
-            LogManager.Error("UserSpace", e);
             return null;
         }
     }

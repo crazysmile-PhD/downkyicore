@@ -192,7 +192,10 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        LoginHelper.SaveLoginInfoCookies(cookies);
+        if (!LoginHelper.SaveLoginInfoCookies(cookies))
+        {
+            throw new IOException("Legacy login cookies could not be persisted.");
+        }
         progress.Report(new LegacyUpgradeProgress("登录信息迁移完成"));
     }
 

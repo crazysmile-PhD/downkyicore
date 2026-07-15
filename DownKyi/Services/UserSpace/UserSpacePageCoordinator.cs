@@ -5,10 +5,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Events;
 using BiliUserSpace = DownKyi.Core.BiliApi.Users.UserSpace;
 
@@ -71,10 +73,14 @@ internal interface IUserSpacePageCoordinator
 internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
 {
     private readonly ISettingsStore _settingsStore;
+    private readonly ILogger<UserSpacePageCoordinator> _logger;
 
-    public UserSpacePageCoordinator(ISettingsStore settingsStore)
+    public UserSpacePageCoordinator(
+        ISettingsStore settingsStore,
+        ILogger<UserSpacePageCoordinator> logger)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public Task<IReadOnlyList<PublicationMedia>> LoadPublicationPageAsync(
@@ -89,13 +95,20 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
         return Task.Run<IReadOnlyList<PublicationMedia>>(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var videos = BiliUserSpace.GetPublication(
+            var publication = BiliUserSpace.GetPublication(
                 _settingsStore,
                 mid,
                 page,
                 pageSize,
                 typeId,
-                cancellationToken: cancellationToken)?.Vlist;
+                cancellationToken: cancellationToken);
+            if (publication == null)
+            {
+                _logger.LogWarningMessage("Bilibili publication page could not be loaded.");
+                return Array.Empty<PublicationMedia>();
+            }
+
+            var videos = publication.Vlist;
             if (videos == null || videos.Count == 0)
             {
                 return Array.Empty<PublicationMedia>();

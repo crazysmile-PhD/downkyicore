@@ -70,6 +70,41 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     }
 
     [Fact]
+    public void BilibiliCoreLeavesSanitizedDiagnosticsToInjectedCoordinators()
+    {
+        var apiDirectory = Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi");
+        var violations = Directory
+            .EnumerateFiles(apiDirectory, "*.cs", SearchOption.AllDirectories)
+            .Where(path =>
+            {
+                var source = File.ReadAllText(path);
+                return source.Contains("LogManager.", StringComparison.Ordinal)
+                       || source.Contains("Console.Print", StringComparison.Ordinal);
+            })
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .ToArray();
+        var webClientSource = File.ReadAllText(Path.Combine(apiDirectory, "WebClient.cs"));
+        var loginCoordinatorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Account",
+            "LoginCoordinator.cs"));
+        var userSpaceCoordinatorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "UserSpace",
+            "UserSpacePageCoordinator.cs"));
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
+        Assert.Contains("GetConfiguredClient().Send(", webClientSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("catch (Exception", webClientSource, StringComparison.Ordinal);
+        Assert.Contains("ILogger<LoginCoordinator>", loginCoordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("ILogger<UserSpacePageCoordinator>", userSpaceCoordinatorSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BilibiliApiBoundaryUsesTypedFailuresInsteadOfNullFallbacks()
     {
         var source = File.ReadAllText(Path.Combine(

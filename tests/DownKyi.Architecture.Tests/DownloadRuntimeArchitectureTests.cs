@@ -116,7 +116,12 @@ public sealed class DownloadRuntimeArchitectureTests
     {
         var directory = Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download");
         var violations = Directory.EnumerateFiles(directory, "*.cs", SearchOption.TopDirectoryOnly)
-            .Where(path => File.ReadAllText(path).Contains("LogManager.", StringComparison.Ordinal))
+            .Where(path =>
+            {
+                var source = File.ReadAllText(path);
+                return source.Contains("LogManager.", StringComparison.Ordinal)
+                       || source.Contains("Console.Print", StringComparison.Ordinal);
+            })
             .Select(path => Path.GetRelativePath(RepositoryRoot, path))
             .ToArray();
         var taskFileSource = File.ReadAllText(Path.Combine(directory, "DownloadTaskFileService.cs"));

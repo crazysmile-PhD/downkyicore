@@ -28,7 +28,6 @@ using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Services.Download;
 
@@ -435,17 +434,14 @@ internal abstract class DownloadService : IDisposable
         }
         catch (HttpRequestException e)
         {
-            Console.PrintLine($"{Tag}.DownloadCover()发生异常: {0}", e);
             Logger.LogErrorMessage("Cover download failed.", e);
         }
         catch (IOException e)
         {
-            Console.PrintLine($"{Tag}.DownloadCover()发生IO异常: {0}", e);
             Logger.LogErrorMessage("Cover download timed out.", e);
         }
         catch (UnauthorizedAccessException e)
         {
-            Console.PrintLine($"{Tag}.DownloadCover()没有写入权限: {0}", e);
             Logger.LogErrorMessage("Cover download was denied.", e);
         }
 
@@ -532,7 +528,13 @@ internal abstract class DownloadService : IDisposable
             downloading.DownloadBase.Avid,
             downloading.DownloadBase.Bvid,
             downloading.DownloadBase.Cid,
+            e => Logger.LogErrorMessage("Subtitle response parsing failed.", e),
             CancellationToken.GetValueOrDefault());
+        if (subRipTexts.Count == 0)
+        {
+            Logger.LogWarningMessage("No usable subtitles were returned for the download task.");
+        }
+
         foreach (var subRip in subRipTexts)
         {
             var srtFile = $"{downloading.DownloadBase.FilePath}_{subRip.LanDoc}.srt";
@@ -553,12 +555,10 @@ internal abstract class DownloadService : IDisposable
             }
             catch (IOException e)
             {
-                Console.PrintLine($"{Tag}.DownloadSubtitle()发生异常: {0}", e);
                 Logger.LogErrorMessage("Subtitle download failed.", e);
             }
             catch (UnauthorizedAccessException e)
             {
-                Console.PrintLine($"{Tag}.DownloadSubtitle()没有写入权限: {0}", e);
                 Logger.LogErrorMessage("Subtitle download was denied.", e);
             }
         }
@@ -950,7 +950,6 @@ internal abstract class DownloadService : IDisposable
             }
             catch (IOException e)
             {
-                Console.PrintLine(Tag, e.ToString());
                 Logger.LogDebugMessage(e.Message);
 
                 var alertService = new AlertService(DialogService);
@@ -960,7 +959,6 @@ internal abstract class DownloadService : IDisposable
             }
             catch (UnauthorizedAccessException e)
             {
-                Console.PrintLine(Tag, e.ToString());
                 Logger.LogDebugMessage(e.Message);
 
                 var alertService = new AlertService(DialogService);
@@ -1284,7 +1282,6 @@ internal abstract class DownloadService : IDisposable
         }
         catch (OperationCanceledException e)
         {
-            Console.PrintLine(Tag, e.ToString());
             Logger.LogDebugMessage(e.Message);
             await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
         }

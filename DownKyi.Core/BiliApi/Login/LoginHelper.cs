@@ -1,10 +1,8 @@
 using System.Web;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.Login;
 
@@ -104,24 +102,17 @@ public static class LoginHelper
                 File.Copy(tempFile, LocalLoginInfo, true);
                 // Encryptor.EncryptFile(tempFile, LOCAL_LOGIN_INFO, password);
             }
-            catch (IOException e)
+            catch (IOException)
             {
-                Console.PrintLine("SaveLoginInfoCookies()发生异常: {0}", e);
-                LogManager.Error(e);
                 return false;
             }
-            catch (UnauthorizedAccessException e)
+            catch (UnauthorizedAccessException)
             {
-                Console.PrintLine("SaveLoginInfoCookies()没有写入权限: {0}", e);
-                LogManager.Error(e);
                 return false;
             }
             finally
             {
-                if (File.Exists(tempFile))
-                {
-                    File.Delete(tempFile);
-                }
+                TryDeleteTemporaryFile(tempFile);
             }
 
             // 写入成功后使缓存立即失效
@@ -129,10 +120,7 @@ public static class LoginHelper
         }
         else
         {
-            if (File.Exists(tempFile))
-            {
-                File.Delete(tempFile);
-            }
+            TryDeleteTemporaryFile(tempFile);
         }
 
         return isSucceed;
@@ -186,16 +174,12 @@ public static class LoginHelper
                         cookie.Domain))
                     .ToList();
             }
-            catch (IOException e)
+            catch (IOException)
             {
-                Console.PrintLine("GetLoginInfoCookies()发生异常: {0}", e);
-                LogManager.Error(e);
                 return new List<DownKyiCookie>();
             }
-            catch (UnauthorizedAccessException e)
+            catch (UnauthorizedAccessException)
             {
-                Console.PrintLine("GetLoginInfoCookies()没有读取权限: {0}", e);
-                LogManager.Error(e);
                 return new List<DownKyiCookie>();
             }
 
@@ -279,11 +263,29 @@ public static class LoginHelper
             });
             return true;
         }
-        catch (IOException e)
+        catch (IOException)
         {
-            Console.PrintLine("Logout()发生异常: {0}", e);
-            LogManager.Error(e);
             return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static void TryDeleteTemporaryFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+            // Cookie persistence outcome must not be replaced by cleanup failure.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Cookie persistence outcome must not be replaced by cleanup failure.
         }
     }
 }

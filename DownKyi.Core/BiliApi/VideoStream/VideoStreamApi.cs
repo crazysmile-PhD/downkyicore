@@ -2,10 +2,8 @@ using System.Text.RegularExpressions;
 using DownKyi.Core.BiliApi.Models.Json;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream.Models;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using Newtonsoft.Json;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.VideoStream;
 
@@ -71,6 +69,23 @@ public static class VideoStreamApi
         long cid,
         CancellationToken cancellationToken = default)
     {
+        return GetSubtitle(
+            settingsStore,
+            avid,
+            bvid,
+            cid,
+            reportParseFailure: null,
+            cancellationToken);
+    }
+
+    public static IReadOnlyList<SubRipText> GetSubtitle(
+        ISettingsStore settingsStore,
+        long avid,
+        string? bvid,
+        long cid,
+        Action<Exception>? reportParseFailure,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(settingsStore);
         var subRipTexts = new List<SubRipText>();
 
@@ -93,7 +108,6 @@ public static class VideoStreamApi
             var subtitleUrl = NormalizeSubtitleUrl(subtitle.SubtitleAddress);
             if (subtitleUrl == null)
             {
-                LogManager.Debug(nameof(GetSubtitle), $"Skip empty subtitle url. lan={subtitle.Lan}, lan_doc={subtitle.LanDoc}");
                 continue;
             }
 
@@ -105,7 +119,6 @@ public static class VideoStreamApi
                 cancellationToken);
             if (string.IsNullOrWhiteSpace(response))
             {
-                LogManager.Debug(nameof(GetSubtitle), $"Skip empty subtitle response. lan={subtitle.Lan}, lan_doc={subtitle.LanDoc}, type={subtitle.Type}");
                 continue;
             }
 
@@ -114,7 +127,6 @@ public static class VideoStreamApi
                 var subtitleJson = JsonConvert.DeserializeObject<SubtitleJson>(response);
                 if (subtitleJson?.Body == null || subtitleJson.Body.Count == 0)
                 {
-                    LogManager.Debug(nameof(GetSubtitle), $"Skip subtitle with empty body. lan={subtitle.Lan}, lan_doc={subtitle.LanDoc}, type={subtitle.Type}");
                     continue;
                 }
 
@@ -137,8 +149,7 @@ public static class VideoStreamApi
             }
             catch (JsonException e)
             {
-                Console.PrintLine("GetSubtitle()发生异常: {0}", e);
-                LogManager.Error("GetSubtitle()", e);
+                reportParseFailure?.Invoke(e);
             }
         }
 
@@ -393,16 +404,12 @@ public static class VideoStreamApi
         {
             throw;
         }
-        catch (JsonException e)
+        catch (JsonException)
         {
-            Console.PrintLine("GetPlayUrlPc()发生异常: {0}", e);
-            LogManager.Error("GetPlayUrlPc()", e);
             return null;
         }
-        catch (RegexMatchTimeoutException e)
+        catch (RegexMatchTimeoutException)
         {
-            Console.PrintLine("GetPlayUrlPc()正则匹配超时: {0}", e);
-            LogManager.Error("GetPlayUrlPc()", e);
             return null;
         }
     }

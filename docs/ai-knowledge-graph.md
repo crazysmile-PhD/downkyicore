@@ -1068,10 +1068,12 @@ inbound:
   - service.seasons-series
 outbound:
   - core.web-client
-  - core.logging
   - core.settings
 contracts:
   - API failures should be visible at the API boundary; do not turn errors into valid empty payloads.
+  - Typed transport and parser failures propagate to injected application coordinators; legacy recoverable `null`/`false` results are logged there without URL, cookie, path, or account identifiers.
+  - Subtitle parsing remains per-track fault tolerant; parser exceptions are reported to the injected download caller without exposing the subtitle address.
+  - Static endpoint facades cannot write through `LogManager` or terminal output.
   - OperationCanceledException must be rethrown.
   - WBI request signatures must match the fixed protocol vector; MD5 is limited to that external format.
   - WBI keys come from the caller's injected settings owner; signing cannot read process-global settings.
@@ -1098,7 +1100,6 @@ inbound:
   - core.bili-api
 outbound:
   - external.bilibili
-  - core.logging
   - core.settings
 contracts:
   - Host composition creates the typed client and handler from the shared injected settings owner before any legacy API call.
@@ -1109,7 +1110,7 @@ contracts:
   - Cancellation is never swallowed by retry.
   - HTTP 401/403 and rejected API schemas are non-retryable; HTTP 429 honors Retry-After with a bounded delay.
   - JSON metadata uses source-generated System.Text.Json contexts; legacy endpoint DTO materialization remains Newtonsoft-compatible.
-  - Sanitized URLs are used in diagnostics.
+  - The static compatibility facade emits no request diagnostics; injected callers own redacted operational context.
 hazards:
   - Synchronous legacy endpoint signatures keep the WebClient facade alive until PR 16-24 moves callers to cancellable use cases; do not add new facade callers.
   - Cookie handling must not be emitted to console or public logs.
@@ -1951,9 +1952,11 @@ test.architecture-boundaries:
     - the settings store retains immutable Current and typed Update contracts, explicit version migration, cancellation-aware flush, and atomic replacement
     - no production source can read through a mutable Settings facade, and `ISettingsStore` cannot expose `SettingsManager`
     - download runtime and file cleanup cannot restore static LogManager or a static DownloadTaskFileService owner
+    - download runtime cannot duplicate typed diagnostics to terminal output; empty subtitle results emit only a sanitized task-level warning
     - FFmpeg processor, concat, and hardware detection cannot restore static LogManager or a static detector owner
     - aria2 manager/server/process supervision cannot restore static LogManager, static server ownership, synchronous HTTP send, or recursive retry
     - settings validation/persistence and legacy migration cannot restore static LogManager, Console diagnostics, or duplicate low-level SQLite logging
+    - Bilibili Core facades cannot log or print request data; injected account and user-space coordinators own sanitized outcome diagnostics
 
 test.settings-store:
   paths:
