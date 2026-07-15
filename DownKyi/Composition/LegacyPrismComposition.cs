@@ -50,6 +50,7 @@ internal static class LegacyPrismComposition
         containerRegistry.RegisterSingleton<DownloadStorageService>();
         containerRegistry.RegisterSingleton<DownloadListState>();
         containerRegistry.RegisterSingleton<DownloadTaskFileService>();
+        containerRegistry.RegisterSingleton<IDownloadManagerCoordinator, DownloadManagerCoordinator>();
         containerRegistry.RegisterSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
         containerRegistry.Register<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         containerRegistry.RegisterSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();

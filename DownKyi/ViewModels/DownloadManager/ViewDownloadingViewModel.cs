@@ -1,15 +1,10 @@
 using System;
-using System.Collections.ObjectModel;
-using System.Linq;
 using System.Threading.Tasks;
 using DownKyi.Commands;
-using DownKyi.Images;
-using DownKyi.Models;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
 using Prism.Dialogs;
 using Prism.Events;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
@@ -20,8 +15,7 @@ namespace DownKyi.ViewModels.DownloadManager
     {
         public const string Tag = "PageDownloadManagerDownloading";
 
-        private readonly DownloadStorageService _downloadStorageService;
-        private readonly DownloadTaskFileService _downloadTaskFileService;
+        private readonly IDownloadManagerCoordinator _downloadManagerCoordinator;
         private readonly ILogger<ViewDownloadingViewModel> _logger;
 
         #region 页面属性申明
@@ -39,16 +33,13 @@ namespace DownKyi.ViewModels.DownloadManager
         public ViewDownloadingViewModel(
             IEventAggregator eventAggregator,
             IDialogService dialogService,
-            DownloadStorageService downloadStorageService,
             DownloadListState downloadLists,
-            DownloadTaskFileService downloadTaskFileService,
+            IDownloadManagerCoordinator downloadManagerCoordinator,
             ILogger<ViewDownloadingViewModel> logger) : base(
             eventAggregator, dialogService)
         {
-            _downloadStorageService = downloadStorageService
-                ?? throw new ArgumentNullException(nameof(downloadStorageService));
-            _downloadTaskFileService = downloadTaskFileService
-                ?? throw new ArgumentNullException(nameof(downloadTaskFileService));
+            _downloadManagerCoordinator = downloadManagerCoordinator
+                ?? throw new ArgumentNullException(nameof(downloadManagerCoordinator));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             // 初始化DownloadingList
             DownloadingList = (downloadLists ?? throw new ArgumentNullException(nameof(downloadLists))).Downloading;
@@ -57,91 +48,49 @@ namespace DownKyi.ViewModels.DownloadManager
         #region 命令申明
 
         // 暂停所有下载事件
-        private DelegateCommand? _pauseAllDownloadingCommand;
+        private DownKyiAsyncDelegateCommand? _pauseAllDownloadingCommand;
 
-        public DelegateCommand PauseAllDownloadingCommand => _pauseAllDownloadingCommand ??= new DelegateCommand(ExecutePauseAllDownloadingCommand);
+        public DownKyiAsyncDelegateCommand PauseAllDownloadingCommand =>
+            _pauseAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(
+                ExecutePauseAllDownloadingCommand,
+                _logger);
 
         /// <summary>
         /// 暂停所有下载事件
         /// </summary>
-        private void ExecutePauseAllDownloadingCommand()
+        private Task ExecutePauseAllDownloadingCommand()
         {
-            foreach (var downloading in _downloadingList)
-            {
-                switch (downloading.Downloading.DownloadStatus)
-                {
-                    case DownloadStatus.NotStarted:
-                    case DownloadStatus.WaitForDownload:
-                        downloading.Downloading.DownloadStatus = DownloadStatus.Pause;
-                        downloading.DownloadStatusTitle = DictionaryResource.GetString("Pausing");
-                        downloading.StartOrPause = ButtonIcon.Instance().Start;
-                        downloading.StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
-                        break;
-                    case DownloadStatus.PauseStarted:
-                        break;
-                    case DownloadStatus.Pause:
-                        break;
-                    //case DownloadStatus.PAUSE_TO_WAIT:
-                    case DownloadStatus.Downloading:
-                        downloading.Downloading.DownloadStatus = DownloadStatus.Pause;
-                        downloading.DownloadStatusTitle = DictionaryResource.GetString("Pausing");
-                        downloading.StartOrPause = ButtonIcon.Instance().Start;
-                        downloading.StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
-                        break;
-                    case DownloadStatus.DownloadSucceed:
-                        // 下载成功后会从下载列表中删除
-                        // 不会出现此分支
-                        break;
-                    case DownloadStatus.DownloadFailed:
-                        break;
-                }
-            }
+            return _downloadManagerCoordinator.PauseAllAsync(DownloadingList);
         }
 
         // 继续所有下载事件
-        private DelegateCommand? _continueAllDownloadingCommand;
+        private DownKyiAsyncDelegateCommand? _continueAllDownloadingCommand;
 
-        public DelegateCommand ContinueAllDownloadingCommand => _continueAllDownloadingCommand ??= new DelegateCommand(ExecuteContinueAllDownloadingCommand);
+        public DownKyiAsyncDelegateCommand ContinueAllDownloadingCommand =>
+            _continueAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(
+                ExecuteContinueAllDownloadingCommand,
+                _logger);
 
         /// <summary>
         /// 继续所有下载事件
         /// </summary>
-        private void ExecuteContinueAllDownloadingCommand()
+        private Task ExecuteContinueAllDownloadingCommand()
         {
-            foreach (var downloading in _downloadingList)
-            {
-                switch (downloading.Downloading.DownloadStatus)
-                {
-                    case DownloadStatus.NotStarted:
-                    case DownloadStatus.WaitForDownload:
-                        downloading.Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
-                        downloading.DownloadStatusTitle = DictionaryResource.GetString("Waiting");
-                        break;
-                    case DownloadStatus.PauseStarted:
-                        downloading.Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
-                        downloading.DownloadStatusTitle = DictionaryResource.GetString("Waiting");
-                        break;
-                    case DownloadStatus.Pause:
-                        downloading.Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
-                        downloading.DownloadStatusTitle = DictionaryResource.GetString("Waiting");
-                        break;
-                    //case DownloadStatus.PAUSE_TO_WAIT:
-                    //    break;
-                    case DownloadStatus.Downloading:
-                        break;
-                    case DownloadStatus.DownloadSucceed:
-                        // 下载成功后会从下载列表中删除
-                        // 不会出现此分支
-                        break;
-                    case DownloadStatus.DownloadFailed:
-                        downloading.Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
-                        downloading.DownloadStatusTitle = DictionaryResource.GetString("Waiting");
-                        break;
-                }
+            return _downloadManagerCoordinator.ResumeAllAsync(DownloadingList);
+        }
 
-                downloading.StartOrPause = ButtonIcon.Instance().Pause;
-                downloading.StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
-            }
+        private DownKyiAsyncDelegateCommand<DownloadingItem>? _toggleDownloadingCommand;
+
+        public DownKyiAsyncDelegateCommand<DownloadingItem> ToggleDownloadingCommand =>
+            _toggleDownloadingCommand ??= new DownKyiAsyncDelegateCommand<DownloadingItem>(
+                ExecuteToggleDownloadingCommand,
+                _logger);
+
+        private Task ExecuteToggleDownloadingCommand(DownloadingItem? downloadingItem)
+        {
+            return downloadingItem == null
+                ? Task.CompletedTask
+                : _downloadManagerCoordinator.ToggleAsync(downloadingItem);
         }
 
         // 删除所有下载事件
@@ -161,14 +110,7 @@ namespace DownKyi.ViewModels.DownloadManager
                 return;
             }
 
-            // 使用Clear()不能触发NotifyCollectionChangedAction.Remove事件
-            // 因此遍历删除
-            // DownloadingList中元素被删除后不能继续遍历
-            var list = DownloadingList.ToList();
-            foreach (var item in list)
-            {
-                await DeleteDownloadingItemAsync(item).ConfigureAwait(true);
-            }
+            await _downloadManagerCoordinator.DeleteAllAsync(DownloadingList).ConfigureAwait(true);
         }
 
 
@@ -193,16 +135,7 @@ namespace DownKyi.ViewModels.DownloadManager
                 return;
             }
 
-            await DeleteDownloadingItemAsync(downloadingItem).ConfigureAwait(true);
-        }
-
-        private async Task DeleteDownloadingItemAsync(DownloadingItem downloadingItem)
-        {
-            downloadingItem.Downloading.DownloadStatus = DownloadStatus.Pause;
-            DownloadingList.Remove(downloadingItem);
-            await _downloadTaskFileService.CancelActiveDownloadAsync(downloadingItem).ConfigureAwait(true);
-            await _downloadStorageService.RemoveDownloadingAsync(downloadingItem, true).ConfigureAwait(true);
-            await _downloadTaskFileService.DeleteGeneratedFilesAsync(downloadingItem).ConfigureAwait(true);
+            await _downloadManagerCoordinator.DeleteAsync(downloadingItem).ConfigureAwait(true);
         }
 
         #endregion

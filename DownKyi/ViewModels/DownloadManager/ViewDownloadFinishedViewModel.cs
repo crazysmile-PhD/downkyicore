@@ -1,10 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
-using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Events;
@@ -23,10 +19,9 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
 {
     public const string Tag = "PageDownloadManagerDownloadFinished";
 
-    private DownloadStorageService _downloadStorageService;
+    private readonly IDownloadManagerCoordinator _downloadManagerCoordinator;
     private readonly DownloadListState _downloadLists;
     private readonly ILogger<ViewDownloadFinishedViewModel> _logger;
-    private readonly IPlatformLauncher _platformLauncher;
     private readonly ISettingsStore _settingsStore;
 
     #region 页面属性申明
@@ -52,10 +47,9 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     public ViewDownloadFinishedViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        DownloadStorageService downloadStorageService,
         DownloadListState downloadLists,
         ISettingsStore settingsStore,
-        IPlatformLauncher platformLauncher,
+        IDownloadManagerCoordinator downloadManagerCoordinator,
         ILogger<ViewDownloadFinishedViewModel> logger
     ) : base(eventAggregator,
         dialogService)
@@ -63,10 +57,10 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         // 初始化DownloadedList
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
-        _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
+        _downloadManagerCoordinator = downloadManagerCoordinator
+            ?? throw new ArgumentNullException(nameof(downloadManagerCoordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         DownloadedList = downloadLists.Downloaded;
-        _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
 
         var finishedSort = _settingsStore.Current.Basic.DownloadFinishedSort;
         FinishedSortBy = finishedSort switch
@@ -151,10 +145,9 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             // 使用Clear()不能触发NotifyCollectionChangedAction.Remove事件
             // 因此遍历删除
             // DownloadingList中元素被删除后不能继续遍历
-            await _downloadStorageService.ClearDownloadedAsync().ConfigureAwait(true);
-            DownloadedList.Clear();
+            await _downloadManagerCoordinator.ClearDownloadedAsync().ConfigureAwait(true);
         }
-        catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or IOException
+        catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException
             or UnauthorizedAccessException or InvalidOperationException)
         {
             var alertService = new AlertService(DialogService);
@@ -176,21 +169,8 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             return;
         }
 
-        var videoPath = $"{downloadedItem.DownloadBase.FilePath}.mp4";
-        var fileInfo = new FileInfo(videoPath);
-        if (File.Exists(fileInfo.FullName))
-        {
-            var opened = await _platformLauncher.OpenFileAsync(fileInfo.FullName).ConfigureAwait(true);
-            if (!opened)
-            {
-                EventAggregator.GetEvent<MessageEvent>().Publish("无法打开视频文件");
-            }
-        }
-        else
-        {
-            //eventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipAddDownloadingZero"));
-            EventAggregator.GetEvent<MessageEvent>().Publish("没有找到视频文件，可能被删除或移动！");
-        }
+        var result = await _downloadManagerCoordinator.OpenVideoAsync(downloadedItem).ConfigureAwait(true);
+        PublishOpenResult(result, "无法打开视频文件");
     }
 
     // 打开文件夹事件
@@ -198,15 +178,6 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
 
     public DownKyiAsyncDelegateCommand<DownloadedItem> OpenFolderCommand => _openFolderCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteOpenFolderCommand, _logger);
 
-
-    private static readonly Dictionary<string, string[]> FileSuffixMap = new()
-    {
-        { "downloadVideo", new[] { ".mp4", ".flv" } },
-        { "downloadAudio", new[] { ".aac", ".mp3" } },
-        { "downloadCover", new[] { ".jpg" } },
-        { "downloadDanmaku", new[] { ".ass" } },
-        { "downloadSubtitle", new[] { ".srt" } }
-    };
 
     /// <summary>
     /// 打开文件夹事件
@@ -218,27 +189,8 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             return;
         }
 
-        var downLoadContents = downloadedItem.DownloadBase.NeedDownloadContent.Where(e => e.Value == true).Select(e => e.Key);
-        var fileSuffixes = downLoadContents
-            .Where(content => FileSuffixMap.ContainsKey(content))
-            .SelectMany(content => FileSuffixMap[content])
-            .ToArray();
-        if (fileSuffixes.Length <= 0) return;
-        foreach (var suffix in fileSuffixes)
-        {
-            var videoPath = $"{downloadedItem.DownloadBase.FilePath}{suffix}";
-            var fileInfo = new FileInfo(videoPath);
-            if (!File.Exists(fileInfo.FullName) || fileInfo.DirectoryName == null) continue;
-            var opened = await _platformLauncher.OpenFolderAsync(fileInfo.DirectoryName).ConfigureAwait(true);
-            if (!opened)
-            {
-                EventAggregator.GetEvent<MessageEvent>().Publish("无法打开文件夹");
-            }
-
-            return;
-        }
-
-        EventAggregator.GetEvent<MessageEvent>().Publish("没有找到视频文件，可能被删除或移动！");
+        var result = await _downloadManagerCoordinator.OpenFolderAsync(downloadedItem).ConfigureAwait(true);
+        PublishOpenResult(result, "无法打开文件夹");
     }
 
     // 删除事件
@@ -263,8 +215,22 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             return;
         }
 
-        DownloadedList.Remove(downloadedItem);
-        await _downloadStorageService.RemoveDownloadedAsync(downloadedItem).ConfigureAwait(true);
+        await _downloadManagerCoordinator.RemoveDownloadedAsync(downloadedItem).ConfigureAwait(true);
+    }
+
+    private void PublishOpenResult(DownloadArtifactOpenResult result, string failureMessage)
+    {
+        var message = result switch
+        {
+            DownloadArtifactOpenResult.Opened => null,
+            DownloadArtifactOpenResult.NotFound => "没有找到视频文件，可能被删除或移动！",
+            DownloadArtifactOpenResult.OpenFailed => failureMessage,
+            _ => failureMessage
+        };
+        if (message != null)
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish(message);
+        }
     }
 
     #endregion

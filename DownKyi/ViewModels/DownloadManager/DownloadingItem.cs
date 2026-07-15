@@ -4,7 +4,6 @@ using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Utils;
 using Downloader;
-using Prism.Commands;
 using DownloadStatus = DownKyi.Models.DownloadStatus;
 
 namespace DownKyi.ViewModels.DownloadManager
@@ -38,34 +37,7 @@ namespace DownKyi.ViewModels.DownloadManager
             {
                 ArgumentNullException.ThrowIfNull(value);
                 _downloading = value;
-
-                switch (value.DownloadStatus)
-                {
-                    case DownloadStatus.NotStarted:
-                    case DownloadStatus.WaitForDownload:
-                        StartOrPause = ButtonIcon.Instance().Pause;
-                        break;
-                    case DownloadStatus.PauseStarted:
-                        StartOrPause = ButtonIcon.Instance().Start;
-                        break;
-                    case DownloadStatus.Pause:
-                        StartOrPause = ButtonIcon.Instance().Start;
-                        break;
-                    case DownloadStatus.Downloading:
-                        StartOrPause = ButtonIcon.Instance().Pause;
-                        break;
-                    case DownloadStatus.DownloadSucceed:
-                        // 下载成功后会从下载列表中删除
-                        // 不会出现此分支
-                        break;
-                    case DownloadStatus.DownloadFailed:
-                        StartOrPause = ButtonIcon.Instance().Retry;
-                        break;
-                    default:
-                        break;
-                }
-
-                StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
+                RefreshControlPresentation(value.DownloadStatus);
             }
         }
 
@@ -164,60 +136,36 @@ namespace DownKyi.ViewModels.DownloadManager
 
         #endregion
 
-        #region 命令申明
-
-        // 下载列表暂停继续事件
-        private DelegateCommand? _startOrPauseCommand;
-        public DelegateCommand StartOrPauseCommand => _startOrPauseCommand ??= new DelegateCommand(ExecuteStartOrPauseCommand);
-
-        /// <summary>
-        /// 下载列表暂停继续事件
-        /// </summary>
-        private void ExecuteStartOrPauseCommand()
+        internal void ApplyControlStatus(DownloadStatus status)
         {
-            switch (Downloading.DownloadStatus)
+            Downloading.DownloadStatus = status;
+            DownloadStatusTitle = status switch
             {
-                case DownloadStatus.NotStarted:
-                case DownloadStatus.WaitForDownload:
-                    Downloading.DownloadStatus = DownloadStatus.PauseStarted;
-                    DownloadStatusTitle = DictionaryResource.GetString("Pausing");
-                    StartOrPause = ButtonIcon.Instance().Start;
-                    StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
-                    break;
-                case DownloadStatus.PauseStarted:
-                    Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
-                    DownloadStatusTitle = DictionaryResource.GetString("Waiting");
-                    StartOrPause = ButtonIcon.Instance().Pause;
-                    StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
-                    break;
-                case DownloadStatus.Pause:
-                    Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
-                    DownloadStatusTitle = DictionaryResource.GetString("Waiting");
-                    StartOrPause = ButtonIcon.Instance().Pause;
-                    StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
-                    break;
-                //case DownloadStatus.PAUSE_TO_WAIT:
-                case DownloadStatus.Downloading:
-                    Downloading.DownloadStatus = DownloadStatus.Pause;
-                    DownloadStatusTitle = DictionaryResource.GetString("Pausing");
-                    StartOrPause = ButtonIcon.Instance().Start;
-                    StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
-                    break;
-                case DownloadStatus.DownloadSucceed:
-                    // 下载成功后会从下载列表中删除
-                    // 不会出现此分支
-                    break;
-                case DownloadStatus.DownloadFailed:
-                    Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
-                    DownloadStatusTitle = DictionaryResource.GetString("Waiting");
-                    StartOrPause = ButtonIcon.Instance().Pause;
-                    StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
-                    break;
-                default:
-                    break;
-            }
+                DownloadStatus.PauseStarted or DownloadStatus.Pause => DictionaryResource.GetString("Pausing"),
+                DownloadStatus.NotStarted or DownloadStatus.WaitForDownload => DictionaryResource.GetString("Waiting"),
+                DownloadStatus.Downloading => DictionaryResource.GetString("WhileDownloading"),
+                DownloadStatus.DownloadFailed => DictionaryResource.GetString("DownloadFailed"),
+                _ => DownloadStatusTitle
+            };
+            RefreshControlPresentation(status);
         }
 
-        #endregion
+        internal void RestoreControlStatus(DownloadStatus status, string? title)
+        {
+            Downloading.DownloadStatus = status;
+            DownloadStatusTitle = title;
+            RefreshControlPresentation(status);
+        }
+
+        private void RefreshControlPresentation(DownloadStatus status)
+        {
+            StartOrPause = status switch
+            {
+                DownloadStatus.PauseStarted or DownloadStatus.Pause => ButtonIcon.Instance().Start,
+                DownloadStatus.DownloadFailed => ButtonIcon.Instance().Retry,
+                _ => ButtonIcon.Instance().Pause
+            };
+            StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
+        }
     }
 }

@@ -460,7 +460,7 @@ contracts:
   - WBI key extraction accepts absolute and protocol-relative addresses and strips query/fragment suffixes using ordinal parsing.
 hazards:
   - Legacy synchronous Bilibili calls cannot abort an in-flight socket request yet; cancellation prevents later persistence and stale UI projection.
-  - The injected store still exposes mutable SettingsManager state until validated snapshots replace it in PR 16-24.
+  - The public settings boundary is immutable, but its compatibility persistence implementation still delegates to `SettingsManager` until PR 25-29 removes the legacy owner.
 tests:
   - test.account-session
   - test.ui-smoke
@@ -747,7 +747,7 @@ contracts:
   - All five pages receive `ISettingsStore` through construction and cannot access `SettingsManager.Instance`.
   - Existing setting getter/setter behavior, persisted JSON names, and enum values remain unchanged during the compatibility migration.
 hazards:
-  - These pages still mutate the legacy manager through the store facade; immutable snapshots and typed updates remain PR 16-24 work.
+  - `ViewNetworkViewModel` still owns restart prompts and direct application shutdown calls in addition to binding state; lifecycle extraction remains PR 16-24 work.
 tests:
   - test.architecture-boundaries
 ```
@@ -823,7 +823,7 @@ contracts:
   - Delayed DataGrid scrolling invalidates stale requests by version and cannot retain a disposable cancellation source in an Avalonia behavior.
   - Host smoke injects a fake clipboard and resolves key ViewModels without initializing Prism ContainerLocator.
 hazards:
-  - Notifications, dialogs, and navigation still use Prism/EventAggregator and remain in PR 16-24.
+  - Notifications, dialogs, and navigation still use Prism/EventAggregator; PR 16-24 introduces Desktop contracts and PR 25-29 deletes the Prism adapters.
 tests:
   - test.architecture-boundaries
   - test.ui-smoke
@@ -1170,8 +1170,10 @@ id: service.download-list-state
 type: ui-state
 paths:
   - DownKyi/Services/Download/DownloadListState.cs
+  - DownKyi/Services/Download/DownloadManagerCoordinator.cs
+  - DownKyi/Services/Download/DownloadTaskFileService.cs
   - DownKyi/ViewModels/DownloadManager
-responsibility: Owns the stable observable downloading/history collection identities used by bootstrap, runtime, migration, and download-manager views.
+responsibility: Owns stable observable downloading/history projections and coordinates download-manager pause, resume, retry, deletion, history, and artifact-open operations outside ViewModels.
 inbound:
   - service.download-bootstrap
   - service.download-add
@@ -1181,11 +1183,18 @@ contracts:
   - Sorting and replacement mutate the existing collection instance so XAML bindings and runtime references never diverge.
   - Collection mutation is projected on the UI thread by the calling desktop boundary.
   - Headless construction must not synchronously wait on an uninitialized Avalonia dispatcher.
+  - Download-manager ViewModels own only confirmation, localized feedback, binding state, and command wiring; they cannot access storage, generated files, or platform launch APIs directly.
+  - Single and bulk pause/resume transitions are persisted before the command completes; persistence failure restores the prior UI projection.
+  - Explicit deletion persists a paused state, cancels the active backend, removes media and resume sidecars, deletes the store row, and only then removes the UI projection.
+  - If generated-file cleanup reports a failure, the database row and UI projection remain so deletion can be retried; once physical deletion starts, store/list cleanup is not interrupted by shutdown cancellation.
+  - File and folder probing belongs to the coordinator and returns a typed open result without exposing filesystem checks to ViewModels.
 hazards:
   - Replacing the collection object disconnects existing views and download workers.
   - Dispatching resource lookup without an initialized Application can deadlock parallel tests and early startup.
+  - aria2 cancellation still crosses the temporary static client boundary until the legacy runtime is deleted in PR 25-29.
 tests:
   - test.download-list-state
+  - test.download-manager
   - test.ui-smoke
   - test.architecture-boundaries
 ```
@@ -1831,6 +1840,18 @@ test.download-list-state:
     - sort and replacement preserve the collection object used by bindings and workers
     - self-replacement snapshots before clearing
     - App has no static downloading/history collections and download runtime has no App service locator
+
+test.download-manager:
+  paths:
+    - tests/DownKyi.Tests/DownloadManagerCoordinatorTests.cs
+    - tests/DownKyi.Tests/DownloadTaskFileServiceTests.cs
+    - tests/DownKyi.Architecture.Tests/DownloadRuntimeArchitectureTests.cs
+  guards:
+    - pause and resume update both the stable UI projection and the persisted domain phase
+    - explicit deletion removes generated media, aria2/download sidecars, the database row, and the projection in one ordered operation
+    - cancellation before deletion preserves files, persistence, and projection state
+    - completed video open probes MP4 then FLV through the injected platform launcher
+    - download-manager ViewModels cannot regain direct storage, generated-file, filesystem, or item-owned command behavior
 
 test.download-bootstrap:
   paths:

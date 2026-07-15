@@ -40,10 +40,13 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
             CreateFile("audio.aac.download", "partial audio")
         };
 
-        await _service.DeleteFilesAsync(
+        var result = await _service.DeleteFilesAsync(
             files,
             TestContext.Current.CancellationToken);
 
+        Assert.True(result.Succeeded);
+        Assert.Equal(files.Length, result.AttemptedCount);
+        Assert.Equal(0, result.FailedCount);
         Assert.All(files, file => Assert.False(File.Exists(file), file));
     }
 

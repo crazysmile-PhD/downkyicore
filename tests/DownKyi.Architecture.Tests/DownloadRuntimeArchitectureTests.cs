@@ -112,7 +112,7 @@ public sealed class DownloadRuntimeArchitectureTests
     }
 
     [Fact]
-    public void DownloadRuntimeUsesInjectedTypedLoggingOnly()
+    public void DownloadManagerUsesCoordinatorAndInjectedRuntimeBoundaries()
     {
         var directory = Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download");
         var violations = Directory.EnumerateFiles(directory, "*.cs", SearchOption.TopDirectoryOnly)
@@ -131,6 +131,27 @@ public sealed class DownloadRuntimeArchitectureTests
             "ViewModels",
             "DownloadManager",
             "ViewDownloadingViewModel.cs"));
+        var finishedViewModelSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "DownloadManager",
+            "ViewDownloadFinishedViewModel.cs"));
+        var itemSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "DownloadManager",
+            "DownloadingItem.cs"));
+        var viewSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Views",
+            "DownloadManager",
+            "ViewDownloading.axaml"));
+        var coordinatorSource = File.ReadAllText(Path.Combine(
+            directory,
+            "DownloadManagerCoordinator.cs"));
         var compositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "DownKyi",
@@ -140,8 +161,22 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
         Assert.Contains("sealed class DownloadTaskFileService", taskFileSource, StringComparison.Ordinal);
         Assert.DoesNotContain("static class DownloadTaskFileService", taskFileSource, StringComparison.Ordinal);
-        Assert.Contains("DownloadTaskFileService _downloadTaskFileService", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IDownloadManagerCoordinator _downloadManagerCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("IDownloadManagerCoordinator _downloadManagerCoordinator", finishedViewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadStorageService", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadTaskFileService", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadStorageService", finishedViewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("File.", finishedViewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("StartOrPauseCommand", itemSource, StringComparison.Ordinal);
+        Assert.Contains("ToggleDownloadingCommand", viewSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadFileDeletionResult", taskFileSource, StringComparison.Ordinal);
+        Assert.Contains("RemoveDownloadingAsync", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("DeleteGeneratedFilesAsync", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("RegisterSingleton<DownloadTaskFileService>()", compositionSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "RegisterSingleton<IDownloadManagerCoordinator, DownloadManagerCoordinator>()",
+            compositionSource,
+            StringComparison.Ordinal);
     }
 
     [Fact]

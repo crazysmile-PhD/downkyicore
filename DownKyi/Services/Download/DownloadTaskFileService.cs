@@ -75,13 +75,15 @@ internal sealed class DownloadTaskFileService
         }
     }
 
-    public Task DeleteGeneratedFilesAsync(DownloadingItem downloading, CancellationToken cancellationToken = default)
+    public Task<DownloadFileDeletionResult> DeleteGeneratedFilesAsync(
+        DownloadingItem downloading,
+        CancellationToken cancellationToken = default)
     {
         var files = GetGeneratedFiles(downloading);
         return DeleteFilesAsync(files, cancellationToken);
     }
 
-    internal Task DeleteFilesAsync(
+    internal Task<DownloadFileDeletionResult> DeleteFilesAsync(
         IEnumerable<string> files,
         CancellationToken cancellationToken = default)
     {
@@ -89,15 +91,23 @@ internal sealed class DownloadTaskFileService
         return Task.Run(() => DeleteFilesCoreAsync(files, cancellationToken), cancellationToken);
     }
 
-    private async Task DeleteFilesCoreAsync(
+    private async Task<DownloadFileDeletionResult> DeleteFilesCoreAsync(
         IEnumerable<string> files,
         CancellationToken cancellationToken)
     {
+        var attemptedCount = 0;
+        var failedCount = 0;
         foreach (var file in files)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await TryDeleteFileAsync(file, cancellationToken).ConfigureAwait(false);
+            attemptedCount++;
+            if (!await TryDeleteFileAsync(file, cancellationToken).ConfigureAwait(false))
+            {
+                failedCount++;
+            }
         }
+
+        return new DownloadFileDeletionResult(attemptedCount, failedCount);
     }
 
     public IReadOnlyCollection<string> GetGeneratedFiles(DownloadingItem downloading)
@@ -210,7 +220,7 @@ internal sealed class DownloadTaskFileService
             : path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
     }
 
-    private async Task TryDeleteFileAsync(string file, CancellationToken cancellationToken)
+    private async Task<bool> TryDeleteFileAsync(string file, CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 5; attempt++)
         {
@@ -222,7 +232,7 @@ internal sealed class DownloadTaskFileService
                     File.Delete(file);
                 }
 
-                return;
+                return true;
             }
             catch (IOException e) when (attempt < 4)
             {
@@ -237,13 +247,20 @@ internal sealed class DownloadTaskFileService
             catch (IOException e)
             {
                 _logger.LogErrorMessage("Generated file deletion failed.", e);
-                return;
+                return false;
             }
             catch (UnauthorizedAccessException e)
             {
                 _logger.LogErrorMessage("Generated file deletion was denied.", e);
-                return;
+                return false;
             }
         }
+
+        return false;
     }
+}
+
+internal readonly record struct DownloadFileDeletionResult(int AttemptedCount, int FailedCount)
+{
+    public bool Succeeded => FailedCount == 0;
 }
