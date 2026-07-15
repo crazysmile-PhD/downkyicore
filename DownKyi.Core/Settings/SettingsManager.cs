@@ -4,20 +4,22 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils.Encryptor;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.Settings;
 
 public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan FlushDelay = TimeSpan.FromMilliseconds(750);
-    private static SettingsManager? _instance;
+    private static readonly Lazy<SettingsManager> InstanceOwner = new(() => new SettingsManager());
 
     private readonly object _settingsLock = new();
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly string _settingsName;
     private readonly bool _persistInitialDefaults;
+    private readonly ILogger<SettingsManager> _logger;
     private readonly string password = "YO1J$4#p";
     private AppSettings _appSettings;
     private Timer? _flushTimer;
@@ -30,16 +32,22 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
 
     internal event Action? Changed;
 
-    public static SettingsManager Instance => _instance ??= new SettingsManager();
+    public static SettingsManager Instance => InstanceOwner.Value;
 
     private SettingsManager()
-        : this(StorageManager.GetSettings())
+        : this(StorageManager.GetSettings(), NullLogger<SettingsManager>.Instance)
     {
     }
 
     internal SettingsManager(string settingsName)
+        : this(settingsName, NullLogger<SettingsManager>.Instance)
+    {
+    }
+
+    internal SettingsManager(string settingsName, ILogger<SettingsManager> logger)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsName);
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _settingsName = settingsName;
         var loadResult = LoadFromFile();
         _appSettings = loadResult.Settings;
@@ -60,8 +68,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         if (migration.IsFutureSchema)
         {
             _persistenceDisabled = true;
-            LogManager.Error(
-                nameof(SettingsManager),
+            _logger.LogErrorMessage(
                 $"Settings schema {_appSettings.SchemaVersion} is newer than supported schema {ApplicationSettingsValidator.CurrentSchemaVersion}; persistence is disabled to preserve the file.");
         }
     }
@@ -163,8 +170,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         {
             var backupPath = $"{_settingsName}.invalid-{Guid.NewGuid():N}";
             File.Move(_settingsName, backupPath);
-            LogManager.Info(
-                nameof(SettingsManager),
+            _logger.LogInformationMessage(
                 "Invalid settings were preserved before safe defaults were initialized.");
             return true;
         }
@@ -191,10 +197,9 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         settings.WindowSettings ??= new WindowSettings();
     }
 
-    private static void LogLoadFailure(string message, Exception exception)
+    private void LogLoadFailure(string message, Exception exception)
     {
-        Console.PrintLine("{0}: {1}", message, exception.Message);
-        LogManager.Error(nameof(SettingsManager), exception);
+        _logger.LogErrorMessage(message, exception);
     }
 
     private sealed record SettingsLoadResult(
@@ -273,15 +278,15 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         }
         catch (IOException e)
         {
-            LogManager.Error(nameof(SettingsManager), e);
+            _logger.LogErrorMessage("Debounced settings persistence failed.", e);
         }
         catch (UnauthorizedAccessException e)
         {
-            LogManager.Error(nameof(SettingsManager), e);
+            _logger.LogErrorMessage("Debounced settings persistence was denied.", e);
         }
         catch (JsonException e)
         {
-            LogManager.Error(nameof(SettingsManager), e);
+            _logger.LogErrorMessage("Debounced settings serialization failed.", e);
         }
     }
 
@@ -380,11 +385,11 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
             }
             catch (IOException e)
             {
-                LogManager.Error(nameof(SettingsManager), e);
+                _logger.LogErrorMessage("Temporary settings file cleanup failed.", e);
             }
             catch (UnauthorizedAccessException e)
             {
-                LogManager.Error(nameof(SettingsManager), e);
+                _logger.LogErrorMessage("Temporary settings file cleanup was denied.", e);
             }
         }
     }

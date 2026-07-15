@@ -515,7 +515,18 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("using var database", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("AddDownloadedBatchAsync", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("ILogger<LegacyUpgradeCoordinator>", coordinatorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LogManager.", coordinatorSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Console.", coordinatorSource, StringComparison.Ordinal);
+
+        var databaseSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "Storage",
+            "Database",
+            "SqliteDatabase.cs"));
+        Assert.DoesNotContain("LogManager.", databaseSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Console.", databaseSource, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

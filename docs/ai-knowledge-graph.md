@@ -1204,6 +1204,7 @@ contracts:
   - Each legacy SQLite connection is validated, read, and disposed before the source database is deleted, moved, or renamed.
   - Valid records are persisted in bounded batches; one malformed record is logged and skipped without discarding the rest of its batch.
   - Failed databases are preserved under a collision-resistant backup name and UI diagnostics reveal only the backup filename, never a full personal path.
+  - Migration context owns typed diagnostics; the low-level SQLite helper rethrows without duplicating or printing failures.
   - The dialog cannot own NRBF, SQLite, storage lookup, worker scheduling, or dispatcher code.
 hazards:
   - Deleting the source database before every batch is committed loses user download history.
@@ -1415,6 +1416,7 @@ contracts:
   - HTTP, WBI, logout, UI, navigation, media, download planning/runtime, diagnostics, and FFmpeg consume validated snapshots instead of the mutable compatibility manager.
   - Debounced and explicit flushes share one async write gate and replace the destination only after a complete UTF-8 temporary file is flushed.
   - Shutdown flush is awaited without synchronously blocking the UI thread.
+  - Production composition constructs the settings owner with the shared `ILoggerFactory`; validation, migration, load, flush, and cleanup diagnostics cannot use static `LogManager` or terminal output.
 hazards:
   - `SettingsManager.Instance` remains a private construction bridge inside `SettingsStore`; PR 25-29 must replace that owner without changing the user settings path or persisted schema.
   - Synchronous disposal intentionally stops scheduled writes without flushing; application shutdown and owners that require persistence must call `FlushAsync` or `DisposeAsync`.
@@ -1951,6 +1953,7 @@ test.architecture-boundaries:
     - download runtime and file cleanup cannot restore static LogManager or a static DownloadTaskFileService owner
     - FFmpeg processor, concat, and hardware detection cannot restore static LogManager or a static detector owner
     - aria2 manager/server/process supervision cannot restore static LogManager, static server ownership, synchronous HTTP send, or recursive retry
+    - settings validation/persistence and legacy migration cannot restore static LogManager, Console diagnostics, or duplicate low-level SQLite logging
 
 test.settings-store:
   paths:

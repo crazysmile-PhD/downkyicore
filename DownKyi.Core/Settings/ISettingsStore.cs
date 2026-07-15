@@ -1,3 +1,8 @@
+using DownKyi.Core.Logging;
+using DownKyi.Core.Storage;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace DownKyi.Core.Settings;
 
 public interface ISettingsStore : IDisposable, IAsyncDisposable
@@ -12,24 +17,40 @@ public interface ISettingsStore : IDisposable, IAsyncDisposable
 public sealed class SettingsStore : ISettingsStore
 {
     private readonly object _updateLock = new();
+    private readonly ILogger<SettingsStore> _logger;
     private readonly SettingsManager _settings;
     private ApplicationSettings _current;
     private bool _isNormalizing;
     private int _disposeState;
 
     public SettingsStore()
-        : this(SettingsManager.Instance)
+        : this(SettingsManager.Instance, NullLogger<SettingsStore>.Instance)
+    {
+    }
+
+    public SettingsStore(ILoggerFactory loggerFactory)
+        : this(
+            CreateManager(loggerFactory),
+            loggerFactory.CreateLogger<SettingsStore>())
     {
     }
 
     public SettingsStore(string settingsPath)
-        : this(new SettingsManager(settingsPath))
+        : this(
+            new SettingsManager(settingsPath, NullLogger<SettingsManager>.Instance),
+            NullLogger<SettingsStore>.Instance)
     {
     }
 
     internal SettingsStore(SettingsManager settings)
+        : this(settings, NullLogger<SettingsStore>.Instance)
+    {
+    }
+
+    internal SettingsStore(SettingsManager settings, ILogger<SettingsStore> logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         var validation = ApplicationSettingsValidator.Validate(settings.CreateInitialSnapshot());
         _current = validation.Settings;
         _settings.Changed += RefreshSnapshot;
@@ -121,10 +142,17 @@ public sealed class SettingsStore : ISettingsStore
         }
     }
 
-    private static void LogCorrections(IEnumerable<string> corrections)
+    private void LogCorrections(IEnumerable<string> corrections)
     {
-        DownKyi.Core.Logging.LogManager.Info(
-            nameof(SettingsStore),
+        _logger.LogInformationMessage(
             $"Invalid settings were restored to safe defaults: {string.Join(", ", corrections)}");
+    }
+
+    private static SettingsManager CreateManager(ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+        return new SettingsManager(
+            StorageManager.GetSettings(),
+            loggerFactory.CreateLogger<SettingsManager>());
     }
 }

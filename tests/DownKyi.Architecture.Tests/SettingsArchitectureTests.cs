@@ -130,6 +130,12 @@ public sealed class SettingsArchitectureTests
         Assert.Contains("Update(Func<ApplicationSettings, ApplicationSettings>", storeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("SettingsManager Settings", storeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Run", storeSource, StringComparison.Ordinal);
+        Assert.Contains("SettingsStore(ILoggerFactory loggerFactory)", storeSource, StringComparison.Ordinal);
+        Assert.Contains("ILogger<SettingsStore>", storeSource, StringComparison.Ordinal);
+        Assert.Contains("ILogger<SettingsManager>", managerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LogManager.", storeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LogManager.", managerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Console.", managerSource, StringComparison.Ordinal);
         Assert.Contains("File.Replace", managerSource, StringComparison.Ordinal);
         Assert.Contains("FlushAsync(CancellationToken", managerSource, StringComparison.Ordinal);
         Assert.Contains("switch (settings.SchemaVersion)", migratorSource, StringComparison.Ordinal);

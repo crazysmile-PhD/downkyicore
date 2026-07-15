@@ -16,6 +16,7 @@ using DownKyi.Models;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Migration;
 
@@ -44,11 +45,15 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
 {
     private const int BatchSize = 200;
     private readonly DownloadStorageService _downloadStorageService;
+    private readonly ILogger<LegacyUpgradeCoordinator> _logger;
 
-    public LegacyUpgradeCoordinator(DownloadStorageService downloadStorageService)
+    public LegacyUpgradeCoordinator(
+        DownloadStorageService downloadStorageService,
+        ILogger<LegacyUpgradeCoordinator> logger)
     {
         _downloadStorageService = downloadStorageService
             ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public Task<LegacyUpgradeResult> UpgradeAsync(
@@ -101,7 +106,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         }
         catch (Exception e) when (IsMigrationException(e))
         {
-            LogManager.Error(nameof(LegacyUpgradeCoordinator), e);
+            _logger.LogErrorMessage("Legacy upgrade failed.", e);
             var backupMessage = File.Exists(oldDatabasePath)
                 ? BackupFailedDatabase(oldDatabasePath)
                 : null;
@@ -115,7 +120,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         }
     }
 
-    private static void TryMigrateLogin(
+    private void TryMigrateLogin(
         IProgress<LegacyUpgradeProgress> progress,
         CancellationToken cancellationToken)
     {
@@ -129,7 +134,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         }
         catch (Exception e) when (IsLegacyRecordException(e) || e is IOException or UnauthorizedAccessException)
         {
-            LogManager.Error(nameof(LegacyUpgradeCoordinator), e);
+            _logger.LogErrorMessage("Legacy login migration failed; download migration will continue.", e);
             progress.Report(new LegacyUpgradeProgress("登录信息迁移失败，继续迁移下载信息"));
         }
     }
@@ -202,7 +207,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         return possiblePaths.FirstOrDefault(File.Exists);
     }
 
-    private static Dictionary<string, DownloadedWithData>? ReadLegacyDatabase(
+    private Dictionary<string, DownloadedWithData>? ReadLegacyDatabase(
         string databasePath,
         IProgress<LegacyUpgradeProgress> progress,
         CancellationToken cancellationToken)
@@ -226,7 +231,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
             catch (Exception e) when (e is SqliteException or IOException or UnauthorizedAccessException
                 or InvalidOperationException or ArgumentException)
             {
-                LogManager.Error(nameof(LegacyUpgradeCoordinator), e);
+                _logger.LogErrorMessage($"Legacy database connection attempt {attempt} failed.", e);
                 progress.Report(new LegacyUpgradeProgress($"数据库连接尝试 {attempt} 失败"));
             }
         }
@@ -272,7 +277,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         }
     }
 
-    private static Dictionary<string, DownloadedWithData> ReadLegacyRecords(
+    private Dictionary<string, DownloadedWithData> ReadLegacyRecords(
         SqliteDatabase database,
         IProgress<LegacyUpgradeProgress> progress,
         CancellationToken cancellationToken)
@@ -311,7 +316,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
                     }
                     catch (Exception e) when (IsLegacyRecordException(e))
                     {
-                        LogManager.Error(nameof(LegacyUpgradeCoordinator), e);
+                        _logger.LogErrorMessage("A damaged legacy download record was skipped.", e);
                         progress.Report(new LegacyUpgradeProgress("已跳过一笔损坏的旧下载记录"));
                     }
                 }
@@ -340,7 +345,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
             }
             catch (Exception e) when (IsLegacyRecordException(e) || e is SqliteException)
             {
-                LogManager.Error(nameof(LegacyUpgradeCoordinator), e);
+                _logger.LogErrorMessage("A damaged legacy download detail was skipped.", e);
                 progress.Report(new LegacyUpgradeProgress("已跳过一笔损坏的旧下载详情"));
             }
 
@@ -439,7 +444,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         return record.GetString($"<{propertyName}>k__BackingField") ?? string.Empty;
     }
 
-    private static string BackupFailedDatabase(string databasePath)
+    private string BackupFailedDatabase(string databasePath)
     {
         try
         {
@@ -453,7 +458,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            LogManager.Error(nameof(LegacyUpgradeCoordinator), e);
+            _logger.LogErrorMessage("Legacy database backup failed; trying a rename fallback.", e);
             try
             {
                 var renamedPath = $"{databasePath}.corrupted_{DateTime.Now:yyyyMMdd_HHmmss_fff}";
@@ -462,7 +467,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
             }
             catch (Exception fallback) when (fallback is IOException or UnauthorizedAccessException)
             {
-                LogManager.Error(nameof(LegacyUpgradeCoordinator), fallback);
+                _logger.LogErrorMessage("Legacy database rename fallback failed.", fallback);
                 return "无法自动备份旧数据库，请保留日志并手动处理";
             }
         }
