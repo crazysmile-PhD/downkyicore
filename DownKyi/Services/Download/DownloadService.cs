@@ -46,6 +46,7 @@ internal abstract class DownloadService : IDisposable
     protected DownloadDiagnosticLogger DiagnosticLogger { get; }
     protected FfmpegProcessor FfmpegProcessor { get; }
     protected SettingsManager Settings { get; }
+    protected ISettingsStore SettingsStore { get; }
 
     protected Task? WorkTask { get; set; }
     protected CancellationTokenSource? TokenSource { get; set; }
@@ -153,7 +154,8 @@ internal abstract class DownloadService : IDisposable
         DownloadedList = downloadLists.Downloaded;
         DialogService = dialogService;
         UiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
-        Settings = settingsStore?.Settings ?? throw new ArgumentNullException(nameof(settingsStore));
+        SettingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        Settings = settingsStore.Settings;
         DiagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         FfmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
     }
@@ -522,6 +524,7 @@ internal abstract class DownloadService : IDisposable
         var srtFiles = new List<string>();
 
         var subRipTexts = VideoStreamApi.GetSubtitle(
+            SettingsStore,
             downloading.DownloadBase.Avid,
             downloading.DownloadBase.Bvid,
             downloading.DownloadBase.Cid,
@@ -771,9 +774,9 @@ internal abstract class DownloadService : IDisposable
             case PlayStreamType.Video:
                 playUrl = downloading.PlayUrl ?? Settings.VideoParseType switch
                 {
-                    0 => VideoStreamApi.GetVideoPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
+                    0 => VideoStreamApi.GetVideoPlayUrl(SettingsStore, downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         cancellationToken: CancellationToken.GetValueOrDefault()),
-                    1 => VideoStreamApi.GetVideoPlayUrlWebPage(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
+                    1 => VideoStreamApi.GetVideoPlayUrlWebPage(SettingsStore, downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         downloading.DownloadBase.Page, CancellationToken.GetValueOrDefault()),
                     _ => throw new ArgumentException("Invalid video parse type. Valid values are: 0 (WebAPI) or 1 (WebPage).")
                 };

@@ -9,7 +9,8 @@ public sealed class UserSpacePageCoordinatorTests
     [Fact]
     public async Task PreCanceledPublicationLoadDoesNotStartApiWork()
     {
-        var coordinator = new UserSpacePageCoordinator();
+        using var settings = new TestSettingsStore();
+        var coordinator = new UserSpacePageCoordinator(settings.Store);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -25,7 +26,8 @@ public sealed class UserSpacePageCoordinatorTests
     [Fact]
     public async Task PreCanceledProfileLoadDoesNotStartApiWork()
     {
-        var coordinator = new UserSpacePageCoordinator();
+        using var settings = new TestSettingsStore();
+        var coordinator = new UserSpacePageCoordinator(settings.Store);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -36,7 +38,8 @@ public sealed class UserSpacePageCoordinatorTests
     [Fact]
     public async Task PreCanceledStatsLoadDoesNotStartApiWork()
     {
-        var coordinator = new UserSpacePageCoordinator();
+        using var settings = new TestSettingsStore();
+        var coordinator = new UserSpacePageCoordinator(settings.Store);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -47,7 +50,8 @@ public sealed class UserSpacePageCoordinatorTests
     [Fact]
     public async Task PreCanceledBangumiLoadDoesNotStartApiWork()
     {
-        var coordinator = new UserSpacePageCoordinator();
+        using var settings = new TestSettingsStore();
+        var coordinator = new UserSpacePageCoordinator(settings.Store);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 

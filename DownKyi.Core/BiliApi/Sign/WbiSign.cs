@@ -51,10 +51,23 @@ public static class WbiSign
     /// </summary>
     /// <param name="parameters"></param>
     /// <returns></returns>
-    public static Dictionary<string, string> EncodeWbi(Dictionary<string, object?> parameters)
+    public static Dictionary<string, string> EncodeWbi(
+        Dictionary<string, object?> parameters,
+        ISettingsStore settingsStore)
     {
-        var (imgKey, subKey) = GetKey();
+        ArgumentNullException.ThrowIfNull(settingsStore);
+        var (imgKey, subKey) = GetKey(settingsStore);
         return EncodeWbi(parameters, imgKey, subKey, DateTimeOffset.Now.ToUnixTimeSeconds());
+    }
+
+    internal static Dictionary<string, string> EncodeWbi(
+        Dictionary<string, object?> parameters,
+        ISettingsStore settingsStore,
+        long unixTimeSeconds)
+    {
+        ArgumentNullException.ThrowIfNull(settingsStore);
+        var (imgKey, subKey) = GetKey(settingsStore);
+        return EncodeWbi(parameters, imgKey, subKey, unixTimeSeconds);
     }
 
     /// <summary>
@@ -112,9 +125,9 @@ public static class WbiSign
         return Uri.EscapeDataString(value).Replace("%20", "+", StringComparison.Ordinal);
     }
 
-    private static (string ImgKey, string SubKey) GetKey()
+    private static (string ImgKey, string SubKey) GetKey(ISettingsStore settingsStore)
     {
-        var user = SettingsManager.Instance.GetUserInfo();
+        var user = settingsStore.Settings.GetUserInfo();
 
         return (user.ImgKey, user.SubKey);
     }

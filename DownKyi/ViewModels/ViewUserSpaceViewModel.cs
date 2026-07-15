@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
 using DownKyi.Events;
@@ -24,6 +25,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     public const string Tag = "PageUserSpace";
 
     private readonly IRegionManager _regionManager;
+    private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
 
     // mid
@@ -185,10 +187,13 @@ internal class ViewUserSpaceViewModel : ViewModelBase
 
     #endregion
 
-    public ViewUserSpaceViewModel(IRegionManager regionManager, IEventAggregator eventAggregator) : base(
-        eventAggregator)
+    public ViewUserSpaceViewModel(
+        IRegionManager regionManager,
+        IEventAggregator eventAggregator,
+        ISettingsStore settingsStore) : base(eventAggregator)
     {
         _regionManager = regionManager;
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
 
         #region 属性初始化
 
@@ -350,7 +355,9 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         UserSpaceSnapshot snapshot;
         try
         {
-            snapshot = await UserSpaceLoadCoordinator.LoadAsync(mid, cancellationToken).ConfigureAwait(true);
+            snapshot = await UserSpaceLoadCoordinator
+                .LoadAsync(_settingsStore, mid, cancellationToken)
+                .ConfigureAwait(true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

@@ -456,7 +456,7 @@ contracts:
   - WBI key extraction accepts absolute and protocol-relative addresses and strips query/fragment suffixes using ordinal parsing.
 hazards:
   - Legacy synchronous Bilibili calls cannot abort an in-flight socket request yet; cancellation prevents later persistence and stale UI projection.
-  - SettingsManager remains a compatibility dependency until injected settings snapshots replace it in PR 16-24.
+  - The injected store still exposes mutable SettingsManager state until validated snapshots replace it in PR 16-24.
 tests:
   - test.account-session
   - test.ui-smoke
@@ -1067,10 +1067,12 @@ inbound:
 outbound:
   - core.web-client
   - core.logging
+  - core.settings
 contracts:
   - API failures should be visible at the API boundary; do not turn errors into valid empty payloads.
   - OperationCanceledException must be rethrown.
   - WBI request signatures must match the fixed protocol vector; MD5 is limited to that external format.
+  - WBI keys come from the caller's injected settings owner; signing cannot read process-global settings.
 hazards:
   - Bilibili schema changes can deserialize into null and fail later in UI/download flows.
   - Logging full URLs can leak tokens, cookies, and personal query data.
@@ -1382,7 +1384,7 @@ outbound:
   - external.filesystem
 contracts:
   - Prism and Microsoft Host composition share the same store instance; they must not create competing settings owners.
-  - App and migrated ViewModels cannot reach through `SettingsManager.Instance`.
+  - Production consumers cannot reach through `SettingsManager.Instance`; the compatibility owner is the only temporary reference.
   - Basic, network, video, danmaku, and about settings pages use the same injected owner for reads and writes.
   - MainWindow has no parameterless singleton fallback; Host composition supplies both its ViewModel and settings owner.
   - Video, bangumi, and cheese info services receive settings from their parse/add coordinator; manually constructed info services cannot fall back to global state.
@@ -1391,7 +1393,7 @@ contracts:
   - The persisted JSON property names, enum values, and storage path remain compatible with existing user settings.
   - Shutdown flush is awaited without synchronously blocking the UI thread.
 hazards:
-  - `SettingsManager` remains mutable and singleton-backed behind the compatibility facade; immutable validated snapshots and full consumer migration remain PR 16-24 work.
+  - `SettingsManager` remains mutable and singleton-backed behind the compatibility facade; immutable validated snapshots and owner replacement remain PR 16-24 work.
   - Timer callbacks and shutdown flush must not race into partial or non-atomic writes.
 tests:
   - test.settings-store
@@ -1839,6 +1841,7 @@ test.wbi-signature:
     - tests/DownKyi.Core.Tests/WbiSignTests.cs
   guards:
     - fixed Bilibili WBI keys, timestamp, and parameters produce the expected w_rid
+    - the same protocol vector succeeds when keys come from an isolated injected settings owner
 
 test.legacy-settings-migration:
   paths:
@@ -1912,6 +1915,7 @@ test.architecture-boundaries:
     - season/series loading and add work cannot move back into the ViewModel or bypass directory cancellation
     - legacy upgrade migration cannot move NRBF, SQLite, storage lookup, Task.Run, or Dispatcher work back into the dialog ViewModel
     - migrated App, shell, ViewModels, dialogs, account session, video-detail, and settings-page owners cannot restore direct SettingsManager singleton access
+    - no production source outside the compatibility settings owner can reference SettingsManager.Instance
     - Prism and Host composition must share one injected settings owner
 
 test.settings-store:

@@ -24,7 +24,7 @@ Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
 - Move collection parsing, video parsing, selection, plan building, duplicate policy, and queueing into Application use cases; BV/AV/bangumi/course entry resolution, cancellable detail/stream result coordination, directory-cancel/add coordination, and single-source video search projection are complete.
 - Move notifications, dialogs, and navigation behind Desktop interfaces; clipboard and file-picker boundaries are complete and their static helpers are deleted.
-- Replace `SettingsManager.Instance` with an injected `ISettingsStore`, immutable validated snapshots, schema migration, debounced atomic writes, and explicit async shutdown flush; App/shell, migrated ViewModels/dialogs, media/download coordinators, account session/logout, settings pages, user-space navigation, Host-owned HTTP runtime, and one process-wide injected FFmpeg owner are complete, while the static WBI signing entry remains the final direct singleton consumer.
+- Complete the settings boundary after direct consumer migration: production code now receives one shared `ISettingsStore`, including Host-owned HTTP, WBI signing, account/logout, navigation, media/download runtime, settings pages, and FFmpeg; immutable validated snapshots, explicit schema versions/migrations, and non-blocking atomic persistence still remain.
 - Replace static `LogManager` usage with injected `Microsoft.Extensions.Logging`, correlation/task/process context, one sensitive-data redactor, bounded recent-event diagnostics, rotation, export, and async shutdown flush; 42 production files still reference the static logger.
 
 ## PR 25-29 - Remove Prism And Legacy Architecture

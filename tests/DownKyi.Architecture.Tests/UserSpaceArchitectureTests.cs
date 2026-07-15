@@ -14,7 +14,8 @@ public sealed class UserSpaceArchitectureTests
             "ViewUserSpaceViewModel.cs"));
 
         Assert.DoesNotContain("Task.Run", source, StringComparison.Ordinal);
-        Assert.Contains("UserSpaceLoadCoordinator.LoadAsync", source, StringComparison.Ordinal);
+        Assert.Contains("UserSpaceLoadCoordinator", source, StringComparison.Ordinal);
+        Assert.Contains(".LoadAsync(_settingsStore, mid, cancellationToken)", source, StringComparison.Ordinal);
         Assert.Contains("OnNavigatedFrom", source, StringComparison.Ordinal);
         Assert.Contains("_loadCancellation?.Cancel()", source, StringComparison.Ordinal);
     }

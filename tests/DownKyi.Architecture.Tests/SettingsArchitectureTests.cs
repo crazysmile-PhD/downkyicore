@@ -44,6 +44,14 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi.Core", "BiliApi", "Login", "LoginHelper.cs")]
     [InlineData("DownKyi.Core", "BiliApi", "WebClient.cs")]
     [InlineData("DownKyi.Core", "BiliApi", "BilibiliHttpClientRegistration.cs")]
+    [InlineData("DownKyi.Core", "BiliApi", "Sign", "WbiSign.cs")]
+    [InlineData("DownKyi.Core", "BiliApi", "Video", "VideoInfo.cs")]
+    [InlineData("DownKyi.Core", "BiliApi", "VideoStream", "VideoStreamApi.cs")]
+    [InlineData("DownKyi.Core", "BiliApi", "Users", "UserInfo.cs")]
+    [InlineData("DownKyi.Core", "BiliApi", "Users", "UserSpace.cs")]
+    [InlineData("DownKyi", "Services", "UserSpace", "UserSpaceLoadCoordinator.cs")]
+    [InlineData("DownKyi", "Services", "UserSpace", "UserSpacePageCoordinator.cs")]
+    [InlineData("DownKyi", "ViewModels", "ViewUserSpaceViewModel.cs")]
     public void MigratedApplicationOwnersDoNotReachIntoTheSettingsSingleton(params string[] pathParts)
     {
         var source = File.ReadAllText(Path.Combine([RepositoryRoot, .. pathParts]));
@@ -83,6 +91,32 @@ public sealed class SettingsArchitectureTests
         Assert.DoesNotContain("FfmpegProcessor.Instance", processorSource, StringComparison.Ordinal);
         Assert.Contains("RegisterSingleton<FfmpegProcessor>()", prismSource, StringComparison.Ordinal);
         Assert.Contains("container.Resolve<FfmpegProcessor>()", hostSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProductionCodeHasNoDirectSettingsSingletonConsumers()
+    {
+        var sourceRoots = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core"),
+            Path.Combine(RepositoryRoot, "src")
+        };
+        var compatibilityOwner = Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "Settings",
+            "ISettingsStore.cs");
+        var violations = sourceRoots
+            .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            .Where(path => !string.Equals(path, compatibilityOwner, StringComparison.OrdinalIgnoreCase))
+            .Where(path => File.ReadAllText(path).Contains("SettingsManager.Instance", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .ToArray();
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
     }
 
     private static string ReadSource(params string[] pathParts)

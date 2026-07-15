@@ -38,13 +38,13 @@ internal class VideoInfoService : IInfoService
         if (ParseEntrance.IsAvId(input) || ParseEntrance.IsAvUrl(input))
         {
             var avid = ParseEntrance.GetAvId(input);
-            _videoView = VideoInfo.VideoViewInfo(null, avid, cancellationToken);
+            _videoView = VideoInfo.VideoViewInfo(_settingsStore, null, avid, cancellationToken);
         }
 
         if (ParseEntrance.IsBvId(input) || ParseEntrance.IsBvUrl(input))
         {
             var bvid = ParseEntrance.GetBvId(input);
-            _videoView = VideoInfo.VideoViewInfo(bvid, cancellationToken: cancellationToken);
+            _videoView = VideoInfo.VideoViewInfo(_settingsStore, bvid, cancellationToken: cancellationToken);
         }
     }
 
@@ -284,8 +284,19 @@ internal class VideoInfoService : IInfoService
         cancellationToken.ThrowIfCancellationRequested();
         var playUrl = _settingsStore.Settings.VideoParseType switch
         {
-            0 => VideoStreamApi.GetVideoPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken),
-            1 => VideoStreamApi.GetVideoPlayUrlWebPage(page.Avid, page.Bvid, page.Cid, page.Page, cancellationToken),
+            0 => VideoStreamApi.GetVideoPlayUrl(
+                _settingsStore,
+                page.Avid,
+                page.Bvid,
+                page.Cid,
+                cancellationToken: cancellationToken),
+            1 => VideoStreamApi.GetVideoPlayUrlWebPage(
+                _settingsStore,
+                page.Avid,
+                page.Bvid,
+                page.Cid,
+                page.Page,
+                cancellationToken),
             _ => null
         };
 

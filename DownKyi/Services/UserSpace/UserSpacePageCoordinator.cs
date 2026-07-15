@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
@@ -69,6 +70,13 @@ internal interface IUserSpacePageCoordinator
 
 internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
 {
+    private readonly ISettingsStore _settingsStore;
+
+    public UserSpacePageCoordinator(ISettingsStore settingsStore)
+    {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+    }
+
     public Task<IReadOnlyList<PublicationMedia>> LoadPublicationPageAsync(
         long mid,
         int page,
@@ -82,6 +90,7 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
         {
             cancellationToken.ThrowIfCancellationRequested();
             var videos = BiliUserSpace.GetPublication(
+                _settingsStore,
                 mid,
                 page,
                 pageSize,
