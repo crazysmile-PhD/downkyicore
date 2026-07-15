@@ -22,6 +22,7 @@ using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.UserSpace;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -33,6 +34,7 @@ namespace DownKyi.ViewModels
         public const string Tag = "PagePublication";
         private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
         private readonly IContentDownloadCoordinator _downloadCoordinator;
+        private readonly ILogger<ViewPublicationViewModel> _logger;
         private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
         private CancellationTokenSource? _loadCancellation;
         private CancellationTokenSource? _downloadCancellation;
@@ -161,7 +163,8 @@ namespace DownKyi.ViewModels
             IDialogService dialogService,
             IAddToDownloadServiceFactory addToDownloadServiceFactory,
             IContentDownloadCoordinator downloadCoordinator,
-            IUserSpacePageCoordinator userSpaceCoordinator) : base(
+            IUserSpacePageCoordinator userSpaceCoordinator,
+            ILogger<ViewPublicationViewModel> logger) : base(
             eventAggregator)
         {
             DialogService = dialogService;
@@ -169,6 +172,7 @@ namespace DownKyi.ViewModels
                 ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
             _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
             _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
             #region 属性初始化
 
@@ -320,7 +324,7 @@ namespace DownKyi.ViewModels
         // 添加选中项到下载列表事件
         private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-        public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+        public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
 
         /// <summary>
         /// 添加选中项到下载列表事件
@@ -328,7 +332,7 @@ namespace DownKyi.ViewModels
         // 添加所有视频到下载列表事件
         private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-        public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+        public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
 
         /// <summary>
         /// 添加所有视频到下载列表事件
@@ -373,7 +377,7 @@ namespace DownKyi.ViewModels
             catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
                 or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
             {
-                LogManager.Error(Tag, e);
+                _logger.LogErrorMessage("Publication download preparation failed.", e);
                 EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
             }
         }
@@ -397,7 +401,8 @@ namespace DownKyi.ViewModels
 
             RunFireAndForget(
                 UpdatePublicationAsync(((CustomPagerViewModel)sender!).ProposedCurrent),
-                nameof(UpdatePublicationAsync));
+                nameof(UpdatePublicationAsync),
+                _logger);
         }
 
         private async Task UpdatePublicationAsync(int current)
@@ -433,7 +438,7 @@ namespace DownKyi.ViewModels
             {
                 LoadingVisibility = false;
                 NoDataVisibility = true;
-                LogManager.Error(Tag, e);
+                _logger.LogErrorMessage("Publication page loading failed.", e);
             }
             finally
             {

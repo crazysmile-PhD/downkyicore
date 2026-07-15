@@ -75,7 +75,7 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     // 输入avid事件
     private DownKyiAsyncDelegateCommand<string>? _avidCommand;
 
-    public DownKyiAsyncDelegateCommand<string> AvidCommand => _avidCommand ??= new DownKyiAsyncDelegateCommand<string>(ExecuteAvidCommand);
+    public DownKyiAsyncDelegateCommand<string> AvidCommand => _avidCommand ??= new DownKyiAsyncDelegateCommand<string>(ExecuteAvidCommand, _logger);
 
     /// <summary>
     /// 输入avid事件
@@ -94,7 +94,7 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     // 输入bvid事件
     private DownKyiAsyncDelegateCommand<string>? _bvidCommand;
 
-    public DownKyiAsyncDelegateCommand<string> BvidCommand => _bvidCommand ??= new DownKyiAsyncDelegateCommand<string>(ExecuteBvidCommand);
+    public DownKyiAsyncDelegateCommand<string> BvidCommand => _bvidCommand ??= new DownKyiAsyncDelegateCommand<string>(ExecuteBvidCommand, _logger);
 
     /// <summary>
     /// 输入bvid事件
@@ -114,7 +114,7 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     // 访问网页事件
     private DownKyiAsyncDelegateCommand? _gotoWebCommand;
 
-    public DownKyiAsyncDelegateCommand GotoWebCommand => _gotoWebCommand ??= new DownKyiAsyncDelegateCommand(ExecuteGotoWebCommand);
+    public DownKyiAsyncDelegateCommand GotoWebCommand => _gotoWebCommand ??= new DownKyiAsyncDelegateCommand(ExecuteGotoWebCommand, _logger);
 
     /// <summary>
     /// 访问网页事件
@@ -131,7 +131,7 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     // 查询弹幕发送者事件
     private DownKyiAsyncDelegateCommand? _findDanmakuSenderCommand;
 
-    public DownKyiAsyncDelegateCommand FindDanmakuSenderCommand => _findDanmakuSenderCommand ??= new DownKyiAsyncDelegateCommand(ExecuteFindDanmakuSenderCommand);
+    public DownKyiAsyncDelegateCommand FindDanmakuSenderCommand => _findDanmakuSenderCommand ??= new DownKyiAsyncDelegateCommand(ExecuteFindDanmakuSenderCommand, _logger);
 
     /// <summary>
     /// 查询弹幕发送者事件
@@ -164,7 +164,7 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     // 访问用户空间事件
     private DownKyiAsyncDelegateCommand? _visitUserSpaceCommand;
 
-    public DownKyiAsyncDelegateCommand VisitUserSpaceCommand => _visitUserSpaceCommand ??= new DownKyiAsyncDelegateCommand(ExecuteVisitUserSpaceCommand);
+    public DownKyiAsyncDelegateCommand VisitUserSpaceCommand => _visitUserSpaceCommand ??= new DownKyiAsyncDelegateCommand(ExecuteVisitUserSpaceCommand, _logger);
 
     /// <summary>
     /// 访问用户空间事件

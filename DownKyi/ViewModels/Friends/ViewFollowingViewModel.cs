@@ -14,6 +14,7 @@ using DownKyi.CustomControl;
 using DownKyi.Services.Friends;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -24,6 +25,7 @@ internal class ViewFollowingViewModel : ViewModelBase
 {
     public const string Tag = "PageFriendsFollowing";
     private readonly IFriendRelationCoordinator _friendRelationCoordinator;
+    private readonly ILogger<ViewFollowingViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
 
@@ -152,11 +154,13 @@ internal class ViewFollowingViewModel : ViewModelBase
     public ViewFollowingViewModel(
         IEventAggregator eventAggregator,
         IFriendRelationCoordinator friendRelationCoordinator,
-        ISettingsStore settingsStore) : base(eventAggregator)
+        ISettingsStore settingsStore,
+        ILogger<ViewFollowingViewModel> logger) : base(eventAggregator)
     {
         _friendRelationCoordinator = friendRelationCoordinator
             ?? throw new ArgumentNullException(nameof(friendRelationCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         // 初始化loading gif
@@ -295,7 +299,7 @@ internal class ViewFollowingViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Following page initialization failed.", e);
             if (_loadCancellation?.Token == cancellationToken)
             {
                 ContentVisibility = false;
@@ -367,7 +371,7 @@ internal class ViewFollowingViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Following page loading failed.", e);
             if (_loadCancellation?.Token == cancellationToken)
             {
                 InnerContentVisibility = false;
@@ -409,7 +413,7 @@ internal class ViewFollowingViewModel : ViewModelBase
             return;
         }
 
-        RunFireAndForget(UpdateContentAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateContentAsync));
+        RunFireAndForget(UpdateContentAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateContentAsync), _logger);
     }
 
     /// <summary>
@@ -436,7 +440,7 @@ internal class ViewFollowingViewModel : ViewModelBase
         var isFirst = navigationContext.Parameters.GetValue<bool>("isFirst");
         if (isFirst)
         {
-            RunFireAndForget(InitializeAsync(), nameof(InitializeAsync));
+            RunFireAndForget(InitializeAsync(), nameof(InitializeAsync), _logger);
         }
     }
 

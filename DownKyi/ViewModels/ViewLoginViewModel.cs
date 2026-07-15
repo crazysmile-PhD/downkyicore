@@ -7,10 +7,10 @@ using DownKyi.Core.Logging;
 using DownKyi.Events;
 using DownKyi.Services.Account;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels;
 
@@ -19,6 +19,7 @@ internal class ViewLoginViewModel : ViewModelBase
     public const string Tag = "PageLogin";
 
     private readonly ILoginCoordinator _loginCoordinator;
+    private readonly ILogger<ViewLoginViewModel> _logger;
     private CancellationTokenSource? _tokenSource;
 
     #region 页面属性申明
@@ -51,9 +52,11 @@ internal class ViewLoginViewModel : ViewModelBase
 
     public ViewLoginViewModel(
         IEventAggregator eventAggregator,
-        ILoginCoordinator loginCoordinator) : base(eventAggregator)
+        ILoginCoordinator loginCoordinator,
+        ILogger<ViewLoginViewModel> logger) : base(eventAggregator)
     {
         _loginCoordinator = loginCoordinator ?? throw new ArgumentNullException(nameof(loginCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     private DelegateCommand? _backSpaceCommand;
@@ -120,8 +123,7 @@ internal class ViewLoginViewModel : ViewModelBase
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
         {
-            Console.PrintLine("Login()发生异常: {0}", e);
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Login initialization failed.", e);
         }
     }
 
@@ -148,7 +150,7 @@ internal class ViewLoginViewModel : ViewModelBase
                     // 二维码已失效
                     // 发送通知
                     EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginTimeOut"));
-                    LogManager.Info(Tag, DictionaryResource.GetString("LoginTimeOut"));
+                    _logger.LogInformationMessage("Login QR code timed out.");
 
                     await RestartLoginAsync().ConfigureAwait(true);
                     return;
@@ -168,7 +170,7 @@ internal class ViewLoginViewModel : ViewModelBase
 
                     // 发送通知
                     EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginSuccessful"));
-                    LogManager.Info(Tag, DictionaryResource.GetString("LoginSuccessful"));
+                    _logger.LogInformationMessage("Login completed successfully.");
 
                     // 保存登录信息
                     try
@@ -180,14 +182,13 @@ internal class ViewLoginViewModel : ViewModelBase
                         if (!isSucceed)
                         {
                             EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginFailed"));
-                            LogManager.Error(Tag, DictionaryResource.GetString("LoginFailed"));
+                            _logger.LogErrorMessage("Login cookies could not be persisted.");
                         }
                     }
                     catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
                         or InvalidOperationException or ArgumentException or Newtonsoft.Json.JsonException)
                     {
-                        Console.PrintLine("PageLogin 保存登录信息发生异常: {0}", e);
-                        LogManager.Error(e);
+                        _logger.LogErrorMessage("Login cookie persistence failed.", e);
                         EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginFailed"));
                     }
 
@@ -199,8 +200,7 @@ internal class ViewLoginViewModel : ViewModelBase
 
             // 判断是否该结束线程，若为true，跳出while循环
             if (!cancellationToken.IsCancellationRequested) continue;
-            Console.PrintLine("停止Login线程，跳出while循环");
-            LogManager.Debug(Tag, "登录操作结束");
+            _logger.LogDebugMessage("Login polling stopped.");
             break;
         }
     }
@@ -215,7 +215,7 @@ internal class ViewLoginViewModel : ViewModelBase
             previous.Dispose();
         }
 
-        RunFireAndForget(LoginAsync(replacement.Token), $"{Tag}.LoginAsync");
+        RunFireAndForget(LoginAsync(replacement.Token), $"{Tag}.LoginAsync", _logger);
     }
 
 
@@ -235,7 +235,7 @@ internal class ViewLoginViewModel : ViewModelBase
 
         InitStatus();
 
-        RunFireAndForget(RestartLoginAsync(), $"{Tag}.RestartLoginAsync");
+        RunFireAndForget(RestartLoginAsync(), $"{Tag}.RestartLoginAsync", _logger);
     }
 
     protected override void Dispose(bool disposing)

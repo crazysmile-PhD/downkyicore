@@ -14,6 +14,7 @@ using DownKyi.Images;
 using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.UserSpace;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -25,6 +26,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     public const string Tag = "PageUserSpace";
 
     private readonly IRegionManager _regionManager;
+    private readonly ILogger<ViewUserSpaceViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
 
@@ -190,10 +192,12 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     public ViewUserSpaceViewModel(
         IRegionManager regionManager,
         IEventAggregator eventAggregator,
-        ISettingsStore settingsStore) : base(eventAggregator)
+        ISettingsStore settingsStore,
+        ILogger<ViewUserSpaceViewModel> logger) : base(eventAggregator)
     {
         _regionManager = regionManager;
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
 
@@ -524,7 +528,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         mid = parameter;
 
         InitView();
-        RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync));
+        RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync), _logger);
     }
 
     public override void OnNavigatedFrom(NavigationContext navigationContext)

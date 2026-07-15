@@ -3,6 +3,7 @@ using DownKyi.Services.Download;
 using DownKyi.Services.Migration;
 using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Extensions.Logging.Abstractions;
 using Prism.Dialogs;
 
 namespace DownKyi.Tests;
@@ -13,7 +14,10 @@ public sealed class LegacyUpgradeViewModelTests
     public async Task ClosingDialogCancelsActiveMigration()
     {
         var coordinator = new BlockingLegacyUpgradeCoordinator();
-        using var viewModel = new ViewUpgradingDialogViewModel(coordinator, new DownloadListState());
+        using var viewModel = new ViewUpgradingDialogViewModel(
+            coordinator,
+            new DownloadListState(),
+            NullLogger<ViewUpgradingDialogViewModel>.Instance);
 
         viewModel.OnDialogOpened(new DialogParameters());
         await coordinator.Started.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
@@ -34,7 +38,8 @@ public sealed class LegacyUpgradeViewModelTests
         var state = new DownloadListState();
         using var viewModel = new ViewUpgradingDialogViewModel(
             new CompletedLegacyUpgradeCoordinator(item),
-            state);
+            state,
+            NullLogger<ViewUpgradingDialogViewModel>.Instance);
 
         viewModel.OnDialogOpened(new DialogParameters());
 

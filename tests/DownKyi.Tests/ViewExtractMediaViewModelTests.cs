@@ -15,7 +15,8 @@ public sealed class ViewExtractMediaViewModelTests
         using var viewModel = new ViewExtractMediaViewModel(
             new EventAggregator(),
             new StubFilePickerService(),
-            new FfmpegProcessor(settings.Store, NullLoggerFactory.Instance))
+            new FfmpegProcessor(settings.Store, NullLoggerFactory.Instance),
+            NullLogger<ViewExtractMediaViewModel>.Instance)
         {
             VideoPaths = new[] { "first.mp4", "second.mp4" }
         };

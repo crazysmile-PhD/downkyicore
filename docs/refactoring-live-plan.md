@@ -24,7 +24,6 @@ Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
 - Move collection parsing, video parsing, selection, plan building, duplicate policy, and queueing into Application use cases; BV/AV/bangumi/course entry resolution, cancellable detail/stream result coordination, directory-cancel/add coordination, and single-source video search projection are complete.
 - Move notifications, dialogs, and navigation behind Desktop interfaces; clipboard, file-picker, and cross-platform file/folder/URI launcher boundaries are complete and their static helpers are deleted.
-- Replace the remaining static `LogManager` usage with injected `Microsoft.Extensions.Logging`; Prism/Host composition, App crash/shutdown, About log management, download runtime/file lifecycle/maintenance, FFmpeg, aria2, settings/migration, Bilibili API boundaries, update checks, disk probes, cookie serialization, delayed UI scrolling, and external desktop launch diagnostics are migrated, with download task scopes using redacted short IDs; 17 production caller files still contain executable static logger references.
 
 ## PR 25-29 - Remove Prism And Legacy Architecture
 
@@ -33,7 +32,7 @@ Branch: `refactor/pr-25-29-remove-legacy`
 - Replace Prism/DryIoc with Microsoft DI, a thin typed router, dialog coordinator, and explicit event streams.
 - Delete `LegacyDesktopComposition`, `MainWindow.AttachLegacyRegion`, and the deferred Prism region attachment after typed navigation owns the shell.
 - Remove string navigation tags, EventAggregator, Prism commands, region navigation, and global container lookup.
-- Delete old download inheritance, `DownloadStorageService`, custom aria2 duplication, SettingsManager singleton, static App collections, console wrapper, dead utilities, old comments, and obsolete packages immediately after new owners pass migration tests.
+- Delete old download inheritance, `DownloadStorageService`, custom aria2 duplication, SettingsManager singleton, static App collections, dead utilities, old comments, and obsolete packages immediately after new owners pass migration tests.
 - Add CI rules that reject new `App.Current`, `Container.Resolve`, `Thread.Sleep`, synchronous async waits, empty catches, `new HttpClient`, mutable static collections, and ViewModel `Task.Run` in the new architecture.
 
 ## PR 30-32 - Profiling, UI, And Release Hardening

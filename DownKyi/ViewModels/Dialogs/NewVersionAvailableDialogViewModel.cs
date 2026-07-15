@@ -7,6 +7,7 @@ using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Models;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
 
@@ -16,6 +17,7 @@ namespace DownKyi.ViewModels.Dialogs
     {
         public const string Tag = "NewVersionAvailable";
 
+        private readonly ILogger<NewVersionAvailableDialogViewModel> _logger;
         private readonly IPlatformLauncher _platformLauncher;
         private readonly ISettingsStore _settingsStore;
         private DownKyiAsyncDelegateCommand? _allowCommand;
@@ -23,14 +25,16 @@ namespace DownKyi.ViewModels.Dialogs
         private DelegateCommand? _skipCurrentVersionCommand;
 
         public DelegateCommand SkipCurrentVersionCommand => _skipCurrentVersionCommand ??= new DelegateCommand(ExecuteSkipCurrentVersionCommand);
-        public DownKyiAsyncDelegateCommand AllowCommand => _allowCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAllowCommand);
+        public DownKyiAsyncDelegateCommand AllowCommand => _allowCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAllowCommand, _logger);
 
         public NewVersionAvailableDialogViewModel(
             ISettingsStore settingsStore,
-            IPlatformLauncher platformLauncher)
+            IPlatformLauncher platformLauncher,
+            ILogger<NewVersionAvailableDialogViewModel> logger)
         {
             _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
             _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         private async Task ExecuteAllowCommand()

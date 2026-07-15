@@ -11,6 +11,7 @@ using DownKyi.CustomControl;
 using DownKyi.Services.Friends;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Events;
 using Prism.Navigation.Regions;
 
@@ -20,6 +21,7 @@ internal class ViewFollowerViewModel : ViewModelBase
 {
     public const string Tag = "PageFriendsFollower";
     private readonly IFriendRelationCoordinator _friendRelationCoordinator;
+    private readonly ILogger<ViewFollowerViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
 
@@ -100,11 +102,13 @@ internal class ViewFollowerViewModel : ViewModelBase
     public ViewFollowerViewModel(
         IEventAggregator eventAggregator,
         IFriendRelationCoordinator friendRelationCoordinator,
-        ISettingsStore settingsStore) : base(eventAggregator)
+        ISettingsStore settingsStore,
+        ILogger<ViewFollowerViewModel> logger) : base(eventAggregator)
     {
         _friendRelationCoordinator = friendRelationCoordinator
             ?? throw new ArgumentNullException(nameof(friendRelationCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         // 初始化loading
@@ -178,7 +182,7 @@ internal class ViewFollowerViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Follower page loading failed.", e);
             if (_loadCancellation?.Token == cancellationToken)
             {
                 ContentVisibility = false;
@@ -220,7 +224,7 @@ internal class ViewFollowerViewModel : ViewModelBase
             return;
         }
 
-        RunFireAndForget(UpdateContentAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateContentAsync));
+        RunFireAndForget(UpdateContentAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateContentAsync), _logger);
     }
 
     /// <summary>

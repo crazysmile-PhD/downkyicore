@@ -8,6 +8,7 @@ using DownKyi.Models;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
 using Prism.Events;
@@ -21,6 +22,7 @@ namespace DownKyi.ViewModels.DownloadManager
 
         private readonly DownloadStorageService _downloadStorageService;
         private readonly DownloadTaskFileService _downloadTaskFileService;
+        private readonly ILogger<ViewDownloadingViewModel> _logger;
 
         #region 页面属性申明
 
@@ -39,13 +41,15 @@ namespace DownKyi.ViewModels.DownloadManager
             IDialogService dialogService,
             DownloadStorageService downloadStorageService,
             DownloadListState downloadLists,
-            DownloadTaskFileService downloadTaskFileService) : base(
+            DownloadTaskFileService downloadTaskFileService,
+            ILogger<ViewDownloadingViewModel> logger) : base(
             eventAggregator, dialogService)
         {
             _downloadStorageService = downloadStorageService
                 ?? throw new ArgumentNullException(nameof(downloadStorageService));
             _downloadTaskFileService = downloadTaskFileService
                 ?? throw new ArgumentNullException(nameof(downloadTaskFileService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             // 初始化DownloadingList
             DownloadingList = (downloadLists ?? throw new ArgumentNullException(nameof(downloadLists))).Downloading;
         }
@@ -143,7 +147,7 @@ namespace DownKyi.ViewModels.DownloadManager
         // 删除所有下载事件
         private DownKyiAsyncDelegateCommand? _deleteAllDownloadingCommand;
 
-        public DownKyiAsyncDelegateCommand DeleteAllDownloadingCommand => _deleteAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDeleteAllDownloadingCommand);
+        public DownKyiAsyncDelegateCommand DeleteAllDownloadingCommand => _deleteAllDownloadingCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDeleteAllDownloadingCommand, _logger);
 
         /// <summary>
         /// 删除所有下载事件
@@ -170,7 +174,7 @@ namespace DownKyi.ViewModels.DownloadManager
 
         // 下载列表删除事件
         private DownKyiAsyncDelegateCommand<DownloadingItem>? _deleteCommand;
-        public DownKyiAsyncDelegateCommand<DownloadingItem> DeleteCommand => _deleteCommand ??= new DownKyiAsyncDelegateCommand<DownloadingItem>(ExecuteDeleteCommand);
+        public DownKyiAsyncDelegateCommand<DownloadingItem> DeleteCommand => _deleteCommand ??= new DownKyiAsyncDelegateCommand<DownloadingItem>(ExecuteDeleteCommand, _logger);
 
         /// <summary>
         /// 下载列表删除事件

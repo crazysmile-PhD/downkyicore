@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using DownKyi.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Commands;
 
@@ -11,13 +12,18 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
 {
     private readonly Func<T?, Task> _execute;
     private readonly Func<T, bool>? _canExecute;
+    private readonly ILogger _logger;
     private bool _isExecuting;
 
     public event EventHandler? CanExecuteChanged;
 
-    public DownKyiAsyncDelegateCommand(Func<T?, Task> execute, Func<T, bool>? canExecute = null)
+    public DownKyiAsyncDelegateCommand(
+        Func<T?, Task> execute,
+        ILogger logger,
+        Func<T, bool>? canExecute = null)
     {
         _execute = execute ?? throw new ArgumentNullException(nameof(execute));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _canExecute = canExecute;
     }
 
@@ -42,39 +48,16 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
 
     private async Task ExecuteAsync(object? parameter)
     {
+        T? executionParameter;
         if (parameter is null && typeof(T) == typeof(object))
         {
-            _isExecuting = true;
-            OnCanExecuteChanged();
-
-            try
-            {
-                await _execute(default!).ConfigureAwait(true);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (InvalidOperationException e)
-            {
-                LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
-            }
-            catch (HttpRequestException e)
-            {
-                LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
-            }
-            catch (IOException e)
-            {
-                LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
-            }
-            finally
-            {
-                _isExecuting = false;
-                OnCanExecuteChanged();
-            }
-            return;
+            executionParameter = default;
         }
-
-        if (parameter is not T typedParameter)
+        else if (parameter is T typedParameter)
+        {
+            executionParameter = typedParameter;
+        }
+        else
         {
             return;
         }
@@ -84,22 +67,14 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
 
         try
         {
-            await _execute(typedParameter).ConfigureAwait(true);
+            await _execute(executionParameter).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
         }
-        catch (InvalidOperationException e)
+        catch (Exception e) when (e is InvalidOperationException or HttpRequestException or IOException)
         {
-            LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
-        }
-        catch (HttpRequestException e)
-        {
-            LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
-        }
-        catch (IOException e)
-        {
-            LogManager.Error(nameof(DownKyiAsyncDelegateCommand), e);
+            _logger.LogErrorMessage("UI command execution failed.", e);
         }
         finally
         {
@@ -116,13 +91,19 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
 
 internal class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
 {
-    public DownKyiAsyncDelegateCommand(Func<object?, Task> execute, Func<object, bool>? canExecute = null)
-        : base(execute, canExecute)
+    public DownKyiAsyncDelegateCommand(
+        Func<object?, Task> execute,
+        ILogger logger,
+        Func<object, bool>? canExecute = null)
+        : base(execute, logger, canExecute)
     {
     }
 
-    public DownKyiAsyncDelegateCommand(Func<Task> execute, Func<bool>? canExecute = null)
-        : this(_ => execute(),
+    public DownKyiAsyncDelegateCommand(
+        Func<Task> execute,
+        ILogger logger,
+        Func<bool>? canExecute = null)
+        : this(_ => execute(), logger,
             canExecute != null ? _ => canExecute() : null)
     {
     }

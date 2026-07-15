@@ -22,6 +22,7 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using DownKyi.Events;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Bitmap = Avalonia.Media.Imaging.Bitmap;
@@ -38,6 +39,7 @@ internal class ViewDelogoViewModel : ViewModelBase
     private bool _isDelogo;
     private readonly IFilePickerService _filePickerService;
     private readonly FfmpegProcessor _ffmpegProcessor;
+    private readonly ILogger<ViewDelogoViewModel> _logger;
 
     private IImage _source = null!;
 
@@ -151,10 +153,12 @@ internal class ViewDelogoViewModel : ViewModelBase
     public ViewDelogoViewModel(
         IEventAggregator eventAggregator,
         IFilePickerService filePickerService,
-        FfmpegProcessor ffmpegProcessor) : base(eventAggregator)
+        FfmpegProcessor ffmpegProcessor,
+        ILogger<ViewDelogoViewModel> logger) : base(eventAggregator)
     {
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         VideoPath = string.Empty;
@@ -179,7 +183,7 @@ internal class ViewDelogoViewModel : ViewModelBase
     // 选择视频事件
     private DownKyiAsyncDelegateCommand? _selectVideoCommand;
 
-    public DownKyiAsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSelectVideoCommand);
+    public DownKyiAsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSelectVideoCommand, _logger);
 
     /// <summary>
     /// 选择视频事件
@@ -202,7 +206,7 @@ internal class ViewDelogoViewModel : ViewModelBase
             catch (Exception e) when (e is IOException or UnauthorizedAccessException
                 or InvalidOperationException or System.ComponentModel.Win32Exception)
             {
-                LogManager.Error(nameof(ViewDelogoViewModel), e);
+                _logger.LogErrorMessage("Delogo preview extraction failed.", e);
             }
         }
     }
@@ -210,7 +214,7 @@ internal class ViewDelogoViewModel : ViewModelBase
     // 去水印事件
     private DownKyiAsyncDelegateCommand? _delogoCommand;
 
-    public DownKyiAsyncDelegateCommand DelogoCommand => _delogoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDelogoCommand);
+    public DownKyiAsyncDelegateCommand DelogoCommand => _delogoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDelogoCommand, _logger);
 
     /// <summary>
     /// 去水印事件

@@ -12,6 +12,7 @@ using DownKyi.Core.Settings;
 using DownKyi.Events;
 using DownKyi.Models;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -30,6 +31,7 @@ internal class ViewVideoViewModel : ViewModelBase
 
     private bool _isOnNavigatedTo;
     private readonly IFilePickerService _filePickerService;
+    private readonly ILogger<ViewVideoViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
 
     #region 页面属性申明
@@ -272,10 +274,12 @@ internal class ViewVideoViewModel : ViewModelBase
     public ViewVideoViewModel(
         IEventAggregator eventAggregator,
         IFilePickerService filePickerService,
-        ISettingsStore settingsStore) : base(eventAggregator)
+        ISettingsStore settingsStore,
+        ILogger<ViewVideoViewModel> logger) : base(eventAggregator)
     {
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         // 优先下载的视频编码
@@ -624,7 +628,7 @@ internal class ViewVideoViewModel : ViewModelBase
     // 修改默认下载目录事件
     private DownKyiAsyncDelegateCommand? _changeSaveVideoDirectoryCommand;
 
-    public DownKyiAsyncDelegateCommand ChangeSaveVideoDirectoryCommand => _changeSaveVideoDirectoryCommand ??= new DownKyiAsyncDelegateCommand(ExecuteChangeSaveVideoDirectoryCommand);
+    public DownKyiAsyncDelegateCommand ChangeSaveVideoDirectoryCommand => _changeSaveVideoDirectoryCommand ??= new DownKyiAsyncDelegateCommand(ExecuteChangeSaveVideoDirectoryCommand, _logger);
 
     /// <summary>
     /// 修改默认下载目录事件

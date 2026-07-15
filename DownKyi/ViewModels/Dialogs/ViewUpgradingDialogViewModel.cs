@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using DownKyi.Core.Logging;
 using DownKyi.Services.Download;
 using DownKyi.Services.Migration;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
 
@@ -14,6 +15,7 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
 {
     public const string Tag = "DialogLoading";
     private readonly DownloadListState _downloadLists;
+    private readonly ILogger<ViewUpgradingDialogViewModel> _logger;
     private readonly ILegacyUpgradeCoordinator _upgradeCoordinator;
     private CancellationTokenSource? _upgradeCancellation;
 
@@ -47,10 +49,12 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
 
     public ViewUpgradingDialogViewModel(
         ILegacyUpgradeCoordinator upgradeCoordinator,
-        DownloadListState downloadLists)
+        DownloadListState downloadLists,
+        ILogger<ViewUpgradingDialogViewModel> logger)
     {
         _upgradeCoordinator = upgradeCoordinator ?? throw new ArgumentNullException(nameof(upgradeCoordinator));
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Message = "数据迁移中，请不要关闭软件";
     }
 
@@ -100,7 +104,7 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
         }
         catch (InvalidOperationException e)
         {
-            LogManager.Error(nameof(ViewUpgradingDialogViewModel), e);
+            _logger.LogErrorMessage("Legacy data migration dialog failed.", e);
             Message = "数据迁移失败，请查看日志";
             RestartVisible = false;
         }

@@ -20,6 +20,7 @@ using DownKyi.Services.Media;
 using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -32,6 +33,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     public const string Tag = "PageMyBangumiFollow";
     private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly IContentDownloadCoordinator _downloadCoordinator;
+    private readonly ILogger<ViewMyBangumiFollowViewModel> _logger;
     private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
@@ -172,7 +174,8 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
         IDialogService dialogService,
         IAddToDownloadServiceFactory addToDownloadServiceFactory,
         IContentDownloadCoordinator downloadCoordinator,
-        IUserSpacePageCoordinator userSpaceCoordinator) : base(
+        IUserSpacePageCoordinator userSpaceCoordinator,
+        ILogger<ViewMyBangumiFollowViewModel> logger) : base(
         eventAggregator)
     {
         DialogService = dialogService;
@@ -180,6 +183,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
             ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
 
@@ -345,7 +349,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     // 添加选中项到下载列表事件
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
 
     /// <summary>
     /// 添加选中项到下载列表事件
@@ -353,7 +357,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     // 添加所有视频到下载列表事件
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
 
     /// <summary>
     /// 添加所有视频到下载列表事件
@@ -401,7 +405,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Bangumi download preparation failed.", e);
             EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
         }
     }
@@ -418,7 +422,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
             return;
         }
 
-        RunFireAndForget(UpdateBangumiMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateBangumiMediaListAsync));
+        RunFireAndForget(UpdateBangumiMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateBangumiMediaListAsync), _logger);
     }
 
     private async Task UpdateBangumiMediaListAsync(int current)
@@ -466,7 +470,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
         {
             LoadingVisibility = false;
             NoDataVisibility = true;
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Bangumi page loading failed.", e);
         }
         finally
         {

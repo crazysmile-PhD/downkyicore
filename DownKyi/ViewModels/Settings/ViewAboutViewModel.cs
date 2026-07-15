@@ -117,7 +117,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // 访问主页事件
     private DownKyiAsyncDelegateCommand? _appNameCommand;
 
-    public DownKyiAsyncDelegateCommand AppNameCommand => _appNameCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAppNameCommand);
+    public DownKyiAsyncDelegateCommand AppNameCommand => _appNameCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAppNameCommand, _logger);
 
     /// <summary>
     /// 访问主页事件
@@ -130,7 +130,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // 检查更新事件
     private ICommand? _checkUpdateCommand;
 
-    public ICommand CheckUpdateCommand => _checkUpdateCommand ??= new DownKyiAsyncDelegateCommand(ExecuteCheckUpdateCommand);
+    public ICommand CheckUpdateCommand => _checkUpdateCommand ??= new DownKyiAsyncDelegateCommand(ExecuteCheckUpdateCommand, _logger);
 
 
     /// <summary>
@@ -174,7 +174,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // 意见反馈事件
     private DownKyiAsyncDelegateCommand? _feedbackCommand;
 
-    public DownKyiAsyncDelegateCommand FeedbackCommand => _feedbackCommand ??= new DownKyiAsyncDelegateCommand(ExecuteFeedbackCommand);
+    public DownKyiAsyncDelegateCommand FeedbackCommand => _feedbackCommand ??= new DownKyiAsyncDelegateCommand(ExecuteFeedbackCommand, _logger);
 
     /// <summary>
     /// 意见反馈事件
@@ -187,7 +187,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // 打开日志目录事件
     private DownKyiAsyncDelegateCommand? _openLogsCommand;
 
-    public DownKyiAsyncDelegateCommand OpenLogsCommand => _openLogsCommand ??= new DownKyiAsyncDelegateCommand(ExecuteOpenLogsCommand);
+    public DownKyiAsyncDelegateCommand OpenLogsCommand => _openLogsCommand ??= new DownKyiAsyncDelegateCommand(ExecuteOpenLogsCommand, _logger);
 
     private async Task ExecuteOpenLogsCommand()
     {
@@ -203,7 +203,7 @@ internal class ViewAboutViewModel : ViewModelBase
     private DownKyiAsyncDelegateCommand? _exportDiagnosticLogCommand;
 
     public DownKyiAsyncDelegateCommand ExportDiagnosticLogCommand =>
-        _exportDiagnosticLogCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExportDiagnosticLogCommand);
+        _exportDiagnosticLogCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExportDiagnosticLogCommand, _logger);
 
     private async Task ExecuteExportDiagnosticLogCommand()
     {
@@ -267,7 +267,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // Google.Protobuf许可证查看事件
     private DownKyiAsyncDelegateCommand? _protobufLicenseCommand;
 
-    public DownKyiAsyncDelegateCommand ProtobufLicenseCommand => _protobufLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteProtobufLicenseCommand);
+    public DownKyiAsyncDelegateCommand ProtobufLicenseCommand => _protobufLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteProtobufLicenseCommand, _logger);
 
     /// <summary>
     /// Google.Protobuf许可证查看事件
@@ -280,7 +280,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // Newtonsoft.Json许可证查看事件
     private DownKyiAsyncDelegateCommand? _newtonsoftLicenseCommand;
 
-    public DownKyiAsyncDelegateCommand NewtonsoftLicenseCommand => _newtonsoftLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteNewtonsoftLicenseCommand);
+    public DownKyiAsyncDelegateCommand NewtonsoftLicenseCommand => _newtonsoftLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteNewtonsoftLicenseCommand, _logger);
 
     /// <summary>
     /// Newtonsoft.Json许可证查看事件
@@ -293,7 +293,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // Prism.DryIoc许可证查看事件
     private DownKyiAsyncDelegateCommand? _prismLicenseCommand;
 
-    public DownKyiAsyncDelegateCommand PrismLicenseCommand => _prismLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecutePrismLicenseCommand);
+    public DownKyiAsyncDelegateCommand PrismLicenseCommand => _prismLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecutePrismLicenseCommand, _logger);
 
     /// <summary>
     /// Prism.DryIoc许可证查看事件
@@ -306,7 +306,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // QRCoder许可证查看事件
     private DownKyiAsyncDelegateCommand? _qRCoderLicenseCommand;
 
-    public DownKyiAsyncDelegateCommand QRCoderLicenseCommand => _qRCoderLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteQRCoderLicenseCommand);
+    public DownKyiAsyncDelegateCommand QRCoderLicenseCommand => _qRCoderLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteQRCoderLicenseCommand, _logger);
 
     /// <summary>
     /// QRCoder许可证查看事件
@@ -319,7 +319,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // System.Data.SQLite.Core许可证查看事件
     private DownKyiAsyncDelegateCommand? _sQLiteLicenseCommand;
 
-    public DownKyiAsyncDelegateCommand SQLiteLicenseCommand => _sQLiteLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSQLiteLicenseCommand);
+    public DownKyiAsyncDelegateCommand SQLiteLicenseCommand => _sQLiteLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSQLiteLicenseCommand, _logger);
 
     /// <summary>
     /// System.Data.SQLite.Core许可证查看事件
@@ -332,7 +332,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // Aria2c许可证查看事件
     private DownKyiAsyncDelegateCommand? _ariaLicenseCommand;
 
-    public DownKyiAsyncDelegateCommand AriaLicenseCommand => _ariaLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAriaLicenseCommand);
+    public DownKyiAsyncDelegateCommand AriaLicenseCommand => _ariaLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAriaLicenseCommand, _logger);
 
     /// <summary>
     /// Aria2c许可证查看事件
@@ -348,7 +348,7 @@ internal class ViewAboutViewModel : ViewModelBase
     // FFmpeg许可证查看事件
     private DownKyiAsyncDelegateCommand? _fFmpegLicenseCommand;
 
-    public DownKyiAsyncDelegateCommand FFmpegLicenseCommand => _fFmpegLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteFFmpegLicenseCommand);
+    public DownKyiAsyncDelegateCommand FFmpegLicenseCommand => _fFmpegLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteFFmpegLicenseCommand, _logger);
 
     /// <summary>
     /// FFmpeg许可证查看事件

@@ -104,7 +104,7 @@ flowchart TD
     Storage["core.storage\nlegacy projection + StorageManager"]
     Aria["external.aria2\naria2c process"]
     FFmpeg["external.ffmpeg\nffmpeg process"]
-    Logs["core.logging\nLogManager + diagnostic export"]
+    Logs["core.logging\nApplicationLogProvider + diagnostic export"]
     Tests["test.suites\ntests/*"]
     ArchitectureTests["test.architecture-boundaries\nDownKyi.Architecture.Tests"]
     UiSmoke["test.ui-smoke\nDownKyi.Desktop.Tests"]
@@ -1353,8 +1353,6 @@ paths:
   - DownKyi.Core/Logging/ApplicationLogRecord.cs
   - DownKyi.Core/Logging/IApplicationLogService.cs
   - DownKyi.Core/Logging/SensitiveDataRedactor.cs
-  - DownKyi.Core/Logging/LogManager.cs
-  - DownKyi.Core/Logging/LogInfo.cs
 responsibility: Provides the Microsoft.Extensions.Logging sink, bounded asynchronous persistence, rotation/retention, recent-event diagnostics, export, and one sensitive-data redaction policy.
 inbound:
   - app.application
@@ -1369,11 +1367,13 @@ contracts:
   - Explicit flush drains accepted entries, closes the active file handle so logs are immediately readable on Windows, and reports writer failures.
   - Rotation is size/day based; startup retention bounds both age and file count.
   - Async disposal drains accepted entries without a synchronous wait.
+  - Async commands and ViewModel fire-and-forget observation require an injected logger; cancellation retains cancellation semantics while operational failures are sanitized and recorded.
+  - Production code cannot restore `LogManager`, the legacy terminal wrapper, or direct terminal diagnostics.
 hazards:
-  - `LogManager` remains an unbounded static compatibility writer until all production callers are migrated; it must not receive new call sites.
-  - Console logging bypasses sanitization policy.
+  - Bypassing the shared provider loses redaction, bounded buffering, retention, and export consistency.
 tests:
   - test.diagnostic-log-redaction
+  - test.architecture-boundaries
 ```
 
 ### core.settings
@@ -1964,6 +1964,8 @@ test.architecture-boundaries:
     - settings validation/persistence and legacy migration cannot restore static LogManager, Console diagnostics, or duplicate low-level SQLite logging
     - Bilibili Core facades cannot log or print request data; injected account and user-space coordinators own sanitized outcome diagnostics
     - migrated update, disk, cookie serialization, and delayed-scroll files cannot restore static or terminal diagnostics
+    - all production C# roots reject legacy LogManager, the removed Console wrapper, and terminal Print calls; legacy logging source files must remain deleted
+    - async commands and ViewModel fire-and-forget observation require injected diagnostics and preserve normal cancellation semantics
     - ViewModels cannot restore PlatformHelper, and the platform launcher cannot restore shell-string execution
 
 test.settings-store:

@@ -18,6 +18,7 @@ using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -32,6 +33,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly IFavoritesCoordinator _favoritesCoordinator;
+    private readonly ILogger<ViewPublicFavoritesViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
@@ -144,7 +146,8 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         IAddToDownloadServiceFactory addToDownloadServiceFactory,
         IContentDownloadCoordinator downloadCoordinator,
         IFavoritesCoordinator favoritesCoordinator,
-        ISettingsStore settingsStore) : base(eventAggregator)
+        ISettingsStore settingsStore,
+        ILogger<ViewPublicFavoritesViewModel> logger) : base(eventAggregator)
     {
         DialogService = dialogService;
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
@@ -153,6 +156,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _favoritesCoordinator = favoritesCoordinator ?? throw new ArgumentNullException(nameof(favoritesCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
 
@@ -234,13 +238,13 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     {
         // 复制封面图片到剪贴板
         // Clipboard.SetImage(Favorites.Cover);
-        LogManager.Info(Tag, "复制封面图片到剪贴板");
+        _logger.LogInformationMessage("Favorites cover image copied to the clipboard.");
     }
 
     // 复制封面URL事件
     private DownKyiAsyncDelegateCommand? _copyCoverUrlCommand;
 
-    public DownKyiAsyncDelegateCommand CopyCoverUrlCommand => _copyCoverUrlCommand ??= new DownKyiAsyncDelegateCommand(ExecuteCopyCoverUrlCommand);
+    public DownKyiAsyncDelegateCommand CopyCoverUrlCommand => _copyCoverUrlCommand ??= new DownKyiAsyncDelegateCommand(ExecuteCopyCoverUrlCommand, _logger);
 
     /// <summary>
     /// 复制封面URL事件
@@ -249,7 +253,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     {
         // 复制封面url到剪贴板
         await _clipboardService.SetTextAsync(Favorites.CoverUrl).ConfigureAwait(true);
-        LogManager.Info(Tag, "复制封面url到剪贴板");
+        _logger.LogInformationMessage("Favorites cover URL copied to the clipboard.");
     }
 
     // 前往UP主页事件
@@ -267,7 +271,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     // 添加选中项到下载列表事件
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
 
     /// <summary>
     /// 添加选中项到下载列表事件
@@ -275,7 +279,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     // 添加所有视频到下载列表事件
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
 
     /// <summary>
     /// 添加所有视频到下载列表事件
@@ -316,7 +320,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Favorites download preparation failed.", e);
             EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
         }
     }
@@ -326,7 +330,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     /// </summary>
     private void InitView()
     {
-        LogManager.Debug(Tag, "初始化页面元素");
+        _logger.LogDebugMessage("Initializing public favorites view.");
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
@@ -352,7 +356,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
-        RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync));
+        RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync), _logger);
     }
 
     private async Task OnNavigatedToAsync(NavigationContext navigationContext)
@@ -375,7 +379,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
             cancellationToken.ThrowIfCancellationRequested();
             if (snapshot == null)
             {
-                LogManager.Debug(Tag, "Favorites is null.");
+                _logger.LogDebugMessage("Favorites response was empty.");
                 LoadingVisibility = false;
                 NoDataVisibility = true;
                 return;
@@ -399,7 +403,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(nameof(ViewPublicFavoritesViewModel), e);
+            _logger.LogErrorMessage("Public favorites loading failed.", e);
         }
     }
 

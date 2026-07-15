@@ -4,7 +4,6 @@ using DownKyi.Core.BiliApi.Video.Models;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using Newtonsoft.Json;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.Video;
 

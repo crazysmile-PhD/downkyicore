@@ -22,6 +22,7 @@ using DownKyi.Services.Download;
 using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -36,6 +37,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
 
     private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly ISeasonsSeriesCoordinator _coordinator;
+    private readonly ILogger<ViewSeasonsSeriesViewModel> _logger;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
     private long _mid = -1;
@@ -134,12 +136,14 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         IEventAggregator eventAggregator,
         IDialogService dialogService,
         IAddToDownloadServiceFactory addToDownloadServiceFactory,
-        ISeasonsSeriesCoordinator coordinator) : base(eventAggregator)
+        ISeasonsSeriesCoordinator coordinator,
+        ILogger<ViewSeasonsSeriesViewModel> logger) : base(eventAggregator)
     {
         DialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _addToDownloadServiceFactory = addToDownloadServiceFactory
             ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         ArrowBack = NavigationIcon.Instance().ArrowBack;
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
@@ -215,12 +219,12 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
     public DownKyiAsyncDelegateCommand AddToDownloadCommand =>
-        _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+        _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
 
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
     public DownKyiAsyncDelegateCommand AddAllToDownloadCommand =>
-        _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+        _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
 
     private async Task AddToDownloadAsync(bool onlySelected)
     {
@@ -258,7 +262,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Season or series download preparation failed.", e);
             EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
         }
     }
@@ -300,7 +304,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Season or series page loading failed.", e);
             if (_loadCancellation?.Token == cancellationToken)
             {
                 LoadingVisibility = false;
@@ -355,7 +359,8 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
 
         RunFireAndForget(
             UpdatePageAsync(((CustomPagerViewModel)sender!).ProposedCurrent),
-            nameof(UpdatePageAsync));
+            nameof(UpdatePageAsync),
+            _logger);
     }
 
     private void ReplacePager(CustomPagerViewModel pager)

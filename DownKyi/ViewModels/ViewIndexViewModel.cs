@@ -9,10 +9,10 @@ using DownKyi.Images;
 using DownKyi.Services;
 using DownKyi.Services.Account;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels;
 
@@ -20,6 +20,7 @@ internal class ViewIndexViewModel : ViewModelBase
 {
     public const string Tag = "PageIndex";
     private readonly IUserSessionCoordinator _userSessionCoordinator;
+    private readonly ILogger<ViewIndexViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _userRefreshCancellation;
 
@@ -100,11 +101,13 @@ internal class ViewIndexViewModel : ViewModelBase
     public ViewIndexViewModel(
         IEventAggregator eventAggregator,
         IUserSessionCoordinator userSessionCoordinator,
-        ISettingsStore settingsStore) : base(eventAggregator)
+        ISettingsStore settingsStore,
+        ILogger<ViewIndexViewModel> logger) : base(eventAggregator)
     {
         _userSessionCoordinator = userSessionCoordinator
             ?? throw new ArgumentNullException(nameof(userSessionCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _loginPanelVisibility = true;
         Header = "avares://DownKyi/Resources/default_header.jpg";
 
@@ -213,7 +216,7 @@ internal class ViewIndexViewModel : ViewModelBase
             return;
         }
 
-        LogManager.Debug(Tag, $"InputText: {InputText}");
+        _logger.LogDebugMessage("Processing search input.");
         InputText = Regex.Replace(InputText, @"[【]*[^【]*[^】]*[】 ]", "");
         var searchService = new SearchService(_settingsStore);
         var isSupport = searchService.BiliInput(InputText, Tag, EventAggregator);
@@ -281,8 +284,7 @@ internal class ViewIndexViewModel : ViewModelBase
             or System.Security.Cryptography.CryptographicException
             or Newtonsoft.Json.JsonException)
         {
-            Console.PrintLine("UpdateUserInfo()发生异常: {0}", e);
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("User session refresh failed.", e);
             if (updateUi && _userRefreshCancellation?.Token == cancellationToken)
             {
                 LoginPanelVisibility = true;
@@ -306,7 +308,7 @@ internal class ViewIndexViewModel : ViewModelBase
         {
             case null:
                 // 其他情况只更新设置的用户信息，不更新UI
-                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync));
+                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync), _logger);
                 return;
             // 启动
             case "start":
@@ -314,11 +316,11 @@ internal class ViewIndexViewModel : ViewModelBase
             case "login":
             // 注销
             case "logout":
-                RunFireAndForget(UpdateUserInfoAsync(), nameof(UpdateUserInfoAsync));
+                RunFireAndForget(UpdateUserInfoAsync(), nameof(UpdateUserInfoAsync), _logger);
                 break;
             default:
                 // 其他情况只更新设置的用户信息，不更新UI
-                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync));
+                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync), _logger);
                 break;
         }
     }

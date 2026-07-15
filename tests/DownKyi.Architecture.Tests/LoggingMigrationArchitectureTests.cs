@@ -2,7 +2,63 @@ namespace DownKyi.Architecture.Tests;
 
 public sealed class LoggingMigrationArchitectureTests
 {
+    private static readonly string[] ProductionRoots = ["DownKyi", "DownKyi.Core", "src"];
+    private static readonly string[] LegacyLoggingFiles =
+    [
+        "DownKyi.Core/Logging/LogManager.cs",
+        "DownKyi.Core/Logging/LogInfo.cs",
+        "DownKyi.Core/Logging/LogLevel.cs",
+        "DownKyi.Core/Utils/Debugging/Console.cs"
+    ];
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+
+    [Fact]
+    public void ProductionCodeCannotUseLegacyStaticOrTerminalLogging()
+    {
+        var violations = ProductionRoots
+            .Select(root => Path.Combine(RepositoryRoot, root))
+            .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+            .Where(path => !ContainsBuildOutputSegment(path))
+            .Where(path =>
+            {
+                var source = File.ReadAllText(path);
+                return source.Contains("LogManager.", StringComparison.Ordinal) ||
+                       source.Contains("Console.Print", StringComparison.Ordinal) ||
+                       source.Contains("DownKyi.Core.Utils.Debugging.Console", StringComparison.Ordinal);
+            })
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void LegacyStaticLoggingTypesStayDeleted()
+    {
+        var existingFiles = LegacyLoggingFiles
+            .Where(path => File.Exists(Path.Combine(
+                RepositoryRoot,
+                path.Replace('/', Path.DirectorySeparatorChar))))
+            .ToArray();
+
+        Assert.Empty(existingFiles);
+    }
+
+    [Fact]
+    public void AsyncCommandsRequireInjectedDiagnostics()
+    {
+        var commandSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Commands",
+            "AsyncDelegateCommand.cs"));
+
+        Assert.Contains("ILogger logger", commandSource, StringComparison.Ordinal);
+        Assert.Contains("_logger.LogErrorMessage", commandSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LogManager.", commandSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Console.Print", commandSource, StringComparison.Ordinal);
+    }
 
     [Theory]
     [InlineData("DownKyi.Core/Utils/HardDisk.cs")]
@@ -57,5 +113,13 @@ public sealed class LoggingMigrationArchitectureTests
         }
 
         throw new DirectoryNotFoundException("Could not locate the repository root.");
+    }
+
+    private static bool ContainsBuildOutputSegment(string path)
+    {
+        var relativePath = Path.GetRelativePath(RepositoryRoot, path);
+        var segments = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return segments.Contains("bin", StringComparer.OrdinalIgnoreCase) ||
+               segments.Contains("obj", StringComparer.OrdinalIgnoreCase);
     }
 }

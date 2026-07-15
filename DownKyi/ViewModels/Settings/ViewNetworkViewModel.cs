@@ -9,6 +9,7 @@ using DownKyi.Core.Utils.Validator;
 using DownKyi.Events;
 using DownKyi.Services;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
 using Prism.Events;
@@ -22,6 +23,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     public const string Tag = "PageSettingsNetwork";
 
     private readonly ISettingsStore _settingsStore;
+    private readonly ILogger<ViewNetworkViewModel> _logger;
     private bool _isOnNavigatedTo;
 
     #region 页面属性申明
@@ -311,10 +313,12 @@ internal class ViewNetworkViewModel : ViewModelBase
     public ViewNetworkViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        ISettingsStore settingsStore) : base(eventAggregator,
+        ISettingsStore settingsStore,
+        ILogger<ViewNetworkViewModel> logger) : base(eventAggregator,
         dialogService)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         // builtin同时下载数
@@ -503,7 +507,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     // 下载器选择事件
     private DownKyiAsyncDelegateCommand<string>? _selectDownloaderCommand;
 
-    public DownKyiAsyncDelegateCommand<string> SelectDownloaderCommand => _selectDownloaderCommand ??= new DownKyiAsyncDelegateCommand<string>(ExecuteSelectDownloaderCommand);
+    public DownKyiAsyncDelegateCommand<string> SelectDownloaderCommand => _selectDownloaderCommand ??= new DownKyiAsyncDelegateCommand<string>(ExecuteSelectDownloaderCommand, _logger);
 
     /// <summary>
     /// 下载器选择事件
@@ -587,7 +591,7 @@ internal class ViewNetworkViewModel : ViewModelBase
 
     private DownKyiAsyncDelegateCommand<object>? _networkProxyCommand;
 
-    public DownKyiAsyncDelegateCommand<object> NetworkProxyCommand => _networkProxyCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteNetworkProxyCommand);
+    public DownKyiAsyncDelegateCommand<object> NetworkProxyCommand => _networkProxyCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteNetworkProxyCommand, _logger);
 
     private async Task ExecuteNetworkProxyCommand(object? obj)
     {
@@ -629,7 +633,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     // builtin同时下载数事件
     private DownKyiAsyncDelegateCommand<object>? _maxCurrentDownloadsCommand;
 
-    public DownKyiAsyncDelegateCommand<object> MaxCurrentDownloadsCommand => _maxCurrentDownloadsCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteMaxCurrentDownloadsCommand);
+    public DownKyiAsyncDelegateCommand<object> MaxCurrentDownloadsCommand => _maxCurrentDownloadsCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteMaxCurrentDownloadsCommand, _logger);
 
     /// <summary>
     /// builtin同时下载数事件
@@ -809,7 +813,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     private DownKyiAsyncDelegateCommand<object>? _ariaMaxConcurrentDownloadsCommand;
 
     public DownKyiAsyncDelegateCommand<object> AriaMaxConcurrentDownloadsCommand =>
-        _ariaMaxConcurrentDownloadsCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteAriaMaxConcurrentDownloadsCommand);
+        _ariaMaxConcurrentDownloadsCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteAriaMaxConcurrentDownloadsCommand, _logger);
 
     /// <summary>
     /// Aria同时下载数事件

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Avalonia.Threading;
 using DownKyi.Core.Logging;
 using DownKyi.PrismExtension.Dialog;
+using Microsoft.Extensions.Logging;
 using Prism.Events;
 using Prism.Mvvm;
 using Prism.Navigation.Regions;
@@ -85,20 +86,21 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
         UiDispatcher.Invoke(callback);
     }
 
-    protected void RunFireAndForget(Task task, string operation)
+    protected void RunFireAndForget(Task task, string operation, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(task);
-        _ = RunFireAndForgetAsync(task, $"{GetType().Name}.{operation}");
+        ArgumentNullException.ThrowIfNull(logger);
+        _ = RunFireAndForgetAsync(task, $"{GetType().Name}.{operation}", logger);
     }
 
-    private static async Task RunFireAndForgetAsync(Task task, string operation)
+    private static async Task RunFireAndForgetAsync(Task task, string operation, ILogger logger)
     {
         await task.ContinueWith(
             completedTask =>
             {
                 if (completedTask.Exception is { } exception)
                 {
-                    LogManager.Error(operation, exception.GetBaseException());
+                    logger.LogErrorMessage(operation, exception.GetBaseException());
                 }
             },
             CancellationToken.None,

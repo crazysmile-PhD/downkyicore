@@ -13,6 +13,7 @@ using DownKyi.Images;
 using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -24,6 +25,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
     public const string Tag = "PageMySpace";
 
     private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
+    private readonly ILogger<ViewMySpaceViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
 
@@ -293,10 +295,12 @@ internal class ViewMySpaceViewModel : ViewModelBase
     public ViewMySpaceViewModel(
         IEventAggregator eventAggregator,
         IUserSpacePageCoordinator userSpaceCoordinator,
-        ISettingsStore settingsStore) : base(eventAggregator)
+        ISettingsStore settingsStore,
+        ILogger<ViewMySpaceViewModel> logger) : base(eventAggregator)
     {
         _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         // 返回按钮
@@ -553,7 +557,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
             catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
                 or FormatException or Newtonsoft.Json.JsonException)
             {
-                LogManager.Error(Tag, e);
+                _logger.LogErrorMessage("Personal space section loading failed.", e);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -562,7 +566,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Personal space loading failed.", e);
             ShowNoData();
         }
     }
@@ -635,7 +639,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
         _mid = parameter;
 
         InitView();
-        RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync));
+        RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync), _logger);
     }
 
     public override void OnNavigatedFrom(NavigationContext navigationContext)

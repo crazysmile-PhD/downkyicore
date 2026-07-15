@@ -16,6 +16,7 @@ using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -27,6 +28,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     public const string Tag = "PageMyHistory";
     private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly IContentDownloadCoordinator _downloadCoordinator;
+    private readonly ILogger<ViewMyHistoryViewModel> _logger;
     private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
 
     // 每页视频数量，暂时在此写死，以后在设置中增加选项
@@ -118,7 +120,8 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         IDialogService dialogService,
         IAddToDownloadServiceFactory addToDownloadServiceFactory,
         IContentDownloadCoordinator downloadCoordinator,
-        IPersonalMediaCoordinator personalMediaCoordinator) : base(
+        IPersonalMediaCoordinator personalMediaCoordinator,
+        ILogger<ViewMyHistoryViewModel> logger) : base(
         eventAggregator)
     {
         DialogService = dialogService;
@@ -127,6 +130,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _personalMediaCoordinator = personalMediaCoordinator
             ?? throw new ArgumentNullException(nameof(personalMediaCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
 
@@ -249,7 +253,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
     public DownKyiAsyncDelegateCommand AddToDownloadCommand =>
-        _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+        _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
 
     /// <summary>
     /// 添加选中项到下载列表事件
@@ -258,12 +262,12 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
     public DownKyiAsyncDelegateCommand AddAllToDownloadCommand =>
-        _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+        _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
 
     private DownKyiAsyncDelegateCommand? _loadMoreCommand;
 
     public DownKyiAsyncDelegateCommand LoadMoreCommand =>
-        _loadMoreCommand ??= new DownKyiAsyncDelegateCommand(ExecuteLoadMoreCommand);
+        _loadMoreCommand ??= new DownKyiAsyncDelegateCommand(ExecuteLoadMoreCommand, _logger);
 
     private long _nextMax;
 
@@ -328,7 +332,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("History download preparation failed.", e);
             EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
         }
     }
@@ -388,7 +392,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("History page loading failed.", e);
             if (reset)
             {
                 NoDataVisibility = true;
@@ -458,7 +462,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
 
         InitView();
 
-        RunFireAndForget(UpdateHistoryMediaListAsync(), nameof(UpdateHistoryMediaListAsync));
+        RunFireAndForget(UpdateHistoryMediaListAsync(), nameof(UpdateHistoryMediaListAsync), _logger);
     }
 
     public override void OnNavigatedFrom(NavigationContext navigationContext)

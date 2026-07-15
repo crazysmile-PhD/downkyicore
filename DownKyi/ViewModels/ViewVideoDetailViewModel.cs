@@ -17,6 +17,7 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.UiState;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
 using Prism.Events;
@@ -31,6 +32,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
 
     private readonly IClipboardService _clipboardService;
     private readonly IVideoDetailDownloadCoordinator _downloadCoordinator;
+    private readonly ILogger<ViewVideoDetailViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
     private readonly IVideoDetailWorkflowCoordinator _workflow;
 
@@ -40,25 +42,27 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         IClipboardService clipboardService,
         ISettingsStore settingsStore,
         IVideoDetailWorkflowCoordinator workflow,
-        IVideoDetailDownloadCoordinator downloadCoordinator)
+        IVideoDetailDownloadCoordinator downloadCoordinator,
+        ILogger<ViewVideoDetailViewModel> logger)
         : base(eventAggregator, dialogService)
     {
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         UiState.DownloadManage = CreateDownloadManageIcon();
         BackSpaceCommand = new DelegateCommand(ExecuteBackSpace);
         DownloadManagerCommand = new DelegateCommand(ExecuteDownloadManagerCommand);
-        InputCommand = new DownKyiAsyncDelegateCommand(ExecuteInputCommandAsync, () => !UiState.IsBusy);
+        InputCommand = new DownKyiAsyncDelegateCommand(ExecuteInputCommandAsync, _logger, () => !UiState.IsBusy);
         InputSearchCommand = new DelegateCommand(() => _workflow.ApplySearch(UiState.InputSearchText));
-        CopyCoverUrlCommand = new DownKyiAsyncDelegateCommand(ExecuteCopyCoverUrlCommandAsync);
+        CopyCoverUrlCommand = new DownKyiAsyncDelegateCommand(ExecuteCopyCoverUrlCommandAsync, _logger);
         UpperCommand = new DelegateCommand(ExecuteUpperCommand);
         SelectAllCommand = new DelegateCommand(() => SetAllSelected(UiState.IsSelectAll));
         ClearSelectionCommand = new DelegateCommand(() => SetAllSelected(isSelected: false));
-        ParseCommand = new DownKyiAsyncDelegateCommand<object>(ExecuteParseCommandAsync, _ => !UiState.IsBusy);
-        ParseAllVideoCommand = new DownKyiAsyncDelegateCommand(ExecuteParseAllVideoCommandAsync, () => !UiState.IsBusy);
-        AddToDownloadCommand = new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), () => !UiState.IsBusy);
+        ParseCommand = new DownKyiAsyncDelegateCommand<object>(ExecuteParseCommandAsync, _logger, _ => !UiState.IsBusy);
+        ParseAllVideoCommand = new DownKyiAsyncDelegateCommand(ExecuteParseAllVideoCommandAsync, _logger, () => !UiState.IsBusy);
+        AddToDownloadCommand = new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger, () => !UiState.IsBusy);
     }
 
     public VideoDetailUiState UiState { get; } = new();
@@ -118,12 +122,12 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         await RunOperationAsync(operation, async () =>
         {
             UiState.InputText = _workflow.SetInput(requestedInput);
-            LogManager.Debug(Tag, "Processing captured video input.");
+            _logger.LogDebugMessage("Processing captured video input.");
             var result = await _workflow.LoadDetailAsync(operation).ConfigureAwait(true);
             await UiDispatcher.InvokeAsync(() => ApplyVideoDetailResult(result, operation.CancellationToken));
             if (_workflow.IsCurrent(operation) && _settingsStore.Current.Basic.IsAutoParseVideo == AllowStatus.Yes)
             {
-                RunFireAndForget(ExecuteParseAllVideoCommandAsync(), nameof(ExecuteParseAllVideoCommandAsync));
+                RunFireAndForget(ExecuteParseAllVideoCommandAsync(), nameof(ExecuteParseAllVideoCommandAsync), _logger);
             }
         }, VideoDetailDisplayState.Empty).ConfigureAwait(true);
     }
@@ -136,7 +140,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         }
 
         await _clipboardService.SetTextAsync(coverUrl).ConfigureAwait(true);
-        LogManager.Info(Tag, "复制封面url到剪贴板");
+        _logger.LogInformationMessage("Video cover URL copied to the clipboard.");
     }
 
     private void ExecuteUpperCommand()
@@ -220,7 +224,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
                 await AddToDownloadAsync(true).ConfigureAwait(true);
             }
 
-            LogManager.Debug(Tag, $"ParseScope: {parseScope:G}");
+            _logger.LogDebugMessage($"ParseScope: {parseScope:G}");
         }, null).ConfigureAwait(true);
     }
 
@@ -307,7 +311,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             return;
         }
 
-        LogManager.Error(Tag, exception);
+        _logger.LogErrorMessage("Video detail operation failed.", exception);
         EventAggregator.GetEvent<MessageEvent>().Publish(exception.Message);
         if (failureState is { } state)
         {
@@ -394,7 +398,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
                 if (!UiState.IsBusy)
                 {
                     UiState.InputText = input;
-                    RunFireAndForget(ExecuteInputCommandAsync(input), nameof(ExecuteInputCommandAsync));
+                    RunFireAndForget(ExecuteInputCommandAsync(input), nameof(ExecuteInputCommandAsync), _logger);
                 }
             }
         }

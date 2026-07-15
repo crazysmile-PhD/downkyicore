@@ -11,6 +11,7 @@ using DownKyi.Events;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
 using Prism.Events;
@@ -24,6 +25,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
 
     private DownloadStorageService _downloadStorageService;
     private readonly DownloadListState _downloadLists;
+    private readonly ILogger<ViewDownloadFinishedViewModel> _logger;
     private readonly IPlatformLauncher _platformLauncher;
     private readonly ISettingsStore _settingsStore;
 
@@ -53,7 +55,8 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         DownloadStorageService downloadStorageService,
         DownloadListState downloadLists,
         ISettingsStore settingsStore,
-        IPlatformLauncher platformLauncher
+        IPlatformLauncher platformLauncher,
+        ILogger<ViewDownloadFinishedViewModel> logger
     ) : base(eventAggregator,
         dialogService)
     {
@@ -61,6 +64,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         DownloadedList = downloadLists.Downloaded;
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
 
@@ -127,7 +131,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
 
     // 清空下载完成列表事件
     private DownKyiAsyncDelegateCommand? _clearAllDownloadedCommand;
-    public DownKyiAsyncDelegateCommand ClearAllDownloadedCommand => _clearAllDownloadedCommand ??= new DownKyiAsyncDelegateCommand(ExecuteClearAllDownloadedCommand);
+    public DownKyiAsyncDelegateCommand ClearAllDownloadedCommand => _clearAllDownloadedCommand ??= new DownKyiAsyncDelegateCommand(ExecuteClearAllDownloadedCommand, _logger);
 
     /// <summary>
     /// 清空下载完成列表事件
@@ -160,7 +164,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
 
     // 打开视频事件
     private DownKyiAsyncDelegateCommand<DownloadedItem>? _openVideoCommand;
-    public DownKyiAsyncDelegateCommand<DownloadedItem> OpenVideoCommand => _openVideoCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteOpenVideoCommand);
+    public DownKyiAsyncDelegateCommand<DownloadedItem> OpenVideoCommand => _openVideoCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteOpenVideoCommand, _logger);
 
     /// <summary>
     /// 打开视频事件
@@ -192,7 +196,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     // 打开文件夹事件
     private DownKyiAsyncDelegateCommand<DownloadedItem>? _openFolderCommand;
 
-    public DownKyiAsyncDelegateCommand<DownloadedItem> OpenFolderCommand => _openFolderCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteOpenFolderCommand);
+    public DownKyiAsyncDelegateCommand<DownloadedItem> OpenFolderCommand => _openFolderCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteOpenFolderCommand, _logger);
 
 
     private static readonly Dictionary<string, string[]> FileSuffixMap = new()
@@ -240,7 +244,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     // 删除事件
     private DownKyiAsyncDelegateCommand<DownloadedItem>? _removeVideoCommand;
 
-    public DownKyiAsyncDelegateCommand<DownloadedItem> RemoveVideoCommand => _removeVideoCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteRemoveVideoCommand);
+    public DownKyiAsyncDelegateCommand<DownloadedItem> RemoveVideoCommand => _removeVideoCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteRemoveVideoCommand, _logger);
 
     /// <summary>
     /// 删除事件

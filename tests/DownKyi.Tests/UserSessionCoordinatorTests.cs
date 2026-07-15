@@ -1,6 +1,7 @@
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Services.Account;
 using DownKyi.ViewModels;
+using Microsoft.Extensions.Logging.Abstractions;
 using Prism.Events;
 
 namespace DownKyi.Tests;
@@ -12,7 +13,11 @@ public sealed class UserSessionCoordinatorTests
     {
         using var settings = new TestSettingsStore();
         var coordinator = new RecordingUserSessionCoordinator();
-        using var viewModel = new ViewIndexViewModel(new EventAggregator(), coordinator, settings.Store);
+        using var viewModel = new ViewIndexViewModel(
+            new EventAggregator(),
+            coordinator,
+            settings.Store,
+            NullLogger<ViewIndexViewModel>.Instance);
 
         Assert.Equal(0, coordinator.RefreshCount);
     }

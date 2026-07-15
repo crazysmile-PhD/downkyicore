@@ -214,7 +214,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     // 浏览文件夹事件
     private DownKyiAsyncDelegateCommand? _browseCommand;
 
-    public DownKyiAsyncDelegateCommand BrowseCommand => _browseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteBrowseCommand);
+    public DownKyiAsyncDelegateCommand BrowseCommand => _browseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteBrowseCommand, _logger);
 
     /// <summary>
     /// 浏览文件夹事件

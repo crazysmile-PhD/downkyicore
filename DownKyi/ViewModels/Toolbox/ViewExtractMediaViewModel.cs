@@ -9,6 +9,7 @@ using DownKyi.Commands;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Events;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 
@@ -22,6 +23,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     private bool _isExtracting;
     private readonly IFilePickerService _filePickerService;
     private readonly FfmpegProcessor _ffmpegProcessor;
+    private readonly ILogger<ViewExtractMediaViewModel> _logger;
 
     #region 页面属性申明
 
@@ -58,10 +60,12 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     public ViewExtractMediaViewModel(
         IEventAggregator eventAggregator,
         IFilePickerService filePickerService,
-        FfmpegProcessor ffmpegProcessor) : base(eventAggregator)
+        FfmpegProcessor ffmpegProcessor,
+        ILogger<ViewExtractMediaViewModel> logger) : base(eventAggregator)
     {
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         VideoPaths = Array.Empty<string>();
@@ -74,7 +78,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     // 选择视频事件
     private DownKyiAsyncDelegateCommand? _selectVideoCommand;
 
-    public DownKyiAsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSelectVideoCommand);
+    public DownKyiAsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSelectVideoCommand, _logger);
 
     /// <summary>
     /// 选择视频事件
@@ -93,7 +97,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     // 提取音频事件
     private DownKyiAsyncDelegateCommand? _extractAudioCommand;
 
-    public DownKyiAsyncDelegateCommand ExtractAudioCommand => _extractAudioCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExtractAudioCommand);
+    public DownKyiAsyncDelegateCommand ExtractAudioCommand => _extractAudioCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExtractAudioCommand, _logger);
 
     /// <summary>
     /// 提取音频事件
@@ -135,7 +139,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     // 提取视频事件
     private DownKyiAsyncDelegateCommand? _extractVideoCommand;
 
-    public DownKyiAsyncDelegateCommand ExtractVideoCommand => _extractVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExtractVideoCommand);
+    public DownKyiAsyncDelegateCommand ExtractVideoCommand => _extractVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExtractVideoCommand, _logger);
 
     /// <summary>
     /// 提取视频事件

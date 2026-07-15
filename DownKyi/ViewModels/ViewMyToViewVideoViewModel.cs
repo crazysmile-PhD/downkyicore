@@ -16,6 +16,7 @@ using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -27,6 +28,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     public const string Tag = "PageMyToView";
     private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly IContentDownloadCoordinator _downloadCoordinator;
+    private readonly ILogger<ViewMyToViewVideoViewModel> _logger;
     private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
@@ -112,7 +114,8 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         IDialogService dialogService,
         IAddToDownloadServiceFactory addToDownloadServiceFactory,
         IContentDownloadCoordinator downloadCoordinator,
-        IPersonalMediaCoordinator personalMediaCoordinator) : base(
+        IPersonalMediaCoordinator personalMediaCoordinator,
+        ILogger<ViewMyToViewVideoViewModel> logger) : base(
         eventAggregator)
     {
         DialogService = dialogService;
@@ -121,6 +124,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _personalMediaCoordinator = personalMediaCoordinator
             ?? throw new ArgumentNullException(nameof(personalMediaCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
 
@@ -239,7 +243,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     // 添加选中项到下载列表事件
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
 
     /// <summary>
     /// 添加选中项到下载列表事件
@@ -247,7 +251,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     // 添加所有视频到下载列表事件
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
 
     /// <summary>
     /// 添加所有视频到下载列表事件
@@ -290,7 +294,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Watch-later download preparation failed.", e);
             EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
         }
     }
@@ -327,7 +331,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         {
             LoadingVisibility = false;
             NoDataVisibility = true;
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Watch-later page loading failed.", e);
         }
     }
 
@@ -377,7 +381,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
 
         InitView();
 
-        RunFireAndForget(UpdateToViewMediaListAsync(), nameof(UpdateToViewMediaListAsync));
+        RunFireAndForget(UpdateToViewMediaListAsync(), nameof(UpdateToViewMediaListAsync), _logger);
     }
 
     public override void OnNavigatedFrom(NavigationContext navigationContext)

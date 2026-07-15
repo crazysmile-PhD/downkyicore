@@ -20,6 +20,7 @@ using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Navigation.Regions;
@@ -32,6 +33,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly IFavoritesCoordinator _favoritesCoordinator;
+    private readonly ILogger<ViewMyFavoritesViewModel> _logger;
     private CancellationTokenSource? _folderLoadCancellation;
     private CancellationTokenSource? _mediaLoadCancellation;
     private CancellationTokenSource? _downloadCancellation;
@@ -204,13 +206,15 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         IDialogService dialogService,
         IAddToDownloadServiceFactory addToDownloadServiceFactory,
         IContentDownloadCoordinator downloadCoordinator,
-        IFavoritesCoordinator favoritesCoordinator) : base(eventAggregator)
+        IFavoritesCoordinator favoritesCoordinator,
+        ILogger<ViewMyFavoritesViewModel> logger) : base(eventAggregator)
     {
         DialogService = dialogService;
         _addToDownloadServiceFactory = addToDownloadServiceFactory
             ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _favoritesCoordinator = favoritesCoordinator ?? throw new ArgumentNullException(nameof(favoritesCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
 
@@ -367,7 +371,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     // 添加选中项到下载列表事件
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
 
     /// <summary>
     /// 添加选中项到下载列表事件
@@ -375,7 +379,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     // 添加所有视频到下载列表事件
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
 
     /// <summary>
     /// 添加所有视频到下载列表事件
@@ -420,7 +424,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Favorites download preparation failed.", e);
             EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
         }
     }
@@ -437,7 +441,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
             return;
         }
 
-        RunFireAndForget(UpdateFavoritesMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateFavoritesMediaListAsync));
+        RunFireAndForget(UpdateFavoritesMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateFavoritesMediaListAsync), _logger);
     }
 
     private async Task UpdateFavoritesMediaListAsync(int current)
@@ -480,7 +484,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(nameof(ViewMyFavoritesViewModel), e);
+            _logger.LogErrorMessage("Favorites media loading failed.", e);
         }
         finally
         {
@@ -520,7 +524,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
-        RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync));
+        RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync), _logger);
     }
 
     private async Task OnNavigatedToAsync(NavigationContext navigationContext)
@@ -567,7 +571,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(nameof(ViewMyFavoritesViewModel), e);
+            _logger.LogErrorMessage("Favorites folder loading failed.", e);
         }
     }
 
