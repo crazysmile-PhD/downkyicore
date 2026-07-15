@@ -56,6 +56,7 @@ internal static class LegacyPrismComposition
         containerRegistry.Register<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         containerRegistry.RegisterSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();
         containerRegistry.RegisterSingleton<IContentDownloadCoordinator, ContentDownloadCoordinator>();
+        containerRegistry.RegisterSingleton<IContentInfoServiceFactory, ContentInfoServiceFactory>();
         containerRegistry.RegisterSingleton<IPersonalMediaCoordinator, PersonalMediaCoordinator>();
         containerRegistry.RegisterSingleton<ILegacyUpgradeCoordinator, LegacyUpgradeCoordinator>();
         containerRegistry.RegisterSingleton<IFavoritesService, FavoritesService>();

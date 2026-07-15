@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Downloads;
+using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
@@ -17,13 +20,38 @@ internal enum DownloadInfoKind
 
 internal sealed record ContentDownloadItem(string Source, DownloadInfoKind Kind, bool IsSelected);
 
+internal interface IContentInfoServiceFactory
+{
+    IInfoService Create(ContentDownloadItem item, CancellationToken cancellationToken);
+}
+
+internal sealed class ContentInfoServiceFactory : IContentInfoServiceFactory
+{
+    private readonly ISettingsStore _settingsStore;
+
+    public ContentInfoServiceFactory(ISettingsStore settingsStore)
+    {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+    }
+
+    public IInfoService Create(ContentDownloadItem item, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        cancellationToken.ThrowIfCancellationRequested();
+        return item.Kind switch
+        {
+            DownloadInfoKind.Video => new VideoInfoService(item.Source, _settingsStore, cancellationToken),
+            DownloadInfoKind.Bangumi => new BangumiInfoService(item.Source, _settingsStore, cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(item), item.Kind, null)
+        };
+    }
+}
+
 internal interface IContentDownloadCoordinator
 {
-    Task<int> AddAsync(
-        AddToDownloadService addToDownloadService,
+    Task<int?> AddAsync(
         IReadOnlyList<ContentDownloadItem> items,
         bool onlySelected,
-        string directory,
         IEventAggregator eventAggregator,
         IDialogService? dialogService,
         CancellationToken cancellationToken);
@@ -31,55 +59,84 @@ internal interface IContentDownloadCoordinator
 
 internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
 {
-    private readonly ISettingsStore _settingsStore;
+    private readonly IAddToDownloadServiceFactory _serviceFactory;
+    private readonly IContentInfoServiceFactory _infoServiceFactory;
 
-    public ContentDownloadCoordinator(ISettingsStore settingsStore)
+    public ContentDownloadCoordinator(
+        IAddToDownloadServiceFactory serviceFactory,
+        IContentInfoServiceFactory infoServiceFactory)
     {
-        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _serviceFactory = serviceFactory ?? throw new ArgumentNullException(nameof(serviceFactory));
+        _infoServiceFactory = infoServiceFactory ?? throw new ArgumentNullException(nameof(infoServiceFactory));
     }
 
-    public Task<int> AddAsync(
-        AddToDownloadService addToDownloadService,
+    public async Task<int?> AddAsync(
         IReadOnlyList<ContentDownloadItem> items,
         bool onlySelected,
+        IEventAggregator eventAggregator,
+        IDialogService? dialogService,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(eventAggregator);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var selectedItems = onlySelected
+            ? items.Where(item => item.IsSelected).ToArray()
+            : items.ToArray();
+        if (selectedItems.Length == 0)
+        {
+            return 0;
+        }
+
+        var addToDownloadSession = _serviceFactory.Create(ToPlayStreamType(selectedItems[0].Kind));
+        return await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
+            () => addToDownloadSession.SetDirectory(dialogService),
+            directory => AddItemsAsync(
+                addToDownloadSession,
+                selectedItems,
+                directory,
+                eventAggregator,
+                dialogService,
+                cancellationToken),
+            cancellationToken).ConfigureAwait(true);
+    }
+
+    private Task<int> AddItemsAsync(
+        IAddToDownloadSession addToDownloadSession,
+        IReadOnlyList<ContentDownloadItem> items,
         string directory,
         IEventAggregator eventAggregator,
         IDialogService? dialogService,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(addToDownloadService);
-        ArgumentNullException.ThrowIfNull(items);
-        ArgumentException.ThrowIfNullOrEmpty(directory);
-        ArgumentNullException.ThrowIfNull(eventAggregator);
-
         return Task.Run(async () =>
         {
             var addedCount = 0;
             foreach (var item in items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (onlySelected && !item.IsSelected)
-                {
-                    continue;
-                }
-
-                IInfoService infoService = item.Kind switch
-                {
-                    DownloadInfoKind.Video => new VideoInfoService(item.Source, _settingsStore),
-                    DownloadInfoKind.Bangumi => new BangumiInfoService(item.Source, _settingsStore),
-                    _ => throw new ArgumentOutOfRangeException(nameof(items), item.Kind, null)
-                };
-
-                addToDownloadService.SetVideoInfoService(infoService);
-                addToDownloadService.GetVideo();
-                addToDownloadService.ParseVideo(infoService);
+                var infoService = _infoServiceFactory.Create(item, cancellationToken);
+                addToDownloadSession.SetVideoInfoService(infoService);
+                addToDownloadSession.GetVideo();
+                addToDownloadSession.ParseVideo(infoService);
                 cancellationToken.ThrowIfCancellationRequested();
-                addedCount += await addToDownloadService
+                addedCount += await addToDownloadSession
                     .AddToDownload(eventAggregator, dialogService, directory)
                     .ConfigureAwait(false);
             }
 
             return addedCount;
         }, cancellationToken);
+    }
+
+    private static PlayStreamType ToPlayStreamType(DownloadInfoKind kind)
+    {
+        return kind switch
+        {
+            DownloadInfoKind.Video => PlayStreamType.Video,
+            DownloadInfoKind.Bangumi => PlayStreamType.Bangumi,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+        };
     }
 }

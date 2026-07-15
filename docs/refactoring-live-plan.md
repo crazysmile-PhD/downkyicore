@@ -22,7 +22,6 @@ This file contains only unfinished work. Completed items are removed in the same
 
 Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
-- Replace the remaining per-page `IAddToDownloadServiceFactory` loops with the shared download planning/queue coordinator, then delete the duplicated favorites/history/watch-later/publication/bangumi add orchestration.
 - Add Desktop notification, dialog, and typed navigation contracts, then move ViewModels off direct Prism `EventAggregator`, dialog, and string-region calls while leaving the temporary Prism adapters for PR 25-29 removal.
 - Reduce the remaining oversized settings and media ViewModels to binding state and command wiring; `ViewNetworkViewModel` still combines all network option construction, validation feedback, restart prompts, and update commands.
 

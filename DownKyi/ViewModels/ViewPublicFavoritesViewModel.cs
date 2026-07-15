@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Favorites;
-using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Events;
@@ -30,7 +29,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     public const string Tag = "PagePublicFavorites";
 
     private readonly IClipboardService _clipboardService;
-    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly IFavoritesCoordinator _favoritesCoordinator;
     private readonly ILogger<ViewPublicFavoritesViewModel> _logger;
@@ -143,7 +141,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         IEventAggregator eventAggregator,
         IDialogService dialogService,
         IClipboardService clipboardService,
-        IAddToDownloadServiceFactory addToDownloadServiceFactory,
         IContentDownloadCoordinator downloadCoordinator,
         IFavoritesCoordinator favoritesCoordinator,
         ISettingsStore settingsStore,
@@ -151,8 +148,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     {
         DialogService = dialogService;
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
-        _addToDownloadServiceFactory = addToDownloadServiceFactory
-            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _favoritesCoordinator = favoritesCoordinator ?? throw new ArgumentNullException(nameof(favoritesCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -288,13 +283,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
 
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
-        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-        if (directory == null)
-        {
-            return;
-        }
-
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
         var items = FavoritesMedias
             .Select(media => new ContentDownloadItem(media.Bvid, DownloadInfoKind.Video, media.IsSelected))
@@ -302,14 +290,17 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         try
         {
             var addedCount = await _downloadCoordinator.AddAsync(
-                addToDownloadService,
                 items,
                 isOnlySelected,
-                directory,
                 EventAggregator,
                 DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
+            if (addedCount == null)
+            {
+                return;
+            }
+
             EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
                 ? DictionaryResource.GetString("TipAddDownloadingZero")
                 : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");

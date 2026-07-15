@@ -29,7 +29,7 @@ namespace DownKyi.Services.Download;
 /// <summary>
 /// 添加到下载列表服务
 /// </summary>
-internal class AddToDownloadService
+internal sealed class AddToDownloadService : IAddToDownloadSession
 {
     private readonly ILogger<AddToDownloadService> _logger;
     private IInfoService _videoInfoService = null!;

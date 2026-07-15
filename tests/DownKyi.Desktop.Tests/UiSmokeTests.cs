@@ -199,12 +199,12 @@ public sealed class UiSmokeTests
 
     private sealed class StubAddToDownloadServiceFactory : IAddToDownloadServiceFactory
     {
-        public AddToDownloadService Create(PlayStreamType streamType)
+        public IAddToDownloadSession Create(PlayStreamType streamType)
         {
             throw new NotSupportedException();
         }
 
-        public AddToDownloadService Create(string id, PlayStreamType streamType)
+        public IAddToDownloadSession Create(string id, PlayStreamType streamType)
         {
             throw new NotSupportedException();
         }

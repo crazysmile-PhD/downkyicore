@@ -6,7 +6,6 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Commands;
-using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Logging;
 using DownKyi.Events;
 using DownKyi.Images;
@@ -26,7 +25,6 @@ namespace DownKyi.ViewModels;
 internal class ViewMyHistoryViewModel : ViewModelBase
 {
     public const string Tag = "PageMyHistory";
-    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly ILogger<ViewMyHistoryViewModel> _logger;
     private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
@@ -118,15 +116,12 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     public ViewMyHistoryViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        IAddToDownloadServiceFactory addToDownloadServiceFactory,
         IContentDownloadCoordinator downloadCoordinator,
         IPersonalMediaCoordinator personalMediaCoordinator,
         ILogger<ViewMyHistoryViewModel> logger) : base(
         eventAggregator)
     {
         DialogService = dialogService;
-        _addToDownloadServiceFactory = addToDownloadServiceFactory
-            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _personalMediaCoordinator = personalMediaCoordinator
             ?? throw new ArgumentNullException(nameof(personalMediaCoordinator));
@@ -296,13 +291,6 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     /// <param name="isOnlySelected"></param>
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
-        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-        if (directory == null)
-        {
-            return;
-        }
-
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
         var items = Medias
             .Where(media => media.Business is "archive" or "pgc")
@@ -314,14 +302,17 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         try
         {
             var addedCount = await _downloadCoordinator.AddAsync(
-                addToDownloadService,
                 items,
                 isOnlySelected,
-                directory,
                 EventAggregator,
                 DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
+            if (addedCount == null)
+            {
+                return;
+            }
+
             EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
                 ? DictionaryResource.GetString("TipAddDownloadingZero")
                 : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");

@@ -334,12 +334,11 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.DoesNotContain("UpdateChannelAsync", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("Medias.AddRange", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("ISeasonsSeriesCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IAddToDownloadServiceFactory", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetDirectory", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);
-
-        var directoryCancellation = viewModelSource.IndexOf("if (directory == null)", StringComparison.Ordinal);
-        var addCall = viewModelSource.IndexOf(".AddToDownloadAsync(", StringComparison.Ordinal);
-        Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
+        Assert.Contains("_downloadCoordinator.AddAsync", coordinatorSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -378,12 +377,14 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("Task.Run", favoritesCoordinatorSource, StringComparison.Ordinal);
         Assert.Contains("CancellationToken", favoritesCoordinatorSource, StringComparison.Ordinal);
         Assert.Contains("Task.Run", downloadCoordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("_serviceFactory.Create", downloadCoordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadAddCoordinator", downloadCoordinatorSource, StringComparison.Ordinal);
 
         foreach (var source in viewModelPaths.Select(File.ReadAllText))
         {
-            var directoryCancellation = source.IndexOf("if (directory == null)", StringComparison.Ordinal);
-            var addCall = source.IndexOf("_downloadCoordinator.AddAsync(", StringComparison.Ordinal);
-            Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
+            Assert.DoesNotContain("IAddToDownloadServiceFactory", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("SetDirectory", source, StringComparison.Ordinal);
+            Assert.Contains("_downloadCoordinator.AddAsync(", source, StringComparison.Ordinal);
         }
 
         var publicView = File.ReadAllText(Path.Combine(
@@ -435,9 +436,9 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
 
         foreach (var source in viewModelPaths.Select(File.ReadAllText))
         {
-            var directoryCancellation = source.IndexOf("if (directory == null)", StringComparison.Ordinal);
-            var addCall = source.IndexOf("_downloadCoordinator.AddAsync(", StringComparison.Ordinal);
-            Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
+            Assert.DoesNotContain("IAddToDownloadServiceFactory", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("SetDirectory", source, StringComparison.Ordinal);
+            Assert.Contains("_downloadCoordinator.AddAsync(", source, StringComparison.Ordinal);
         }
 
         foreach (var viewName in new[] { "ViewMyToViewVideo.axaml", "ViewMyHistory.axaml" })
@@ -492,9 +493,9 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
 
         foreach (var source in new[] { File.ReadAllText(publicationPath), File.ReadAllText(bangumiPath) })
         {
-            var directoryCancellation = source.IndexOf("if (directory == null)", StringComparison.Ordinal);
-            var addCall = source.IndexOf("_downloadCoordinator.AddAsync(", StringComparison.Ordinal);
-            Assert.True(directoryCancellation >= 0 && directoryCancellation < addCall);
+            Assert.DoesNotContain("IAddToDownloadServiceFactory", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("SetDirectory", source, StringComparison.Ordinal);
+            Assert.Contains("_downloadCoordinator.AddAsync(", source, StringComparison.Ordinal);
         }
 
         var publicationView = File.ReadAllText(Path.Combine(

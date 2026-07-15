@@ -7,9 +7,9 @@ namespace DownKyi.Services.Download;
 
 internal interface IAddToDownloadServiceFactory
 {
-    AddToDownloadService Create(PlayStreamType streamType);
+    IAddToDownloadSession Create(PlayStreamType streamType);
 
-    AddToDownloadService Create(string id, PlayStreamType streamType);
+    IAddToDownloadSession Create(string id, PlayStreamType streamType);
 }
 
 internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
@@ -31,12 +31,12 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public AddToDownloadService Create(PlayStreamType streamType)
+    public IAddToDownloadSession Create(PlayStreamType streamType)
     {
         return new AddToDownloadService(streamType, _downloadLists, _downloadStorageService, _settingsStore, _logger);
     }
 
-    public AddToDownloadService Create(string id, PlayStreamType streamType)
+    public IAddToDownloadSession Create(string id, PlayStreamType streamType)
     {
         return new AddToDownloadService(id, streamType, _downloadLists, _downloadStorageService, _settingsStore, _logger);
     }

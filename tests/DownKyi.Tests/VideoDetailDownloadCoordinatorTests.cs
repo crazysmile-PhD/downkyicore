@@ -51,13 +51,13 @@ public sealed class VideoDetailDownloadCoordinatorTests
     {
         public int CreateCount { get; private set; }
 
-        public AddToDownloadService Create(PlayStreamType streamType)
+        public IAddToDownloadSession Create(PlayStreamType streamType)
         {
             CreateCount++;
             throw new InvalidOperationException("A download service should not have been created.");
         }
 
-        public AddToDownloadService Create(string id, PlayStreamType streamType)
+        public IAddToDownloadSession Create(string id, PlayStreamType streamType)
         {
             CreateCount++;
             throw new InvalidOperationException("A download service should not have been created.");

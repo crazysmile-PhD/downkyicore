@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Logging;
 using DownKyi.CustomControl;
 using DownKyi.Events;
@@ -31,7 +30,6 @@ namespace DownKyi.ViewModels;
 internal class ViewMyBangumiFollowViewModel : ViewModelBase
 {
     public const string Tag = "PageMyBangumiFollow";
-    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly ILogger<ViewMyBangumiFollowViewModel> _logger;
     private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
@@ -172,15 +170,12 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     public ViewMyBangumiFollowViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        IAddToDownloadServiceFactory addToDownloadServiceFactory,
         IContentDownloadCoordinator downloadCoordinator,
         IUserSpacePageCoordinator userSpaceCoordinator,
         ILogger<ViewMyBangumiFollowViewModel> logger) : base(
         eventAggregator)
     {
         DialogService = dialogService;
-        _addToDownloadServiceFactory = addToDownloadServiceFactory
-            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -370,13 +365,6 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     /// <param name="isOnlySelected"></param>
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Bangumi);
-        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-        if (directory == null)
-        {
-            return;
-        }
-
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
         var items = Medias
             .Select(media => new ContentDownloadItem(
@@ -387,14 +375,17 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
         try
         {
             var addedCount = await _downloadCoordinator.AddAsync(
-                addToDownloadService,
                 items,
                 isOnlySelected,
-                directory,
                 EventAggregator,
                 DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
+            if (addedCount == null)
+            {
+                return;
+            }
+
             EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
                 ? DictionaryResource.GetString("TipAddDownloadingZero")
                 : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");

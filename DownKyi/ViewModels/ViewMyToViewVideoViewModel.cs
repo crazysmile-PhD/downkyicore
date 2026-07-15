@@ -6,7 +6,6 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Commands;
-using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Logging;
 using DownKyi.Events;
 using DownKyi.Images;
@@ -26,7 +25,6 @@ namespace DownKyi.ViewModels;
 internal class ViewMyToViewVideoViewModel : ViewModelBase
 {
     public const string Tag = "PageMyToView";
-    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly IContentDownloadCoordinator _downloadCoordinator;
     private readonly ILogger<ViewMyToViewVideoViewModel> _logger;
     private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
@@ -112,15 +110,12 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     public ViewMyToViewVideoViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        IAddToDownloadServiceFactory addToDownloadServiceFactory,
         IContentDownloadCoordinator downloadCoordinator,
         IPersonalMediaCoordinator personalMediaCoordinator,
         ILogger<ViewMyToViewVideoViewModel> logger) : base(
         eventAggregator)
     {
         DialogService = dialogService;
-        _addToDownloadServiceFactory = addToDownloadServiceFactory
-            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _personalMediaCoordinator = personalMediaCoordinator
             ?? throw new ArgumentNullException(nameof(personalMediaCoordinator));
@@ -264,13 +259,6 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     /// <param name="isOnlySelected"></param>
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
-        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-        if (directory == null)
-        {
-            return;
-        }
-
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
         var items = Medias
             .Select(media => new ContentDownloadItem(media.Bvid, DownloadInfoKind.Video, media.IsSelected))
@@ -278,15 +266,16 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         try
         {
             var addedCount = await _downloadCoordinator.AddAsync(
-                addToDownloadService,
                 items,
                 isOnlySelected,
-                directory,
                 EventAggregator,
                 DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
-            PublishAddedCount(addedCount);
+            if (addedCount != null)
+            {
+                PublishAddedCount(addedCount.Value);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

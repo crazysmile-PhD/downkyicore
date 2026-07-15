@@ -1186,10 +1186,11 @@ type: service
 paths:
   - DownKyi/Services/Download/AddToDownloadService.cs
   - DownKyi/Services/Download/AddToDownloadServiceFactory.cs
+  - DownKyi/Services/Download/IAddToDownloadSession.cs
   - src/DownKyi.Application/Downloads/DownloadAddCoordinator.cs
   - DownKyi/Services/Video/VideoDetailDownloadCoordinator.cs
   - DownKyi/Services/Media/ContentDownloadCoordinator.cs
-responsibility: Converts selected parsed media into download tasks, centralizes legacy per-item info-service parsing, handles duplicate decisions, and writes queue state.
+responsibility: Converts immutable selected-media snapshots into download tasks, centralizes directory selection and cancellable per-item parsing, handles duplicate decisions, and writes queue state.
 inbound:
   - viewmodel.video-detail
   - viewmodel.seasons-series
@@ -1202,11 +1203,12 @@ outbound:
   - service.download-runtime
   - service.download-list-state
 contracts:
-  - `ContentDownloadCoordinator` checks cancellation between items and receives a confirmed non-empty directory.
-  - Video and bangumi info-service construction is selected by an explicit enum; ViewModels do not duplicate parse/add loops.
+  - `ContentDownloadCoordinator` owns the session factory, checks selection/cancellation before opening a dialog, selects one directory, and checks cancellation between queued items.
+  - Video and bangumi info-service construction is selected by an injected factory and receives the operation cancellation token; ViewModels cannot construct sessions, select directories, or duplicate parse/add loops.
   - Directory selection returning null means user canceled; no task should be queued.
   - Existing downloaded/downloading records must be checked before inserting duplicates.
-  - Video-detail receives `IVideoDetailDownloadCoordinator`; remaining legacy media ViewModels receive the factory until their add flows move behind the shared coordinator.
+  - Video-detail receives `IVideoDetailDownloadCoordinator`; favorites, history, watch-later, publication, bangumi-follow, and season/series pages receive only their shared coordinator.
+  - `IAddToDownloadSession` isolates the legacy mutable add implementation so queue orchestration is tested without network, SQLite, dialogs, or user paths.
   - The add service receives list/storage owners explicitly and cannot resolve them through App.
   - Add factory, content coordinator, and info-service construction share the injected settings owner; file naming, quality selection, and duplicate policy cannot read a global singleton.
 hazards:
@@ -1798,9 +1800,16 @@ test.web-client:
 test.download-add:
   paths:
     - tests/DownKyi.Tests/DownloadAddCoordinatorTests.cs
+    - tests/DownKyi.Tests/ContentDownloadCoordinatorTests.cs
+    - tests/DownKyi.Tests/SeasonsSeriesCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
     - canceling directory selection does not call add
     - selected directory reaches add service
+    - pre-canceled and empty-selection requests cannot create a download session or open directory selection
+    - mixed video/bangumi snapshots select one directory and queue in stable input order
+    - cancellation reaches info-service construction and stops before mutable session state changes
+    - content ViewModels cannot regain factory ownership, directory selection, or per-item parse loops
 
 test.bili-helper:
   paths:

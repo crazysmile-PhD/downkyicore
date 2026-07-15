@@ -10,7 +10,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
@@ -35,7 +34,6 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     private const int VideoNumberInPage = 30;
     private const string PlaceholderCover = "avares://DownKyi/Resources/video-placeholder.png";
 
-    private readonly IAddToDownloadServiceFactory _addToDownloadServiceFactory;
     private readonly ISeasonsSeriesCoordinator _coordinator;
     private readonly ILogger<ViewSeasonsSeriesViewModel> _logger;
     private CancellationTokenSource? _loadCancellation;
@@ -135,13 +133,10 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     public ViewSeasonsSeriesViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
-        IAddToDownloadServiceFactory addToDownloadServiceFactory,
         ISeasonsSeriesCoordinator coordinator,
         ILogger<ViewSeasonsSeriesViewModel> logger) : base(eventAggregator)
     {
         DialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
-        _addToDownloadServiceFactory = addToDownloadServiceFactory
-            ?? throw new ArgumentNullException(nameof(addToDownloadServiceFactory));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -228,13 +223,6 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
 
     private async Task AddToDownloadAsync(bool onlySelected)
     {
-        var addToDownloadService = _addToDownloadServiceFactory.Create(PlayStreamType.Video);
-        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-        if (directory == null)
-        {
-            return;
-        }
-
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
         var items = Medias
             .Select(media => new SeasonsSeriesDownloadItem(media.Bvid, media.IsSelected))
@@ -243,15 +231,18 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         {
             var addedCount = await _coordinator
                 .AddToDownloadAsync(
-                    addToDownloadService,
                     items,
                     onlySelected,
-                    directory,
                     EventAggregator,
                     DialogService,
                     cancellationToken)
                 .ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
+            if (addedCount == null)
+            {
+                return;
+            }
+
             EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
                 ? DictionaryResource.GetString("TipAddDownloadingZero")
                 : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
