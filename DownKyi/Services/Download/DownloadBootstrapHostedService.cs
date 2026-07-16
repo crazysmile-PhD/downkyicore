@@ -20,7 +20,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
     private readonly IDownloadRuntimeFactory _downloadRuntimeFactory;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly ILogger<DownloadBootstrapHostedService> _logger;
-    private IDownloadService? _downloadService;
+    private IDownloadRuntime? _downloadRuntime;
     private Task? _historyLoadTask;
     private bool _disposed;
 
@@ -52,10 +52,10 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
             }).ConfigureAwait(false);
 
             _historyLoadTask = LoadRemainingHistoryAsync(cancellationToken);
-            _downloadService = _downloadRuntimeFactory.Create();
-            if (_downloadService != null)
+            _downloadRuntime = _downloadRuntimeFactory.Create();
+            if (_downloadRuntime != null)
             {
-                await _downloadService.StartAsync(cancellationToken).ConfigureAwait(false);
+                await _downloadRuntime.StartAsync(cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -71,9 +71,9 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         var stopTasks = new List<Task>(2);
-        if (_downloadService != null)
+        if (_downloadRuntime != null)
         {
-            stopTasks.Add(_downloadService.EndAsync());
+            stopTasks.Add(_downloadRuntime.StopAsync(cancellationToken));
         }
 
         if (_historyLoadTask != null)
@@ -133,8 +133,8 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         }
 
         _disposed = true;
-        _downloadService?.Dispose();
-        _downloadService = null;
+        _downloadRuntime?.Dispose();
+        _downloadRuntime = null;
     }
 
     private sealed record DownloadStartupState(

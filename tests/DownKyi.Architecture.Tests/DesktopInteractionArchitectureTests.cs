@@ -149,10 +149,9 @@ public sealed class DesktopInteractionArchitectureTests
             new[]
             {
                 ReadSource("DownKyi", "Services", "Download", "DownloadRuntimeFactory.cs"),
-                ReadSource("DownKyi", "Services", "Download", "DownloadService.cs"),
-                ReadSource("DownKyi", "Services", "Download", "AriaDownloadService.cs"),
-                ReadSource("DownKyi", "Services", "Download", "BuiltinDownloadService.cs"),
-                ReadSource("DownKyi", "Services", "Download", "CustomAriaDownloadService.cs")
+                ReadSource("DownKyi", "Services", "Download", "DownloadOrchestrator.cs"),
+                ReadSource("DownKyi", "Services", "Download", "Aria2TransferBackend.cs"),
+                ReadSource("DownKyi", "Services", "Download", "BuiltinTransferBackend.cs")
             });
 
         Assert.Contains("IAppDialogService", runtimeSource, StringComparison.Ordinal);

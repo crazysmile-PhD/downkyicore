@@ -10,7 +10,7 @@ public sealed class DurlDownloadIdentityTests
     [Fact]
     public void DescriptorUsesDurlOrderAsStableDownloadKey()
     {
-        var descriptor = DownloadService.CreateDurlDownloadDescriptor(new List<PlayUrlDurl>
+        var descriptor = DownloadOrchestrator.CreateDurlDownloadDescriptor(new List<PlayUrlDurl>
         {
             new()
             {
@@ -32,7 +32,7 @@ public sealed class DurlDownloadIdentityTests
     [Fact]
     public void DescriptorSelectsLowestDurlOrder()
     {
-        var descriptor = DownloadService.CreateDurlDownloadDescriptor(new List<PlayUrlDurl>
+        var descriptor = DownloadOrchestrator.CreateDurlDownloadDescriptor(new List<PlayUrlDurl>
         {
             new() { Order = 9, SourceAddress = "https://example.invalid/segment-9" },
             new() { Order = 2, SourceAddress = "https://example.invalid/segment-2" },

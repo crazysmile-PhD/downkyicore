@@ -11,7 +11,7 @@ namespace DownKyi.Services.Download;
 
 internal interface IDownloadRuntimeFactory
 {
-    IDownloadService? Create();
+    IDownloadRuntime? Create();
 }
 
 internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
@@ -49,42 +49,43 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
     }
 
-    public IDownloadService? Create()
+    public IDownloadRuntime? Create()
     {
-        return _settingsStore.Current.Network.Downloader switch
+        var downloader = _settingsStore.Current.Network.Downloader;
+        ITransferBackend? transferBackend = downloader switch
         {
-            DownloaderSetting.BuiltIn => new BuiltinDownloadService(
-                _downloadLists,
-                _downloadStorageService,
-                _dialogService,
-                _uiDispatcher,
+            DownloaderSetting.BuiltIn => new BuiltinTransferBackend(
                 _settingsStore,
                 _diagnosticLogger,
-                _ffmpegProcessor,
-                _loggerFactory.CreateLogger<BuiltinDownloadService>()),
-            DownloaderSetting.Aria => new AriaDownloadService(
-                _downloadLists,
-                _downloadStorageService,
-                _dialogService,
-                _uiDispatcher,
+                _loggerFactory.CreateLogger<BuiltinTransferBackend>()),
+            DownloaderSetting.Aria => new Aria2TransferBackend(
                 _settingsStore,
                 _diagnosticLogger,
-                _ffmpegProcessor,
                 _ariaServer,
                 _loggerFactory,
-                _loggerFactory.CreateLogger<AriaDownloadService>()),
-            DownloaderSetting.CustomAria => new CustomAriaDownloadService(
-                _downloadLists,
-                _downloadStorageService,
-                _dialogService,
-                _uiDispatcher,
+                _loggerFactory.CreateLogger<Aria2TransferBackend>(),
+                ownsAriaServer: true),
+            DownloaderSetting.CustomAria => new Aria2TransferBackend(
                 _settingsStore,
                 _diagnosticLogger,
-                _ffmpegProcessor,
                 _ariaServer,
                 _loggerFactory,
-                _loggerFactory.CreateLogger<CustomAriaDownloadService>()),
+                _loggerFactory.CreateLogger<Aria2TransferBackend>(),
+                ownsAriaServer: false),
             _ => null
         };
+
+        return transferBackend == null
+            ? null
+            : new DownloadOrchestrator(
+                _downloadLists,
+                _downloadStorageService,
+                _dialogService,
+                _uiDispatcher,
+                _settingsStore,
+                _diagnosticLogger,
+                _ffmpegProcessor,
+                transferBackend,
+                _loggerFactory.CreateLogger<DownloadOrchestrator>());
     }
 }

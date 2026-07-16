@@ -5,83 +5,56 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Login;
-using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
-using DownKyi.Models;
-using DownKyi.Platform;
 using DownKyi.Utils;
-using DownKyi.ViewModels;
-using DownKyi.ViewModels.DownloadManager;
 using Downloader;
 using Microsoft.Extensions.Logging;
 using DownloadStatus = DownKyi.Models.DownloadStatus;
 
 namespace DownKyi.Services.Download;
 
-internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
+internal sealed class BuiltinTransferBackend : ITransferBackend
 {
-    public BuiltinDownloadService(
-        DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService,
-        IAppDialogService dialogService,
-        IUiDispatcher uiDispatcher,
+    private readonly ISettingsStore _settingsStore;
+    private readonly DownloadDiagnosticLogger _diagnosticLogger;
+    private readonly ILogger<BuiltinTransferBackend> _logger;
+
+    public BuiltinTransferBackend(
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
-        FfmpegProcessor ffmpegProcessor,
-        ILogger<BuiltinDownloadService> logger)
-        : base(
-            downloadLists,
-            downloadStorageService,
-            dialogService,
-            uiDispatcher,
-            settingsStore,
-            diagnosticLogger,
-            ffmpegProcessor,
-            logger)
+        ILogger<BuiltinTransferBackend> logger)
     {
-        Tag = nameof(BuiltinDownloadService);
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public Task EndAsync()
-    {
-        return BaseEndTask();
-    }
+    public string Name => "built-in";
 
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        BaseStart();
         return Task.CompletedTask;
     }
 
-    protected override void Pause(DownloadingItem downloading)
+    public Task StopAsync(CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(downloading);
-        CancellationToken?.ThrowIfCancellationRequested();
-        downloading.DownloadStatusTitle = DictionaryResource.GetString("Pausing");
-        if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause)
-        {
-            throw new OperationCanceledException("Download was paused.");
-        }
-
-        if (!DownloadingList.Contains(downloading))
-        {
-            throw new OperationCanceledException("Download was deleted.");
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
     }
 
-    protected override async Task<DownloadTransferOutcome> TransferAsync(
-        DownloadingItem downloading,
-        IReadOnlyList<string> urls,
-        string path,
-        string localFileName,
-        long expectedBytes)
+    public async Task<DownloadTransferOutcome> TransferAsync(DownloadTransferRequest request)
     {
-        var network = Settings.Network;
+        ArgumentNullException.ThrowIfNull(request);
+        var downloading = request.Download;
+        var urls = request.Urls;
+        var path = request.Directory;
+        var localFileName = request.FileName;
+        var expectedBytes = request.ExpectedBytes;
+        var network = _settingsStore.Current.Network;
         var requestConfiguration = new RequestConfiguration
         {
             Headers = new WebHeaderCollection
@@ -117,8 +90,8 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             var totalBytesToReceive = expectedBytes;
             var receivedBytes = 0L;
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            DiagnosticLogger.LogBuiltInTaskStart(
-                Tag,
+            _diagnosticLogger.LogBuiltInTaskStart(
+                Name,
                 localFileName,
                 urls.Count,
                 configuration.ChunkCount,
@@ -144,8 +117,8 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
                 downloading.DownloadingFileSize = $"{Format.FormatFileSize(args.ReceivedBytesSize)}/{Format.FormatFileSize(args.TotalBytesToReceive)}";
                 var speed = (long)args.BytesPerSecondSpeed;
                 downloading.SpeedDisplay = Format.FormatSpeedWithBandwidth(speed);
-                DiagnosticLogger.LogSpeed(
-                    Tag,
+                _diagnosticLogger.LogSpeed(
+                    Name,
                     localFileName,
                     args.ReceivedBytesSize,
                     args.TotalBytesToReceive,
@@ -156,7 +129,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             {
                 if (args.Error != null)
                 {
-                    Logger.LogErrorMessage("Built-in download completion reported an error.", args.Error);
+                    _logger.LogErrorMessage("Built-in download completion reported an error.", args.Error);
                 }
 
                 var succeeded = !args.Cancelled &&
@@ -175,21 +148,21 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
                 downloader,
                 url,
                 targetFile,
-                CancellationToken.GetValueOrDefault());
+                request.CancellationToken);
             while (!completion.Task.IsCompleted && !transferTask.IsCompleted)
             {
-                CancellationToken?.ThrowIfCancellationRequested();
+                request.EnsureActive();
                 if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause)
                 {
                     downloader.Pause();
                     downloader.CancelAsync();
                     downloading.DownloadService = null;
-                    Pause(downloading);
+                    throw new OperationCanceledException("Download was paused.");
                 }
 
                 await Task.Delay(
                     TimeSpan.FromMilliseconds(100),
-                    CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
+                    request.CancellationToken).ConfigureAwait(true);
             }
 
             var taskSucceeded = await transferTask.ConfigureAwait(true);
@@ -204,7 +177,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             }
 
             DeleteInvalidDownloadedMediaFile(targetFile);
-            Logger.LogInformationMessage("Built-in transfer was incomplete; trying a backup endpoint.");
+            _logger.LogInformationMessage("Built-in transfer was incomplete; trying a backup endpoint.");
         }
 
         return DownloadTransferOutcome.Failed;
@@ -231,8 +204,54 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
         }
         catch (Exception e) when (e is IOException or HttpRequestException or InvalidOperationException)
         {
-            Logger.LogErrorMessage("Built-in transfer failed.", e);
+            _logger.LogErrorMessage("Built-in transfer failed.", e);
             return false;
+        }
+    }
+
+    public void Dispose()
+    {
+    }
+
+    private bool IsDownloadedMediaFileUsable(
+        string? file,
+        long expectedBytes = 0,
+        long receivedBytes = 0,
+        long totalBytesToReceive = 0)
+    {
+        var result = DownloadFileIntegrity.Check(file, expectedBytes, receivedBytes, totalBytesToReceive);
+        if (!result.IsUsable)
+        {
+            _logger.LogInformationMessage(result.Reason ?? "Downloaded media file is not usable.");
+        }
+
+        return result.IsUsable;
+    }
+
+    private void DeleteInvalidDownloadedMediaFile(string? file)
+    {
+        if (string.IsNullOrWhiteSpace(file))
+        {
+            return;
+        }
+
+        foreach (var path in new[] { file, $"{file}.aria2", $"{file}.download" })
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (IOException e)
+            {
+                _logger.LogDebugMessage($"Delete invalid media file failed: {e.Message}");
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                _logger.LogDebugMessage($"Delete invalid media file was denied: {e.Message}");
+            }
         }
     }
 }

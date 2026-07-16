@@ -4,7 +4,6 @@ using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using DownKyi.Platform;
 using DownKyi.Services.Download;
-using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
@@ -14,7 +13,7 @@ public sealed class DownloadBootstrapHostedServiceTests
     [Fact]
     public async Task HostLifecycleOwnsDownloadRuntimeAndUiProjection()
     {
-        using var runtime = new RecordingDownloadService();
+        using var runtime = new RecordingDownloadRuntime();
         var dispatcher = new ImmediateUiDispatcher();
         var listState = new DownloadListState();
         using var storage = new DownloadStorageService(new EmptyDownloadTaskStore(), new FixedClock());
@@ -35,60 +34,19 @@ public sealed class DownloadBootstrapHostedServiceTests
         Assert.Empty(listState.Downloaded);
     }
 
-    private sealed class RecordingRuntimeFactory(IDownloadService runtime) : IDownloadRuntimeFactory
+    private sealed class RecordingRuntimeFactory(IDownloadRuntime runtime) : IDownloadRuntimeFactory
     {
-        public IDownloadService Create()
+        public IDownloadRuntime Create()
         {
             return runtime;
         }
     }
 
-    private sealed class RecordingDownloadService : IDownloadService
+    private sealed class RecordingDownloadRuntime : IDownloadRuntime
     {
         public bool Started { get; private set; }
 
         public bool Ended { get; private set; }
-
-        public Task ParseAsync(DownloadingItem downloading)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<string?> DownloadAudioAsync(DownloadingItem downloading)
-        {
-            return Task.FromResult<string?>(null);
-        }
-
-        public Task<string?> DownloadVideoAsync(DownloadingItem downloading)
-        {
-            return Task.FromResult<string?>(null);
-        }
-
-        public Task<string> DownloadDanmakuAsync(DownloadingItem downloading)
-        {
-            return Task.FromResult(string.Empty);
-        }
-
-        public Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading)
-        {
-            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
-        }
-
-        public Task<string?> DownloadCoverAsync(
-            DownloadingItem downloading,
-            string? coverUrl,
-            string fileName)
-        {
-            return Task.FromResult<string?>(null);
-        }
-
-        public Task<string?> MixedFlowAsync(
-            DownloadingItem downloading,
-            string? audioUid,
-            string? videoUid)
-        {
-            return Task.FromResult<string?>(null);
-        }
 
         public Task StartAsync(CancellationToken cancellationToken = default)
         {
@@ -97,8 +55,9 @@ public sealed class DownloadBootstrapHostedServiceTests
             return Task.CompletedTask;
         }
 
-        public Task EndAsync()
+        public Task StopAsync(CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Ended = true;
             return Task.CompletedTask;
         }

@@ -31,36 +31,37 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
-internal abstract class DownloadService : IDisposable
+internal sealed class DownloadOrchestrator : IDownloadRuntime
 {
     private bool _disposed;
-    protected string Tag { get; set; } = "DownloadService";
+    private string Tag => _transferBackend.Name;
 
     // protected TaskbarIcon _notifyIcon;
-    protected IAppDialogService DialogService { get; }
-    protected DownloadListState DownloadLists { get; }
-    protected ImmutableObservableCollection<DownloadingItem> DownloadingList { get; }
-    protected ImmutableObservableCollection<DownloadedItem> DownloadedList { get; }
+    private IAppDialogService DialogService { get; }
+    private DownloadListState DownloadLists { get; }
+    private ImmutableObservableCollection<DownloadingItem> DownloadingList { get; }
+    private ImmutableObservableCollection<DownloadedItem> DownloadedList { get; }
     private DownloadStorageService DownloadStorageService { get; }
     private IUiDispatcher UiDispatcher { get; }
-    protected DownloadDiagnosticLogger DiagnosticLogger { get; }
-    protected FfmpegProcessor FfmpegProcessor { get; }
-    protected ApplicationSettings Settings => SettingsStore.Current;
-    protected ISettingsStore SettingsStore { get; }
-    protected ILogger Logger { get; }
+    private DownloadDiagnosticLogger DiagnosticLogger { get; }
+    private FfmpegProcessor FfmpegProcessor { get; }
+    private ApplicationSettings Settings => SettingsStore.Current;
+    private ISettingsStore SettingsStore { get; }
+    private ILogger Logger { get; }
 
-    protected Task? WorkTask { get; set; }
-    protected CancellationTokenSource? TokenSource { get; set; }
-    protected CancellationToken? CancellationToken { get; set; }
+    private Task? WorkTask { get; set; }
+    private CancellationTokenSource? TokenSource { get; set; }
+    private CancellationToken? CancellationToken { get; set; }
     private readonly Lock _queueLock = new();
     private readonly HashSet<DownloadingItem> _queuedDownloads = [];
+    private readonly ITransferBackend _transferBackend;
     private Channel<DownloadingItem>? _downloadQueue;
     private Task[] _downloadWorkers = [];
 
-    protected const int Retry = 5;
-    protected const string NullMark = "<null>";
+    private const int Retry = 5;
+    private const string NullMark = "<null>";
 
-    protected void EnsureDownloadIsActive(DownloadingItem downloading)
+    private void EnsureDownloadIsActive(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
         CancellationToken?.ThrowIfCancellationRequested();
@@ -70,7 +71,7 @@ internal abstract class DownloadService : IDisposable
         }
     }
 
-    protected async Task PersistDownloadingStateAsync(DownloadingItem downloading)
+    private async Task PersistDownloadingStateAsync(DownloadingItem downloading)
     {
         try
         {
@@ -91,7 +92,7 @@ internal abstract class DownloadService : IDisposable
         }
     }
 
-    protected bool IsDownloadedMediaFileUsable(
+    private bool IsDownloadedMediaFileUsable(
         string? file,
         long expectedBytes = 0,
         long receivedBytes = 0,
@@ -106,7 +107,7 @@ internal abstract class DownloadService : IDisposable
         return result.IsUsable;
     }
 
-    protected void DeleteInvalidDownloadedMediaFile(string? file)
+    private void DeleteInvalidDownloadedMediaFile(string? file)
     {
         if (string.IsNullOrWhiteSpace(file))
         {
@@ -140,7 +141,7 @@ internal abstract class DownloadService : IDisposable
     /// <param name="downloadStorageService"></param>
     /// <param name="dialogService"></param>
     /// <returns></returns>
-    protected DownloadService(
+    public DownloadOrchestrator(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
         IAppDialogService dialogService,
@@ -148,6 +149,7 @@ internal abstract class DownloadService : IDisposable
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
+        ITransferBackend transferBackend,
         ILogger logger)
     {
         DownloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
@@ -159,10 +161,11 @@ internal abstract class DownloadService : IDisposable
         SettingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         DiagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         FfmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        _transferBackend = transferBackend ?? throw new ArgumentNullException(nameof(transferBackend));
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    protected static PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
+    private static PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -216,7 +219,7 @@ internal abstract class DownloadService : IDisposable
         return downloadAudio;
     }
 
-    protected static VideoPlayUrlBasic? BaseDownloadVideo(DownloadingItem downloading)
+    private static VideoPlayUrlBasic? BaseDownloadVideo(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -400,7 +403,7 @@ internal abstract class DownloadService : IDisposable
         }
     }
 
-    protected async Task<string?> BaseDownloadCoverAsync(
+    private async Task<string?> BaseDownloadCoverAsync(
         DownloadingItem downloading,
         string? coverUrl,
         string fileName)
@@ -448,7 +451,7 @@ internal abstract class DownloadService : IDisposable
         return null;
     }
 
-    protected async Task<string> BaseDownloadDanmakuAsync(DownloadingItem downloading)
+    private async Task<string> BaseDownloadDanmakuAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -509,7 +512,7 @@ internal abstract class DownloadService : IDisposable
     }
 
 
-    protected async Task<IReadOnlyList<string>> BaseDownloadSubtitleAsync(DownloadingItem downloading)
+    private async Task<IReadOnlyList<string>> BaseDownloadSubtitleAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -575,7 +578,7 @@ internal abstract class DownloadService : IDisposable
     }
 
 
-    protected void GenerateNfoFile(DownloadingItem downloading)
+    private void GenerateNfoFile(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -655,7 +658,7 @@ internal abstract class DownloadService : IDisposable
     }
 
 
-    protected async Task<string?> BaseMixedFlowAsync(
+    private async Task<string?> BaseMixedFlowAsync(
         DownloadingItem downloading,
         string? audioUid,
         string? videoUid,
@@ -748,7 +751,7 @@ internal abstract class DownloadService : IDisposable
     private sealed record DurlDownloadResult(PlayUrlDurl Durl, string FilePath);
 
 
-    protected async Task BaseParseAsync(DownloadingItem downloading)
+    private async Task BaseParseAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -810,7 +813,7 @@ internal abstract class DownloadService : IDisposable
     /// <summary>
     /// 执行任务
     /// </summary>
-    protected async Task DoWork()
+    private async Task DoWork()
     {
         var queue = _downloadQueue ?? throw new InvalidOperationException("Download queue is not initialized.");
         var lastDownloadingCount = 0;
@@ -980,7 +983,7 @@ internal abstract class DownloadService : IDisposable
                 await ParseAsync(downloading).ConfigureAwait(true);
 
                 // 暂停
-                Pause(downloading);
+                EnsureDownloadIsActive(downloading);
 
                 var isMediaSuccess = true;
 
@@ -1008,7 +1011,7 @@ internal abstract class DownloadService : IDisposable
                         return;
                     }
 
-                    Pause(downloading);
+                    EnsureDownloadIsActive(downloading);
 
 
                     // 如果需要下载视频
@@ -1031,7 +1034,7 @@ internal abstract class DownloadService : IDisposable
                         return;
                     }
 
-                    Pause(downloading);
+                    EnsureDownloadIsActive(downloading);
 
                     // 混流
                     var outputMedia = string.Empty;
@@ -1105,7 +1108,7 @@ internal abstract class DownloadService : IDisposable
                             return;
                         }
 
-                        Pause(downloading);
+                        EnsureDownloadIsActive(downloading);
 
                         if (durls.Count > 1)
                         {
@@ -1132,7 +1135,7 @@ internal abstract class DownloadService : IDisposable
                         //音频分离？
                     }
 
-                    Pause(downloading);
+                    EnsureDownloadIsActive(downloading);
                 }
                 else
                 {
@@ -1155,7 +1158,7 @@ internal abstract class DownloadService : IDisposable
                 }
 
                 // 暂停
-                Pause(downloading);
+                EnsureDownloadIsActive(downloading);
 
                 IReadOnlyList<string>? outputSubtitles = null;
                 // 如果需要下载字幕
@@ -1165,7 +1168,7 @@ internal abstract class DownloadService : IDisposable
                 }
 
                 // 暂停
-                Pause(downloading);
+                EnsureDownloadIsActive(downloading);
 
                 string? outputCover = null;
                 string? outputPageCover = null;
@@ -1190,7 +1193,7 @@ internal abstract class DownloadService : IDisposable
                 }
 
                 // 暂停
-                Pause(downloading);
+                EnsureDownloadIsActive(downloading);
 
                 // 这里本来只有IsExist，没有pause，不知道怎么处理
                 // 是否存在
@@ -1291,7 +1294,7 @@ internal abstract class DownloadService : IDisposable
     /// 下载失败后的处理
     /// </summary>
     /// <param name="downloading"></param>
-    protected async Task DownloadFailedAsync(DownloadingItem downloading)
+    private async Task DownloadFailedAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -1353,7 +1356,7 @@ internal abstract class DownloadService : IDisposable
     /// <summary>
     /// 停止基本下载服务(转换await和Task.Wait两种调用形式)
     /// </summary>
-    protected async Task BaseEndTask()
+    private async Task BaseEndTask()
     {
         await DownloadShutdownCoordinator.StopAsync(
             TokenSource,
@@ -1396,7 +1399,7 @@ internal abstract class DownloadService : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    protected virtual void Dispose(bool disposing)
+    private void Dispose(bool disposing)
     {
         if (_disposed)
         {
@@ -1412,12 +1415,13 @@ internal abstract class DownloadService : IDisposable
         TokenSource?.Cancel();
         TokenSource?.Dispose();
         TokenSource = null;
+        _transferBackend.Dispose();
     }
 
     /// <summary>
     /// 启动基本下载服务
     /// </summary>
-    protected void BaseStart()
+    private void BaseStart()
     {
         TokenSource = new CancellationTokenSource();
         CancellationToken = TokenSource.Token;
@@ -1435,17 +1439,15 @@ internal abstract class DownloadService : IDisposable
         WorkTask = Task.Run(DoWork);
     }
 
-    #region 抽象接口函数
-
-    public Task ParseAsync(DownloadingItem downloading) => BaseParseAsync(downloading);
-    public Task<string> DownloadDanmakuAsync(DownloadingItem downloading) => BaseDownloadDanmakuAsync(downloading);
-    public Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading) =>
+    private Task ParseAsync(DownloadingItem downloading) => BaseParseAsync(downloading);
+    private Task<string> DownloadDanmakuAsync(DownloadingItem downloading) => BaseDownloadDanmakuAsync(downloading);
+    private Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading) =>
         BaseDownloadSubtitleAsync(downloading);
-    public Task<string?> DownloadCoverAsync(
+    private Task<string?> DownloadCoverAsync(
         DownloadingItem downloading,
         string? coverUrl,
         string fileName) => BaseDownloadCoverAsync(downloading, coverUrl, fileName);
-    public async Task<string?> MixedFlowAsync(DownloadingItem downloading, string? audioUid, string? videoUid)
+    private async Task<string?> MixedFlowAsync(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
         EnsureDownloadIsActive(downloading);
         return await BaseMixedFlowAsync(
@@ -1455,14 +1457,38 @@ internal abstract class DownloadService : IDisposable
             CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
     }
 
-    protected abstract Task<DownloadTransferOutcome> TransferAsync(
+    private Task<DownloadTransferOutcome> TransferAsync(
         DownloadingItem downloading,
         IReadOnlyList<string> urls,
         string path,
         string localFileName,
-        long expectedBytes);
-    protected abstract void Pause(DownloadingItem downloading);
-    #endregion
+        long expectedBytes)
+    {
+        return _transferBackend.TransferAsync(new DownloadTransferRequest(
+            downloading,
+            urls,
+            path,
+            localFileName,
+            expectedBytes,
+            () => EnsureDownloadIsActive(downloading),
+            cancellationToken => DownloadStorageService.UpdateDownloadingAsync(
+                downloading,
+                cancellationToken),
+            CancellationToken.GetValueOrDefault()));
+    }
+
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _transferBackend.StartAsync(cancellationToken).ConfigureAwait(true);
+        BaseStart();
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken = default)
+    {
+        await BaseEndTask().ConfigureAwait(true);
+        await _transferBackend.StopAsync(cancellationToken).ConfigureAwait(true);
+    }
 }
 
 internal enum DownloadTransferOutcome

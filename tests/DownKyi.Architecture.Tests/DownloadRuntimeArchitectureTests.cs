@@ -32,29 +32,32 @@ public sealed class DownloadRuntimeArchitectureTests
     }
 
     [Fact]
-    public void CustomAriaUsesTheSharedAriaTransferBackend()
+    public void LocalAndCustomAriaUseOneTransferBackend()
     {
-        var source = File.ReadAllText(Path.Combine(
+        var directory = Path.Combine(
             RepositoryRoot,
             "DownKyi",
             "Services",
-            "Download",
-            "CustomAriaDownloadService.cs"));
+            "Download");
+        var factorySource = File.ReadAllText(Path.Combine(directory, "DownloadRuntimeFactory.cs"));
 
-        Assert.Contains(": AriaDownloadService", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("TransferAsync", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("AriaManager", source, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(directory, "CustomAriaDownloadService.cs")));
+        Assert.Equal(
+            2,
+            factorySource.Split("new Aria2TransferBackend(", StringSplitOptions.None).Length - 1);
+        Assert.Contains("ownsAriaServer: true", factorySource, StringComparison.Ordinal);
+        Assert.Contains("ownsAriaServer: false", factorySource, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void LegacyRuntimeUsesBoundedWorkersAndHasNoSynchronousPersistenceBridge()
+    public void OrchestratorUsesBoundedWorkersAndHasNoSynchronousPersistenceBridge()
     {
         var source = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "DownKyi",
             "Services",
             "Download",
-            "DownloadService.cs"));
+            "DownloadOrchestrator.cs"));
 
         Assert.Contains("Channel.CreateBounded<DownloadingItem>", source, StringComparison.Ordinal);
         Assert.Contains("DownloadWorkerAsync", source, StringComparison.Ordinal);
@@ -87,10 +90,9 @@ public sealed class DownloadRuntimeArchitectureTests
         string[] runtimeOwners =
         [
             "DownloadRuntimeFactory.cs",
-            "DownloadService.cs",
-            "BuiltinDownloadService.cs",
-            "AriaDownloadService.cs",
-            "CustomAriaDownloadService.cs",
+            "DownloadOrchestrator.cs",
+            "BuiltinTransferBackend.cs",
+            "Aria2TransferBackend.cs",
             "DownloadDiagnosticLogger.cs"
         ];
         var violations = runtimeOwners
@@ -234,7 +236,7 @@ public sealed class DownloadRuntimeArchitectureTests
             "DownKyi",
             "Services",
             "Download",
-            "DownloadService.cs"));
+            "DownloadOrchestrator.cs"));
 
         Assert.Contains("IUiDispatcher", source, StringComparison.Ordinal);
         Assert.Contains("await UiDispatcher.InvokeAsync", source, StringComparison.Ordinal);

@@ -7,99 +7,51 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Application.Desktop;
 using DownKyi.Core.Aria2cNet;
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Client.Entity;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi.Login;
-using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
-using DownKyi.Images;
 using DownKyi.Models;
-using DownKyi.Platform;
 using DownKyi.Utils;
-using DownKyi.ViewModels;
-using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
-internal class AriaDownloadService : DownloadService, IDownloadService
+internal sealed class Aria2TransferBackend : ITransferBackend
 {
+    private readonly ISettingsStore _settingsStore;
+    private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly AriaServer _ariaServer;
     private readonly ILoggerFactory _loggerFactory;
     private readonly bool _ownsAriaServer;
+    private readonly ILogger<Aria2TransferBackend> _logger;
 
-    public AriaDownloadService(
-        DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService,
-        IAppDialogService dialogService,
-        IUiDispatcher uiDispatcher,
+    public Aria2TransferBackend(
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
-        FfmpegProcessor ffmpegProcessor,
         AriaServer ariaServer,
         ILoggerFactory loggerFactory,
-        ILogger logger)
-        : this(
-            downloadLists,
-            downloadStorageService,
-            dialogService,
-            uiDispatcher,
-            settingsStore,
-            diagnosticLogger,
-            ffmpegProcessor,
-            ariaServer,
-            loggerFactory,
-            logger,
-            ownsAriaServer: true)
-    {
-    }
-
-    protected AriaDownloadService(
-        DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService,
-        IAppDialogService dialogService,
-        IUiDispatcher uiDispatcher,
-        ISettingsStore settingsStore,
-        DownloadDiagnosticLogger diagnosticLogger,
-        FfmpegProcessor ffmpegProcessor,
-        AriaServer ariaServer,
-        ILoggerFactory loggerFactory,
-        ILogger logger,
+        ILogger<Aria2TransferBackend> logger,
         bool ownsAriaServer)
-        : base(
-            downloadLists,
-            downloadStorageService,
-            dialogService,
-            uiDispatcher,
-            settingsStore,
-            diagnosticLogger,
-            ffmpegProcessor,
-            logger)
     {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _ownsAriaServer = ownsAriaServer;
-        Tag = ownsAriaServer ? nameof(AriaDownloadService) : nameof(CustomAriaDownloadService);
     }
 
-    public async Task EndAsync()
-    {
-        await BaseEndTask().ConfigureAwait(true);
-        if (_ownsAriaServer)
-        {
-            await CloseAriaServerAsync().ConfigureAwait(true);
-        }
-    }
+    public string Name => _ownsAriaServer ? "aria2-local" : "aria2-custom";
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var network = Settings.Network;
+        var network = _settingsStore.Current.Network;
         if (_ownsAriaServer)
         {
             AriaClient.SetToken();
@@ -117,73 +69,64 @@ internal class AriaDownloadService : DownloadService, IDownloadService
             await StartAriaServerAsync(cancellationToken).ConfigureAwait(true);
         }
 
-        BaseStart();
     }
 
-    protected override void Pause(DownloadingItem downloading)
+    public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(downloading);
-        CancellationToken?.ThrowIfCancellationRequested();
-        downloading.DownloadStatusTitle = DictionaryResource.GetString("Pausing");
-        if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause)
+        if (_ownsAriaServer)
         {
-            throw new OperationCanceledException("Download was paused.");
-        }
-
-        if (!DownloadingList.Contains(downloading))
-        {
-            throw new OperationCanceledException("Download was deleted.");
+            await CloseAriaServerAsync(cancellationToken).ConfigureAwait(true);
         }
     }
 
-    protected override async Task<DownloadTransferOutcome> TransferAsync(
-        DownloadingItem downloading,
-        IReadOnlyList<string> urls,
-        string path,
-        string localFileName,
-        long expectedBytes)
+    public async Task<DownloadTransferOutcome> TransferAsync(DownloadTransferRequest request)
     {
-        _ = expectedBytes;
+        ArgumentNullException.ThrowIfNull(request);
+        var downloading = request.Download;
         var activeGid = await EnsureAriaTaskAsync(
-            downloading,
-            urls,
-            path,
-            localFileName).ConfigureAwait(true);
+            request).ConfigureAwait(true);
         if (activeGid == null)
         {
             return DownloadTransferOutcome.Failed;
         }
 
-        DiagnosticLogger.LogAriaTaskStart(Tag, activeGid, urls.Count);
+        _diagnosticLogger.LogAriaTaskStart(Name, activeGid, request.Urls.Count);
         var ariaManager = new AriaManager(_loggerFactory.CreateLogger<AriaManager>());
-        ariaManager.TellStatus += AriaTellStatus;
-        var result = await ariaManager.GetDownloadStatusAsync(
-            activeGid,
-            async cancellationToken =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause)
-                {
-                    await AriaClient.PauseAsync(activeGid).ConfigureAwait(false);
-                    Pause(downloading);
-                }
-            },
-            CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
-
-        return result switch
+        EventHandler<AriaProgressEventArgs> progressHandler = (_, eventArgs) =>
+            UpdateProgress(downloading, eventArgs);
+        ariaManager.TellStatus += progressHandler;
+        try
         {
-            DownloadResult.SUCCESS => DownloadTransferOutcome.Succeeded,
-            DownloadResult.ABORT => DownloadTransferOutcome.Failed,
-            _ => DownloadTransferOutcome.Failed
-        };
+            var result = await ariaManager.GetDownloadStatusAsync(
+                activeGid,
+                async cancellationToken =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    request.EnsureActive();
+                    if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause)
+                    {
+                        await AriaClient.PauseAsync(activeGid).ConfigureAwait(false);
+                        throw new OperationCanceledException("Download was paused.");
+                    }
+                },
+                request.CancellationToken).ConfigureAwait(true);
+
+            return result switch
+            {
+                DownloadResult.SUCCESS => DownloadTransferOutcome.Succeeded,
+                DownloadResult.ABORT => DownloadTransferOutcome.Failed,
+                _ => DownloadTransferOutcome.Failed
+            };
+        }
+        finally
+        {
+            ariaManager.TellStatus -= progressHandler;
+        }
     }
 
-    private async Task<string?> EnsureAriaTaskAsync(
-        DownloadingItem downloading,
-        IReadOnlyList<string> urls,
-        string path,
-        string localFileName)
+    private async Task<string?> EnsureAriaTaskAsync(DownloadTransferRequest request)
     {
+        var downloading = request.Download;
         var gid = downloading.Downloading.Gid;
         if (!string.IsNullOrWhiteSpace(gid))
         {
@@ -193,17 +136,17 @@ internal class AriaDownloadService : DownloadService, IDownloadService
             {
                 gid = null;
                 downloading.Downloading.Gid = null;
-                await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+                await request.PersistStateAsync(request.CancellationToken).ConfigureAwait(true);
             }
         }
 
         if (gid == null)
         {
-            var network = Settings.Network;
+            var network = _settingsStore.Current.Network;
             var option = new AriaSendOption
             {
-                Dir = path,
-                Out = localFileName,
+                Dir = request.Directory,
+                Out = request.FileName,
                 Continue = "true",
                 AllowOverwrite = "true",
                 AutoFileRenaming = "false",
@@ -218,7 +161,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
                 option.HttpProxy = $"http://{network.AriaHttpProxy}:{network.AriaHttpProxyListenPort}";
             }
 
-            var added = await AriaClient.AddUriAsync(urls.ToList(), option).ConfigureAwait(true);
+            var added = await AriaClient.AddUriAsync(request.Urls.ToList(), option).ConfigureAwait(true);
             if (string.IsNullOrWhiteSpace(added?.Result))
             {
                 return null;
@@ -226,7 +169,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
 
             gid = added.Result;
             downloading.Downloading.Gid = gid;
-            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+            await request.PersistStateAsync(request.CancellationToken).ConfigureAwait(true);
         }
         else
         {
@@ -238,7 +181,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
 
     private async Task StartAriaServerAsync(CancellationToken cancellationToken)
     {
-        var network = Settings.Network;
+        var network = _settingsStore.Current.Network;
         var config = new AriaConfig
         {
             ListenPort = network.AriaListenPort,
@@ -260,7 +203,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
                 $"User-Agent: {network.UserAgent}"
             ]
         };
-        DiagnosticLogger.LogAriaServerConfig(Tag, config);
+        _diagnosticLogger.LogAriaServerConfig(Name, config);
 
         var errors = new ConcurrentQueue<string>();
         await _ariaServer.StartServerAsync(config, output =>
@@ -274,14 +217,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         var message = string.Join(Environment.NewLine, errors);
         if (message.Contains("ERROR", StringComparison.OrdinalIgnoreCase))
         {
-            var alertService = new AlertService(DialogService);
-            await alertService.ShowMessage(
-                SystemIcon.Instance().Error,
-                $"Aria2 {DictionaryResource.GetString("Error")}",
-                message,
-                1,
-                cancellationToken).ConfigureAwait(true);
-            return;
+            throw new InvalidOperationException("The local aria2 process reported a startup error.");
         }
 
         for (var attempt = 0; attempt < 10; attempt++)
@@ -296,16 +232,18 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         }
     }
 
-    private async Task CloseAriaServerAsync()
+    private async Task CloseAriaServerAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await AriaClient.PauseAllAsync().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
+            await AriaClient.PauseAllAsync()
+                .WaitAsync(TimeSpan.FromSeconds(2), cancellationToken)
+                .ConfigureAwait(true);
         }
         catch (Exception e) when (e is TimeoutException or HttpRequestException or IOException
             or InvalidOperationException or Newtonsoft.Json.JsonException)
         {
-            Logger.LogErrorMessage("Aria server shutdown failed.", e);
+            _logger.LogErrorMessage("Aria server shutdown failed.", e);
         }
 
         if (!await _ariaServer.CloseServerAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true))
@@ -314,10 +252,9 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         }
     }
 
-    private void AriaTellStatus(object? sender, AriaProgressEventArgs eventArgs)
+    private void UpdateProgress(DownKyi.ViewModels.DownloadManager.DownloadingItem video, AriaProgressEventArgs eventArgs)
     {
-        var video = DownloadingList.FirstOrDefault(item => item.Downloading.Gid == eventArgs.Gid);
-        if (video == null)
+        if (!string.Equals(video.Downloading.Gid, eventArgs.Gid, StringComparison.Ordinal))
         {
             return;
         }
@@ -333,12 +270,16 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         video.Progress = percent;
         video.DownloadingFileSize = $"{Format.FormatFileSize(eventArgs.CompletedLength)}/{Format.FormatFileSize(eventArgs.TotalLength)}";
         video.SpeedDisplay = Format.FormatSpeedWithBandwidth(eventArgs.Speed);
-        DiagnosticLogger.LogSpeed(
-            Tag,
+        _diagnosticLogger.LogSpeed(
+            Name,
             eventArgs.Gid,
             eventArgs.CompletedLength,
             eventArgs.TotalLength,
             eventArgs.Speed);
         video.Downloading.MaxSpeed = Math.Max(video.Downloading.MaxSpeed, eventArgs.Speed);
+    }
+
+    public void Dispose()
+    {
     }
 }
