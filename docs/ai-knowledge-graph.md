@@ -588,7 +588,7 @@ contracts:
   - Season and series pages share one result projection and one batched collection update.
   - Canceling directory selection returns before parsing or queueing any media.
   - Navigation, pager replacement, and disposal cancel outstanding page/download work and detach pager events.
-  - Back navigation uses the Prism journal when available before publishing the compatibility navigation event.
+  - Back navigation uses the Prism journal when available, then falls back to the typed parent route.
 hazards:
   - Duplicated season/series loops drift in cover normalization, dates, loading flags, and cancellation behavior.
   - Running parse/add after a null directory silently queues work the user canceled.
@@ -617,7 +617,7 @@ contracts:
   - Add work checks cancellation between items and receives a confirmed non-empty directory.
 hazards:
   - Legacy synchronous page and parse calls cannot abort in flight; cancellation blocks subsequent work and stale UI projection.
-  - The add path still crosses Prism dialog/event compatibility types until PR 25-29 removes the bridge.
+  - The add path depends only on typed dialog and notification contracts; Prism compatibility is isolated behind Desktop adapters.
 tests:
   - test.seasons-series
   - test.architecture-boundaries
@@ -793,7 +793,7 @@ paths:
   - DownKyi/ViewModels/Settings/ViewAboutViewModel.cs
 responsibility: Projects the current settings into Avalonia bindings and forwards validated user changes to the injected settings owner.
 inbound:
-  - legacy Prism navigation
+  - typed navigation through the temporary Prism adapter
 outbound:
   - core.settings
   - service.desktop-platform-boundaries
@@ -865,7 +865,7 @@ paths:
 responsibility: Keeps lifecycle, notifications, dialogs, typed navigation, clipboard, file/folder picker, and external launch contracts independent of Avalonia while Desktop adapters own framework integration and diagnostics.
 inbound:
   - viewmodel.video-detail
-  - legacy toolbox/settings/dialog viewmodels
+  - application ViewModels and dialog coordinators
 outbound:
   - external.os-desktop
 contracts:
@@ -881,8 +881,11 @@ contracts:
   - Every app route, nested region, and dialog has one enum value and one tested compatibility mapping; ViewModels never pass Prism region names or dialog tags through the new contracts.
   - `DesktopNotificationService` publishes a typed event without depending on Prism; MainWindow owns presentation timing and UI dispatch.
   - Media page-item models receive `IAppNavigationService` plus a typed parent route from their coordinator or ViewModel; they cannot publish Prism events or infer parent routes from command strings.
+  - `IDesktopInteractionContext` groups notification, navigation, and dialog contracts for `ViewModelBase` without exposing framework types or a service locator.
+  - Non-dialog ViewModels cannot reference Prism EventAggregator, RegionManager, dialog services, navigation events, message events, or the string-route helper.
+  - The Prism dialog adapter marshals calls to Avalonia's UI thread; download/add services await only `IAppDialogService` and cannot dispatch framework work themselves.
 hazards:
-  - Legacy ViewModels still publish Prism events or call Prism dialogs/regions directly; PR 16-24 owns migration, and PR 25-29 deletes only the adapters after no callers remain.
+  - Prism navigation and dialog adapters remain as compatibility owners until PR 25-29 replaces framework composition; application callers cannot bypass the typed contracts.
 tests:
   - test.desktop-interactions
   - test.architecture-boundaries
@@ -1216,6 +1219,7 @@ contracts:
   - Video-detail receives `IVideoDetailDownloadCoordinator`; favorites, history, watch-later, publication, bangumi-follow, and season/series pages receive only their shared coordinator.
   - `IAddToDownloadSession` isolates the legacy mutable add implementation so queue orchestration is tested without network, SQLite, dialogs, or user paths.
   - Duplicate-task feedback goes through the injected `IUserNotificationService`; add sessions and coordinators cannot accept or publish Prism event-bus messages.
+  - Directory selection, duplicate confirmation, parsing, and persistence propagate the operation cancellation token through the typed dialog boundary.
   - The add service receives list/storage owners explicitly and cannot resolve them through App.
   - Add factory, content coordinator, and info-service construction share the injected settings owner; file naming, quality selection, and duplicate policy cannot read a global singleton.
 hazards:
@@ -1363,6 +1367,7 @@ contracts:
   - State transitions await persistence; high-rate progress uses the bounded write-behind boundary.
   - Runtime receives `DownloadListState` and `DownloadStorageService` through construction; it cannot resolve either through App/Prism.
   - Runtime factory, backends, workers, and diagnostic logger share the Host-injected `ISettingsStore`; no download service reads the global settings singleton.
+  - Runtime alerts depend on `IAppDialogService`; backend constructors cannot accept the legacy Prism dialog service.
   - Runtime factory creates a typed backend logger, and every download/file-lifecycle/maintenance owner uses the shared provider; this directory cannot call static `LogManager`.
   - Download diagnostic throttling belongs to the injected runtime logger instance; scopes contain only a SHA-256-derived short task ID and cannot retain raw task IDs in process-wide static state.
   - `DownloadTaskFileService` is an injected instance so cancellation, sidecar cleanup, retry, and permission failures use the same logger without a static owner.
@@ -2122,6 +2127,8 @@ test.desktop-interactions:
     - Application Desktop contracts cannot reference Prism or Avalonia
     - MainWindowViewModel and SearchService cannot regain EventAggregator, RegionManager, Prism dialog, MessageEvent, or NavigationEvent dependencies
     - migrated media page-item models and download-add services cannot regain EventAggregator, MessageEvent, or string-route helper dependencies
+    - every non-dialog ViewModel rejects Prism EventAggregator, RegionManager, dialog service, event-message, and string-route dependencies
+    - download runtime alerts cannot regain a legacy Prism dialog dependency
     - production Prism adapters and all three contract instances resolve through both Prism and Host composition
 
 test.domain-results:

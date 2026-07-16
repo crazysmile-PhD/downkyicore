@@ -66,6 +66,7 @@ public sealed class DesktopInteractionArchitectureTests
             StringComparison.Ordinal);
         Assert.Contains("IRegionManager", navigationAdapter, StringComparison.Ordinal);
         Assert.Contains("LegacyDialogService", dialogAdapter, StringComparison.Ordinal);
+        Assert.Contains("Dispatcher.UIThread.CheckAccess()", dialogAdapter, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -105,6 +106,55 @@ public sealed class DesktopInteractionArchitectureTests
         Assert.Contains("IUserNotificationService", downloadSource, StringComparison.Ordinal);
         Assert.DoesNotContain("IEventAggregator", downloadSource, StringComparison.Ordinal);
         Assert.DoesNotContain("MessageEvent", downloadSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Avalonia.Threading", downloadSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NonDialogViewModelsCannotRegainLegacyInteractionDependencies()
+    {
+        var viewModelDirectory = Path.Combine(RepositoryRoot, "DownKyi", "ViewModels");
+        var dialogDirectory = Path.Combine(viewModelDirectory, "Dialogs") + Path.DirectorySeparatorChar;
+        var forbiddenTokens = new[]
+        {
+            "using DownKyi.Events;",
+            "using Prism.Dialogs;",
+            "using Prism.Events;",
+            "DownKyi.PrismExtension.Dialog.IDialogService",
+            "IEventAggregator",
+            "IRegionManager",
+            "MessageEvent",
+            "NavigateToView",
+            "NavigationEvent",
+            "RequestNavigate("
+        };
+        var violations = Directory
+            .EnumerateFiles(viewModelDirectory, "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.StartsWith(dialogDirectory, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(path => forbiddenTokens
+                .Where(token => File.ReadAllText(path).Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{Path.GetRelativePath(RepositoryRoot, path)}: {token}"))
+            .ToArray();
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
+    }
+
+    [Fact]
+    public void DownloadRuntimeUsesTheTypedDialogBoundary()
+    {
+        var runtimeSource = string.Join(
+            Environment.NewLine,
+            new[]
+            {
+                ReadSource("DownKyi", "Services", "Download", "DownloadRuntimeFactory.cs"),
+                ReadSource("DownKyi", "Services", "Download", "DownloadService.cs"),
+                ReadSource("DownKyi", "Services", "Download", "AriaDownloadService.cs"),
+                ReadSource("DownKyi", "Services", "Download", "BuiltinDownloadService.cs"),
+                ReadSource("DownKyi", "Services", "Download", "CustomAriaDownloadService.cs")
+            });
+
+        Assert.Contains("IAppDialogService", runtimeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownKyi.PrismExtension.Dialog", runtimeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IDialogService", runtimeSource, StringComparison.Ordinal);
     }
 
     private static string ReadSource(params string[] segments)

@@ -12,7 +12,6 @@ using DownKyi.Services.Account;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -20,7 +19,6 @@ namespace DownKyi.ViewModels;
 internal class ViewIndexViewModel : ViewModelBase
 {
     public const string Tag = "PageIndex";
-    private readonly IAppNavigationService _navigationService;
     private readonly IUserSessionCoordinator _userSessionCoordinator;
     private readonly ILogger<ViewIndexViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
@@ -101,13 +99,11 @@ internal class ViewIndexViewModel : ViewModelBase
 
 
     public ViewIndexViewModel(
-        IEventAggregator eventAggregator,
-        IAppNavigationService navigationService,
+        IDesktopInteractionContext desktopInteractions,
         IUserSessionCoordinator userSessionCoordinator,
         ISettingsStore settingsStore,
-        ILogger<ViewIndexViewModel> logger) : base(eventAggregator)
+        ILogger<ViewIndexViewModel> logger) : base(desktopInteractions)
     {
-        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
         _userSessionCoordinator = userSessionCoordinator
             ?? throw new ArgumentNullException(nameof(userSessionCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -155,7 +151,9 @@ internal class ViewIndexViewModel : ViewModelBase
     {
         if (UserName is null or "")
         {
-            NavigateToView.NavigationView(EventAggregator, ViewLoginViewModel.Tag, Tag, null);
+            Navigation.Navigate(new AppNavigationRequest(
+                AppRoute.Login,
+                AppRoute.Index));
         }
         else
         {
@@ -163,7 +161,10 @@ internal class ViewIndexViewModel : ViewModelBase
             var userInfo = _settingsStore.Current.User;
             if (userInfo != null && userInfo.Mid != -1)
             {
-                NavigateToView.NavigationView(EventAggregator, ViewMySpaceViewModel.Tag, Tag, userInfo.Mid);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.MySpace,
+                    AppRoute.Index,
+                    userInfo.Mid));
             }
         }
     }
@@ -178,7 +179,9 @@ internal class ViewIndexViewModel : ViewModelBase
     /// </summary>
     private void ExecuteSettingsCommand()
     {
-        NavigateToView.NavigationView(EventAggregator, ViewSettingsViewModel.Tag, Tag, null);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.Settings,
+            AppRoute.Index));
     }
 
     // 进入下载管理页面
@@ -191,7 +194,9 @@ internal class ViewIndexViewModel : ViewModelBase
     /// </summary>
     private void ExecuteDownloadManagerCommand()
     {
-        NavigateToView.NavigationView(EventAggregator, ViewDownloadManagerViewModel.Tag, Tag, null);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.DownloadManager,
+            AppRoute.Index));
     }
 
     // 进入工具箱页面
@@ -204,7 +209,9 @@ internal class ViewIndexViewModel : ViewModelBase
     /// </summary>
     private void ExecuteToolboxCommand()
     {
-        NavigateToView.NavigationView(EventAggregator, ViewToolboxViewModel.Tag, Tag, null);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.Toolbox,
+            AppRoute.Index));
     }
 
 
@@ -222,7 +229,7 @@ internal class ViewIndexViewModel : ViewModelBase
 
         _logger.LogDebugMessage("Processing search input.");
         InputText = Regex.Replace(InputText, @"[【]*[^【]*[^】]*[】 ]", "");
-        var searchService = new SearchService(_settingsStore, _navigationService);
+        var searchService = new SearchService(_settingsStore, Navigation);
         var isSupport = searchService.BiliInput(InputText, AppRoute.Index);
         if (!isSupport)
         {

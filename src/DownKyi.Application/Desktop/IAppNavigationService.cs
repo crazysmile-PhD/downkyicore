@@ -6,7 +6,8 @@ public enum AppNavigationRegion
     Settings = 1,
     DownloadManager = 2,
     Friends = 3,
-    UserSpace = 4
+    UserSpace = 4,
+    Toolbox = 5
 }
 
 public enum AppRoute

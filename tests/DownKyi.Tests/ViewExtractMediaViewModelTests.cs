@@ -2,7 +2,6 @@ using DownKyi.Application.Desktop;
 using DownKyi.Core.FFMpeg;
 using DownKyi.ViewModels.Toolbox;
 using Microsoft.Extensions.Logging.Abstractions;
-using Prism.Events;
 
 namespace DownKyi.Tests;
 
@@ -13,7 +12,7 @@ public sealed class ViewExtractMediaViewModelTests
     {
         using var settings = new TestSettingsStore();
         using var viewModel = new ViewExtractMediaViewModel(
-            new EventAggregator(),
+            new TestDesktopInteractionContext(),
             new StubFilePickerService(),
             new FfmpegProcessor(settings.Store, NullLoggerFactory.Instance),
             NullLogger<ViewExtractMediaViewModel>.Instance)

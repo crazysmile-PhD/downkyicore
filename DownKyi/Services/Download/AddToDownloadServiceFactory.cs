@@ -19,6 +19,7 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
     private readonly DownloadStorageService _downloadStorageService;
     private readonly ISettingsStore _settingsStore;
     private readonly IUserNotificationService _notificationService;
+    private readonly IAppDialogService _dialogService;
     private readonly ILogger<AddToDownloadService> _logger;
 
     public AddToDownloadServiceFactory(
@@ -26,12 +27,14 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
         DownloadStorageService downloadStorageService,
         ISettingsStore settingsStore,
         IUserNotificationService notificationService,
+        IAppDialogService dialogService,
         ILogger<AddToDownloadService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+        _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -43,6 +46,7 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
             _downloadStorageService,
             _settingsStore,
             _notificationService,
+            _dialogService,
             _logger);
     }
 
@@ -55,6 +59,7 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
             _downloadStorageService,
             _settingsStore,
             _notificationService,
+            _dialogService,
             _logger);
     }
 }

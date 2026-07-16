@@ -78,6 +78,7 @@ internal static class LegacyPrismComposition
         containerRegistry.RegisterSingleton<IUserNotificationService, DesktopNotificationService>();
         containerRegistry.RegisterSingleton<IAppNavigationService, PrismNavigationService>();
         containerRegistry.RegisterSingleton<IAppDialogService, PrismDialogService>();
+        containerRegistry.RegisterSingleton<IDesktopInteractionContext, DesktopInteractionContext>();
         containerRegistry.Register<IDialogWindow, DialogWindow>();
 
         containerRegistry.RegisterForNavigation<ViewIndex>(ViewIndexViewModel.Tag);

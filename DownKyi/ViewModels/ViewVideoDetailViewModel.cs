@@ -9,7 +9,6 @@ using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Services;
 using DownKyi.Services.Video;
@@ -19,10 +18,7 @@ using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.UiState;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Dialogs;
-using Prism.Events;
 using Prism.Navigation.Regions;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels;
 
@@ -37,14 +33,13 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
     private readonly IVideoDetailWorkflowCoordinator _workflow;
 
     public ViewVideoDetailViewModel(
-        IEventAggregator eventAggregator,
-        IDialogService dialogService,
+        IDesktopInteractionContext desktopInteractions,
         IClipboardService clipboardService,
         ISettingsStore settingsStore,
         IVideoDetailWorkflowCoordinator workflow,
         IVideoDetailDownloadCoordinator downloadCoordinator,
         ILogger<ViewVideoDetailViewModel> logger)
-        : base(eventAggregator, dialogService)
+        : base(desktopInteractions)
     {
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -89,19 +84,14 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             return;
         }
 
-        EventAggregator.GetEvent<NavigationEvent>().Publish(new NavigationParam
-        {
-            ViewName = string.IsNullOrWhiteSpace(ParentView) ? ViewIndexViewModel.Tag : ParentView
-        });
+        NavigateToParent();
     }
 
     private void ExecuteDownloadManagerCommand()
     {
-        EventAggregator.GetEvent<NavigationEvent>().Publish(new NavigationParam
-        {
-            ViewName = ViewDownloadManagerViewModel.Tag,
-            ParentViewName = string.IsNullOrWhiteSpace(ParentView) ? ViewIndexViewModel.Tag : ParentView
-        });
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.DownloadManager,
+            ParentRoute));
     }
 
     private Task ExecuteInputCommandAsync()
@@ -147,11 +137,13 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
     {
         if (UiState.VideoInfoView != null)
         {
-            NavigateToView.NavigateToViewUserSpace(
-                EventAggregator,
-                _settingsStore,
-                Tag,
-                UiState.VideoInfoView.UpperMid);
+            var route = _settingsStore.Current.User.Mid == UiState.VideoInfoView.UpperMid
+                ? AppRoute.MySpace
+                : AppRoute.UserSpace;
+            Navigation.Navigate(new AppNavigationRequest(
+                route,
+                AppRoute.VideoDetail,
+                UiState.VideoInfoView.UpperMid));
         }
     }
 
@@ -191,15 +183,13 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             return;
         }
 
-        if (DialogService != null)
+        var result = await AppDialogs.ShowAsync(
+            new AppDialogRequest(AppDialog.ParsingSelector)).ConfigureAwait(true);
+        if (result.Outcome == AppDialogOutcome.Accepted
+            && result.Parameters.TryGetValue("parseScope", out var scopeValue)
+            && scopeValue is ParseScope selectedScope)
         {
-            await DialogService.ShowDialogAsync(ViewParsingSelectorViewModel.Tag, null, async result =>
-            {
-                if (result.Result == ButtonResult.OK)
-                {
-                    await ExecuteParseAsync(result.Parameters.GetValue<ParseScope>("parseScope")).ConfigureAwait(true);
-                }
-            }).ConfigureAwait(true);
+            await ExecuteParseAsync(selectedScope).ConfigureAwait(true);
         }
     }
 
@@ -244,7 +234,6 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
                 UiState.VideoInfoView,
                 VideoSections.ToList(),
                 isAll,
-                DialogService,
                 operation.CancellationToken).ConfigureAwait(true);
             if (addedCount is { } count && _workflow.IsCurrent(operation))
             {
@@ -297,7 +286,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         var message = count <= 0
             ? DictionaryResource.GetString("TipAddDownloadingZero")
             : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{count}{DictionaryResource.GetString("TipAddDownloadingFinished2")}";
-        EventAggregator.GetEvent<MessageEvent>().Publish(message);
+        Notifications.Show(message);
     }
 
     private void HandleOperationError(
@@ -311,7 +300,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         }
 
         _logger.LogErrorMessage("Video detail operation failed.", exception);
-        EventAggregator.GetEvent<MessageEvent>().Publish(exception.Message);
+        Notifications.Show(exception.Message);
         if (failureState is { } state)
         {
             SetDisplayState(state);

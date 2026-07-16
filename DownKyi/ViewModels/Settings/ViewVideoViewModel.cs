@@ -9,12 +9,10 @@ using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.FileName;
 using DownKyi.Core.Settings;
-using DownKyi.Events;
 using DownKyi.Models;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Settings;
@@ -272,10 +270,10 @@ internal class ViewVideoViewModel : ViewModelBase
     #endregion
 
     public ViewVideoViewModel(
-        IEventAggregator eventAggregator,
+        IDesktopInteractionContext desktopInteractions,
         IFilePickerService filePickerService,
         ISettingsStore settingsStore,
-        ILogger<ViewVideoViewModel> logger) : base(eventAggregator)
+        ILogger<ViewVideoViewModel> logger) : base(desktopInteractions)
     {
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -1073,6 +1071,6 @@ internal class ViewVideoViewModel : ViewModelBase
             return;
         }
 
-        EventAggregator.GetEvent<MessageEvent>().Publish(isSucceed ? DictionaryResource.GetString("TipSettingUpdated") : DictionaryResource.GetString("TipSettingFailed"));
+        Notifications.Show(isSucceed ? DictionaryResource.GetString("TipSettingUpdated") : DictionaryResource.GetString("TipSettingFailed"));
     }
 }

@@ -4,19 +4,18 @@ using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.UserSpace;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -25,7 +24,6 @@ internal class ViewUserSpaceViewModel : ViewModelBase
 {
     public const string Tag = "PageUserSpace";
 
-    private readonly IRegionManager _regionManager;
     private readonly ILogger<ViewUserSpaceViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
@@ -190,12 +188,10 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     #endregion
 
     public ViewUserSpaceViewModel(
-        IRegionManager regionManager,
-        IEventAggregator eventAggregator,
+        IDesktopInteractionContext desktopInteractions,
         ISettingsStore settingsStore,
-        ILogger<ViewUserSpaceViewModel> logger) : base(eventAggregator)
+        ILogger<ViewUserSpaceViewModel> logger) : base(desktopInteractions)
     {
-        _regionManager = regionManager;
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -233,13 +229,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
             return;
         }
 
-        var parameter = new NavigationParam
-        {
-            ViewName = string.IsNullOrWhiteSpace(ParentView) ? ViewIndexViewModel.Tag : ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent();
     }
 
     // 左侧tab点击事件
@@ -258,23 +248,31 @@ internal class ViewUserSpaceViewModel : ViewModelBase
             return;
         }
 
-        var param = new NavigationParameters
+        var parameters = new Dictionary<string, object?>
         {
-            { "object", banner.NavigationData },
-            { "mid", mid },
+            ["object"] = banner.NavigationData,
+            ["mid"] = mid
         };
 
         switch (banner.Id)
         {
             case 0: // 投稿
-                _regionManager.RequestNavigate("UserSpaceContentRegion", ViewArchiveViewModel.Tag, param);
+                Navigation.NavigateRegion(
+                    AppNavigationRegion.UserSpace,
+                    AppRoute.Archive,
+                    parameters);
                 break;
             case 1: // 频道（弃用）
-                _regionManager.RequestNavigate("UserSpaceContentRegion", ViewChannelViewModel.Tag, param);
+                Navigation.NavigateRegion(
+                    AppNavigationRegion.UserSpace,
+                    AppRoute.UserSpaceChannel,
+                    parameters);
                 break;
             case 2: // 合集和列表
-                _regionManager.RequestNavigate("UserSpaceContentRegion", UserSpace.ViewSeasonsSeriesViewModel.Tag,
-                    param);
+                Navigation.NavigateRegion(
+                    AppNavigationRegion.UserSpace,
+                    AppRoute.UserSpaceSeasonsSeries,
+                    parameters);
                 break;
         }
     }
@@ -300,17 +298,25 @@ internal class ViewUserSpaceViewModel : ViewModelBase
             { "friendId", 0 }
         };
 
-        var parentViewName = ParentView == ViewFriendsViewModel.Tag ? ViewIndexViewModel.Tag : Tag;
+        var parentRoute = ParentRoute == AppRoute.Friends
+            ? AppRoute.Index
+            : AppRoute.UserSpace;
 
         switch (banner.Id)
         {
             case 0:
                 data["friendId"] = 0;
-                NavigateToView.NavigationView(EventAggregator, ViewFriendsViewModel.Tag, parentViewName, data);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.Friends,
+                    parentRoute,
+                    data));
                 break;
             case 1:
                 data["friendId"] = 1;
-                NavigateToView.NavigationView(EventAggregator, ViewFriendsViewModel.Tag, parentViewName, data);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.Friends,
+                    parentRoute,
+                    data));
                 break;
         }
 
@@ -342,7 +348,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         SelectedRightBanner = -1;
 
         // 将内容置空，使其不指向任何页面
-        _regionManager.RequestNavigate("UserSpaceContentRegion", "");
+        Navigation.ClearRegion(AppNavigationRegion.UserSpace);
 
         ContentVisibility = false;
         ViewVisibility = false;

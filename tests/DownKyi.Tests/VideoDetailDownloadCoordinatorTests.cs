@@ -20,7 +20,6 @@ public sealed class VideoDetailDownloadCoordinatorTests
             new VideoInfoView(),
             [],
             isAll: false,
-            dialogService: null,
             cancellation.Token));
 
         Assert.Equal(0, factory.CreateCount);
@@ -37,7 +36,6 @@ public sealed class VideoDetailDownloadCoordinatorTests
             new VideoInfoView(),
             [],
             isAll: false,
-            dialogService: null,
             CancellationToken.None);
 
         Assert.Null(result);

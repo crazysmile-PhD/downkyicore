@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Aria2cNet;
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Client.Entity;
@@ -19,7 +20,6 @@ using DownKyi.Core.Utils;
 using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Platform;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
@@ -36,7 +36,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
     public AriaDownloadService(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        IDialogService? dialogService,
+        IAppDialogService dialogService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
@@ -62,7 +62,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
     protected AriaDownloadService(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        IDialogService? dialogService,
+        IAppDialogService dialogService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,

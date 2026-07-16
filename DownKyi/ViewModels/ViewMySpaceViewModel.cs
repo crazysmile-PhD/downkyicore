@@ -5,17 +5,16 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -293,10 +292,10 @@ internal class ViewMySpaceViewModel : ViewModelBase
     #endregion
 
     public ViewMySpaceViewModel(
-        IEventAggregator eventAggregator,
+        IDesktopInteractionContext desktopInteractions,
         IUserSpacePageCoordinator userSpaceCoordinator,
         ISettingsStore settingsStore,
-        ILogger<ViewMySpaceViewModel> logger) : base(eventAggregator)
+        ILogger<ViewMySpaceViewModel> logger) : base(desktopInteractions)
     {
         _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -347,13 +346,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
         // 结束任务
         CancelAndDispose(ref _loadCancellation);
 
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent();
     }
 
     // 退出登录事件
@@ -370,13 +363,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
         LoginHelper.Logout(_settingsStore);
 
         // 返回上一页
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = "logout"
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent("logout");
     }
 
     // 页面选择事件
@@ -404,15 +391,24 @@ internal class ViewMySpaceViewModel : ViewModelBase
         {
             case 0:
                 data["friendId"] = 0;
-                NavigateToView.NavigationView(EventAggregator, ViewFriendsViewModel.Tag, Tag, data);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.Friends,
+                    AppRoute.MySpace,
+                    data));
                 break;
             case 1:
                 data["friendId"] = 0;
-                NavigateToView.NavigationView(EventAggregator, ViewFriendsViewModel.Tag, Tag, data);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.Friends,
+                    AppRoute.MySpace,
+                    data));
                 break;
             case 2:
                 data["friendId"] = 1;
-                NavigateToView.NavigationView(EventAggregator, ViewFriendsViewModel.Tag, Tag, data);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.Friends,
+                    AppRoute.MySpace,
+                    data));
                 break;
             default:
                 break;
@@ -439,16 +435,28 @@ internal class ViewMySpaceViewModel : ViewModelBase
         switch (SelectedPackage)
         {
             case 0:
-                NavigateToView.NavigationView(EventAggregator, ViewMyFavoritesViewModel.Tag, Tag, _mid);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.MyFavorites,
+                    AppRoute.MySpace,
+                    _mid));
                 break;
             case 1:
-                NavigateToView.NavigationView(EventAggregator, ViewMyBangumiFollowViewModel.Tag, Tag, _mid);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.MyBangumiFollow,
+                    AppRoute.MySpace,
+                    _mid));
                 break;
             case 2:
-                NavigateToView.NavigationView(EventAggregator, ViewMyToViewVideoViewModel.Tag, Tag, _mid);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.MyToViewVideo,
+                    AppRoute.MySpace,
+                    _mid));
                 break;
             case 3:
-                NavigateToView.NavigationView(EventAggregator, ViewMyHistoryViewModel.Tag, Tag, _mid);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.MyHistory,
+                    AppRoute.MySpace,
+                    _mid));
                 break;
             default:
                 break;

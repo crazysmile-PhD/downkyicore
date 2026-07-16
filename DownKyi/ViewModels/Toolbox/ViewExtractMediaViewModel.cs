@@ -7,11 +7,9 @@ using Avalonia.VisualTree;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.FFMpeg;
-using DownKyi.Events;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 
 namespace DownKyi.ViewModels.Toolbox;
 
@@ -58,10 +56,10 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     #endregion
 
     public ViewExtractMediaViewModel(
-        IEventAggregator eventAggregator,
+        IDesktopInteractionContext desktopInteractions,
         IFilePickerService filePickerService,
         FfmpegProcessor ffmpegProcessor,
-        ILogger<ViewExtractMediaViewModel> logger) : base(eventAggregator)
+        ILogger<ViewExtractMediaViewModel> logger) : base(desktopInteractions)
     {
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
@@ -87,7 +85,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     {
         if (_isExtracting)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
+            Notifications.Show(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
 
@@ -106,13 +104,13 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     {
         if (_isExtracting)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
+            Notifications.Show(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
 
         if (VideoPaths.Count <= 0)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipNoSelectedVideo"));
+            Notifications.Show(DictionaryResource.GetString("TipNoSelectedVideo"));
             return;
         }
 
@@ -148,13 +146,13 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     {
         if (_isExtracting)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
+            Notifications.Show(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
 
         if (VideoPaths.Count <= 0)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipNoSeletedVideo"));
+            Notifications.Show(DictionaryResource.GetString("TipNoSeletedVideo"));
             return;
         }
 

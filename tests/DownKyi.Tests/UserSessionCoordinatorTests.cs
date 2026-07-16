@@ -3,7 +3,6 @@ using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Services.Account;
 using DownKyi.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
-using Prism.Events;
 
 namespace DownKyi.Tests;
 
@@ -14,9 +13,9 @@ public sealed class UserSessionCoordinatorTests
     {
         using var settings = new TestSettingsStore();
         var coordinator = new RecordingUserSessionCoordinator();
+        var navigation = new StubNavigationService();
         using var viewModel = new ViewIndexViewModel(
-            new EventAggregator(),
-            new StubNavigationService(),
+            new TestDesktopInteractionContext(navigation),
             coordinator,
             settings.Store,
             NullLogger<ViewIndexViewModel>.Instance);

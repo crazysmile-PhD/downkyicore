@@ -15,7 +15,6 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
 using DownKyi.CustomControl;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
@@ -24,7 +23,6 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -36,7 +34,6 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     private const string PlaceholderCover = "avares://DownKyi/Resources/video-placeholder.png";
 
     private readonly ISeasonsSeriesCoordinator _coordinator;
-    private readonly IAppNavigationService _navigationService;
     private readonly ILogger<ViewSeasonsSeriesViewModel> _logger;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
@@ -133,14 +130,10 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     }
 
     public ViewSeasonsSeriesViewModel(
-        IEventAggregator eventAggregator,
-        IDialogService dialogService,
-        IAppNavigationService navigationService,
+        IDesktopInteractionContext desktopInteractions,
         ISeasonsSeriesCoordinator coordinator,
-        ILogger<ViewSeasonsSeriesViewModel> logger) : base(eventAggregator)
+        ILogger<ViewSeasonsSeriesViewModel> logger) : base(desktopInteractions)
     {
-        DialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
-        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -166,12 +159,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
             return;
         }
 
-        EventAggregator.GetEvent<NavigationEvent>().Publish(new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        });
+        NavigateToParent();
     }
 
     private DelegateCommand? _downloadManagerCommand;
@@ -181,12 +169,9 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
 
     private void ExecuteDownloadManagerCommand()
     {
-        EventAggregator.GetEvent<NavigationEvent>().Publish(new NavigationParam
-        {
-            ViewName = ViewDownloadManagerViewModel.Tag,
-            ParentViewName = Tag,
-            Parameter = null
-        });
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.DownloadManager,
+            AppRoute.SeasonsSeries));
     }
 
     private DelegateCommand<object>? _selectAllCommand;
@@ -237,7 +222,6 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
                 .AddToDownloadAsync(
                     items,
                     onlySelected,
-                    DialogService,
                     cancellationToken)
                 .ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
@@ -246,7 +230,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
                 return;
             }
 
-            EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
+            Notifications.Show(addedCount <= 0
                 ? DictionaryResource.GetString("TipAddDownloadingZero")
                 : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
         }
@@ -257,7 +241,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
             _logger.LogErrorMessage("Season or series download preparation failed.", e);
-            EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
+            Notifications.Show(e.Message);
         }
     }
 
@@ -327,7 +311,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
             .ToLocalTime()
             .ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
-        return new ChannelMedia(_navigationService, AppRoute.SeasonsSeries)
+        return new ChannelMedia(Navigation, AppRoute.SeasonsSeries)
         {
             Avid = video.Aid,
             Bvid = video.Bvid,

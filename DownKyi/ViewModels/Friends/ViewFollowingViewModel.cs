@@ -17,7 +17,6 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Friends;
@@ -28,7 +27,6 @@ internal class ViewFollowingViewModel : ViewModelBase
     private readonly IFriendRelationCoordinator _friendRelationCoordinator;
     private readonly ILogger<ViewFollowingViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
-    private readonly IAppNavigationService _navigationService;
     private CancellationTokenSource? _loadCancellation;
 
     // mid
@@ -154,13 +152,11 @@ internal class ViewFollowingViewModel : ViewModelBase
     #endregion
 
     public ViewFollowingViewModel(
-        IEventAggregator eventAggregator,
-        IAppNavigationService navigationService,
+        IDesktopInteractionContext desktopInteractions,
         IFriendRelationCoordinator friendRelationCoordinator,
         ISettingsStore settingsStore,
-        ILogger<ViewFollowingViewModel> logger) : base(eventAggregator)
+        ILogger<ViewFollowingViewModel> logger) : base(desktopInteractions)
     {
-        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
         _friendRelationCoordinator = friendRelationCoordinator
             ?? throw new ArgumentNullException(nameof(friendRelationCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -352,7 +348,7 @@ internal class ViewFollowingViewModel : ViewModelBase
             if (contents.Count > 0)
             {
                 Contents.AddRange(contents.Select(item => new FriendInfo(
-                    _navigationService,
+                    Navigation,
                     AppRoute.Friends)
                 {
                     Mid = item.Mid,

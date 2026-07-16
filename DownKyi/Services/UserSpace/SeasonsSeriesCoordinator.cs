@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Media;
 
 namespace DownKyi.Services.UserSpace;
@@ -29,7 +28,6 @@ internal interface ISeasonsSeriesCoordinator
     Task<int?> AddToDownloadAsync(
         IReadOnlyList<SeasonsSeriesDownloadItem> items,
         bool onlySelected,
-        IDialogService? dialogService,
         CancellationToken cancellationToken);
 }
 
@@ -67,7 +65,6 @@ internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
     public Task<int?> AddToDownloadAsync(
         IReadOnlyList<SeasonsSeriesDownloadItem> items,
         bool onlySelected,
-        IDialogService? dialogService,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(items);
@@ -80,7 +77,6 @@ internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
         return _downloadCoordinator.AddAsync(
             downloadItems,
             onlySelected,
-            dialogService,
             cancellationToken);
     }
 

@@ -2,14 +2,13 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Logging;
-using DownKyi.Events;
 using DownKyi.Services.Account;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -51,9 +50,9 @@ internal class ViewLoginViewModel : ViewModelBase
     #endregion
 
     public ViewLoginViewModel(
-        IEventAggregator eventAggregator,
+        IDesktopInteractionContext desktopInteractions,
         ILoginCoordinator loginCoordinator,
-        ILogger<ViewLoginViewModel> logger) : base(eventAggregator)
+        ILogger<ViewLoginViewModel> logger) : base(desktopInteractions)
     {
         _loginCoordinator = loginCoordinator ?? throw new ArgumentNullException(nameof(loginCoordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -70,13 +69,7 @@ internal class ViewLoginViewModel : ViewModelBase
 
         // 结束任务
         _tokenSource?.Cancel();
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = "login"
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent("login");
     }
 
     /// <summary>
@@ -103,13 +96,13 @@ internal class ViewLoginViewModel : ViewModelBase
 
             if (loginUrl.Data?.QrCodeAddress == null || loginUrl.Data?.QrcodeKey == null)
             {
-                EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("GetLoginUrlFailed"));
+                Notifications.Show(DictionaryResource.GetString("GetLoginUrlFailed"));
                 return;
             }
 
             if (!Uri.TryCreate(loginUrl.Data.QrCodeAddress, UriKind.Absolute, out var loginUri))
             {
-                EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("GetLoginUrlFailed"));
+                Notifications.Show(DictionaryResource.GetString("GetLoginUrlFailed"));
                 return;
             }
 
@@ -149,7 +142,7 @@ internal class ViewLoginViewModel : ViewModelBase
                 case 86038:
                     // 二维码已失效
                     // 发送通知
-                    EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginTimeOut"));
+                    Notifications.Show(DictionaryResource.GetString("LoginTimeOut"));
                     _logger.LogInformationMessage("Login QR code timed out.");
 
                     await RestartLoginAsync().ConfigureAwait(true);
@@ -169,7 +162,7 @@ internal class ViewLoginViewModel : ViewModelBase
                     // 确认登录
 
                     // 发送通知
-                    EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginSuccessful"));
+                    Notifications.Show(DictionaryResource.GetString("LoginSuccessful"));
                     _logger.LogInformationMessage("Login completed successfully.");
 
                     // 保存登录信息
@@ -181,7 +174,7 @@ internal class ViewLoginViewModel : ViewModelBase
                             .ConfigureAwait(true);
                         if (!isSucceed)
                         {
-                            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginFailed"));
+                            Notifications.Show(DictionaryResource.GetString("LoginFailed"));
                             _logger.LogErrorMessage("Login cookies could not be persisted.");
                         }
                     }
@@ -189,7 +182,7 @@ internal class ViewLoginViewModel : ViewModelBase
                         or InvalidOperationException or ArgumentException or Newtonsoft.Json.JsonException)
                     {
                         _logger.LogErrorMessage("Login cookie persistence failed.", e);
-                        EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginFailed"));
+                        Notifications.Show(DictionaryResource.GetString("LoginFailed"));
                     }
 
                     // 取消任务

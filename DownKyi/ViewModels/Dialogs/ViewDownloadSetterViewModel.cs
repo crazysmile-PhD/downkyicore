@@ -9,20 +9,18 @@ using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
-using Prism.Events;
 
 namespace DownKyi.ViewModels.Dialogs;
 
 internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogDownloadSetter";
-    private readonly IEventAggregator _eventAggregator;
+    private readonly IUserNotificationService _notifications;
     private readonly IFilePickerService _filePickerService;
     private readonly ISettingsStore _settingsStore;
     private readonly ILogger<ViewDownloadSetterViewModel> _logger;
@@ -154,12 +152,12 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     #endregion
 
     public ViewDownloadSetterViewModel(
-        IEventAggregator eventAggregator,
+        IUserNotificationService notifications,
         IFilePickerService filePickerService,
         ISettingsStore settingsStore,
         ILogger<ViewDownloadSetterViewModel> logger)
     {
-        _eventAggregator = eventAggregator;
+        _notifications = notifications ?? throw new ArgumentNullException(nameof(notifications));
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -225,7 +223,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 
         if (directory == null)
         {
-            _eventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("WarningNullDirectory"));
+            _notifications.Show(DictionaryResource.GetString("WarningNullDirectory"));
         }
         else
         {

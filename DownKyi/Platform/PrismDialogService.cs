@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using DownKyi.Application.Desktop;
 using DownKyi.ViewModels.Dialogs;
 using Prism.Dialogs;
@@ -23,6 +24,21 @@ internal sealed class PrismDialogService : IAppDialogService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            return await Dispatcher.UIThread
+                .InvokeAsync(() => ShowCoreAsync(request, cancellationToken))
+                .ConfigureAwait(false);
+        }
+
+        return await ShowCoreAsync(request, cancellationToken).ConfigureAwait(true);
+    }
+
+    private async Task<AppDialogResult> ShowCoreAsync(
+        AppDialogRequest request,
+        CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         var parameters = new DialogParameters();
         if (request.Parameters != null)

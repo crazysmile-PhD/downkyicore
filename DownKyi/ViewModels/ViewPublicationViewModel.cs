@@ -8,10 +8,10 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.CustomControl;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
@@ -23,7 +23,6 @@ using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.UserSpace;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
@@ -157,14 +156,11 @@ namespace DownKyi.ViewModels
         #endregion
 
         public ViewPublicationViewModel(
-            IEventAggregator eventAggregator,
-            IDialogService dialogService,
+            IDesktopInteractionContext desktopInteractions,
             IContentDownloadCoordinator downloadCoordinator,
             IUserSpacePageCoordinator userSpaceCoordinator,
-            ILogger<ViewPublicationViewModel> logger) : base(
-            eventAggregator)
+            ILogger<ViewPublicationViewModel> logger) : base(desktopInteractions)
         {
-            DialogService = dialogService;
             _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
             _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -210,13 +206,7 @@ namespace DownKyi.ViewModels
 
             // 结束任务
             CancelOperations();
-            var parameter = new NavigationParam
-            {
-                ViewName = ParentView,
-                ParentViewName = null,
-                Parameter = null
-            };
-            EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+            NavigateToParent();
         }
 
         // 前往下载管理页面
@@ -229,13 +219,9 @@ namespace DownKyi.ViewModels
         /// </summary>
         private void ExecuteDownloadManagerCommand()
         {
-            var parameter = new NavigationParam
-            {
-                ViewName = ViewDownloadManagerViewModel.Tag,
-                ParentViewName = Tag,
-                Parameter = null
-            };
-            EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+            Navigation.Navigate(new AppNavigationRequest(
+                AppRoute.DownloadManager,
+                AppRoute.Publication));
         }
 
         // 左侧tab点击事件
@@ -349,7 +335,6 @@ namespace DownKyi.ViewModels
                 var addedCount = await _downloadCoordinator.AddAsync(
                     items,
                     isOnlySelected,
-                    DialogService,
                     cancellationToken).ConfigureAwait(true);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (addedCount == null)
@@ -357,7 +342,7 @@ namespace DownKyi.ViewModels
                     return;
                 }
 
-                EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
+                Notifications.Show(addedCount <= 0
                     ? DictionaryResource.GetString("TipAddDownloadingZero")
                     : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
             }
@@ -368,7 +353,7 @@ namespace DownKyi.ViewModels
                 or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
             {
                 _logger.LogErrorMessage("Publication download preparation failed.", e);
-                EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
+                Notifications.Show(e.Message);
             }
         }
 

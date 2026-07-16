@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
@@ -8,17 +9,13 @@ using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.Events;
 using DownKyi.Models;
 using DownKyi.Services;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Dialogs;
-using Prism.Events;
 using Prism.Navigation.Regions;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.Settings;
 
@@ -69,13 +66,11 @@ internal class ViewAboutViewModel : ViewModelBase
     #endregion
 
     public ViewAboutViewModel(
-        IEventAggregator eventAggregator,
-        IDialogService dialogService,
+        IDesktopInteractionContext desktopInteractions,
         ISettingsStore settingsStore,
         IApplicationLogService logService,
         IPlatformLauncher platformLauncher,
-        ILogger<ViewAboutViewModel> logger) : base(eventAggregator,
-        dialogService)
+        ILogger<ViewAboutViewModel> logger) : base(desktopInteractions)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logService = logService ?? throw new ArgumentNullException(nameof(logService));
@@ -144,30 +139,33 @@ internal class ViewAboutViewModel : ViewModelBase
             var release = await service.GetLatestReleaseAsync().ConfigureAwait(true);
             if (GitHubRelease.IsNullOrEmpty(release))
             {
-                EventAggregator.GetEvent<MessageEvent>().Publish("检查失败，请稍后重试~");
+                Notifications.Show("检查失败，请稍后重试~");
                 return;
             }
 
             if (service.IsNewVersionAvailable(release!.TagName))
             {
-                var dialogService = DialogService ?? throw new InvalidOperationException("Dialog service is not available.");
-                await dialogService.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
-                    DialogParameters { { "release", release } }).ConfigureAwait(true);
+                await AppDialogs.ShowAsync(new AppDialogRequest(
+                    AppDialog.NewVersionAvailable,
+                    new Dictionary<string, object?>
+                    {
+                        ["release"] = release
+                    })).ConfigureAwait(true);
             }
             else
             {
-                EventAggregator.GetEvent<MessageEvent>().Publish("已是最新版~");
+                Notifications.Show("已是最新版~");
             }
         }
         catch (OperationCanceledException)
         {
             _logger.LogWarningMessage("Manual update check timed out.");
-            EventAggregator.GetEvent<MessageEvent>().Publish("检查超时，请稍后重试~");
+            Notifications.Show("检查超时，请稍后重试~");
         }
         catch (Exception e) when (e is HttpRequestException or InvalidOperationException or JsonException)
         {
             _logger.LogErrorMessage("Manual update check failed.", e);
-            EventAggregator.GetEvent<MessageEvent>().Publish("检查失败，请稍后重试~");
+            Notifications.Show("检查失败，请稍后重试~");
         }
     }
 
@@ -195,7 +193,7 @@ internal class ViewAboutViewModel : ViewModelBase
         await _logService.FlushAsync(cancellation.Token).ConfigureAwait(true);
         if (!await _platformLauncher.OpenFolderAsync(_logService.LogDirectory).ConfigureAwait(true))
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开日志文件夹");
+            Notifications.Show("无法打开日志文件夹");
         }
     }
 
@@ -210,17 +208,17 @@ internal class ViewAboutViewModel : ViewModelBase
         try
         {
             var diagnosticLog = await _logService.ExportDiagnosticLogAsync().ConfigureAwait(true);
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("DiagnosticLogExported"));
+            Notifications.Show(DictionaryResource.GetString("DiagnosticLogExported"));
             if (!await _platformLauncher.OpenFileAsync(diagnosticLog).ConfigureAwait(true))
             {
-                EventAggregator.GetEvent<MessageEvent>().Publish("无法打开诊断日志");
+                Notifications.Show("无法打开诊断日志");
             }
         }
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
             or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             _logger.LogErrorMessage("Diagnostic log export failed.", e);
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("DiagnosticLogExportFailed"));
+            Notifications.Show(DictionaryResource.GetString("DiagnosticLogExportFailed"));
         }
     }
 
@@ -341,7 +339,7 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         if (!await _platformLauncher.OpenFileAsync("aria2_COPYING.txt").ConfigureAwait(true))
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开 aria2 许可文件");
+            Notifications.Show("无法打开 aria2 许可文件");
         }
     }
 
@@ -357,7 +355,7 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         if (!await _platformLauncher.OpenFileAsync("FFmpeg_LICENSE.txt").ConfigureAwait(true))
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开 FFmpeg 许可文件");
+            Notifications.Show("无法打开 FFmpeg 许可文件");
         }
     }
 
@@ -365,7 +363,7 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         if (!await _platformLauncher.OpenUriAsync(new Uri(value)).ConfigureAwait(true))
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开网页");
+            Notifications.Show("无法打开网页");
         }
     }
 
@@ -382,7 +380,7 @@ internal class ViewAboutViewModel : ViewModelBase
             return;
         }
 
-        EventAggregator.GetEvent<MessageEvent>().Publish(isSucceed
+        Notifications.Show(isSucceed
             ? DictionaryResource.GetString("TipSettingUpdated")
             : DictionaryResource.GetString("TipSettingFailed"));
     }

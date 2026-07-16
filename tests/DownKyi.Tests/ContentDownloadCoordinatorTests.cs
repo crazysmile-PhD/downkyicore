@@ -21,7 +21,6 @@ public sealed class ContentDownloadCoordinatorTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
             [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true)],
             onlySelected: true,
-            dialogService: null,
             cancellation.Token));
 
         Assert.Equal(0, factory.CreateCount);
@@ -37,7 +36,6 @@ public sealed class ContentDownloadCoordinatorTests
         var result = await coordinator.AddAsync(
             [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, false)],
             onlySelected: true,
-            dialogService: null,
             TestContext.Current.CancellationToken);
 
         Assert.Equal(0, result);
@@ -55,7 +53,6 @@ public sealed class ContentDownloadCoordinatorTests
         var result = await coordinator.AddAsync(
             [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true)],
             onlySelected: true,
-            dialogService: null,
             TestContext.Current.CancellationToken);
 
         Assert.Null(result);
@@ -79,7 +76,6 @@ public sealed class ContentDownloadCoordinatorTests
                 new ContentDownloadItem("https://www.bilibili.com/bangumi/media/md28223074", DownloadInfoKind.Bangumi, false)
             ],
             onlySelected: false,
-            dialogService: null,
             TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result);
@@ -107,7 +103,6 @@ public sealed class ContentDownloadCoordinatorTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
             [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true)],
             onlySelected: true,
-            dialogService: null,
             cancellation.Token));
 
         Assert.Equal(1, session.DirectorySelectionCount);
@@ -146,8 +141,9 @@ public sealed class ContentDownloadCoordinatorTests
 
         public int AddCount { get; private set; }
 
-        public Task<string?> SetDirectory(IDialogService? dialogService)
+        public Task<string?> SetDirectory(CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             DirectorySelectionCount++;
             return Task.FromResult(directory);
         }
@@ -175,10 +171,11 @@ public sealed class ContentDownloadCoordinatorTests
         }
 
         public Task<int> AddToDownload(
-            IDialogService? dialogService,
             string? directoryPath,
-            bool isAll = false)
+            bool isAll = false,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Assert.Equal(directory, directoryPath);
             Assert.False(isAll);
             AddCount++;

@@ -2,12 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Media;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils.Validator;
-using DownKyi.Events;
 using DownKyi.Utils;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Settings;
@@ -111,7 +110,9 @@ internal class ViewDanmakuViewModel : ViewModelBase
 
     #endregion
 
-    public ViewDanmakuViewModel(IEventAggregator eventAggregator, ISettingsStore settingsStore) : base(eventAggregator)
+    public ViewDanmakuViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        ISettingsStore settingsStore) : base(desktopInteractions)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         #region 属性初始化
@@ -386,6 +387,6 @@ internal class ViewDanmakuViewModel : ViewModelBase
             return;
         }
 
-        EventAggregator.GetEvent<MessageEvent>().Publish(isSucceed ? DictionaryResource.GetString("TipSettingUpdated") : DictionaryResource.GetString("TipSettingFailed"));
+        Notifications.Show(isSucceed ? DictionaryResource.GetString("TipSettingUpdated") : DictionaryResource.GetString("TipSettingFailed"));
     }
 }

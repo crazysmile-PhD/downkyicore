@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
 
 namespace DownKyi.Services.Media;
@@ -51,7 +50,6 @@ internal interface IContentDownloadCoordinator
     Task<int?> AddAsync(
         IReadOnlyList<ContentDownloadItem> items,
         bool onlySelected,
-        IDialogService? dialogService,
         CancellationToken cancellationToken);
 }
 
@@ -71,7 +69,6 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
     public async Task<int?> AddAsync(
         IReadOnlyList<ContentDownloadItem> items,
         bool onlySelected,
-        IDialogService? dialogService,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(items);
@@ -87,12 +84,11 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
 
         var addToDownloadSession = _serviceFactory.Create(ToPlayStreamType(selectedItems[0].Kind));
         return await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
-            () => addToDownloadSession.SetDirectory(dialogService),
+            () => addToDownloadSession.SetDirectory(cancellationToken),
             directory => AddItemsAsync(
                 addToDownloadSession,
                 selectedItems,
                 directory,
-                dialogService,
                 cancellationToken),
             cancellationToken).ConfigureAwait(true);
     }
@@ -101,7 +97,6 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
         IAddToDownloadSession addToDownloadSession,
         IReadOnlyList<ContentDownloadItem> items,
         string directory,
-        IDialogService? dialogService,
         CancellationToken cancellationToken)
     {
         return Task.Run(async () =>
@@ -116,7 +111,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                 addToDownloadSession.ParseVideo(infoService);
                 cancellationToken.ThrowIfCancellationRequested();
                 addedCount += await addToDownloadSession
-                    .AddToDownload(dialogService, directory)
+                    .AddToDownload(directory, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
             }
 

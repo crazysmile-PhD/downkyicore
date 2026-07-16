@@ -1,11 +1,11 @@
 using System;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Platform;
 using Microsoft.Extensions.Logging;
 using DownloaderSetting = DownKyi.Core.Settings.Downloader;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.Services.Download;
 
@@ -19,7 +19,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     private readonly DownloadListState _downloadLists;
     private readonly AriaServer _ariaServer;
     private readonly DownloadStorageService _downloadStorageService;
-    private readonly IDialogService _dialogService;
+    private readonly IAppDialogService _dialogService;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly FfmpegProcessor _ffmpegProcessor;
     private readonly ISettingsStore _settingsStore;
@@ -29,7 +29,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     public DownloadRuntimeFactory(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        IDialogService dialogService,
+        IAppDialogService dialogService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,

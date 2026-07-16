@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
-using DownKyi.Events;
+using DownKyi.Application.Desktop;
 using DownKyi.Images;
 using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.ViewModels.PageViewModels;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -14,8 +13,6 @@ namespace DownKyi.ViewModels;
 internal class ViewDownloadManagerViewModel : ViewModelBase
 {
     public const string Tag = "PageDownloadManager";
-
-    private readonly IRegionManager _regionManager;
 
     #region 页面属性申明
 
@@ -37,11 +34,9 @@ internal class ViewDownloadManagerViewModel : ViewModelBase
 
     #endregion
 
-    public ViewDownloadManagerViewModel(IRegionManager regionManager, IEventAggregator eventAggregator) : base(
-        eventAggregator)
+    public ViewDownloadManagerViewModel(IDesktopInteractionContext desktopInteractions)
+        : base(desktopInteractions)
     {
-        _regionManager = regionManager;
-
         #region 属性初始化
 
         TabHeaders = new List<TabHeader>
@@ -72,13 +67,7 @@ internal class ViewDownloadManagerViewModel : ViewModelBase
     /// </summary>
     protected internal override void ExecuteBackSpace()
     {
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent();
     }
 
     // 左侧tab点击事件
@@ -97,15 +86,13 @@ internal class ViewDownloadManagerViewModel : ViewModelBase
             return;
         }
 
-        var param = new NavigationParameters();
-
         switch (tabHeader.Id)
         {
             case 0:
-                _regionManager.RequestNavigate("DownloadManagerContentRegion", ViewDownloadingViewModel.Tag, param);
+                Navigation.NavigateRegion(AppNavigationRegion.DownloadManager, AppRoute.Downloading);
                 break;
             case 1:
-                _regionManager.RequestNavigate("DownloadManagerContentRegion", ViewDownloadFinishedViewModel.Tag, param);
+                Navigation.NavigateRegion(AppNavigationRegion.DownloadManager, AppRoute.DownloadFinished);
                 break;
             default:
                 break;
@@ -125,6 +112,7 @@ internal class ViewDownloadManagerViewModel : ViewModelBase
         //// 进入设置页面时显示的设置项
         SelectTabId = 0;
 
-        PropertyChangeAsync(() => { _regionManager.RequestNavigate("DownloadManagerContentRegion", ViewDownloadingViewModel.Tag, new NavigationParameters()); });
+        PropertyChangeAsync(() =>
+            Navigation.NavigateRegion(AppNavigationRegion.DownloadManager, AppRoute.Downloading));
     }
 }

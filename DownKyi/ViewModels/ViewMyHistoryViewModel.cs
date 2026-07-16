@@ -5,9 +5,9 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
@@ -17,7 +17,6 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -114,14 +113,11 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     #endregion
 
     public ViewMyHistoryViewModel(
-        IEventAggregator eventAggregator,
-        IDialogService dialogService,
+        IDesktopInteractionContext desktopInteractions,
         IContentDownloadCoordinator downloadCoordinator,
         IPersonalMediaCoordinator personalMediaCoordinator,
-        ILogger<ViewMyHistoryViewModel> logger) : base(
-        eventAggregator)
+        ILogger<ViewMyHistoryViewModel> logger) : base(desktopInteractions)
     {
-        DialogService = dialogService;
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _personalMediaCoordinator = personalMediaCoordinator
             ?? throw new ArgumentNullException(nameof(personalMediaCoordinator));
@@ -167,13 +163,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
 
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent();
     }
 
     // 前往下载管理页面
@@ -187,13 +177,9 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     /// </summary>
     private void ExecuteDownloadManagerCommand()
     {
-        var parameter = new NavigationParam
-        {
-            ViewName = ViewDownloadManagerViewModel.Tag,
-            ParentViewName = Tag,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.DownloadManager,
+            AppRoute.MyHistory));
     }
 
     // 全选按钮点击事件
@@ -304,7 +290,6 @@ internal class ViewMyHistoryViewModel : ViewModelBase
             var addedCount = await _downloadCoordinator.AddAsync(
                 items,
                 isOnlySelected,
-                DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
             if (addedCount == null)
@@ -312,7 +297,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
                 return;
             }
 
-            EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
+            Notifications.Show(addedCount <= 0
                 ? DictionaryResource.GetString("TipAddDownloadingZero")
                 : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
         }
@@ -323,7 +308,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
             _logger.LogErrorMessage("History download preparation failed.", e);
-            EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
+            Notifications.Show(e.Message);
         }
     }
 

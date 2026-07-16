@@ -9,7 +9,6 @@ using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
@@ -19,7 +18,6 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -138,15 +136,13 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     #endregion
 
     public ViewPublicFavoritesViewModel(
-        IEventAggregator eventAggregator,
-        IDialogService dialogService,
+        IDesktopInteractionContext desktopInteractions,
         IClipboardService clipboardService,
         IContentDownloadCoordinator downloadCoordinator,
         IFavoritesCoordinator favoritesCoordinator,
         ISettingsStore settingsStore,
-        ILogger<ViewPublicFavoritesViewModel> logger) : base(eventAggregator)
+        ILogger<ViewPublicFavoritesViewModel> logger) : base(desktopInteractions)
     {
-        DialogService = dialogService;
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _favoritesCoordinator = favoritesCoordinator ?? throw new ArgumentNullException(nameof(favoritesCoordinator));
@@ -193,13 +189,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         // 结束任务
         CancelOperations();
 
-        NavigationParam parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent();
     }
 
     // 前往下载管理页面
@@ -212,13 +202,9 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     /// </summary>
     private void ExecuteDownloadManagerCommand()
     {
-        NavigationParam parameter = new NavigationParam
-        {
-            ViewName = ViewDownloadManagerViewModel.Tag,
-            ParentViewName = Tag,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.DownloadManager,
+            AppRoute.PublicFavorites));
     }
 
     // 复制封面事件
@@ -260,7 +246,13 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     /// </summary>
     private void ExecuteUpperCommand()
     {
-        NavigateToView.NavigateToViewUserSpace(EventAggregator, _settingsStore, Tag, Favorites.UpperMid);
+        var route = _settingsStore.Current.User.Mid == Favorites.UpperMid
+            ? AppRoute.MySpace
+            : AppRoute.UserSpace;
+        Navigation.Navigate(new AppNavigationRequest(
+            route,
+            AppRoute.PublicFavorites,
+            Favorites.UpperMid));
     }
 
     // 添加选中项到下载列表事件
@@ -292,7 +284,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
             var addedCount = await _downloadCoordinator.AddAsync(
                 items,
                 isOnlySelected,
-                DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
             if (addedCount == null)
@@ -300,7 +291,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
                 return;
             }
 
-            EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
+            Notifications.Show(addedCount <= 0
                 ? DictionaryResource.GetString("TipAddDownloadingZero")
                 : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
         }
@@ -311,7 +302,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
             _logger.LogErrorMessage("Favorites download preparation failed.", e);
-            EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
+            Notifications.Show(e.Message);
         }
     }
 

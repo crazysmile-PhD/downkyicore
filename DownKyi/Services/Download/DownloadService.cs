@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Xml;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -22,7 +23,6 @@ using DownKyi.Core.Utils;
 using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Platform;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
@@ -37,7 +37,7 @@ internal abstract class DownloadService : IDisposable
     protected string Tag { get; set; } = "DownloadService";
 
     // protected TaskbarIcon _notifyIcon;
-    protected IDialogService? DialogService { get; }
+    protected IAppDialogService DialogService { get; }
     protected DownloadListState DownloadLists { get; }
     protected ImmutableObservableCollection<DownloadingItem> DownloadingList { get; }
     protected ImmutableObservableCollection<DownloadedItem> DownloadedList { get; }
@@ -143,7 +143,7 @@ internal abstract class DownloadService : IDisposable
     protected DownloadService(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        IDialogService? dialogService,
+        IAppDialogService dialogService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
@@ -154,7 +154,7 @@ internal abstract class DownloadService : IDisposable
         DownloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         DownloadingList = downloadLists.Downloading;
         DownloadedList = downloadLists.Downloaded;
-        DialogService = dialogService;
+        DialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         UiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         SettingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         DiagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));

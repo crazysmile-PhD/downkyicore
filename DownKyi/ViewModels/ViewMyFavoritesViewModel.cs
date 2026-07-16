@@ -8,10 +8,10 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.CustomControl;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
@@ -21,7 +21,6 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -200,13 +199,11 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     #endregion
 
     public ViewMyFavoritesViewModel(
-        IEventAggregator eventAggregator,
-        IDialogService dialogService,
+        IDesktopInteractionContext desktopInteractions,
         IContentDownloadCoordinator downloadCoordinator,
         IFavoritesCoordinator favoritesCoordinator,
-        ILogger<ViewMyFavoritesViewModel> logger) : base(eventAggregator)
+        ILogger<ViewMyFavoritesViewModel> logger) : base(desktopInteractions)
     {
-        DialogService = dialogService;
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _favoritesCoordinator = favoritesCoordinator ?? throw new ArgumentNullException(nameof(favoritesCoordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -255,13 +252,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         // 结束任务
         CancelOperations();
 
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent();
     }
 
     // 前往下载管理页面
@@ -274,13 +265,9 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     /// </summary>
     private void ExecuteDownloadManagerCommand()
     {
-        var parameter = new NavigationParam
-        {
-            ViewName = ViewDownloadManagerViewModel.Tag,
-            ParentViewName = Tag,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.DownloadManager,
+            AppRoute.MyFavorites));
     }
 
     // 左侧tab点击事件
@@ -396,7 +383,6 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
             var addedCount = await _downloadCoordinator.AddAsync(
                 items,
                 isOnlySelected,
-                DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
             if (addedCount == null)
@@ -404,7 +390,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
                 return;
             }
 
-            EventAggregator.GetEvent<MessageEvent>().Publish(addedCount <= 0
+            Notifications.Show(addedCount <= 0
                 ? DictionaryResource.GetString("TipAddDownloadingZero")
                 : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
         }
@@ -415,7 +401,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
             _logger.LogErrorMessage("Favorites download preparation failed.", e);
-            EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
+            Notifications.Show(e.Message);
         }
     }
 

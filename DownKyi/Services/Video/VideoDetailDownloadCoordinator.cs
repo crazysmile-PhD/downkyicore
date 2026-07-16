@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Downloads;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.PageViewModels;
 
@@ -16,7 +15,6 @@ internal interface IVideoDetailDownloadCoordinator
         VideoInfoView videoInfoView,
         IList<VideoSection> videoSections,
         bool isAll,
-        IDialogService? dialogService,
         CancellationToken cancellationToken);
 }
 
@@ -34,7 +32,6 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
         VideoInfoView videoInfoView,
         IList<VideoSection> videoSections,
         bool isAll,
-        IDialogService? dialogService,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(videoInfoView);
@@ -49,13 +46,13 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
 
         var addService = _serviceFactory.Create(streamType.Value);
         return DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
-            () => addService.SetDirectory(dialogService),
+            () => addService.SetDirectory(cancellationToken),
             async directory =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 addService.GetVideo(videoInfoView, videoSections);
                 return await addService
-                    .AddToDownload(dialogService, directory, isAll)
+                    .AddToDownload(directory, isAll, cancellationToken)
                     .ConfigureAwait(false);
             },
             cancellationToken);

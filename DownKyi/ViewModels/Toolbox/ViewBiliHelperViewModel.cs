@@ -4,11 +4,9 @@ using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
-using DownKyi.Events;
 using DownKyi.Services.Toolbox;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 
 namespace DownKyi.ViewModels.Toolbox;
 
@@ -57,10 +55,10 @@ internal class ViewBiliHelperViewModel : ViewModelBase
     #endregion
 
     public ViewBiliHelperViewModel(
-        IEventAggregator eventAggregator,
+        IDesktopInteractionContext desktopInteractions,
         IBiliHelperCoordinator coordinator,
         IPlatformLauncher platformLauncher,
-        ILogger<ViewBiliHelperViewModel> logger) : base(eventAggregator)
+        ILogger<ViewBiliHelperViewModel> logger) : base(desktopInteractions)
     {
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
@@ -124,7 +122,7 @@ internal class ViewBiliHelperViewModel : ViewModelBase
         var uri = new Uri($"https://www.bilibili.com/video/{Bvid}");
         if (!await _platformLauncher.OpenUriAsync(uri).ConfigureAwait(true))
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开视频页面");
+            Notifications.Show("无法打开视频页面");
         }
     }
 
@@ -179,7 +177,7 @@ internal class ViewBiliHelperViewModel : ViewModelBase
         var userSpace = new Uri($"https://space.bilibili.com/{UserMid}");
         if (!await _platformLauncher.OpenUriAsync(userSpace).ConfigureAwait(true))
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish("无法打开用户空间");
+            Notifications.Show("无法打开用户空间");
         }
     }
 

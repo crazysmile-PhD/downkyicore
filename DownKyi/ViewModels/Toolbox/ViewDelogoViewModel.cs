@@ -20,11 +20,9 @@ using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
-using DownKyi.Events;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Bitmap = Avalonia.Media.Imaging.Bitmap;
 using Path = System.IO.Path;
 
@@ -151,10 +149,10 @@ internal class ViewDelogoViewModel : ViewModelBase
     #endregion
 
     public ViewDelogoViewModel(
-        IEventAggregator eventAggregator,
+        IDesktopInteractionContext desktopInteractions,
         IFilePickerService filePickerService,
         FfmpegProcessor ffmpegProcessor,
-        ILogger<ViewDelogoViewModel> logger) : base(eventAggregator)
+        ILogger<ViewDelogoViewModel> logger) : base(desktopInteractions)
     {
         _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
@@ -192,7 +190,7 @@ internal class ViewDelogoViewModel : ViewModelBase
     {
         if (_isDelogo)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
+            Notifications.Show(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
         VideoPath = await _filePickerService.SelectVideoAsync().ConfigureAwait(true);
@@ -223,37 +221,37 @@ internal class ViewDelogoViewModel : ViewModelBase
     {
         if (_isDelogo)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
+            Notifications.Show(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
 
         if (VideoPath is null or "")
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipNoSeletedVideo"));
+            Notifications.Show(DictionaryResource.GetString("TipNoSeletedVideo"));
             return;
         }
 
         if (LogoWidth == -1)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipInputRightLogoWidth"));
+            Notifications.Show(DictionaryResource.GetString("TipInputRightLogoWidth"));
             return;
         }
 
         if (LogoHeight == -1)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipInputRightLogoHeight"));
+            Notifications.Show(DictionaryResource.GetString("TipInputRightLogoHeight"));
             return;
         }
 
         if (LogoX == -1)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipInputRightLogoX"));
+            Notifications.Show(DictionaryResource.GetString("TipInputRightLogoX"));
             return;
         }
 
         if (LogoY == -1)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipInputRightLogoY"));
+            Notifications.Show(DictionaryResource.GetString("TipInputRightLogoY"));
             return;
         }
 

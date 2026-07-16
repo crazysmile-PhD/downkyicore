@@ -21,6 +21,7 @@ internal sealed class PrismNavigationService : IAppNavigationService
     private const string DownloadManagerRegion = "DownloadManagerContentRegion";
     private const string FriendsRegion = "FriendContentRegion";
     private const string UserSpaceRegion = "UserSpaceContentRegion";
+    private const string ToolboxRegion = "ToolboxContentRegion";
     private readonly IRegionManager _regionManager;
 
     public PrismNavigationService(IRegionManager regionManager)
@@ -80,6 +81,7 @@ internal sealed class PrismNavigationService : IAppNavigationService
             AppNavigationRegion.DownloadManager => DownloadManagerRegion,
             AppNavigationRegion.Friends => FriendsRegion,
             AppNavigationRegion.UserSpace => UserSpaceRegion,
+            AppNavigationRegion.Toolbox => ToolboxRegion,
             _ => throw new ArgumentOutOfRangeException(nameof(region), region, null)
         };
     }

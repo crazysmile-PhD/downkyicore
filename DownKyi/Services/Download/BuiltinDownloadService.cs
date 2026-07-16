@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
@@ -12,7 +13,6 @@ using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Models;
 using DownKyi.Platform;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
@@ -27,7 +27,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
     public BuiltinDownloadService(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        IDialogService? dialogService,
+        IAppDialogService dialogService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,

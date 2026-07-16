@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
-using DownKyi.Events;
+using DownKyi.Application.Desktop;
 using DownKyi.Images;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.Settings;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -14,8 +13,6 @@ namespace DownKyi.ViewModels;
 internal class ViewSettingsViewModel : ViewModelBase
 {
     public const string Tag = "PageSettings";
-
-    private readonly IRegionManager _regionManager;
 
     #region 页面属性申明
 
@@ -45,10 +42,9 @@ internal class ViewSettingsViewModel : ViewModelBase
 
     #endregion
 
-    public ViewSettingsViewModel(IRegionManager regionManager, IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewSettingsViewModel(IDesktopInteractionContext desktopInteractions)
+        : base(desktopInteractions)
     {
-        _regionManager = regionManager;
-
         #region 属性初始化
 
         ArrowBack = NavigationIcon.Instance().ArrowBack;
@@ -78,13 +74,7 @@ internal class ViewSettingsViewModel : ViewModelBase
     /// </summary>
     protected internal override void ExecuteBackSpace()
     {
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent();
     }
 
     // 左侧tab点击事件
@@ -106,19 +96,19 @@ internal class ViewSettingsViewModel : ViewModelBase
         switch (tabHeader.Id)
         {
             case 0:
-                _regionManager.RequestNavigate("SettingsContentRegion", ViewBasicViewModel.Tag);
+                Navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsBasic);
                 break;
             case 1:
-                _regionManager.RequestNavigate("SettingsContentRegion", ViewNetworkViewModel.Tag);
+                Navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsNetwork);
                 break;
             case 2:
-                _regionManager.RequestNavigate("SettingsContentRegion", ViewVideoViewModel.Tag);
+                Navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsVideo);
                 break;
             case 3:
-                _regionManager.RequestNavigate("SettingsContentRegion", ViewDanmakuViewModel.Tag);
+                Navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsDanmaku);
                 break;
             case 4:
-                _regionManager.RequestNavigate("SettingsContentRegion", ViewAboutViewModel.Tag);
+                Navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsAbout);
                 break;
         }
     }
@@ -132,7 +122,7 @@ internal class ViewSettingsViewModel : ViewModelBase
     /// </summary>
     private void ExecuteLoadedCommand()
     {
-        _regionManager.RequestNavigate("SettingsContentRegion", ViewBasicViewModel.Tag);
+        Navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsBasic);
     }
 
     #endregion
@@ -148,7 +138,8 @@ internal class ViewSettingsViewModel : ViewModelBase
         // 进入设置页面时显示的设置项
         SelectTabId = 0;
 
-        PropertyChangeAsync(() => { _regionManager.RequestNavigate("SettingsContentRegion", ViewBasicViewModel.Tag); });
+        PropertyChangeAsync(() =>
+            Navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsBasic));
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
     }

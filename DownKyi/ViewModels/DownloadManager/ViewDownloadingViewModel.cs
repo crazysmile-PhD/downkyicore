@@ -1,13 +1,11 @@
 using System;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Dialogs;
-using Prism.Events;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.DownloadManager
 {
@@ -31,12 +29,10 @@ namespace DownKyi.ViewModels.DownloadManager
         #endregion
 
         public ViewDownloadingViewModel(
-            IEventAggregator eventAggregator,
-            IDialogService dialogService,
+            IDesktopInteractionContext desktopInteractions,
             DownloadListState downloadLists,
             IDownloadManagerCoordinator downloadManagerCoordinator,
-            ILogger<ViewDownloadingViewModel> logger) : base(
-            eventAggregator, dialogService)
+            ILogger<ViewDownloadingViewModel> logger) : base(desktopInteractions)
         {
             _downloadManagerCoordinator = downloadManagerCoordinator
                 ?? throw new ArgumentNullException(nameof(downloadManagerCoordinator));
@@ -103,9 +99,9 @@ namespace DownKyi.ViewModels.DownloadManager
         /// </summary>
         private async Task ExecuteDeleteAllDownloadingCommand()
         {
-            var alertService = new AlertService(DialogService);
+            var alertService = new AlertService(AppDialogs);
             var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete")).ConfigureAwait(true);
-            if (result != ButtonResult.OK)
+            if (result != AppDialogOutcome.Accepted)
             {
                 return;
             }
@@ -128,9 +124,9 @@ namespace DownKyi.ViewModels.DownloadManager
                 return;
             }
 
-            var alertService = new AlertService(DialogService);
+            var alertService = new AlertService(AppDialogs);
             var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2).ConfigureAwait(true);
-            if (result != ButtonResult.OK)
+            if (result != AppDialogOutcome.Accepted)
             {
                 return;
             }

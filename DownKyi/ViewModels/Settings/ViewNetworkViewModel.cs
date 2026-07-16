@@ -2,20 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Application.Lifetime;
 using DownKyi.Commands;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils.Validator;
-using DownKyi.Events;
 using DownKyi.Services;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Dialogs;
-using Prism.Events;
 using Prism.Navigation.Regions;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.Settings;
 
@@ -313,12 +310,10 @@ internal class ViewNetworkViewModel : ViewModelBase
     #endregion
 
     public ViewNetworkViewModel(
-        IEventAggregator eventAggregator,
-        IDialogService dialogService,
+        IDesktopInteractionContext desktopInteractions,
         ISettingsStore settingsStore,
         IApplicationLifecycle applicationLifecycle,
-        ILogger<ViewNetworkViewModel> logger) : base(eventAggregator,
-        dialogService)
+        ILogger<ViewNetworkViewModel> logger) : base(desktopInteractions)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _applicationLifecycle = applicationLifecycle
@@ -540,9 +535,9 @@ internal class ViewNetworkViewModel : ViewModelBase
         var isSucceed = UpdateNetwork(settings => settings with { Downloader = downloader }).Downloader == downloader;
         PublishTip(isSucceed);
 
-        var alertService = new AlertService(DialogService);
+        var alertService = new AlertService(AppDialogs);
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
-        if (result == ButtonResult.OK)
+        if (result == AppDialogOutcome.Accepted)
         {
             await RestartApplicationAsync().ConfigureAwait(true);
         }
@@ -600,9 +595,9 @@ internal class ViewNetworkViewModel : ViewModelBase
             NetworkProxy = networkProxy
         }).NetworkProxy == networkProxy;
         PublishTip(isSucceed);
-        var alertService = new AlertService(DialogService);
+        var alertService = new AlertService(AppDialogs);
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
-        if (result == ButtonResult.OK)
+        if (result == AppDialogOutcome.Accepted)
         {
             await RestartApplicationAsync().ConfigureAwait(true);
         }
@@ -646,9 +641,9 @@ internal class ViewNetworkViewModel : ViewModelBase
         }).MaxCurrentDownloads == SelectedMaxCurrentDownload;
         PublishTip(isSucceed);
 
-        var alertService = new AlertService(DialogService);
+        var alertService = new AlertService(AppDialogs);
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
-        if (result == ButtonResult.OK)
+        if (result == AppDialogOutcome.Accepted)
         {
             await RestartApplicationAsync().ConfigureAwait(true);
         }
@@ -825,9 +820,9 @@ internal class ViewNetworkViewModel : ViewModelBase
             MaxCurrentDownloads = SelectedAriaMaxConcurrentDownload
         }).MaxCurrentDownloads == SelectedAriaMaxConcurrentDownload;
         PublishTip(isSucceed);
-        var alertService = new AlertService(DialogService);
+        var alertService = new AlertService(AppDialogs);
         var result = await alertService.ShowInfo(DictionaryResource.GetString("ConfirmReboot")).ConfigureAwait(true);
-        if (result == ButtonResult.OK)
+        if (result == AppDialogOutcome.Accepted)
         {
             await RestartApplicationAsync().ConfigureAwait(true);
         }
@@ -837,7 +832,7 @@ internal class ViewNetworkViewModel : ViewModelBase
     {
         if (!await _applicationLifecycle.RestartAsync().ConfigureAwait(true))
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish("无法重新启动应用，请查看日志");
+            Notifications.Show("无法重新启动应用，请查看日志");
         }
     }
 
@@ -1045,6 +1040,6 @@ internal class ViewNetworkViewModel : ViewModelBase
             return;
         }
 
-        EventAggregator.GetEvent<MessageEvent>().Publish(isSucceed ? DictionaryResource.GetString("TipSettingUpdated") : DictionaryResource.GetString("TipSettingFailed"));
+        Notifications.Show(isSucceed ? DictionaryResource.GetString("TipSettingUpdated") : DictionaryResource.GetString("TipSettingFailed"));
     }
 }

@@ -102,6 +102,8 @@ internal static class LegacyDesktopComposition
         services.AddSingleton(notificationService);
         services.AddSingleton(navigationService);
         services.AddSingleton(appDialogService);
+        services.AddSingleton<IDesktopInteractionContext>(
+            new DesktopInteractionContext(notificationService, navigationService, appDialogService));
         services.AddSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
         services.AddTransient<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         services.AddSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();

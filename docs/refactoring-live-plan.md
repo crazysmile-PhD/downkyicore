@@ -1,7 +1,7 @@
 # DownKyi Core Live Refactoring Plan
 
 Status: active
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 Current group: PR 16-24
 Next branch: `refactor/pr-16-24-media-ui-lifecycle`
 
@@ -22,7 +22,6 @@ This file contains only unfinished work. Completed items are removed in the same
 
 Branch: `refactor/pr-16-24-media-ui-lifecycle`
 
-- Finish moving the remaining ViewModels to the new Desktop notification, dialog, and typed navigation contracts. Shell/search, media page-item models, and the shared add-to-download notification path are migrated; temporary Prism navigation/dialog adapters remain until PR 25-29, while legacy pages still expose direct `EventAggregator`, `NavigationContext`, dialog, or string-region dependencies.
 - Reduce the remaining oversized settings and media ViewModels to binding state and command wiring; `ViewNetworkViewModel` still combines all network option construction, validation feedback, restart prompts, and update commands.
 
 ## PR 25-29 - Remove Prism And Legacy Architecture

@@ -1,17 +1,14 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
-using DownKyi.Events;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Dialogs;
-using Prism.Events;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.DownloadManager;
 
@@ -45,14 +42,12 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     #endregion
 
     public ViewDownloadFinishedViewModel(
-        IEventAggregator eventAggregator,
-        IDialogService dialogService,
+        IDesktopInteractionContext desktopInteractions,
         DownloadListState downloadLists,
         ISettingsStore settingsStore,
         IDownloadManagerCoordinator downloadManagerCoordinator,
         ILogger<ViewDownloadFinishedViewModel> logger
-    ) : base(eventAggregator,
-        dialogService)
+    ) : base(desktopInteractions)
     {
         // 初始化DownloadedList
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
@@ -134,9 +129,9 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     {
         try
         {
-            var alertService = new AlertService(DialogService);
+            var alertService = new AlertService(AppDialogs);
             var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete")).ConfigureAwait(true);
-            if (result != ButtonResult.OK)
+            if (result != AppDialogOutcome.Accepted)
             {
                 return;
             }
@@ -150,7 +145,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException
             or UnauthorizedAccessException or InvalidOperationException)
         {
-            var alertService = new AlertService(DialogService);
+            var alertService = new AlertService(AppDialogs);
             await alertService.ShowError(e.Message).ConfigureAwait(true);
         }
     }
@@ -208,9 +203,9 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
             return;
         }
 
-        var alertService = new AlertService(DialogService);
+        var alertService = new AlertService(AppDialogs);
         var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2).ConfigureAwait(true);
-        if (result != ButtonResult.OK)
+        if (result != AppDialogOutcome.Accepted)
         {
             return;
         }
@@ -229,7 +224,7 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
         };
         if (message != null)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(message);
+            Notifications.Show(message);
         }
     }
 

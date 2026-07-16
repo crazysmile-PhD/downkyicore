@@ -1,11 +1,11 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
-using DownKyi.PrismExtension.Dialog;
 using Microsoft.Extensions.Logging;
-using Prism.Events;
 using Prism.Mvvm;
 using Prism.Navigation.Regions;
 
@@ -14,21 +14,20 @@ namespace DownKyi.ViewModels;
 internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
 {
     private bool _disposed;
-    protected IEventAggregator EventAggregator { get; }
-    protected IDialogService? DialogService { get; set; }
+    protected IUserNotificationService Notifications { get; }
+    protected IAppNavigationService Navigation { get; }
+    protected IAppDialogService AppDialogs { get; }
     protected IRegionNavigationJournal? Journal { get; set; }
     protected string ParentView { get; set; } = string.Empty;
+    protected AppRoute ParentRoute { get; set; } = AppRoute.Index;
     protected virtual Dispatcher UiDispatcher => Dispatcher.UIThread;
 
-    public ViewModelBase(IEventAggregator eventAggregator)
+    public ViewModelBase(IDesktopInteractionContext desktopInteractions)
     {
-        EventAggregator = eventAggregator;
-    }
-
-    public ViewModelBase(IEventAggregator eventAggregator, IDialogService dialogService)
-    {
-        EventAggregator = eventAggregator;
-        DialogService = dialogService;
+        ArgumentNullException.ThrowIfNull(desktopInteractions);
+        Notifications = desktopInteractions.Notifications;
+        Navigation = desktopInteractions.Navigation;
+        AppDialogs = desktopInteractions.Dialogs;
     }
 
     public virtual void OnNavigatedTo(NavigationContext navigationContext)
@@ -40,6 +39,17 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
         if (viewName != null)
         {
             ParentView = viewName;
+        }
+
+        var parentRoute = navigationContext.Parameters
+            .FirstOrDefault(parameter => string.Equals(
+                parameter.Key,
+                "ParentRoute",
+                StringComparison.Ordinal))
+            .Value;
+        if (parentRoute is AppRoute route)
+        {
+            ParentRoute = route;
         }
     }
 
@@ -57,6 +67,11 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
 
         Journal.GoBack();
         return true;
+    }
+
+    protected void NavigateToParent(object? parameter = null)
+    {
+        Navigation.Navigate(new AppNavigationRequest(ParentRoute, Parameter: parameter));
     }
 
     public bool IsNavigationTarget(NavigationContext navigationContext)

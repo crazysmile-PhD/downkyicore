@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Generic;
-using DownKyi.Events;
+using DownKyi.Application.Desktop;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.Toolbox;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
@@ -13,8 +12,6 @@ namespace DownKyi.ViewModels
     internal class ViewToolboxViewModel : ViewModelBase
     {
         public const string Tag = "PageToolbox";
-
-        private readonly IRegionManager _regionManager;
 
         #region 页面属性申明
 
@@ -36,11 +33,9 @@ namespace DownKyi.ViewModels
 
         #endregion
 
-        public ViewToolboxViewModel(IRegionManager regionManager, IEventAggregator eventAggregator) : base(
-            eventAggregator)
+        public ViewToolboxViewModel(IDesktopInteractionContext desktopInteractions)
+            : base(desktopInteractions)
         {
-            _regionManager = regionManager;
-
             #region 属性初始化
 
             TabHeaders = new List<TabHeader>
@@ -65,13 +60,7 @@ namespace DownKyi.ViewModels
         /// </summary>
         protected internal override void ExecuteBackSpace()
         {
-            var parameter = new NavigationParam
-            {
-                ViewName = ParentView,
-                ParentViewName = null,
-                Parameter = null
-            };
-            EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+            NavigateToParent();
         }
 
         // 左侧tab点击事件
@@ -93,13 +82,13 @@ namespace DownKyi.ViewModels
             switch (tabHeader.Id)
             {
                 case 0:
-                    _regionManager.RequestNavigate("ToolboxContentRegion", ViewBiliHelperViewModel.Tag);
+                    Navigation.NavigateRegion(AppNavigationRegion.Toolbox, AppRoute.BiliHelper);
                     break;
                 case 1:
-                    _regionManager.RequestNavigate("ToolboxContentRegion", ViewDelogoViewModel.Tag);
+                    Navigation.NavigateRegion(AppNavigationRegion.Toolbox, AppRoute.Delogo);
                     break;
                 case 2:
-                    _regionManager.RequestNavigate("ToolboxContentRegion", ViewExtractMediaViewModel.Tag);
+                    Navigation.NavigateRegion(AppNavigationRegion.Toolbox, AppRoute.ExtractMedia);
                     break;
             }
         }
@@ -116,7 +105,8 @@ namespace DownKyi.ViewModels
 
             // 进入设置页面时显示的设置项
             SelectTabId = 0;
-            PropertyChangeAsync(() => { _regionManager.RequestNavigate("ToolboxContentRegion", ViewBiliHelperViewModel.Tag); });
+            PropertyChangeAsync(() =>
+                Navigation.NavigateRegion(AppNavigationRegion.Toolbox, AppRoute.BiliHelper));
         }
     }
 }

@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Threading;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -16,12 +15,9 @@ using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Models;
 using DownKyi.Utils;
-using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
-using Prism.Dialogs;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.Services.Download;
 
@@ -38,6 +34,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     private readonly DownloadStorageService _downloadStorageService;
     private readonly ISettingsStore _settingsStore;
     private readonly IUserNotificationService _notificationService;
+    private readonly IAppDialogService _dialogService;
 
     // 下载内容
     private bool _downloadAudio = true;
@@ -58,12 +55,14 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         DownloadStorageService downloadStorageService,
         ISettingsStore settingsStore,
         IUserNotificationService notificationService,
+        IAppDialogService dialogService,
         ILogger<AddToDownloadService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+        _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
@@ -95,12 +94,14 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         DownloadStorageService downloadStorageService,
         ISettingsStore settingsStore,
         IUserNotificationService notificationService,
+        IAppDialogService dialogService,
         ILogger<AddToDownloadService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+        _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
@@ -191,10 +192,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     /// <summary>
     /// 选择文件夹和下载项
     /// </summary>
-    /// <param name="dialogService"></param>
-    public async Task<string?> SetDirectory(IDialogService? dialogService)
+    public async Task<string?> SetDirectory(CancellationToken cancellationToken = default)
     {
-        if (dialogService == null) return null;
+        cancellationToken.ThrowIfCancellationRequested();
         // 选择的下载文件夹
         var directory = string.Empty;
 
@@ -215,19 +215,23 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         else
         {
             // 打开文件夹选择器
-            await dialogService.ShowDialogAsync(ViewDownloadSetterViewModel.Tag, null, result =>
+            var result = await _dialogService.ShowAsync(
+                new AppDialogRequest(AppDialog.DownloadSettings),
+                cancellationToken).ConfigureAwait(true);
+            if (result.Outcome == AppDialogOutcome.Accepted)
             {
-                if (result.Result != ButtonResult.OK) return;
                 // 选择的下载文件夹
-                directory = result.Parameters.GetValue<string>("directory");
+                directory = result.Parameters.TryGetValue("directory", out var directoryValue)
+                    ? directoryValue as string ?? string.Empty
+                    : string.Empty;
 
                 // 下载内容
-                _downloadAudio = result.Parameters.GetValue<bool>("downloadAudio");
-                _downloadVideo = result.Parameters.GetValue<bool>("downloadVideo");
-                _downloadDanmaku = result.Parameters.GetValue<bool>("downloadDanmaku");
-                _downloadSubtitle = result.Parameters.GetValue<bool>("downloadSubtitle");
-                _downloadCover = result.Parameters.GetValue<bool>("downloadCover");
-            }).ConfigureAwait(true);
+                _downloadAudio = GetBoolean(result.Parameters, "downloadAudio");
+                _downloadVideo = GetBoolean(result.Parameters, "downloadVideo");
+                _downloadDanmaku = GetBoolean(result.Parameters, "downloadDanmaku");
+                _downloadSubtitle = GetBoolean(result.Parameters, "downloadSubtitle");
+                _downloadCover = GetBoolean(result.Parameters, "downloadCover");
+            }
         }
 
         if (string.IsNullOrEmpty(directory))
@@ -238,7 +242,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
         if (!Directory.Exists(Directory.GetDirectoryRoot(directory)))
         {
-            var alert = new AlertService(dialogService);
+            var alert = new AlertService(_dialogService);
             await alert.ShowError(DictionaryResource.GetString("DriveNotFound")).ConfigureAwait(true);
 
             directory = string.Empty;
@@ -264,12 +268,15 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     /// <summary>
     /// 添加到下载列表
     /// </summary>
-    /// <param name="dialogService">dialog</param>
     /// <param name="directory">下载路径</param>
     /// <param name="isAll">是否下载所有，包括未选中项</param>
     /// <returns>添加的数量</returns>
-    public async Task<int> AddToDownload(IDialogService? dialogService, string? directory, bool isAll = false)
+    public async Task<int> AddToDownload(
+        string? directory,
+        bool isAll = false,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrEmpty(directory))
         {
             return -1;
@@ -316,7 +323,10 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 while (page.VideoQuality == null && retry < 5)
                 {
                     // 执行解析任务
-                    Utils.VideoPageInfo(_videoInfoService.GetVideoStream(page), page, _settingsStore);
+                    Utils.VideoPageInfo(
+                        _videoInfoService.GetVideoStream(page, cancellationToken),
+                        page,
+                        _settingsStore);
                     retry++;
                 }
 
@@ -391,23 +401,20 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                         {
                             case RepeatDownloadStrategy.Ask:
                                 {
-                                    var result = ButtonResult.Cancel;
-                                    await Dispatcher.UIThread.Invoke(async () =>
-                                    {
-                                        var param = new DialogParameters
-                                        {
-                                        { "message", $"{item.Name}已下载，是否重新下载" },
-                                        };
+                                    var result = (await _dialogService.ShowAsync(
+                                        new AppDialogRequest(
+                                            AppDialog.AlreadyDownloaded,
+                                            new Dictionary<string, object?>
+                                            {
+                                                ["message"] = $"{item.Name}已下载，是否重新下载"
+                                            }),
+                                        cancellationToken).ConfigureAwait(true)).Outcome;
 
-                                        if (dialogService != null)
-                                        {
-                                            await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; }).ConfigureAwait(true);
-                                        }
-                                    }).ConfigureAwait(true);
-
-                                    if (result == ButtonResult.OK)
+                                    if (result == AppDialogOutcome.Accepted)
                                     {
-                                        await _downloadStorageService.RemoveDownloadedAsync(item).ConfigureAwait(true);
+                                        await _downloadStorageService
+                                            .RemoveDownloadedAsync(item, cancellationToken)
+                                            .ConfigureAwait(true);
                                         _downloadLists.Downloaded.Remove(item);
                                         isDownloaded = false;
                                     }
@@ -605,7 +612,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                     downloadingItem.Metadata = BuildMovieMetadata(page);
                 }
 
-                await _downloadStorageService.AddDownloadingAsync(downloadingItem).ConfigureAwait(true);
+                await _downloadStorageService
+                    .AddDownloadingAsync(downloadingItem, cancellationToken)
+                    .ConfigureAwait(true);
                 addedItems.Add(downloadingItem);
             }
         }
@@ -618,6 +627,10 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         return addedItems.Count;
     }
 
+    private static bool GetBoolean(IReadOnlyDictionary<string, object?> parameters, string key)
+    {
+        return parameters.TryGetValue(key, out var value) && value is true;
+    }
 
     private MovieMetadata BuildMovieMetadata(VideoPage page)
     {

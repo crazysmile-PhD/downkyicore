@@ -1,13 +1,13 @@
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.ViewModels.PageViewModels;
 
 namespace DownKyi.Services.Download;
 
 internal interface IAddToDownloadSession
 {
-    Task<string?> SetDirectory(IDialogService? dialogService);
+    Task<string?> SetDirectory(CancellationToken cancellationToken = default);
 
     void SetVideoInfoService(IInfoService videoInfoService);
 
@@ -18,7 +18,7 @@ internal interface IAddToDownloadSession
     void ParseVideo(IInfoService videoInfoService);
 
     Task<int> AddToDownload(
-        IDialogService? dialogService,
         string? directory,
-        bool isAll = false);
+        bool isAll = false,
+        CancellationToken cancellationToken = default);
 }
