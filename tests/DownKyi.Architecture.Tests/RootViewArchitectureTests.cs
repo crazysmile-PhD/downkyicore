@@ -1,11 +1,12 @@
+using System.Xml;
 using System.Xml.Linq;
 
 namespace DownKyi.Architecture.Tests;
 
 public sealed class RootViewArchitectureTests
 {
-    private const string PrismNamespace = "http://prismlibrary.com/";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+
     [Fact]
     public void ProductionViewsDoNotUsePrismCompositionAttachedProperties()
     {
@@ -19,10 +20,9 @@ public sealed class RootViewArchitectureTests
             var forbiddenAttributes = document.Root!
                 .DescendantsAndSelf()
                 .Attributes()
-                .Where(attribute => attribute.Name.NamespaceName == PrismNamespace)
                 .Where(attribute => attribute.Name.LocalName is
                     "ViewModelLocator.AutoWireViewModel" or "RegionManager.RegionName")
-                .Select(attribute => attribute.Name.LocalName)
+                .Select(attribute => $"{attribute.Name} at line {((IXmlLineInfo)attribute).LineNumber}")
                 .ToArray();
             if (forbiddenAttributes.Length > 0)
             {
