@@ -80,6 +80,13 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
             return null;
         }
 
+        var stateWriter = new DownloadTaskStateWriter(
+            _projectionStore,
+            _loggerFactory.CreateLogger<DownloadTaskStateWriter>());
+        var artifactWriter = new DownloadArtifactWriter(
+            _settingsStore,
+            stateWriter,
+            _loggerFactory.CreateLogger<DownloadArtifactWriter>());
         var pipeline = new DownloadPipeline(
                 _downloadLists,
                 _projectionStore,
@@ -88,10 +95,13 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _settingsStore,
                 _diagnosticLogger,
                 _ffmpegProcessor,
+                artifactWriter,
+                stateWriter,
                 transferBackend,
                 _loggerFactory.CreateLogger<DownloadPipeline>());
         return new DownloadOrchestrator(
             pipeline,
+            stateWriter,
             _downloadLists,
             _settingsStore,
             _loggerFactory.CreateLogger<DownloadOrchestrator>());

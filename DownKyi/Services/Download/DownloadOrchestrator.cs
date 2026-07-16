@@ -17,6 +17,7 @@ namespace DownKyi.Services.Download;
 internal sealed class DownloadOrchestrator : IDownloadRuntime
 {
     private readonly DownloadPipeline _pipeline;
+    private readonly DownloadTaskStateWriter _stateWriter;
     private readonly DownloadListState _downloadLists;
     private readonly ISettingsStore _settingsStore;
     private readonly ILogger<DownloadOrchestrator> _logger;
@@ -30,11 +31,13 @@ internal sealed class DownloadOrchestrator : IDownloadRuntime
 
     public DownloadOrchestrator(
         DownloadPipeline pipeline,
+        DownloadTaskStateWriter stateWriter,
         DownloadListState downloadLists,
         ISettingsStore settingsStore,
         ILogger<DownloadOrchestrator> logger)
     {
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+        _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -160,7 +163,7 @@ internal sealed class DownloadOrchestrator : IDownloadRuntime
                     }
 
                     downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
-                    await _pipeline.PersistDownloadingStateAsync(downloading).ConfigureAwait(false);
+                    await _stateWriter.UpdateAsync(downloading, cancellationToken).ConfigureAwait(false);
                     await _pipeline.ExecuteAsync(downloading, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

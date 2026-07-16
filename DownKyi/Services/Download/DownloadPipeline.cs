@@ -1,19 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Xml;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
-using DownKyi.Core.Danmaku2Ass;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -25,7 +22,6 @@ using DownKyi.Platform;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
@@ -43,6 +39,8 @@ internal sealed class DownloadPipeline : IDisposable
     private IUiDispatcher UiDispatcher { get; }
     private DownloadDiagnosticLogger DiagnosticLogger { get; }
     private FfmpegProcessor FfmpegProcessor { get; }
+    private DownloadArtifactWriter ArtifactWriter { get; }
+    private DownloadTaskStateWriter StateWriter { get; }
     private ApplicationSettings Settings => SettingsStore.Current;
     private ISettingsStore SettingsStore { get; }
     private ILogger Logger { get; }
@@ -60,28 +58,6 @@ internal sealed class DownloadPipeline : IDisposable
         if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause || !DownloadingList.Contains(downloading))
         {
             throw new OperationCanceledException("Task is paused or deleted");
-        }
-    }
-
-    internal async Task PersistDownloadingStateAsync(DownloadingItem downloading)
-    {
-        try
-        {
-            await ProjectionStore
-                .UpdateDownloadingAsync(downloading, CancellationToken.GetValueOrDefault())
-                .ConfigureAwait(true);
-        }
-        catch (SqliteException e)
-        {
-            Logger.LogDebugMessage($"Persist downloading state failed: {e.Message}");
-        }
-        catch (InvalidOperationException e)
-        {
-            Logger.LogDebugMessage($"Persist downloading state conflicted: {e.Message}");
-        }
-        catch (OperationCanceledException) when (CancellationToken?.IsCancellationRequested == true)
-        {
-            return;
         }
     }
 
@@ -142,6 +118,8 @@ internal sealed class DownloadPipeline : IDisposable
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
+        DownloadArtifactWriter artifactWriter,
+        DownloadTaskStateWriter stateWriter,
         ITransferBackend transferBackend,
         ILogger logger)
     {
@@ -154,6 +132,8 @@ internal sealed class DownloadPipeline : IDisposable
         SettingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         DiagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         FfmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        ArtifactWriter = artifactWriter ?? throw new ArgumentNullException(nameof(artifactWriter));
+        StateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _transferBackend = transferBackend ?? throw new ArgumentNullException(nameof(transferBackend));
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -340,13 +320,17 @@ internal sealed class DownloadPipeline : IDisposable
             if (downloading.Downloading.DownloadedFiles.Remove(key))
             {
                 DeleteInvalidDownloadedMediaFile(cachedFile);
-                await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+                await StateWriter.UpdateAsync(
+                    downloading,
+                    CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
             }
         }
         else if (downloading.Downloading.DownloadFiles.TryAdd(key, fileName))
         {
             downloading.Downloading.Gid = null;
-            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+            await StateWriter.UpdateAsync(
+                downloading,
+                CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
         }
 
         NormalizeTransferSchemes(urls, Settings.Network.UseSsl == AllowStatus.Yes);
@@ -366,7 +350,9 @@ internal sealed class DownloadPipeline : IDisposable
             }
 
             downloading.Downloading.Gid = null;
-            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+            await StateWriter.UpdateAsync(
+                downloading,
+                CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
             return targetFile;
         }
 
@@ -374,7 +360,9 @@ internal sealed class DownloadPipeline : IDisposable
         {
             downloading.Downloading.Gid = null;
             DeleteInvalidDownloadedMediaFile(targetFile);
-            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+            await StateWriter.UpdateAsync(
+                downloading,
+                CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
         }
 
         return NullMark;
@@ -395,252 +383,6 @@ internal sealed class DownloadPipeline : IDisposable
             }
         }
     }
-
-    private async Task<string?> DownloadCoverAsync(
-        DownloadingItem downloading,
-        string? coverUrl,
-        string fileName)
-    {
-        ArgumentNullException.ThrowIfNull(downloading);
-
-        // 更新状态显示
-        downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
-        downloading.DownloadContent = DictionaryResource.GetString("DownloadingCover");
-        // 下载大小
-        downloading.DownloadingFileSize = string.Empty;
-        // 下载速度
-        downloading.SpeedDisplay = string.Empty;
-
-        // 复制图片到指定位置
-        try
-        {
-            if (string.IsNullOrWhiteSpace(coverUrl)) return null;
-            WebClient.DownloadFile(coverUrl, fileName, cancellationToken: CancellationToken.GetValueOrDefault());
-
-            // 记录本次下载的文件
-            if (downloading.Downloading.DownloadFiles.TryAdd(coverUrl, fileName))
-            {
-                await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
-            }
-            return fileName;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (HttpRequestException e)
-        {
-            Logger.LogErrorMessage("Cover download failed.", e);
-        }
-        catch (IOException e)
-        {
-            Logger.LogErrorMessage("Cover download timed out.", e);
-        }
-        catch (UnauthorizedAccessException e)
-        {
-            Logger.LogErrorMessage("Cover download was denied.", e);
-        }
-
-        return null;
-    }
-
-    private async Task<string> DownloadDanmakuAsync(DownloadingItem downloading)
-    {
-        ArgumentNullException.ThrowIfNull(downloading);
-
-        // 更新状态显示
-        downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
-        downloading.DownloadContent = DictionaryResource.GetString("DownloadingDanmaku");
-        // 下载大小
-        downloading.DownloadingFileSize = string.Empty;
-        // 下载速度
-        downloading.SpeedDisplay = string.Empty;
-
-        var title = $"{downloading.Name}";
-        var assFile = $"{downloading.DownloadBase?.FilePath}.ass";
-
-        // 记录本次下载的文件
-        if (downloading.Downloading.DownloadFiles.TryAdd("danmaku", assFile))
-        {
-            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
-        }
-
-        var danmakuSettings = Settings.Danmaku;
-        var screenWidth = danmakuSettings.ScreenWidth;
-        var screenHeight = danmakuSettings.ScreenHeight;
-        // 字幕配置
-        var subtitleConfig = new Config
-        {
-            Title = title,
-            ScreenWidth = screenWidth,
-            ScreenHeight = screenHeight,
-            FontName = danmakuSettings.FontName,
-            BaseFontSize = danmakuSettings.FontSize,
-            LineCount = danmakuSettings.LineCount,
-            LayoutAlgorithm =
-                GetDanmakuLayoutAlgorithmValue(danmakuSettings.LayoutAlgorithm), // async/sync
-            TuneDuration = 0,
-            DropOffset = 0,
-            BottomMargin = 0,
-            CustomOffset = 0
-        };
-
-        var bilibili = new Core.Danmaku2Ass.BilibiliDanmakuConverter();
-        bilibili.SetTopFilter(danmakuSettings.TopFilter == AllowStatus.Yes);
-        bilibili.SetBottomFilter(danmakuSettings.BottomFilter == AllowStatus.Yes);
-        bilibili.SetScrollFilter(danmakuSettings.ScrollFilter == AllowStatus.Yes);
-        var downloadBase = downloading.DownloadBase ?? throw new InvalidOperationException("DownloadBase is required to download danmaku.");
-        bilibili.Create(downloadBase.Avid, downloadBase.Cid, subtitleConfig, assFile, CancellationToken.GetValueOrDefault());
-
-        return assFile;
-    }
-
-
-    private async Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading)
-    {
-        ArgumentNullException.ThrowIfNull(downloading);
-
-        // 更新状态显示
-        downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
-        downloading.DownloadContent = DictionaryResource.GetString("DownloadingSubtitle");
-        // 下载大小
-        downloading.DownloadingFileSize = string.Empty;
-        // 下载速度
-        downloading.SpeedDisplay = string.Empty;
-
-        var srtFiles = new List<string>();
-
-        var subRipTexts = VideoStreamApi.GetSubtitle(
-            SettingsStore,
-            downloading.DownloadBase.Avid,
-            downloading.DownloadBase.Bvid,
-            downloading.DownloadBase.Cid,
-            e => Logger.LogErrorMessage("Subtitle response parsing failed.", e),
-            CancellationToken.GetValueOrDefault());
-        if (subRipTexts.Count == 0)
-        {
-            Logger.LogWarningMessage("No usable subtitles were returned for the download task.");
-        }
-
-        foreach (var subRip in subRipTexts)
-        {
-            var srtFile = $"{downloading.DownloadBase.FilePath}_{subRip.LanDoc}.srt";
-            try
-            {
-                await File.WriteAllTextAsync(
-                    srtFile,
-                    subRip.SrtString,
-                    CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
-
-                // 记录本次下载的文件
-                if (downloading.Downloading.DownloadFiles.TryAdd("subtitle", srtFile))
-                {
-                    await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
-                }
-
-                srtFiles.Add(srtFile);
-            }
-            catch (IOException e)
-            {
-                Logger.LogErrorMessage("Subtitle download failed.", e);
-            }
-            catch (UnauthorizedAccessException e)
-            {
-                Logger.LogErrorMessage("Subtitle download was denied.", e);
-            }
-        }
-
-        // subRipTexts中第一个复制为不带后缀的字幕,保证能自动匹配到字幕
-        if (srtFiles.Count > 0)
-        {
-            var srtFile = $"{downloading.DownloadBase.FilePath}.srt";
-            File.Copy(srtFiles[0], srtFile, true);
-            srtFiles.Add(srtFile);
-        }
-
-        return srtFiles;
-    }
-
-
-    private void GenerateNfoFile(DownloadingItem downloading)
-    {
-        ArgumentNullException.ThrowIfNull(downloading);
-
-        var metadata = downloading.Metadata;
-        if (metadata == null) return;
-
-        var settings = new XmlWriterSettings { Indent = true };
-        try
-        {
-            string filePath = $"{downloading.DownloadBase.FilePath}.nfo";
-            using var writer = XmlWriter.Create(filePath, settings);
-            WriteMovieMetadata(writer, metadata);
-        }
-        catch (IOException e)
-        {
-            Logger.LogErrorMessage("NFO generation failed.", e);
-        }
-        catch (UnauthorizedAccessException e)
-        {
-            Logger.LogErrorMessage("NFO generation was denied.", e);
-        }
-        catch (XmlException e)
-        {
-            Logger.LogErrorMessage("NFO generation produced invalid XML.", e);
-        }
-    }
-
-    private static void WriteMovieMetadata(XmlWriter writer, MovieMetadata metadata)
-    {
-        writer.WriteStartDocument();
-        writer.WriteStartElement("movie");
-
-        writer.WriteElementString("title", metadata.Title);
-        writer.WriteElementString("plot", metadata.Plot);
-        writer.WriteElementString("year", metadata.Year);
-
-        foreach (var genre in metadata.Genres)
-        {
-            writer.WriteElementString("genre", genre);
-        }
-
-        foreach (var tag in metadata.Tags)
-        {
-            writer.WriteElementString("tag", tag);
-        }
-
-        foreach (var actor in metadata.Actors)
-        {
-            writer.WriteStartElement("actor");
-            writer.WriteElementString("name", actor.Name);
-            writer.WriteElementString("role", actor.Role);
-            writer.WriteEndElement();
-        }
-
-        if (metadata.BilibiliId != null)
-        {
-            writer.WriteStartElement("uniqueid");
-            writer.WriteAttributeString("type", metadata.BilibiliId.Type);
-            writer.WriteString(metadata.BilibiliId.Value);
-            writer.WriteEndElement();
-        }
-
-        writer.WriteElementString("premiered", metadata.Premiered);
-
-        foreach (var rating in metadata.Ratings)
-        {
-            writer.WriteStartElement("rating");
-            writer.WriteAttributeString("name", rating.Name);
-            writer.WriteAttributeString("max", rating.Max.ToString(CultureInfo.InvariantCulture));
-            writer.WriteAttributeString("default", rating.IsDefault ? "true" : "false");
-            writer.WriteString(rating.Value.ToString(CultureInfo.InvariantCulture));
-            writer.WriteEndElement();
-        }
-
-        writer.WriteEndElement();
-        writer.WriteEndDocument();
-    }
-
 
     private async Task<string?> MixedFlowAsync(
         DownloadingItem downloading,
@@ -788,17 +530,6 @@ internal sealed class DownloadPipeline : IDisposable
         }
 
         downloading.PlayUrl = playUrl;
-    }
-
-    private static string GetDanmakuLayoutAlgorithmValue(DanmakuLayoutAlgorithm algorithm)
-    {
-        return algorithm switch
-        {
-            DanmakuLayoutAlgorithm.None => "none",
-            DanmakuLayoutAlgorithm.Async => "async",
-            DanmakuLayoutAlgorithm.Sync => "sync",
-            _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, "Unsupported danmaku layout algorithm.")
-        };
     }
 
     /// <summary>
@@ -1019,14 +750,16 @@ internal sealed class DownloadPipeline : IDisposable
                 //nfo
                 if (Settings.Video.Content.GenerateMovieMetadata)
                 {
-                    GenerateNfoFile(downloading);
+                    ArtifactWriter.GenerateNfoFile(downloading);
                 }
 
                 string? outputDanmaku = null;
                 // 如果需要下载弹幕
                 if (downloading.DownloadBase.NeedDownloadContent["downloadDanmaku"])
                 {
-                    outputDanmaku = await DownloadDanmakuAsync(downloading).ConfigureAwait(true);
+                    outputDanmaku = await ArtifactWriter.DownloadDanmakuAsync(
+                        downloading,
+                        cancellationToken).ConfigureAwait(true);
                 }
 
                 // 暂停
@@ -1036,7 +769,9 @@ internal sealed class DownloadPipeline : IDisposable
                 // 如果需要下载字幕
                 if (downloading.DownloadBase.NeedDownloadContent["downloadSubtitle"])
                 {
-                    outputSubtitles = await DownloadSubtitleAsync(downloading).ConfigureAwait(true);
+                    outputSubtitles = await ArtifactWriter.DownloadSubtitleAsync(
+                        downloading,
+                        cancellationToken).ConfigureAwait(true);
                 }
 
                 // 暂停
@@ -1049,18 +784,20 @@ internal sealed class DownloadPipeline : IDisposable
                 {
                     // page的封面
                     var pageCoverFileName = $"{downloading.DownloadBase.FilePath}.{GetImageExtension(downloading.DownloadBase.PageCoverUrl)}";
-                    outputPageCover = await DownloadCoverAsync(
+                    outputPageCover = await ArtifactWriter.DownloadCoverAsync(
                         downloading,
                         downloading.DownloadBase.PageCoverUrl,
-                        pageCoverFileName).ConfigureAwait(true);
+                        pageCoverFileName,
+                        cancellationToken).ConfigureAwait(true);
 
 
                     var coverFileName = $"{downloading.DownloadBase.FilePath}.Cover.{GetImageExtension(downloading.DownloadBase.CoverUrl)}";
                     // 封面
-                    outputCover = await DownloadCoverAsync(
+                    outputCover = await ArtifactWriter.DownloadCoverAsync(
                         downloading,
                         downloading.DownloadBase.CoverUrl,
-                        coverFileName).ConfigureAwait(true);
+                        coverFileName,
+                        cancellationToken).ConfigureAwait(true);
                 }
 
                 // 暂停
@@ -1148,7 +885,9 @@ internal sealed class DownloadPipeline : IDisposable
         catch (OperationCanceledException e)
         {
             Logger.LogDebugMessage(e.Message);
-            await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+            await StateWriter.UpdateAsync(
+                downloading,
+                System.Threading.CancellationToken.None).ConfigureAwait(true);
         }
     }
 
@@ -1169,7 +908,9 @@ internal sealed class DownloadPipeline : IDisposable
         downloading.Downloading.DownloadStatus = DownloadStatus.DownloadFailed;
         downloading.StartOrPause = ButtonIcon.Instance().Retry;
         downloading.StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
-        await PersistDownloadingStateAsync(downloading).ConfigureAwait(true);
+        await StateWriter.UpdateAsync(
+            downloading,
+            CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -1222,7 +963,9 @@ internal sealed class DownloadPipeline : IDisposable
 
             item.SpeedDisplay = string.Empty;
 
-            await ProjectionStore.UpdateDownloadingAsync(item).ConfigureAwait(true);
+            await StateWriter.UpdateAsync(
+                item,
+                System.Threading.CancellationToken.None).ConfigureAwait(true);
         }
     }
 
@@ -1262,7 +1005,7 @@ internal sealed class DownloadPipeline : IDisposable
             localFileName,
             expectedBytes,
             () => EnsureDownloadIsActive(downloading),
-            cancellationToken => ProjectionStore.UpdateDownloadingAsync(
+            cancellationToken => StateWriter.UpdateAsync(
                 downloading,
                 cancellationToken),
             CancellationToken.GetValueOrDefault()));

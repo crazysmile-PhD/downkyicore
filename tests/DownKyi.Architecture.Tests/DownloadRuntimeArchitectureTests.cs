@@ -65,6 +65,31 @@ public sealed class DownloadRuntimeArchitectureTests
     }
 
     [Fact]
+    public void DownloadArtifactsAndTaskStateHaveDedicatedOwners()
+    {
+        var directory = Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download");
+        var pipelineSource = File.ReadAllText(Path.Combine(directory, "DownloadPipeline.cs"));
+        var artifactSource = File.ReadAllText(Path.Combine(directory, "DownloadArtifactWriter.cs"));
+        var stateSource = File.ReadAllText(Path.Combine(directory, "DownloadTaskStateWriter.cs"));
+        var factorySource = File.ReadAllText(Path.Combine(directory, "DownloadRuntimeFactory.cs"));
+
+        Assert.Contains("DownloadArtifactWriter ArtifactWriter", pipelineSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskStateWriter StateWriter", pipelineSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("VideoStreamApi.GetSubtitle", pipelineSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("BilibiliDanmakuConverter", pipelineSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("XmlWriter.Create", pipelineSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("UpdateDownloadingAsync", pipelineSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Microsoft.Data.Sqlite", pipelineSource, StringComparison.Ordinal);
+
+        Assert.Contains("VideoStreamApi.GetSubtitle", artifactSource, StringComparison.Ordinal);
+        Assert.Contains("new BilibiliDanmakuConverter()", artifactSource, StringComparison.Ordinal);
+        Assert.Contains("XmlWriter.Create", artifactSource, StringComparison.Ordinal);
+        Assert.Contains("UpdateDownloadingAsync", stateSource, StringComparison.Ordinal);
+        Assert.Contains("new DownloadArtifactWriter(", factorySource, StringComparison.Ordinal);
+        Assert.Contains("new DownloadTaskStateWriter(", factorySource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DownloadRuntimeUsesInjectedListAndStorageOwners()
     {
         var directory = Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download");
@@ -115,6 +140,8 @@ public sealed class DownloadRuntimeArchitectureTests
             "DownloadRuntimeFactory.cs",
             "DownloadOrchestrator.cs",
             "DownloadPipeline.cs",
+            "DownloadArtifactWriter.cs",
+            "DownloadTaskStateWriter.cs",
             "BuiltinTransferBackend.cs",
             "Aria2TransferBackend.cs",
             "DownloadDiagnosticLogger.cs"
