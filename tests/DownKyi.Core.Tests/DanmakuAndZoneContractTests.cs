@@ -71,4 +71,27 @@ public sealed class DanmakuAndZoneContractTests
             Directory.Delete(directory);
         }
     }
+
+    [Fact]
+    public void ProducerReportReturnsSummaryAndPerFilterCounts()
+    {
+        var producer = new Producer(
+            new Dictionary<string, bool>
+            {
+                ["top_filter"] = false,
+                ["bottom_filter"] = false,
+                ["scroll_filter"] = false
+            },
+            []);
+
+        producer.StartHandle();
+        var report = producer.Report();
+
+        Assert.Equal(0, report["blocked"]);
+        Assert.Equal(0, report["passed"]);
+        Assert.Equal(0, report["total"]);
+        Assert.Equal(0, report["top_filter"]);
+        Assert.Equal(0, report["bottom_filter"]);
+        Assert.Equal(0, report["scroll_filter"]);
+    }
 }

@@ -51,16 +51,6 @@
                             Content="{TemplateBinding Content}" />
                     </Grid>
 
-                    <!--<ControlTemplate.Triggers>
-                        <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="nameIcon" Property="Source"
-                                    Value="{StaticResource Radio.SelectedDrawingImage}" />
-                        </Trigger>
-                        <Trigger Property="IsChecked" Value="False">
-                            <Setter TargetName="nameIcon" Property="Source"
-                                    Value="{StaticResource Radio.UnselectedDrawingImage}" />
-                        </Trigger>
-                    </ControlTemplate.Triggers>-->
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

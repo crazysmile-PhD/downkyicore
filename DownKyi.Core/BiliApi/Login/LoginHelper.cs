@@ -103,7 +103,6 @@ public static class LoginHelper
             try
             {
                 File.Copy(tempFile, LocalLoginInfo, true);
-                // Encryptor.EncryptFile(tempFile, LOCAL_LOGIN_INFO, password);
             }
             catch (IOException)
             {

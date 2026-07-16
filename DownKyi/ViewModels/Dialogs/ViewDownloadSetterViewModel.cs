@@ -459,9 +459,5 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         // 下载目录
         // 弹出选择下载目录的窗口
         return await _filePickerService.SelectFolderAsync().ConfigureAwait(true);
-        // if (path == null || path == string.Empty)
-        // {
-        //     return null;
-        // }
     }
 }

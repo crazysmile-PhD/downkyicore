@@ -1,5 +1,3 @@
-using System.Reflection;
-
 namespace DownKyi.Core.Danmaku2Ass;
 
 /// <summary>
@@ -74,11 +72,6 @@ public abstract class Display
     /// <returns></returns>
     protected int SetFontSize()
     {
-        if (IsScaled)
-        {
-            Console.WriteLine($"{Danmaku.SizeRatio}");
-        }
-
         return Utils.IntCeiling(Config.BaseFontSize * Danmaku.SizeRatio);
     }
 
@@ -89,7 +82,6 @@ public abstract class Display
     protected bool SetIsScaled()
     {
         return !Math.Round(Danmaku.SizeRatio, 2).Equals(1.0);
-        //return Danmaku.SizeRatio.Equals(1.0f);
     }
 
     /// <summary>
@@ -370,17 +362,12 @@ public class ScrollDisplay : Display
     /// <returns></returns>
     protected override int SetDuration()
     {
-        var methodName = string.Concat(
-            Config.LayoutAlgorithm.AsSpan(0, 1).ToString().ToUpperInvariant(),
-            Config.LayoutAlgorithm.AsSpan(1),
-            "Duration");
-        var method = typeof(ScrollDisplay).GetMethod(methodName);
-        if (method != null)
+        return Config.LayoutAlgorithm switch
         {
-            return method.Invoke(this, null) is int duration ? duration : 0;
-        }
-
-        return 0;
+            "sync" => SyncDuration(),
+            "async" => AsyncDuration(),
+            _ => 0
+        };
     }
 
     /// <summary>

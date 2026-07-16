@@ -172,19 +172,6 @@ internal partial class App : Avalonia.Application, IDisposable
         Dispose();
     }
 
-    private void NativeMenuItem_OnClick(object? sender, EventArgs e)
-    {
-        ObserveBackgroundTask(ExitFromNativeMenuAsync(), "Application exit failed.");
-    }
-
-    private async Task ExitFromNativeMenuAsync()
-    {
-        if (_applicationLifecycle != null)
-        {
-            await _applicationLifecycle.ExitAsync().ConfigureAwait(true);
-        }
-    }
-
     private void ObserveBackgroundTask(Task task, string failureMessage)
     {
         _ = task.ContinueWith(

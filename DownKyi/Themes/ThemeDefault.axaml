@@ -3,14 +3,11 @@
     <ResourceDictionary.MergedDictionaries>
         <!--  每个主题都相同  -->
         <ResourceInclude Source="/Themes/ColorBrush.axaml" />
-        <!--  根据实际需要调整  -->
-        <!-- <ResourceInclude Source="/Themes/Colors/ColorDefault.axaml" /> -->
         <ResourceInclude Source="/Themes/Styles/StyleBtn.axaml" />
         <ResourceInclude Source="/Themes/Styles/StyleImageBtn.axaml" />
         <ResourceInclude Source="/Themes/Styles/StyleSystemBtn.axaml" />
         <ResourceInclude Source="/Themes/Styles/StyleCheckBox.axaml" />
         <ResourceInclude Source="/Themes/Styles/StyleListBox.axaml" />
-        <!-- <ResourceInclude Source="Styles/StyleListView.xaml" /> -->
         <ResourceInclude Source="/Themes/Styles/StyleRadio.axaml" />
         <ResourceInclude Source="/Themes/Styles/NormalIcon.axaml" />
         <ResourceInclude Source="/Themes/Styles/NavigationIcon.axaml" />

@@ -102,13 +102,7 @@
     </Application.Styles>
     <TrayIcon.Icons>
         <TrayIcons>
-            <TrayIcon Icon="/Resources/favicon.ico" ToolTipText="{StaticResource AppName}">
-                <!--<TrayIcon.Menu>
-                    <NativeMenu>
-                        <NativeMenuItem Header="退出" Click="NativeMenuItem_OnClick" />
-                    </NativeMenu>
-                </TrayIcon.Menu>-->
-            </TrayIcon>
+            <TrayIcon Icon="/Resources/favicon.ico" ToolTipText="{StaticResource AppName}" />
         </TrayIcons>
     </TrayIcon.Icons>
 </Application>

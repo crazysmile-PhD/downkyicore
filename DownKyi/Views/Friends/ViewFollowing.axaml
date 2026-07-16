@@ -99,11 +99,6 @@
                     ItemContainerTheme="{StaticResource ContentListStyle}"
                     ItemsSource="{Binding Contents}"
                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <!--<i:Interaction.Behaviors>
-                        <ia:EventTriggerBehavior EventName="SelectionChanged">
-                            <ia:InvokeCommandAction Command="{Binding ContentsCommand}" CommandParameter="{Binding ElementName=nameContents, Path=SelectedItems}" />
-                        </ia:EventTriggerBehavior>
-                    </i:Interaction.Behaviors>-->
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel />

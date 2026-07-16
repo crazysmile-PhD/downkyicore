@@ -467,21 +467,6 @@
                     Orientation="Horizontal"
                     ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}"
                     IsVisible="{Binding ElementName=NameIsAriaHttpProxy,Path=IsChecked}">
-                    <!--<StackPanel.Style>
-                        <Style TargetType="{x:Type StackPanel}">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding ElementName=nameIsAriaHttpProxy, Path=IsChecked}"
-                                             Value="false">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding ElementName=nameIsAriaHttpProxy, Path=IsChecked}"
-                                             Value="true">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </StackPanel.Style>-->
-
                     <StackPanel Orientation="Horizontal">
                         <TextBlock
                             VerticalAlignment="Center"

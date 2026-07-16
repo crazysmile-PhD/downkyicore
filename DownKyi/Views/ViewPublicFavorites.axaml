@@ -69,9 +69,7 @@
                 <Image asyncImageLoader:ImageLoader.Source="{Binding Favorites.CoverUrl}">
                     <Image.ContextMenu>
                         <ContextMenu>
-                            <MenuItem Command="{Binding CopyCoverCommand}" Header="{DynamicResource CopyCover}" />
                             <MenuItem Command="{Binding CopyCoverUrlCommand}" Header="{DynamicResource CopyCoverUrl}" />
-                            <!--  TODO 复制封面到文件  -->
                         </ContextMenu>
                     </Image.ContextMenu>
                 </Image>

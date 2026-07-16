@@ -19,6 +19,7 @@ public sealed class LegacyPatternArchitectureTests
             ["Task.Wait"] = @"\.Wait\s*\(",
             ["GetAwaiter.GetResult"] = @"\.GetAwaiter\s*\(\s*\)\s*\.GetResult\s*\(",
             ["new HttpClient"] = @"\bnew\s+HttpClient\s*\(",
+            ["Console output"] = @"\bConsole\s*\.",
             ["async void"] = @"\basync\s+void\b"
         };
         var violations = EnumerateProductionSourceFiles()
@@ -172,6 +173,10 @@ public sealed class LegacyPatternArchitectureTests
     public void PrismAndDryIocCannotReturnToProductionComposition()
     {
         var files = EnumerateProductionSourceFiles()
+            .Concat(Directory.EnumerateFiles(
+                Path.Combine(RepositoryRoot, "DownKyi"),
+                "*.axaml",
+                SearchOption.AllDirectories))
             .Concat(Directory.EnumerateFiles(RepositoryRoot, "*.csproj", SearchOption.AllDirectories)
                 .Where(path => !IsBuildOutput(path)))
             .Concat(Directory.EnumerateFiles(RepositoryRoot, "*.props", SearchOption.TopDirectoryOnly));

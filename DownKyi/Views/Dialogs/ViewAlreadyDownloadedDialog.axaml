@@ -4,15 +4,6 @@
              xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
              x:DataType="vmd:ViewAlreadyDownloadedDialogViewModel">
 
-    <!-- <prismExtension:Dialog.Theme> -->
-    <!--     <ControlTheme TargetType="Window"> -->
-    <!--         <Setter Property="CanResize" Value="False" /> -->
-    <!--         <Setter Property="ShowInTaskbar" Value="False" /> -->
-    <!--         <Setter Property="SizeToContent" Value="WidthAndHeight" /> -->
-    <!--         <Setter Property="SystemDecorations" Value="None" /> -->
-    <!--     </ControlTheme> -->
-    <!-- </prismExtension:Dialog.Theme> -->
-
     <Border BorderBrush="{DynamicResource BrushWindowBorder}" BorderThickness="1,1,0.6,0.6">
         <Grid RowDefinitions="40,*">
             <Grid

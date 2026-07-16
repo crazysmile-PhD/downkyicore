@@ -205,21 +205,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
             AppRoute.PublicFavorites));
     }
 
-    // 复制封面事件
-    private RelayCommand? _copyCoverCommand;
-
-    public RelayCommand CopyCoverCommand => _copyCoverCommand ??= new RelayCommand(ExecuteCopyCoverCommand);
-
-    /// <summary>
-    /// 复制封面事件
-    /// </summary>
-    private void ExecuteCopyCoverCommand()
-    {
-        // 复制封面图片到剪贴板
-        // Clipboard.SetImage(Favorites.Cover);
-        _logger.LogInformationMessage("Favorites cover image copied to the clipboard.");
-    }
-
     // 复制封面URL事件
     private DownKyiAsyncDelegateCommand? _copyCoverUrlCommand;
 

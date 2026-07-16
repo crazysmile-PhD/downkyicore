@@ -35,7 +35,6 @@ internal sealed class DownloadPipeline : IDisposable
     private bool _disposed;
     private string Tag => _transferBackend.Name;
 
-    // protected TaskbarIcon _notifyIcon;
     private IUserNotificationService NotificationService { get; }
     private DownloadListState DownloadLists { get; }
     private ImmutableObservableCollection<DownloadingItem> DownloadingList { get; }
@@ -397,7 +396,7 @@ internal sealed class DownloadPipeline : IDisposable
         }
     }
 
-    private async Task<string?> BaseDownloadCoverAsync(
+    private async Task<string?> DownloadCoverAsync(
         DownloadingItem downloading,
         string? coverUrl,
         string fileName)
@@ -445,7 +444,7 @@ internal sealed class DownloadPipeline : IDisposable
         return null;
     }
 
-    private async Task<string> BaseDownloadDanmakuAsync(DownloadingItem downloading)
+    private async Task<string> DownloadDanmakuAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -469,15 +468,6 @@ internal sealed class DownloadPipeline : IDisposable
         var danmakuSettings = Settings.Danmaku;
         var screenWidth = danmakuSettings.ScreenWidth;
         var screenHeight = danmakuSettings.ScreenHeight;
-        //if (Settings.IsCustomDanmakuResolution() != AllowStatus.YES)
-        //{
-        //    if (downloadingEntity.Width > 0 && downloadingEntity.Height > 0)
-        //    {
-        //        screenWidth = downloadingEntity.Width;
-        //        screenHeight = downloadingEntity.Height;
-        //    }
-        //}
-
         // 字幕配置
         var subtitleConfig = new Config
         {
@@ -506,7 +496,7 @@ internal sealed class DownloadPipeline : IDisposable
     }
 
 
-    private async Task<IReadOnlyList<string>> BaseDownloadSubtitleAsync(DownloadingItem downloading)
+    private async Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -652,13 +642,14 @@ internal sealed class DownloadPipeline : IDisposable
     }
 
 
-    private async Task<string?> BaseMixedFlowAsync(
+    private async Task<string?> MixedFlowAsync(
         DownloadingItem downloading,
         string? audioUid,
         string? videoUid,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(downloading);
+        EnsureDownloadIsActive(downloading);
 
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("MixedFlow");
@@ -667,11 +658,6 @@ internal sealed class DownloadPipeline : IDisposable
         downloading.DownloadingFileSize = string.Empty;
         // 下载速度
         downloading.SpeedDisplay = string.Empty;
-
-        //if (videoUid == nullMark)
-        //{
-        //    return null;
-        //}
 
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
         if (videoUid == null)
@@ -745,7 +731,7 @@ internal sealed class DownloadPipeline : IDisposable
     private sealed record DurlDownloadResult(PlayUrlDurl Durl, string FilePath);
 
 
-    private async Task BaseParseAsync(DownloadingItem downloading)
+    private async Task ParseAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -825,11 +811,8 @@ internal sealed class DownloadPipeline : IDisposable
         CancellationToken cancellationToken)
     {
         CancellationToken = cancellationToken;
-        // 路径
         downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/", StringComparison.Ordinal);
-        var temp = downloading.DownloadBase.FilePath.Split('/');
-        //string path = downloading.DownloadBase.FilePath.Replace(temp[temp.Length - 1], "");
-        var path = downloading.DownloadBase.FilePath.TrimEnd(temp[temp.Length - 1].ToCharArray());
+        var path = GetDownloadDirectoryPath(downloading.DownloadBase.FilePath);
 
         // 路径不存在则创建
         if (!Directory.Exists(path))
@@ -862,7 +845,6 @@ internal sealed class DownloadPipeline : IDisposable
                 // 初始化
                 downloading.DownloadStatusTitle = string.Empty;
                 downloading.DownloadContent = string.Empty;
-                //downloading.Downloading.DownloadFiles.Clear();
 
                 // 解析并依次下载音频、视频、弹幕、字幕、封面等内容
                 await ParseAsync(downloading).ConfigureAwait(true);
@@ -926,7 +908,11 @@ internal sealed class DownloadPipeline : IDisposable
                     if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"] ||
                         downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
                     {
-                        outputMedia = await MixedFlowAsync(downloading, audioUid, videoUid).ConfigureAwait(true);
+                        outputMedia = await MixedFlowAsync(
+                            downloading,
+                            audioUid,
+                            videoUid,
+                            cancellationToken).ConfigureAwait(true);
                     }
 
                     // 检测音频、视频是否下载成功
@@ -1009,7 +995,8 @@ internal sealed class DownloadPipeline : IDisposable
                             var outputMedia = await MixedFlowAsync(
                                 downloading,
                                 null,
-                                downloadStatus[0].FilePath).ConfigureAwait(true);
+                                downloadStatus[0].FilePath,
+                                cancellationToken).ConfigureAwait(true);
                             isMediaSuccess = File.Exists(outputMedia);
                         }
                     }
@@ -1070,7 +1057,6 @@ internal sealed class DownloadPipeline : IDisposable
 
                     var coverFileName = $"{downloading.DownloadBase.FilePath}.Cover.{GetImageExtension(downloading.DownloadBase.CoverUrl)}";
                     // 封面
-                    //outputCover = DownloadCover(downloading, downloading.DownloadBase.CoverUrl, $"{path}/Cover.{GetImageExtension(downloading.DownloadBase.CoverUrl)}");
                     outputCover = await DownloadCoverAsync(
                         downloading,
                         downloading.DownloadBase.CoverUrl,
@@ -1079,14 +1065,6 @@ internal sealed class DownloadPipeline : IDisposable
 
                 // 暂停
                 EnsureDownloadIsActive(downloading);
-
-                // 这里本来只有IsExist，没有pause，不知道怎么处理
-                // 是否存在
-                //isExist = IsExist(downloading);
-                //if (!isExist.Result)
-                //{
-                //    return;
-                //}
 
                 // 检测弹幕是否下载成功
                 var isDanmakuSuccess = true;
@@ -1165,7 +1143,6 @@ internal sealed class DownloadPipeline : IDisposable
                     var finishedSort = Settings.Basic.DownloadFinishedSort;
                     DownloadLists.SortDownloaded(finishedSort);
                 }).ConfigureAwait(true);
-                // _notifyIcon.ShowBalloonTip(DictionaryResource.GetString("DownloadSuccess"), $"{downloadedItem.DownloadBase.Name}", BalloonIcon.Info);
             }
         }
         catch (OperationCanceledException e)
@@ -1200,17 +1177,27 @@ internal sealed class DownloadPipeline : IDisposable
     /// </summary>
     /// <param name="coverUrl"></param>
     /// <returns></returns>
-    private static string GetImageExtension(string? coverUrl)
+    internal static string GetImageExtension(string? coverUrl)
     {
-        if (coverUrl == null)
+        if (string.IsNullOrWhiteSpace(coverUrl))
         {
             return string.Empty;
         }
 
-        // 图片的扩展名
-        var temp = coverUrl.Split('.');
-        var fileExtension = temp[^1];
-        return fileExtension;
+        var candidate = coverUrl.StartsWith("//", StringComparison.Ordinal)
+            ? $"{Uri.UriSchemeHttps}:{coverUrl}"
+            : coverUrl;
+        var path = Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
+            ? uri.AbsolutePath
+            : coverUrl.Split('?', '#')[0];
+        return Path.GetExtension(path).TrimStart('.');
+    }
+
+    internal static string GetDownloadDirectoryPath(string filePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        return Path.GetDirectoryName(filePath)
+               ?? throw new ArgumentException("Download file path must include a directory.", nameof(filePath));
     }
 
     internal async Task PersistShutdownStateAsync()
@@ -1259,24 +1246,6 @@ internal sealed class DownloadPipeline : IDisposable
         }
 
         _transferBackend.Dispose();
-    }
-
-    private Task ParseAsync(DownloadingItem downloading) => BaseParseAsync(downloading);
-    private Task<string> DownloadDanmakuAsync(DownloadingItem downloading) => BaseDownloadDanmakuAsync(downloading);
-    private Task<IReadOnlyList<string>> DownloadSubtitleAsync(DownloadingItem downloading) =>
-        BaseDownloadSubtitleAsync(downloading);
-    private Task<string?> DownloadCoverAsync(
-        DownloadingItem downloading,
-        string? coverUrl,
-        string fileName) => BaseDownloadCoverAsync(downloading, coverUrl, fileName);
-    private async Task<string?> MixedFlowAsync(DownloadingItem downloading, string? audioUid, string? videoUid)
-    {
-        EnsureDownloadIsActive(downloading);
-        return await BaseMixedFlowAsync(
-            downloading,
-            audioUid,
-            videoUid,
-            CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
     }
 
     private Task<DownloadTransferOutcome> TransferAsync(

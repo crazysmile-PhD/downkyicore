@@ -16,12 +16,6 @@ internal class Loading : TemplatedControl
     private double _ellipseDiameter = 10;
     private Thickness _ellipseOffset = new(2);
 
-    static Loading()
-    {
-        //DefaultStyleKeyProperty.OverrideMetadata(typeof(ProgressRing),
-        //    new FrameworkPropertyMetadata(typeof(ProgressRing)));
-    }
-
     public Loading()
     {
     }

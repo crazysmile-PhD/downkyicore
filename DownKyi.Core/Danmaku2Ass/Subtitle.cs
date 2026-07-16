@@ -100,12 +100,10 @@ public class Subtitle
         // 暗色加个亮色边框，方便阅读
         if (Utils.IsDark(Danmaku.Color))
         {
-            //return "\\3c&HFFFFFF";
             return "\\3c&H000000";
         }
 
         return "\\3c&H000000";
-        //return "";
     }
 
     protected string SetFontSizeMarkup()

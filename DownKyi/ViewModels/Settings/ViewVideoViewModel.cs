@@ -281,18 +281,12 @@ internal class ViewVideoViewModel : ViewModelBase
 
         // 优先下载的视频编码
         VideoCodecs = Constant.GetCodecIds();
-        //VideoCodecs = new List<string>
-        //{
-        //    "H.264/AVC",
-        //    "H.265/HEVC",
-        //};
 
         // 优先下载画质
         VideoQualityList = Constant.GetResolutions();
 
         // 优先下载音质
         AudioQualityList = Constant.GetAudioQualities();
-        //AudioQualityList.RemoveAt(3);
         AudioQualityList[3].Id += 1000;
         AudioQualityList[4].Id += 1000;
 
@@ -367,7 +361,6 @@ internal class ViewVideoViewModel : ViewModelBase
         // 优先下载的视频编码
         var videoSettings = _settingsStore.Current.Video;
         var videoCodecs = videoSettings.VideoCodecs;
-        //SelectedVideoCodec = GetVideoCodecsString(videoCodecs);
         SelectedVideoCodec = VideoCodecs.FirstOrDefault(t => t.Id == videoCodecs) ?? VideoCodecs[0];
 
         // 优先下载画质
@@ -457,8 +450,6 @@ internal class ViewVideoViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteVideoCodecsCommand(object parameter)
     {
-        //VideoCodecs videoCodecs = GetVideoCodecs(parameter);
-
         if (parameter is not Quality videoCodecs)
         {
             return;
@@ -937,55 +928,6 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     #endregion
-
-    /// <summary>
-    /// 返回VideoCodecs的字符串
-    /// </summary>
-    /// <param name="videoCodecs"></param>
-    /// <returns></returns>
-    //private string GetVideoCodecsString(VideoCodecs videoCodecs)
-    //{
-    //    string codec;
-    //    switch (videoCodecs)
-    //    {
-    //        case Core.Settings.VideoCodecs.NONE:
-    //            codec = "";
-    //            break;
-    //        case Core.Settings.VideoCodecs.AVC:
-    //            codec = "H.264/AVC";
-    //            break;
-    //        case Core.Settings.VideoCodecs.HEVC:
-    //            codec = "H.265/HEVC";
-    //            break;
-    //        default:
-    //            codec = "";
-    //            break;
-    //    }
-    //    return codec;
-    //}
-
-    /// <summary>
-    /// 返回VideoCodecs
-    /// </summary>
-    /// <param name="str"></param>
-    /// <returns></returns>
-    //private VideoCodecs GetVideoCodecs(string str)
-    //{
-    //    VideoCodecs videoCodecs;
-    //    switch (str)
-    //    {
-    //        case "H.264/AVC":
-    //            videoCodecs = Core.Settings.VideoCodecs.AVC;
-    //            break;
-    //        case "H.265/HEVC":
-    //            videoCodecs = Core.Settings.VideoCodecs.HEVC;
-    //            break;
-    //        default:
-    //            videoCodecs = Core.Settings.VideoCodecs.NONE;
-    //            break;
-    //    }
-    //    return videoCodecs;
-    //}
 
     /// <summary>
     /// 保存下载视频内容到设置
