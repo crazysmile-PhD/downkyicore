@@ -15,8 +15,7 @@ using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.UserSpace;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels;
 
@@ -194,6 +193,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ObserveRegion(AppNavigationRegion.UserSpace);
 
         #region 属性初始化
 
@@ -215,9 +215,9 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     #region 命令申明
 
     // 返回事件
-    private DelegateCommand? _backSpaceCommand;
+    private RelayCommand? _backSpaceCommand;
 
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
     /// <summary>
     /// 返回事件
@@ -233,9 +233,9 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     }
 
     // 左侧tab点击事件
-    private DelegateCommand<object>? _tabLeftBannersCommand;
+    private RelayCommand<object>? _tabLeftBannersCommand;
 
-    public DelegateCommand<object> TabLeftBannersCommand => _tabLeftBannersCommand ??= new DelegateCommand<object>(ExecuteTabLeftBannersCommand);
+    public RelayCommand<object> TabLeftBannersCommand => _tabLeftBannersCommand ??= RequiredParameterCommand.Create<object>(ExecuteTabLeftBannersCommand);
 
     /// <summary>
     /// 左侧tab点击事件
@@ -278,9 +278,9 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     }
 
     // 右侧tab点击事件
-    private DelegateCommand<object>? _tabRightBannersCommand;
+    private RelayCommand<object>? _tabRightBannersCommand;
 
-    public DelegateCommand<object> TabRightBannersCommand => _tabRightBannersCommand ??= new DelegateCommand<object>(ExecuteTabRightBannersCommand);
+    public RelayCommand<object> TabRightBannersCommand => _tabRightBannersCommand ??= RequiredParameterCommand.Create<object>(ExecuteTabRightBannersCommand);
 
     /// <summary>
     /// 右侧tab点击事件
@@ -519,7 +519,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     /// 接收mid参数
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
@@ -537,7 +537,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync), _logger);
     }
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         _loadCancellation?.Cancel();
         base.OnNavigatedFrom(navigationContext);

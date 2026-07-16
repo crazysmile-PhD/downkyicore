@@ -3,8 +3,6 @@
              x:Class="DownKyi.Views.UserSpace.ViewSeasonsSeries"
              xmlns:vmu="clr-namespace:DownKyi.ViewModels.UserSpace"
              x:DataType="vmu:ViewSeasonsSeriesViewModel"
-             xmlns:prism="http://prismlibrary.com/"
-             prism:ViewModelLocator.AutoWireViewModel="True"
              xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader">
     <Grid RowDefinitions="*">
         <ListBox

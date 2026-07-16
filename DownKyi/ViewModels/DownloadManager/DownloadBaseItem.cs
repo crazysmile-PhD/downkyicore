@@ -4,11 +4,11 @@ using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Models;
 using DownKyi.Utils;
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.DownloadManager
 {
-    internal class DownloadBaseItem : BindableBase
+    internal class DownloadBaseItem : ObservableObject
     {
         // model数据
         private DownloadBase _downloadBase = new();
@@ -43,7 +43,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 DownloadBase.Order = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -54,7 +54,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 DownloadBase.MainTitle = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -65,7 +65,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 DownloadBase.Name = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -76,7 +76,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 DownloadBase.Duration = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -87,7 +87,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 DownloadBase.VideoCodecName = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -98,7 +98,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 DownloadBase.Resolution = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -109,7 +109,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 DownloadBase.AudioCodec = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -120,7 +120,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 DownloadBase.FileSize = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
     }

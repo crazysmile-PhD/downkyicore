@@ -1,8 +1,9 @@
 using System;
+using System.Collections.Generic;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Settings;
 using DownKyi.Utils;
-using Prism.Commands;
-using Prism.Dialogs;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Dialogs;
 
@@ -40,9 +41,9 @@ internal class ViewParsingSelectorViewModel : BaseDialogViewModel
     #region 命令申明
 
     // 解析当前项事件
-    private DelegateCommand? _parseSelectedItemCommand;
+    private RelayCommand? _parseSelectedItemCommand;
 
-    public DelegateCommand ParseSelectedItemCommand => _parseSelectedItemCommand ??= new DelegateCommand(ExecuteParseSelectedItemCommand);
+    public RelayCommand ParseSelectedItemCommand => _parseSelectedItemCommand ??= new RelayCommand(ExecuteParseSelectedItemCommand);
 
     /// <summary>
     /// 解析当前项事件
@@ -51,18 +52,18 @@ internal class ViewParsingSelectorViewModel : BaseDialogViewModel
     {
         SetParseScopeSetting(ParseScope.SelectedItem);
 
-        IDialogParameters parameters = new DialogParameters
+        var parameters = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             { "parseScope", ParseScope.SelectedItem }
         };
 
-        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(AppDialogOutcome.Accepted, parameters);
     }
 
     // 解析当前页视频事件
-    private DelegateCommand? _parseCurrentSectionCommand;
+    private RelayCommand? _parseCurrentSectionCommand;
 
-    public DelegateCommand ParseCurrentSectionCommand => _parseCurrentSectionCommand ??= new DelegateCommand(ExecuteParseCurrentSectionCommand);
+    public RelayCommand ParseCurrentSectionCommand => _parseCurrentSectionCommand ??= new RelayCommand(ExecuteParseCurrentSectionCommand);
 
     /// <summary>
     /// 解析当前页视频事件
@@ -71,18 +72,18 @@ internal class ViewParsingSelectorViewModel : BaseDialogViewModel
     {
         SetParseScopeSetting(ParseScope.CurrentSection);
 
-        IDialogParameters parameters = new DialogParameters
+        var parameters = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             { "parseScope", ParseScope.CurrentSection }
         };
 
-        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(AppDialogOutcome.Accepted, parameters);
     }
 
     // 解析所有视频事件
-    private DelegateCommand? _parseAllCommand;
+    private RelayCommand? _parseAllCommand;
 
-    public DelegateCommand ParseAllCommand => _parseAllCommand ??= new DelegateCommand(ExecuteParseAllCommand);
+    public RelayCommand ParseAllCommand => _parseAllCommand ??= new RelayCommand(ExecuteParseAllCommand);
 
     /// <summary>
     /// 解析所有视频事件
@@ -91,12 +92,12 @@ internal class ViewParsingSelectorViewModel : BaseDialogViewModel
     {
         SetParseScopeSetting(ParseScope.All);
 
-        IDialogParameters parameters = new DialogParameters
+        var parameters = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             { "parseScope", ParseScope.All }
         };
 
-        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(AppDialogOutcome.Accepted, parameters);
     }
 
     #endregion

@@ -1,9 +1,9 @@
 using DownKyi.Images;
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-internal class TabLeftBanner : BindableBase
+internal class TabLeftBanner : ObservableObject
 {
     public object NavigationData { get; set; } = new();
 

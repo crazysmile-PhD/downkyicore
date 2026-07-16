@@ -21,7 +21,7 @@
         </EventTriggerBehavior>
     </Interaction.Behaviors>
     <Grid RowDefinitions="*">
-        <ContentControl x:Name="ContentRegionHost" />
+        <ContentControl Content="{Binding MainContent}" />
 
         <Border
             MinHeight="30"

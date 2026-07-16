@@ -4,7 +4,6 @@ using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.ViewModels.PageViewModels;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.Tests;
 

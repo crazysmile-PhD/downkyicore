@@ -1,8 +1,8 @@
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.Images;
 
-internal class VectorImage : BindableBase
+internal class VectorImage : ObservableObject
 {
     private double _width;
 

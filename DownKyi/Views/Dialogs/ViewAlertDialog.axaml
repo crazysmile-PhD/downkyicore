@@ -1,8 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DownKyi.Views.Dialogs.ViewAlertDialog"
-             xmlns:prism="http://prismlibrary.com/"
-             prism:ViewModelLocator.AutoWireViewModel="True"
              xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
              x:DataType="vmd:ViewAlertDialogViewModel">
 

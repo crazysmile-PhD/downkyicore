@@ -1,9 +1,7 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:prism="http://prismlibrary.com/"
              x:Class="DownKyi.Views.Dialogs.ViewDownloadSetter"
              xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
-             prism:ViewModelLocator.AutoWireViewModel="True"
              x:DataType="vmd:ViewDownloadSetterViewModel">
     <!-- <prismExtension:Dialog.Theme> -->
     <!--     <ControlTheme TargetType="Window"> -->

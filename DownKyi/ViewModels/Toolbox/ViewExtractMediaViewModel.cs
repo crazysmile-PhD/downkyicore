@@ -9,7 +9,7 @@ using DownKyi.Commands;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Toolbox;
 
@@ -177,9 +177,9 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     }
 
     // Status改变事件
-    private DelegateCommand<object>? _statusCommand;
+    private RelayCommand<object>? _statusCommand;
 
-    public DelegateCommand<object> StatusCommand => _statusCommand ??= new DelegateCommand<object>(ExecuteStatusCommand);
+    public RelayCommand<object> StatusCommand => _statusCommand ??= RequiredParameterCommand.Create<object>(ExecuteStatusCommand);
 
     /// <summary>
     /// Status改变事件

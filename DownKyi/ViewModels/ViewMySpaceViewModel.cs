@@ -14,8 +14,7 @@ using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels;
 
@@ -334,9 +333,9 @@ internal class ViewMySpaceViewModel : ViewModelBase
     #region 命令申明
 
     // 返回事件
-    private DelegateCommand? _backSpaceCommand;
+    private RelayCommand? _backSpaceCommand;
 
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
     /// <summary>
     /// 返回事件
@@ -350,9 +349,9 @@ internal class ViewMySpaceViewModel : ViewModelBase
     }
 
     // 退出登录事件
-    private DelegateCommand? _logoutCommand;
+    private RelayCommand? _logoutCommand;
 
-    public DelegateCommand LogoutCommand => _logoutCommand ??= new DelegateCommand(ExecuteLogoutCommand);
+    public RelayCommand LogoutCommand => _logoutCommand ??= new RelayCommand(ExecuteLogoutCommand);
 
     /// <summary>
     /// 退出登录事件
@@ -367,9 +366,9 @@ internal class ViewMySpaceViewModel : ViewModelBase
     }
 
     // 页面选择事件
-    private DelegateCommand? _statusListCommand;
+    private RelayCommand? _statusListCommand;
 
-    public DelegateCommand StatusListCommand => _statusListCommand ??= new DelegateCommand(ExecuteStatusListCommand);
+    public RelayCommand StatusListCommand => _statusListCommand ??= new RelayCommand(ExecuteStatusListCommand);
 
     /// <summary>
     /// 页面选择事件
@@ -418,9 +417,9 @@ internal class ViewMySpaceViewModel : ViewModelBase
     }
 
     // 页面选择事件
-    private DelegateCommand? _packageListCommand;
+    private RelayCommand? _packageListCommand;
 
-    public DelegateCommand PackageListCommand => _packageListCommand ??= new DelegateCommand(ExecutePackageListCommand);
+    public RelayCommand PackageListCommand => _packageListCommand ??= new RelayCommand(ExecutePackageListCommand);
 
     /// <summary>
     /// 页面选择事件
@@ -632,7 +631,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
     /// 接收mid参数
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
@@ -650,7 +649,7 @@ internal class ViewMySpaceViewModel : ViewModelBase
         RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync), _logger);
     }
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         CancelAndDispose(ref _loadCancellation);
         LoadingVisibility = false;

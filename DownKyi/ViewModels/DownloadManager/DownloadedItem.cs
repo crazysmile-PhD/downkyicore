@@ -31,7 +31,7 @@ internal class DownloadedItem : DownloadBaseItem
         set
         {
             Downloaded.MaxSpeedDisplay = value;
-            RaisePropertyChanged();
+            OnPropertyChanged();
         }
     }
 
@@ -42,7 +42,7 @@ internal class DownloadedItem : DownloadBaseItem
         set
         {
             Downloaded.FinishedTime = value;
-            RaisePropertyChanged();
+            OnPropertyChanged();
         }
     }
 

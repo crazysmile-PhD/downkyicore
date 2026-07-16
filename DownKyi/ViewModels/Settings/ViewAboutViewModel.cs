@@ -14,8 +14,7 @@ using DownKyi.Services;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Settings;
 
@@ -89,7 +88,7 @@ internal class ViewAboutViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
 
@@ -119,7 +118,7 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteAppNameCommand()
     {
-        await OpenUriAsync($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases").ConfigureAwait(true);
+        await OpenUriAsync($"https://github.com/{AppConstant.RepoOwner}/{AppConstant.RepoName}/releases").ConfigureAwait(true);
     }
 
     // 检查更新事件
@@ -135,7 +134,10 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         try
         {
-            var service = new VersionCheckerService(App.RepoOwner, App.RepoName, _isReceiveBetaVersion);
+            var service = new VersionCheckerService(
+                AppConstant.RepoOwner,
+                AppConstant.RepoName,
+                _isReceiveBetaVersion);
             var release = await service.GetLatestReleaseAsync().ConfigureAwait(true);
             if (GitHubRelease.IsNullOrEmpty(release))
             {
@@ -179,7 +181,7 @@ internal class ViewAboutViewModel : ViewModelBase
     /// </summary>
     private async Task ExecuteFeedbackCommand()
     {
-        await OpenUriAsync($"https://github.com/{App.RepoOwner}/{App.RepoName}/issues").ConfigureAwait(true);
+        await OpenUriAsync($"https://github.com/{AppConstant.RepoOwner}/{AppConstant.RepoName}/issues").ConfigureAwait(true);
     }
 
     // 打开日志目录事件
@@ -223,9 +225,9 @@ internal class ViewAboutViewModel : ViewModelBase
     }
 
     // 是否接收测试版更新事件
-    private DelegateCommand? _receiveBetaVersionCommand;
+    private RelayCommand? _receiveBetaVersionCommand;
 
-    public DelegateCommand ReceiveBetaVersionCommand => _receiveBetaVersionCommand ??= new DelegateCommand(ExecuteReceiveBetaVersionCommand);
+    public RelayCommand ReceiveBetaVersionCommand => _receiveBetaVersionCommand ??= new RelayCommand(ExecuteReceiveBetaVersionCommand);
 
     /// <summary>
     /// 是否接收测试版更新事件
@@ -243,9 +245,9 @@ internal class ViewAboutViewModel : ViewModelBase
     }
 
     // 是否在启动时自动检查更新事件
-    private DelegateCommand? _autoUpdateWhenLaunchCommand;
+    private RelayCommand? _autoUpdateWhenLaunchCommand;
 
-    public DelegateCommand AutoUpdateWhenLaunchCommand => _autoUpdateWhenLaunchCommand ??= new DelegateCommand(ExecuteAutoUpdateWhenLaunchCommand);
+    public RelayCommand AutoUpdateWhenLaunchCommand => _autoUpdateWhenLaunchCommand ??= new RelayCommand(ExecuteAutoUpdateWhenLaunchCommand);
 
     /// <summary>
     /// 是否在启动时自动检查更新事件
@@ -286,19 +288,6 @@ internal class ViewAboutViewModel : ViewModelBase
     private async Task ExecuteNewtonsoftLicenseCommand()
     {
         await OpenUriAsync("https://licenses.nuget.org/MIT").ConfigureAwait(true);
-    }
-
-    // Prism.DryIoc许可证查看事件
-    private DownKyiAsyncDelegateCommand? _prismLicenseCommand;
-
-    public DownKyiAsyncDelegateCommand PrismLicenseCommand => _prismLicenseCommand ??= new DownKyiAsyncDelegateCommand(ExecutePrismLicenseCommand, _logger);
-
-    /// <summary>
-    /// Prism.DryIoc许可证查看事件
-    /// </summary>
-    private async Task ExecutePrismLicenseCommand()
-    {
-        await OpenUriAsync("https://www.nuget.org/packages/Prism.DryIoc/8.1.97/license").ConfigureAwait(true);
     }
 
     // QRCoder许可证查看事件

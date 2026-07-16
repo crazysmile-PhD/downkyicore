@@ -8,8 +8,7 @@ using DownKyi.Core.Logging;
 using DownKyi.Services.Account;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels;
 
@@ -58,9 +57,9 @@ internal class ViewLoginViewModel : ViewModelBase
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    private DelegateCommand? _backSpaceCommand;
+    private RelayCommand? _backSpaceCommand;
 
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
     protected internal override void ExecuteBackSpace()
     {
@@ -222,7 +221,7 @@ internal class ViewLoginViewModel : ViewModelBase
         LoginQrCodeStatus = false;
     }
 
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
 

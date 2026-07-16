@@ -5,8 +5,7 @@ using DownKyi.Application.Desktop;
 using DownKyi.Core.Settings;
 using DownKyi.Models;
 using DownKyi.Utils;
-using Prism.Commands;
-using Prism.Navigation.Regions;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Settings;
 
@@ -163,7 +162,7 @@ internal class ViewBasicViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
 
@@ -219,9 +218,9 @@ internal class ViewBasicViewModel : ViewModelBase
     #region 命令申明
 
     // 主题事件
-    private DelegateCommand<string>? _themeCommand;
+    private RelayCommand<string>? _themeCommand;
 
-    public DelegateCommand<string> ThemeCommand => _themeCommand ??= new DelegateCommand<string>(ExecuteThemeCommand);
+    public RelayCommand<string> ThemeCommand => _themeCommand ??= RequiredParameterCommand.Create<string>(ExecuteThemeCommand);
 
     /// <summary>
     /// 主题事件
@@ -242,9 +241,9 @@ internal class ViewBasicViewModel : ViewModelBase
     }
 
     // 下载完成后的操作事件
-    private DelegateCommand<string>? _afterDownloadOperationCommand;
+    private RelayCommand<string>? _afterDownloadOperationCommand;
 
-    public DelegateCommand<string> AfterDownloadOperationCommand => _afterDownloadOperationCommand ??= new DelegateCommand<string>(ExecuteAfterDownloadOperationCommand);
+    public RelayCommand<string> AfterDownloadOperationCommand => _afterDownloadOperationCommand ??= RequiredParameterCommand.Create<string>(ExecuteAfterDownloadOperationCommand);
 
     /// <summary>
     /// 下载完成后的操作事件
@@ -273,9 +272,9 @@ internal class ViewBasicViewModel : ViewModelBase
     }
 
     // 是否监听剪贴板事件
-    private DelegateCommand? _listenClipboardCommand;
+    private RelayCommand? _listenClipboardCommand;
 
-    public DelegateCommand ListenClipboardCommand => _listenClipboardCommand ??= new DelegateCommand(ExecuteListenClipboardCommand);
+    public RelayCommand ListenClipboardCommand => _listenClipboardCommand ??= new RelayCommand(ExecuteListenClipboardCommand);
 
     /// <summary>
     /// 是否监听剪贴板事件
@@ -288,9 +287,9 @@ internal class ViewBasicViewModel : ViewModelBase
         PublishTip(isSucceed);
     }
 
-    private DelegateCommand? _autoParseVideoCommand;
+    private RelayCommand? _autoParseVideoCommand;
 
-    public DelegateCommand AutoParseVideoCommand => _autoParseVideoCommand ??= new DelegateCommand(ExecuteAutoParseVideoCommand);
+    public RelayCommand AutoParseVideoCommand => _autoParseVideoCommand ??= new RelayCommand(ExecuteAutoParseVideoCommand);
 
     /// <summary>
     /// 是否自动解析视频
@@ -304,9 +303,9 @@ internal class ViewBasicViewModel : ViewModelBase
     }
 
     // 解析范围事件
-    private DelegateCommand<object>? _parseScopesCommand;
+    private RelayCommand<object>? _parseScopesCommand;
 
-    public DelegateCommand<object> ParseScopesCommand => _parseScopesCommand ??= new DelegateCommand<object>(ExecuteParseScopesCommand);
+    public RelayCommand<object> ParseScopesCommand => _parseScopesCommand ??= RequiredParameterCommand.Create<object>(ExecuteParseScopesCommand);
 
     /// <summary>
     /// 解析范围事件
@@ -324,9 +323,9 @@ internal class ViewBasicViewModel : ViewModelBase
     }
 
     // 解析后是否自动下载解析视频
-    private DelegateCommand? _autoDownloadAllCommand;
+    private RelayCommand? _autoDownloadAllCommand;
 
-    public DelegateCommand AutoDownloadAllCommand => _autoDownloadAllCommand ??= new DelegateCommand(ExecuteAutoDownloadAllCommand);
+    public RelayCommand AutoDownloadAllCommand => _autoDownloadAllCommand ??= new RelayCommand(ExecuteAutoDownloadAllCommand);
 
     /// <summary>
     /// 解析后是否自动下载解析视频
@@ -339,9 +338,9 @@ internal class ViewBasicViewModel : ViewModelBase
         PublishTip(isSucceed);
     }
 
-    private DelegateCommand? _repeatFileAutoAddNumberSuffixCommand;
+    private RelayCommand? _repeatFileAutoAddNumberSuffixCommand;
 
-    public DelegateCommand RepeatFileAutoAddNumberSuffixCommand => _repeatFileAutoAddNumberSuffixCommand ??= new DelegateCommand(ExecuteRepeatFileAutoAddNumberSuffixCommand);
+    public RelayCommand RepeatFileAutoAddNumberSuffixCommand => _repeatFileAutoAddNumberSuffixCommand ??= new RelayCommand(ExecuteRepeatFileAutoAddNumberSuffixCommand);
 
     private void ExecuteRepeatFileAutoAddNumberSuffixCommand()
     {
@@ -353,9 +352,9 @@ internal class ViewBasicViewModel : ViewModelBase
     }
 
     // 重复下载策略事件
-    private DelegateCommand<object>? _repeatDownloadStrategyCommand;
+    private RelayCommand<object>? _repeatDownloadStrategyCommand;
 
-    public DelegateCommand<object> RepeatDownloadStrategyCommand => _repeatDownloadStrategyCommand ??= new DelegateCommand<object>(ExecuteRepeatDownloadStrategyCommand);
+    public RelayCommand<object> RepeatDownloadStrategyCommand => _repeatDownloadStrategyCommand ??= RequiredParameterCommand.Create<object>(ExecuteRepeatDownloadStrategyCommand);
 
     /// <summary>
     /// 重复下载策略事件

@@ -6,7 +6,7 @@ using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Services.Toolbox;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Toolbox;
 

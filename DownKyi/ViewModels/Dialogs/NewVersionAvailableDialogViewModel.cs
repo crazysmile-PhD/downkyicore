@@ -8,8 +8,7 @@ using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Models;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Dialogs;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Dialogs
 {
@@ -22,9 +21,9 @@ namespace DownKyi.ViewModels.Dialogs
         private readonly ISettingsStore _settingsStore;
         private DownKyiAsyncDelegateCommand? _allowCommand;
 
-        private DelegateCommand? _skipCurrentVersionCommand;
+        private RelayCommand? _skipCurrentVersionCommand;
 
-        public DelegateCommand SkipCurrentVersionCommand => _skipCurrentVersionCommand ??= new DelegateCommand(ExecuteSkipCurrentVersionCommand);
+        public RelayCommand SkipCurrentVersionCommand => _skipCurrentVersionCommand ??= new RelayCommand(ExecuteSkipCurrentVersionCommand);
         public DownKyiAsyncDelegateCommand AllowCommand => _allowCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAllowCommand, _logger);
 
         public NewVersionAvailableDialogViewModel(
@@ -39,10 +38,10 @@ namespace DownKyi.ViewModels.Dialogs
 
         private async Task ExecuteAllowCommand()
         {
-            const ButtonResult result = ButtonResult.OK;
-            var releaseUri = new Uri($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases/tag/{TagName}");
+            var releaseUri = new Uri(
+                $"https://github.com/{AppConstant.RepoOwner}/{AppConstant.RepoName}/releases/tag/{TagName}");
             _ = await _platformLauncher.OpenUriAsync(releaseUri).ConfigureAwait(true);
-            CloseDialog(new DialogResult(result));
+            CloseDialog(AppDialogOutcome.Accepted);
         }
 
         private void ExecuteSkipCurrentVersionCommand()
@@ -51,7 +50,7 @@ namespace DownKyi.ViewModels.Dialogs
             {
                 About = settings.About with { SkipVersionOnLaunch = NewVersion }
             });
-            CloseDialog(new DialogResult());
+            CloseDialog(AppDialogOutcome.Canceled);
         }
 
         private string _tagName = string.Empty;
@@ -87,12 +86,12 @@ namespace DownKyi.ViewModels.Dialogs
             set => SetProperty(ref _enableSkipVersionOnLaunch, value);
         }
 
-        public override void OnDialogOpened(IDialogParameters parameters)
+        public override void OnDialogOpened(AppDialogRequest request)
         {
-            ArgumentNullException.ThrowIfNull(parameters);
+            ArgumentNullException.ThrowIfNull(request);
 
-            var release = parameters.GetValue<GitHubRelease>("release");
-            EnableSkipVersionOnLaunch = parameters.GetValue<bool>("enableSkipVersion");
+            var release = GetRequiredParameter<GitHubRelease>(request, "release");
+            EnableSkipVersionOnLaunch = GetRequiredParameter<bool>(request, "enableSkipVersion");
             MarkdownText = release.Body;
             TagName = release.TagName;
             NewVersion = release.TagName.TrimStart('v');

@@ -51,7 +51,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 Downloading.DownloadContent = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -62,7 +62,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 Downloading.DownloadStatusTitle = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -73,7 +73,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 Downloading.Progress = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -84,7 +84,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 Downloading.DownloadingFileSize = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 
@@ -95,7 +95,7 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 Downloading.SpeedDisplay = value;
-                RaisePropertyChanged();
+                OnPropertyChanged();
             }
         }
 

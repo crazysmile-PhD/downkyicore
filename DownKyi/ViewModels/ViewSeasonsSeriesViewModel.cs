@@ -16,14 +16,12 @@ using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
 using DownKyi.CustomControl;
 using DownKyi.Images;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
 using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels;
 
@@ -146,9 +144,9 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
     }
 
-    private DelegateCommand? _backSpaceCommand;
+    private RelayCommand? _backSpaceCommand;
 
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
     protected internal override void ExecuteBackSpace()
     {
@@ -162,10 +160,10 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         NavigateToParent();
     }
 
-    private DelegateCommand? _downloadManagerCommand;
+    private RelayCommand? _downloadManagerCommand;
 
-    public DelegateCommand DownloadManagerCommand =>
-        _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
+    public RelayCommand DownloadManagerCommand =>
+        _downloadManagerCommand ??= new RelayCommand(ExecuteDownloadManagerCommand);
 
     private void ExecuteDownloadManagerCommand()
     {
@@ -174,10 +172,10 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
             AppRoute.SeasonsSeries));
     }
 
-    private DelegateCommand<object>? _selectAllCommand;
+    private RelayCommand<object>? _selectAllCommand;
 
-    public DelegateCommand<object> SelectAllCommand =>
-        _selectAllCommand ??= new DelegateCommand<object>(ExecuteSelectAllCommand);
+    public RelayCommand<object> SelectAllCommand =>
+        _selectAllCommand ??= RequiredParameterCommand.Create<object>(ExecuteSelectAllCommand);
 
     private void ExecuteSelectAllCommand(object parameter)
     {
@@ -187,10 +185,10 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         }
     }
 
-    private DelegateCommand<object>? _mediasCommand;
+    private RelayCommand<object>? _mediasCommand;
 
-    public DelegateCommand<object> MediasCommand =>
-        _mediasCommand ??= new DelegateCommand<object>(ExecuteMediasCommand);
+    public RelayCommand<object> MediasCommand =>
+        _mediasCommand ??= RequiredParameterCommand.Create<object>(ExecuteMediasCommand);
 
     private void ExecuteMediasCommand(object parameter)
     {
@@ -354,7 +352,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         Pager.CountChanged += OnCountChangedPager;
     }
 
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
@@ -387,7 +385,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         Pager.Current = 1;
     }
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         CancelOperations();
         IsEnabled = true;

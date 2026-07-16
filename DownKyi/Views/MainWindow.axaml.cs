@@ -6,13 +6,11 @@ using DownKyi.Application.Lifetime;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
 using DownKyi.ViewModels;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.Views;
 
 internal partial class MainWindow : Window
 {
-    private const string ContentRegionName = "ContentRegion";
     private readonly IApplicationLifecycle _applicationLifecycle;
     private readonly ISettingsStore _settingsStore;
     private WindowSettings _windowSettings;
@@ -39,11 +37,6 @@ internal partial class MainWindow : Window
         };
         ApplyWindowSettings();
         DataContext = viewModel;
-    }
-
-    public void AttachLegacyRegion()
-    {
-        RegionManager.SetRegionName(ContentRegionHost, ContentRegionName);
     }
 
     private void ApplyWindowSettings()

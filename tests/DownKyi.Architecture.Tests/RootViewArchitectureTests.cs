@@ -6,18 +6,16 @@ public sealed class RootViewArchitectureTests
 {
     private const string PrismNamespace = "http://prismlibrary.com/";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
-    private static readonly string[] HostIndependentRootViews =
-    [
-        Path.Combine("DownKyi", "Views", "MainWindow.axaml")
-    ];
-    private static readonly HashSet<string> ApprovedCompatibilityBridges = new(StringComparer.OrdinalIgnoreCase);
-
     [Fact]
-    public void HostIndependentRootViewsDoNotUsePrismCompositionAttachedProperties()
+    public void ProductionViewsDoNotUsePrismCompositionAttachedProperties()
     {
-        foreach (var relativePath in HostIndependentRootViews)
+        var viewRoot = Path.Combine(RepositoryRoot, "DownKyi");
+        var violations = new List<string>();
+        foreach (var path in Directory.EnumerateFiles(viewRoot, "*.axaml", SearchOption.AllDirectories)
+                     .Where(path => !IsUnderDirectory(path, "obj"))
+                     .Where(path => !IsUnderDirectory(path, "bin")))
         {
-            var document = XDocument.Load(Path.Combine(RepositoryRoot, relativePath), LoadOptions.SetLineInfo);
+            var document = XDocument.Load(path, LoadOptions.SetLineInfo);
             var forbiddenAttributes = document.Root!
                 .DescendantsAndSelf()
                 .Attributes()
@@ -26,11 +24,14 @@ public sealed class RootViewArchitectureTests
                     "ViewModelLocator.AutoWireViewModel" or "RegionManager.RegionName")
                 .Select(attribute => attribute.Name.LocalName)
                 .ToArray();
-
-            Assert.True(
-                forbiddenAttributes.Length == 0 || ApprovedCompatibilityBridges.Contains(relativePath),
-                $"Host root '{relativePath}' uses Prism composition: {string.Join(", ", forbiddenAttributes)}");
+            if (forbiddenAttributes.Length > 0)
+            {
+                violations.Add(
+                    $"{Path.GetRelativePath(RepositoryRoot, path)}: {string.Join(", ", forbiddenAttributes)}");
+            }
         }
+
+        Assert.True(violations.Count == 0, string.Join(Environment.NewLine, violations));
     }
 
     [Fact]
@@ -48,6 +49,22 @@ public sealed class RootViewArchitectureTests
         Assert.True(
             violations.Length == 0,
             $"Production source references Prism ContainerLocator: {string.Join(", ", violations)}");
+    }
+
+    [Fact]
+    public void ProductCodeDoesNotReferencePrismNamespaces()
+    {
+        var violations = Directory
+            .EnumerateFiles(Path.Combine(RepositoryRoot, "DownKyi"), "*.cs", SearchOption.AllDirectories)
+            .Where(path => !IsUnderDirectory(path, "obj"))
+            .Where(path => !IsUnderDirectory(path, "bin"))
+            .Where(path => File.ReadAllText(path).Contains("Prism", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .ToArray();
+
+        Assert.True(
+            violations.Length == 0,
+            $"Product source references Prism: {string.Join(", ", violations)}");
     }
 
     private static bool IsUnderDirectory(string path, string directoryName)

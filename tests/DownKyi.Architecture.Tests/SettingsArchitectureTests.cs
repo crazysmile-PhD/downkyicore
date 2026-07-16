@@ -34,7 +34,6 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi", "Services", "SearchService.cs")]
     [InlineData("DownKyi", "Services", "Video", "VideoParseCoordinator.cs")]
     [InlineData("DownKyi", "Services", "Video", "VideoDetailWorkflowCoordinator.cs")]
-    [InlineData("DownKyi", "Utils", "NavigateToView.cs")]
     [InlineData("DownKyi", "ViewModels", "PageViewModels", "FavoritesMedia.cs")]
     [InlineData("DownKyi", "ViewModels", "PageViewModels", "HistoryMedia.cs")]
     [InlineData("DownKyi", "ViewModels", "PageViewModels", "ToViewMedia.cs")]
@@ -61,15 +60,15 @@ public sealed class SettingsArchitectureTests
     }
 
     [Fact]
-    public void CompositionRootsShareThePrismOwnedSettingsStore()
+    public void HostCompositionOwnsOneSettingsStoreRegistration()
     {
-        var prismSource = ReadSource("DownKyi", "Composition", "LegacyPrismComposition.cs");
-        var hostSource = ReadSource("DownKyi", "Composition", "LegacyDesktopComposition.cs");
+        var compositionSource = ReadSource("DownKyi", "Composition", "DesktopComposition.cs");
 
-        Assert.Contains("RegisterSingleton<ISettingsStore, SettingsStore>()", prismSource, StringComparison.Ordinal);
-        Assert.Contains("var settingsStore = container.Resolve<ISettingsStore>()", hostSource, StringComparison.Ordinal);
-        Assert.Contains("services.AddSingleton(settingsStore)", hostSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("new SettingsStore", hostSource, StringComparison.Ordinal);
+        Assert.Contains("AddSingleton<ISettingsStore, SettingsStore>()", compositionSource, StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            CountOccurrences(compositionSource, "AddSingleton<ISettingsStore, SettingsStore>()"));
+        Assert.DoesNotContain("new SettingsStore", compositionSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -101,8 +100,7 @@ public sealed class SettingsArchitectureTests
             "Services",
             "Settings",
             "NetworkSettingsCoordinator.cs");
-        var prismComposition = ReadSource("DownKyi", "Composition", "LegacyPrismComposition.cs");
-        var hostComposition = ReadSource("DownKyi", "Composition", "LegacyDesktopComposition.cs");
+        var composition = ReadSource("DownKyi", "Composition", "DesktopComposition.cs");
 
         Assert.Contains("INetworkSettingsCoordinator", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ISettingsStore", viewModelSource, StringComparison.Ordinal);
@@ -114,9 +112,7 @@ public sealed class SettingsArchitectureTests
         Assert.Contains("#region 页面属性申明", stateSource, StringComparison.Ordinal);
         Assert.Contains("ISettingsStore", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("ApplyWithRestartPromptAsync", coordinatorSource, StringComparison.Ordinal);
-        Assert.Contains("INetworkSettingsCoordinator, NetworkSettingsCoordinator", prismComposition,
-            StringComparison.Ordinal);
-        Assert.Contains("INetworkSettingsCoordinator, NetworkSettingsCoordinator", hostComposition,
+        Assert.Contains("INetworkSettingsCoordinator, NetworkSettingsCoordinator", composition,
             StringComparison.Ordinal);
     }
 
@@ -124,12 +120,11 @@ public sealed class SettingsArchitectureTests
     public void FfmpegProcessorIsOneInjectedCompositionOwner()
     {
         var processorSource = ReadSource("DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs");
-        var prismSource = ReadSource("DownKyi", "Composition", "LegacyPrismComposition.cs");
-        var hostSource = ReadSource("DownKyi", "Composition", "LegacyDesktopComposition.cs");
+        var compositionSource = ReadSource("DownKyi", "Composition", "DesktopComposition.cs");
 
         Assert.DoesNotContain("FfmpegProcessor.Instance", processorSource, StringComparison.Ordinal);
-        Assert.Contains("RegisterSingleton<FfmpegProcessor>()", prismSource, StringComparison.Ordinal);
-        Assert.Contains("container.Resolve<FfmpegProcessor>()", hostSource, StringComparison.Ordinal);
+        Assert.Contains("AddSingleton<FfmpegProcessor>()", compositionSource, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(compositionSource, "AddSingleton<FfmpegProcessor>()"));
     }
 
     [Fact]
@@ -209,6 +204,11 @@ public sealed class SettingsArchitectureTests
     private static string ReadSource(params string[] pathParts)
     {
         return File.ReadAllText(Path.Combine([RepositoryRoot, .. pathParts]));
+    }
+
+    private static int CountOccurrences(string source, string value)
+    {
+        return source.Split(value, StringSplitOptions.None).Length - 1;
     }
 
     private static string FindRepositoryRoot()

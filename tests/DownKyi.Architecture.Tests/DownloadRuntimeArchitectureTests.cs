@@ -103,7 +103,7 @@ public sealed class DownloadRuntimeArchitectureTests
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyDesktopComposition.cs"));
+            "DesktopComposition.cs"));
 
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
         Assert.Contains("sealed class DownloadDiagnosticLogger", diagnosticSource, StringComparison.Ordinal);
@@ -156,7 +156,7 @@ public sealed class DownloadRuntimeArchitectureTests
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyPrismComposition.cs"));
+            "DesktopComposition.cs"));
 
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
         Assert.Contains("sealed class DownloadTaskFileService", taskFileSource, StringComparison.Ordinal);
@@ -172,9 +172,9 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.Contains("DownloadFileDeletionResult", taskFileSource, StringComparison.Ordinal);
         Assert.Contains("RemoveDownloadingAsync", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("DeleteGeneratedFilesAsync", coordinatorSource, StringComparison.Ordinal);
-        Assert.Contains("RegisterSingleton<DownloadTaskFileService>()", compositionSource, StringComparison.Ordinal);
+        Assert.Contains("AddSingleton<DownloadTaskFileService>()", compositionSource, StringComparison.Ordinal);
         Assert.Contains(
-            "RegisterSingleton<IDownloadManagerCoordinator, DownloadManagerCoordinator>()",
+            "AddSingleton<IDownloadManagerCoordinator, DownloadManagerCoordinator>()",
             compositionSource,
             StringComparison.Ordinal);
     }
@@ -193,7 +193,7 @@ public sealed class DownloadRuntimeArchitectureTests
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyDesktopComposition.cs"));
+            "DesktopComposition.cs"));
         var lifecycleSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "DownKyi",

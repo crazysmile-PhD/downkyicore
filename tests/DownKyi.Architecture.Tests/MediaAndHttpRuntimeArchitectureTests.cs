@@ -55,7 +55,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyDesktopComposition.cs"));
+            "DesktopComposition.cs"));
         var registrationSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "DownKyi.Core",
@@ -63,7 +63,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "BilibiliHttpClientRegistration.cs"));
 
         Assert.DoesNotContain("AddDownKyiBilibiliHttpClient()", appSource, StringComparison.Ordinal);
-        Assert.Contains("AddDownKyiBilibiliHttpClient(settingsStore)", compositionSource, StringComparison.Ordinal);
+        Assert.Contains("AddDownKyiBilibiliHttpClient()", compositionSource, StringComparison.Ordinal);
         Assert.Contains("AddHttpClient<BilibiliHttpClient>", registrationSource, StringComparison.Ordinal);
         Assert.Contains("ConfigurePrimaryHttpMessageHandler", registrationSource, StringComparison.Ordinal);
         Assert.Contains("ISettingsStore settingsStore", registrationSource, StringComparison.Ordinal);

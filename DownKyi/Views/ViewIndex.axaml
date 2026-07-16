@@ -5,10 +5,8 @@
              mc:Ignorable="d"
              d:DesignWidth="840"
              d:DesignHeight="620"
-             xmlns:prism="http://prismlibrary.com/"
              xmlns:vm="clr-namespace:DownKyi.ViewModels"
              xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
-             prism:ViewModelLocator.AutoWireViewModel="True"
              x:DataType="vm:ViewIndexViewModel"
              x:Class="DownKyi.Views.ViewIndex">
     <Grid RowDefinitions="60,200,100,230,*,50">

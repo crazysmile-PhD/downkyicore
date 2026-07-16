@@ -1,8 +1,8 @@
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-internal class TabRightBanner : BindableBase
+internal class TabRightBanner : ObservableObject
 {
     public int Id { get; set; }
 

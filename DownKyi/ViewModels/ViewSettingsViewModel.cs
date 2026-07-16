@@ -5,8 +5,7 @@ using DownKyi.Images;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.Settings;
-using Prism.Commands;
-using Prism.Navigation.Regions;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels;
 
@@ -45,6 +44,7 @@ internal class ViewSettingsViewModel : ViewModelBase
     public ViewSettingsViewModel(IDesktopInteractionContext desktopInteractions)
         : base(desktopInteractions)
     {
+        ObserveRegion(AppNavigationRegion.Settings);
         #region 属性初始化
 
         ArrowBack = NavigationIcon.Instance().ArrowBack;
@@ -65,9 +65,9 @@ internal class ViewSettingsViewModel : ViewModelBase
     #region 命令申明
 
     // 返回事件
-    private DelegateCommand? _backSpaceCommand;
+    private RelayCommand? _backSpaceCommand;
 
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
     /// <summary>
     /// 返回事件
@@ -78,9 +78,9 @@ internal class ViewSettingsViewModel : ViewModelBase
     }
 
     // 左侧tab点击事件
-    private DelegateCommand<object>? _leftTabHeadersCommand;
+    private RelayCommand<object>? _leftTabHeadersCommand;
 
-    public DelegateCommand<object> LeftTabHeadersCommand => _leftTabHeadersCommand ??= new DelegateCommand<object>(ExecuteLeftTabHeadersCommand);
+    public RelayCommand<object> LeftTabHeadersCommand => _leftTabHeadersCommand ??= RequiredParameterCommand.Create<object>(ExecuteLeftTabHeadersCommand);
 
     /// <summary>
     /// 左侧tab点击事件
@@ -113,9 +113,9 @@ internal class ViewSettingsViewModel : ViewModelBase
         }
     }
 
-    private DelegateCommand? _loadedCommand;
+    private RelayCommand? _loadedCommand;
 
-    public DelegateCommand LoadedCommand => _loadedCommand ??= new DelegateCommand(ExecuteLoadedCommand);
+    public RelayCommand LoadedCommand => _loadedCommand ??= new RelayCommand(ExecuteLoadedCommand);
 
     /// <summary>
     /// region加载完成事件
@@ -131,7 +131,7 @@ internal class ViewSettingsViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
 

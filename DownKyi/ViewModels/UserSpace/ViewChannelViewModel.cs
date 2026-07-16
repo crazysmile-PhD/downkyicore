@@ -4,8 +4,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
-using Prism.Commands;
-using Prism.Navigation.Regions;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.UserSpace;
 
@@ -48,10 +47,10 @@ internal class ViewChannelViewModel : ViewModelBase
     #region 命令申明
 
     // 视频选择事件
-    private DelegateCommand<object>? channelsCommand;
+    private RelayCommand<object>? channelsCommand;
 
-    public DelegateCommand<object> ChannelsCommand =>
-        channelsCommand ?? (channelsCommand = new DelegateCommand<object>(ExecuteChannelsCommand));
+    public RelayCommand<object> ChannelsCommand =>
+        channelsCommand ?? (channelsCommand = RequiredParameterCommand.Create<object>(ExecuteChannelsCommand));
 
     /// <summary>
     /// 视频选择事件
@@ -79,7 +78,7 @@ internal class ViewChannelViewModel : ViewModelBase
 
     #endregion
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         base.OnNavigatedFrom(navigationContext);
 
@@ -91,7 +90,7 @@ internal class ViewChannelViewModel : ViewModelBase
     /// 接收mid参数
     /// </summary>
     /// <param name="navigationContext"></param>
-    public async override void OnNavigatedTo(NavigationContext navigationContext)
+    public async override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);

@@ -5,13 +5,13 @@ using Avalonia.Xaml.Interactivity;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Lifetime;
 using DownKyi.Composition;
-using DownKyi.Core.BiliApi.VideoStream;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.CustomAction;
 using DownKyi.Desktop.Composition;
+using DownKyi.Infrastructure.Downloads;
 using DownKyi.Platform;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels;
@@ -19,80 +19,123 @@ using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.Settings;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Prism.Container.DryIoc;
-using Prism.Events;
-using Prism.Ioc;
-using Prism.Navigation.Regions;
-using DesktopDialogService = DownKyi.PrismExtension.Dialog.DialogService;
 
 namespace DownKyi.Desktop.Tests;
 
 public sealed class UiSmokeTests
 {
     [Fact]
-    public async Task RealHostResolvesShellAndKeyViewModelsWithoutGlobalContainerState()
+    public void TypedRouterRestoresMainHistoryAndNavigationLifecycle()
     {
-        ContainerLocator.ResetContainer();
-        AssertPrismContainerIsUninitialized();
-
         EnsureHeadlessApplication();
+        var created = new List<NavigationProbe>();
+        using var navigation = new AvaloniaNavigationService(
+            route =>
+            {
+                var probe = new NavigationProbe(route);
+                created.Add(probe);
+                return probe;
+            },
+            static action => action());
 
-        var app = Assert.IsType<SmokeTestApplication>(Avalonia.Application.Current);
-        app.Initialize();
+        navigation.Navigate(new AppNavigationRequest(AppRoute.Index, Parameter: "first"));
+        navigation.Navigate(new AppNavigationRequest(AppRoute.Settings, AppRoute.Index, "second"));
+
+        Assert.True(navigation.CanGoBack(AppNavigationRegion.Main));
+        Assert.Same(created[1], navigation.GetActiveView(AppNavigationRegion.Main));
+        Assert.Equal(1, created[0].NavigatedFromCount);
+        Assert.Equal("first", created[0].LastContext?.Parameter);
+
+        navigation.GoBack(AppNavigationRegion.Main);
+
+        Assert.Same(created[0], navigation.GetActiveView(AppNavigationRegion.Main));
+        Assert.False(navigation.CanGoBack(AppNavigationRegion.Main));
+        Assert.Equal(2, created[0].NavigatedToCount);
+        Assert.True(created[1].IsDisposed);
+    }
+
+    [Fact]
+    public void TypedRouterReplacesAndDisposesNestedRegionContent()
+    {
+        EnsureHeadlessApplication();
+        var created = new List<NavigationProbe>();
+        using var navigation = new AvaloniaNavigationService(
+            route =>
+            {
+                var probe = new NavigationProbe(route);
+                created.Add(probe);
+                return probe;
+            },
+            static action => action());
+
+        navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsBasic);
+        navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsNetwork);
+
+        Assert.True(created[0].IsDisposed);
+        Assert.Same(created[1], navigation.GetActiveView(AppNavigationRegion.Settings));
+        Assert.False(navigation.CanGoBack(AppNavigationRegion.Settings));
+
+        navigation.ClearRegion(AppNavigationRegion.Settings);
+
+        Assert.True(created[1].IsDisposed);
+        Assert.Null(navigation.GetActiveView(AppNavigationRegion.Settings));
+    }
+
+    [Fact]
+    public async Task RealHostResolvesShellAndKeyViewsWithoutPrismRuntime()
+    {
+        AssertPrismRuntimeIsNotLoaded();
+        EnsureHeadlessApplication();
         AssertVideoPageSelectionBehavior();
-        var prismContainer = new DryIocContainerExtension();
-        var regionManager = new RegionManager();
-        var eventAggregator = new EventAggregator();
-        var dialogService = new DesktopDialogService(prismContainer);
-        var settingsDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-host-smoke-{Guid.NewGuid():N}");
-        var settingsStore = new SettingsStore(Path.Combine(settingsDirectory, "settings.json"));
-        using var host = DownKyiHost.Create(services =>
-        {
-            services.AddSingleton<IAddToDownloadServiceFactory>(new StubAddToDownloadServiceFactory());
-            services.AddLegacyDesktopShell(
-                regionManager,
-                eventAggregator,
-                dialogService,
-                new StubClipboardService(),
-                new StubPlatformLauncher(),
-                settingsStore,
-                new StubApplicationLifecycle(),
-                new StubClipboardMonitor(),
-                new DesktopNotificationService(),
-                new StubNavigationService(),
-                new StubAppDialogService());
-        });
+
+        var testDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-host-smoke-{Guid.NewGuid():N}");
+        var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
+        var logProvider = new ApplicationLogProvider(
+            new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
+        var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logProvider));
 
         try
         {
-            await host.StartAsync(TestContext.Current.CancellationToken);
+            using var host = DownKyiHost.Create(services =>
+            {
+                services.AddDownKyiDesktop(loggerFactory, logProvider);
+                services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
+                services.Replace(ServiceDescriptor.Singleton(
+                    new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
+            });
+
             var window = host.Services.GetRequiredService<MainWindow>();
+            var mainViewModel = host.Services.GetRequiredService<MainWindowViewModel>();
 
             Assert.True(window.Width >= window.MinWidth);
             Assert.True(window.Height >= window.MinHeight);
-            Assert.Same(host.Services.GetRequiredService<MainWindowViewModel>(), window.DataContext);
+            Assert.NotNull(window.Content);
+            Assert.Same(mainViewModel, window.DataContext);
             Assert.NotNull(host.Services.GetRequiredService<ViewIndexViewModel>());
             Assert.NotNull(host.Services.GetRequiredService<ViewVideoDetailViewModel>());
             Assert.NotNull(host.Services.GetRequiredService<ViewDownloadManagerViewModel>());
             Assert.NotNull(host.Services.GetRequiredService<ViewNetworkViewModel>());
+
+            host.Services
+                .GetRequiredService<IAppNavigationService>()
+                .Navigate(new AppNavigationRequest(AppRoute.Index, Parameter: "smoke"));
+
+            Assert.IsType<ViewIndexViewModel>(mainViewModel.MainContent);
             Assert.NotNull(Program.BuildAvaloniaApp());
-            AssertPrismContainerIsUninitialized();
+            AssertPrismRuntimeIsNotLoaded();
         }
         finally
         {
-            try
+            loggerFactory.Dispose();
+            SynchronizationContext.SetSynchronizationContext(null);
+            await logProvider.DisposeAsync();
+            await settingsStore.DisposeAsync();
+            if (Directory.Exists(testDirectory))
             {
-                await host.StopAsync(CancellationToken.None);
-            }
-            finally
-            {
-                prismContainer.Instance.Dispose();
-                await settingsStore.DisposeAsync();
-                if (Directory.Exists(settingsDirectory))
-                {
-                    Directory.Delete(settingsDirectory, recursive: true);
-                }
+                Directory.Delete(testDirectory, recursive: true);
             }
         }
     }
@@ -180,9 +223,11 @@ public sealed class UiSmokeTests
         ];
     }
 
-    private static void AssertPrismContainerIsUninitialized()
+    private static void AssertPrismRuntimeIsNotLoaded()
     {
-        Assert.Throws<InvalidOperationException>(() => ContainerLocator.Container);
+        Assert.DoesNotContain(
+            AppDomain.CurrentDomain.GetAssemblies(),
+            assembly => assembly.GetName().Name?.StartsWith("Prism", StringComparison.Ordinal) == true);
     }
 
     private static void EnsureHeadlessApplication()
@@ -202,112 +247,33 @@ public sealed class UiSmokeTests
     {
     }
 
-    private sealed class StubAddToDownloadServiceFactory : IAddToDownloadServiceFactory
+    private sealed class NavigationProbe(AppRoute route) : IAppNavigationAware, IDisposable
     {
-        public IAddToDownloadSession Create(PlayStreamType streamType)
+        public AppRoute Route { get; } = route;
+
+        public int NavigatedToCount { get; private set; }
+
+        public int NavigatedFromCount { get; private set; }
+
+        public bool IsDisposed { get; private set; }
+
+        public AppNavigationContext? LastContext { get; private set; }
+
+        public void OnNavigatedTo(AppNavigationContext context)
         {
-            throw new NotSupportedException();
+            LastContext = context;
+            NavigatedToCount++;
         }
 
-        public IAddToDownloadSession Create(string id, PlayStreamType streamType)
+        public void OnNavigatedFrom(AppNavigationContext context)
         {
-            throw new NotSupportedException();
-        }
-    }
-
-    private sealed class StubClipboardService : IClipboardService
-    {
-        public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class StubClipboardMonitor : IClipboardMonitor
-    {
-        public event EventHandler<ClipboardTextChangedEventArgs>? Changed
-        {
-            add { }
-            remove { }
+            LastContext = context;
+            NavigatedFromCount++;
         }
 
         public void Dispose()
         {
-        }
-    }
-
-    private sealed class StubApplicationLifecycle : IApplicationLifecycle
-    {
-        public Task RequestShutdownAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
-        }
-
-        public Task ExitAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> RestartAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(true);
-        }
-    }
-
-    private sealed class StubNavigationService : IAppNavigationService
-    {
-        public void Navigate(AppNavigationRequest request)
-        {
-        }
-
-        public void NavigateRegion(
-            AppNavigationRegion region,
-            AppRoute route,
-            IReadOnlyDictionary<string, object?>? parameters = null)
-        {
-        }
-
-        public void ClearRegion(AppNavigationRegion region)
-        {
-        }
-
-        public object? GetActiveView(AppNavigationRegion region)
-        {
-            return null;
-        }
-    }
-
-    private sealed class StubAppDialogService : IAppDialogService
-    {
-        public Task<AppDialogResult> ShowAsync(
-            AppDialogRequest request,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new AppDialogResult(
-                AppDialogOutcome.Canceled,
-                new Dictionary<string, object?>()));
-        }
-    }
-
-    private sealed class StubPlatformLauncher : IPlatformLauncher
-    {
-        public Task<bool> OpenFileAsync(string path, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(true);
-        }
-
-        public Task<bool> OpenFolderAsync(string path, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(true);
-        }
-
-        public Task<bool> OpenUriAsync(Uri uri, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(true);
+            IsDisposed = true;
         }
     }
 }

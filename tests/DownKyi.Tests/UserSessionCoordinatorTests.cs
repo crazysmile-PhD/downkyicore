@@ -83,6 +83,12 @@ public sealed class UserSessionCoordinatorTests
 
     private sealed class StubNavigationService : IAppNavigationService
     {
+        public event EventHandler<AppNavigationChangedEventArgs>? NavigationChanged
+        {
+            add { }
+            remove { }
+        }
+
         public void Navigate(AppNavigationRequest request)
         {
         }
@@ -101,6 +107,15 @@ public sealed class UserSessionCoordinatorTests
         public object? GetActiveView(AppNavigationRegion region)
         {
             return null;
+        }
+
+        public bool CanGoBack(AppNavigationRegion region)
+        {
+            return false;
+        }
+
+        public void GoBack(AppNavigationRegion region)
+        {
         }
     }
 }

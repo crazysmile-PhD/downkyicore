@@ -1,12 +1,12 @@
 using System;
 using Avalonia.Media.Imaging;
 using DownKyi.Application.Desktop;
-using Prism.Commands;
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class FriendInfo : BindableBase
+internal class FriendInfo : ObservableObject
 {
     private readonly IAppNavigationService _navigationService;
     private readonly AppRoute _parentRoute;
@@ -50,9 +50,9 @@ internal class FriendInfo : BindableBase
     #region 命令申明
 
     // 视频标题点击事件
-    private DelegateCommand<object>? _userCommand;
+    private RelayCommand<object>? _userCommand;
 
-    public DelegateCommand<object> UserCommand => _userCommand ??= new DelegateCommand<object>(ExecuteUserCommand);
+    public RelayCommand<object> UserCommand => _userCommand ??= RequiredParameterCommand.Create<object>(ExecuteUserCommand);
 
     /// <summary>
     /// 视频标题点击事件

@@ -3,12 +3,12 @@ using Avalonia.Media.Imaging;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.Settings;
-using Prism.Commands;
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class FavoritesMedia : BindableBase
+internal class FavoritesMedia : ObservableObject
 {
     private readonly ISettingsStore _settingsStore;
     private readonly IAppNavigationService _navigationService;
@@ -123,9 +123,9 @@ internal class FavoritesMedia : BindableBase
     #region 命令申明
 
     // 视频标题点击事件
-    private DelegateCommand<object>? _titleCommand;
+    private RelayCommand<object>? _titleCommand;
 
-    public DelegateCommand<object> TitleCommand => _titleCommand ??= new DelegateCommand<object>(ExecuteTitleCommand);
+    public RelayCommand<object> TitleCommand => _titleCommand ??= RequiredParameterCommand.Create<object>(ExecuteTitleCommand);
 
     /// <summary>
     /// 视频标题点击事件
@@ -140,9 +140,9 @@ internal class FavoritesMedia : BindableBase
     }
 
     // 视频的UP主点击事件
-    private DelegateCommand<object>? _videoUpperCommand;
+    private RelayCommand<object>? _videoUpperCommand;
 
-    public DelegateCommand<object> VideoUpperCommand => _videoUpperCommand ??= new DelegateCommand<object>(ExecuteVideoUpperCommand);
+    public RelayCommand<object> VideoUpperCommand => _videoUpperCommand ??= RequiredParameterCommand.Create<object>(ExecuteVideoUpperCommand);
 
     /// <summary>
     /// 视频的UP主点击事件

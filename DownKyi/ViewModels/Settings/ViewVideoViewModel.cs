@@ -12,8 +12,7 @@ using DownKyi.Core.Settings;
 using DownKyi.Models;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Settings;
 
@@ -359,7 +358,7 @@ internal class ViewVideoViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
 
@@ -426,11 +425,14 @@ internal class ViewVideoViewModel : ViewModelBase
         // 文件命名格式
         var fileNameParts = videoSettings.FileNameParts;
         SelectedFileName.Clear();
-        SelectedFileName.AddRange(fileNameParts.Select(x => new DisplayFileNamePart()
+        foreach (var fileNamePart in fileNameParts.Select(x => new DisplayFileNamePart()
         {
             Id = x,
             Title = DisplayFileNamePart(x),
-        }));
+        }))
+        {
+            SelectedFileName.Add(fileNamePart);
+        }
 
         // 文件命名中的时间格式
         SelectedFileNamePartTimeFormat = videoSettings.FileNamePartTimeFormat;
@@ -445,9 +447,9 @@ internal class ViewVideoViewModel : ViewModelBase
     #region 命令申明
 
     // 优先下载的视频编码事件
-    private DelegateCommand<object>? _videoCodecsCommand;
+    private RelayCommand<object>? _videoCodecsCommand;
 
-    public DelegateCommand<object> VideoCodecsCommand => _videoCodecsCommand ??= new DelegateCommand<object>(ExecuteVideoCodecsCommand);
+    public RelayCommand<object> VideoCodecsCommand => _videoCodecsCommand ??= RequiredParameterCommand.Create<object>(ExecuteVideoCodecsCommand);
 
     /// <summary>
     /// 优先下载的视频编码事件
@@ -467,9 +469,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 优先下载画质事件
-    private DelegateCommand<object>? _videoQualityCommand;
+    private RelayCommand<object>? _videoQualityCommand;
 
-    public DelegateCommand<object> VideoQualityCommand => _videoQualityCommand ??= new DelegateCommand<object>(ExecuteVideoQualityCommand);
+    public RelayCommand<object> VideoQualityCommand => _videoQualityCommand ??= RequiredParameterCommand.Create<object>(ExecuteVideoQualityCommand);
 
     /// <summary>
     /// 优先下载画质事件
@@ -487,9 +489,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 优先下载音质事件
-    private DelegateCommand<object>? _audioQualityCommand;
+    private RelayCommand<object>? _audioQualityCommand;
 
-    public DelegateCommand<object> AudioQualityCommand => _audioQualityCommand ??= new DelegateCommand<object>(ExecuteAudioQualityCommand);
+    public RelayCommand<object> AudioQualityCommand => _audioQualityCommand ??= RequiredParameterCommand.Create<object>(ExecuteAudioQualityCommand);
 
     /// <summary>
     /// 优先下载音质事件
@@ -508,9 +510,9 @@ internal class ViewVideoViewModel : ViewModelBase
 
 
     // 首选视频解析线路事件
-    private DelegateCommand<object>? _videoParseTypeCommand;
+    private RelayCommand<object>? _videoParseTypeCommand;
 
-    public DelegateCommand<object> VideoParseTypeCommand => _videoParseTypeCommand ??= new DelegateCommand<object>(ExecuteVideoParseTypeCommand);
+    public RelayCommand<object> VideoParseTypeCommand => _videoParseTypeCommand ??= RequiredParameterCommand.Create<object>(ExecuteVideoParseTypeCommand);
 
     /// <summary>
     /// 首选视频解析线路事件
@@ -529,9 +531,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 是否下载flv视频后转码为mp4事件
-    private DelegateCommand? _isTranscodingFlvToMp4Command;
+    private RelayCommand? _isTranscodingFlvToMp4Command;
 
-    public DelegateCommand IsTranscodingFlvToMp4Command => _isTranscodingFlvToMp4Command ??= new DelegateCommand(ExecuteIsTranscodingFlvToMp4Command);
+    public RelayCommand IsTranscodingFlvToMp4Command => _isTranscodingFlvToMp4Command ??= new RelayCommand(ExecuteIsTranscodingFlvToMp4Command);
 
     /// <summary>
     /// 是否下载flv视频后转码为mp4事件
@@ -548,9 +550,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 是否下载aac音频后转码为mp3事件
-    private DelegateCommand? _isTranscodingAacToMp3Command;
+    private RelayCommand? _isTranscodingAacToMp3Command;
 
-    public DelegateCommand IsTranscodingAacToMp3Command => _isTranscodingAacToMp3Command ??= new DelegateCommand(ExecuteIsTranscodingAacToMp3Command);
+    public RelayCommand IsTranscodingAacToMp3Command => _isTranscodingAacToMp3Command ??= new RelayCommand(ExecuteIsTranscodingAacToMp3Command);
 
     /// <summary>
     /// 是否下载aac音频后转码为mp3事件
@@ -566,10 +568,10 @@ internal class ViewVideoViewModel : ViewModelBase
         PublishTip(isSucceed);
     }
 
-    private DelegateCommand<object>? _ffmpegHardwareAccelerationCommand;
+    private RelayCommand<object>? _ffmpegHardwareAccelerationCommand;
 
-    public DelegateCommand<object> FfmpegHardwareAccelerationCommand =>
-        _ffmpegHardwareAccelerationCommand ??= new DelegateCommand<object>(ExecuteFfmpegHardwareAccelerationCommand);
+    public RelayCommand<object> FfmpegHardwareAccelerationCommand =>
+        _ffmpegHardwareAccelerationCommand ??= RequiredParameterCommand.Create<object>(ExecuteFfmpegHardwareAccelerationCommand);
 
     private void ExecuteFfmpegHardwareAccelerationCommand(object parameter)
     {
@@ -585,10 +587,10 @@ internal class ViewVideoViewModel : ViewModelBase
         PublishTip(isSucceed);
     }
 
-    private DelegateCommand<object>? _ffmpegMaxParallelJobsCommand;
+    private RelayCommand<object>? _ffmpegMaxParallelJobsCommand;
 
-    public DelegateCommand<object> FfmpegMaxParallelJobsCommand =>
-        _ffmpegMaxParallelJobsCommand ??= new DelegateCommand<object>(ExecuteFfmpegMaxParallelJobsCommand);
+    public RelayCommand<object> FfmpegMaxParallelJobsCommand =>
+        _ffmpegMaxParallelJobsCommand ??= RequiredParameterCommand.Create<object>(ExecuteFfmpegMaxParallelJobsCommand);
 
     private void ExecuteFfmpegMaxParallelJobsCommand(object parameter)
     {
@@ -605,9 +607,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 是否使用默认下载目录事件
-    private DelegateCommand? _isUseDefaultDirectoryCommand;
+    private RelayCommand? _isUseDefaultDirectoryCommand;
 
-    public DelegateCommand IsUseDefaultDirectoryCommand => _isUseDefaultDirectoryCommand ??= new DelegateCommand(ExecuteIsUseDefaultDirectoryCommand);
+    public RelayCommand IsUseDefaultDirectoryCommand => _isUseDefaultDirectoryCommand ??= new RelayCommand(ExecuteIsUseDefaultDirectoryCommand);
 
     /// <summary>
     /// 是否使用默认下载目录事件
@@ -652,9 +654,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 所有内容选择事件
-    private DelegateCommand? _downloadAllCommand;
+    private RelayCommand? _downloadAllCommand;
 
-    public DelegateCommand DownloadAllCommand => _downloadAllCommand ??= new DelegateCommand(ExecuteDownloadAllCommand);
+    public RelayCommand DownloadAllCommand => _downloadAllCommand ??= new RelayCommand(ExecuteDownloadAllCommand);
 
     /// <summary>
     /// 所有内容选择事件
@@ -682,9 +684,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 音频选择事件
-    private DelegateCommand? _downloadAudioCommand;
+    private RelayCommand? _downloadAudioCommand;
 
-    public DelegateCommand DownloadAudioCommand => _downloadAudioCommand ??= new DelegateCommand(ExecuteDownloadAudioCommand);
+    public RelayCommand DownloadAudioCommand => _downloadAudioCommand ??= new RelayCommand(ExecuteDownloadAudioCommand);
 
     /// <summary>
     /// 音频选择事件
@@ -705,9 +707,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 视频选择事件
-    private DelegateCommand? _downloadVideoCommand;
+    private RelayCommand? _downloadVideoCommand;
 
-    public DelegateCommand DownloadVideoCommand => _downloadVideoCommand ??= new DelegateCommand(ExecuteDownloadVideoCommand);
+    public RelayCommand DownloadVideoCommand => _downloadVideoCommand ??= new RelayCommand(ExecuteDownloadVideoCommand);
 
     /// <summary>
     /// 视频选择事件
@@ -728,9 +730,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 弹幕选择事件
-    private DelegateCommand? _downloadDanmakuCommand;
+    private RelayCommand? _downloadDanmakuCommand;
 
-    public DelegateCommand DownloadDanmakuCommand => _downloadDanmakuCommand ??= new DelegateCommand(ExecuteDownloadDanmakuCommand);
+    public RelayCommand DownloadDanmakuCommand => _downloadDanmakuCommand ??= new RelayCommand(ExecuteDownloadDanmakuCommand);
 
     /// <summary>
     /// 弹幕选择事件
@@ -751,9 +753,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 字幕选择事件
-    private DelegateCommand? _downloadSubtitleCommand;
+    private RelayCommand? _downloadSubtitleCommand;
 
-    public DelegateCommand DownloadSubtitleCommand => _downloadSubtitleCommand ??= new DelegateCommand(ExecuteDownloadSubtitleCommand);
+    public RelayCommand DownloadSubtitleCommand => _downloadSubtitleCommand ??= new RelayCommand(ExecuteDownloadSubtitleCommand);
 
     /// <summary>
     /// 字幕选择事件
@@ -775,14 +777,14 @@ internal class ViewVideoViewModel : ViewModelBase
 
 
     // 封面选择事件
-    private DelegateCommand? _downloadCoverCommand;
+    private RelayCommand? _downloadCoverCommand;
 
-    public DelegateCommand DownloadCoverCommand => _downloadCoverCommand ??= new DelegateCommand(ExecuteDownloadCoverCommand);
+    public RelayCommand DownloadCoverCommand => _downloadCoverCommand ??= new RelayCommand(ExecuteDownloadCoverCommand);
 
 
-    private DelegateCommand? _generateMovieMetadataCommand;
+    private RelayCommand? _generateMovieMetadataCommand;
 
-    public DelegateCommand GenerateMovieMetadataCommand => _generateMovieMetadataCommand ??= new DelegateCommand(ExecuteGenerateMovieMetadataCommand);
+    public RelayCommand GenerateMovieMetadataCommand => _generateMovieMetadataCommand ??= new RelayCommand(ExecuteGenerateMovieMetadataCommand);
 
 
     private void ExecuteGenerateMovieMetadataCommand()
@@ -808,9 +810,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 选中文件名字段右键点击事件
-    private DelegateCommand<object>? _selectedFileNameRightCommand;
+    private RelayCommand<object>? _selectedFileNameRightCommand;
 
-    public DelegateCommand<object> SelectedFileNameRightCommand => _selectedFileNameRightCommand ??= new DelegateCommand<object>(ExecuteSelectedFileNameRightCommand);
+    public RelayCommand<object> SelectedFileNameRightCommand => _selectedFileNameRightCommand ??= RequiredParameterCommand.Create<object>(ExecuteSelectedFileNameRightCommand);
 
     /// <summary>
     /// 选中文件名字段右键点击事件
@@ -834,9 +836,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 可选文件名字段点击事件
-    private DelegateCommand<object>? _optionalFieldsCommand;
+    private RelayCommand<object>? _optionalFieldsCommand;
 
-    public DelegateCommand<object> OptionalFieldsCommand => _optionalFieldsCommand ??= new DelegateCommand<object>(ExecuteOptionalFieldsCommand);
+    public RelayCommand<object> OptionalFieldsCommand => _optionalFieldsCommand ??= RequiredParameterCommand.Create<object>(ExecuteOptionalFieldsCommand);
 
     /// <summary>
     /// 可选文件名字段点击事件
@@ -862,8 +864,8 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 重置选中文件名字段
-    private DelegateCommand? _resetCommand;
-    public DelegateCommand ResetCommand => _resetCommand ??= new DelegateCommand(ExecuteResetCommand);
+    private RelayCommand? _resetCommand;
+    public RelayCommand ResetCommand => _resetCommand ??= new RelayCommand(ExecuteResetCommand);
 
     /// <summary>
     /// 重置选中文件名字段
@@ -889,9 +891,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 文件命名中的时间格式事件
-    private DelegateCommand<object>? _fileNamePartTimeFormatCommand;
+    private RelayCommand<object>? _fileNamePartTimeFormatCommand;
 
-    public DelegateCommand<object> FileNamePartTimeFormatCommand => _fileNamePartTimeFormatCommand ??= new DelegateCommand<object>(ExecuteFileNamePartTimeFormatCommand);
+    public RelayCommand<object> FileNamePartTimeFormatCommand => _fileNamePartTimeFormatCommand ??= RequiredParameterCommand.Create<object>(ExecuteFileNamePartTimeFormatCommand);
 
     /// <summary>
     /// 文件命名中的时间格式事件
@@ -912,9 +914,9 @@ internal class ViewVideoViewModel : ViewModelBase
     }
 
     // 文件命名中的序号格式事件
-    private DelegateCommand<object>? _orderFormatCommand;
+    private RelayCommand<object>? _orderFormatCommand;
 
-    public DelegateCommand<object> OrderFormatCommand => _orderFormatCommand ??= new DelegateCommand<object>(ExecuteOrderFormatCommandCommand);
+    public RelayCommand<object> OrderFormatCommand => _orderFormatCommand ??= RequiredParameterCommand.Create<object>(ExecuteOrderFormatCommandCommand);
 
     /// <summary>
     /// 文件命名中的序号格式事件

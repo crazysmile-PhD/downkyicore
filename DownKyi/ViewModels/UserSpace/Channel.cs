@@ -1,8 +1,8 @@
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-internal class Channel : BindableBase
+internal class Channel : ObservableObject
 {
     public long Cid { get; set; }
 

@@ -28,8 +28,6 @@
         <PackageReference Include="CommunityToolkit.Mvvm"/>
         <PackageReference Include="Downloader"/>
         <PackageReference Include="Microsoft.Extensions.Logging"/>
-        <PackageReference Include="Prism.Avalonia"/>
-        <PackageReference Include="Prism.DryIoc.Avalonia"/>
         <PackageReference Include="Xaml.Behaviors"/>
         <PackageReference Include="System.Formats.Nrbf"/>
     </ItemGroup>

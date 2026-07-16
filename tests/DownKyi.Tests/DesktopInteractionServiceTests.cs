@@ -21,36 +21,35 @@ public sealed class DesktopInteractionServiceTests
     }
 
     [Fact]
-    public void EveryTypedRouteMapsToOneNonEmptyLegacyRoute()
+    public void EveryTypedRouteMapsToOneViewModelType()
     {
-        var routeNames = Enum.GetValues<AppRoute>()
-            .Select(PrismNavigationService.GetRouteName)
+        var viewModelTypes = Enum.GetValues<AppRoute>()
+            .Select(AvaloniaNavigationService.GetViewModelType)
             .ToArray();
 
-        Assert.DoesNotContain(routeNames, string.IsNullOrWhiteSpace);
-        Assert.Equal(routeNames.Length, routeNames.Distinct(StringComparer.Ordinal).Count());
+        Assert.DoesNotContain(viewModelTypes, type => !type.Name.EndsWith("ViewModel", StringComparison.Ordinal));
+        Assert.Equal(viewModelTypes.Length, viewModelTypes.Distinct().Count());
     }
 
     [Fact]
-    public void EveryTypedRegionMapsToOneNonEmptyLegacyRegion()
+    public void EveryTypedRegionHasOneStableNumericIdentity()
     {
-        var regionNames = Enum.GetValues<AppNavigationRegion>()
-            .Select(PrismNavigationService.GetRegionName)
+        var regionIds = Enum.GetValues<AppNavigationRegion>()
+            .Select(region => (int)region)
             .ToArray();
 
-        Assert.DoesNotContain(regionNames, string.IsNullOrWhiteSpace);
-        Assert.Equal(regionNames.Length, regionNames.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(regionIds.Length, regionIds.Distinct().Count());
     }
 
     [Fact]
-    public void EveryTypedDialogMapsToOneNonEmptyLegacyDialog()
+    public void EveryTypedDialogMapsToOneViewAndViewModelPair()
     {
-        var dialogNames = Enum.GetValues<AppDialog>()
-            .Select(PrismDialogService.GetDialogName)
+        var dialogTypes = Enum.GetValues<AppDialog>()
+            .Select(AvaloniaDialogService.GetDialogTypes)
             .ToArray();
 
-        Assert.DoesNotContain(dialogNames, string.IsNullOrWhiteSpace);
-        Assert.Equal(dialogNames.Length, dialogNames.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(dialogTypes.Length, dialogTypes.Select(pair => pair.View).Distinct().Count());
+        Assert.Equal(dialogTypes.Length, dialogTypes.Select(pair => pair.ViewModel).Distinct().Count());
     }
 
     [Theory]
@@ -87,6 +86,12 @@ public sealed class DesktopInteractionServiceTests
 
     private sealed class RecordingNavigationService : IAppNavigationService
     {
+        public event EventHandler<AppNavigationChangedEventArgs>? NavigationChanged
+        {
+            add { }
+            remove { }
+        }
+
         public List<AppNavigationRequest> Requests { get; } = [];
 
         public void Navigate(AppNavigationRequest request)
@@ -108,6 +113,16 @@ public sealed class DesktopInteractionServiceTests
         }
 
         public object? GetActiveView(AppNavigationRegion region)
+        {
+            throw new NotSupportedException();
+        }
+
+        public bool CanGoBack(AppNavigationRegion region)
+        {
+            return false;
+        }
+
+        public void GoBack(AppNavigationRegion region)
         {
             throw new NotSupportedException();
         }

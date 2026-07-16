@@ -9,8 +9,7 @@ using DownKyi.Core.Utils.Validator;
 using DownKyi.Services.Settings;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Settings;
 
@@ -44,7 +43,7 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
 
@@ -146,9 +145,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     #region 命令申明
 
     // 是否启用https事件
-    private DelegateCommand? _useSslCommand;
+    private RelayCommand? _useSslCommand;
 
-    public DelegateCommand UseSslCommand => _useSslCommand ??= new DelegateCommand(ExecuteUseSslCommand);
+    public RelayCommand UseSslCommand => _useSslCommand ??= new RelayCommand(ExecuteUseSslCommand);
 
     /// <summary>
     /// 是否启用https事件
@@ -163,9 +162,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // 设置UserAgent事件
-    private DelegateCommand? _userAgentCommand;
+    private RelayCommand? _userAgentCommand;
 
-    public DelegateCommand UserAgentCommand => _userAgentCommand ??= new DelegateCommand(ExecuteUserAgentCommand);
+    public RelayCommand UserAgentCommand => _userAgentCommand ??= new RelayCommand(ExecuteUserAgentCommand);
 
     /// <summary>
     /// 设置UserAgent事件
@@ -210,10 +209,10 @@ internal partial class ViewNetworkViewModel : ViewModelBase
             settings => settings.Downloader == downloader).ConfigureAwait(true);
     }
 
-    private DelegateCommand? _highSpeedDownloadModeCommand;
+    private RelayCommand? _highSpeedDownloadModeCommand;
 
-    public DelegateCommand HighSpeedDownloadModeCommand =>
-        _highSpeedDownloadModeCommand ??= new DelegateCommand(ExecuteHighSpeedDownloadModeCommand);
+    public RelayCommand HighSpeedDownloadModeCommand =>
+        _highSpeedDownloadModeCommand ??= new RelayCommand(ExecuteHighSpeedDownloadModeCommand);
 
     private void ExecuteHighSpeedDownloadModeCommand()
     {
@@ -262,9 +261,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // builtin的http代理的地址事件
-    private DelegateCommand<string>? _customNetworkProxyCommand;
+    private RelayCommand<string>? _customNetworkProxyCommand;
 
-    public DelegateCommand<string> CustomNetworkProxyCommand => _customNetworkProxyCommand ??= new DelegateCommand<string>(ExecuteCustomNetworkProxyCommand);
+    public RelayCommand<string> CustomNetworkProxyCommand => _customNetworkProxyCommand ??= RequiredParameterCommand.Create<string>(ExecuteCustomNetworkProxyCommand);
 
     /// <summary>
     /// builtin的http代理的地址事件
@@ -297,9 +296,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // builtin最大线程数事件
-    private DelegateCommand<object>? _splitsCommand;
+    private RelayCommand<object>? _splitsCommand;
 
-    public DelegateCommand<object> SplitsCommand => _splitsCommand ??= new DelegateCommand<object>(ExecuteSplitsCommand);
+    public RelayCommand<object> SplitsCommand => _splitsCommand ??= RequiredParameterCommand.Create<object>(ExecuteSplitsCommand);
 
     /// <summary>
     /// builtin最大线程数事件
@@ -315,9 +314,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // 是否开启builtin http代理事件
-    private DelegateCommand? _isHttpProxyCommand;
+    private RelayCommand? _isHttpProxyCommand;
 
-    public DelegateCommand IsHttpProxyCommand => _isHttpProxyCommand ??= new DelegateCommand(ExecuteIsHttpProxyCommand);
+    public RelayCommand IsHttpProxyCommand => _isHttpProxyCommand ??= new RelayCommand(ExecuteIsHttpProxyCommand);
 
     /// <summary>
     /// 是否开启builtin http代理事件
@@ -332,9 +331,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // builtin的http代理的地址事件
-    private DelegateCommand<string>? _httpProxyCommand;
+    private RelayCommand<string>? _httpProxyCommand;
 
-    public DelegateCommand<string> HttpProxyCommand => _httpProxyCommand ??= new DelegateCommand<string>(ExecuteHttpProxyCommand);
+    public RelayCommand<string> HttpProxyCommand => _httpProxyCommand ??= RequiredParameterCommand.Create<string>(ExecuteHttpProxyCommand);
 
     /// <summary>
     /// builtin的http代理的地址事件
@@ -348,9 +347,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // builtin的http代理的端口事件
-    private DelegateCommand<string>? _httpProxyPortCommand;
+    private RelayCommand<string>? _httpProxyPortCommand;
 
-    public DelegateCommand<string> HttpProxyPortCommand => _httpProxyPortCommand ??= new DelegateCommand<string>(ExecuteHttpProxyPortCommand);
+    public RelayCommand<string> HttpProxyPortCommand => _httpProxyPortCommand ??= RequiredParameterCommand.Create<string>(ExecuteHttpProxyPortCommand);
 
     /// <summary>
     /// builtin的http代理的端口事件
@@ -367,9 +366,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria服务器host事件
-    private DelegateCommand<string>? _ariaHostCommand;
+    private RelayCommand<string>? _ariaHostCommand;
 
-    public DelegateCommand<string> AriaHostCommand => _ariaHostCommand ??= new DelegateCommand<string>(ExecuteAriaHostCommand);
+    public RelayCommand<string> AriaHostCommand => _ariaHostCommand ??= RequiredParameterCommand.Create<string>(ExecuteAriaHostCommand);
 
     /// <summary>
     /// Aria服务器host事件
@@ -384,9 +383,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria服务器端口事件
-    private DelegateCommand<string>? _ariaListenPortCommand;
+    private RelayCommand<string>? _ariaListenPortCommand;
 
-    public DelegateCommand<string> AriaListenPortCommand => _ariaListenPortCommand ??= new DelegateCommand<string>(ExecuteAriaListenPortCommand);
+    public RelayCommand<string> AriaListenPortCommand => _ariaListenPortCommand ??= RequiredParameterCommand.Create<string>(ExecuteAriaListenPortCommand);
 
     /// <summary>
     /// Aria服务器端口事件
@@ -403,9 +402,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria服务器token事件
-    private DelegateCommand<string>? _ariaTokenCommand;
+    private RelayCommand<string>? _ariaTokenCommand;
 
-    public DelegateCommand<string> AriaTokenCommand => _ariaTokenCommand ??= new DelegateCommand<string>(ExecuteAriaTokenCommand);
+    public RelayCommand<string> AriaTokenCommand => _ariaTokenCommand ??= RequiredParameterCommand.Create<string>(ExecuteAriaTokenCommand);
 
     /// <summary>
     /// Aria服务器token事件
@@ -420,9 +419,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria的日志等级事件
-    private DelegateCommand<string>? _ariaLogLevelsCommand;
+    private RelayCommand<string>? _ariaLogLevelsCommand;
 
-    public DelegateCommand<string> AriaLogLevelsCommand => _ariaLogLevelsCommand ??= new DelegateCommand<string>(ExecuteAriaLogLevelsCommand);
+    public RelayCommand<string> AriaLogLevelsCommand => _ariaLogLevelsCommand ??= RequiredParameterCommand.Create<string>(ExecuteAriaLogLevelsCommand);
 
     /// <summary>
     /// Aria的日志等级事件
@@ -466,9 +465,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria最大线程数事件
-    private DelegateCommand<object?>? _ariaSplitsCommand;
+    private RelayCommand<object?>? _ariaSplitsCommand;
 
-    public DelegateCommand<object?> AriaSplitsCommand => _ariaSplitsCommand ??= new DelegateCommand<object?>(ExecuteAriaSplitsCommand);
+    public RelayCommand<object?> AriaSplitsCommand => _ariaSplitsCommand ??= new RelayCommand<object?>(ExecuteAriaSplitsCommand);
 
     /// <summary>
     /// Aria最大线程数事件
@@ -484,10 +483,10 @@ internal partial class ViewNetworkViewModel : ViewModelBase
             settings => settings.AriaSplit == SelectedAriaSplit);
     }
 
-    private DelegateCommand<object?>? _ariaMaxConnectionPerServersCommand;
+    private RelayCommand<object?>? _ariaMaxConnectionPerServersCommand;
 
-    public DelegateCommand<object?> AriaMaxConnectionPerServersCommand => _ariaMaxConnectionPerServersCommand ??=
-        new DelegateCommand<object?>(ExecuteAriaMaxConnectionPerServersCommand);
+    public RelayCommand<object?> AriaMaxConnectionPerServersCommand => _ariaMaxConnectionPerServersCommand ??=
+        new RelayCommand<object?>(ExecuteAriaMaxConnectionPerServersCommand);
 
     private void ExecuteAriaMaxConnectionPerServersCommand(object? parameter)
     {
@@ -499,10 +498,10 @@ internal partial class ViewNetworkViewModel : ViewModelBase
             settings => settings.AriaMaxConnectionPerServer == SelectedAriaMaxConnectionPerServer);
     }
 
-    private DelegateCommand<object?>? _ariaMinSplitSizesCommand;
+    private RelayCommand<object?>? _ariaMinSplitSizesCommand;
 
-    public DelegateCommand<object?> AriaMinSplitSizesCommand => _ariaMinSplitSizesCommand ??=
-        new DelegateCommand<object?>(ExecuteAriaMinSplitSizesCommand);
+    public RelayCommand<object?> AriaMinSplitSizesCommand => _ariaMinSplitSizesCommand ??=
+        new RelayCommand<object?>(ExecuteAriaMinSplitSizesCommand);
 
     private void ExecuteAriaMinSplitSizesCommand(object? parameter)
     {
@@ -515,9 +514,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria下载速度限制事件
-    private DelegateCommand<string>? _ariaMaxOverallDownloadLimitCommand;
+    private RelayCommand<string>? _ariaMaxOverallDownloadLimitCommand;
 
-    public DelegateCommand<string> AriaMaxOverallDownloadLimitCommand => _ariaMaxOverallDownloadLimitCommand ??= new DelegateCommand<string>(
+    public RelayCommand<string> AriaMaxOverallDownloadLimitCommand => _ariaMaxOverallDownloadLimitCommand ??= RequiredParameterCommand.Create<string>(
         ExecuteAriaMaxOverallDownloadLimitCommand);
 
     /// <summary>
@@ -535,9 +534,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria下载单文件速度限制事件
-    private DelegateCommand<string>? _ariaMaxDownloadLimitCommand;
+    private RelayCommand<string>? _ariaMaxDownloadLimitCommand;
 
-    public DelegateCommand<string> AriaMaxDownloadLimitCommand => _ariaMaxDownloadLimitCommand ??= new DelegateCommand<string>(ExecuteAriaMaxDownloadLimitCommand);
+    public RelayCommand<string> AriaMaxDownloadLimitCommand => _ariaMaxDownloadLimitCommand ??= RequiredParameterCommand.Create<string>(ExecuteAriaMaxDownloadLimitCommand);
 
     /// <summary>
     /// Aria下载单文件速度限制事件
@@ -554,9 +553,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // 是否开启Aria http代理事件
-    private DelegateCommand? _isAriaHttpProxyCommand;
+    private RelayCommand? _isAriaHttpProxyCommand;
 
-    public DelegateCommand IsAriaHttpProxyCommand => _isAriaHttpProxyCommand ??= new DelegateCommand(ExecuteIsAriaHttpProxyCommand);
+    public RelayCommand IsAriaHttpProxyCommand => _isAriaHttpProxyCommand ??= new RelayCommand(ExecuteIsAriaHttpProxyCommand);
 
     /// <summary>
     /// 是否开启Aria http代理事件
@@ -571,9 +570,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria的http代理的地址事件
-    private DelegateCommand<string>? _ariaHttpProxyCommand;
+    private RelayCommand<string>? _ariaHttpProxyCommand;
 
-    public DelegateCommand<string> AriaHttpProxyCommand => _ariaHttpProxyCommand ??= new DelegateCommand<string>(ExecuteAriaHttpProxyCommand);
+    public RelayCommand<string> AriaHttpProxyCommand => _ariaHttpProxyCommand ??= RequiredParameterCommand.Create<string>(ExecuteAriaHttpProxyCommand);
 
     /// <summary>
     /// Aria的http代理的地址事件
@@ -587,9 +586,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria的http代理的端口事件
-    private DelegateCommand<string>? _ariaHttpProxyPortCommand;
+    private RelayCommand<string>? _ariaHttpProxyPortCommand;
 
-    public DelegateCommand<string> AriaHttpProxyPortCommand => _ariaHttpProxyPortCommand ??= new DelegateCommand<string>(ExecuteAriaHttpProxyPortCommand);
+    public RelayCommand<string> AriaHttpProxyPortCommand => _ariaHttpProxyPortCommand ??= RequiredParameterCommand.Create<string>(ExecuteAriaHttpProxyPortCommand);
 
     /// <summary>
     /// Aria的http代理的端口事件
@@ -606,9 +605,9 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     // Aria文件预分配事件
-    private DelegateCommand<string>? _ariaFileAllocationsCommand;
+    private RelayCommand<string>? _ariaFileAllocationsCommand;
 
-    public DelegateCommand<string> AriaFileAllocationsCommand => _ariaFileAllocationsCommand ??= new DelegateCommand<string>(ExecuteAriaFileAllocationsCommand);
+    public RelayCommand<string> AriaFileAllocationsCommand => _ariaFileAllocationsCommand ??= RequiredParameterCommand.Create<string>(ExecuteAriaFileAllocationsCommand);
 
     /// <summary>
     /// Aria文件预分配事件

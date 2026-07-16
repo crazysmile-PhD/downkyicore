@@ -4,12 +4,12 @@ using System.Collections.ObjectModel;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
-using Prism.Commands;
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class VideoPage : BindableBase
+internal class VideoPage : ObservableObject
 {
     public PlayUrl? PlayUrl { get; set; }
 
@@ -101,9 +101,9 @@ internal class VideoPage : BindableBase
     #region
 
     // 视频画质选择事件
-    private DelegateCommand? _videoQualitySelectedCommand;
+    private RelayCommand? _videoQualitySelectedCommand;
 
-    public DelegateCommand VideoQualitySelectedCommand => _videoQualitySelectedCommand ??= new DelegateCommand(ExecuteVideoQualitySelectedCommand);
+    public RelayCommand VideoQualitySelectedCommand => _videoQualitySelectedCommand ??= new RelayCommand(ExecuteVideoQualitySelectedCommand);
 
     /// <summary>
     /// 视频画质选择事件

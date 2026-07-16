@@ -180,12 +180,23 @@ public sealed class ProjectDependencyTests
     }
 
     [Fact]
-    public void LegacyDesktopBridgeHasAnExplicitRemovalOwner()
+    public void PrismPackagesAndLegacyCompositionBridgesAreRemoved()
     {
-        var bridgePath = Path.Combine(RepositoryRoot, "DownKyi", "Composition", "LegacyDesktopComposition.cs");
-        var bridge = File.ReadAllText(bridgePath);
+        var projectSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "DownKyi.csproj"));
+        var packageSource = File.ReadAllText(Path.Combine(RepositoryRoot, "Directory.Packages.props"));
 
-        Assert.Contains("PR 25-29", bridge, StringComparison.Ordinal);
+        Assert.DoesNotContain("Prism", projectSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Prism", packageSource, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyDesktopComposition.cs")));
+        Assert.False(File.Exists(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "LegacyPrismComposition.cs")));
     }
 
     private static string GetTargetProjectPath(string projectName)
