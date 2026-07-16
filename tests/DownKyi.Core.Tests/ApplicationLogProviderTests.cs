@@ -27,6 +27,17 @@ public sealed class ApplicationLogProviderTests : IDisposable
         "DownKyi.Core.Tests",
         Guid.NewGuid().ToString("N"));
 
+    [Theory]
+    [InlineData(@"C:\Users\alice\Videos\private.mp4")]
+    [InlineData("/home/alice/Videos/private.mp4")]
+    public void RedactorUsesOnlyTheLeafNameForEveryPathStyle(string path)
+    {
+        var redacted = new SensitiveDataRedactor().Redact(path);
+
+        Assert.Equal($"[path]{Path.DirectorySeparatorChar}private.mp4", redacted);
+        Assert.DoesNotContain("alice", redacted, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task FlushWritesRedactedMessageExceptionAndScope()
     {

@@ -29,7 +29,8 @@ internal sealed partial class SensitiveDataRedactor : ISensitiveDataRedactor
     {
         var value = match.Value.TrimEnd();
         var suffix = value.Length == match.Value.Length ? string.Empty : match.Value[value.Length..];
-        var fileName = Path.GetFileName(value);
+        var separatorIndex = value.LastIndexOfAny(['\\', '/']);
+        var fileName = separatorIndex >= 0 ? value[(separatorIndex + 1)..] : value;
         return string.IsNullOrWhiteSpace(fileName)
             ? $"[path]{suffix}"
             : $"[path]{Path.DirectorySeparatorChar}{fileName}{suffix}";
@@ -50,7 +51,7 @@ internal sealed partial class SensitiveDataRedactor : ISensitiveDataRedactor
     [GeneratedRegex("(?i)(?<![\\w])(?:[a-z]:[\\\\/]|\\\\\\\\)[^\\r\\n\\s\"'<>|]+")]
     private static partial Regex WindowsPathRegex();
 
-    [GeneratedRegex("(?<!:)\\b(?:/Users/|/home/|/var/folders/|/tmp/)[^\\r\\n\\s\"'<>|]+")]
+    [GeneratedRegex("(?<![:\\w])(?:/Users/|/home/|/var/folders/|/tmp/)[^\\r\\n\\s\"'<>|]+")]
     private static partial Regex UnixUserPathRegex();
 
     [GeneratedRegex("(?i)(mid|uid|userid|user_id)\\s*[:=]\\s*\\d{4,}")]
