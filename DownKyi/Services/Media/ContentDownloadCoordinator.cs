@@ -8,7 +8,6 @@ using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
-using Prism.Events;
 
 namespace DownKyi.Services.Media;
 
@@ -52,7 +51,6 @@ internal interface IContentDownloadCoordinator
     Task<int?> AddAsync(
         IReadOnlyList<ContentDownloadItem> items,
         bool onlySelected,
-        IEventAggregator eventAggregator,
         IDialogService? dialogService,
         CancellationToken cancellationToken);
 }
@@ -73,12 +71,10 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
     public async Task<int?> AddAsync(
         IReadOnlyList<ContentDownloadItem> items,
         bool onlySelected,
-        IEventAggregator eventAggregator,
         IDialogService? dialogService,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(items);
-        ArgumentNullException.ThrowIfNull(eventAggregator);
         cancellationToken.ThrowIfCancellationRequested();
 
         var selectedItems = onlySelected
@@ -96,7 +92,6 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                 addToDownloadSession,
                 selectedItems,
                 directory,
-                eventAggregator,
                 dialogService,
                 cancellationToken),
             cancellationToken).ConfigureAwait(true);
@@ -106,7 +101,6 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
         IAddToDownloadSession addToDownloadSession,
         IReadOnlyList<ContentDownloadItem> items,
         string directory,
-        IEventAggregator eventAggregator,
         IDialogService? dialogService,
         CancellationToken cancellationToken)
     {
@@ -122,7 +116,7 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
                 addToDownloadSession.ParseVideo(infoService);
                 cancellationToken.ThrowIfCancellationRequested();
                 addedCount += await addToDownloadSession
-                    .AddToDownload(eventAggregator, dialogService, directory)
+                    .AddToDownload(dialogService, directory)
                     .ConfigureAwait(false);
             }
 

@@ -268,7 +268,6 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
             var addedCount = await _downloadCoordinator.AddAsync(
                 items,
                 isOnlySelected,
-                EventAggregator,
                 DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
@@ -297,7 +296,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         try
         {
             var medias = await _personalMediaCoordinator
-                .LoadToViewAsync(EventAggregator, cancellationToken)
+                .LoadToViewAsync(cancellationToken)
                 .ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
             if (medias.Count == 0)

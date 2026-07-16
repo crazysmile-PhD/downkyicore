@@ -68,6 +68,45 @@ public sealed class DesktopInteractionArchitectureTests
         Assert.Contains("LegacyDialogService", dialogAdapter, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PageItemsAndDownloadAddFlowUseTypedDesktopInteractions()
+    {
+        var pageItemDirectory = Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "PageViewModels");
+        var pageItemNames = new[]
+        {
+            "BangumiFollowMedia.cs",
+            "ChannelMedia.cs",
+            "FavoritesMedia.cs",
+            "FriendInfo.cs",
+            "HistoryMedia.cs",
+            "PublicationMedia.cs",
+            "ToViewMedia.cs"
+        };
+        var pageItemSource = string.Join(
+            Environment.NewLine,
+            pageItemNames.Select(name => File.ReadAllText(Path.Combine(pageItemDirectory, name))));
+        var downloadSource = string.Join(
+            Environment.NewLine,
+            new[]
+            {
+                ReadSource("DownKyi", "Services", "Download", "IAddToDownloadSession.cs"),
+                ReadSource("DownKyi", "Services", "Download", "AddToDownloadService.cs"),
+                ReadSource("DownKyi", "Services", "Media", "ContentDownloadCoordinator.cs"),
+                ReadSource("DownKyi", "Services", "Video", "VideoDetailDownloadCoordinator.cs")
+            });
+
+        Assert.Contains("IAppNavigationService", pageItemSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IEventAggregator", pageItemSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("NavigateToView", pageItemSource, StringComparison.Ordinal);
+        Assert.Contains("IUserNotificationService", downloadSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IEventAggregator", downloadSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("MessageEvent", downloadSource, StringComparison.Ordinal);
+    }
+
     private static string ReadSource(params string[] segments)
     {
         return File.ReadAllText(Path.Combine([RepositoryRoot, .. segments]));

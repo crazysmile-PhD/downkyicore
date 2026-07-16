@@ -880,8 +880,9 @@ contracts:
   - Clipboard polling is one disposable injected monitor, starts with its first subscriber, and stops after its final subscriber.
   - Every app route, nested region, and dialog has one enum value and one tested compatibility mapping; ViewModels never pass Prism region names or dialog tags through the new contracts.
   - `DesktopNotificationService` publishes a typed event without depending on Prism; MainWindow owns presentation timing and UI dispatch.
+  - Media page-item models receive `IAppNavigationService` plus a typed parent route from their coordinator or ViewModel; they cannot publish Prism events or infer parent routes from command strings.
 hazards:
-  - Legacy ViewModels and page-item models still publish Prism events or call Prism dialogs/regions directly; PR 16-24 owns migration, and PR 25-29 deletes only the adapters after no callers remain.
+  - Legacy ViewModels still publish Prism events or call Prism dialogs/regions directly; PR 16-24 owns migration, and PR 25-29 deletes only the adapters after no callers remain.
 tests:
   - test.desktop-interactions
   - test.architecture-boundaries
@@ -1214,6 +1215,7 @@ contracts:
   - Existing downloaded/downloading records must be checked before inserting duplicates.
   - Video-detail receives `IVideoDetailDownloadCoordinator`; favorites, history, watch-later, publication, bangumi-follow, and season/series pages receive only their shared coordinator.
   - `IAddToDownloadSession` isolates the legacy mutable add implementation so queue orchestration is tested without network, SQLite, dialogs, or user paths.
+  - Duplicate-task feedback goes through the injected `IUserNotificationService`; add sessions and coordinators cannot accept or publish Prism event-bus messages.
   - The add service receives list/storage owners explicitly and cannot resolve them through App.
   - Add factory, content coordinator, and info-service construction share the injected settings owner; file naming, quality selection, and duplicate policy cannot read a global singleton.
 hazards:
@@ -1815,6 +1817,7 @@ test.download-add:
     - mixed video/bangumi snapshots select one directory and queue in stable input order
     - cancellation reaches info-service construction and stops before mutable session state changes
     - content ViewModels cannot regain factory ownership, directory selection, or per-item parse loops
+    - page-item navigation and add-to-download notifications cannot regain Prism event-bus dependencies
 
 test.bili-helper:
   paths:
@@ -2118,6 +2121,7 @@ test.desktop-interactions:
     - typed search routes signed-in and external user IDs without publishing NavigationEvent
     - Application Desktop contracts cannot reference Prism or Avalonia
     - MainWindowViewModel and SearchService cannot regain EventAggregator, RegionManager, Prism dialog, MessageEvent, or NavigationEvent dependencies
+    - migrated media page-item models and download-add services cannot regain EventAggregator, MessageEvent, or string-route helper dependencies
     - production Prism adapters and all three contract instances resolve through both Prism and Host composition
 
 test.domain-results:

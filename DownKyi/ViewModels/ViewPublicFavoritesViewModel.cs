@@ -292,7 +292,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
             var addedCount = await _downloadCoordinator.AddAsync(
                 items,
                 isOnlySelected,
-                EventAggregator,
                 DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
@@ -365,7 +364,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
             LoadingVisibility = true;
             var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
             var snapshot = await _favoritesCoordinator
-                .LoadPublicFavoritesAsync(parameter, EventAggregator, cancellationToken)
+                .LoadPublicFavoritesAsync(parameter, cancellationToken)
                 .ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
             if (snapshot == null)

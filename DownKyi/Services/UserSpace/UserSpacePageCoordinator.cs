@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
@@ -11,7 +12,6 @@ using DownKyi.Core.Utils;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
-using Prism.Events;
 using BiliUserSpace = DownKyi.Core.BiliApi.Users.UserSpace;
 
 namespace DownKyi.Services.UserSpace;
@@ -54,7 +54,6 @@ internal interface IUserSpacePageCoordinator
         int page,
         int pageSize,
         long typeId,
-        IEventAggregator eventAggregator,
         CancellationToken cancellationToken);
 
     Task<MySpaceProfileSnapshot?> LoadMyProfileAsync(long mid, CancellationToken cancellationToken);
@@ -66,7 +65,6 @@ internal interface IUserSpacePageCoordinator
         BangumiType type,
         int page,
         int pageSize,
-        IEventAggregator eventAggregator,
         CancellationToken cancellationToken);
 }
 
@@ -74,12 +72,15 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
 {
     private readonly ISettingsStore _settingsStore;
     private readonly ILogger<UserSpacePageCoordinator> _logger;
+    private readonly IAppNavigationService _navigationService;
 
     public UserSpacePageCoordinator(
         ISettingsStore settingsStore,
+        IAppNavigationService navigationService,
         ILogger<UserSpacePageCoordinator> logger)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -88,10 +89,8 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
         int page,
         int pageSize,
         long typeId,
-        IEventAggregator eventAggregator,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(eventAggregator);
         return Task.Run<IReadOnlyList<PublicationMedia>>(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -118,7 +117,7 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
             foreach (var video in videos)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                result.Add(new PublicationMedia(eventAggregator)
+                result.Add(new PublicationMedia(_navigationService, AppRoute.Publication)
                 {
                     Avid = video.Aid,
                     Bvid = video.Bvid,
@@ -210,10 +209,8 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
         BangumiType type,
         int page,
         int pageSize,
-        IEventAggregator eventAggregator,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(eventAggregator);
         return Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -227,7 +224,7 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
             foreach (var item in response.List)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                medias.Add(new BangumiFollowMedia(eventAggregator)
+                medias.Add(new BangumiFollowMedia(_navigationService, AppRoute.MyBangumiFollow)
                 {
                     MediaId = item.MediaId,
                     SeasonId = item.SeasonId,

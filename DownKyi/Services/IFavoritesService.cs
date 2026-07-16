@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
+using DownKyi.Application.Desktop;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
 using ApiFavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
 
 namespace DownKyi.Services;
@@ -12,7 +12,7 @@ internal interface IFavoritesService
 
     IReadOnlyList<FavoritesMedia> MapFavoritesMedia(
         IReadOnlyList<ApiFavoritesMedia> medias,
-        IEventAggregator eventAggregator,
+        AppRoute parentRoute,
         CancellationToken cancellationToken);
 
     IReadOnlyList<TabHeader> GetCreatedFavorites(long mid, CancellationToken cancellationToken);

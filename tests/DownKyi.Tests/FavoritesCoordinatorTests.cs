@@ -1,6 +1,6 @@
+using DownKyi.Application.Desktop;
 using DownKyi.Services;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
 using ApiFavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
 
 namespace DownKyi.Tests;
@@ -26,7 +26,7 @@ public sealed class FavoritesCoordinatorTests
         await cancellation.CancelAsync();
 
         await Assert.ThrowsAsync<TaskCanceledException>(
-            () => coordinator.LoadPublicFavoritesAsync(42, new EventAggregator(), cancellation.Token));
+            () => coordinator.LoadPublicFavoritesAsync(42, cancellation.Token));
     }
 
     private sealed class ThrowingFavoritesService : IFavoritesService
@@ -38,7 +38,7 @@ public sealed class FavoritesCoordinatorTests
 
         public IReadOnlyList<FavoritesMedia> MapFavoritesMedia(
             IReadOnlyList<ApiFavoritesMedia> medias,
-            IEventAggregator eventAggregator,
+            AppRoute parentRoute,
             CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Mapping should not run for a canceled request.");

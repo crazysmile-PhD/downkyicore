@@ -244,7 +244,6 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
                 UiState.VideoInfoView,
                 VideoSections.ToList(),
                 isAll,
-                EventAggregator,
                 DialogService,
                 operation.CancellationToken).ConfigureAwait(true);
             if (addedCount is { } count && _workflow.IsCurrent(operation))

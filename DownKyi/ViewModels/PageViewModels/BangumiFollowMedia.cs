@@ -1,19 +1,21 @@
+using System;
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
-using DownKyi.Utils;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
 internal class BangumiFollowMedia : BindableBase
 {
-    protected IEventAggregator EventAggregator { get; }
+    private readonly IAppNavigationService _navigationService;
+    private readonly AppRoute _parentRoute;
 
-    public BangumiFollowMedia(IEventAggregator eventAggregator)
+    public BangumiFollowMedia(IAppNavigationService navigationService, AppRoute parentRoute)
     {
-        this.EventAggregator = eventAggregator;
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
+        _parentRoute = parentRoute;
     }
 
     // media id
@@ -121,13 +123,10 @@ internal class BangumiFollowMedia : BindableBase
     /// <param name="parameter"></param>
     private void ExecuteTitleCommand(object parameter)
     {
-        if (parameter is not string tag)
-        {
-            return;
-        }
-
-        NavigateToView.NavigationView(EventAggregator, ViewVideoDetailViewModel.Tag, tag,
-            $"{ParseEntrance.BangumiMediaUrl}md{MediaId}");
+        _navigationService.Navigate(new AppNavigationRequest(
+            AppRoute.VideoDetail,
+            _parentRoute,
+            $"{ParseEntrance.BangumiMediaUrl}md{MediaId}"));
     }
 
     #endregion

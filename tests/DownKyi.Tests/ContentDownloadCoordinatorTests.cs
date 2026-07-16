@@ -4,7 +4,6 @@ using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.Tests;
@@ -22,7 +21,6 @@ public sealed class ContentDownloadCoordinatorTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
             [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true)],
             onlySelected: true,
-            new EventAggregator(),
             dialogService: null,
             cancellation.Token));
 
@@ -39,7 +37,6 @@ public sealed class ContentDownloadCoordinatorTests
         var result = await coordinator.AddAsync(
             [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, false)],
             onlySelected: true,
-            new EventAggregator(),
             dialogService: null,
             TestContext.Current.CancellationToken);
 
@@ -58,7 +55,6 @@ public sealed class ContentDownloadCoordinatorTests
         var result = await coordinator.AddAsync(
             [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true)],
             onlySelected: true,
-            new EventAggregator(),
             dialogService: null,
             TestContext.Current.CancellationToken);
 
@@ -83,7 +79,6 @@ public sealed class ContentDownloadCoordinatorTests
                 new ContentDownloadItem("https://www.bilibili.com/bangumi/media/md28223074", DownloadInfoKind.Bangumi, false)
             ],
             onlySelected: false,
-            new EventAggregator(),
             dialogService: null,
             TestContext.Current.CancellationToken);
 
@@ -112,7 +107,6 @@ public sealed class ContentDownloadCoordinatorTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.AddAsync(
             [new ContentDownloadItem("BV17x411w7KC", DownloadInfoKind.Video, true)],
             onlySelected: true,
-            new EventAggregator(),
             dialogService: null,
             cancellation.Token));
 
@@ -181,12 +175,10 @@ public sealed class ContentDownloadCoordinatorTests
         }
 
         public Task<int> AddToDownload(
-            IEventAggregator eventAggregator,
             IDialogService? dialogService,
             string? directoryPath,
             bool isAll = false)
         {
-            Assert.NotNull(eventAggregator);
             Assert.Equal(directory, directoryPath);
             Assert.False(isAll);
             AddCount++;

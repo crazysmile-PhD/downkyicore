@@ -6,7 +6,6 @@ using DownKyi.Application.Downloads;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
 
 namespace DownKyi.Services.Video;
 
@@ -17,7 +16,6 @@ internal interface IVideoDetailDownloadCoordinator
         VideoInfoView videoInfoView,
         IList<VideoSection> videoSections,
         bool isAll,
-        IEventAggregator eventAggregator,
         IDialogService? dialogService,
         CancellationToken cancellationToken);
 }
@@ -36,13 +34,11 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
         VideoInfoView videoInfoView,
         IList<VideoSection> videoSections,
         bool isAll,
-        IEventAggregator eventAggregator,
         IDialogService? dialogService,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(videoInfoView);
         ArgumentNullException.ThrowIfNull(videoSections);
-        ArgumentNullException.ThrowIfNull(eventAggregator);
         cancellationToken.ThrowIfCancellationRequested();
 
         var streamType = VideoInputResolver.ResolvePlayStreamType(input);
@@ -59,7 +55,7 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
                 cancellationToken.ThrowIfCancellationRequested();
                 addService.GetVideo(videoInfoView, videoSections);
                 return await addService
-                    .AddToDownload(eventAggregator, dialogService, directory, isAll)
+                    .AddToDownload(dialogService, directory, isAll)
                     .ConfigureAwait(false);
             },
             cancellationToken);

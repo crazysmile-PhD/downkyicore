@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
 
 namespace DownKyi.Services;
 
@@ -20,12 +20,10 @@ internal interface IFavoritesCoordinator
         long favoritesId,
         int page,
         int pageSize,
-        IEventAggregator eventAggregator,
         CancellationToken cancellationToken);
 
     Task<PublicFavoritesSnapshot?> LoadPublicFavoritesAsync(
         long favoritesId,
-        IEventAggregator eventAggregator,
         CancellationToken cancellationToken);
 }
 
@@ -56,10 +54,8 @@ internal sealed class FavoritesCoordinator : IFavoritesCoordinator
         long favoritesId,
         int page,
         int pageSize,
-        IEventAggregator eventAggregator,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(eventAggregator);
         return Task.Run<IReadOnlyList<FavoritesMedia>>(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -70,16 +66,14 @@ internal sealed class FavoritesCoordinator : IFavoritesCoordinator
                 cancellationToken);
             return medias == null || medias.Count == 0
                 ? Array.Empty<FavoritesMedia>()
-                : _favoritesService.MapFavoritesMedia(medias, eventAggregator, cancellationToken);
+                : _favoritesService.MapFavoritesMedia(medias, AppRoute.MyFavorites, cancellationToken);
         }, cancellationToken);
     }
 
     public Task<PublicFavoritesSnapshot?> LoadPublicFavoritesAsync(
         long favoritesId,
-        IEventAggregator eventAggregator,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(eventAggregator);
         return Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -90,7 +84,7 @@ internal sealed class FavoritesCoordinator : IFavoritesCoordinator
             }
 
             var medias = FavoritesResource.GetAllFavoritesMedia(favoritesId, cancellationToken);
-            var mapped = _favoritesService.MapFavoritesMedia(medias, eventAggregator, cancellationToken);
+            var mapped = _favoritesService.MapFavoritesMedia(medias, AppRoute.PublicFavorites, cancellationToken);
             return new PublicFavoritesSnapshot(favorites, mapped);
         }, cancellationToken);
     }

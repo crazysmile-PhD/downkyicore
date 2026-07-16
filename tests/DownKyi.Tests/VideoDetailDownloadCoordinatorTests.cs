@@ -2,7 +2,6 @@ using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Services.Download;
 using DownKyi.Services.Video;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
 
 namespace DownKyi.Tests;
 
@@ -21,7 +20,6 @@ public sealed class VideoDetailDownloadCoordinatorTests
             new VideoInfoView(),
             [],
             isAll: false,
-            new EventAggregator(),
             dialogService: null,
             cancellation.Token));
 
@@ -39,7 +37,6 @@ public sealed class VideoDetailDownloadCoordinatorTests
             new VideoInfoView(),
             [],
             isAll: false,
-            new EventAggregator(),
             dialogService: null,
             CancellationToken.None);
 

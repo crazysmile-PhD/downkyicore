@@ -349,7 +349,6 @@ namespace DownKyi.ViewModels
                 var addedCount = await _downloadCoordinator.AddAsync(
                     items,
                     isOnlySelected,
-                    EventAggregator,
                     DialogService,
                     cancellationToken).ConfigureAwait(true);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -408,7 +407,6 @@ namespace DownKyi.ViewModels
                     current,
                     VideoNumberInPage,
                     tab.Id,
-                    EventAggregator,
                     cancellationToken).ConfigureAwait(true);
                 cancellationToken.ThrowIfCancellationRequested();
                 LoadingVisibility = false;

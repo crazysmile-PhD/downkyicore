@@ -1,7 +1,6 @@
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Services.UserSpace;
 using Microsoft.Extensions.Logging.Abstractions;
-using Prism.Events;
 
 namespace DownKyi.Tests;
 
@@ -20,7 +19,6 @@ public sealed class UserSpacePageCoordinatorTests
             1,
             30,
             0,
-            new EventAggregator(),
             cancellation.Token));
     }
 
@@ -61,7 +59,6 @@ public sealed class UserSpacePageCoordinatorTests
             BangumiType.ANIME,
             1,
             15,
-            new EventAggregator(),
             cancellation.Token));
     }
 
@@ -69,6 +66,7 @@ public sealed class UserSpacePageCoordinatorTests
     {
         return new UserSpacePageCoordinator(
             settings.Store,
+            new TestNavigationService(),
             NullLogger<UserSpacePageCoordinator>.Instance);
     }
 }

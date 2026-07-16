@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.Zone;
@@ -13,7 +14,6 @@ using DownKyi.Core.FileName;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
-using DownKyi.Events;
 using DownKyi.Models;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
@@ -21,7 +21,6 @@ using DownKyi.ViewModels.DownloadManager;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
 using Prism.Dialogs;
-using Prism.Events;
 using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.Services.Download;
@@ -38,6 +37,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     private readonly DownloadListState _downloadLists;
     private readonly DownloadStorageService _downloadStorageService;
     private readonly ISettingsStore _settingsStore;
+    private readonly IUserNotificationService _notificationService;
 
     // 下载内容
     private bool _downloadAudio = true;
@@ -57,11 +57,13 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
         ISettingsStore settingsStore,
+        IUserNotificationService notificationService,
         ILogger<AddToDownloadService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
@@ -92,11 +94,13 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
         ISettingsStore settingsStore,
+        IUserNotificationService notificationService,
         ILogger<AddToDownloadService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
@@ -260,15 +264,12 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     /// <summary>
     /// 添加到下载列表
     /// </summary>
-    /// <param name="eventAggregator">传递事件的对象</param>
     /// <param name="dialogService">dialog</param>
     /// <param name="directory">下载路径</param>
     /// <param name="isAll">是否下载所有，包括未选中项</param>
     /// <returns>添加的数量</returns>
-    public async Task<int> AddToDownload(IEventAggregator eventAggregator, IDialogService? dialogService, string? directory, bool isAll = false)
+    public async Task<int> AddToDownload(IDialogService? dialogService, string? directory, bool isAll = false)
     {
-        ArgumentNullException.ThrowIfNull(eventAggregator);
-
         if (string.IsNullOrEmpty(directory))
         {
             return -1;
@@ -353,8 +354,8 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
                     if (isSameVideo)
                     {
-                        eventAggregator.GetEvent<MessageEvent>()
-                            .Publish($"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloading")}");
+                        _notificationService.Show(
+                            $"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloading")}");
                         isDownloading = true;
                         break;
                     }
@@ -385,8 +386,6 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
                     if (isSameVideo)
                     {
-                        // eventAggregator.GetEvent<MessageEvent>().Publish($"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloaded")}");
-                        // isDownloaded = true;
                         var repeatDownloadStrategy = settings.Basic.RepeatDownloadStrategy;
                         switch (repeatDownloadStrategy)
                         {

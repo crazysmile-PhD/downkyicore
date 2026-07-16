@@ -1,18 +1,20 @@
+using System;
 using Avalonia.Media.Imaging;
-using DownKyi.Utils;
+using DownKyi.Application.Desktop;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
 internal class FriendInfo : BindableBase
 {
-    protected IEventAggregator EventAggregator { get; }
+    private readonly IAppNavigationService _navigationService;
+    private readonly AppRoute _parentRoute;
 
-    public FriendInfo(IEventAggregator eventAggregator)
+    public FriendInfo(IAppNavigationService navigationService, AppRoute parentRoute)
     {
-        this.EventAggregator = eventAggregator;
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
+        _parentRoute = parentRoute;
     }
 
     public long Mid { get; set; }
@@ -58,12 +60,7 @@ internal class FriendInfo : BindableBase
     /// <param name="parameter"></param>
     private void ExecuteUserCommand(object parameter)
     {
-        if (parameter is not string tag)
-        {
-            return;
-        }
-
-        NavigateToView.NavigationView(EventAggregator, ViewUserSpaceViewModel.Tag, tag, Mid);
+        _navigationService.Navigate(new AppNavigationRequest(AppRoute.UserSpace, _parentRoute, Mid));
     }
 
     #endregion

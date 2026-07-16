@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.CustomControl;
@@ -23,6 +24,7 @@ internal class ViewFollowerViewModel : ViewModelBase
     private readonly IFriendRelationCoordinator _friendRelationCoordinator;
     private readonly ILogger<ViewFollowerViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
+    private readonly IAppNavigationService _navigationService;
     private CancellationTokenSource? _loadCancellation;
 
     // mid
@@ -101,10 +103,12 @@ internal class ViewFollowerViewModel : ViewModelBase
 
     public ViewFollowerViewModel(
         IEventAggregator eventAggregator,
+        IAppNavigationService navigationService,
         IFriendRelationCoordinator friendRelationCoordinator,
         ISettingsStore settingsStore,
         ILogger<ViewFollowerViewModel> logger) : base(eventAggregator)
     {
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
         _friendRelationCoordinator = friendRelationCoordinator
             ?? throw new ArgumentNullException(nameof(friendRelationCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -153,7 +157,9 @@ internal class ViewFollowerViewModel : ViewModelBase
                 return;
             }
 
-            Contents.AddRange(data.List.Select(item => new FriendInfo(EventAggregator)
+            Contents.AddRange(data.List.Select(item => new FriendInfo(
+                _navigationService,
+                AppRoute.Friends)
             {
                 Mid = item.Mid,
                 Header = item.Face,

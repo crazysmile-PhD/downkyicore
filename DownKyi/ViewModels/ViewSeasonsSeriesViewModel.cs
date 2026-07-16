@@ -8,6 +8,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
@@ -35,6 +36,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     private const string PlaceholderCover = "avares://DownKyi/Resources/video-placeholder.png";
 
     private readonly ISeasonsSeriesCoordinator _coordinator;
+    private readonly IAppNavigationService _navigationService;
     private readonly ILogger<ViewSeasonsSeriesViewModel> _logger;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
@@ -133,10 +135,12 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     public ViewSeasonsSeriesViewModel(
         IEventAggregator eventAggregator,
         IDialogService dialogService,
+        IAppNavigationService navigationService,
         ISeasonsSeriesCoordinator coordinator,
         ILogger<ViewSeasonsSeriesViewModel> logger) : base(eventAggregator)
     {
         DialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -233,7 +237,6 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
                 .AddToDownloadAsync(
                     items,
                     onlySelected,
-                    EventAggregator,
                     DialogService,
                     cancellationToken)
                 .ConfigureAwait(true);
@@ -324,7 +327,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
             .ToLocalTime()
             .ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
 
-        return new ChannelMedia(EventAggregator)
+        return new ChannelMedia(_navigationService, AppRoute.SeasonsSeries)
         {
             Avid = video.Aid,
             Bvid = video.Bvid,

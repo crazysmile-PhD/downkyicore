@@ -396,7 +396,6 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
             var addedCount = await _downloadCoordinator.AddAsync(
                 items,
                 isOnlySelected,
-                EventAggregator,
                 DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
@@ -455,7 +454,6 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
                 tab.Id,
                 current,
                 VideoNumberInPage,
-                EventAggregator,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
             MediaContentVisibility = true;

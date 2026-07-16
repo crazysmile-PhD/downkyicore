@@ -1,10 +1,9 @@
 using System;
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Settings;
 using DownKyi.Images;
-using DownKyi.Utils;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
@@ -12,11 +11,16 @@ namespace DownKyi.ViewModels.PageViewModels;
 internal class HistoryMedia : BindableBase
 {
     private readonly ISettingsStore _settingsStore;
-    protected IEventAggregator EventAggregator { get; }
+    private readonly IAppNavigationService _navigationService;
+    private readonly AppRoute _parentRoute;
 
-    public HistoryMedia(IEventAggregator eventAggregator, ISettingsStore settingsStore)
+    public HistoryMedia(
+        IAppNavigationService navigationService,
+        AppRoute parentRoute,
+        ISettingsStore settingsStore)
     {
-        EventAggregator = eventAggregator;
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
+        _parentRoute = parentRoute;
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
     }
 
@@ -166,12 +170,7 @@ internal class HistoryMedia : BindableBase
     /// <param name="parameter"></param>
     private void ExecuteTitleCommand(object parameter)
     {
-        if (parameter is not string tag)
-        {
-            return;
-        }
-
-        NavigateToView.NavigationView(EventAggregator, ViewVideoDetailViewModel.Tag, tag, Url);
+        _navigationService.Navigate(new AppNavigationRequest(AppRoute.VideoDetail, _parentRoute, Url));
     }
 
     // UP主头像点击事件
@@ -185,12 +184,10 @@ internal class HistoryMedia : BindableBase
     /// <param name="parameter"></param>
     private void ExecuteUpCommand(object parameter)
     {
-        if (parameter is not string tag)
-        {
-            return;
-        }
-
-        NavigateToView.NavigateToViewUserSpace(EventAggregator, _settingsStore, tag, UpMid);
+        var route = _settingsStore.Current.User.Mid == UpMid
+            ? AppRoute.MySpace
+            : AppRoute.UserSpace;
+        _navigationService.Navigate(new AppNavigationRequest(route, _parentRoute, UpMid));
     }
 
     #endregion

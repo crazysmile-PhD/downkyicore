@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.History;
 using DownKyi.Core.BiliApi.History.Models;
 using DownKyi.Core.Settings;
@@ -10,7 +11,6 @@ using DownKyi.Core.Utils;
 using DownKyi.Images;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
 
 namespace DownKyi.Services.Media;
 
@@ -22,32 +22,30 @@ internal sealed record HistoryPageSnapshot(
 
 internal interface IPersonalMediaCoordinator
 {
-    Task<IReadOnlyList<ToViewMedia>> LoadToViewAsync(
-        IEventAggregator eventAggregator,
-        CancellationToken cancellationToken);
+    Task<IReadOnlyList<ToViewMedia>> LoadToViewAsync(CancellationToken cancellationToken);
 
     Task<HistoryPageSnapshot> LoadHistoryPageAsync(
         long max,
         long viewAt,
         int pageSize,
-        IEventAggregator eventAggregator,
         CancellationToken cancellationToken);
 }
 
 internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
 {
     private readonly ISettingsStore _settingsStore;
+    private readonly IAppNavigationService _navigationService;
 
-    public PersonalMediaCoordinator(ISettingsStore settingsStore)
+    public PersonalMediaCoordinator(
+        ISettingsStore settingsStore,
+        IAppNavigationService navigationService)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
     }
 
-    public Task<IReadOnlyList<ToViewMedia>> LoadToViewAsync(
-        IEventAggregator eventAggregator,
-        CancellationToken cancellationToken)
+    public Task<IReadOnlyList<ToViewMedia>> LoadToViewAsync(CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(eventAggregator);
         return Task.Run<IReadOnlyList<ToViewMedia>>(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -61,7 +59,10 @@ internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
             foreach (var item in items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                result.Add(new ToViewMedia(eventAggregator, _settingsStore)
+                result.Add(new ToViewMedia(
+                    _navigationService,
+                    AppRoute.MyToViewVideo,
+                    _settingsStore)
                 {
                     Aid = item.Aid,
                     Bvid = item.Bvid,
@@ -81,10 +82,8 @@ internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
         long max,
         long viewAt,
         int pageSize,
-        IEventAggregator eventAggregator,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(eventAggregator);
         return Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -94,7 +93,7 @@ internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
                 pageSize,
                 cancellationToken: cancellationToken);
             var medias = response?.List?
-                .Select(item => ConvertHistory(item, eventAggregator, _settingsStore))
+                .Select(item => ConvertHistory(item, _navigationService, _settingsStore))
                 .Where(item => item != null && !string.IsNullOrEmpty(item.Title))
                 .Cast<HistoryMedia>()
                 .ToArray() ?? Array.Empty<HistoryMedia>();
@@ -108,10 +107,10 @@ internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
 
     internal static HistoryMedia? ConvertHistory(
         HistoryList history,
-        IEventAggregator eventAggregator,
+        IAppNavigationService navigationService,
         ISettingsStore settingsStore)
     {
-        ArgumentNullException.ThrowIfNull(eventAggregator);
+        ArgumentNullException.ThrowIfNull(navigationService);
         ArgumentNullException.ThrowIfNull(settingsStore);
         if (history?.History == null || history.History.Business is not ("archive" or "pgc"))
         {
@@ -121,7 +120,7 @@ internal sealed class PersonalMediaCoordinator : IPersonalMediaCoordinator
         var address = history.History.Business == "archive"
             ? $"https://www.bilibili.com/video/{history.History.Bvid}"
             : history.Address;
-        return new HistoryMedia(eventAggregator, settingsStore)
+        return new HistoryMedia(navigationService, AppRoute.MyHistory, settingsStore)
         {
             Business = history.History.Business,
             Bvid = history.History.Bvid ?? string.Empty,

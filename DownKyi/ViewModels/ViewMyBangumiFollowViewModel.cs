@@ -377,7 +377,6 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
             var addedCount = await _downloadCoordinator.AddAsync(
                 items,
                 isOnlySelected,
-                EventAggregator,
                 DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
@@ -438,7 +437,6 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
                 type,
                 current,
                 VideoNumberInPage,
-                EventAggregator,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
             LoadingVisibility = false;

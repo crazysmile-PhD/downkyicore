@@ -304,7 +304,6 @@ internal class ViewMyHistoryViewModel : ViewModelBase
             var addedCount = await _downloadCoordinator.AddAsync(
                 items,
                 isOnlySelected,
-                EventAggregator,
                 DialogService,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
@@ -352,7 +351,6 @@ internal class ViewMyHistoryViewModel : ViewModelBase
                 _nextMax,
                 _nextViewAt,
                 VideoNumberInPage,
-                EventAggregator,
                 cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
             if (loadVersion != Volatile.Read(ref _loadVersion))

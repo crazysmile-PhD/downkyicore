@@ -1,4 +1,5 @@
 using System;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
 using Microsoft.Extensions.Logging;
@@ -17,27 +18,43 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
     private readonly DownloadListState _downloadLists;
     private readonly DownloadStorageService _downloadStorageService;
     private readonly ISettingsStore _settingsStore;
+    private readonly IUserNotificationService _notificationService;
     private readonly ILogger<AddToDownloadService> _logger;
 
     public AddToDownloadServiceFactory(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
         ISettingsStore settingsStore,
+        IUserNotificationService notificationService,
         ILogger<AddToDownloadService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public IAddToDownloadSession Create(PlayStreamType streamType)
     {
-        return new AddToDownloadService(streamType, _downloadLists, _downloadStorageService, _settingsStore, _logger);
+        return new AddToDownloadService(
+            streamType,
+            _downloadLists,
+            _downloadStorageService,
+            _settingsStore,
+            _notificationService,
+            _logger);
     }
 
     public IAddToDownloadSession Create(string id, PlayStreamType streamType)
     {
-        return new AddToDownloadService(id, streamType, _downloadLists, _downloadStorageService, _settingsStore, _logger);
+        return new AddToDownloadService(
+            id,
+            streamType,
+            _downloadLists,
+            _downloadStorageService,
+            _settingsStore,
+            _notificationService,
+            _logger);
     }
 }

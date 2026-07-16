@@ -1,6 +1,5 @@
 using DownKyi.Core.BiliApi.History.Models;
 using DownKyi.Services.Media;
-using Prism.Events;
 
 namespace DownKyi.Tests;
 
@@ -10,24 +9,24 @@ public sealed class PersonalMediaCoordinatorTests
     public async Task PreCanceledToViewLoadDoesNotStartApiWork()
     {
         using var settings = new TestSettingsStore();
-        var coordinator = new PersonalMediaCoordinator(settings.Store);
+        var coordinator = new PersonalMediaCoordinator(settings.Store, new TestNavigationService());
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
         await Assert.ThrowsAsync<TaskCanceledException>(
-            () => coordinator.LoadToViewAsync(new EventAggregator(), cancellation.Token));
+            () => coordinator.LoadToViewAsync(cancellation.Token));
     }
 
     [Fact]
     public async Task PreCanceledHistoryLoadDoesNotStartApiWork()
     {
         using var settings = new TestSettingsStore();
-        var coordinator = new PersonalMediaCoordinator(settings.Store);
+        var coordinator = new PersonalMediaCoordinator(settings.Store, new TestNavigationService());
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
         await Assert.ThrowsAsync<TaskCanceledException>(
-            () => coordinator.LoadHistoryPageAsync(0, 0, 30, new EventAggregator(), cancellation.Token));
+            () => coordinator.LoadHistoryPageAsync(0, 0, 30, cancellation.Token));
     }
 
     [Fact]
@@ -45,7 +44,7 @@ public sealed class PersonalMediaCoordinatorTests
             }
         };
 
-        var media = PersonalMediaCoordinator.ConvertHistory(source, new EventAggregator(), settings.Store);
+        var media = PersonalMediaCoordinator.ConvertHistory(source, new TestNavigationService(), settings.Store);
 
         Assert.NotNull(media);
         Assert.Equal("https://www.bilibili.com/video/BV1test", media.Url);
@@ -61,6 +60,6 @@ public sealed class PersonalMediaCoordinatorTests
             History = new HistoryListHistory { Business = "article" }
         };
 
-        Assert.Null(PersonalMediaCoordinator.ConvertHistory(source, new EventAggregator(), settings.Store));
+        Assert.Null(PersonalMediaCoordinator.ConvertHistory(source, new TestNavigationService(), settings.Store));
     }
 }

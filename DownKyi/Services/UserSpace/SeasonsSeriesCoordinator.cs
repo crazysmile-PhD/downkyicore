@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services.Media;
-using Prism.Events;
 
 namespace DownKyi.Services.UserSpace;
 
@@ -30,7 +29,6 @@ internal interface ISeasonsSeriesCoordinator
     Task<int?> AddToDownloadAsync(
         IReadOnlyList<SeasonsSeriesDownloadItem> items,
         bool onlySelected,
-        IEventAggregator eventAggregator,
         IDialogService? dialogService,
         CancellationToken cancellationToken);
 }
@@ -69,7 +67,6 @@ internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
     public Task<int?> AddToDownloadAsync(
         IReadOnlyList<SeasonsSeriesDownloadItem> items,
         bool onlySelected,
-        IEventAggregator eventAggregator,
         IDialogService? dialogService,
         CancellationToken cancellationToken)
     {
@@ -83,7 +80,6 @@ internal sealed class SeasonsSeriesCoordinator : ISeasonsSeriesCoordinator
         return _downloadCoordinator.AddAsync(
             downloadItems,
             onlySelected,
-            eventAggregator,
             dialogService,
             cancellationToken);
     }

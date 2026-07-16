@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
 using ApiFavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
 
 namespace DownKyi.Services;
@@ -14,10 +14,12 @@ namespace DownKyi.Services;
 internal sealed class FavoritesService : IFavoritesService
 {
     private readonly ISettingsStore _settingsStore;
+    private readonly IAppNavigationService _navigationService;
 
-    public FavoritesService(ISettingsStore settingsStore)
+    public FavoritesService(ISettingsStore settingsStore, IAppNavigationService navigationService)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
     }
 
     public FavoritesPageItem? GetFavorites(long mediaId, CancellationToken cancellationToken = default)
@@ -50,11 +52,10 @@ internal sealed class FavoritesService : IFavoritesService
 
     public IReadOnlyList<FavoritesMedia> MapFavoritesMedia(
         IReadOnlyList<ApiFavoritesMedia> medias,
-        IEventAggregator eventAggregator,
+        AppRoute parentRoute,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(medias);
-        ArgumentNullException.ThrowIfNull(eventAggregator);
 
         var order = 0;
         var result = new List<FavoritesMedia>(medias.Count);
@@ -67,7 +68,7 @@ internal sealed class FavoritesService : IFavoritesService
             }
 
             order++;
-            result.Add(new FavoritesMedia(eventAggregator, _settingsStore)
+            result.Add(new FavoritesMedia(_navigationService, parentRoute, _settingsStore)
             {
                 Avid = media.Id,
                 Bvid = media.Bvid,

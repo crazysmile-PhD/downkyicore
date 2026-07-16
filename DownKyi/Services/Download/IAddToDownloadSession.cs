@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
 
 namespace DownKyi.Services.Download;
 
@@ -19,7 +18,6 @@ internal interface IAddToDownloadSession
     void ParseVideo(IInfoService videoInfoService);
 
     Task<int> AddToDownload(
-        IEventAggregator eventAggregator,
         IDialogService? dialogService,
         string? directory,
         bool isAll = false);
