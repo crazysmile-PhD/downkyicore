@@ -142,7 +142,7 @@ public sealed class DesktopInteractionArchitectureTests
     }
 
     [Fact]
-    public void DownloadRuntimeUsesTheTypedDialogBoundary()
+    public void DownloadRuntimePublishesNotificationsWithoutOwningDialogs()
     {
         var runtimeSource = string.Join(
             Environment.NewLine,
@@ -150,11 +150,13 @@ public sealed class DesktopInteractionArchitectureTests
             {
                 ReadSource("DownKyi", "Services", "Download", "DownloadRuntimeFactory.cs"),
                 ReadSource("DownKyi", "Services", "Download", "DownloadOrchestrator.cs"),
+                ReadSource("DownKyi", "Services", "Download", "DownloadPipeline.cs"),
                 ReadSource("DownKyi", "Services", "Download", "Aria2TransferBackend.cs"),
                 ReadSource("DownKyi", "Services", "Download", "BuiltinTransferBackend.cs")
             });
 
-        Assert.Contains("IAppDialogService", runtimeSource, StringComparison.Ordinal);
+        Assert.Contains("IUserNotificationService", runtimeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IAppDialogService", runtimeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("DownKyi.PrismExtension.Dialog", runtimeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("IDialogService", runtimeSource, StringComparison.Ordinal);
     }

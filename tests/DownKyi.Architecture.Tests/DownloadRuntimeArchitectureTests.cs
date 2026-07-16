@@ -91,6 +91,7 @@ public sealed class DownloadRuntimeArchitectureTests
         [
             "DownloadRuntimeFactory.cs",
             "DownloadOrchestrator.cs",
+            "DownloadPipeline.cs",
             "BuiltinTransferBackend.cs",
             "Aria2TransferBackend.cs",
             "DownloadDiagnosticLogger.cs"
@@ -236,7 +237,7 @@ public sealed class DownloadRuntimeArchitectureTests
             "DownKyi",
             "Services",
             "Download",
-            "DownloadOrchestrator.cs"));
+            "DownloadPipeline.cs"));
 
         Assert.Contains("IUiDispatcher", source, StringComparison.Ordinal);
         Assert.Contains("await UiDispatcher.InvokeAsync", source, StringComparison.Ordinal);

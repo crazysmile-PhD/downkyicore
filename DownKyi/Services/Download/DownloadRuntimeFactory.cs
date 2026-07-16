@@ -19,7 +19,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     private readonly DownloadListState _downloadLists;
     private readonly AriaServer _ariaServer;
     private readonly DownloadStorageService _downloadStorageService;
-    private readonly IAppDialogService _dialogService;
+    private readonly IUserNotificationService _notificationService;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly FfmpegProcessor _ffmpegProcessor;
     private readonly ISettingsStore _settingsStore;
@@ -29,7 +29,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     public DownloadRuntimeFactory(
         DownloadListState downloadLists,
         DownloadStorageService downloadStorageService,
-        IAppDialogService dialogService,
+        IUserNotificationService notificationService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
         DownloadDiagnosticLogger diagnosticLogger,
@@ -40,7 +40,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _downloadStorageService = downloadStorageService
             ?? throw new ArgumentNullException(nameof(downloadStorageService));
-        _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
+        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
@@ -75,17 +75,25 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
             _ => null
         };
 
-        return transferBackend == null
-            ? null
-            : new DownloadOrchestrator(
+        if (transferBackend == null)
+        {
+            return null;
+        }
+
+        var pipeline = new DownloadPipeline(
                 _downloadLists,
                 _downloadStorageService,
-                _dialogService,
+                _notificationService,
                 _uiDispatcher,
                 _settingsStore,
                 _diagnosticLogger,
                 _ffmpegProcessor,
                 transferBackend,
-                _loggerFactory.CreateLogger<DownloadOrchestrator>());
+                _loggerFactory.CreateLogger<DownloadPipeline>());
+        return new DownloadOrchestrator(
+            pipeline,
+            _downloadLists,
+            _settingsStore,
+            _loggerFactory.CreateLogger<DownloadOrchestrator>());
     }
 }
