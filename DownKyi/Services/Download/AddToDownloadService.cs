@@ -243,7 +243,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         if (!Directory.Exists(Directory.GetDirectoryRoot(directory)))
         {
             var alert = new AlertService(_dialogService);
-            await alert.ShowError(DictionaryResource.GetString("DriveNotFound")).ConfigureAwait(true);
+            await alert
+                .ShowError(DictionaryResource.GetString("DriveNotFound"), cancellationToken)
+                .ConfigureAwait(true);
 
             directory = string.Empty;
         }

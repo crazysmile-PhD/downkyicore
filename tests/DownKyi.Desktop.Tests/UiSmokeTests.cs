@@ -16,6 +16,7 @@ using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.PageViewModels;
+using DownKyi.ViewModels.Settings;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -74,6 +75,7 @@ public sealed class UiSmokeTests
             Assert.NotNull(host.Services.GetRequiredService<ViewIndexViewModel>());
             Assert.NotNull(host.Services.GetRequiredService<ViewVideoDetailViewModel>());
             Assert.NotNull(host.Services.GetRequiredService<ViewDownloadManagerViewModel>());
+            Assert.NotNull(host.Services.GetRequiredService<ViewNetworkViewModel>());
             Assert.NotNull(Program.BuildAvaloniaApp());
             AssertPrismContainerIsUninitialized();
         }

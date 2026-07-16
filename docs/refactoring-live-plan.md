@@ -2,8 +2,8 @@
 
 Status: active
 Last updated: 2026-07-16
-Current group: PR 16-24
-Next branch: `refactor/pr-16-24-media-ui-lifecycle`
+Current group: PR 25-29
+Next branch: `refactor/pr-25-29-remove-legacy`
 
 This file contains only unfinished work. Completed items are removed in the same PR that finishes them; newly discovered debt is added immediately with an owning PR or phase.
 
@@ -18,13 +18,7 @@ This file contains only unfinished work. Completed items are removed in the same
 - A group may contain multiple ordered commits, but it must not be split into smaller public PRs or combined with another numbered range.
 - The next group starts only after the previous group has completed its full scope and passed build, tests, data compatibility checks, documentation updates, and `git diff --check`.
 
-## Active Next: PR 16-24 - Media Use Cases, ViewModels, And App Lifecycle
-
-Branch: `refactor/pr-16-24-media-ui-lifecycle`
-
-- Reduce the remaining oversized settings and media ViewModels to binding state and command wiring; `ViewNetworkViewModel` still combines all network option construction, validation feedback, restart prompts, and update commands.
-
-## PR 25-29 - Remove Prism And Legacy Architecture
+## Active Next: PR 25-29 - Remove Prism And Legacy Architecture
 
 Branch: `refactor/pr-25-29-remove-legacy`
 

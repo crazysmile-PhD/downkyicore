@@ -10,7 +10,7 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi", "ViewModels", "Settings", "ViewAboutViewModel.cs")]
     [InlineData("DownKyi", "ViewModels", "Settings", "ViewBasicViewModel.cs")]
     [InlineData("DownKyi", "ViewModels", "Settings", "ViewDanmakuViewModel.cs")]
-    [InlineData("DownKyi", "ViewModels", "Settings", "ViewNetworkViewModel.cs")]
+    [InlineData("DownKyi", "Services", "Settings", "NetworkSettingsCoordinator.cs")]
     [InlineData("DownKyi", "ViewModels", "Settings", "ViewVideoViewModel.cs")]
     [InlineData("DownKyi", "Views", "MainWindow.axaml.cs")]
     [InlineData("DownKyi", "ViewModels", "MainWindowViewModel.cs")]
@@ -81,6 +81,43 @@ public sealed class SettingsArchitectureTests
         Assert.Contains("ISettingsStore settingsStore", source, StringComparison.Ordinal);
         Assert.Contains("IApplicationLifecycle applicationLifecycle", source, StringComparison.Ordinal);
         Assert.DoesNotContain("public MainWindow()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NetworkSettingsViewModelOwnsOnlyBindingProjectionAndCommandWiring()
+    {
+        var viewModelSource = ReadSource(
+            "DownKyi",
+            "ViewModels",
+            "Settings",
+            "ViewNetworkViewModel.cs");
+        var stateSource = ReadSource(
+            "DownKyi",
+            "ViewModels",
+            "Settings",
+            "ViewNetworkViewModel.State.cs");
+        var coordinatorSource = ReadSource(
+            "DownKyi",
+            "Services",
+            "Settings",
+            "NetworkSettingsCoordinator.cs");
+        var prismComposition = ReadSource("DownKyi", "Composition", "LegacyPrismComposition.cs");
+        var hostComposition = ReadSource("DownKyi", "Composition", "LegacyDesktopComposition.cs");
+
+        Assert.Contains("INetworkSettingsCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IApplicationLifecycle", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AlertService", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Enumerable.Range", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DictionaryResource", viewModelSource, StringComparison.Ordinal);
+        Assert.True(viewModelSource.Count(character => character == '\n') < 700);
+        Assert.Contains("#region 页面属性申明", stateSource, StringComparison.Ordinal);
+        Assert.Contains("ISettingsStore", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("ApplyWithRestartPromptAsync", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("INetworkSettingsCoordinator, NetworkSettingsCoordinator", prismComposition,
+            StringComparison.Ordinal);
+        Assert.Contains("INetworkSettingsCoordinator, NetworkSettingsCoordinator", hostComposition,
+            StringComparison.Ordinal);
     }
 
     [Fact]

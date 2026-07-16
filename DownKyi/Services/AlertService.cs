@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Images;
@@ -22,11 +23,14 @@ internal class AlertService
     /// <param name="message"></param>
     /// <param name="buttonNumber"></param>
     /// <returns></returns>
-    public Task<AppDialogOutcome> ShowInfo(string message, int buttonNumber = 2)
+    public Task<AppDialogOutcome> ShowInfo(
+        string message,
+        int buttonNumber = 2,
+        CancellationToken cancellationToken = default)
     {
         var image = SystemIcon.Instance().Info;
         var title = DictionaryResource.GetString("Info");
-        return ShowMessage(image, title, message, buttonNumber);
+        return ShowMessage(image, title, message, buttonNumber, cancellationToken);
     }
 
     /// <summary>
@@ -35,11 +39,14 @@ internal class AlertService
     /// <param name="message"></param>
     /// <param name="buttonNumber"></param>
     /// <returns></returns>
-    public Task<AppDialogOutcome> ShowWarning(string message, int buttonNumber = 1)
+    public Task<AppDialogOutcome> ShowWarning(
+        string message,
+        int buttonNumber = 1,
+        CancellationToken cancellationToken = default)
     {
         var image = SystemIcon.Instance().Warning;
         var title = DictionaryResource.GetString("Warning");
-        return ShowMessage(image, title, message, buttonNumber);
+        return ShowMessage(image, title, message, buttonNumber, cancellationToken);
     }
 
     /// <summary>
@@ -47,18 +54,21 @@ internal class AlertService
     /// </summary>
     /// <param name="message"></param>
     /// <returns></returns>
-    public Task<AppDialogOutcome> ShowError(string message)
+    public Task<AppDialogOutcome> ShowError(
+        string message,
+        CancellationToken cancellationToken = default)
     {
         var image = SystemIcon.Instance().Error;
         var title = DictionaryResource.GetString("Error");
-        return ShowMessage(image, title, message, 1);
+        return ShowMessage(image, title, message, 1, cancellationToken);
     }
 
     public async Task<AppDialogOutcome> ShowMessage(
         VectorImage image,
         string title,
         string message,
-        int buttonNumber)
+        int buttonNumber,
+        CancellationToken cancellationToken = default)
     {
         var parameters = new Dictionary<string, object?>
         {
@@ -68,7 +78,8 @@ internal class AlertService
             ["button_number"] = buttonNumber
         };
         var result = await _dialogService.ShowAsync(
-            new AppDialogRequest(AppDialog.Alert, parameters)).ConfigureAwait(true);
+            new AppDialogRequest(AppDialog.Alert, parameters),
+            cancellationToken).ConfigureAwait(true);
         return result.Outcome;
     }
 }

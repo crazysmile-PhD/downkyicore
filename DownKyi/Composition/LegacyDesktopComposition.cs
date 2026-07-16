@@ -12,8 +12,10 @@ using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Account;
 using DownKyi.Services.Download;
+using DownKyi.Services.Settings;
 using DownKyi.Services.Video;
 using DownKyi.ViewModels;
+using DownKyi.ViewModels.Settings;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -107,10 +109,12 @@ internal static class LegacyDesktopComposition
         services.AddSingleton<IUserSessionCoordinator, UserSessionCoordinator>();
         services.AddTransient<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         services.AddSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();
+        services.AddSingleton<INetworkSettingsCoordinator, NetworkSettingsCoordinator>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddTransient<ViewIndexViewModel>();
         services.AddTransient<ViewVideoDetailViewModel>();
         services.AddTransient<ViewDownloadManagerViewModel>();
+        services.AddTransient<ViewNetworkViewModel>();
         services.AddSingleton<MainWindow>();
         return services;
     }

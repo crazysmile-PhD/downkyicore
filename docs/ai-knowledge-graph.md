@@ -87,6 +87,7 @@ flowchart TD
     UserSpacePages["service.user-space-pages\nUserSpacePageCoordinator.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
     SettingsVms["viewmodel.settings-pages\nSettings ViewModels"]
+    NetworkSettings["service.network-settings\nNetworkSettingsCoordinator.cs"]
     BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
     BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
     Resolver["service.video-input-resolver\nsrc/DownKyi.Application/Media"]
@@ -155,8 +156,10 @@ flowchart TD
     BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
     VideoVm -->|calls| Parser
-    SettingsVms -->|reads and writes| Settings
-    SettingsVms -->|requests restart| Lifecycle
+    SettingsVms -->|network commands| NetworkSettings
+    SettingsVms -->|other pages read and write| Settings
+    NetworkSettings -->|validates and writes| Settings
+    NetworkSettings -->|requests restart| Lifecycle
     Parser -->|calls| InfoServices
     InfoServices -->|calls| BiliApi
     BiliApi -->|calls| WebClient
@@ -788,21 +791,52 @@ type: viewmodel
 paths:
   - DownKyi/ViewModels/Settings/ViewBasicViewModel.cs
   - DownKyi/ViewModels/Settings/ViewNetworkViewModel.cs
+  - DownKyi/ViewModels/Settings/ViewNetworkViewModel.State.cs
   - DownKyi/ViewModels/Settings/ViewVideoViewModel.cs
   - DownKyi/ViewModels/Settings/ViewDanmakuViewModel.cs
   - DownKyi/ViewModels/Settings/ViewAboutViewModel.cs
-responsibility: Projects the current settings into Avalonia bindings and forwards validated user changes to the injected settings owner.
+responsibility: Projects current settings into Avalonia binding state and wires commands to typed settings owners.
 inbound:
   - typed navigation through the temporary Prism adapter
 outbound:
   - core.settings
+  - service.network-settings
   - service.desktop-platform-boundaries
 contracts:
-  - All five pages receive `ISettingsStore` through construction and cannot access `SettingsManager.Instance`.
+  - Basic, video, danmaku, and about pages receive `ISettingsStore`; the network page receives only `INetworkSettingsCoordinator` and cannot persist, validate, prompt, or restart directly.
   - Existing setting getter/setter behavior, persisted JSON names, and enum values remain unchanged during the compatibility migration.
-hazards:
-  - `ViewNetworkViewModel` still owns option-list construction, validation feedback, and repeated restart-prompt orchestration in addition to binding state.
+  - Network binding properties live in a dedicated partial state file; the main file remains below 700 lines and contains navigation projection plus command wiring.
 tests:
+  - test.network-settings
+  - test.architecture-boundaries
+```
+
+### service.network-settings
+
+```yaml
+id: service.network-settings
+type: coordinator
+paths:
+  - DownKyi/Services/Settings/NetworkSettingsCoordinator.cs
+responsibility: Owns immutable option catalogs, validated network-setting updates, localized feedback, restart confirmation, and asynchronous restart requests.
+inbound:
+  - viewmodel.settings-pages
+outbound:
+  - core.settings
+  - service.application-lifecycle
+  - service.desktop-platform-boundaries
+contracts:
+  - Option catalogs are immutable and constructed once; opening the settings page does not allocate repeated range/list graphs.
+  - Every update passes through `ISettingsStore.Update` and a post-validation predicate before success is reported.
+  - Initialization-triggered binding commands can persist normalized values but cannot display feedback, open restart dialogs, or restart the process.
+  - Failed validation never opens a restart prompt; accepted prompts call only the cancellation-aware `IApplicationLifecycle.RestartAsync` boundary.
+  - The coordinator changes no JSON names, enum values, validation ranges, or settings storage paths.
+hazards:
+  - Prompting during initial binding projection can restart the app merely by opening the page.
+  - Bypassing the post-validation predicate reports invalid or clamped settings as successfully applied.
+tests:
+  - test.network-settings
+  - test.ui-smoke
   - test.architecture-boundaries
 ```
 
@@ -2080,6 +2114,19 @@ test.settings-store:
     - tests never read or write the user's real settings path
     - user-space navigation routes the signed-in MID to My Space and other MIDs to public User Space using the injected owner
     - logout removes an isolated login file and clears only the injected settings owner
+
+test.network-settings:
+  paths:
+    - tests/DownKyi.Tests/NetworkSettingsCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/SettingsArchitectureTests.cs
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+  guards:
+    - immutable option catalogs retain the supported downloader, split, log-level, and file-allocation choices
+    - validated updates persist through an isolated settings owner and report success or failure once
+    - initialization projection cannot show feedback, open a dialog, or request restart
+    - rejected values cannot open a restart prompt, while an accepted prompt requests exactly one asynchronous restart
+    - ViewNetworkViewModel cannot regain settings persistence, lifecycle, dialog, option-construction, or resource-feedback ownership
+    - Host smoke resolves ViewNetworkViewModel and its coordinator without Prism ContainerLocator
 
 test.diagnostic-log-redaction:
   paths:

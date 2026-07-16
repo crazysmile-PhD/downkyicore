@@ -34,16 +34,23 @@ public sealed class AppLifecycleArchitectureTests
     [Fact]
     public void SettingsRestartPromptsCannotBypassAsynchronousCleanup()
     {
-        var source = ReadSource(
+        var viewModelSource = ReadSource(
             "DownKyi",
             "ViewModels",
             "Settings",
             "ViewNetworkViewModel.cs");
+        var coordinatorSource = ReadSource(
+            "DownKyi",
+            "Services",
+            "Settings",
+            "NetworkSettingsCoordinator.cs");
 
-        Assert.DoesNotContain("IClassicDesktopStyleApplicationLifetime", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("App.Current", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Process.Start", source, StringComparison.Ordinal);
-        Assert.Contains("_applicationLifecycle.RestartAsync()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("IApplicationLifecycle", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IClassicDesktopStyleApplicationLifetime", coordinatorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("App.Current", coordinatorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Process.Start", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("_applicationLifecycle.RestartAsync(cancellationToken)", coordinatorSource,
+            StringComparison.Ordinal);
     }
 
     [Fact]

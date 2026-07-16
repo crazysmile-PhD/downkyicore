@@ -15,6 +15,7 @@ using DownKyi.Services.Download;
 using DownKyi.Services.Friends;
 using DownKyi.Services.Media;
 using DownKyi.Services.Migration;
+using DownKyi.Services.Settings;
 using DownKyi.Services.Toolbox;
 using DownKyi.Services.UserSpace;
 using DownKyi.Services.Video;
@@ -67,6 +68,7 @@ internal static class LegacyPrismComposition
         containerRegistry.RegisterSingleton<IFriendRelationCoordinator, FriendRelationCoordinator>();
         containerRegistry.RegisterSingleton<ISeasonsSeriesCoordinator, SeasonsSeriesCoordinator>();
         containerRegistry.RegisterSingleton<IUserSpacePageCoordinator, UserSpacePageCoordinator>();
+        containerRegistry.RegisterSingleton<INetworkSettingsCoordinator, NetworkSettingsCoordinator>();
         containerRegistry.RegisterSingleton<AvaloniaDesktopContext>();
         containerRegistry.RegisterSingleton<IProcessRestartLauncher, ProcessRestartLauncher>();
         containerRegistry.RegisterSingleton<IApplicationLifecycle, AvaloniaApplicationLifecycle>();
