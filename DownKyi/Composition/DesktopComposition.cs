@@ -57,6 +57,12 @@ internal static class DesktopComposition
         services.AddSingleton(new SqliteDownloadTaskStoreOptions(StorageManager.GetDbPath()));
         services.AddHttpClient("DownKyi.Images", client =>
             client.Timeout = TimeSpan.FromSeconds(15));
+        services.AddHttpClient<VersionCheckerService>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.github.com/");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("downkyi");
+            client.Timeout = TimeSpan.FromSeconds(3);
+        });
         services.AddSingleton<IAsyncImageLoader>(provider =>
             new DiskCachedWebImageLoader(
                 provider.GetRequiredService<IHttpClientFactory>().CreateClient("DownKyi.Images"),

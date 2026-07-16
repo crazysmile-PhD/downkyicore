@@ -6,68 +6,69 @@ using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Models;
 
-namespace DownKyi.Services
+namespace DownKyi.Services;
+
+internal sealed class VersionCheckerService
 {
-    internal class VersionCheckerService
+    private readonly HttpClient _httpClient;
+    private readonly string _repoOwner;
+    private readonly string _repoName;
+    private readonly string _currentVersion;
+
+    public VersionCheckerService(HttpClient httpClient)
+        : this(httpClient, AppConstant.RepoOwner, AppConstant.RepoName)
     {
-        private readonly string _repoOwner;
-        private readonly string _repoName;
-        private readonly bool _includePrereleases;
-        private readonly string _currentVersion;
+    }
 
-        public VersionCheckerService(string repoOwner, string repoName, bool includePrereleases = false)
+    internal VersionCheckerService(HttpClient httpClient, string repoOwner, string repoName)
+    {
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _repoOwner = repoOwner ?? throw new ArgumentNullException(nameof(repoOwner));
+        _repoName = repoName ?? throw new ArgumentNullException(nameof(repoName));
+        _currentVersion = AppInfo.NormalizeVersionName(new AppInfo().VersionName);
+    }
+
+    public async Task<GitHubRelease?> GetLatestReleaseAsync(
+        bool includePrereleases,
+        string? excludedVersion = null,
+        CancellationToken cancellationToken = default)
+    {
+        var endpoint = includePrereleases
+            ? $"repos/{_repoOwner}/{_repoName}/releases"
+            : $"repos/{_repoOwner}/{_repoName}/releases/latest";
+        var responseJson = await _httpClient
+            .GetStringAsync(new Uri(endpoint, UriKind.Relative), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (includePrereleases)
         {
-            _repoOwner = repoOwner;
-            _repoName = repoName;
-            _includePrereleases = includePrereleases;
-            _currentVersion = AppInfo.NormalizeVersionName(new AppInfo().VersionName);
+            var releases = JsonSerializer.Deserialize(
+                responseJson,
+                GitHubJsonContext.Default.GitHubReleaseArray);
+            return string.IsNullOrEmpty(excludedVersion)
+                ? releases?.FirstOrDefault()
+                : releases?.FirstOrDefault(release =>
+                    release.TagName.TrimStart('v') != excludedVersion);
         }
 
+        var latestRelease = JsonSerializer.Deserialize(
+            responseJson,
+            GitHubJsonContext.Default.GitHubRelease);
+        return string.IsNullOrEmpty(excludedVersion) ||
+               latestRelease?.TagName.TrimStart('v') != excludedVersion
+            ? latestRelease
+            : null;
+    }
 
-        public async Task<GitHubRelease?> GetLatestReleaseAsync(
-            string? excludedVersion = null,
-            CancellationToken cancellationToken = default)
+    public bool IsNewVersionAvailable(string latestVersion)
+    {
+        var latestReleaseVersion = AppInfo.NormalizeVersionName(latestVersion);
+        if (!Version.TryParse(_currentVersion, out var current) ||
+            !Version.TryParse(latestReleaseVersion, out var latest))
         {
-            using var client = new HttpClient();
-            client.DefaultRequestHeaders.Add("User-Agent", "downkyi");
-            client.Timeout = TimeSpan.FromSeconds(3);
-            if (_includePrereleases)
-            {
-                var releasesUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases";
-                var releasesJson = await client
-                    .GetStringAsync(new Uri(releasesUrl), cancellationToken)
-                    .ConfigureAwait(true);
-                var releases = JsonSerializer.Deserialize(releasesJson, GitHubJsonContext.Default.GitHubReleaseArray);
-
-                return string.IsNullOrEmpty(excludedVersion)
-                    ? releases?.FirstOrDefault()
-                    : releases?.FirstOrDefault(r => r.TagName.TrimStart('v') != excludedVersion);
-            }
-
-            var latestReleaseUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases/latest";
-            var latestReleaseJson = await client
-                .GetStringAsync(new Uri(latestReleaseUrl), cancellationToken)
-                .ConfigureAwait(true);
-            var release = JsonSerializer.Deserialize(latestReleaseJson, GitHubJsonContext.Default.GitHubRelease);
-
-            return string.IsNullOrEmpty(excludedVersion) ||
-                   release?.TagName.TrimStart('v') != excludedVersion ? release : null;
+            return false;
         }
 
-
-
-
-        public bool IsNewVersionAvailable(string latestVersion)
-        {
-            var latestReleaseVersion = AppInfo.NormalizeVersionName(latestVersion);
-            if (!Version.TryParse(_currentVersion, out var current) ||
-                !Version.TryParse(latestReleaseVersion, out var latest))
-            {
-                return false;
-            }
-
-            return latest > current;
-        }
-
+        return latest > current;
     }
 }

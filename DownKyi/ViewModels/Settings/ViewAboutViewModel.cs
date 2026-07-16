@@ -26,6 +26,7 @@ internal class ViewAboutViewModel : ViewModelBase
     private readonly IApplicationLogService _logService;
     private readonly ILogger<ViewAboutViewModel> _logger;
     private readonly IPlatformLauncher _platformLauncher;
+    private readonly VersionCheckerService _versionChecker;
     private bool _isOnNavigatedTo;
 
     #region 页面属性申明
@@ -69,11 +70,13 @@ internal class ViewAboutViewModel : ViewModelBase
         ISettingsStore settingsStore,
         IApplicationLogService logService,
         IPlatformLauncher platformLauncher,
+        VersionCheckerService versionChecker,
         ILogger<ViewAboutViewModel> logger) : base(desktopInteractions)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logService = logService ?? throw new ArgumentNullException(nameof(logService));
         _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
+        _versionChecker = versionChecker ?? throw new ArgumentNullException(nameof(versionChecker));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
@@ -134,18 +137,16 @@ internal class ViewAboutViewModel : ViewModelBase
     {
         try
         {
-            var service = new VersionCheckerService(
-                AppConstant.RepoOwner,
-                AppConstant.RepoName,
-                _isReceiveBetaVersion);
-            var release = await service.GetLatestReleaseAsync().ConfigureAwait(true);
+            var release = await _versionChecker
+                .GetLatestReleaseAsync(_isReceiveBetaVersion)
+                .ConfigureAwait(true);
             if (GitHubRelease.IsNullOrEmpty(release))
             {
                 Notifications.Show("检查失败，请稍后重试~");
                 return;
             }
 
-            if (service.IsNewVersionAvailable(release!.TagName))
+            if (_versionChecker.IsNewVersionAvailable(release!.TagName))
             {
                 await AppDialogs.ShowAsync(new AppDialogRequest(
                     AppDialog.NewVersionAvailable,

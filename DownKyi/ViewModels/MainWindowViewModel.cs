@@ -26,6 +26,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
     private readonly ISettingsStore _settingsStore;
     private readonly IClipboardMonitor _clipboardMonitor;
     private readonly SearchService _searchService;
+    private readonly VersionCheckerService _versionChecker;
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
 
@@ -127,6 +128,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         ISettingsStore settingsStore,
         IClipboardMonitor clipboardMonitor,
         SearchService searchService,
+        VersionCheckerService versionChecker,
         ILogger<MainWindowViewModel> logger)
     {
         _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
@@ -135,6 +137,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _clipboardMonitor = clipboardMonitor ?? throw new ArgumentNullException(nameof(clipboardMonitor));
         _searchService = searchService ?? throw new ArgumentNullException(nameof(searchService));
+        _versionChecker = versionChecker ?? throw new ArgumentNullException(nameof(versionChecker));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region MyRegion
@@ -287,12 +290,13 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
             var about = _settingsStore.Current.About;
             var isAutoUpdate = about.AutoUpdateWhenLaunch != AllowStatus.Yes;
             if (isAutoUpdate) return;
-            var service = new VersionCheckerService(AppConstant.RepoOwner, AppConstant.RepoName,
-                about.IsReceiveBetaVersion == AllowStatus.Yes);
-            var release = await service
-                .GetLatestReleaseAsync(about.SkipVersionOnLaunch, _lifetimeCancellation.Token)
+            var release = await _versionChecker
+                .GetLatestReleaseAsync(
+                    about.IsReceiveBetaVersion == AllowStatus.Yes,
+                    about.SkipVersionOnLaunch,
+                    _lifetimeCancellation.Token)
                 .ConfigureAwait(true);
-            if (release != null && service.IsNewVersionAvailable(release.TagName))
+            if (release != null && _versionChecker.IsNewVersionAvailable(release.TagName))
             {
                 await _dialogService.ShowAsync(new AppDialogRequest(
                     AppDialog.NewVersionAvailable,

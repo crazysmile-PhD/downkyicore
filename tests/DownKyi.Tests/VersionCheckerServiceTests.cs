@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using DownKyi.Models;
 using DownKyi.Services;
@@ -51,7 +52,9 @@ public class VersionCheckerServiceTests
     [Fact]
     public void IsNewVersionAvailableReturnsFalseForCurrentVersion()
     {
-        var service = new VersionCheckerService("owner", "repo");
+        using var handler = new StubHandler("{}");
+        using var httpClient = CreateHttpClient(handler);
+        var service = new VersionCheckerService(httpClient, "owner", "repo");
         var currentVersion = new AppInfo().VersionName;
 
         Assert.False(service.IsNewVersionAvailable($"v{currentVersion}"));
@@ -60,7 +63,9 @@ public class VersionCheckerServiceTests
     [Fact]
     public void IsNewVersionAvailableReturnsTrueForGreaterVersion()
     {
-        var service = new VersionCheckerService("owner", "repo");
+        using var handler = new StubHandler("{}");
+        using var httpClient = CreateHttpClient(handler);
+        var service = new VersionCheckerService(httpClient, "owner", "repo");
 
         Assert.True(service.IsNewVersionAvailable("v99.0.0"));
     }
@@ -68,11 +73,56 @@ public class VersionCheckerServiceTests
     [Fact]
     public async Task LatestReleaseCheckPreservesPreCanceledRequest()
     {
-        var service = new VersionCheckerService("owner", "repo");
+        using var handler = new StubHandler("{}");
+        using var httpClient = CreateHttpClient(handler);
+        var service = new VersionCheckerService(httpClient, "owner", "repo");
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            service.GetLatestReleaseAsync(cancellationToken: cancellation.Token));
+            service.GetLatestReleaseAsync(false, cancellationToken: cancellation.Token));
+    }
+
+    [Fact]
+    public async Task PrereleaseCheckUsesReleaseCollectionEndpoint()
+    {
+        using var handler = new StubHandler("[{\"tag_name\":\"v2.0.0-beta.1\"}]");
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.github.test/")
+        };
+        var service = new VersionCheckerService(httpClient, "owner", "repo");
+
+        var release = await service.GetLatestReleaseAsync(
+            true,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal("v2.0.0-beta.1", release?.TagName);
+        Assert.Equal("https://api.github.test/repos/owner/repo/releases", handler.RequestUri?.AbsoluteUri);
+    }
+
+    private static HttpClient CreateHttpClient(HttpMessageHandler handler)
+    {
+        return new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri("https://api.github.test/")
+        };
+    }
+
+    private sealed class StubHandler(string responseBody) : HttpMessageHandler
+    {
+        public Uri? RequestUri { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RequestUri = request.RequestUri;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseBody)
+            });
+        }
     }
 }
