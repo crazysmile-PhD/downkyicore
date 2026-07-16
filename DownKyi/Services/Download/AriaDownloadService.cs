@@ -279,7 +279,8 @@ internal class AriaDownloadService : DownloadService, IDownloadService
                 SystemIcon.Instance().Error,
                 $"Aria2 {DictionaryResource.GetString("Error")}",
                 message,
-                1).ConfigureAwait(true);
+                1,
+                cancellationToken).ConfigureAwait(true);
             return;
         }
 
