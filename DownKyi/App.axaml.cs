@@ -11,6 +11,7 @@ using DownKyi.Core.BiliApi;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
+using DownKyi.CustomControl.AsyncImageLoader;
 using DownKyi.Core.Utils;
 using DownKyi.Desktop.Composition;
 using DownKyi.Models;
@@ -74,6 +75,9 @@ internal partial class App : Avalonia.Application, IDisposable
         var desktopContext = host.Services.GetRequiredService<AvaloniaDesktopContext>();
         desktopContext.AttachLifetime(desktop);
         WebClient.Configure(host.Services.GetRequiredService<BilibiliHttpClient>());
+        var imageLoader = host.Services.GetRequiredService<IAsyncImageLoader>();
+        ImageLoader.AsyncImageLoader = imageLoader;
+        ImageBrushLoader.AsyncImageLoader = imageLoader;
 
         var mainWindow = host.Services.GetRequiredService<MainWindow>();
         desktopContext.AttachMainWindow(mainWindow);

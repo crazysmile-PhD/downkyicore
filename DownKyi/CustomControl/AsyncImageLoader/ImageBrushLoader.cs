@@ -8,7 +8,6 @@ using Avalonia.Logging;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
-using DownKyi.Core.Storage;
 using DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
 namespace DownKyi.CustomControl.AsyncImageLoader;
@@ -19,12 +18,11 @@ internal static class ImageBrushLoader
         Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);
     public static readonly AttachedProperty<string?> SourceProperty =
         AvaloniaProperty.RegisterAttached<ImageBrush, string?>("Source", typeof(ImageLoader));
-    public static IAsyncImageLoader AsyncImageLoader { get; set; } = CreateDefaultLoader();
+    public static IAsyncImageLoader AsyncImageLoader { get; set; } = NullAsyncImageLoader.Instance;
 
-    private static DiskCachedWebImageLoader CreateDefaultLoader()
+    static ImageBrushLoader()
     {
         SourceProperty.Changed.AddClassHandler<ImageBrush>(OnSourceChanged);
-        return new DiskCachedWebImageLoader(Path.Combine(StorageManager.GetCache(), "Images"));
     }
 
     private static void OnSourceChanged(ImageBrush imageBrush, AvaloniaPropertyChangedEventArgs args)

@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Net.Http;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
@@ -8,6 +10,8 @@ using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
+using DownKyi.CustomControl.AsyncImageLoader;
+using DownKyi.CustomControl.AsyncImageLoader.Loaders;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Platform;
 using DownKyi.Services;
@@ -51,6 +55,13 @@ internal static class DesktopComposition
         services.AddSingleton(loggerFactory);
         services.AddSingleton(logService);
         services.AddSingleton(new SqliteDownloadTaskStoreOptions(StorageManager.GetDbPath()));
+        services.AddHttpClient("DownKyi.Images", client =>
+            client.Timeout = TimeSpan.FromSeconds(15));
+        services.AddSingleton<IAsyncImageLoader>(provider =>
+            new DiskCachedWebImageLoader(
+                provider.GetRequiredService<IHttpClientFactory>().CreateClient("DownKyi.Images"),
+                disposeHttpClient: true,
+                Path.Combine(StorageManager.GetCache(), "Images")));
         services.AddSingleton<ISettingsStore, SettingsStore>();
         services.AddSingleton<FfmpegProcessor>();
         services.AddSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();

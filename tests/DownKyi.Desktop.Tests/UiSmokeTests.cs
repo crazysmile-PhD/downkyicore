@@ -9,6 +9,8 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.CustomAction;
+using DownKyi.CustomControl.AsyncImageLoader;
+using DownKyi.CustomControl.AsyncImageLoader.Loaders;
 using DownKyi.Desktop.Composition;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Platform;
@@ -109,11 +111,13 @@ public sealed class UiSmokeTests
 
             var window = host.Services.GetRequiredService<MainWindow>();
             var mainViewModel = host.Services.GetRequiredService<MainWindowViewModel>();
+            var imageLoader = host.Services.GetRequiredService<IAsyncImageLoader>();
 
             Assert.True(window.Width >= window.MinWidth);
             Assert.True(window.Height >= window.MinHeight);
             Assert.NotNull(window.Content);
             Assert.Same(mainViewModel, window.DataContext);
+            Assert.IsType<DiskCachedWebImageLoader>(imageLoader);
             Assert.NotNull(host.Services.GetRequiredService<ViewIndexViewModel>());
             Assert.NotNull(host.Services.GetRequiredService<ViewVideoDetailViewModel>());
             Assert.NotNull(host.Services.GetRequiredService<ViewDownloadManagerViewModel>());

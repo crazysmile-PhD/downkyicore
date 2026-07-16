@@ -9,7 +9,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Logging;
 using Avalonia.Threading;
-using DownKyi.Core.Storage;
 using DownKyi.CustomControl.AsyncImageLoader.Loaders;
 
 namespace DownKyi.CustomControl.AsyncImageLoader;
@@ -27,12 +26,11 @@ internal static class ImageLoader
     public static readonly AttachedProperty<bool> IsLoadingProperty =
         AvaloniaProperty.RegisterAttached<Image, bool>("IsLoading", typeof(ImageLoader));
 
-    public static IAsyncImageLoader AsyncImageLoader { get; set; } = CreateDefaultLoader();
+    public static IAsyncImageLoader AsyncImageLoader { get; set; } = NullAsyncImageLoader.Instance;
 
-    private static DiskCachedWebImageLoader CreateDefaultLoader()
+    static ImageLoader()
     {
         SourceProperty.Changed.AddClassHandler<Image>(OnSourceChanged);
-        return new DiskCachedWebImageLoader(Path.Combine(StorageManager.GetCache(), "Images"));
     }
 
     private static readonly ConcurrentDictionary<Image, CancellationTokenSource> PendingOperations = new();
