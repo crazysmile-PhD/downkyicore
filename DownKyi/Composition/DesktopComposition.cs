@@ -54,7 +54,7 @@ internal static class DesktopComposition
         services.AddSingleton<ISettingsStore, SettingsStore>();
         services.AddSingleton<FfmpegProcessor>();
         services.AddSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
-        services.AddSingleton<DownloadStorageService>();
+        services.AddSingleton<DownloadTaskProjectionStore>();
         services.AddSingleton<DownloadListState>();
         services.AddSingleton<DownloadTaskFileService>();
         services.AddSingleton<IDownloadManagerCoordinator, DownloadManagerCoordinator>();

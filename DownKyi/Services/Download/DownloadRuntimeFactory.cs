@@ -18,7 +18,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
 {
     private readonly DownloadListState _downloadLists;
     private readonly AriaServer _ariaServer;
-    private readonly DownloadStorageService _downloadStorageService;
+    private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly IUserNotificationService _notificationService;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly FfmpegProcessor _ffmpegProcessor;
@@ -28,7 +28,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
 
     public DownloadRuntimeFactory(
         DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService,
+        DownloadTaskProjectionStore projectionStore,
         IUserNotificationService notificationService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
@@ -38,8 +38,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         ILoggerFactory loggerFactory)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
-        _downloadStorageService = downloadStorageService
-            ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _projectionStore = projectionStore
+            ?? throw new ArgumentNullException(nameof(projectionStore));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -82,7 +82,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
 
         var pipeline = new DownloadPipeline(
                 _downloadLists,
-                _downloadStorageService,
+                _projectionStore,
                 _notificationService,
                 _uiDispatcher,
                 _settingsStore,

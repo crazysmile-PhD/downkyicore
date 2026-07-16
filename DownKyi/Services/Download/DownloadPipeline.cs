@@ -40,7 +40,7 @@ internal sealed class DownloadPipeline : IDisposable
     private DownloadListState DownloadLists { get; }
     private ImmutableObservableCollection<DownloadingItem> DownloadingList { get; }
     private ImmutableObservableCollection<DownloadedItem> DownloadedList { get; }
-    private DownloadStorageService DownloadStorageService { get; }
+    private DownloadTaskProjectionStore ProjectionStore { get; }
     private IUiDispatcher UiDispatcher { get; }
     private DownloadDiagnosticLogger DiagnosticLogger { get; }
     private FfmpegProcessor FfmpegProcessor { get; }
@@ -68,7 +68,7 @@ internal sealed class DownloadPipeline : IDisposable
     {
         try
         {
-            await DownloadStorageService
+            await ProjectionStore
                 .UpdateDownloadingAsync(downloading, CancellationToken.GetValueOrDefault())
                 .ConfigureAwait(true);
         }
@@ -131,12 +131,12 @@ internal sealed class DownloadPipeline : IDisposable
     /// 初始化
     /// </summary>
     /// <param name="downloadLists"></param>
-    /// <param name="downloadStorageService"></param>
+    /// <param name="projectionStore"></param>
     /// <param name="dialogService"></param>
     /// <returns></returns>
     public DownloadPipeline(
         DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService,
+        DownloadTaskProjectionStore projectionStore,
         IUserNotificationService notificationService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
@@ -146,7 +146,7 @@ internal sealed class DownloadPipeline : IDisposable
         ILogger logger)
     {
         DownloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
-        DownloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        ProjectionStore = projectionStore ?? throw new ArgumentNullException(nameof(projectionStore));
         DownloadingList = downloadLists.Downloading;
         DownloadedList = downloadLists.Downloaded;
         NotificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
@@ -1151,7 +1151,7 @@ internal sealed class DownloadPipeline : IDisposable
                     Downloaded = downloaded
                 };
 
-                await DownloadStorageService
+                await ProjectionStore
                     .AddDownloadedAsync(downloadedItem, cancellationToken)
                     .ConfigureAwait(true);
                 await UiDispatcher.InvokeAsync(() =>
@@ -1234,7 +1234,7 @@ internal sealed class DownloadPipeline : IDisposable
 
             item.SpeedDisplay = string.Empty;
 
-            await DownloadStorageService.UpdateDownloadingAsync(item).ConfigureAwait(true);
+            await ProjectionStore.UpdateDownloadingAsync(item).ConfigureAwait(true);
         }
     }
 
@@ -1292,7 +1292,7 @@ internal sealed class DownloadPipeline : IDisposable
             localFileName,
             expectedBytes,
             () => EnsureDownloadIsActive(downloading),
-            cancellationToken => DownloadStorageService.UpdateDownloadingAsync(
+            cancellationToken => ProjectionStore.UpdateDownloadingAsync(
                 downloading,
                 cancellationToken),
             CancellationToken.GetValueOrDefault()));

@@ -61,13 +61,13 @@ internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
             ["downloadSubtitle"] = [".srt"]
         };
 
-    private readonly DownloadStorageService _storage;
+    private readonly DownloadTaskProjectionStore _storage;
     private readonly DownloadTaskFileService _fileService;
     private readonly DownloadListState _downloadLists;
     private readonly IPlatformLauncher _platformLauncher;
 
     public DownloadManagerCoordinator(
-        DownloadStorageService storage,
+        DownloadTaskProjectionStore storage,
         DownloadTaskFileService fileService,
         DownloadListState downloadLists,
         IPlatformLauncher platformLauncher)

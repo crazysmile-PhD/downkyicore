@@ -84,6 +84,29 @@ public sealed class DownloadRuntimeArchitectureTests
     }
 
     [Fact]
+    public void DesktopProjectionUsesTheApplicationStoreWithoutOwningSqlite()
+    {
+        var directory = Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download");
+        var projectionSource = File.ReadAllText(Path.Combine(
+            directory,
+            "DownloadTaskProjectionStore.cs"));
+        var compositionSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Composition",
+            "DesktopComposition.cs"));
+
+        Assert.False(File.Exists(Path.Combine(directory, "DownloadStorageService.cs")));
+        Assert.Contains("IDownloadTaskStore _store", projectionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("SqliteConnection", projectionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Microsoft.Data.Sqlite", projectionSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "AddSingleton<DownloadTaskProjectionStore>()",
+            compositionSource,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DownloadRuntimeUsesInjectedSettingsAndDiagnosticOwners()
     {
         var directory = Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download");

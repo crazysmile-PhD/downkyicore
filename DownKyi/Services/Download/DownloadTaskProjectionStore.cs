@@ -20,10 +20,10 @@ using LegacyQuality = DownKyi.Core.BiliApi.BiliUtils.Quality;
 namespace DownKyi.Services.Download;
 
 /// <summary>
-/// Projects the new download domain into legacy UI models while the ViewModels are migrated.
-/// Persistence belongs exclusively to <see cref="IDownloadTaskStore"/>.
+/// Persists download aggregates and projects them into desktop list items.
+/// SQLite access and schema ownership remain exclusively behind <see cref="IDownloadTaskStore"/>.
 /// </summary>
-internal sealed class DownloadStorageService : IDisposable
+internal sealed class DownloadTaskProjectionStore : IDisposable
 {
     private const int MaximumUpdateAttempts = 2;
     private readonly IDownloadTaskStore _store;
@@ -32,7 +32,7 @@ internal sealed class DownloadStorageService : IDisposable
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _taskGates = new(StringComparer.Ordinal);
     private bool _disposed;
 
-    public DownloadStorageService(IDownloadTaskStore store, IClock clock)
+    public DownloadTaskProjectionStore(IDownloadTaskStore store, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(clock);

@@ -8,7 +8,7 @@ using Microsoft.Data.Sqlite;
 
 namespace DownKyi.Tests;
 
-public sealed class DownloadStorageResumeTests : IDisposable
+public sealed class DownloadTaskProjectionStoreResumeTests : IDisposable
 {
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(),
@@ -41,7 +41,7 @@ public sealed class DownloadStorageResumeTests : IDisposable
         using (var store = new SqliteDownloadTaskStore(
                    new SqliteDownloadTaskStoreOptions(database),
                    new SystemClock()))
-        using (var storage = new DownloadStorageService(store, new SystemClock()))
+        using (var storage = new DownloadTaskProjectionStore(store, new SystemClock()))
         {
             await storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
         }
@@ -49,7 +49,7 @@ public sealed class DownloadStorageResumeTests : IDisposable
         using (var store = new SqliteDownloadTaskStore(
                    new SqliteDownloadTaskStoreOptions(database),
                    new SystemClock()))
-        using (var reopenedStorage = new DownloadStorageService(store, new SystemClock()))
+        using (var reopenedStorage = new DownloadTaskProjectionStore(store, new SystemClock()))
         {
             var restored = Assert.Single(
                 await reopenedStorage.GetDownloadingAsync(TestContext.Current.CancellationToken));
@@ -113,7 +113,7 @@ public sealed class DownloadStorageResumeTests : IDisposable
         using (var store = new SqliteDownloadTaskStore(
                    new SqliteDownloadTaskStoreOptions(database),
                    new SystemClock()))
-        using (var storage = new DownloadStorageService(store, new SystemClock()))
+        using (var storage = new DownloadTaskProjectionStore(store, new SystemClock()))
         {
             await storage.AddDownloadingAsync(downloadingItem, TestContext.Current.CancellationToken);
             await storage.RemoveDownloadingAsync(
@@ -126,7 +126,7 @@ public sealed class DownloadStorageResumeTests : IDisposable
         using var reopenedStore = new SqliteDownloadTaskStore(
             new SqliteDownloadTaskStoreOptions(database),
             new SystemClock());
-        using var reopened = new DownloadStorageService(reopenedStore, new SystemClock());
+        using var reopened = new DownloadTaskProjectionStore(reopenedStore, new SystemClock());
         Assert.Empty(await reopened.GetDownloadingAsync(TestContext.Current.CancellationToken));
         var restored = Assert.Single(
             await reopened.GetDownloadedAsync(TestContext.Current.CancellationToken));

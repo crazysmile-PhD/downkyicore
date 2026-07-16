@@ -113,7 +113,7 @@ public sealed class DownloadManagerCoordinatorTests
             Store = new SqliteDownloadTaskStore(
                 new SqliteDownloadTaskStoreOptions(Path.Combine(_directory, "download.db")),
                 new SystemClock());
-            Storage = new DownloadStorageService(Store, new SystemClock());
+            Storage = new DownloadTaskProjectionStore(Store, new SystemClock());
             State = new DownloadListState();
             Launcher = new RecordingPlatformLauncher();
             var fileService = new DownloadTaskFileService(
@@ -123,7 +123,7 @@ public sealed class DownloadManagerCoordinatorTests
 
         public SqliteDownloadTaskStore Store { get; }
 
-        public DownloadStorageService Storage { get; }
+        public DownloadTaskProjectionStore Storage { get; }
 
         public DownloadListState State { get; }
 

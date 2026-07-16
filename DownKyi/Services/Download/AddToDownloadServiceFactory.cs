@@ -16,7 +16,7 @@ internal interface IAddToDownloadServiceFactory
 internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
 {
     private readonly DownloadListState _downloadLists;
-    private readonly DownloadStorageService _downloadStorageService;
+    private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly ISettingsStore _settingsStore;
     private readonly IUserNotificationService _notificationService;
     private readonly IAppDialogService _dialogService;
@@ -24,14 +24,14 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
 
     public AddToDownloadServiceFactory(
         DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService,
+        DownloadTaskProjectionStore projectionStore,
         ISettingsStore settingsStore,
         IUserNotificationService notificationService,
         IAppDialogService dialogService,
         ILogger<AddToDownloadService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
-        _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _projectionStore = projectionStore ?? throw new ArgumentNullException(nameof(projectionStore));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
@@ -43,7 +43,7 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
         return new AddToDownloadService(
             streamType,
             _downloadLists,
-            _downloadStorageService,
+            _projectionStore,
             _settingsStore,
             _notificationService,
             _dialogService,
@@ -56,7 +56,7 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
             id,
             streamType,
             _downloadLists,
-            _downloadStorageService,
+            _projectionStore,
             _settingsStore,
             _notificationService,
             _dialogService,

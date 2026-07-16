@@ -16,7 +16,7 @@ public sealed class DownloadBootstrapHostedServiceTests
         using var runtime = new RecordingDownloadRuntime();
         var dispatcher = new ImmediateUiDispatcher();
         var listState = new DownloadListState();
-        using var storage = new DownloadStorageService(new EmptyDownloadTaskStore(), new FixedClock());
+        using var storage = new DownloadTaskProjectionStore(new EmptyDownloadTaskStore(), new FixedClock());
         using var service = new DownloadBootstrapHostedService(
             listState,
             storage,
