@@ -136,16 +136,10 @@ public sealed class SettingsArchitectureTests
             Path.Combine(RepositoryRoot, "DownKyi.Core"),
             Path.Combine(RepositoryRoot, "src")
         };
-        var compatibilityOwner = Path.Combine(
-            RepositoryRoot,
-            "DownKyi.Core",
-            "Settings",
-            "ISettingsStore.cs");
         var violations = sourceRoots
             .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
-            .Where(path => !string.Equals(path, compatibilityOwner, StringComparison.OrdinalIgnoreCase))
             .Where(path => File.ReadAllText(path).Contains("SettingsManager.Instance", StringComparison.Ordinal))
             .Select(path => Path.GetRelativePath(RepositoryRoot, path))
             .ToArray();
@@ -165,8 +159,11 @@ public sealed class SettingsArchitectureTests
         Assert.DoesNotContain("SettingsManager Settings", storeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Run", storeSource, StringComparison.Ordinal);
         Assert.Contains("SettingsStore(ILoggerFactory loggerFactory)", storeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("public SettingsStore()", storeSource, StringComparison.Ordinal);
         Assert.Contains("ILogger<SettingsStore>", storeSource, StringComparison.Ordinal);
         Assert.Contains("ILogger<SettingsManager>", managerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("static SettingsManager Instance", managerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lazy<SettingsManager>", managerSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LogManager.", storeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LogManager.", managerSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Console.", managerSource, StringComparison.Ordinal);

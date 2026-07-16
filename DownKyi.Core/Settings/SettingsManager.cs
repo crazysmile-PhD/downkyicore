@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using System.Text;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings.Models;
-using DownKyi.Core.Storage;
 using DownKyi.Core.Utils.Encryptor;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -13,8 +12,6 @@ namespace DownKyi.Core.Settings;
 public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan FlushDelay = TimeSpan.FromMilliseconds(750);
-    private static readonly Lazy<SettingsManager> InstanceOwner = new(() => new SettingsManager());
-
     private readonly object _settingsLock = new();
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly string _settingsName;
@@ -31,13 +28,6 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
     private int _disposeState;
 
     internal event Action? Changed;
-
-    public static SettingsManager Instance => InstanceOwner.Value;
-
-    private SettingsManager()
-        : this(StorageManager.GetSettings(), NullLogger<SettingsManager>.Instance)
-    {
-    }
 
     internal SettingsManager(string settingsName)
         : this(settingsName, NullLogger<SettingsManager>.Instance)

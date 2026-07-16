@@ -23,11 +23,6 @@ public sealed class SettingsStore : ISettingsStore
     private bool _isNormalizing;
     private int _disposeState;
 
-    public SettingsStore()
-        : this(SettingsManager.Instance, NullLogger<SettingsStore>.Instance)
-    {
-    }
-
     public SettingsStore(ILoggerFactory loggerFactory)
         : this(
             CreateManager(loggerFactory),
