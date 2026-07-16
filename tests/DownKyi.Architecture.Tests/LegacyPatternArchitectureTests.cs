@@ -20,6 +20,7 @@ public sealed class LegacyPatternArchitectureTests
             ["GetAwaiter.GetResult"] = @"\.GetAwaiter\s*\(\s*\)\s*\.GetResult\s*\(",
             ["new HttpClient"] = @"\bnew\s+HttpClient\s*\(",
             ["Console output"] = @"\bConsole\s*\.",
+            ["mutable danmaku singleton"] = @"\bBilibiliDanmakuConverter\.Instance\b",
             ["async void"] = @"\basync\s+void\b"
         };
         var violations = EnumerateProductionSourceFiles()

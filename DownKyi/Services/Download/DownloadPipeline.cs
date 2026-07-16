@@ -485,7 +485,7 @@ internal sealed class DownloadPipeline : IDisposable
             CustomOffset = 0
         };
 
-        var bilibili = Core.Danmaku2Ass.BilibiliDanmakuConverter.Instance;
+        var bilibili = new Core.Danmaku2Ass.BilibiliDanmakuConverter();
         bilibili.SetTopFilter(danmakuSettings.TopFilter == AllowStatus.Yes);
         bilibili.SetBottomFilter(danmakuSettings.BottomFilter == AllowStatus.Yes);
         bilibili.SetScrollFilter(danmakuSettings.ScrollFilter == AllowStatus.Yes);
