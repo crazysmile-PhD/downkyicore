@@ -73,16 +73,7 @@ public class Studio
 
     public void CreateFile(string fileName, string text)
     {
-        try
-        {
-            File.WriteAllText(fileName, text, _outputEncoding);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        File.WriteAllText(fileName, text, _outputEncoding);
     }
 
     public Dictionary<string, int> Report()

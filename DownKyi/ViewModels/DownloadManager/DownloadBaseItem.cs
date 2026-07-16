@@ -1,10 +1,10 @@
 using Avalonia;
 using Avalonia.Media;
+using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Models;
 using DownKyi.Utils;
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.DownloadManager
 {

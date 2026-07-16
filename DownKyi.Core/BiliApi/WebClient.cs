@@ -249,20 +249,24 @@ public static class WebClient
         }
         catch
         {
-            try
-            {
-                File.Delete(temporaryFile);
-            }
-            catch (IOException)
-            {
-                // Preserve the original download failure.
-            }
-            catch (UnauthorizedAccessException)
-            {
-                // Preserve the original download failure.
-            }
-
+            DeleteTemporaryFileBestEffort(temporaryFile);
             throw;
+        }
+    }
+
+    private static void DeleteTemporaryFileBestEffort(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+            return;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return;
         }
     }
 

@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
@@ -17,7 +18,6 @@ using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.UiState;
 using Microsoft.Extensions.Logging;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels;
 
@@ -241,6 +241,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (operation.CancellationToken.IsCancellationRequested)
         {
+            return;
         }
     }
 

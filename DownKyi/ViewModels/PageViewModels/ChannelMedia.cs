@@ -1,9 +1,9 @@
 using System;
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
-using CommunityToolkit.Mvvm.Input;
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.PageViewModels;
 

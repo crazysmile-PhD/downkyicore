@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.UserSpace;
 

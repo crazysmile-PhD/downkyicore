@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -12,13 +13,14 @@ namespace DownKyi.Converter;
 internal class MarkdownToInlinesConverter : IValueConverter
 {
     private static readonly string[] LineSeparators = { "\r\n", "\n" };
-    private static readonly Dictionary<int, (double FontSize, FontWeight Weight)> HeaderStyles = new()
-    {
-        [1] = (24, FontWeight.Bold),  // #
-        [2] = (20, FontWeight.Bold),  // ##
-        [3] = (16, FontWeight.Bold),  // ###
-        [4] = (14, FontWeight.SemiBold) // ####
-    };
+    private static readonly FrozenDictionary<int, (double FontSize, FontWeight Weight)> HeaderStyles =
+        new Dictionary<int, (double FontSize, FontWeight Weight)>
+        {
+            [1] = (24, FontWeight.Bold),  // #
+            [2] = (20, FontWeight.Bold),  // ##
+            [3] = (16, FontWeight.Bold),  // ###
+            [4] = (14, FontWeight.SemiBold) // ####
+        }.ToFrozenDictionary();
     private static bool TryParseHeader(string line, out int level, out string text)
     {
         level = 0;

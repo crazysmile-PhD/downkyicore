@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Images;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Friends;
 using DownKyi.ViewModels.PageViewModels;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels
 {

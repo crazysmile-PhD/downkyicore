@@ -111,9 +111,12 @@ public sealed class DownloadProgressWriteBehind : IAsyncDisposable
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
         {
+            return;
         }
-
-        await FlushPendingAsync(CancellationToken.None).ConfigureAwait(false);
+        finally
+        {
+            await FlushPendingAsync(CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     private async Task FlushPendingAsync(CancellationToken cancellationToken)

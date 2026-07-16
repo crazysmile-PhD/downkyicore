@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -12,8 +14,6 @@ using DownKyi.Models;
 using DownKyi.Platform;
 using DownKyi.Services;
 using Microsoft.Extensions.Logging;
-using CommunityToolkit.Mvvm.Input;
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels;
 
@@ -203,6 +203,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (OperationCanceledException)
         {
+            return;
         }
     }
 
@@ -276,6 +277,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
         {
+            return;
         }
         catch (InvalidOperationException e)
         {
@@ -309,7 +311,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
         {
-            // Expected while the application window is closing.
+            return;
         }
         catch (OperationCanceledException)
         {

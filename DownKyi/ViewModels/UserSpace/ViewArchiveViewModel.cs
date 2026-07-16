@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Avalonia.Media;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Utils;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.UserSpace;
 

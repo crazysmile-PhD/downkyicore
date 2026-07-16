@@ -1,8 +1,10 @@
+using System.Collections.Frozen;
+
 namespace DownKyi.Core.BiliApi.Bangumi;
 
 public static class BangumiType
 {
-    public static readonly Dictionary<int, string> Type = new()
+    public static IReadOnlyDictionary<int, string> Type { get; } = new Dictionary<int, string>
     {
         { 1, "Anime" },
         { 2, "Movie" },
@@ -14,9 +16,9 @@ public static class BangumiType
         { 8, "Unknown" },
         { 9, "Unknown" },
         { 10, "Unknown" }
-    };
+    }.ToFrozenDictionary();
 
-    public static readonly Dictionary<int, int> TypeId = new()
+    public static IReadOnlyDictionary<int, int> TypeId { get; } = new Dictionary<int, int>
     {
         { 1, 13 },
         { 2, 23 },
@@ -28,5 +30,5 @@ public static class BangumiType
         { 8, -1 },
         { 9, -1 },
         { 10, -1 }
-    };
+    }.ToFrozenDictionary();
 }

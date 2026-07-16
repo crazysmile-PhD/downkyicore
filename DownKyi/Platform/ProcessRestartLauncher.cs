@@ -55,15 +55,7 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
             return false;
         }
 
-        try
-        {
-            using var parent = Process.GetProcessById(parentProcessId);
-            await parent.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (ArgumentException)
-        {
-            // The parent completed before the helper obtained its process handle.
-        }
+        await WaitForParentExitAsync(parentProcessId, cancellationToken).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
         using var process = Process.Start(CreateStartInfo(null));
@@ -73,6 +65,21 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         }
 
         return true;
+    }
+
+    private static async Task WaitForParentExitAsync(
+        int parentProcessId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var parent = Process.GetProcessById(parentProcessId);
+            await parent.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
     }
 
     internal static bool TryParseParentProcessId(

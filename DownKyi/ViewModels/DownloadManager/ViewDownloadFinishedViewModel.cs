@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
@@ -8,7 +9,6 @@ using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.DownloadManager;
 

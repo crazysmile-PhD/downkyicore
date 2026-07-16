@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -12,7 +13,6 @@ using DownKyi.Core.Settings;
 using DownKyi.Models;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Settings;
 

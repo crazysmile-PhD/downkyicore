@@ -2,13 +2,13 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Logging;
 using DownKyi.Services.Account;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels;
 
@@ -111,6 +111,7 @@ internal class ViewLoginViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)

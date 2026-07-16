@@ -102,6 +102,7 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         }
         catch (OperationCanceledException) when (ShutdownToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
             or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
@@ -142,6 +143,7 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
             }
             catch (OperationCanceledException) when (ShutdownToken.IsCancellationRequested)
             {
+                _logger.LogDebugMessage("Application cleanup was canceled by shutdown.");
             }
             catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
                 or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException

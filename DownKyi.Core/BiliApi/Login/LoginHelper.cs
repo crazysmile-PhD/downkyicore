@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Web;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
@@ -13,7 +14,8 @@ public static class LoginHelper
 
     // 内存缓存：读多写少，使用 ReaderWriterLockSlim 保证线程安全
     private static readonly ReaderWriterLockSlim CacheLock = new();
-    private static List<DownKyiCookie>? _cachedCookies;
+    private static ImmutableArray<DownKyiCookie> _cachedCookies = [];
+    private static bool _isCookieCacheInitialized;
     private static string? _cachedCookieString;
 
     private static DownKyiCookie CloneCookie(DownKyiCookie cookie)
@@ -64,7 +66,8 @@ public static class LoginHelper
         CacheLock.EnterWriteLock();
         try
         {
-            _cachedCookies = null;
+            _cachedCookies = [];
+            _isCookieCacheInitialized = false;
             _cachedCookieString = null;
         }
         finally
@@ -136,7 +139,7 @@ public static class LoginHelper
         CacheLock.EnterReadLock();
         try
         {
-            if (_cachedCookies != null)
+            if (_isCookieCacheInitialized)
             {
                 return CloneCookies(_cachedCookies);
             }
@@ -151,14 +154,17 @@ public static class LoginHelper
         try
         {
             // 双重检查：可能其他线程已完成加载
-            if (_cachedCookies != null)
+            if (_isCookieCacheInitialized)
             {
                 return CloneCookies(_cachedCookies);
             }
 
             if (!File.Exists(LocalLoginInfo))
             {
-                return new List<DownKyiCookie>();
+                _cachedCookies = [];
+                _cachedCookieString = string.Empty;
+                _isCookieCacheInitialized = true;
+                return [];
             }
 
             List<DownKyiCookie>? cookies;
@@ -183,7 +189,10 @@ public static class LoginHelper
                 return new List<DownKyiCookie>();
             }
 
-            _cachedCookies = cookies ?? new List<DownKyiCookie>();
+            _cachedCookies = (cookies ?? [])
+                .Select(CloneCookie)
+                .ToImmutableArray();
+            _isCookieCacheInitialized = true;
             // 同步更新字符串缓存
             _cachedCookieString = BuildCookieHeader(_cachedCookies);
 
@@ -281,11 +290,11 @@ public static class LoginHelper
         }
         catch (IOException)
         {
-            // Cookie persistence outcome must not be replaced by cleanup failure.
+            return;
         }
         catch (UnauthorizedAccessException)
         {
-            // Cookie persistence outcome must not be replaced by cleanup failure.
+            return;
         }
     }
 }

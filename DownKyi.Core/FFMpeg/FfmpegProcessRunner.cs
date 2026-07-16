@@ -102,11 +102,11 @@ internal sealed class FfmpegProcessRunner : IFfmpegProcessRunner
         }
         catch (InvalidOperationException)
         {
-            // The process exited between HasExited and Kill.
+            return;
         }
         catch (Win32Exception)
         {
-            // Process termination is best effort during timeout or cancellation.
+            return;
         }
     }
 }

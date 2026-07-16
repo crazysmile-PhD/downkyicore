@@ -3,12 +3,12 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls.Documents;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Models;
 using Microsoft.Extensions.Logging;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Dialogs
 {

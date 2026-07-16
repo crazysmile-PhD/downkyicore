@@ -82,6 +82,7 @@ internal sealed class DownloadPipeline : IDisposable
         }
         catch (OperationCanceledException) when (CancellationToken?.IsCancellationRequested == true)
         {
+            return;
         }
     }
 

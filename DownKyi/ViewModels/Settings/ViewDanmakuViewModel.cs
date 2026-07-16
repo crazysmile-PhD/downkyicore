@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Media;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils.Validator;
 using DownKyi.Utils;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Settings;
 

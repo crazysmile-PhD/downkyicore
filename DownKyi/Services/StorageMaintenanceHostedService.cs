@@ -49,6 +49,7 @@ internal sealed class StorageMaintenanceHostedService : IHostedService
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

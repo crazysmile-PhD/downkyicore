@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -11,8 +12,8 @@ using DownKyi.Core.BiliApi;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
-using DownKyi.CustomControl.AsyncImageLoader;
 using DownKyi.Core.Utils;
+using DownKyi.CustomControl.AsyncImageLoader;
 using DownKyi.Desktop.Composition;
 using DownKyi.Models;
 using DownKyi.Platform;
@@ -160,7 +161,10 @@ internal partial class App : Avalonia.Application, IDisposable
 
     private void StartHost()
     {
-        _ = _applicationLifecycle?.StartHostAsync();
+        if (_applicationLifecycle != null)
+        {
+            ObserveBackgroundTask(_applicationLifecycle.StartHostAsync(), "Application Host startup failed.");
+        }
     }
 
     private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
@@ -168,11 +172,27 @@ internal partial class App : Avalonia.Application, IDisposable
         Dispose();
     }
 
-    private async void NativeMenuItem_OnClick(object? sender, EventArgs e)
+    private void NativeMenuItem_OnClick(object? sender, EventArgs e)
+    {
+        ObserveBackgroundTask(ExitFromNativeMenuAsync(), "Application exit failed.");
+    }
+
+    private async Task ExitFromNativeMenuAsync()
     {
         if (_applicationLifecycle != null)
         {
             await _applicationLifecycle.ExitAsync().ConfigureAwait(true);
         }
+    }
+
+    private void ObserveBackgroundTask(Task task, string failureMessage)
+    {
+        _ = task.ContinueWith(
+            completed => _logger?.LogErrorMessage(
+                failureMessage,
+                completed.Exception!.GetBaseException()),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 }

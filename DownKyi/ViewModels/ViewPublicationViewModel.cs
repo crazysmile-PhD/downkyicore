@@ -8,6 +8,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
@@ -21,7 +22,6 @@ using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.UserSpace;
 using Microsoft.Extensions.Logging;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels
 {
@@ -346,6 +346,7 @@ namespace DownKyi.ViewModels
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                return;
             }
             catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
                 or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
@@ -404,6 +405,7 @@ namespace DownKyi.ViewModels
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                return;
             }
             catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
                 or FormatException or Newtonsoft.Json.JsonException)

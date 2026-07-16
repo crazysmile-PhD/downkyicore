@@ -1,7 +1,7 @@
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Images;
 using DownKyi.Utils;
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.PageViewModels;
 

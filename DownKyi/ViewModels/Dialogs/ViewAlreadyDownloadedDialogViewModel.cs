@@ -1,7 +1,7 @@
 using System;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Images;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Dialogs;
 

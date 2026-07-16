@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Aria2cNet.Server;
@@ -9,7 +10,6 @@ using DownKyi.Core.Utils.Validator;
 using DownKyi.Services.Settings;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Settings;
 

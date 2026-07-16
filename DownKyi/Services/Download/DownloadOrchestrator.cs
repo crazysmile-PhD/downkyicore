@@ -130,6 +130,7 @@ internal sealed class DownloadOrchestrator : IDownloadRuntime
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+            return;
         }
         catch (InvalidOperationException exception)
         {
@@ -180,6 +181,7 @@ internal sealed class DownloadOrchestrator : IDownloadRuntime
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
     }
 

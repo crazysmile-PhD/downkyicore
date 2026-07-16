@@ -4,12 +4,12 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Storage;
 using DownKyi.Images;
 using DownKyi.Utils;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.UserSpace;
 

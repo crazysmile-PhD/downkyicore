@@ -1,8 +1,8 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Application.Lifetime;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Lifetime;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Services.Download;
@@ -106,6 +106,7 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (InvalidOperationException e)
         {

@@ -14,6 +14,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -22,7 +23,6 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using CommunityToolkit.Mvvm.Input;
 using Bitmap = Avalonia.Media.Imaging.Bitmap;
 using Path = System.IO.Path;
 

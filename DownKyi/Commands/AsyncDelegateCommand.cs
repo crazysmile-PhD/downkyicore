@@ -71,6 +71,7 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
         }
         catch (OperationCanceledException)
         {
+            return;
         }
         catch (Exception e) when (e is InvalidOperationException or HttpRequestException or IOException)
         {

@@ -159,6 +159,7 @@ internal class ViewModelBase : ObservableObject, IAppNavigationAware, IDisposabl
         }
         catch (ObjectDisposedException)
         {
+            return;
         }
         finally
         {

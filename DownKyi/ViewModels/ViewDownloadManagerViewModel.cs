@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Images;
 using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.ViewModels.PageViewModels;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels;
 

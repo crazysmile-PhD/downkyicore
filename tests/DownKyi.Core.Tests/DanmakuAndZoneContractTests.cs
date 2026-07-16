@@ -50,4 +50,25 @@ public sealed class DanmakuAndZoneContractTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public void StudioDoesNotHideOutputWriteFailures()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"downkyi-studio-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var studio = new Studio(new Config(), [], Encoding.UTF8);
+
+        try
+        {
+            var exception = Record.Exception(() => studio.CreateFile(directory, "subtitle"));
+
+            Assert.True(
+                exception is IOException or UnauthorizedAccessException,
+                $"Expected a visible file-system failure, got {exception?.GetType().Name ?? "no exception"}.");
+        }
+        finally
+        {
+            Directory.Delete(directory);
+        }
+    }
 }

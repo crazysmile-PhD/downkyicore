@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -11,7 +12,6 @@ using DownKyi.Services;
 using DownKyi.Services.Account;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels;
 
@@ -288,6 +288,7 @@ internal class ViewIndexViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
             or FormatException or System.Net.Http.HttpRequestException

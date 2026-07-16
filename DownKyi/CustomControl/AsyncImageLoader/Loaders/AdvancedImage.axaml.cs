@@ -207,15 +207,9 @@ internal class AdvancedImage : ContentControl
 
         var oldCancellationToken = Interlocked.Exchange(ref _updateCancellationToken, cancellationTokenSource);
 
-        try
+        if (oldCancellationToken != null)
         {
-            if (oldCancellationToken != null)
-            {
-                await oldCancellationToken.CancelAsync().ConfigureAwait(true);
-            }
-        }
-        catch (ObjectDisposedException)
-        {
+            await CancelPreviousAsync(oldCancellationToken).ConfigureAwait(true);
         }
 
         if (source is null && CurrentImage is not ImageWrapper)
@@ -245,21 +239,10 @@ internal class AdvancedImage : ContentControl
                     // The Bitmap constructor is expensive and cannot be cancelled
                     await Task.Delay(10, cancellationTokenSource.Token).ConfigureAwait(true);
 
-                    // Hack to support relative URI
-                    // TODO: Refactor IAsyncImageLoader to support BaseUri
-                    try
+                    var assetBitmap = TryLoadAsset(source, _baseUri);
+                    if (assetBitmap != null)
                     {
-                        var uri = new Uri(source, UriKind.RelativeOrAbsolute);
-                        if (AssetLoader.Exists(uri, _baseUri))
-                            return new Bitmap(AssetLoader.Open(uri, _baseUri));
-                    }
-                    catch (UriFormatException)
-                    {
-                        // The loader below may still support the source format.
-                    }
-                    catch (IOException)
-                    {
-                        // The loader below may still resolve a remote source.
+                        return assetBitmap;
                     }
 
                     loader ??= ImageLoader.AsyncImageLoader;
@@ -306,6 +289,37 @@ internal class AdvancedImage : ContentControl
         }
         CurrentImage = bitmap is null ? null : new ImageWrapper(bitmap);
         IsLoading = false;
+    }
+
+    private static async Task CancelPreviousAsync(CancellationTokenSource cancellationTokenSource)
+    {
+        try
+        {
+            await cancellationTokenSource.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+    }
+
+    private static Bitmap? TryLoadAsset(string source, Uri? baseUri)
+    {
+        try
+        {
+            var uri = new Uri(source, UriKind.RelativeOrAbsolute);
+            return AssetLoader.Exists(uri, baseUri)
+                ? new Bitmap(AssetLoader.Open(uri, baseUri))
+                : null;
+        }
+        catch (UriFormatException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
     }
 
     private void UpdateCornerRadius(CornerRadius radius)

@@ -60,6 +60,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or InvalidOperationException or SqliteException)
@@ -117,6 +118,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or InvalidOperationException or SqliteException)

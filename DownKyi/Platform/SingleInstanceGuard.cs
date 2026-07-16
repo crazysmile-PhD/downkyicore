@@ -59,15 +59,19 @@ internal sealed class SingleInstanceGuard : IDisposable
         }
 
         _disposed = true;
+        ReleaseMutexBestEffort();
+        _mutex.Dispose();
+    }
+
+    private void ReleaseMutexBestEffort()
+    {
         try
         {
             _mutex.ReleaseMutex();
         }
         catch (ApplicationException)
         {
-            // Process teardown must not mask the original shutdown result.
+            return;
         }
-
-        _mutex.Dispose();
     }
 }

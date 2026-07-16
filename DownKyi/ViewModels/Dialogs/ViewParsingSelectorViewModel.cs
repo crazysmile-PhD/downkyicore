@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Settings;
 using DownKyi.Utils;
-using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.ViewModels.Dialogs;
 
