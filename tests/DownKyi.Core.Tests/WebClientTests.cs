@@ -6,10 +6,7 @@ namespace DownKyi.Core.Tests;
 
 public sealed class WebClientTests : IDisposable
 {
-    public WebClientTests()
-    {
-        BiliWebClient.SetBuvidForTests();
-    }
+    private readonly WebClientTestContext _context = new();
 
     [Fact]
     public void RequestWebThrowsClearHttpRequestExceptionWhenRetriesAreExhausted()
@@ -101,6 +98,6 @@ public sealed class WebClientTests : IDisposable
 
     public void Dispose()
     {
-        BiliWebClient.ClearTestOverrides();
+        _context.Dispose();
     }
 }

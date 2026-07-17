@@ -7,17 +7,13 @@ namespace DownKyi.Core.Tests;
 
 public sealed class BiliApiContractSampleTests : IDisposable
 {
+    private readonly WebClientTestContext _context = new();
     private static readonly string SampleDirectory = Path.Combine(
         FindRepositoryRoot(),
         "tests",
         "DownKyi.Core.Tests",
         "BiliApi",
         "JsonSamples");
-
-    public BiliApiContractSampleTests()
-    {
-        BiliWebClient.SetBuvidForTests();
-    }
 
     [Fact]
     public void SuccessSampleDeserializes()
@@ -64,7 +60,7 @@ public sealed class BiliApiContractSampleTests : IDisposable
 
     public void Dispose()
     {
-        BiliWebClient.ClearTestOverrides();
+        _context.Dispose();
         GC.SuppressFinalize(this);
     }
 

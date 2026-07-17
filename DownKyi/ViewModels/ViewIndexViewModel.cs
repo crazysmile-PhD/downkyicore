@@ -1,27 +1,28 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Core.BiliApi.Users;
-using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Settings.Models;
-using DownKyi.Core.Storage;
 using DownKyi.Images;
 using DownKyi.Services;
+using DownKyi.Services.Account;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels;
 
 internal class ViewIndexViewModel : ViewModelBase
 {
     public const string Tag = "PageIndex";
+    private readonly IUserSessionCoordinator _userSessionCoordinator;
+    private readonly ILogger<ViewIndexViewModel> _logger;
+    private readonly ISettingsStore _settingsStore;
+    private CancellationTokenSource? _userRefreshCancellation;
 
     private bool _loginPanelVisibility;
 
@@ -97,8 +98,16 @@ internal class ViewIndexViewModel : ViewModelBase
     }
 
 
-    public ViewIndexViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewIndexViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        IUserSessionCoordinator userSessionCoordinator,
+        ISettingsStore settingsStore,
+        ILogger<ViewIndexViewModel> logger) : base(desktopInteractions)
     {
+        _userSessionCoordinator = userSessionCoordinator
+            ?? throw new ArgumentNullException(nameof(userSessionCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _loginPanelVisibility = true;
         Header = "avares://DownKyi/Resources/default_header.jpg";
 
@@ -117,7 +126,6 @@ internal class ViewIndexViewModel : ViewModelBase
         Toolbox = ButtonIcon.Instance().Toolbox;
         Toolbox.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-        RunFireAndForget(UpdateUserInfoAsync(), nameof(UpdateUserInfoAsync));
     }
 
     // 输入确认事件
@@ -143,15 +151,20 @@ internal class ViewIndexViewModel : ViewModelBase
     {
         if (UserName is null or "")
         {
-            NavigateToView.NavigationView(EventAggregator, ViewLoginViewModel.Tag, Tag, null);
+            Navigation.Navigate(new AppNavigationRequest(
+                AppRoute.Login,
+                AppRoute.Index));
         }
         else
         {
             // 进入用户空间
-            var userInfo = SettingsManager.Instance.GetUserInfo();
+            var userInfo = _settingsStore.Current.User;
             if (userInfo != null && userInfo.Mid != -1)
             {
-                NavigateToView.NavigationView(EventAggregator, ViewMySpaceViewModel.Tag, Tag, userInfo.Mid);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.MySpace,
+                    AppRoute.Index,
+                    userInfo.Mid));
             }
         }
     }
@@ -166,7 +179,9 @@ internal class ViewIndexViewModel : ViewModelBase
     /// </summary>
     private void ExecuteSettingsCommand()
     {
-        NavigateToView.NavigationView(EventAggregator, ViewSettingsViewModel.Tag, Tag, null);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.Settings,
+            AppRoute.Index));
     }
 
     // 进入下载管理页面
@@ -179,7 +194,9 @@ internal class ViewIndexViewModel : ViewModelBase
     /// </summary>
     private void ExecuteDownloadManagerCommand()
     {
-        NavigateToView.NavigationView(EventAggregator, ViewDownloadManagerViewModel.Tag, Tag, null);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.DownloadManager,
+            AppRoute.Index));
     }
 
     // 进入工具箱页面
@@ -192,7 +209,9 @@ internal class ViewIndexViewModel : ViewModelBase
     /// </summary>
     private void ExecuteToolboxCommand()
     {
-        NavigateToView.NavigationView(EventAggregator, ViewToolboxViewModel.Tag, Tag, null);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.Toolbox,
+            AppRoute.Index));
     }
 
 
@@ -208,74 +227,45 @@ internal class ViewIndexViewModel : ViewModelBase
             return;
         }
 
-        LogManager.Debug(Tag, $"InputText: {InputText}");
+        _logger.LogDebugMessage("Processing search input.");
         InputText = Regex.Replace(InputText, @"[【]*[^【]*[^】]*[】 ]", "");
-        var searchService = new SearchService();
-        var isSupport = searchService.BiliInput(InputText, Tag, EventAggregator);
+        var searchService = new SearchService(_settingsStore, Navigation);
+        var isSupport = searchService.BiliInput(InputText, AppRoute.Index);
         if (!isSupport)
         {
             // 关键词搜索
-            searchService.SearchKey(InputText, Tag, EventAggregator);
+            SearchService.SearchKey(InputText, AppRoute.Index);
         }
 
         InputText = string.Empty;
     }
 
 
-    private static async Task<UserInfoForNavigation?> GetUserInfo()
-    {
-        UserInfoForNavigation? userInfo = null;
-        await Task.Run(() =>
-        {
-            // 获取用户信息
-            userInfo = UserInfo.GetUserInfoForNavigation();
-            if (userInfo != null)
-            {
-                SettingsManager.Instance.SetUserInfo(new UserInfoSettings
-                {
-                    Mid = userInfo.Mid,
-                    Name = userInfo.Name,
-                    IsLogin = userInfo.IsLogin,
-                    IsVip = userInfo.VipStatus == 1,
-                    ImgKey = userInfo.Wbi.ImageAddress.Split('/').ToList().Last().Split('.')[0],
-                    SubKey = userInfo.Wbi.SubAddress.Split('/').ToList().Last().Split('.')[0],
-                });
-            }
-            else
-            {
-                SettingsManager.Instance.SetUserInfo(new UserInfoSettings
-                {
-                    Mid = -1,
-                    Name = "",
-                    IsLogin = false,
-                    IsVip = false,
-                });
-            }
-        }).ConfigureAwait(true);
-        return userInfo;
-    }
-
     /// <summary>
     /// 更新用户登录信息
     /// </summary>
-    private async Task UpdateUserInfoAsync(bool isBackgroud = false)
+    private async Task UpdateUserInfoAsync(bool isBackground = false)
     {
+        var cancellationToken = ReplaceCancellationSource(ref _userRefreshCancellation);
+        var updateUi = !isBackground || !LoginPanelVisibility;
         try
         {
-            if (isBackgroud)
+            if (updateUi)
             {
-                // 获取用户信息
-                await GetUserInfo().ConfigureAwait(true);
+                LoginPanelVisibility = false;
+            }
+
+            var snapshot = await _userSessionCoordinator
+                .RefreshAsync(cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_userRefreshCancellation?.Token != cancellationToken || !updateUi)
+            {
                 return;
             }
 
-            LoginPanelVisibility = false;
-
-            // 获取用户信息
-            var userInfo = await GetUserInfo().ConfigureAwait(true);
-
             // 检查本地是否存在login文件，没有则说明未登录
-            if (!File.Exists(StorageManager.GetLogin()))
+            if (!snapshot.HasLoginFile)
             {
                 LoginPanelVisibility = true;
                 Header = "avares://DownKyi/Resources/default_header.jpg";
@@ -285,11 +275,11 @@ internal class ViewIndexViewModel : ViewModelBase
 
             LoginPanelVisibility = true;
 
-            if (userInfo != null)
+            if (snapshot.UserInfo != null)
             {
-                Header = userInfo.Face ?? "avares://DownKyi/Resources/default_header.jpg";
+                Header = snapshot.UserInfo.Face ?? "avares://DownKyi/Resources/default_header.jpg";
 
-                UserName = userInfo.Name;
+                UserName = snapshot.UserInfo.Name;
             }
             else
             {
@@ -297,12 +287,19 @@ internal class ViewIndexViewModel : ViewModelBase
                 UserName = null;
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
-            or FormatException or System.Security.Cryptography.CryptographicException
+            or FormatException or System.Net.Http.HttpRequestException
+            or System.Security.Cryptography.CryptographicException
             or Newtonsoft.Json.JsonException)
         {
-            Console.PrintLine("UpdateUserInfo()发生异常: {0}", e);
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("User session refresh failed.", e);
+            if (updateUi && _userRefreshCancellation?.Token == cancellationToken)
+            {
+                LoginPanelVisibility = true;
+            }
         }
     }
 
@@ -322,7 +319,7 @@ internal class ViewIndexViewModel : ViewModelBase
         {
             case null:
                 // 其他情况只更新设置的用户信息，不更新UI
-                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync));
+                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync), _logger);
                 return;
             // 启动
             case "start":
@@ -330,12 +327,22 @@ internal class ViewIndexViewModel : ViewModelBase
             case "login":
             // 注销
             case "logout":
-                RunFireAndForget(UpdateUserInfoAsync(), nameof(UpdateUserInfoAsync));
+                RunFireAndForget(UpdateUserInfoAsync(), nameof(UpdateUserInfoAsync), _logger);
                 break;
             default:
                 // 其他情况只更新设置的用户信息，不更新UI
-                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync));
+                RunFireAndForget(UpdateUserInfoAsync(true), nameof(UpdateUserInfoAsync), _logger);
                 break;
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            CancelAndDispose(ref _userRefreshCancellation);
+        }
+
+        base.Dispose(disposing);
     }
 }

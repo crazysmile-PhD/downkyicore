@@ -1,15 +1,18 @@
 using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Core.BiliApi.Users;
-using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Application.Desktop;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Storage;
 using DownKyi.CustomControl;
+using DownKyi.Services.Friends;
+using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
+using Microsoft.Extensions.Logging;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Friends;
@@ -17,6 +20,10 @@ namespace DownKyi.ViewModels.Friends;
 internal class ViewFollowerViewModel : ViewModelBase
 {
     public const string Tag = "PageFriendsFollower";
+    private readonly IFriendRelationCoordinator _friendRelationCoordinator;
+    private readonly ILogger<ViewFollowerViewModel> _logger;
+    private readonly ISettingsStore _settingsStore;
+    private CancellationTokenSource? _loadCancellation;
 
     // mid
     private long _mid = -1;
@@ -82,9 +89,9 @@ internal class ViewFollowerViewModel : ViewModelBase
         set => SetProperty(ref _pager, value);
     }
 
-    private ObservableCollection<FriendInfo> _contents = new();
+    private RangeObservableCollection<FriendInfo> _contents = new();
 
-    public ObservableCollection<FriendInfo> Contents
+    public RangeObservableCollection<FriendInfo> Contents
     {
         get => _contents;
         private set => SetProperty(ref _contents, value);
@@ -92,8 +99,16 @@ internal class ViewFollowerViewModel : ViewModelBase
 
     #endregion
 
-    public ViewFollowerViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewFollowerViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        IFriendRelationCoordinator friendRelationCoordinator,
+        ISettingsStore settingsStore,
+        ILogger<ViewFollowerViewModel> logger) : base(desktopInteractions)
     {
+        _friendRelationCoordinator = friendRelationCoordinator
+            ?? throw new ArgumentNullException(nameof(friendRelationCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         // 初始化loading
@@ -101,25 +116,15 @@ internal class ViewFollowerViewModel : ViewModelBase
         LoadingVisibility = false;
         NoDataVisibility = false;
 
-        Contents = new ObservableCollection<FriendInfo>();
+        Contents = new RangeObservableCollection<FriendInfo>();
 
         #endregion
     }
 
 
-    private void LoadContent(IReadOnlyList<RelationFollowInfo> contents)
-    {
-        ContentVisibility = true;
-        LoadingVisibility = false;
-        NoDataVisibility = false;
-        foreach (var item in contents)
-        {
-            PropertyChangeAsync(() => { Contents.Add(new FriendInfo(EventAggregator) { Mid = item.Mid, Header = item.Face, Name = item.Name, Sign = item.Sign }); });
-        }
-    }
-
     private async Task UpdateContentAsync(int current)
     {
+        var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
         // 是否正在获取数据
         // 在所有的退出分支中都需要设为true
         IsEnabled = false;
@@ -129,33 +134,36 @@ internal class ViewFollowerViewModel : ViewModelBase
         LoadingVisibility = true;
         NoDataVisibility = false;
 
-        RelationFollow? data = null;
-        IReadOnlyList<RelationFollowInfo>? contents = null;
-        await Task.Run(() =>
+        try
         {
-            data = UserRelation.GetFollowers(_mid, current, NumberInPage);
-            if (data != null && data.List != null && data.List.Count > 0)
-            {
-                contents = data.List;
-            }
-
-            if (contents == null)
+            var data = await _friendRelationCoordinator
+                .LoadFollowerPageAsync(_mid, current, NumberInPage, cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_loadCancellation?.Token != cancellationToken)
             {
                 return;
             }
 
-            LoadContent(contents);
-        }).ConfigureAwait(true);
+            if (data?.List == null || data.List.Count == 0)
+            {
+                ContentVisibility = false;
+                LoadingVisibility = false;
+                NoDataVisibility = true;
+                return;
+            }
 
-        if (data == null || contents == null)
-        {
-            ContentVisibility = false;
-            LoadingVisibility = false;
-            NoDataVisibility = true;
-        }
-        else
-        {
-            var userInfo = SettingsManager.Instance.GetUserInfo();
+            Contents.AddRange(data.List.Select(item => new FriendInfo(
+                Navigation,
+                AppRoute.Friends)
+            {
+                Mid = item.Mid,
+                Header = item.Face,
+                Name = item.Name,
+                Sign = item.Sign
+            }));
+
+            var userInfo = _settingsStore.Current.User;
             if (userInfo != null && userInfo.Mid == _mid)
             {
                 Pager.Count = (int)Math.Ceiling((double)data.Total / NumberInPage);
@@ -170,12 +178,44 @@ internal class ViewFollowerViewModel : ViewModelBase
             LoadingVisibility = false;
             NoDataVisibility = false;
         }
-
-        IsEnabled = true;
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+        {
+            _logger.LogErrorMessage("Follower page loading failed.", e);
+            if (_loadCancellation?.Token == cancellationToken)
+            {
+                ContentVisibility = false;
+                LoadingVisibility = false;
+                NoDataVisibility = true;
+            }
+        }
+        finally
+        {
+            if (_loadCancellation?.Token == cancellationToken)
+            {
+                IsEnabled = true;
+            }
+        }
     }
 
     private void OnCountChangedPager(object? sender, EventArgs e)
     {
+    }
+
+    private void ReplacePager(CustomPagerViewModel pager)
+    {
+        if (Pager != null)
+        {
+            Pager.CurrentChanging -= OnCurrentChangedPager;
+            Pager.CountChanged -= OnCountChangedPager;
+        }
+
+        Pager = pager;
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
     }
 
     private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
@@ -186,7 +226,7 @@ internal class ViewFollowerViewModel : ViewModelBase
             return;
         }
 
-        RunFireAndForget(UpdateContentAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateContentAsync));
+        RunFireAndForget(UpdateContentAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateContentAsync), _logger);
     }
 
     /// <summary>
@@ -194,6 +234,7 @@ internal class ViewFollowerViewModel : ViewModelBase
     /// </summary>
     private void InitView()
     {
+        IsEnabled = true;
         ContentVisibility = false;
         LoadingVisibility = true;
         NoDataVisibility = false;
@@ -229,9 +270,30 @@ internal class ViewFollowerViewModel : ViewModelBase
         //UpdateContent(1);
 
         // 页面选择
-        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling((double)1 / NumberInPage));
-        Pager.CurrentChanging += OnCurrentChangedPager;
-        Pager.CountChanged += OnCountChangedPager;
+        ReplacePager(new CustomPagerViewModel(1, (int)Math.Ceiling((double)1 / NumberInPage)));
         Pager.Current = 1;
+    }
+
+    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    {
+        CancelAndDispose(ref _loadCancellation);
+        IsEnabled = true;
+        LoadingVisibility = false;
+        base.OnNavigatedFrom(navigationContext);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            CancelAndDispose(ref _loadCancellation);
+            if (Pager != null)
+            {
+                Pager.CurrentChanging -= OnCurrentChangedPager;
+                Pager.CountChanged -= OnCountChangedPager;
+            }
+        }
+
+        base.Dispose(disposing);
     }
 }

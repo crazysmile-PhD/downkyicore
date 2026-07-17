@@ -1,19 +1,27 @@
+using System;
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
-using DownKyi.Utils;
+using DownKyi.Core.Settings;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
 internal class FavoritesMedia : BindableBase
 {
-    protected IEventAggregator EventAggregator { get; }
+    private readonly ISettingsStore _settingsStore;
+    private readonly IAppNavigationService _navigationService;
+    private readonly AppRoute _parentRoute;
 
-    public FavoritesMedia(IEventAggregator eventAggregator)
+    public FavoritesMedia(
+        IAppNavigationService navigationService,
+        AppRoute parentRoute,
+        ISettingsStore settingsStore)
     {
-        EventAggregator = eventAggregator;
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
+        _parentRoute = parentRoute;
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
     }
 
     public long Avid { get; set; }
@@ -125,13 +133,10 @@ internal class FavoritesMedia : BindableBase
     /// <param name="parameter"></param>
     private void ExecuteTitleCommand(object parameter)
     {
-        if (parameter is not string tag)
-        {
-            return;
-        }
-
-        NavigateToView.NavigationView(EventAggregator, ViewVideoDetailViewModel.Tag, tag,
-            $"{ParseEntrance.VideoUrl}{Bvid}");
+        _navigationService.Navigate(new AppNavigationRequest(
+            AppRoute.VideoDetail,
+            _parentRoute,
+            $"{ParseEntrance.VideoUrl}{Bvid}"));
     }
 
     // 视频的UP主点击事件
@@ -145,12 +150,10 @@ internal class FavoritesMedia : BindableBase
     /// <param name="parameter"></param>
     private void ExecuteVideoUpperCommand(object parameter)
     {
-        if (parameter is not string tag)
-        {
-            return;
-        }
-
-        NavigateToView.NavigateToViewUserSpace(EventAggregator, tag, UpMid);
+        var route = _settingsStore.Current.User.Mid == UpMid
+            ? AppRoute.MySpace
+            : AppRoute.UserSpace;
+        _navigationService.Navigate(new AppNavigationRequest(route, _parentRoute, UpMid));
     }
 
     #endregion

@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.UserSpace;
@@ -35,7 +35,8 @@ internal class ViewChannelViewModel : ViewModelBase
 
     #endregion
 
-    public ViewChannelViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewChannelViewModel(IDesktopInteractionContext desktopInteractions)
+        : base(desktopInteractions)
     {
         #region 属性初始化
 
@@ -72,7 +73,6 @@ internal class ViewChannelViewModel : ViewModelBase
         };
 
         // 进入视频页面
-        // NavigateToView.NavigationView(eventAggregator, ViewModels.ViewChannelViewModel.Tag, ViewUserSpaceViewModel.Tag, data);
 
         SelectedItem = -1;
     }

@@ -2,8 +2,8 @@ using DownKyi.Core.BiliApi.Models.Json;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Video.Models;
 using DownKyi.Core.Logging;
+using DownKyi.Core.Settings;
 using Newtonsoft.Json;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.Video;
 
@@ -15,8 +15,13 @@ public static class VideoInfo
     /// <param name="bvid"></param>
     /// <param name="aid"></param>
     /// <returns></returns>
-    public static VideoView? VideoViewInfo(string? bvid = null, long aid = -1, CancellationToken cancellationToken = default)
+    public static VideoView? VideoViewInfo(
+        ISettingsStore settingsStore,
+        string? bvid = null,
+        long aid = -1,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(settingsStore);
         // https://api.bilibili.com/x/web-interface/view/detail?bvid=BV1Sg411F7cb&aid=969147110&need_operation_card=1&web_rm_repeat=1&need_elec=1&out_referer=https%3A%2F%2Fspace.bilibili.com%2F42018135%2Ffavlist%3Ffid%3D94341835
 
         var parameters = new Dictionary<string, object?>();
@@ -32,7 +37,7 @@ public static class VideoInfo
         {
             return null;
         }
-        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
+        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters, settingsStore));
         var url = $"https://api.bilibili.com/x/web-interface/wbi/view?{query}";
         const string referer = "https://www.bilibili.com";
         var videoView = BiliApiRequest.RequestJson<VideoViewOrigin>(

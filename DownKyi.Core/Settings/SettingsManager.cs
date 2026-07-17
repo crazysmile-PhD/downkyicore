@@ -1,233 +1,339 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Storage;
-using DownKyi.Core.Utils;
 using DownKyi.Core.Utils.Encryptor;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.Settings;
 
-public partial class SettingsManager
+public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan FlushDelay = TimeSpan.FromMilliseconds(750);
+    private static readonly Lazy<SettingsManager> InstanceOwner = new(() => new SettingsManager());
+
+    private readonly object _settingsLock = new();
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private readonly string _settingsName;
+    private readonly bool _persistInitialDefaults;
+    private readonly ILogger<SettingsManager> _logger;
+    private readonly string password = "YO1J$4#p";
+    private AppSettings _appSettings;
+    private Timer? _flushTimer;
+    private bool _dirty;
+    private bool _persistenceDisabled;
+    private long _changeVersion;
+    private int _suppressChangeNotifications;
+    private int _suppressPersistence;
+    private int _disposeState;
+
+    internal event Action? Changed;
+
+    public static SettingsManager Instance => InstanceOwner.Value;
+
+    private SettingsManager()
+        : this(StorageManager.GetSettings(), NullLogger<SettingsManager>.Instance)
+    {
+    }
+
+    internal SettingsManager(string settingsName)
+        : this(settingsName, NullLogger<SettingsManager>.Instance)
+    {
+    }
+
+    internal SettingsManager(string settingsName, ILogger<SettingsManager> logger)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsName);
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _settingsName = settingsName;
+        var loadResult = LoadFromFile();
+        _appSettings = loadResult.Settings;
+        _persistInitialDefaults = loadResult.PersistInitialDefaults;
+        _persistenceDisabled = loadResult.DisablePersistence;
+        EnsureSections(_appSettings);
+        if (loadResult.PreserveInvalidFile && !TryPreserveInvalidSettingsFile())
+        {
+            _persistenceDisabled = true;
+        }
+
+        var migration = SettingsSchemaMigrator.Migrate(_appSettings);
+        if (migration.Migrated && loadResult.PersistInitialDefaults)
+        {
+            MarkDirty();
+        }
+
+        if (migration.IsFutureSchema)
+        {
+            _persistenceDisabled = true;
+            _logger.LogErrorMessage(
+                $"Settings schema {_appSettings.SchemaVersion} is newer than supported schema {ApplicationSettingsValidator.CurrentSchemaVersion}; persistence is disabled to preserve the file.");
+        }
+    }
 
     private bool SetProperty<T>(T currentValue, T newValue, Action<T> setter)
     {
-        if (!EqualityComparer<T>.Default.Equals(currentValue, newValue))
+        ArgumentNullException.ThrowIfNull(setter);
+        var changed = false;
+        lock (_settingsLock)
         {
-            setter(newValue);
-            ScheduleFlush();
-            return true;
+            if (!EqualityComparer<T>.Default.Equals(currentValue, newValue))
+            {
+                setter(newValue);
+                if (_suppressPersistence == 0)
+                {
+                    MarkDirtyUnsafe();
+                }
+                changed = true;
+            }
         }
+
+        if (changed && _suppressChangeNotifications == 0)
+        {
+            Changed?.Invoke();
+        }
+
         return true;
     }
 
-    private static SettingsManager? _instance;
-
-    private static readonly object _settingsLock = new();
-    // 内存中保存一份配置
-    private AppSettings _appSettings;
-
-    // 设置的配置文件路径
-    private readonly string _settingsName = StorageManager.GetSettings();
-
-    // 密钥（用于旧版加密配置迁移）
-    private readonly string password = "YO1J$4#p";
-
-    // 防抖写：延迟 500ms 后真正落盘
-    private Timer? _flushTimer;
-    private bool _dirty;
-
-    /// <summary>
-    /// 获取 SettingsManager 实例（单例）
-    /// </summary>
-    public static SettingsManager Instance => _instance ??= new SettingsManager();
-
-    /// <summary>
-    /// 隐藏构造函数，必须使用单例模式
-    /// </summary>
-    private SettingsManager()
+    private SettingsLoadResult LoadFromFile()
     {
-        _appSettings = LoadFromFile();
-    }
+        if (!File.Exists(_settingsName))
+        {
+            return SettingsLoadResult.NewFile();
+        }
 
-    /// <summary>
-    /// 从文件加载配置（仅在初始化时调用一次）
-    /// </summary>
-    private AppSettings LoadFromFile()
-    {
+        string payload;
         try
         {
-            if (!File.Exists(_settingsName))
-            {
-                return CreateDefaultSettingsFile();
-            }
-
-            var jsonWordTemplate = File.ReadAllText(_settingsName, Encoding.UTF8);
-            try
-            {
-                return JsonConvert.DeserializeObject<AppSettings>(jsonWordTemplate) ?? new AppSettings();
-            }
-            catch (JsonException)
-            {
-                // 尝试旧版加密格式
-                try
-                {
-                    string decryptedJson = LegacySettingsDecryptor.Decrypt(jsonWordTemplate, password);
-                    var settings = JsonConvert.DeserializeObject<AppSettings>(decryptedJson);
-                    if (settings != null)
-                    {
-                        // 迁移：以明文重新写入
-                        var migrated = settings;
-                        _appSettings = migrated;
-                        WriteSettingsFile(migrated);
-                        return migrated;
-                    }
-                }
-                catch (CryptographicException decryptEx)
-                {
-                    Console.PrintLine("配置文件解密失败: {0}", decryptEx.Message);
-                    LogManager.Error("SettingsManager", decryptEx);
-                }
-                catch (FormatException decryptEx)
-                {
-                    Console.PrintLine("旧版配置格式无效: {0}", decryptEx.Message);
-                    LogManager.Error("SettingsManager", decryptEx);
-                }
-                catch (ArgumentException decryptEx)
-                {
-                    Console.PrintLine("旧版配置参数无效: {0}", decryptEx.Message);
-                    LogManager.Error("SettingsManager", decryptEx);
-                }
-                catch (JsonException decryptEx)
-                {
-                    Console.PrintLine("旧版配置JSON无效: {0}", decryptEx.Message);
-                    LogManager.Error("SettingsManager", decryptEx);
-                }
-            }
+            payload = File.ReadAllText(_settingsName, Encoding.UTF8);
         }
         catch (IOException e)
         {
-            Console.PrintLine("LoadFromFile()发生异常: {0}", e);
-            LogManager.Error("SettingsManager", e);
+            LogLoadFailure("Settings file could not be read", e);
+            return SettingsLoadResult.Unreadable();
         }
         catch (UnauthorizedAccessException e)
         {
-            Console.PrintLine("LoadFromFile()没有读取权限: {0}", e);
-            LogManager.Error("SettingsManager", e);
+            LogLoadFailure("Settings file access was denied", e);
+            return SettingsLoadResult.Unreadable();
+        }
+
+        try
+        {
+            var settings = JsonConvert.DeserializeObject<AppSettings>(payload);
+            return settings == null
+                ? SettingsLoadResult.Invalid()
+                : SettingsLoadResult.Loaded(settings);
+        }
+        catch (JsonException)
+        {
+            return LoadLegacySettings(payload);
+        }
+    }
+
+    private SettingsLoadResult LoadLegacySettings(string payload)
+    {
+        try
+        {
+            var decrypted = LegacySettingsDecryptor.Decrypt(payload, password);
+            var settings = JsonConvert.DeserializeObject<AppSettings>(decrypted);
+            return settings == null
+                ? SettingsLoadResult.Invalid()
+                : SettingsLoadResult.Loaded(settings);
+        }
+        catch (CryptographicException e)
+        {
+            LogLoadFailure("Legacy settings decryption failed", e);
+        }
+        catch (FormatException e)
+        {
+            LogLoadFailure("Legacy settings format is invalid", e);
+        }
+        catch (ArgumentException e)
+        {
+            LogLoadFailure("Legacy settings arguments are invalid", e);
         }
         catch (JsonException e)
         {
-            Console.PrintLine("CreateDefaultSettingsFile()序列化失败: {0}", e);
-            LogManager.Error("SettingsManager", e);
+            LogLoadFailure("Settings JSON is invalid", e);
         }
-        return new AppSettings();
+
+        return SettingsLoadResult.Invalid();
     }
 
-    private AppSettings CreateDefaultSettingsFile()
+    private bool TryPreserveInvalidSettingsFile()
     {
-        var settings = new AppSettings();
         try
         {
-            WriteSettingsFile(settings);
+            var backupPath = $"{_settingsName}.invalid-{Guid.NewGuid():N}";
+            File.Move(_settingsName, backupPath);
+            _logger.LogInformationMessage(
+                "Invalid settings were preserved before safe defaults were initialized.");
+            return true;
         }
         catch (IOException e)
         {
-            Console.PrintLine("CreateDefaultSettingsFile()发生异常: {0}", e);
-            LogManager.Error("SettingsManager", e);
+            LogLoadFailure("Invalid settings could not be preserved; persistence is disabled", e);
+            return false;
         }
         catch (UnauthorizedAccessException e)
         {
-            Console.PrintLine("CreateDefaultSettingsFile()没有写入权限: {0}", e);
-            LogManager.Error("SettingsManager", e);
+            LogLoadFailure("Invalid settings could not be preserved; persistence is disabled", e);
+            return false;
         }
-
-        return settings;
     }
 
-    /// <summary>
-    /// 触发防抖计时器：500ms 内多次调用只落盘一次
-    /// </summary>
-    private void ScheduleFlush()
+    private static void EnsureSections(AppSettings settings)
+    {
+        settings.Basic ??= new BasicSettings();
+        settings.Network ??= new NetworkSettings();
+        settings.Video ??= new VideoSettings();
+        settings.Danmaku ??= new DanmakuSettings();
+        settings.About ??= new AboutSettings();
+        settings.UserInfo ??= new UserInfoSettings();
+        settings.WindowSettings ??= new WindowSettings();
+    }
+
+    private void LogLoadFailure(string message, Exception exception)
+    {
+        _logger.LogErrorMessage(message, exception);
+    }
+
+    private sealed record SettingsLoadResult(
+        AppSettings Settings,
+        bool PreserveInvalidFile,
+        bool DisablePersistence,
+        bool PersistInitialDefaults)
+    {
+        public static SettingsLoadResult NewFile()
+        {
+            return new SettingsLoadResult(
+                new AppSettings(),
+                PreserveInvalidFile: false,
+                DisablePersistence: false,
+                PersistInitialDefaults: false);
+        }
+
+        public static SettingsLoadResult Loaded(AppSettings settings)
+        {
+            return new SettingsLoadResult(
+                settings,
+                PreserveInvalidFile: false,
+                DisablePersistence: false,
+                PersistInitialDefaults: true);
+        }
+
+        public static SettingsLoadResult Invalid()
+        {
+            return new SettingsLoadResult(
+                new AppSettings(),
+                PreserveInvalidFile: true,
+                DisablePersistence: false,
+                PersistInitialDefaults: true);
+        }
+
+        public static SettingsLoadResult Unreadable()
+        {
+            return new SettingsLoadResult(
+                new AppSettings(),
+                PreserveInvalidFile: false,
+                DisablePersistence: true,
+                PersistInitialDefaults: false);
+        }
+    }
+
+    private void MarkDirty()
     {
         lock (_settingsLock)
         {
-            _dirty = true;
-            _flushTimer ??= new Timer(static state => ((SettingsManager)state!).FlushNow(), this, Timeout.Infinite, Timeout.Infinite);
-            _flushTimer.Change(FlushDelay, Timeout.InfiniteTimeSpan);
+            MarkDirtyUnsafe();
         }
     }
 
-    /// <summary>
-    /// 立即将内存配置写入磁盘
-    /// </summary>
-    private void FlushNow()
+    private void MarkDirtyUnsafe()
     {
+        if (_persistenceDisabled || Volatile.Read(ref _disposeState) != 0)
+        {
+            return;
+        }
+
+        _dirty = true;
+        _changeVersion = checked(_changeVersion + 1);
+        _flushTimer ??= new Timer(
+            static state => _ = ((SettingsManager)state!).FlushDebouncedAsync(),
+            this,
+            Timeout.InfiniteTimeSpan,
+            Timeout.InfiniteTimeSpan);
+        _flushTimer.Change(FlushDelay, Timeout.InfiniteTimeSpan);
+    }
+
+    private async Task FlushDebouncedAsync()
+    {
+        try
+        {
+            await FlushAsync().ConfigureAwait(false);
+        }
+        catch (IOException e)
+        {
+            _logger.LogErrorMessage("Debounced settings persistence failed.", e);
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            _logger.LogErrorMessage("Debounced settings persistence was denied.", e);
+        }
+        catch (JsonException e)
+        {
+            _logger.LogErrorMessage("Debounced settings serialization failed.", e);
+        }
+    }
+
+    public async Task FlushAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         lock (_settingsLock)
         {
-            if (!_dirty) return;
-            try
-            {
-                WriteSettingsFile(_appSettings);
-                _dirty = false;
-            }
-            catch (IOException e)
-            {
-                Console.PrintLine("FlushNow()发生异常: {0}", e);
-                LogManager.Error("SettingsManager", e);
-            }
-            catch (UnauthorizedAccessException e)
-            {
-                Console.PrintLine("FlushNow()没有写入权限: {0}", e);
-                LogManager.Error("SettingsManager", e);
-            }
-            catch (JsonException e)
-            {
-                Console.PrintLine("FlushNow()序列化失败: {0}", e);
-                LogManager.Error("SettingsManager", e);
-            }
+            _flushTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
-    }
 
-    /// <summary>
-    /// 强制立即将未落盘的配置写入磁盘（应用退出时调用）
-    /// </summary>
-    public void Flush()
-    {
-        lock (_settingsLock)
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            _flushTimer?.Dispose();
-            _flushTimer = null;
-            if (!_dirty) return;
+            while (true)
+            {
+                string json;
+                long version;
+                lock (_settingsLock)
+                {
+                    if (!_dirty || _persistenceDisabled)
+                    {
+                        return;
+                    }
 
-            try
-            {
-                WriteSettingsFile(_appSettings);
-                _dirty = false;
+                    json = JsonConvert.SerializeObject(_appSettings);
+                    version = _changeVersion;
+                }
+
+                await WriteSettingsFileAsync(json, cancellationToken).ConfigureAwait(false);
+                lock (_settingsLock)
+                {
+                    if (_changeVersion == version)
+                    {
+                        _dirty = false;
+                        return;
+                    }
+                }
             }
-            catch (IOException e)
-            {
-                Console.PrintLine("Flush()发生异常: {0}", e);
-                LogManager.Error("SettingsManager", e);
-            }
-            catch (UnauthorizedAccessException e)
-            {
-                Console.PrintLine("Flush()没有写入权限: {0}", e);
-                LogManager.Error("SettingsManager", e);
-            }
-            catch (JsonException e)
-            {
-                Console.PrintLine("Flush()序列化失败: {0}", e);
-                LogManager.Error("SettingsManager", e);
-            }
+        }
+        finally
+        {
+            _writeGate.Release();
         }
     }
 
-    private void WriteSettingsFile(AppSettings settings)
+    private async Task WriteSettingsFileAsync(string json, CancellationToken cancellationToken)
     {
         var directory = Path.GetDirectoryName(_settingsName);
         if (!string.IsNullOrEmpty(directory))
@@ -235,19 +341,33 @@ public partial class SettingsManager
             Directory.CreateDirectory(directory);
         }
 
-        var json = JsonConvert.SerializeObject(settings);
         var tempFile = $"{_settingsName}.{Guid.NewGuid():N}.tmp";
-
         try
         {
-            using (var stream = new FileStream(tempFile, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            using (var writer = new StreamWriter(stream, Encoding.UTF8))
+            var stream = new FileStream(
+                tempFile,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 81920,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await using (stream.ConfigureAwait(false))
             {
-                writer.Write(json);
-                writer.Flush();
-                stream.Flush(flushToDisk: true);
+                var writer = new StreamWriter(
+                    stream,
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                    bufferSize: 1024,
+                    leaveOpen: true);
+                await using (writer.ConfigureAwait(false))
+                {
+                    await writer.WriteAsync(json.AsMemory(), cancellationToken).ConfigureAwait(false);
+                    await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             if (File.Exists(_settingsName))
             {
                 File.Replace(tempFile, _settingsName, null, ignoreMetadataErrors: true);
@@ -261,19 +381,59 @@ public partial class SettingsManager
         {
             try
             {
-                if (File.Exists(tempFile))
-                {
-                    File.Delete(tempFile);
-                }
+                File.Delete(tempFile);
             }
             catch (IOException e)
             {
-                LogManager.Error("SettingsManager", e);
+                _logger.LogErrorMessage("Temporary settings file cleanup failed.", e);
             }
             catch (UnauthorizedAccessException e)
             {
-                LogManager.Error("SettingsManager", e);
+                _logger.LogErrorMessage("Temporary settings file cleanup was denied.", e);
             }
         }
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
+        Timer? timer;
+        lock (_settingsLock)
+        {
+            timer = _flushTimer;
+            _flushTimer = null;
+        }
+
+        timer?.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
+        Timer? timer;
+        lock (_settingsLock)
+        {
+            timer = _flushTimer;
+            _flushTimer = null;
+        }
+
+        if (timer != null)
+        {
+            await timer.DisposeAsync().ConfigureAwait(false);
+        }
+
+        await _writeGate.WaitAsync().ConfigureAwait(false);
+        _writeGate.Release();
+        _writeGate.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

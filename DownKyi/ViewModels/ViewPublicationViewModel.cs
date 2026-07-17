@@ -1,28 +1,28 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
-using System.Text;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
-using DownKyi.Core.BiliApi.VideoStream;
-using DownKyi.Core.Utils;
+using DownKyi.Core.Logging;
 using DownKyi.CustomControl;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Download;
+using DownKyi.Services.Media;
+using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.UserSpace;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
@@ -30,8 +30,11 @@ namespace DownKyi.ViewModels
     internal class ViewPublicationViewModel : ViewModelBase
     {
         public const string Tag = "PagePublication";
-
-        private CancellationTokenSource? _tokenSource;
+        private readonly IContentDownloadCoordinator _downloadCoordinator;
+        private readonly ILogger<ViewPublicationViewModel> _logger;
+        private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
+        private CancellationTokenSource? _loadCancellation;
+        private CancellationTokenSource? _downloadCancellation;
 
         private long _mid = -1;
 
@@ -88,9 +91,9 @@ namespace DownKyi.ViewModels
             set => SetProperty(ref _downloadManage, value);
         }
 
-        private ObservableCollection<TabHeader> _tabHeaders;
+        private RangeObservableCollection<TabHeader> _tabHeaders;
 
-        public ObservableCollection<TabHeader> TabHeaders
+        public RangeObservableCollection<TabHeader> TabHeaders
         {
             get => _tabHeaders;
             private set => SetProperty(ref _tabHeaders, value);
@@ -117,12 +120,26 @@ namespace DownKyi.ViewModels
         public CustomPagerViewModel Pager
         {
             get => _pager;
-            set => SetProperty(ref _pager, value);
+            private set
+            {
+                ArgumentNullException.ThrowIfNull(value);
+                if (ReferenceEquals(_pager, value))
+                {
+                    return;
+                }
+
+                _pager.CurrentChanging -= OnCurrentChangedPager;
+                _pager.CountChanged -= OnCountChangedPager;
+                _pager = value;
+                RaisePropertyChanged(nameof(Pager));
+                _pager.CurrentChanging += OnCurrentChangedPager;
+                _pager.CountChanged += OnCountChangedPager;
+            }
         }
 
-        private ObservableCollection<PublicationMedia> _medias;
+        private RangeObservableCollection<PublicationMedia> _medias;
 
-        public ObservableCollection<PublicationMedia> Medias
+        public RangeObservableCollection<PublicationMedia> Medias
         {
             get => _medias;
             private set => SetProperty(ref _medias, value);
@@ -138,10 +155,15 @@ namespace DownKyi.ViewModels
 
         #endregion
 
-        public ViewPublicationViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(
-            eventAggregator)
+        public ViewPublicationViewModel(
+            IDesktopInteractionContext desktopInteractions,
+            IContentDownloadCoordinator downloadCoordinator,
+            IUserSpacePageCoordinator userSpaceCoordinator,
+            ILogger<ViewPublicationViewModel> logger) : base(desktopInteractions)
         {
-            DialogService = dialogService;
+            _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
+            _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
             #region 属性初始化
 
@@ -159,9 +181,11 @@ namespace DownKyi.ViewModels
             _downloadManage.Width = 24;
             _downloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-            _tabHeaders = new ObservableCollection<TabHeader>();
-            _medias = new ObservableCollection<PublicationMedia>();
+            _tabHeaders = new RangeObservableCollection<TabHeader>();
+            _medias = new RangeObservableCollection<PublicationMedia>();
             _pager = new CustomPagerViewModel(1, 1);
+            _pager.CurrentChanging += OnCurrentChangedPager;
+            _pager.CountChanged += OnCountChangedPager;
 
             #endregion
         }
@@ -181,16 +205,8 @@ namespace DownKyi.ViewModels
             ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
 
             // 结束任务
-            _tokenSource?.Cancel();
-            _tokenSource?.Dispose();
-            _tokenSource = null;
-            var parameter = new NavigationParam
-            {
-                ViewName = ParentView,
-                ParentViewName = null,
-                Parameter = null
-            };
-            EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+            CancelOperations();
+            NavigateToParent();
         }
 
         // 前往下载管理页面
@@ -203,13 +219,9 @@ namespace DownKyi.ViewModels
         /// </summary>
         private void ExecuteDownloadManagerCommand()
         {
-            var parameter = new NavigationParam
-            {
-                ViewName = ViewDownloadManagerViewModel.Tag,
-                ParentViewName = Tag,
-                Parameter = null
-            };
-            EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+            Navigation.Navigate(new AppNavigationRequest(
+                AppRoute.DownloadManager,
+                AppRoute.Publication));
         }
 
         // 左侧tab点击事件
@@ -231,8 +243,6 @@ namespace DownKyi.ViewModels
 
             // 页面选择
             Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
-            Pager.CurrentChanging += OnCurrentChangedPager;
-            Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;
         }
 
@@ -295,7 +305,7 @@ namespace DownKyi.ViewModels
         // 添加选中项到下载列表事件
         private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-        public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+        public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
 
         /// <summary>
         /// 添加选中项到下载列表事件
@@ -303,7 +313,7 @@ namespace DownKyi.ViewModels
         // 添加所有视频到下载列表事件
         private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-        public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+        public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
 
         /// <summary>
         /// 添加所有视频到下载列表事件
@@ -316,40 +326,35 @@ namespace DownKyi.ViewModels
         /// <param name="isOnlySelected"></param>
         private async Task AddToDownloadAsync(bool isOnlySelected)
         {
-            // 收藏夹里只有视频
-            var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
-
-            // 选择文件夹
-            var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-
-            // 视频计数
-            var i = 0;
-            await Task.Run(async () =>
+            var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+            var items = Medias
+                .Select(media => new ContentDownloadItem(media.Bvid, DownloadInfoKind.Video, media.IsSelected))
+                .ToArray();
+            try
             {
-                // 为了避免执行其他操作时，
-                // Medias变化导致的异常
-                var list = Medias.ToList();
-
-                // 添加到下载
-                foreach (var videoInfoService in from media in list where !isOnlySelected || media.IsSelected select new VideoInfoService(media.Bvid))
+                var addedCount = await _downloadCoordinator.AddAsync(
+                    items,
+                    isOnlySelected,
+                    cancellationToken).ConfigureAwait(true);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (addedCount == null)
                 {
-                    addToDownloadService.SetVideoInfoService(videoInfoService);
-                    addToDownloadService.GetVideo();
-                    addToDownloadService.ParseVideo(videoInfoService);
-                    // 下载
-                    i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
+                    return;
                 }
-            }).ConfigureAwait(true);
 
-            if (directory == null)
-            {
-                return;
+                Notifications.Show(addedCount <= 0
+                    ? DictionaryResource.GetString("TipAddDownloadingZero")
+                    : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
             }
-
-            // 通知用户添加到下载列表的结果
-            EventAggregator.GetEvent<MessageEvent>().Publish(i <= 0
-                ? DictionaryResource.GetString("TipAddDownloadingZero")
-                : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
+                or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+            {
+                _logger.LogErrorMessage("Publication download preparation failed.", e);
+                Notifications.Show(e.Message);
+            }
         }
 
         private void OnCountChangedPager(object? sender, EventArgs e)
@@ -369,107 +374,45 @@ namespace DownKyi.ViewModels
             LoadingVisibility = true;
             NoDataVisibility = false;
 
-            _ = UpdatePublication(((CustomPagerViewModel)sender!).ProposedCurrent);
+            RunFireAndForget(
+                UpdatePublicationAsync(((CustomPagerViewModel)sender!).ProposedCurrent),
+                nameof(UpdatePublicationAsync),
+                _logger);
         }
 
-        private static string StringToUnicode(string s)
+        private async Task UpdatePublicationAsync(int current)
         {
-            var charbuffers = s.ToCharArray();
-            byte[] buffer;
-            var sb = new StringBuilder();
-            foreach (var t in charbuffers)
-            {
-                buffer = Encoding.Unicode.GetBytes(t.ToString());
-                sb.Append(CultureInfo.InvariantCulture, $"\\u{buffer[1]:X2}{buffer[0]:X2}");
-            }
-
-            return sb.ToString();
-        }
-
-        private readonly Bitmap _defaultPic = ImageHelper.LoadFromResource(new Uri("avares://DownKyi/Resources/video-placeholder.png"));
-
-        private async Task UpdatePublication(int current)
-        {
-            if (_tokenSource != null)
-            {
-                await _tokenSource.CancelAsync().ConfigureAwait(true);
-            }
-            // 是否正在获取数据
-            // 在所有的退出分支中都需要设为true
             IsEnabled = false;
-            _tokenSource = new CancellationTokenSource();
-            var cancellationToken = _tokenSource.Token;
-
+            var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
             var tab = TabHeaders[SelectTabId];
             try
             {
-                await Task.Run(() =>
+                var medias = await _userSpaceCoordinator.LoadPublicationPageAsync(
+                    _mid,
+                    current,
+                    VideoNumberInPage,
+                    tab.Id,
+                    cancellationToken).ConfigureAwait(true);
+                cancellationToken.ThrowIfCancellationRequested();
+                LoadingVisibility = false;
+                if (medias.Count == 0)
                 {
-                    var publications = Core.BiliApi.Users.UserSpace.GetPublication(_mid, current, VideoNumberInPage, tab.Id);
-                    if (publications == null)
-                    {
-                        // 没有数据，UI提示
-                        LoadingVisibility = false;
-                        NoDataVisibility = true;
-                        return;
-                    }
+                    NoDataVisibility = true;
+                    return;
+                }
 
-                    var videos = publications.Vlist;
-                    if (videos == null)
-                    {
-                        // 没有数据，UI提示
-                        LoadingVisibility = false;
-                        NoDataVisibility = true;
-                        return;
-                    }
-
-                    foreach (var video in videos)
-                    {
-                        // 查询、保存封面
-                        var coverUrl = video.Pic;
-
-                        // 播放数
-                        var play = string.Empty;
-                        if (video.Play > 0)
-                        {
-                            play = Format.FormatNumber(video.Play);
-                        }
-                        else
-                        {
-                            play = "--";
-                        }
-
-                        var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
-                        var dateCTime = startTime.AddSeconds(video.Created);
-                        var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
-                        App.PropertyChangeAsync(() =>
-                        {
-                            var media = new PublicationMedia(EventAggregator)
-                            {
-                                Avid = video.Aid,
-                                Bvid = video.Bvid,
-                                Cover = _defaultPic,
-                                Duration = video.Length,
-                                Title = video.Title,
-                                PlayNumber = play,
-                                CreateTime = ctime,
-                                CoverUrl = coverUrl
-                            };
-                            _medias.Add(media);
-
-                            LoadingVisibility = false;
-                            NoDataVisibility = false;
-                        });
-
-                        if (cancellationToken.IsCancellationRequested)
-                        {
-                            return;
-                        }
-                    }
-                }, cancellationToken).ConfigureAwait(true);
+                Medias.AddRange(medias);
+                NoDataVisibility = false;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+            }
+            catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
+                or FormatException or Newtonsoft.Json.JsonException)
+            {
+                LoadingVisibility = false;
+                NoDataVisibility = true;
+                _logger.LogErrorMessage("Publication page loading failed.", e);
             }
             finally
             {
@@ -540,19 +483,30 @@ namespace DownKyi.ViewModels
             // 页面选择
             Pager = new CustomPagerViewModel(1,
             (int)Math.Ceiling(double.Parse(selectTab.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
-            Pager.CurrentChanging += OnCurrentChangedPager;
-            Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;
+        }
+
+        public override void OnNavigatedFrom(NavigationContext navigationContext)
+        {
+            CancelOperations();
+            IsEnabled = true;
+            LoadingVisibility = false;
+            base.OnNavigatedFrom(navigationContext);
+        }
+
+        private void CancelOperations()
+        {
+            CancelAndDispose(ref _loadCancellation);
+            CancelAndDispose(ref _downloadCancellation);
         }
 
         protected override void Dispose(bool disposing)
         {
             if (disposing && !IsDisposed)
             {
-                _tokenSource?.Cancel();
-                _tokenSource?.Dispose();
-                _tokenSource = null;
-                _defaultPic.Dispose();
+                CancelOperations();
+                _pager.CurrentChanging -= OnCurrentChangedPager;
+                _pager.CountChanged -= OnCountChangedPager;
             }
 
             base.Dispose(disposing);

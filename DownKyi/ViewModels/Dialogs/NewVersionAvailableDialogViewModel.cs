@@ -3,10 +3,11 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls.Documents;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
 using DownKyi.Models;
-using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
 
@@ -16,23 +17,40 @@ namespace DownKyi.ViewModels.Dialogs
     {
         public const string Tag = "NewVersionAvailable";
 
+        private readonly ILogger<NewVersionAvailableDialogViewModel> _logger;
+        private readonly IPlatformLauncher _platformLauncher;
+        private readonly ISettingsStore _settingsStore;
         private DownKyiAsyncDelegateCommand? _allowCommand;
 
         private DelegateCommand? _skipCurrentVersionCommand;
 
         public DelegateCommand SkipCurrentVersionCommand => _skipCurrentVersionCommand ??= new DelegateCommand(ExecuteSkipCurrentVersionCommand);
-        public DownKyiAsyncDelegateCommand AllowCommand => _allowCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAllowCommand);
+        public DownKyiAsyncDelegateCommand AllowCommand => _allowCommand ??= new DownKyiAsyncDelegateCommand(ExecuteAllowCommand, _logger);
+
+        public NewVersionAvailableDialogViewModel(
+            ISettingsStore settingsStore,
+            IPlatformLauncher platformLauncher,
+            ILogger<NewVersionAvailableDialogViewModel> logger)
+        {
+            _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+            _platformLauncher = platformLauncher ?? throw new ArgumentNullException(nameof(platformLauncher));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
 
         private async Task ExecuteAllowCommand()
         {
             const ButtonResult result = ButtonResult.OK;
-            await PlatformHelper.OpenUrl($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases/tag/{TagName}").ConfigureAwait(true);
+            var releaseUri = new Uri($"https://github.com/{App.RepoOwner}/{App.RepoName}/releases/tag/{TagName}");
+            _ = await _platformLauncher.OpenUriAsync(releaseUri).ConfigureAwait(true);
             CloseDialog(new DialogResult(result));
         }
 
         private void ExecuteSkipCurrentVersionCommand()
         {
-            SettingsManager.Instance.SetSkipVersionOnLaunch(NewVersion);
+            _settingsStore.Update(settings => settings with
+            {
+                About = settings.About with { SkipVersionOnLaunch = NewVersion }
+            });
             CloseDialog(new DialogResult());
         }
 

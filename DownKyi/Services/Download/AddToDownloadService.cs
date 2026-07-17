@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Threading;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.Zone;
@@ -13,28 +13,28 @@ using DownKyi.Core.FileName;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
-using DownKyi.Events;
 using DownKyi.Models;
 using DownKyi.Utils;
-using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Dialogs;
-using Prism.Events;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
 /// <summary>
 /// 添加到下载列表服务
 /// </summary>
-internal class AddToDownloadService
+internal sealed class AddToDownloadService : IAddToDownloadSession
 {
-    private readonly string Tag = "AddToDownloadService";
+    private readonly ILogger<AddToDownloadService> _logger;
     private IInfoService _videoInfoService = null!;
     private VideoInfoView? _videoInfoView;
     private IList<VideoSection>? _videoSections;
-    private DownloadStorageService _downloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
+    private readonly DownloadListState _downloadLists;
+    private readonly DownloadStorageService _downloadStorageService;
+    private readonly ISettingsStore _settingsStore;
+    private readonly IUserNotificationService _notificationService;
+    private readonly IAppDialogService _dialogService;
 
     // 下载内容
     private bool _downloadAudio = true;
@@ -47,18 +47,33 @@ internal class AddToDownloadService
     /// 添加下载
     /// </summary>
     /// <param name="streamType"></param>
-    public AddToDownloadService(PlayStreamType streamType)
+    /// <param name="downloadLists"></param>
+    /// <param name="downloadStorageService"></param>
+    public AddToDownloadService(
+        PlayStreamType streamType,
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService,
+        ISettingsStore settingsStore,
+        IUserNotificationService notificationService,
+        IAppDialogService dialogService,
+        ILogger<AddToDownloadService> logger)
     {
+        _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+        _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
             case PlayStreamType.Video:
-                _videoInfoService = new VideoInfoService(null);
+                _videoInfoService = new VideoInfoService(null, settingsStore);
                 break;
             case PlayStreamType.Bangumi:
-                _videoInfoService = new BangumiInfoService(null);
+                _videoInfoService = new BangumiInfoService(null, settingsStore);
                 break;
             case PlayStreamType.Cheese:
-                _videoInfoService = new CheeseInfoService(null);
+                _videoInfoService = new CheeseInfoService(null, settingsStore);
                 break;
             default:
                 break;
@@ -70,18 +85,34 @@ internal class AddToDownloadService
     /// </summary>
     /// <param name="id"></param>
     /// <param name="streamType"></param>
-    public AddToDownloadService(string id, PlayStreamType streamType)
+    /// <param name="downloadLists"></param>
+    /// <param name="downloadStorageService"></param>
+    public AddToDownloadService(
+        string id,
+        PlayStreamType streamType,
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService,
+        ISettingsStore settingsStore,
+        IUserNotificationService notificationService,
+        IAppDialogService dialogService,
+        ILogger<AddToDownloadService> logger)
     {
+        _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
+        _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+        _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
             case PlayStreamType.Video:
-                _videoInfoService = new VideoInfoService(id);
+                _videoInfoService = new VideoInfoService(id, settingsStore);
                 break;
             case PlayStreamType.Bangumi:
-                _videoInfoService = new BangumiInfoService(id);
+                _videoInfoService = new BangumiInfoService(id, settingsStore);
                 break;
             case PlayStreamType.Cheese:
-                _videoInfoService = new CheeseInfoService(id);
+                _videoInfoService = new CheeseInfoService(id, settingsStore);
                 break;
             default:
                 break;
@@ -104,14 +135,14 @@ internal class AddToDownloadService
         _videoInfoView = _videoInfoService.GetVideoView();
         if (_videoInfoView == null)
         {
-            LogManager.Debug(Tag, "VideoInfoView is null.");
+            _logger.LogDebugMessage("VideoInfoView is null.");
             return;
         }
 
         _videoSections = _videoInfoService.GetVideoSections(true);
         if (_videoSections == null)
         {
-            LogManager.Debug(Tag, "videoSections is not exist.");
+            _logger.LogDebugMessage("Video sections do not exist.");
 
             _videoSections = new List<VideoSection>
             {
@@ -153,7 +184,7 @@ internal class AddToDownloadService
             foreach (var page in section.VideoPages)
             {
                 // 执行解析任务
-                videoInfoService.GetVideoStream(page);
+                Utils.VideoPageInfo(videoInfoService.GetVideoStream(page), page, _settingsStore);
             }
         }
     }
@@ -161,42 +192,46 @@ internal class AddToDownloadService
     /// <summary>
     /// 选择文件夹和下载项
     /// </summary>
-    /// <param name="dialogService"></param>
-    public async Task<string?> SetDirectory(IDialogService? dialogService)
+    public async Task<string?> SetDirectory(CancellationToken cancellationToken = default)
     {
-        if (dialogService == null) return null;
+        cancellationToken.ThrowIfCancellationRequested();
         // 选择的下载文件夹
         var directory = string.Empty;
 
         // 是否使用默认下载目录
-        if (SettingsManager.Instance.GetIsUseSaveVideoRootPath() == AllowStatus.Yes)
+        var videoSettings = _settingsStore.Current.Video;
+        if (videoSettings.IsUseSaveVideoRootPath == AllowStatus.Yes)
         {
             // 下载内容
-            var videoContent = SettingsManager.Instance.GetVideoContent();
+            var videoContent = videoSettings.Content;
             _downloadAudio = videoContent.DownloadAudio;
             _downloadVideo = videoContent.DownloadVideo;
             _downloadDanmaku = videoContent.DownloadDanmaku;
             _downloadSubtitle = videoContent.DownloadSubtitle;
             _downloadCover = videoContent.DownloadCover;
 
-            directory = SettingsManager.Instance.GetSaveVideoRootPath();
+            directory = videoSettings.SaveVideoRootPath;
         }
         else
         {
             // 打开文件夹选择器
-            await dialogService.ShowDialogAsync(ViewDownloadSetterViewModel.Tag, null, result =>
+            var result = await _dialogService.ShowAsync(
+                new AppDialogRequest(AppDialog.DownloadSettings),
+                cancellationToken).ConfigureAwait(true);
+            if (result.Outcome == AppDialogOutcome.Accepted)
             {
-                if (result.Result != ButtonResult.OK) return;
                 // 选择的下载文件夹
-                directory = result.Parameters.GetValue<string>("directory");
+                directory = result.Parameters.TryGetValue("directory", out var directoryValue)
+                    ? directoryValue as string ?? string.Empty
+                    : string.Empty;
 
                 // 下载内容
-                _downloadAudio = result.Parameters.GetValue<bool>("downloadAudio");
-                _downloadVideo = result.Parameters.GetValue<bool>("downloadVideo");
-                _downloadDanmaku = result.Parameters.GetValue<bool>("downloadDanmaku");
-                _downloadSubtitle = result.Parameters.GetValue<bool>("downloadSubtitle");
-                _downloadCover = result.Parameters.GetValue<bool>("downloadCover");
-            }).ConfigureAwait(true);
+                _downloadAudio = GetBoolean(result.Parameters, "downloadAudio");
+                _downloadVideo = GetBoolean(result.Parameters, "downloadVideo");
+                _downloadDanmaku = GetBoolean(result.Parameters, "downloadDanmaku");
+                _downloadSubtitle = GetBoolean(result.Parameters, "downloadSubtitle");
+                _downloadCover = GetBoolean(result.Parameters, "downloadCover");
+            }
         }
 
         if (string.IsNullOrEmpty(directory))
@@ -207,8 +242,10 @@ internal class AddToDownloadService
 
         if (!Directory.Exists(Directory.GetDirectoryRoot(directory)))
         {
-            var alert = new AlertService(dialogService);
-            await alert.ShowError(DictionaryResource.GetString("DriveNotFound")).ConfigureAwait(true);
+            var alert = new AlertService(_dialogService);
+            await alert
+                .ShowError(DictionaryResource.GetString("DriveNotFound"), cancellationToken)
+                .ConfigureAwait(true);
 
             directory = string.Empty;
         }
@@ -233,15 +270,15 @@ internal class AddToDownloadService
     /// <summary>
     /// 添加到下载列表
     /// </summary>
-    /// <param name="eventAggregator">传递事件的对象</param>
-    /// <param name="dialogService">dialog</param>
     /// <param name="directory">下载路径</param>
     /// <param name="isAll">是否下载所有，包括未选中项</param>
     /// <returns>添加的数量</returns>
-    public async Task<int> AddToDownload(IEventAggregator eventAggregator, IDialogService? dialogService, string? directory, bool isAll = false)
+    public async Task<int> AddToDownload(
+        string? directory,
+        bool isAll = false,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(eventAggregator);
-
+        cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrEmpty(directory))
         {
             return -1;
@@ -256,6 +293,8 @@ internal class AddToDownloadService
         {
             return -1;
         }
+
+        var settings = _settingsStore.Current;
 
         // 视频计数
         var addedItems = new List<DownloadingItem>();
@@ -286,7 +325,10 @@ internal class AddToDownloadService
                 while (page.VideoQuality == null && retry < 5)
                 {
                     // 执行解析任务
-                    _videoInfoService.GetVideoStream(page);
+                    Utils.VideoPageInfo(
+                        _videoInfoService.GetVideoStream(page, cancellationToken),
+                        page,
+                        _settingsStore);
                     retry++;
                 }
 
@@ -306,7 +348,7 @@ internal class AddToDownloadService
                 var isDownloading = false;
 
 
-                foreach (var item in App.DownloadingList.Concat(addedItems))
+                foreach (var item in _downloadLists.Downloading.Concat(addedItems))
                 {
                     if (item.DownloadBase == null)
                     {
@@ -324,8 +366,8 @@ internal class AddToDownloadService
 
                     if (isSameVideo)
                     {
-                        eventAggregator.GetEvent<MessageEvent>()
-                            .Publish($"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloading")}");
+                        _notificationService.Show(
+                            $"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloading")}");
                         isDownloading = true;
                         break;
                     }
@@ -338,7 +380,7 @@ internal class AddToDownloadService
 
                 // TODO 如果存在下载完成列表，弹出选择框是否再次下载
                 var isDownloaded = false;
-                foreach (var item in App.DownloadedList)
+                foreach (var item in _downloadLists.Downloaded)
                 {
                     if (item.DownloadBase == null)
                     {
@@ -356,31 +398,26 @@ internal class AddToDownloadService
 
                     if (isSameVideo)
                     {
-                        // eventAggregator.GetEvent<MessageEvent>().Publish($"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloaded")}");
-                        // isDownloaded = true;
-                        var repeatDownloadStrategy = SettingsManager.Instance.GetRepeatDownloadStrategy();
+                        var repeatDownloadStrategy = settings.Basic.RepeatDownloadStrategy;
                         switch (repeatDownloadStrategy)
                         {
                             case RepeatDownloadStrategy.Ask:
                                 {
-                                    var result = ButtonResult.Cancel;
-                                    await Dispatcher.UIThread.Invoke(async () =>
-                                    {
-                                        var param = new DialogParameters
-                                        {
-                                        { "message", $"{item.Name}已下载，是否重新下载" },
-                                        };
+                                    var result = (await _dialogService.ShowAsync(
+                                        new AppDialogRequest(
+                                            AppDialog.AlreadyDownloaded,
+                                            new Dictionary<string, object?>
+                                            {
+                                                ["message"] = $"{item.Name}已下载，是否重新下载"
+                                            }),
+                                        cancellationToken).ConfigureAwait(true)).Outcome;
 
-                                        if (dialogService != null)
-                                        {
-                                            await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; }).ConfigureAwait(true);
-                                        }
-                                    }).ConfigureAwait(true);
-
-                                    if (result == ButtonResult.OK)
+                                    if (result == AppDialogOutcome.Accepted)
                                     {
-                                        await _downloadStorageService.RemoveDownloadedAsync(item).ConfigureAwait(true);
-                                        App.PropertyChangeAsync(() => App.DownloadedList.Remove(item));
+                                        await _downloadStorageService
+                                            .RemoveDownloadedAsync(item, cancellationToken)
+                                            .ConfigureAwait(true);
+                                        _downloadLists.Downloaded.Remove(item);
                                         isDownloaded = false;
                                     }
                                     else
@@ -438,7 +475,7 @@ internal class AddToDownloadService
                 }
 
                 // 文件路径
-                var fileNameParts = SettingsManager.Instance.GetFileNameParts();
+                var fileNameParts = settings.Video.FileNameParts;
                 var fileName = FileNameBuilder.Create(fileNameParts)
                     .SetSection(Format.FormatFileName(sectionName))
                     .SetMainTitle(Format.FormatFileName(_videoInfoView.Title))
@@ -459,7 +496,7 @@ internal class AddToDownloadService
                     .SetUpName(Format.FormatFileName(ownerName));
 
                 // 序号设置
-                var orderFormat = SettingsManager.Instance.GetOrderFormat();
+                var orderFormat = settings.Video.OrderFormat;
                 switch (orderFormat)
                 {
                     case OrderFormat.Natural:
@@ -473,7 +510,7 @@ internal class AddToDownloadService
                 // 合成绝对路径
                 var filePath = Path.Combine(directory, fileName.RelativePath());
 
-                if (SettingsManager.Instance.IsRepeatFileAutoAddNumberSuffix())
+                if (settings.Basic.RepeatFileAutoAddNumberSuffix)
                 {
                     // 如果存在同名文件，自动重命名
                     // todo 如果重新下载呢。还没想好
@@ -572,25 +609,30 @@ internal class AddToDownloadService
                     PlayUrl = page.PlayUrl,
                 };
 
-                if (SettingsManager.Instance.GetVideoContent()
-                        .GenerateMovieMetadata && _downloadVideo)
+                if (settings.Video.Content.GenerateMovieMetadata && _downloadVideo)
                 {
                     downloadingItem.Metadata = BuildMovieMetadata(page);
                 }
 
-                await _downloadStorageService.AddDownloadingAsync(downloadingItem).ConfigureAwait(true);
+                await _downloadStorageService
+                    .AddDownloadingAsync(downloadingItem, cancellationToken)
+                    .ConfigureAwait(true);
                 addedItems.Add(downloadingItem);
             }
         }
 
         if (addedItems.Count > 0)
         {
-            App.PropertyChangeAsync(() => App.DownloadingList.AddRange(addedItems));
+            _downloadLists.Downloading.AddRange(addedItems);
         }
 
         return addedItems.Count;
     }
 
+    private static bool GetBoolean(IReadOnlyDictionary<string, object?> parameters, string key)
+    {
+        return parameters.TryGetValue(key, out var value) && value is true;
+    }
 
     private MovieMetadata BuildMovieMetadata(VideoPage page)
     {

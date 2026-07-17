@@ -2,8 +2,8 @@ using System;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Core.Logging;
 using DownKyi.Models;
 
 namespace DownKyi.Services
@@ -24,47 +24,34 @@ namespace DownKyi.Services
         }
 
 
-        public async Task<GitHubRelease?> GetLatestReleaseAsync(string? excludedVersion = null)
+        public async Task<GitHubRelease?> GetLatestReleaseAsync(
+            string? excludedVersion = null,
+            CancellationToken cancellationToken = default)
         {
             using var client = new HttpClient();
             client.DefaultRequestHeaders.Add("User-Agent", "downkyi");
             client.Timeout = TimeSpan.FromSeconds(3);
-            try
+            if (_includePrereleases)
             {
-                if (_includePrereleases)
-                {
-                    var releasesUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases";
-                    var releasesJson = await client.GetStringAsync(new Uri(releasesUrl)).ConfigureAwait(true);
-                    var releases = JsonSerializer.Deserialize(releasesJson, GitHubJsonContext.Default.GitHubReleaseArray);
+                var releasesUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases";
+                var releasesJson = await client
+                    .GetStringAsync(new Uri(releasesUrl), cancellationToken)
+                    .ConfigureAwait(true);
+                var releases = JsonSerializer.Deserialize(releasesJson, GitHubJsonContext.Default.GitHubReleaseArray);
 
-                    return string.IsNullOrEmpty(excludedVersion)
-                        ? releases?.FirstOrDefault()
-                        : releases?.FirstOrDefault(r => r.TagName.TrimStart('v') != excludedVersion);
-                }
-                else
-                {
-                    var latestReleaseUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases/latest";
-                    var latestReleaseJson = await client.GetStringAsync(new Uri(latestReleaseUrl)).ConfigureAwait(true);
-                    var release = JsonSerializer.Deserialize(latestReleaseJson, GitHubJsonContext.Default.GitHubRelease);
-
-                    return string.IsNullOrEmpty(excludedVersion) ||
-                           release?.TagName.TrimStart('v') != excludedVersion ? release : null;
-                }
-            }
-            catch (HttpRequestException e)
-            {
-                LogManager.Error(nameof(VersionCheckerService), e);
-            }
-            catch (TaskCanceledException e)
-            {
-                LogManager.Error(nameof(VersionCheckerService), e);
-            }
-            catch (JsonException e)
-            {
-                LogManager.Error(nameof(VersionCheckerService), e);
+                return string.IsNullOrEmpty(excludedVersion)
+                    ? releases?.FirstOrDefault()
+                    : releases?.FirstOrDefault(r => r.TagName.TrimStart('v') != excludedVersion);
             }
 
-            return null;
+            var latestReleaseUrl = $"https://api.github.com/repos/{_repoOwner}/{_repoName}/releases/latest";
+            var latestReleaseJson = await client
+                .GetStringAsync(new Uri(latestReleaseUrl), cancellationToken)
+                .ConfigureAwait(true);
+            var release = JsonSerializer.Deserialize(latestReleaseJson, GitHubJsonContext.Default.GitHubRelease);
+
+            return string.IsNullOrEmpty(excludedVersion) ||
+                   release?.TagName.TrimStart('v') != excludedVersion ? release : null;
         }
 
 

@@ -1,19 +1,22 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Threading;
-using DownKyi.Core.BiliApi.Users;
-using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Application.Desktop;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.CustomControl;
+using DownKyi.Services.Friends;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Friends;
@@ -21,6 +24,10 @@ namespace DownKyi.ViewModels.Friends;
 internal class ViewFollowingViewModel : ViewModelBase
 {
     public const string Tag = "PageFriendsFollowing";
+    private readonly IFriendRelationCoordinator _friendRelationCoordinator;
+    private readonly ILogger<ViewFollowingViewModel> _logger;
+    private readonly ISettingsStore _settingsStore;
+    private CancellationTokenSource? _loadCancellation;
 
     // mid
     private long _mid = -1;
@@ -134,9 +141,9 @@ internal class ViewFollowingViewModel : ViewModelBase
         set => SetProperty(ref _pager, value);
     }
 
-    private ObservableCollection<FriendInfo> _contents = new();
+    private RangeObservableCollection<FriendInfo> _contents = new();
 
-    public ObservableCollection<FriendInfo> Contents
+    public RangeObservableCollection<FriendInfo> Contents
     {
         get => _contents;
         private set => SetProperty(ref _contents, value);
@@ -144,8 +151,16 @@ internal class ViewFollowingViewModel : ViewModelBase
 
     #endregion
 
-    public ViewFollowingViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewFollowingViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        IFriendRelationCoordinator friendRelationCoordinator,
+        ISettingsStore settingsStore,
+        ILogger<ViewFollowingViewModel> logger) : base(desktopInteractions)
     {
+        _friendRelationCoordinator = friendRelationCoordinator
+            ?? throw new ArgumentNullException(nameof(friendRelationCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         // 初始化loading gif
@@ -158,7 +173,7 @@ internal class ViewFollowingViewModel : ViewModelBase
         ContentNoDataVisibility = false;
 
         TabHeaders = new ObservableCollection<TabHeader>();
-        Contents = new ObservableCollection<FriendInfo>();
+        Contents = new RangeObservableCollection<FriendInfo>();
 
         #endregion
     }
@@ -182,9 +197,9 @@ internal class ViewFollowingViewModel : ViewModelBase
         }
 
         // 页面选择
-        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / NumberInPage));
-        Pager.CurrentChanging += OnCurrentChangedPager;
-        Pager.CountChanged += OnCountChangedPager;
+        ReplacePager(new CustomPagerViewModel(
+            1,
+            (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / NumberInPage)));
         Pager.Current = 1;
     }
 
@@ -205,6 +220,7 @@ internal class ViewFollowingViewModel : ViewModelBase
     /// </summary>
     private void InitView()
     {
+        IsEnabled = true;
         ContentVisibility = false;
         InnerContentVisibility = false;
         LoadingVisibility = true;
@@ -220,132 +236,82 @@ internal class ViewFollowingViewModel : ViewModelBase
     /// <summary>
     /// 初始化左侧列表
     /// </summary>
-    private async Task InitLeftTable()
+    private async Task InitializeAsync()
     {
-        TabHeaders.Clear();
-
-        var userInfo = SettingsManager.Instance.GetUserInfo();
-        if (userInfo != null && userInfo.Mid == _mid)
+        var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
+        InitView();
+        try
         {
-            // 用户的关系状态数
-            UserRelationStat? relationStat = null;
-            await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(_mid); }).ConfigureAwait(true);
-            if (relationStat != null)
+            var userInfo = _settingsStore.Current.User;
+            var isCurrentUser = userInfo != null && userInfo.Mid == _mid;
+            var overview = await _friendRelationCoordinator
+                .LoadFollowingOverviewAsync(_mid, isCurrentUser, cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_loadCancellation?.Token != cancellationToken)
+            {
+                return;
+            }
+
+            if (overview.Relation != null)
             {
                 TabHeaders.Add(new TabHeader
                 {
                     Id = -1,
                     Title = DictionaryResource.GetString("AllFollowing"),
-                    SubTitle = relationStat.Following.ToString(CultureInfo.CurrentCulture)
+                    SubTitle = overview.Relation.Following.ToString(CultureInfo.CurrentCulture)
                 });
-                TabHeaders.Add(new TabHeader
+                if (isCurrentUser)
                 {
-                    Id = -2,
-                    Title = DictionaryResource.GetString("WhisperFollowing"),
-                    SubTitle = relationStat.Whisper.ToString(CultureInfo.CurrentCulture)
-                });
-            }
-
-            // 用户的关注分组
-            IReadOnlyList<FollowingGroup>? followingGroup = null;
-            await Task.Run(() => { followingGroup = UserRelation.GetFollowingGroup(); }).ConfigureAwait(true);
-            if (followingGroup != null)
-            {
-                foreach (var tag in followingGroup)
-                {
-                    TabHeaders.Add(new TabHeader { Id = tag.TagId, Title = tag.Name, SubTitle = tag.Count.ToString(CultureInfo.CurrentCulture) });
+                    TabHeaders.Add(new TabHeader
+                    {
+                        Id = -2,
+                        Title = DictionaryResource.GetString("WhisperFollowing"),
+                        SubTitle = overview.Relation.Whisper.ToString(CultureInfo.CurrentCulture)
+                    });
                 }
             }
-        }
-        else
-        {
-            // 用户的关系状态数
-            UserRelationStat? relationStat = null;
-            await Task.Run(() => { relationStat = UserStatus.GetUserRelationStat(_mid); }).ConfigureAwait(true);
-            if (relationStat != null)
+
+            foreach (var tag in overview.Groups)
             {
                 TabHeaders.Add(new TabHeader
                 {
-                    Id = -1,
-                    Title = DictionaryResource.GetString("AllFollowing"),
-                    SubTitle = relationStat.Following.ToString(CultureInfo.CurrentCulture)
+                    Id = tag.TagId,
+                    Title = tag.Name,
+                    SubTitle = tag.Count.ToString(CultureInfo.CurrentCulture)
                 });
             }
+
+            ContentVisibility = true;
+            LoadingVisibility = false;
+            if (TabHeaders.Count > 0)
+            {
+                SelectTabId = 0;
+            }
+            else
+            {
+                NoDataVisibility = true;
+            }
         }
-
-        ContentVisibility = true;
-        LoadingVisibility = false;
-    }
-
-    private void LoadContent(IReadOnlyList<RelationFollowInfo> contents)
-    {
-        InnerContentVisibility = true;
-        ContentLoadingVisibility = false;
-        ContentNoDataVisibility = false;
-        foreach (var item in contents)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            PropertyChangeAsync(() => { Contents.Add(new FriendInfo(EventAggregator) { Mid = item.Mid, Header = item.Face, Name = item.Name, Sign = item.Sign }); });
         }
-    }
-
-    private async Task<bool> LoadAllFollowings(int pn, int ps)
-    {
-        IReadOnlyList<RelationFollowInfo>? contents = null;
-        await Task.Run(() =>
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
         {
-            var data = UserRelation.GetFollowings(_mid, pn, ps);
-            if (data != null && data.List != null && data.List.Count > 0)
+            _logger.LogErrorMessage("Following page initialization failed.", e);
+            if (_loadCancellation?.Token == cancellationToken)
             {
-                contents = data.List;
+                ContentVisibility = false;
+                LoadingVisibility = false;
+                NoDataVisibility = true;
             }
-
-            if (contents == null)
-            {
-                return;
-            }
-
-            LoadContent(contents);
-        }).ConfigureAwait(true);
-
-        return contents != null;
-    }
-
-    private async Task<bool> LoadWhispers(int pn, int ps)
-    {
-        IReadOnlyList<RelationFollowInfo>? contents = null;
-        await Task.Run(() =>
-        {
-            contents = UserRelation.GetWhispers(pn, ps);
-            if (contents == null)
-            {
-                return;
-            }
-
-            LoadContent(contents);
-        }).ConfigureAwait(true);
-
-        return contents != null;
-    }
-
-    private async Task<bool> LoadFollowingGroupContent(long tagId, int pn, int ps)
-    {
-        IReadOnlyList<RelationFollowInfo>? contents = null;
-        await Task.Run(() =>
-        {
-            contents = UserRelation.GetFollowingGroupContent(tagId, pn, ps);
-            if (contents == null)
-            {
-                return;
-            }
-
-            LoadContent(contents);
-        }).ConfigureAwait(true);
-
-        return contents != null;
+        }
     }
 
     private async Task UpdateContentAsync(int current)
     {
+        var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
         // 是否正在获取数据
         // 在所有的退出分支中都需要设为true
         IsEnabled = false;
@@ -355,33 +321,90 @@ internal class ViewFollowingViewModel : ViewModelBase
         ContentLoadingVisibility = true;
         ContentNoDataVisibility = false;
 
-        var tab = TabHeaders[SelectTabId];
-
-        var isSucceed = tab.Id switch
+        try
         {
-            -1 => await LoadAllFollowings(current, NumberInPage).ConfigureAwait(true),
-            -2 => await LoadWhispers(current, NumberInPage).ConfigureAwait(true),
-            _ => await LoadFollowingGroupContent(tab.Id, current, NumberInPage).ConfigureAwait(true)
-        };
+            var tab = TabHeaders[SelectTabId];
+            var kind = tab.Id switch
+            {
+                -1 => FollowingListKind.All,
+                -2 => FollowingListKind.Whisper,
+                _ => FollowingListKind.Group
+            };
+            var contents = await _friendRelationCoordinator
+                .LoadFollowingPageAsync(
+                    _mid,
+                    kind,
+                    tab.Id,
+                    current,
+                    NumberInPage,
+                    cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_loadCancellation?.Token != cancellationToken)
+            {
+                return;
+            }
 
-        if (isSucceed)
-        {
-            InnerContentVisibility = true;
-            ContentLoadingVisibility = false;
-            ContentNoDataVisibility = false;
+            if (contents.Count > 0)
+            {
+                Contents.AddRange(contents.Select(item => new FriendInfo(
+                    Navigation,
+                    AppRoute.Friends)
+                {
+                    Mid = item.Mid,
+                    Header = item.Face,
+                    Name = item.Name,
+                    Sign = item.Sign
+                }));
+                InnerContentVisibility = true;
+                ContentLoadingVisibility = false;
+                ContentNoDataVisibility = false;
+            }
+            else
+            {
+                InnerContentVisibility = false;
+                ContentLoadingVisibility = false;
+                ContentNoDataVisibility = true;
+            }
         }
-        else
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            InnerContentVisibility = false;
-            ContentLoadingVisibility = false;
-            ContentNoDataVisibility = true;
         }
-
-        IsEnabled = true;
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+        {
+            _logger.LogErrorMessage("Following page loading failed.", e);
+            if (_loadCancellation?.Token == cancellationToken)
+            {
+                InnerContentVisibility = false;
+                ContentLoadingVisibility = false;
+                ContentNoDataVisibility = true;
+            }
+        }
+        finally
+        {
+            if (_loadCancellation?.Token == cancellationToken)
+            {
+                IsEnabled = true;
+            }
+        }
     }
 
     private void OnCountChangedPager(object? sender, EventArgs e)
     {
+    }
+
+    private void ReplacePager(CustomPagerViewModel pager)
+    {
+        if (Pager != null)
+        {
+            Pager.CurrentChanging -= OnCurrentChangedPager;
+            Pager.CountChanged -= OnCountChangedPager;
+        }
+
+        Pager = pager;
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
     }
 
     private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
@@ -392,7 +415,7 @@ internal class ViewFollowingViewModel : ViewModelBase
             return;
         }
 
-        RunFireAndForget(UpdateContentAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateContentAsync));
+        RunFireAndForget(UpdateContentAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateContentAsync), _logger);
     }
 
     /// <summary>
@@ -419,16 +442,31 @@ internal class ViewFollowingViewModel : ViewModelBase
         var isFirst = navigationContext.Parameters.GetValue<bool>("isFirst");
         if (isFirst)
         {
-            async Task Init()
-            {
-                InitView();
-                // 初始化左侧列表
-                await InitLeftTable().ConfigureAwait(true);
-                // 进入页面时显示的设置项
-                SelectTabId = 0;
-            }
-
-            Dispatcher.UIThread.InvokeAsync(Init);
+            RunFireAndForget(InitializeAsync(), nameof(InitializeAsync), _logger);
         }
+    }
+
+    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    {
+        CancelAndDispose(ref _loadCancellation);
+        IsEnabled = true;
+        LoadingVisibility = false;
+        ContentLoadingVisibility = false;
+        base.OnNavigatedFrom(navigationContext);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed)
+        {
+            CancelAndDispose(ref _loadCancellation);
+            if (Pager != null)
+            {
+                Pager.CurrentChanging -= OnCurrentChangedPager;
+                Pager.CountChanged -= OnCountChangedPager;
+            }
+        }
+
+        base.Dispose(disposing);
     }
 }

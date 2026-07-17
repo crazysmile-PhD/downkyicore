@@ -14,15 +14,15 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
-using DownKyi.Events;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Bitmap = Avalonia.Media.Imaging.Bitmap;
 using Path = System.IO.Path;
 
@@ -35,6 +35,9 @@ internal class ViewDelogoViewModel : ViewModelBase
 
     // 是否正在执行去水印任务
     private bool _isDelogo;
+    private readonly IFilePickerService _filePickerService;
+    private readonly FfmpegProcessor _ffmpegProcessor;
+    private readonly ILogger<ViewDelogoViewModel> _logger;
 
     private IImage _source = null!;
 
@@ -145,8 +148,15 @@ internal class ViewDelogoViewModel : ViewModelBase
 
     #endregion
 
-    public ViewDelogoViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewDelogoViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        IFilePickerService filePickerService,
+        FfmpegProcessor ffmpegProcessor,
+        ILogger<ViewDelogoViewModel> logger) : base(desktopInteractions)
     {
+        _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
+        _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         VideoPath = string.Empty;
@@ -171,7 +181,7 @@ internal class ViewDelogoViewModel : ViewModelBase
     // 选择视频事件
     private DownKyiAsyncDelegateCommand? _selectVideoCommand;
 
-    public DownKyiAsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSelectVideoCommand);
+    public DownKyiAsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSelectVideoCommand, _logger);
 
     /// <summary>
     /// 选择视频事件
@@ -180,21 +190,21 @@ internal class ViewDelogoViewModel : ViewModelBase
     {
         if (_isDelogo)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
+            Notifications.Show(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
-        VideoPath = await DialogUtils.SelectVideoFile().ConfigureAwait(true);
+        VideoPath = await _filePickerService.SelectVideoAsync().ConfigureAwait(true);
         if (!string.IsNullOrEmpty(VideoPath))
         {
             try
             {
-                Source = new Bitmap(await FfmpegProcessor.Instance
+                Source = new Bitmap(await _ffmpegProcessor
                     .ExtractVideoFrameAsync(VideoPath, TimeSpan.FromSeconds(1)).ConfigureAwait(true));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException
                 or InvalidOperationException or System.ComponentModel.Win32Exception)
             {
-                LogManager.Error(nameof(ViewDelogoViewModel), e);
+                _logger.LogErrorMessage("Delogo preview extraction failed.", e);
             }
         }
     }
@@ -202,7 +212,7 @@ internal class ViewDelogoViewModel : ViewModelBase
     // 去水印事件
     private DownKyiAsyncDelegateCommand? _delogoCommand;
 
-    public DownKyiAsyncDelegateCommand DelogoCommand => _delogoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDelogoCommand);
+    public DownKyiAsyncDelegateCommand DelogoCommand => _delogoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteDelogoCommand, _logger);
 
     /// <summary>
     /// 去水印事件
@@ -211,37 +221,37 @@ internal class ViewDelogoViewModel : ViewModelBase
     {
         if (_isDelogo)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
+            Notifications.Show(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
 
         if (VideoPath is null or "")
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipNoSeletedVideo"));
+            Notifications.Show(DictionaryResource.GetString("TipNoSeletedVideo"));
             return;
         }
 
         if (LogoWidth == -1)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipInputRightLogoWidth"));
+            Notifications.Show(DictionaryResource.GetString("TipInputRightLogoWidth"));
             return;
         }
 
         if (LogoHeight == -1)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipInputRightLogoHeight"));
+            Notifications.Show(DictionaryResource.GetString("TipInputRightLogoHeight"));
             return;
         }
 
         if (LogoX == -1)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipInputRightLogoX"));
+            Notifications.Show(DictionaryResource.GetString("TipInputRightLogoX"));
             return;
         }
 
         if (LogoY == -1)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipInputRightLogoY"));
+            Notifications.Show(DictionaryResource.GetString("TipInputRightLogoY"));
             return;
         }
 
@@ -252,7 +262,7 @@ internal class ViewDelogoViewModel : ViewModelBase
         _isDelogo = true;
         try
         {
-            await FfmpegProcessor.Instance.DelogoAsync(
+            await _ffmpegProcessor.DelogoAsync(
                 VideoPath,
                 newFileName,
                 _logoX,

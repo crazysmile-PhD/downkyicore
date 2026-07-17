@@ -5,16 +5,19 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Login;
+using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Models;
-using DownKyi.PrismExtension.Dialog;
+using DownKyi.Platform;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
 using Downloader;
+using Microsoft.Extensions.Logging;
 using DownloadStatus = DownKyi.Models.DownloadStatus;
 
 namespace DownKyi.Services.Download;
@@ -22,10 +25,23 @@ namespace DownKyi.Services.Download;
 internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
 {
     public BuiltinDownloadService(
-        ImmutableObservableCollection<DownloadingItem> downloadingList,
-        ImmutableObservableCollection<DownloadedItem> downloadedList,
-        IDialogService? dialogService)
-        : base(downloadingList, downloadedList, dialogService)
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService,
+        IAppDialogService dialogService,
+        IUiDispatcher uiDispatcher,
+        ISettingsStore settingsStore,
+        DownloadDiagnosticLogger diagnosticLogger,
+        FfmpegProcessor ffmpegProcessor,
+        ILogger<BuiltinDownloadService> logger)
+        : base(
+            downloadLists,
+            downloadStorageService,
+            dialogService,
+            uiDispatcher,
+            settingsStore,
+            diagnosticLogger,
+            ffmpegProcessor,
+            logger)
     {
         Tag = nameof(BuiltinDownloadService);
     }
@@ -65,23 +81,24 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
         string localFileName,
         long expectedBytes)
     {
+        var network = Settings.Network;
         var requestConfiguration = new RequestConfiguration
         {
             Headers = new WebHeaderCollection
             {
                 { "cookie", LoginHelper.GetLoginInfoCookiesString() }
             },
-            UserAgent = SettingsManager.Instance.GetUserAgent(),
+            UserAgent = network.UserAgent,
             Referer = "https://www.bilibili.com"
         };
-        if (SettingsManager.Instance.GetIsHttpProxy() == AllowStatus.Yes)
+        if (network.IsHttpProxy == AllowStatus.Yes)
         {
             requestConfiguration.Proxy = new WebProxy(
-                SettingsManager.Instance.GetHttpProxy(),
-                SettingsManager.Instance.GetHttpProxyListenPort());
+                network.HttpProxy,
+                network.HttpProxyListenPort);
         }
 
-        var split = SettingsManager.Instance.GetSplit();
+        var split = network.Split;
         var configuration = new DownloadConfiguration
         {
             ChunkCount = split,
@@ -100,7 +117,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             var totalBytesToReceive = expectedBytes;
             var receivedBytes = 0L;
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            DownloadDiagnosticLogger.LogBuiltInTaskStart(
+            DiagnosticLogger.LogBuiltInTaskStart(
                 Tag,
                 localFileName,
                 urls.Count,
@@ -127,7 +144,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
                 downloading.DownloadingFileSize = $"{Format.FormatFileSize(args.ReceivedBytesSize)}/{Format.FormatFileSize(args.TotalBytesToReceive)}";
                 var speed = (long)args.BytesPerSecondSpeed;
                 downloading.SpeedDisplay = Format.FormatSpeedWithBandwidth(speed);
-                DownloadDiagnosticLogger.LogSpeed(
+                DiagnosticLogger.LogSpeed(
                     Tag,
                     localFileName,
                     args.ReceivedBytesSize,
@@ -139,7 +156,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             {
                 if (args.Error != null)
                 {
-                    LogManager.Error($"{Tag}.DownloadFileCompleted", args.Error);
+                    Logger.LogErrorMessage("Built-in download completion reported an error.", args.Error);
                 }
 
                 var succeeded = !args.Cancelled &&
@@ -187,13 +204,13 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
             }
 
             DeleteInvalidDownloadedMediaFile(targetFile);
-            LogManager.Info(Tag, "Built-in transfer was incomplete; trying a backup endpoint.");
+            Logger.LogInformationMessage("Built-in transfer was incomplete; trying a backup endpoint.");
         }
 
         return DownloadTransferOutcome.Failed;
     }
 
-    private static async Task<bool> RunDownloadAsync(
+    private async Task<bool> RunDownloadAsync(
         Downloader.DownloadService downloader,
         string url,
         string targetFile,
@@ -214,7 +231,7 @@ internal sealed class BuiltinDownloadService : DownloadService, IDownloadService
         }
         catch (Exception e) when (e is IOException or HttpRequestException or InvalidOperationException)
         {
-            LogManager.Error($"{nameof(BuiltinDownloadService)}.Transfer", e);
+            Logger.LogErrorMessage("Built-in transfer failed.", e);
             return false;
         }
     }

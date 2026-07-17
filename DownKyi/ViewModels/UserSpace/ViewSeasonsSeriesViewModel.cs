@@ -4,13 +4,12 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Storage;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Utils;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.UserSpace;
@@ -44,7 +43,8 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
 
     #endregion
 
-    public ViewSeasonsSeriesViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewSeasonsSeriesViewModel(IDesktopInteractionContext desktopInteractions)
+        : base(desktopInteractions)
     {
         #region 属性初始化
 
@@ -92,13 +92,10 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         };
 
         // 进入视频页面
-        var param = new NavigationParam
-        {
-            ViewName = ViewModels.ViewSeasonsSeriesViewModel.Tag,
-            ParentViewName = ViewUserSpaceViewModel.Tag,
-            Parameter = data
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(param);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.SeasonsSeries,
+            AppRoute.UserSpace,
+            data));
 
         SelectedItem = -1;
     }

@@ -1,9 +1,8 @@
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Threading;
+using DownKyi.Application.Desktop;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
-using FavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
+using ApiFavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
 
 namespace DownKyi.Services;
 
@@ -11,12 +10,12 @@ internal interface IFavoritesService
 {
     FavoritesPageItem? GetFavorites(long mediaId, CancellationToken cancellationToken = default);
 
-    //void GetFavoritesMediaList(long mediaId, ObservableCollection<FavoritesMedia> result, IEventAggregator eventAggregator, CancellationToken cancellationToken);
-    //void GetFavoritesMediaList(long mediaId, int pn, int ps, ObservableCollection<FavoritesMedia> result, IEventAggregator eventAggregator, CancellationToken cancellationToken);
-    void GetFavoritesMediaList(IReadOnlyList<FavoritesMedia> medias, ObservableCollection<ViewModels.PageViewModels.FavoritesMedia> result, IEventAggregator eventAggregator,
+    IReadOnlyList<FavoritesMedia> MapFavoritesMedia(
+        IReadOnlyList<ApiFavoritesMedia> medias,
+        AppRoute parentRoute,
         CancellationToken cancellationToken);
 
-    void GetCreatedFavorites(long mid, ObservableCollection<TabHeader> tabHeaders, CancellationToken cancellationToken);
+    IReadOnlyList<TabHeader> GetCreatedFavorites(long mid, CancellationToken cancellationToken);
 
-    void GetCollectedFavorites(long mid, ObservableCollection<TabHeader> tabHeaders, CancellationToken cancellationToken);
+    IReadOnlyList<TabHeader> GetCollectedFavorites(long mid, CancellationToken cancellationToken);
 }

@@ -2,14 +2,14 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Logging;
-using DownKyi.Events;
+using DownKyi.Services.Account;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels;
 
@@ -17,6 +17,8 @@ internal class ViewLoginViewModel : ViewModelBase
 {
     public const string Tag = "PageLogin";
 
+    private readonly ILoginCoordinator _loginCoordinator;
+    private readonly ILogger<ViewLoginViewModel> _logger;
     private CancellationTokenSource? _tokenSource;
 
     #region 页面属性申明
@@ -47,8 +49,13 @@ internal class ViewLoginViewModel : ViewModelBase
 
     #endregion
 
-    public ViewLoginViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewLoginViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        ILoginCoordinator loginCoordinator,
+        ILogger<ViewLoginViewModel> logger) : base(desktopInteractions)
     {
+        _loginCoordinator = loginCoordinator ?? throw new ArgumentNullException(nameof(loginCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     private DelegateCommand? _backSpaceCommand;
@@ -62,13 +69,7 @@ internal class ViewLoginViewModel : ViewModelBase
 
         // 结束任务
         _tokenSource?.Cancel();
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = "login"
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent("login");
     }
 
     /// <summary>
@@ -79,7 +80,9 @@ internal class ViewLoginViewModel : ViewModelBase
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var loginUrl = LoginQr.GetLoginUrl();
+            var loginUrl = await _loginCoordinator
+                .RequestLoginUrlAsync(cancellationToken)
+                .ConfigureAwait(true);
             if (loginUrl == null)
             {
                 return;
@@ -93,13 +96,13 @@ internal class ViewLoginViewModel : ViewModelBase
 
             if (loginUrl.Data?.QrCodeAddress == null || loginUrl.Data?.QrcodeKey == null)
             {
-                EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("GetLoginUrlFailed"));
+                Notifications.Show(DictionaryResource.GetString("GetLoginUrlFailed"));
                 return;
             }
 
             if (!Uri.TryCreate(loginUrl.Data.QrCodeAddress, UriKind.Absolute, out var loginUri))
             {
-                EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("GetLoginUrlFailed"));
+                Notifications.Show(DictionaryResource.GetString("GetLoginUrlFailed"));
                 return;
             }
 
@@ -107,14 +110,13 @@ internal class ViewLoginViewModel : ViewModelBase
 
             await GetLoginStatusAsync(loginUrl.Data.QrcodeKey, cancellationToken).ConfigureAwait(true);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
         {
-            Console.PrintLine("Login()发生异常: {0}", e);
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("Login initialization failed.", e);
         }
     }
 
@@ -127,7 +129,9 @@ internal class ViewLoginViewModel : ViewModelBase
         while (true)
         {
             await Task.Delay(1000, cancellationToken).ConfigureAwait(true);
-            var loginStatus = LoginQr.GetLoginStatus(oauthKey);
+            var loginStatus = await _loginCoordinator
+                .GetLoginStatusAsync(oauthKey, cancellationToken)
+                .ConfigureAwait(true);
             if (loginStatus == null)
             {
                 continue;
@@ -138,8 +142,8 @@ internal class ViewLoginViewModel : ViewModelBase
                 case 86038:
                     // 二维码已失效
                     // 发送通知
-                    EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginTimeOut"));
-                    LogManager.Info(Tag, DictionaryResource.GetString("LoginTimeOut"));
+                    Notifications.Show(DictionaryResource.GetString("LoginTimeOut"));
+                    _logger.LogInformationMessage("Login QR code timed out.");
 
                     await RestartLoginAsync().ConfigureAwait(true);
                     return;
@@ -158,26 +162,27 @@ internal class ViewLoginViewModel : ViewModelBase
                     // 确认登录
 
                     // 发送通知
-                    EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginSuccessful"));
-                    LogManager.Info(Tag, DictionaryResource.GetString("LoginSuccessful"));
+                    Notifications.Show(DictionaryResource.GetString("LoginSuccessful"));
+                    _logger.LogInformationMessage("Login completed successfully.");
 
                     // 保存登录信息
                     try
                     {
                         var redirectUri = new Uri(loginStatus.Data.RedirectAddress, UriKind.Absolute);
-                        var isSucceed = LoginHelper.SaveLoginInfoCookies(redirectUri);
+                        var isSucceed = await _loginCoordinator
+                            .SaveLoginCookiesAsync(redirectUri, cancellationToken)
+                            .ConfigureAwait(true);
                         if (!isSucceed)
                         {
-                            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginFailed"));
-                            LogManager.Error(Tag, DictionaryResource.GetString("LoginFailed"));
+                            Notifications.Show(DictionaryResource.GetString("LoginFailed"));
+                            _logger.LogErrorMessage("Login cookies could not be persisted.");
                         }
                     }
                     catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
                         or InvalidOperationException or ArgumentException or Newtonsoft.Json.JsonException)
                     {
-                        Console.PrintLine("PageLogin 保存登录信息发生异常: {0}", e);
-                        LogManager.Error(e);
-                        EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("LoginFailed"));
+                        _logger.LogErrorMessage("Login cookie persistence failed.", e);
+                        Notifications.Show(DictionaryResource.GetString("LoginFailed"));
                     }
 
                     // 取消任务
@@ -188,8 +193,7 @@ internal class ViewLoginViewModel : ViewModelBase
 
             // 判断是否该结束线程，若为true，跳出while循环
             if (!cancellationToken.IsCancellationRequested) continue;
-            Console.PrintLine("停止Login线程，跳出while循环");
-            LogManager.Debug(Tag, "登录操作结束");
+            _logger.LogDebugMessage("Login polling stopped.");
             break;
         }
     }
@@ -204,9 +208,7 @@ internal class ViewLoginViewModel : ViewModelBase
             previous.Dispose();
         }
 
-        RunFireAndForget(
-            Task.Run(() => LoginAsync(replacement.Token), replacement.Token),
-            $"{Tag}.LoginAsync");
+        RunFireAndForget(LoginAsync(replacement.Token), $"{Tag}.LoginAsync", _logger);
     }
 
 
@@ -226,7 +228,7 @@ internal class ViewLoginViewModel : ViewModelBase
 
         InitStatus();
 
-        RunFireAndForget(RestartLoginAsync(), $"{Tag}.RestartLoginAsync");
+        RunFireAndForget(RestartLoginAsync(), $"{Tag}.RestartLoginAsync", _logger);
     }
 
     protected override void Dispose(bool disposing)

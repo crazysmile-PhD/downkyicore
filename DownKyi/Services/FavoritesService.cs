@@ -1,242 +1,134 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Globalization;
-using System.Linq;
 using System.Threading;
-using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Favorites;
-using DownKyi.Core.Storage;
+using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
-using DownKyi.ViewModels;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Events;
-using FavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
+using ApiFavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
 
 namespace DownKyi.Services;
 
-internal class FavoritesService : IFavoritesService
+internal sealed class FavoritesService : IFavoritesService
 {
-    /// <summary>
-    /// 获取收藏夹元数据
-    /// </summary>
-    /// <param name="mediaId"></param>
-    /// <returns></returns>
+    private readonly ISettingsStore _settingsStore;
+    private readonly IAppNavigationService _navigationService;
+
+    public FavoritesService(ISettingsStore settingsStore, IAppNavigationService navigationService)
+    {
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
+    }
+
     public FavoritesPageItem? GetFavorites(long mediaId, CancellationToken cancellationToken = default)
     {
-        var favoritesMetaInfo = FavoritesInfo.GetFavoritesInfo(mediaId, cancellationToken);
-        if (favoritesMetaInfo == null)
+        var metadata = FavoritesInfo.GetFavoritesInfo(mediaId, cancellationToken);
+        if (metadata == null)
         {
             return null;
         }
 
-        // 查询、保存封面
-        var coverUrl = favoritesMetaInfo.Cover ?? string.Empty;
-
-        // 获取用户头像
-        var upName = favoritesMetaInfo.Upper?.Name ?? string.Empty;
-
-        // 为Favorites赋值
-        var favorites = new FavoritesPageItem();
-        App.PropertyChangeAsync(() =>
+        cancellationToken.ThrowIfCancellationRequested();
+        return new FavoritesPageItem
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            favorites.CoverUrl = coverUrl;
-
-            favorites.Title = favoritesMetaInfo.Title;
-
-            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
-            var dateTime = startTime.AddSeconds(favoritesMetaInfo.Ctime);
-            favorites.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
-
-            favorites.PlayNumber = Format.FormatNumber(favoritesMetaInfo.CntInfo.Play);
-            favorites.LikeNumber = Format.FormatNumber(favoritesMetaInfo.CntInfo.ThumbUp);
-            favorites.FavoriteNumber = Format.FormatNumber(favoritesMetaInfo.CntInfo.Collect);
-            favorites.ShareNumber = Format.FormatNumber(favoritesMetaInfo.CntInfo.Share);
-            favorites.Description = favoritesMetaInfo.Intro;
-            favorites.MediaCount = favoritesMetaInfo.MediaCount;
-
-            favorites.UpName = upName;
-            favorites.UpHeader = favoritesMetaInfo.Upper?.Face ?? string.Empty;
-            favorites.UpperMid = favoritesMetaInfo.Upper?.Mid ?? -1;
-        });
-
-        return favorites;
+            CoverUrl = metadata.Cover ?? string.Empty,
+            Title = metadata.Title,
+            CreateTime = DateTimeOffset.FromUnixTimeSeconds(metadata.Ctime)
+                .ToLocalTime()
+                .ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture),
+            PlayNumber = Format.FormatNumber(metadata.CntInfo.Play),
+            LikeNumber = Format.FormatNumber(metadata.CntInfo.ThumbUp),
+            FavoriteNumber = Format.FormatNumber(metadata.CntInfo.Collect),
+            ShareNumber = Format.FormatNumber(metadata.CntInfo.Share),
+            Description = metadata.Intro,
+            MediaCount = metadata.MediaCount,
+            UpName = metadata.Upper?.Name ?? string.Empty,
+            UpHeader = metadata.Upper?.Face ?? string.Empty,
+            UpperMid = metadata.Upper?.Mid ?? -1
+        };
     }
 
-    ///// <summary>
-    ///// 获取收藏夹所有内容明细列表
-    ///// </summary>
-    ///// <param name="mediaId"></param>
-    ///// <param name="result"></param>
-    ///// <param name="eventAggregator"></param>
-    //public void GetFavoritesMediaList(long mediaId, ObservableCollection<FavoritesMedia> result, IEventAggregator eventAggregator, CancellationToken cancellationToken)
-    //{
-    //    List<Core.BiliApi.Favorites.Models.FavoritesMedia> medias = FavoritesResource.GetAllFavoritesMedia(mediaId);
-    //    if (medias.Count == 0) { return; }
-
-    //    GetFavoritesMediaList(medias, result, eventAggregator, cancellationToken);
-    //}
-
-    ///// <summary>
-    ///// 获取收藏夹指定页的内容明细列表
-    ///// </summary>
-    ///// <param name="mediaId"></param>
-    ///// <param name="pn"></param>
-    ///// <param name="ps"></param>
-    ///// <param name="result"></param>
-    ///// <param name="eventAggregator"></param>
-    //public void GetFavoritesMediaList(long mediaId, int pn, int ps, ObservableCollection<FavoritesMedia> result, IEventAggregator eventAggregator, CancellationToken cancellationToken)
-    //{
-    //    List<Core.BiliApi.Favorites.Models.FavoritesMedia> medias = FavoritesResource.GetFavoritesMedia(mediaId, pn, ps);
-    //    if (medias.Count == 0) { return; }
-
-    //    GetFavoritesMediaList(medias, result, eventAggregator, cancellationToken);
-    //}
-
-    /// <summary>
-    /// 获取收藏夹内容明细列表
-    /// </summary>
-    /// <param name="medias"></param>
-    /// <param name="result"></param>
-    /// <param name="eventAggregator"></param>
-    /// <param name="cancellationToken"></param>
-    public void GetFavoritesMediaList(IReadOnlyList<FavoritesMedia> medias, ObservableCollection<ViewModels.PageViewModels.FavoritesMedia> result, IEventAggregator eventAggregator,
+    public IReadOnlyList<FavoritesMedia> MapFavoritesMedia(
+        IReadOnlyList<ApiFavoritesMedia> medias,
+        AppRoute parentRoute,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(medias);
 
         var order = 0;
-        var mappedMedias = new List<ViewModels.PageViewModels.FavoritesMedia>();
+        var result = new List<FavoritesMedia>(medias.Count);
         foreach (var media in medias)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (media.Title == "已失效视频")
+            if (string.Equals(media.Title, "已失效视频", StringComparison.Ordinal))
             {
                 continue;
             }
 
             order++;
-
-            // 查询、保存封面
-            var coverUrl = media.Cover;
-
-            // 当地时区
-            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); ;
-
-            // 创建时间
-            var dateCTime = startTime.AddSeconds(media.Ctime);
-            var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
-
-            // 收藏时间
-            var dateFavTime = startTime.AddSeconds(media.FavTime);
-            var favTime = dateFavTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
-
-            mappedMedias.Add(new ViewModels.PageViewModels.FavoritesMedia(eventAggregator)
+            result.Add(new FavoritesMedia(_navigationService, parentRoute, _settingsStore)
             {
                 Avid = media.Id,
                 Bvid = media.Bvid,
                 Order = order,
-                Cover = coverUrl,
+                Cover = media.Cover,
                 Title = media.Title,
                 PlayNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Play) : "0",
                 DanmakuNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Danmaku) : "0",
                 FavoriteNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Collect) : "0",
                 Duration = Format.FormatDuration2(media.Duration),
-                UpName = media.Upper != null ? media.Upper.Name : string.Empty,
-                UpMid = media.Upper != null ? media.Upper.Mid : -1,
-                CreateTime = ctime,
-                FavTime = favTime
+                UpName = media.Upper?.Name ?? string.Empty,
+                UpMid = media.Upper?.Mid ?? -1,
+                CreateTime = FormatDate(media.Ctime),
+                FavTime = FormatDate(media.FavTime)
             });
         }
 
-        App.PropertyChangeAsync(() =>
-        {
-            var existingAvids = result.Select(item => item.Avid).ToHashSet();
-            var newItems = mappedMedias.Where(item => existingAvids.Add(item.Avid)).ToList();
-            if (result is RangeObservableCollection<ViewModels.PageViewModels.FavoritesMedia> range)
-            {
-                range.AddRange(newItems);
-                return;
-            }
-
-            foreach (var item in newItems)
-            {
-                result.Add(item);
-            }
-        });
+        return result;
     }
 
-    /// <summary>
-    /// 更新我创建的收藏夹列表
-    /// </summary>
-    /// <param name="mid"></param>
-    /// <param name="tabHeaders"></param>
-    /// <param name="cancellationToken"></param>
-    public void GetCreatedFavorites(long mid, ObservableCollection<TabHeader> tabHeaders, CancellationToken cancellationToken)
+    public IReadOnlyList<TabHeader> GetCreatedFavorites(long mid, CancellationToken cancellationToken)
     {
         var favorites = FavoritesInfo.GetAllCreatedFavorites(mid, cancellationToken);
-        if (favorites.Count == 0)
-        {
-            return;
-        }
-
-        var headers = new List<TabHeader>();
+        var result = new List<TabHeader>(favorites.Count);
         foreach (var item in favorites)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString(CultureInfo.CurrentCulture) });
+            result.Add(new TabHeader
+            {
+                Id = item.Id,
+                Title = item.Title,
+                SubTitle = item.MediaCount.ToString(CultureInfo.CurrentCulture)
+            });
         }
 
-        App.PropertyChangeAsync(() =>
-        {
-            if (tabHeaders is RangeObservableCollection<TabHeader> range)
-            {
-                range.AddRange(headers);
-                return;
-            }
-
-            foreach (var header in headers)
-            {
-                tabHeaders.Add(header);
-            }
-        });
+        return result;
     }
 
-    /// <summary>
-    /// 更新我收藏的收藏夹列表
-    /// </summary>
-    /// <param name="mid"></param>
-    /// <param name="tabHeaders"></param>
-    /// <param name="cancellationToken"></param>
-    public void GetCollectedFavorites(long mid, ObservableCollection<TabHeader> tabHeaders, CancellationToken cancellationToken)
+    public IReadOnlyList<TabHeader> GetCollectedFavorites(long mid, CancellationToken cancellationToken)
     {
         var favorites = FavoritesInfo.GetAllCollectedFavorites(mid, cancellationToken);
-        if (favorites.Count == 0)
-        {
-            return;
-        }
-
-        var headers = new List<TabHeader>();
+        var result = new List<TabHeader>(favorites.Count);
         foreach (var item in favorites)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            headers.Add(new TabHeader { Id = item.Id, Title = item.Title, SubTitle = item.MediaCount.ToString(CultureInfo.CurrentCulture) });
+            result.Add(new TabHeader
+            {
+                Id = item.Id,
+                Title = item.Title,
+                SubTitle = item.MediaCount.ToString(CultureInfo.CurrentCulture)
+            });
         }
 
-        App.PropertyChangeAsync(() =>
-        {
-            if (tabHeaders is RangeObservableCollection<TabHeader> range)
-            {
-                range.AddRange(headers);
-                return;
-            }
+        return result;
+    }
 
-            foreach (var header in headers)
-            {
-                tabHeaders.Add(header);
-            }
-        });
+    private static string FormatDate(long timestamp)
+    {
+        return DateTimeOffset.FromUnixTimeSeconds(timestamp)
+            .ToLocalTime()
+            .ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
     }
 }

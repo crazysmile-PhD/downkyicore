@@ -1,9 +1,9 @@
 # DownKyi Core Live Refactoring Plan
 
 Status: active
-Last updated: 2026-07-13
-Current group: PR 16-24
-Next branch: `refactor/pr-16-24-media-ui-lifecycle`
+Last updated: 2026-07-16
+Current group: PR 25-29
+Next branch: `refactor/pr-25-29-remove-legacy`
 
 This file contains only unfinished work. Completed items are removed in the same PR that finishes them; newly discovered debt is added immediately with an owning PR or phase.
 
@@ -18,29 +18,14 @@ This file contains only unfinished work. Completed items are removed in the same
 - A group may contain multiple ordered commits, but it must not be split into smaller public PRs or combined with another numbered range.
 - The next group starts only after the previous group has completed its full scope and passed build, tests, data compatibility checks, documentation updates, and `git diff --check`.
 
-## Active Next: PR 16-24 - Media Use Cases, ViewModels, And App Lifecycle
-
-Branch: `refactor/pr-16-24-media-ui-lifecycle`
-
-- Move BV/AV/bangumi/course/collection resolution, parsing, selection, plan building, duplicate policy, and queueing into Application use cases.
-- Keep directory-picker cancellation as a normal no-op result with no database write or background task.
-- Replace ViewModel `Task.Run` calls with cancellable use cases; 47 active call sites remain, excluding comments.
-- Introduce CommunityToolkit.Mvvm and keep ViewModels limited to binding state, commands, navigation, and result projection.
-- Fix collection and video-detail item toggle selection, reliable multi-select, and clear-selection beside select-all.
-- Fix user-space back navigation, startup URL input being overwritten, and delayed reopen caused by lingering shutdown work.
-- Replace conflicting loading booleans with one UI state model.
-- Move clipboard, file picker, notifications, dialogs, and navigation behind Desktop interfaces.
-- Reduce `App.axaml.cs` to XAML, Host, shell, start, and stop; remove static download collections and service locator calls.
-- Replace `OnExitAsync().Wait(15s)` with bounded asynchronous Host shutdown and explicit settings/log flush.
-
-## PR 25-29 - Remove Prism And Legacy Architecture
+## Active Next: PR 25-29 - Remove Prism And Legacy Architecture
 
 Branch: `refactor/pr-25-29-remove-legacy`
 
 - Replace Prism/DryIoc with Microsoft DI, a thin typed router, dialog coordinator, and explicit event streams.
 - Delete `LegacyDesktopComposition`, `MainWindow.AttachLegacyRegion`, and the deferred Prism region attachment after typed navigation owns the shell.
 - Remove string navigation tags, EventAggregator, Prism commands, region navigation, and global container lookup.
-- Delete old download inheritance, `DownloadStorageService`, custom aria2 duplication, SettingsManager singleton, static App collections, console wrapper, dead utilities, old comments, and obsolete packages immediately after new owners pass migration tests.
+- Delete old download inheritance, `DownloadStorageService`, custom aria2 duplication, SettingsManager singleton, static App collections, dead utilities, old comments, and obsolete packages immediately after new owners pass migration tests.
 - Add CI rules that reject new `App.Current`, `Container.Resolve`, `Thread.Sleep`, synchronous async waits, empty catches, `new HttpClient`, mutable static collections, and ViewModel `Task.Run` in the new architecture.
 
 ## PR 30-32 - Profiling, UI, And Release Hardening

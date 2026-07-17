@@ -1,8 +1,8 @@
 using System;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Threading;
+using DownKyi.Application.Lifetime;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
 using DownKyi.ViewModels;
@@ -13,18 +13,31 @@ namespace DownKyi.Views;
 internal partial class MainWindow : Window
 {
     private const string ContentRegionName = "ContentRegion";
+    private readonly IApplicationLifecycle _applicationLifecycle;
+    private readonly ISettingsStore _settingsStore;
     private WindowSettings _windowSettings;
+    private bool _closeConfirmed;
+    private bool _closeInProgress;
 
-    public MainWindow()
-    {
-        InitializeComponent();
-        _windowSettings = SettingsManager.Instance.GetWindowSettings().Clone();
-        ApplyWindowSettings();
-    }
-
-    public MainWindow(MainWindowViewModel viewModel) : this()
+    public MainWindow(
+        MainWindowViewModel viewModel,
+        ISettingsStore settingsStore,
+        IApplicationLifecycle applicationLifecycle)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _applicationLifecycle = applicationLifecycle
+            ?? throw new ArgumentNullException(nameof(applicationLifecycle));
+        InitializeComponent();
+        var window = _settingsStore.Current.Window;
+        _windowSettings = new WindowSettings
+        {
+            Width = window.Width,
+            Height = window.Height,
+            X = window.X,
+            Y = window.Y
+        };
+        ApplyWindowSettings();
         DataContext = viewModel;
     }
 
@@ -49,8 +62,31 @@ internal partial class MainWindow : Window
 
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        base.OnClosing(e);
-        if (Design.IsDesignMode) return;
+        if (Design.IsDesignMode || _closeConfirmed)
+        {
+            SaveWindowSettings();
+            base.OnClosing(e);
+            return;
+        }
+
+        e.Cancel = true;
+        if (_closeInProgress)
+        {
+            return;
+        }
+
+        _closeInProgress = true;
+        SaveWindowSettings();
+        _ = CompleteCloseAsync();
+    }
+
+    private void SaveWindowSettings()
+    {
+        if (Design.IsDesignMode)
+        {
+            return;
+        }
+
         if (WindowState == WindowState.Normal)
         {
             _windowSettings.Width = Width;
@@ -59,24 +95,21 @@ internal partial class MainWindow : Window
             _windowSettings.Y = Position.Y;
         }
 
-        SettingsManager.Instance.SettingWindowSettings(_windowSettings);
-
-        if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        _settingsStore.Update(settings => settings with
         {
-            Dispatcher.UIThread.Post(() => desktop.Shutdown(), DispatcherPriority.Background);
-        }
+            Window = new WindowApplicationSettings(
+                _windowSettings.Width,
+                _windowSettings.Height,
+                _windowSettings.X,
+                _windowSettings.Y)
+        });
     }
 
-    // protected override void OnClosed(EventArgs e)
-    // {
-    //     base.OnClosed(e);
-    //
-    //     // 获取当前窗口的大小和位置
-    //     _windowSettings.Width = Width;
-    //     _windowSettings.Height = Height;
-    //     _windowSettings.X = Position.X;
-    //     _windowSettings.Y = Position.Y;
-    //
-    //     SettingsManager.Instance.SettingWindowSettings(_windowSettings);
-    // }
+    private async Task CompleteCloseAsync()
+    {
+        await _applicationLifecycle.RequestShutdownAsync().ConfigureAwait(true);
+
+        _closeConfirmed = true;
+        Close();
+    }
 }

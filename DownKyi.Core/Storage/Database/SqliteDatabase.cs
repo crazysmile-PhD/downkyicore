@@ -1,6 +1,4 @@
-using DownKyi.Core.Logging;
 using Microsoft.Data.Sqlite;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.Storage.Database;
 
@@ -56,27 +54,18 @@ public sealed class SqliteDatabase : IDisposable
         ArgumentNullException.ThrowIfNull(configureCommand);
         ArgumentNullException.ThrowIfNull(readAction);
 
-        try
+        using var connection = CreateConnection();
+        using var command = connection.CreateCommand();
+
+        configureCommand(command);
+        if (string.IsNullOrWhiteSpace(command.CommandText))
         {
-            using var connection = CreateConnection();
-            using var command = connection.CreateCommand();
-
-            configureCommand(command);
-            if (string.IsNullOrWhiteSpace(command.CommandText))
-            {
-                throw new InvalidOperationException("SQLite query command text must be configured.");
-            }
-
-            using var reader = command.ExecuteReader();
-
-            readAction(reader);
+            throw new InvalidOperationException("SQLite query command text must be configured.");
         }
-        catch (SqliteException ex)
-        {
-            Console.PrintLine("ExecuteQuery() 发生异常: {0}", ex);
-            LogManager.Error("SqliteDatabase.ExecuteQuery()", ex);
-            throw;
-        }
+
+        using var reader = command.ExecuteReader();
+
+        readAction(reader);
     }
 
     /// <summary>

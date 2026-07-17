@@ -147,7 +147,8 @@
                                         Grid.Column="0"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Center"
-                                        Command="{Binding StartOrPauseCommand}"
+                                        Command="{Binding ElementName=DownloadingList,Path=((vmdm:ViewDownloadingViewModel)DataContext).ToggleDownloadingCommand}"
+                                        CommandParameter="{Binding}"
                                         Theme="{StaticResource ImageBtnStyle}"
                                         ToolTip.Tip="{Binding OperationTip}">
                                         <ContentControl Width="20" Height="20">

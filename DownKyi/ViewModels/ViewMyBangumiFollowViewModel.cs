@@ -1,35 +1,38 @@
 using System;
 using System.Collections;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.BiliApi.VideoStream;
-using DownKyi.Core.Storage;
+using DownKyi.Core.Logging;
 using DownKyi.CustomControl;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Services;
 using DownKyi.Services.Download;
+using DownKyi.Services.Media;
+using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels;
 
 internal class ViewMyBangumiFollowViewModel : ViewModelBase
 {
     public const string Tag = "PageMyBangumiFollow";
-
-    private CancellationTokenSource? _tokenSource;
+    private readonly IContentDownloadCoordinator _downloadCoordinator;
+    private readonly ILogger<ViewMyBangumiFollowViewModel> _logger;
+    private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
+    private CancellationTokenSource? _loadCancellation;
+    private CancellationTokenSource? _downloadCancellation;
 
     private long _mid = -1;
 
@@ -62,9 +65,9 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
         set => SetProperty(ref _downloadManage, value);
     }
 
-    private ObservableCollection<TabHeader> _tabHeaders = new();
+    private RangeObservableCollection<TabHeader> _tabHeaders = new();
 
-    public ObservableCollection<TabHeader> TabHeaders
+    public RangeObservableCollection<TabHeader> TabHeaders
     {
         get => _tabHeaders;
         private set => SetProperty(ref _tabHeaders, value);
@@ -99,12 +102,30 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     public CustomPagerViewModel Pager
     {
         get => _pager;
-        set => SetProperty(ref _pager, value);
+        private set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (ReferenceEquals(_pager, value))
+            {
+                return;
+            }
+
+            if (_pager != null)
+            {
+                _pager.CurrentChanging -= OnCurrentChangedPager;
+                _pager.CountChanged -= OnCountChangedPager;
+            }
+
+            _pager = value;
+            RaisePropertyChanged(nameof(Pager));
+            _pager.CurrentChanging += OnCurrentChangedPager;
+            _pager.CountChanged += OnCountChangedPager;
+        }
     }
 
-    private ObservableCollection<BangumiFollowMedia> _medias = new();
+    private RangeObservableCollection<BangumiFollowMedia> _medias = new();
 
-    public ObservableCollection<BangumiFollowMedia> Medias
+    public RangeObservableCollection<BangumiFollowMedia> Medias
     {
         get => _medias;
         private set => SetProperty(ref _medias, value);
@@ -144,10 +165,15 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
 
     #endregion
 
-    public ViewMyBangumiFollowViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(
-        eventAggregator)
+    public ViewMyBangumiFollowViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        IContentDownloadCoordinator downloadCoordinator,
+        IUserSpacePageCoordinator userSpaceCoordinator,
+        ILogger<ViewMyBangumiFollowViewModel> logger) : base(desktopInteractions)
     {
-        DialogService = dialogService;
+        _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
+        _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
 
@@ -165,13 +191,13 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
         DownloadManage.Width = 24;
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-        TabHeaders = new ObservableCollection<TabHeader>
+        TabHeaders = new RangeObservableCollection<TabHeader>
         {
             new() { Id = (long)BangumiType.ANIME, Title = DictionaryResource.GetString("FollowAnime") },
             new() { Id = (long)BangumiType.EPISODE, Title = DictionaryResource.GetString("FollowMovie") }
         };
 
-        Medias = new ObservableCollection<BangumiFollowMedia>();
+        Medias = new RangeObservableCollection<BangumiFollowMedia>();
 
         #endregion
     }
@@ -193,15 +219,9 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
 
         // 结束任务
-        _tokenSource?.Cancel();
+        CancelOperations();
 
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent();
     }
 
     // 前往下载管理页面
@@ -214,13 +234,9 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     /// </summary>
     private void ExecuteDownloadManagerCommand()
     {
-        var parameter = new NavigationParam
-        {
-            ViewName = ViewDownloadManagerViewModel.Tag,
-            ParentViewName = Tag,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.DownloadManager,
+            AppRoute.MyBangumiFollow));
     }
 
     // 顶部tab点击事件
@@ -244,8 +260,6 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
 
         // 页面选择
         Pager = new CustomPagerViewModel(1, 1);
-        Pager.CurrentChanging += OnCurrentChangedPager;
-        Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
     }
 
@@ -315,7 +329,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     // 添加选中项到下载列表事件
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
 
     /// <summary>
     /// 添加选中项到下载列表事件
@@ -323,7 +337,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     // 添加所有视频到下载列表事件
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
 
     /// <summary>
     /// 添加所有视频到下载列表事件
@@ -336,49 +350,38 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     /// <param name="isOnlySelected"></param>
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        // 订阅里只有BANGUMI类型
-        var addToDownloadService = new AddToDownloadService(PlayStreamType.Bangumi);
-
-        // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-
-        // 视频计数
-        var i = 0;
-        await Task.Run(async () =>
+        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var items = Medias
+            .Select(media => new ContentDownloadItem(
+                $"{ParseEntrance.BangumiMediaUrl}md{media.MediaId}",
+                DownloadInfoKind.Bangumi,
+                media.IsSelected))
+            .ToArray();
+        try
         {
-            // 为了避免执行其他操作时，
-            // Medias变化导致的异常
-            var list = Medias.ToList();
-
-            // 添加到下载
-            foreach (var media in list)
+            var addedCount = await _downloadCoordinator.AddAsync(
+                items,
+                isOnlySelected,
+                cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (addedCount == null)
             {
-                // 只下载选中项，跳过未选中项
-                if (isOnlySelected && !media.IsSelected)
-                {
-                    continue;
-                }
-
-                // 开启服务
-                var service = new BangumiInfoService($"{ParseEntrance.BangumiMediaUrl}md{media.MediaId}");
-
-                addToDownloadService.SetVideoInfoService(service);
-                addToDownloadService.GetVideo();
-                addToDownloadService.ParseVideo(service);
-                // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
+                return;
             }
-        }).ConfigureAwait(true);
 
-        if (directory == null)
-        {
-            return;
+            Notifications.Show(addedCount <= 0
+                ? DictionaryResource.GetString("TipAddDownloadingZero")
+                : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
         }
-
-        // 通知用户添加到下载列表的结果
-        EventAggregator.GetEvent<MessageEvent>().Publish(i <= 0
-            ? DictionaryResource.GetString("TipAddDownloadingZero")
-            : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+        {
+            _logger.LogErrorMessage("Bangumi download preparation failed.", e);
+            Notifications.Show(e.Message);
+        }
     }
 
     private void OnCountChangedPager(object? sender, EventArgs e)
@@ -393,7 +396,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
             return;
         }
 
-        RunFireAndForget(UpdateBangumiMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateBangumiMediaListAsync));
+        RunFireAndForget(UpdateBangumiMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateBangumiMediaListAsync), _logger);
     }
 
     private async Task UpdateBangumiMediaListAsync(int current)
@@ -410,88 +413,42 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
 
         var tab = TabHeaders[SelectTabId];
         var type = (BangumiType)tab.Id;
-        var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
-
-        await Task.Run(() =>
+        var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
+        try
         {
-            var bangumiFollows = Core.BiliApi.Users.UserSpace.GetBangumiFollow(_mid, type, current, VideoNumberInPage);
-            if (bangumiFollows?.List == null || bangumiFollows.List.Count == 0)
+            var page = await _userSpaceCoordinator.LoadBangumiFollowPageAsync(
+                _mid,
+                type,
+                current,
+                VideoNumberInPage,
+                cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            LoadingVisibility = false;
+            Pager.Count = page.PageCount;
+            if (page.Medias.Count == 0)
             {
-                LoadingVisibility = false;
                 NoDataVisibility = true;
                 return;
             }
 
-            // 更新总页码
-            Pager.Count = (int)Math.Ceiling((double)bangumiFollows.Total / VideoNumberInPage);
-            // 更新内容
             ContentVisibility = true;
-
-            foreach (var bangumiFollow in bangumiFollows.List)
-            {
-                // 查询、保存封面
-                var coverUrl = bangumiFollow.Cover;
-                if (!coverUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                {
-                    coverUrl = $"https:{bangumiFollow.Cover}";
-                }
-
-                // 地区
-                var area = string.Empty;
-                if (bangumiFollow.Areas != null && bangumiFollow.Areas.Count > 0)
-                {
-                    area = bangumiFollow.Areas[0].Name;
-                }
-
-                // 视频更新进度
-                var indexShow = string.Empty;
-                if (bangumiFollow.NewEp != null)
-                {
-                    indexShow = bangumiFollow.NewEp.IndexShow;
-                }
-
-                // 观看进度
-                string progress;
-                if (string.IsNullOrEmpty(bangumiFollow.Progress))
-                {
-                    progress = DictionaryResource.GetString("BangumiNotWatched");
-                }
-                else
-                {
-                    progress = bangumiFollow.Progress;
-                }
-
-                App.PropertyChangeAsync(() =>
-                {
-                    var media = new BangumiFollowMedia(EventAggregator)
-                    {
-                        MediaId = bangumiFollow.MediaId,
-                        SeasonId = bangumiFollow.SeasonId,
-                        Title = bangumiFollow.Title,
-                        SeasonTypeName = bangumiFollow.SeasonTypeName,
-                        Area = area,
-                        Badge = bangumiFollow.Badge,
-                        Cover = coverUrl ?? "avares://DownKyi/Resources/video-placeholder.png",
-                        Evaluate = bangumiFollow.Evaluate,
-                        IndexShow = indexShow,
-                        Progress = progress
-                    };
-
-                    Medias.Add(media);
-
-                    LoadingVisibility = false;
-                    NoDataVisibility = false;
-                });
-
-                // 判断是否该结束线程，若为true，跳出循环
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-            }
-        }, cancellationToken).ConfigureAwait(true);
-
-        IsEnabled = true;
+            Medias.AddRange(page.Medias);
+            NoDataVisibility = false;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
+        {
+            LoadingVisibility = false;
+            NoDataVisibility = true;
+            _logger.LogErrorMessage("Bangumi page loading failed.", e);
+        }
+        finally
+        {
+            IsEnabled = true;
+        }
     }
 
     /// <summary>
@@ -539,18 +496,33 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
 
         // 页面选择
         Pager = new CustomPagerViewModel(1, 1);
-        Pager.CurrentChanging += OnCurrentChangedPager;
-        Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
+    }
+
+    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    {
+        CancelOperations();
+        IsEnabled = true;
+        LoadingVisibility = false;
+        base.OnNavigatedFrom(navigationContext);
+    }
+
+    private void CancelOperations()
+    {
+        CancelAndDispose(ref _loadCancellation);
+        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing && !IsDisposed)
         {
-            _tokenSource?.Cancel();
-            _tokenSource?.Dispose();
-            _tokenSource = null;
+            CancelOperations();
+            if (_pager != null)
+            {
+                _pager.CurrentChanging -= OnCurrentChangedPager;
+                _pager.CountChanged -= OnCountChangedPager;
+            }
         }
 
         base.Dispose(disposing);

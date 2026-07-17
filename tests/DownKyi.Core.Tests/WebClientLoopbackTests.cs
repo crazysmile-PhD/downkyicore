@@ -7,10 +7,7 @@ namespace DownKyi.Core.Tests;
 
 public sealed class WebClientLoopbackTests : IDisposable
 {
-    public WebClientLoopbackTests()
-    {
-        BiliWebClient.SetBuvidForTests();
-    }
+    private readonly WebClientTestContext _context = new();
 
     [Theory]
     [InlineData(HttpStatusCode.Forbidden)]
@@ -149,6 +146,6 @@ public sealed class WebClientLoopbackTests : IDisposable
 
     public void Dispose()
     {
-        BiliWebClient.ClearTestOverrides();
+        _context.Dispose();
     }
 }

@@ -1,9 +1,7 @@
 using Avalonia.Media.Imaging;
 using DownKyi.Core.BiliApi.Login.Models;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Utils;
 using Newtonsoft.Json;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.Login;
 
@@ -52,16 +50,12 @@ public static class LoginQr
                 ? GetLoginQrCode(loginUri)
                 : null;
         }
-        catch (ArgumentException e)
+        catch (ArgumentException)
         {
-            Console.PrintLine("GetLoginQrCode()发生异常: {0}", e);
-            LogManager.Error("LoginQR", e);
             return null;
         }
-        catch (InvalidOperationException e)
+        catch (InvalidOperationException)
         {
-            Console.PrintLine("GetLoginQrCode()状态无效: {0}", e);
-            LogManager.Error("LoginQR", e);
             return null;
         }
     }

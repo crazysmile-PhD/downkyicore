@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Logging;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -49,7 +50,7 @@ internal static class ImageBrushLoader
                 var height = GetHeight(imageBrush);
                 if (width > 0 && height > 0)
                 {
-                    var scale = await Dispatcher.UIThread.InvokeAsync(() => App.Current.MainWindow.DesktopScaling);
+                    var scale = await Dispatcher.UIThread.InvokeAsync(GetDesktopScaling);
                     var actualWidth = Convert.ToInt32(width * scale);
                     var actualHeight = Convert.ToInt32(height * scale);
                     bitmap = (await AsyncImageLoader.ProvideImageAsync(newValue).ConfigureAwait(true))?.CreateScaledBitmap(new PixelSize(actualWidth, actualHeight));
@@ -130,5 +131,13 @@ internal static class ImageBrushLoader
     {
         ArgumentNullException.ThrowIfNull(element);
         element.SetValue(HeightProperty, value);
+    }
+
+    private static double GetDesktopScaling()
+    {
+        return Avalonia.Application.Current?.ApplicationLifetime
+            is IClassicDesktopStyleApplicationLifetime { MainWindow: { } mainWindow }
+            ? mainWindow.DesktopScaling
+            : 1d;
     }
 }

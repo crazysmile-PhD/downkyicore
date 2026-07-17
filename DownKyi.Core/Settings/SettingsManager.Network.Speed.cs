@@ -2,10 +2,10 @@ namespace DownKyi.Core.Settings;
 
 public partial class SettingsManager
 {
-    public const int HighSpeedBuiltInSplit = 16;
-    public const int HighSpeedAriaSplit = 16;
-    public const int HighSpeedAriaMaxConnectionPerServer = 16;
-    public const int HighSpeedAriaMinSplitSize = 1;
+    public const int HighSpeedBuiltInSplit = ApplicationSettingsDefaults.HighSpeedBuiltInSplit;
+    public const int HighSpeedAriaSplit = ApplicationSettingsDefaults.HighSpeedAriaSplit;
+    public const int HighSpeedAriaMaxConnectionPerServer = ApplicationSettingsDefaults.HighSpeedAriaMaxConnectionPerServer;
+    public const int HighSpeedAriaMinSplitSize = ApplicationSettingsDefaults.HighSpeedAriaMinSplitSize;
 
     private const AllowStatus HighSpeedDownloadMode = AllowStatus.No;
     private const int AriaMaxConnectionPerServer = 8;

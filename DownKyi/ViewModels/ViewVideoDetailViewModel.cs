@@ -1,866 +1,393 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using Avalonia.Controls;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
-using DownKyi.Core.BiliApi.BiliUtils;
-using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.CustomAction;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Services;
-using DownKyi.Services.Download;
 using DownKyi.Services.Video;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.PageViewModels;
+using DownKyi.ViewModels.UiState;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Dialogs;
-using Prism.Events;
 using Prism.Navigation.Regions;
-using Console = DownKyi.Core.Utils.Debugging.Console;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels;
 
-internal class ViewVideoDetailViewModel : ViewModelBase
+internal sealed class ViewVideoDetailViewModel : ViewModelBase
 {
     public const string Tag = "PageVideoDetail";
 
-    // 保存输入字符串，避免被用户修改
-    private string _input = string.Empty;
+    private readonly IClipboardService _clipboardService;
+    private readonly IVideoDetailDownloadCoordinator _downloadCoordinator;
+    private readonly ILogger<ViewVideoDetailViewModel> _logger;
+    private readonly ISettingsStore _settingsStore;
+    private readonly IVideoDetailWorkflowCoordinator _workflow;
 
-    private readonly VideoParseCoordinator _parseCoordinator = new();
-    private CancellationTokenSource? _operationCancellation;
-
-    #region 页面属性申明
-
-    private string? _inputText;
-
-    public string? InputText
+    public ViewVideoDetailViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        IClipboardService clipboardService,
+        ISettingsStore settingsStore,
+        IVideoDetailWorkflowCoordinator workflow,
+        IVideoDetailDownloadCoordinator downloadCoordinator,
+        ILogger<ViewVideoDetailViewModel> logger)
+        : base(desktopInteractions)
     {
-        get => _inputText;
-        set => SetProperty(ref _inputText, value);
+        _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
+        _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        UiState.DownloadManage = CreateDownloadManageIcon();
+        BackSpaceCommand = new DelegateCommand(ExecuteBackSpace);
+        DownloadManagerCommand = new DelegateCommand(ExecuteDownloadManagerCommand);
+        InputCommand = new DownKyiAsyncDelegateCommand(ExecuteInputCommandAsync, _logger, () => !UiState.IsBusy);
+        InputSearchCommand = new DelegateCommand(() => _workflow.ApplySearch(UiState.InputSearchText));
+        CopyCoverUrlCommand = new DownKyiAsyncDelegateCommand(ExecuteCopyCoverUrlCommandAsync, _logger);
+        UpperCommand = new DelegateCommand(ExecuteUpperCommand);
+        SelectAllCommand = new DelegateCommand(() => SetAllSelected(UiState.IsSelectAll));
+        ClearSelectionCommand = new DelegateCommand(() => SetAllSelected(isSelected: false));
+        ParseCommand = new DownKyiAsyncDelegateCommand<object>(ExecuteParseCommandAsync, _logger, _ => !UiState.IsBusy);
+        ParseAllVideoCommand = new DownKyiAsyncDelegateCommand(ExecuteParseAllVideoCommandAsync, _logger, () => !UiState.IsBusy);
+        AddToDownloadCommand = new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger, () => !UiState.IsBusy);
     }
 
-    private string _inputSearchText = string.Empty;
+    public VideoDetailUiState UiState { get; } = new();
 
-    public string InputSearchText
-    {
-        get => _inputSearchText;
-        set => SetProperty(ref _inputSearchText, value);
-    }
+    public RangeObservableCollection<VideoSection> VideoSections { get; } = new();
 
-    private bool _loading;
+    public DelegateCommand BackSpaceCommand { get; }
+    public DelegateCommand DownloadManagerCommand { get; }
+    public ICommand InputCommand { get; }
+    public ICommand InputSearchCommand { get; }
+    public ICommand CopyCoverUrlCommand { get; }
+    public DelegateCommand UpperCommand { get; }
+    public DelegateCommand SelectAllCommand { get; }
+    public DelegateCommand ClearSelectionCommand { get; }
+    public ICommand ParseCommand { get; }
+    public ICommand ParseAllVideoCommand { get; }
+    public ICommand AddToDownloadCommand { get; }
 
-    public bool Loading
-    {
-        get => _loading;
-        set => SetProperty(ref _loading, value);
-    }
-
-
-    private bool _loadingVisibility;
-
-    public bool LoadingVisibility
-    {
-        get => _loadingVisibility;
-        set => SetProperty(ref _loadingVisibility, value);
-    }
-
-    private VectorImage _downloadManage = ButtonIcon.Instance().DownloadManage;
-
-    public VectorImage DownloadManage
-    {
-        get => _downloadManage;
-        set => SetProperty(ref _downloadManage, value);
-    }
-
-    private VideoInfoView? _videoInfoView;
-
-    public VideoInfoView? VideoInfoView
-    {
-        get => _videoInfoView;
-        set => SetProperty(ref _videoInfoView, value);
-    }
-
-    private RangeObservableCollection<VideoSection> _videoSections = new();
-
-    public RangeObservableCollection<VideoSection> VideoSections
-    {
-        get => _videoSections;
-        private set => SetProperty(ref _videoSections, value);
-    }
-
-    public RangeObservableCollection<VideoSection> CaCheVideoSections { get; private set; }
-
-    private bool _isSelectAll;
-
-    public bool IsSelectAll
-    {
-        get => _isSelectAll;
-        set => SetProperty(ref _isSelectAll, value);
-    }
-
-    private bool _contentVisibility;
-
-    public bool ContentVisibility
-    {
-        get => _contentVisibility;
-        set => SetProperty(ref _contentVisibility, value);
-    }
-
-    private bool _noDataVisibility;
-
-    public bool NoDataVisibility
-    {
-        get => _noDataVisibility;
-        set => SetProperty(ref _noDataVisibility, value);
-    }
-
-
-    public ResetGridSplitterBehavior ResetGridBehavior { get; set; } = new();
-
-    #endregion
-
-    public ViewVideoDetailViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(eventAggregator, dialogService)
-    {
-        // 初始化loading
-        Loading = true;
-        LoadingVisibility = false;
-
-        // 下载管理按钮
-        DownloadManage = ButtonIcon.Instance().DownloadManage;
-        DownloadManage.Height = 24;
-        DownloadManage.Width = 24;
-        DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
-
-        VideoSections = new RangeObservableCollection<VideoSection>();
-        CaCheVideoSections = new RangeObservableCollection<VideoSection>();
-    }
-
-    private CancellationToken ResetOperationCancellation()
-    {
-        _operationCancellation?.Cancel();
-        _operationCancellation?.Dispose();
-        _operationCancellation = new CancellationTokenSource();
-        return _operationCancellation.Token;
-    }
-
-    private void CancelOperation()
-    {
-        _operationCancellation?.Cancel();
-    }
-
-    #region 命令申明
-
-    // 返回
-    private DelegateCommand? _backSpaceCommand;
-
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
-
-    /// <summary>
-    /// 返回
-    /// </summary>
     protected internal override void ExecuteBackSpace()
     {
-        CancelOperation();
-        var parameter = new NavigationParam
+        _workflow.Cancel();
+        if (TryNavigateBack())
         {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+            return;
+        }
+
+        NavigateToParent();
     }
 
-    // 前往下载管理页面
-    private DelegateCommand? _downloadManagerCommand;
-
-    public DelegateCommand DownloadManagerCommand => _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
-
-    /// <summary>
-    /// 前往下载管理页面
-    /// </summary>
     private void ExecuteDownloadManagerCommand()
     {
-        var parameter = new NavigationParam
-        {
-            ViewName = ViewDownloadManagerViewModel.Tag,
-            ParentViewName = string.IsNullOrWhiteSpace(ParentView) ? ViewIndexViewModel.Tag : ParentView,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.DownloadManager,
+            ParentRoute));
     }
 
-    // 输入确认事件
-    private DownKyiAsyncDelegateCommand? _inputCommand;
-
-    public ICommand InputCommand => _inputCommand ??= new DownKyiAsyncDelegateCommand(ExecuteInputCommandAsync, CanExecuteInputCommand);
-
-
-    private DownKyiAsyncDelegateCommand? _inputSearchCommand;
-
-
-    public ICommand InputSearchCommand => _inputSearchCommand ??= new DownKyiAsyncDelegateCommand(ExecuteInputSearchCommandAsync);
-
-    /// <summary>
-    /// 搜索视频输入事件
-    /// </summary>
-    private async Task ExecuteInputSearchCommandAsync()
+    private Task ExecuteInputCommandAsync()
     {
-        await Task.Run(() =>
+        return ExecuteInputCommandAsync(UiState.InputText);
+    }
+
+    private async Task ExecuteInputCommandAsync(string? requestedInput)
+    {
+        var operation = _workflow.StartOperation();
+        ResetView();
+        if (string.IsNullOrWhiteSpace(requestedInput))
         {
-            if (string.IsNullOrEmpty(InputSearchText))
+            SetDisplayState(VideoDetailDisplayState.Idle);
+            return;
+        }
+
+        await RunOperationAsync(operation, async () =>
+        {
+            UiState.InputText = _workflow.SetInput(requestedInput);
+            _logger.LogDebugMessage("Processing captured video input.");
+            var result = await _workflow.LoadDetailAsync(operation).ConfigureAwait(true);
+            await UiDispatcher.InvokeAsync(() => ApplyVideoDetailResult(result, operation.CancellationToken));
+            if (_workflow.IsCurrent(operation) && _settingsStore.Current.Basic.IsAutoParseVideo == AllowStatus.Yes)
             {
-                foreach (var section in VideoSections)
-                {
-                    var cache = CaCheVideoSections.FirstOrDefault(e => e.Id == section.Id);
-                    if (cache != null)
-                    {
-                        section.VideoPages = cache.VideoPages;
-                    }
-                }
+                RunFireAndForget(ExecuteParseAllVideoCommandAsync(), nameof(ExecuteParseAllVideoCommandAsync), _logger);
             }
-            else
-            {
-                foreach (var section in VideoSections)
-                {
-                    var cache = CaCheVideoSections.FirstOrDefault(e => e.Id == section.Id);
-
-                    if (cache == null) continue;
-
-                    var pages = cache.VideoPages.Where(e => e.Name.Contains(InputSearchText, StringComparison.Ordinal)).ToList();
-                    section.VideoPages = pages;
-                }
-            }
-        }).ConfigureAwait(true);
+        }, VideoDetailDisplayState.Empty).ConfigureAwait(true);
     }
 
-    /// <summary>
-    /// 处理输入事件
-    /// </summary>
-    private async Task ExecuteInputCommandAsync()
-    {
-        var cancellationToken = ResetOperationCancellation();
-        InitView();
-        try
-        {
-            await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (string.IsNullOrEmpty(InputText))
-                {
-                    return;
-                }
-
-                LogManager.Debug(Tag, $"InputText: {InputText}");
-                InputText = Regex.Replace(InputText, @"[【]*[^【]*[^】]*[】 ]", "");
-                _input = InputText;
-
-                // 更新页面
-                UnityUpdateView(UpdateView, _input, true, cancellationToken);
-
-                // 是否自动解析视频
-                if (SettingsManager.Instance.GetIsAutoParseVideo() == AllowStatus.Yes)
-                {
-                    PropertyChangeAsync(() => _ = ExecuteParseAllVideoCommandAsync());
-                }
-            }, cancellationToken).ConfigureAwait(true);
-        }
-        catch (OperationCanceledException)
-        {
-            LoadingVisibility = false;
-        }
-        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
-            or FormatException or RegexMatchTimeoutException or Newtonsoft.Json.JsonException)
-        {
-            Console.PrintLine("InputCommand()发生异常: {0}", e);
-            LogManager.Error(Tag, e);
-            EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
-
-            LoadingVisibility = false;
-            ContentVisibility = false;
-            NoDataVisibility = true;
-        }
-    }
-
-    /// <summary>
-    /// 输入事件是否允许执行
-    /// </summary>
-    /// <returns></returns>
-    private bool CanExecuteInputCommand()
-    {
-        return LoadingVisibility != true;
-    }
-
-    // 复制封面事件
-    private DelegateCommand? _copyCoverCommand;
-
-    public DelegateCommand CopyCoverCommand => _copyCoverCommand ??= new DelegateCommand(ExecuteCopyCoverCommand);
-
-    /// <summary>
-    /// 复制封面事件
-    /// </summary>
-    private void ExecuteCopyCoverCommand()
-    {
-        // 复制封面图片到剪贴板
-        // Clipboard.SetImage(VideoInfoView.Cover);
-        LogManager.Info(Tag, "复制封面图片到剪贴板");
-    }
-
-    // 复制封面URL事件
-    private DownKyiAsyncDelegateCommand? _copyCoverUrlCommand;
-
-    public ICommand CopyCoverUrlCommand => _copyCoverUrlCommand ??= new DownKyiAsyncDelegateCommand(ExecuteCopyCoverUrlCommandAsync);
-
-    /// <summary>
-    /// 复制封面URL事件
-    /// </summary>
     private async Task ExecuteCopyCoverUrlCommandAsync()
     {
-        if (_videoInfoView?.CoverUrl == null) return;
-        // 复制封面url到剪贴板
-        await ClipboardManager.SetText(_videoInfoView.CoverUrl).ConfigureAwait(true);
-        LogManager.Info(Tag, "复制封面url到剪贴板");
+        if (UiState.VideoInfoView?.CoverUrl is not { } coverUrl)
+        {
+            return;
+        }
+
+        await _clipboardService.SetTextAsync(coverUrl).ConfigureAwait(true);
+        _logger.LogInformationMessage("Video cover URL copied to the clipboard.");
     }
 
-    // 前往UP主页事件
-    private DelegateCommand? _upperCommand;
-    public DelegateCommand UpperCommand => _upperCommand ??= new DelegateCommand(ExecuteUpperCommand);
-
-    /// <summary>
-    /// 前往UP主页事件
-    /// </summary>
     private void ExecuteUpperCommand()
     {
-        if (VideoInfoView == null)
+        if (UiState.VideoInfoView != null)
         {
-            return;
+            var route = _settingsStore.Current.User.Mid == UiState.VideoInfoView.UpperMid
+                ? AppRoute.MySpace
+                : AppRoute.UserSpace;
+            Navigation.Navigate(new AppNavigationRequest(
+                route,
+                AppRoute.VideoDetail,
+                UiState.VideoInfoView.UpperMid));
         }
-
-        NavigateToView.NavigateToViewUserSpace(EventAggregator, Tag, VideoInfoView.UpperMid);
     }
 
-    // 视频章节选择事件
-    private DelegateCommand<object>? _videoSectionsCommand;
-
-    public DelegateCommand<object> VideoSectionsCommand => _videoSectionsCommand ??= new DelegateCommand<object>(ExecuteVideoSectionsCommand);
-
-    /// <summary>
-    /// 视频章节选择事件
-    /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteVideoSectionsCommand(object parameter)
+    private void SetAllSelected(bool isSelected)
     {
-        if (parameter is not DataGrid grid)
-        {
-            return;
-        }
-
-        var selectedSection = VideoSelectionState.GetSelectedSection(VideoSections);
-        if (selectedSection?.VideoPages == null)
-        {
-            IsSelectAll = false;
-            return;
-        }
-
-        var selectedPages = VideoSelectionState.GetSelectedPages(selectedSection);
-        foreach (var page in selectedPages)
-        {
-            grid.SelectedItems.Add(page);
-        }
-
-        IsSelectAll = VideoSelectionState.IsAllSelected(selectedSection, selectedPages.Count);
+        VideoSelectionState.SetAllSelected(VideoSelectionState.GetSelectedSection(VideoSections), isSelected);
+        UiState.IsSelectAll = isSelected;
     }
 
-    // 视频page选择事件
-    private DelegateCommand<IList>? _videoPagesCommand;
-
-    public DelegateCommand<IList> VideoPagesCommand => _videoPagesCommand ??= new DelegateCommand<IList>(ExecuteVideoPagesCommand);
-
-    /// <summary>
-    /// 视频page选择事件
-    /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteVideoPagesCommand(IList parameter)
-    {
-        if (!(parameter is IList videoPages))
-        {
-            return;
-        }
-
-        var section = VideoSelectionState.GetSelectedSection(VideoSections);
-
-        if (section == null)
-        {
-            return;
-        }
-
-        VideoSelectionState.ApplySelectedPages(section, parameter.Cast<VideoPage>());
-        IsSelectAll = VideoSelectionState.IsAllSelected(section, videoPages.Count);
-    }
-
-    // 全选事件
-    private DelegateCommand<object>? _selectAllCommand;
-    public DelegateCommand<object> SelectAllCommand => _selectAllCommand ??= new DelegateCommand<object>(ExecuteSelectAllCommand);
-
-    /// <summary>
-    /// 全选事件
-    /// </summary>
-    /// <param name="parameter"></param>
-    private void ExecuteSelectAllCommand(object parameter)
-    {
-        if (parameter is not DataGrid dataGrid)
-        {
-            return;
-        }
-
-        if (IsSelectAll)
-        {
-            dataGrid.SelectAll();
-        }
-        else
-        {
-            dataGrid.SelectedIndex = -1;
-        }
-    }
-
-
-    // 解析视频流事件
-    private DownKyiAsyncDelegateCommand<object>? _parseCommand;
-
-    public ICommand ParseCommand => _parseCommand ??= new DownKyiAsyncDelegateCommand<object>(ExecuteParseCommandAsync, CanExecuteParseCommand);
-
-    /// <summary>
-    /// 解析视频流事件
-    /// </summary>
-    /// <param name="parameter"></param>
     private async Task ExecuteParseCommandAsync(object? parameter)
     {
-        if (parameter is not VideoPage videoPage)
+        if (parameter is not VideoPage page)
         {
             return;
         }
 
-        LoadingVisibility = true;
-        var cancellationToken = ResetOperationCancellation();
-
-        try
+        var operation = _workflow.StartOperation();
+        SetDisplayState(VideoDetailDisplayState.Busy);
+        await RunOperationAsync(operation, async () =>
         {
-            await Task.Run(() =>
+            var result = await _workflow.LoadPageStreamAsync(page, operation).ConfigureAwait(true);
+            if (result != null)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                LogManager.Debug(Tag, $"Video Page: {videoPage.Cid}");
+                await UiDispatcher.InvokeAsync(() => ApplyVideoStreamResults([result], operation.CancellationToken));
+            }
 
-                UnityUpdateView(ParseVideo, _input, videoPage, true, cancellationToken);
-            }, cancellationToken).ConfigureAwait(true);
-        }
-        catch (OperationCanceledException)
-        {
-            LoadingVisibility = false;
-        }
-        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
-            or FormatException or RegexMatchTimeoutException or Newtonsoft.Json.JsonException)
-        {
-            Console.PrintLine("ParseCommand()发生异常: {0}", e);
-            LogManager.Error(Tag, e);
-            EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
-
-            LoadingVisibility = false;
-        }
-
-        LoadingVisibility = false;
+            RestoreDisplayStateIfCurrent(operation);
+        }, null).ConfigureAwait(true);
     }
 
-    /// <summary>
-    /// 解析视频流事件是否允许执行
-    /// </summary>
-    /// <param name="parameter"></param>
-    /// <returns></returns>
-    private bool CanExecuteParseCommand(object parameter)
-    {
-        return LoadingVisibility != true;
-    }
-
-
-    // 解析所有视频流事件
-    private DownKyiAsyncDelegateCommand? _parseAllVideoCommand;
-
-    public ICommand ParseAllVideoCommand => _parseAllVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteParseAllVideoCommandAsync, CanExecuteParseAllVideoCommand);
-
-    /// <summary>
-    /// 解析所有视频流事件
-    /// </summary>
     private async Task ExecuteParseAllVideoCommandAsync()
     {
-        // 解析范围
-        var parseScope = SettingsManager.Instance.GetParseScope();
-
-        // 是否选择了解析范围
-        if (parseScope == ParseScope.None)
+        var parseScope = _settingsStore.Current.Basic.ParseScope;
+        if (parseScope != ParseScope.None)
         {
-            if (DialogService == null)
+            await ExecuteParseAsync(parseScope).ConfigureAwait(true);
+            return;
+        }
+
+        var result = await AppDialogs.ShowAsync(
+            new AppDialogRequest(AppDialog.ParsingSelector)).ConfigureAwait(true);
+        if (result.Outcome == AppDialogOutcome.Accepted
+            && result.Parameters.TryGetValue("parseScope", out var scopeValue)
+            && scopeValue is ParseScope selectedScope)
+        {
+            await ExecuteParseAsync(selectedScope).ConfigureAwait(true);
+        }
+    }
+
+    private async Task ExecuteParseAsync(ParseScope parseScope)
+    {
+        var operation = _workflow.StartOperation();
+        SetDisplayState(VideoDetailDisplayState.Busy);
+        await RunOperationAsync(operation, async () =>
+        {
+            var results = await _workflow
+                .LoadPageStreamsAsync(VideoSections, parseScope, operation)
+                .ConfigureAwait(true);
+            await UiDispatcher.InvokeAsync(() => ApplyVideoStreamResults(results, operation.CancellationToken));
+            if (!_workflow.IsCurrent(operation))
             {
                 return;
             }
 
-            //打开解析选择器
-            await DialogService.ShowDialogAsync(ViewParsingSelectorViewModel.Tag, null, async result =>
+            RestoreDisplayState();
+            if (parseScope != ParseScope.None && _settingsStore.Current.Basic.IsAutoDownloadAll == AllowStatus.Yes)
             {
-                if (result.Result != ButtonResult.OK) return;
-                // 选择的解析范围
-                parseScope = result.Parameters.GetValue<ParseScope>("parseScope");
-                await ExecuteParse(parseScope).ConfigureAwait(true);
-            }).ConfigureAwait(true);
+                await AddToDownloadAsync(true).ConfigureAwait(true);
+            }
+
+            _logger.LogDebugMessage($"ParseScope: {parseScope:G}");
+        }, null).ConfigureAwait(true);
+    }
+
+    private async Task AddToDownloadAsync(bool isAll)
+    {
+        if (UiState.VideoInfoView == null)
+        {
+            PublishAddedCount(0);
+            return;
+        }
+
+        var operation = _workflow.StartOperation();
+        try
+        {
+            var addedCount = await _downloadCoordinator.AddAsync(
+                _workflow.CurrentInput,
+                UiState.VideoInfoView,
+                VideoSections.ToList(),
+                isAll,
+                operation.CancellationToken).ConfigureAwait(true);
+            if (addedCount is { } count && _workflow.IsCurrent(operation))
+            {
+                PublishAddedCount(count);
+            }
+        }
+        catch (OperationCanceledException) when (operation.CancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void ResetView()
+    {
+        _workflow.Reset();
+        UiState.GridResetVersion++;
+        SetDisplayState(VideoDetailDisplayState.Busy);
+        UiState.VideoInfoView = null;
+        UiState.SelectedVideoPage = null;
+        VideoSections.ReplaceRange(Array.Empty<VideoSection>());
+    }
+
+    private void ApplyVideoDetailResult(VideoDetailParseResult result, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        UiState.VideoInfoView = result.VideoInfoView;
+        if (UiState.VideoInfoView == null)
+        {
+            SetDisplayState(VideoDetailDisplayState.Empty);
+            return;
+        }
+
+        VideoSections.ReplaceRange(result.VideoSections);
+        UiState.SelectedVideoPage = VideoSelectionState.SelectInputPage(VideoSections, _workflow.CurrentInput);
+        SetDisplayState(VideoDetailDisplayState.Content);
+    }
+
+    private void ApplyVideoStreamResults(
+        IReadOnlyList<VideoStreamParseResult> results,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        foreach (var result in results)
+        {
+            Services.Utils.VideoPageInfo(result.PlayUrl, result.Page, _settingsStore);
+        }
+    }
+
+    private void PublishAddedCount(int count)
+    {
+        var message = count <= 0
+            ? DictionaryResource.GetString("TipAddDownloadingZero")
+            : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{count}{DictionaryResource.GetString("TipAddDownloadingFinished2")}";
+        Notifications.Show(message);
+    }
+
+    private void HandleOperationError(
+        Exception exception,
+        VideoDetailOperation operation,
+        VideoDetailDisplayState? failureState)
+    {
+        if (!_workflow.IsCurrent(operation))
+        {
+            return;
+        }
+
+        _logger.LogErrorMessage("Video detail operation failed.", exception);
+        Notifications.Show(exception.Message);
+        if (failureState is { } state)
+        {
+            SetDisplayState(state);
         }
         else
         {
-            await ExecuteParse(parseScope).ConfigureAwait(true);
+            RestoreDisplayState();
         }
     }
 
-    /// <summary>
-    /// 解析所有视频流事件是否允许执行
-    /// </summary>
-    /// <returns></returns>
-    private bool CanExecuteParseAllVideoCommand()
+    private async Task RunOperationAsync(
+        VideoDetailOperation operation,
+        Func<Task> action,
+        VideoDetailDisplayState? failureState)
     {
-        return LoadingVisibility != true;
-    }
-
-    private async Task ExecuteParse(ParseScope parseScope)
-    {
-        var cancellationToken = ResetOperationCancellation();
         try
         {
-            LoadingVisibility = true;
-            await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                LogManager.Debug(Tag, "Parse video");
-
-                var pages = VideoSelectionState.GetPagesForScope(VideoSections, parseScope);
-                foreach (var page in pages)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    // 执行解析任务
-                    UnityUpdateView(ParseVideo, _input, page, cancellationToken: cancellationToken);
-                }
-            }, cancellationToken).ConfigureAwait(true);
+            await action().ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
-            LoadingVisibility = false;
-            return;
+            RestoreDisplayStateIfCurrent(operation);
         }
-        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
-            or FormatException or RegexMatchTimeoutException or Newtonsoft.Json.JsonException)
+        catch (Exception exception) when (IsExpectedOperationException(exception))
         {
-            Console.PrintLine("ParseCommand()发生异常: {0}", e);
-            LogManager.Error(Tag, e);
-            EventAggregator.GetEvent<MessageEvent>().Publish(e.Message);
-
-            LoadingVisibility = false;
+            HandleOperationError(exception, operation, failureState);
         }
+    }
 
-        LoadingVisibility = false;
+    private static bool IsExpectedOperationException(Exception exception)
+    {
+        return exception is System.Net.Http.HttpRequestException or InvalidOperationException
+            or ArgumentException or FormatException or RegexMatchTimeoutException
+            or Newtonsoft.Json.JsonException;
+    }
 
-        // 解析后是否自动下载解析视频
-        var isAutoDownloadAll = SettingsManager.Instance.GetIsAutoDownloadAll();
-        if (parseScope != ParseScope.None && isAutoDownloadAll == AllowStatus.Yes)
+    private void RestoreDisplayStateIfCurrent(VideoDetailOperation operation)
+    {
+        if (_workflow.IsCurrent(operation))
         {
-            await AddToDownloadAsync(true).ConfigureAwait(true);
+            RestoreDisplayState();
         }
-
-        LogManager.Debug(Tag, $"ParseScope: {parseScope:G}");
     }
 
-    // 添加到下载列表事件
-    private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
-
-    public ICommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), CanExecuteAddToDownloadCommand);
-
-    /// <summary>
-    /// 添加到下载列表事件
-    /// </summary>
-    private bool CanExecuteAddToDownloadCommand()
+    private void RestoreDisplayState()
     {
-        return LoadingVisibility != true;
+        SetDisplayState(UiState.VideoInfoView == null
+            ? VideoDetailDisplayState.Idle
+            : VideoDetailDisplayState.Content);
     }
 
-    #endregion
-
-    #region 业务逻辑
-
-    /// <summary>
-    /// 初始化页面元素
-    /// </summary>
-    private void InitView()
+    private void SetDisplayState(VideoDetailDisplayState state)
     {
-        LogManager.Debug(Tag, "初始化页面元素");
-        ResetGridBehavior.ResetGrid();
-        LoadingVisibility = true;
-        ContentVisibility = false;
-        NoDataVisibility = false;
-        VideoSections.ReplaceRange(Array.Empty<VideoSection>());
-        CaCheVideoSections.ReplaceRange(Array.Empty<VideoSection>());
-        _parseCoordinator.Reset();
-    }
-
-
-    /// <summary>
-    /// 更新页面的统一方法
-    /// </summary>
-    /// <param name="action"></param>
-    /// <param name="input"></param>
-    /// <param name="page"></param>
-    /// <param name="refresh"></param>
-    private void UnityUpdateView(Action<IInfoService, CancellationToken> action, string input, bool refresh = false, CancellationToken cancellationToken = default)
-    {
-        var infoService = GetInfoService(input, refresh, cancellationToken);
-        if (infoService == null)
+        if (UiDispatcher.CheckAccess())
         {
-            return;
-        }
-
-        action(infoService, cancellationToken);
-    }
-
-    private void UnityUpdateView(Action<IInfoService, VideoPage, CancellationToken> action, string input, VideoPage page, bool refresh = false, CancellationToken cancellationToken = default)
-    {
-        var infoService = GetInfoService(input, refresh, cancellationToken);
-        if (infoService == null)
-        {
-            return;
-        }
-
-        action(infoService, page, cancellationToken);
-    }
-
-    private IInfoService? GetInfoService(string input, bool refresh, CancellationToken cancellationToken)
-    {
-        return _parseCoordinator.GetInfoService(input, refresh, cancellationToken);
-    }
-
-    /// <summary>
-    /// 更新页面
-    /// </summary>
-    /// <param name="videoInfoService"></param>
-    /// <param name="param"></param>
-    private void UpdateView(IInfoService videoInfoService, CancellationToken cancellationToken)
-    {
-        // 获取视频详情
-        VideoInfoView = videoInfoService.GetVideoView(cancellationToken);
-        if (VideoInfoView == null)
-        {
-            LogManager.Debug(Tag, "VideoInfoView is null.");
-
-            LoadingVisibility = false;
-            ContentVisibility = false;
-            NoDataVisibility = true;
-            return;
+            UiState.DisplayState = state;
         }
         else
         {
-            LoadingVisibility = false;
-            ContentVisibility = true;
-            NoDataVisibility = false;
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        // 获取视频列表
-        var videoSections = videoInfoService.GetVideoSections(false, cancellationToken);
-
-        // 添加新数据
-        if (videoSections == null)
-        {
-            LogManager.Debug(Tag, "videoSections is not exist.");
-
-            var pages = videoInfoService.GetVideoPages(cancellationToken) ?? new List<VideoPage>();
-            var cachePages = pages.Select(page => page.CloneForCache()).ToList();
-            var defaultSections = new[]
-            {
-                new VideoSection
-                {
-                    Id = 0,
-                    Title = "default",
-                    IsSelected = true,
-                    VideoPages = pages
-                }
-            };
-            var defaultCacheSections = new[]
-            {
-                new VideoSection
-                {
-                    Id = 0,
-                    Title = "default",
-                    IsSelected = true,
-                    VideoPages = cachePages
-                }
-            };
-
-            PropertyChangeAsync(() =>
-            {
-                VideoSections.ReplaceRange(defaultSections);
-                CaCheVideoSections.ReplaceRange(defaultCacheSections);
-
-                // 自动定位到合集中对应的视频位置
-                AutoLocateAndSelectVideoPosition();
-            });
-        }
-        else
-        {
-            var videoSectionsData = videoSections.Select(section => section.CloneForCache()).ToList();
-            PropertyChangeAsync(() =>
-            {
-                VideoSections.ReplaceRange(videoSections);
-                CaCheVideoSections.ReplaceRange(videoSectionsData);
-
-                // 自动定位到合集中对应的视频位置
-                AutoLocateAndSelectVideoPosition();
-            });
+            UiDispatcher.Post(() => UiState.DisplayState = state);
         }
     }
 
-    /// <summary>
-    /// 解析视频流
-    /// </summary>
-    /// <param name="videoInfoService"></param>
-    /// <param name="videoPage"></param>
-    private void ParseVideo(IInfoService videoInfoService, VideoPage videoPage, CancellationToken cancellationToken)
+    private static VectorImage CreateDownloadManageIcon()
     {
-        videoInfoService.GetVideoStream(videoPage, cancellationToken);
+        var icon = ButtonIcon.Instance().DownloadManage;
+        icon.Height = 24;
+        icon.Width = 24;
+        icon.Fill = DictionaryResource.GetColor("ColorPrimary");
+        return icon;
     }
-
-    /// <summary>
-    /// 自动定位到合集中对应的视频位置
-    /// </summary>
-    private VideoPage? selectedVideoPage;
-    public VideoPage? SelectedVideoPage
-    {
-        get => selectedVideoPage;
-        set => SetProperty(ref selectedVideoPage, value);
-    }
-
-    private void AutoLocateAndSelectVideoPosition()
-    {
-
-        long avid = ParseEntrance.GetAvId(_input);
-        string bvid = ParseEntrance.GetBvId(_input);
-
-        // 确保在UI线程上更新属性
-        App.PropertyChangeAsync(() =>
-        {
-            // 遍历所有视频页面，找到对应的位置
-            foreach (var section in VideoSections)
-            {
-                section.IsSelected = true;
-                foreach (var page in section.VideoPages)
-                {
-
-                    if (page.Avid == avid || page.Bvid == bvid)
-                    {
-                        // 选中对应的视频页面
-                        page.IsSelected = true;
-                        // 设置SelectedVideoPage以触发DataGrid的SelectedItem变化和滚动操作
-                        SelectedVideoPage = page;
-                        return;
-                    }
-                }
-            }
-        });
-    }
-
-    /// <summary>
-    /// 添加到下载列表事件
-    /// </summary>
-    /// <param name="isAll">是否下载所有，包括未选中项</param>
-    private async Task AddToDownloadAsync(bool isAll)
-    {
-        var playStreamType = VideoInputResolver.ResolvePlayStreamType(_input);
-        if (playStreamType == null)
-        {
-            return;
-        }
-
-        var addToDownloadService = new AddToDownloadService(playStreamType.Value);
-        var videoInfoView = VideoInfoView;
-        if (videoInfoView == null)
-        {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipAddDownloadingZero"));
-            return;
-        }
-
-        var videoSections = VideoSections.ToList();
-
-        // 视频计数
-        var addedCount = await DownloadAddCoordinator.AddToDownloadIfDirectorySelectedAsync(
-            () => addToDownloadService.SetDirectory(DialogService),
-            directory => Task.Run(async () =>
-            {
-                // 传递video对象
-                addToDownloadService.GetVideo(videoInfoView, videoSections);
-                // 下载
-                return await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory, isAll).ConfigureAwait(true);
-            })).ConfigureAwait(true);
-
-        if (addedCount == null)
-        {
-            return;
-        }
-
-        var i = addedCount.Value;
-
-        // 通知用户添加到下载列表的结果
-        if (i <= 0)
-        {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipAddDownloadingZero"));
-        }
-        else
-        {
-            EventAggregator.GetEvent<MessageEvent>()
-                .Publish(
-                    $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
-        }
-    }
-
-    #endregion
 
     public override void OnNavigatedTo(NavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
-
-        DownloadManage = ButtonIcon.Instance().DownloadManage;
-        DownloadManage.Height = 24;
-        DownloadManage.Width = 24;
-        DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
-        // Parent参数为null时，表示是从下一个页面返回到本页面，不需要执行任务
-        if (navigationContext.Parameters.GetValue<string>("Parent") != null)
+        UiState.DownloadManage = CreateDownloadManageIcon();
+        if (navigationContext.Parameters.GetValue<string>("Parent") is not null)
         {
-            var param = navigationContext.Parameters.GetValue<string>("Parameter");
-            // 移除剪贴板id
-            var input = param.Replace(AppConstant.ClipboardId, "", StringComparison.Ordinal);
-
-            // 检测是否从剪贴板传入
-            if (InputText == input && param.EndsWith(AppConstant.ClipboardId, StringComparison.Ordinal))
+            var parameter = navigationContext.Parameters.GetValue<string>("Parameter");
+            var input = parameter.Replace(AppConstant.ClipboardId, string.Empty, StringComparison.Ordinal);
+            if (UiState.InputText != input || !parameter.EndsWith(AppConstant.ClipboardId, StringComparison.Ordinal))
             {
-                return;
-            }
-
-            // 正在执行任务时不开启新任务
-            if (LoadingVisibility != true)
-            {
-                InputText = input;
-                PropertyChangeAsync(() => _ = ExecuteInputCommandAsync());
+                if (!UiState.IsBusy)
+                {
+                    UiState.InputText = input;
+                    RunFireAndForget(ExecuteInputCommandAsync(input), nameof(ExecuteInputCommandAsync), _logger);
+                }
             }
         }
 
@@ -871,9 +398,7 @@ internal class ViewVideoDetailViewModel : ViewModelBase
     {
         if (disposing && !IsDisposed)
         {
-            _operationCancellation?.Cancel();
-            _operationCancellation?.Dispose();
-            _operationCancellation = null;
+            _workflow.Dispose();
         }
 
         base.Dispose(disposing);

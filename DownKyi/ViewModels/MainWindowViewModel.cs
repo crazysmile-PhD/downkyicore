@@ -1,38 +1,32 @@
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.Events;
 using DownKyi.Models;
+using DownKyi.Platform;
 using DownKyi.Services;
-using DownKyi.Utils;
-using DownKyi.ViewModels.Dialogs;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Dialogs;
-using Prism.Events;
 using Prism.Mvvm;
-using Prism.Navigation.Regions;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels;
 
 internal sealed class MainWindowViewModel : BindableBase, IDisposable
 {
     private bool _disposed;
-    private readonly IEventAggregator _eventAggregator;
-
-    private readonly IRegionManager _regionManager;
-
-    private readonly IDialogService _dialogService;
-
-    private const string ContentRegion = nameof(ContentRegion);
-
-    private ClipboardListener? _clipboardListener;
+    private readonly IAppDialogService _dialogService;
+    private readonly IAppNavigationService _navigationService;
+    private readonly IUserNotificationService _notificationService;
+    private readonly ISettingsStore _settingsStore;
+    private readonly IClipboardMonitor _clipboardMonitor;
+    private readonly ILogger<MainWindowViewModel> _logger;
+    private readonly CancellationTokenSource _lifetimeCancellation = new();
 
     private bool _messageVisibility;
     private string? _oldMessage;
@@ -88,12 +82,10 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             return;
         }
 
-        if (_clipboardListener != null)
-        {
-            _clipboardListener.Changed -= ClipboardListenerOnChanged;
-            _clipboardListener.Dispose();
-            _clipboardListener = null;
-        }
+        _lifetimeCancellation.Cancel();
+
+        _notificationService.NotificationRaised -= NotificationServiceOnNotificationRaised;
+        _clipboardMonitor.Changed -= ClipboardMonitorOnChanged;
 
         _clipboardDebounceCancellation?.Cancel();
         _clipboardDebounceCancellation?.Dispose();
@@ -101,6 +93,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         _messageCancellation?.Cancel();
         _messageCancellation?.Dispose();
         _messageCancellation = null;
+        _lifetimeCancellation.Dispose();
     }
 
     private void ExecutePointerPressed(PointerPressedEventArgs e)
@@ -118,45 +111,28 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         }
     }
 
-    private UserControl? GetCurrentUserControl() => _regionManager
-        .Regions[ContentRegion].ActiveViews
-        .FirstOrDefault() as UserControl;
+    private UserControl? GetCurrentUserControl() =>
+        _navigationService.GetActiveView(AppNavigationRegion.Main) as UserControl;
 
-    public MainWindowViewModel(IRegionManager regionManager, IEventAggregator eventAggregator, IDialogService dialogService)
+    public MainWindowViewModel(
+        IAppNavigationService navigationService,
+        IUserNotificationService notificationService,
+        IAppDialogService dialogService,
+        ISettingsStore settingsStore,
+        IClipboardMonitor clipboardMonitor,
+        ILogger<MainWindowViewModel> logger)
     {
-        _eventAggregator = eventAggregator;
-        _regionManager = regionManager;
-        _dialogService = dialogService;
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
+        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+        _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _clipboardMonitor = clipboardMonitor ?? throw new ArgumentNullException(nameof(clipboardMonitor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region MyRegion
 
-        _eventAggregator.GetEvent<NavigationEvent>().Subscribe(view =>
-        {
-            var param = new NavigationParameters
-            {
-                { "Parent", view.ParentViewName ?? string.Empty },
-                { "Parameter", view.Parameter ?? string.Empty }
-            };
-            regionManager.RequestNavigate(ContentRegion, view.ViewName, param);
-        });
-
         // 订阅消息发送事件
-        _eventAggregator.GetEvent<MessageEvent>().Subscribe(message =>
-        {
-            Dispatcher.UIThread.Post(() =>
-            {
-                MessageVisibility = true;
-
-                _oldMessage = Message;
-                Message = message;
-                var delay = _oldMessage == Message ? 1500 : 2000;
-
-                _messageCancellation?.Cancel();
-                _messageCancellation?.Dispose();
-                _messageCancellation = new CancellationTokenSource();
-                _ = HideMessageAfterDelayAsync(delay, _messageCancellation.Token);
-            });
-        }, ThreadOption.BackgroundThread);
+        _notificationService.NotificationRaised += NotificationServiceOnNotificationRaised;
 
         #endregion
 
@@ -169,14 +145,28 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             }
             Upgrade();
             _ = CheckForUpdatesAsync();
-            _clipboardListener = new ClipboardListener(App.Current.MainWindow);
-            _clipboardListener.Changed += ClipboardListenerOnChanged;
-            var param = new NavigationParameters
-            {
-                { "Parent", "" },
-                { "Parameter", "start" }
-            };
-            _regionManager.RequestNavigate("ContentRegion", ViewIndexViewModel.Tag, param);
+            _clipboardMonitor.Changed -= ClipboardMonitorOnChanged;
+            _clipboardMonitor.Changed += ClipboardMonitorOnChanged;
+            _navigationService.Navigate(new AppNavigationRequest(
+                AppRoute.Index,
+                Parameter: "start"));
+        });
+    }
+
+    private void NotificationServiceOnNotificationRaised(object? sender, UserNotificationEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            MessageVisibility = true;
+
+            _oldMessage = Message;
+            Message = e.Message;
+            var delay = _oldMessage == Message ? 1500 : 2000;
+
+            _messageCancellation?.Cancel();
+            _messageCancellation?.Dispose();
+            _messageCancellation = new CancellationTokenSource();
+            _ = HideMessageAfterDelayAsync(delay, _messageCancellation.Token);
         });
     }
 
@@ -205,9 +195,9 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
     #region 剪贴板
 
-    private void ClipboardListenerOnChanged(object? sender, ClipboardChangedEventArgs e)
+    private void ClipboardMonitorOnChanged(object? sender, ClipboardTextChangedEventArgs e)
     {
-        var isListenClipboard = SettingsManager.Instance.GetIsListenClipboard();
+        var isListenClipboard = _settingsStore.Current.Basic.IsListenClipboard;
         if (isListenClipboard != AllowStatus.Yes)
         {
             return;
@@ -231,12 +221,12 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             return;
         }
 
-        var searchService = new SearchService();
+        var searchService = new SearchService(_settingsStore, _navigationService);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (!cancellationToken.IsCancellationRequested)
             {
-                searchService.BiliInput(text + AppConstant.ClipboardId, ViewIndexViewModel.Tag, _eventAggregator);
+                searchService.BiliInput(text + AppConstant.ClipboardId, AppRoute.Index);
             }
         });
     }
@@ -245,28 +235,61 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
     private void Upgrade()
     {
-        _dialogService.ShowDialogAsync(ViewUpgradingDialogViewModel.Tag, new DialogParameters(), (result) => { });
+        _ = ShowUpgradeDialogAsync();
+    }
+
+    private async Task ShowUpgradeDialogAsync()
+    {
+        try
+        {
+            await _dialogService
+                .ShowAsync(new AppDialogRequest(AppDialog.LegacyUpgrade), _lifetimeCancellation.Token)
+                .ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+        {
+        }
+        catch (InvalidOperationException e)
+        {
+            _logger.LogErrorMessage("Legacy upgrade dialog failed to open.", e);
+        }
     }
 
     private async Task CheckForUpdatesAsync()
     {
         try
         {
-            var isAutoUpdate = SettingsManager.Instance.GetAutoUpdateWhenLaunch() != AllowStatus.Yes;
+            var about = _settingsStore.Current.About;
+            var isAutoUpdate = about.AutoUpdateWhenLaunch != AllowStatus.Yes;
             if (isAutoUpdate) return;
             var service = new VersionCheckerService(App.RepoOwner, App.RepoName,
-                SettingsManager.Instance.GetIsReceiveBetaVersion() == AllowStatus.Yes);
-            var release = await service.GetLatestReleaseAsync(SettingsManager.Instance.GetSkipVersionOnLaunch()).ConfigureAwait(true);
+                about.IsReceiveBetaVersion == AllowStatus.Yes);
+            var release = await service
+                .GetLatestReleaseAsync(about.SkipVersionOnLaunch, _lifetimeCancellation.Token)
+                .ConfigureAwait(true);
             if (release != null && service.IsNewVersionAvailable(release.TagName))
             {
-                await _dialogService.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
-                    DialogParameters { { "release", release }, { "enableSkipVersion", true } }).ConfigureAwait(true);
+                await _dialogService.ShowAsync(new AppDialogRequest(
+                    AppDialog.NewVersionAvailable,
+                    new Dictionary<string, object?>
+                    {
+                        ["release"] = release,
+                        ["enableSkipVersion"] = true
+                    }), _lifetimeCancellation.Token).ConfigureAwait(true);
             }
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+        {
+            // Expected while the application window is closing.
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarningMessage("Automatic update check timed out.");
         }
         catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or InvalidOperationException
             or System.Text.Json.JsonException)
         {
-            LogManager.Error(nameof(MainWindowViewModel), ex);
+            _logger.LogErrorMessage("Automatic update check failed.", ex);
         }
     }
 }

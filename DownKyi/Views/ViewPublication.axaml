@@ -196,7 +196,7 @@
                     ItemsSource="{Binding Medias}"
                     ItemContainerTheme="{StaticResource MediaListStyle}"
                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                    SelectionMode="Multiple">
+                    SelectionMode="Multiple,Toggle">
                     <Interaction.Behaviors>
                         <EventTriggerBehavior EventName="SelectionChanged">
                             <InvokeCommandAction Command="{Binding MediasCommand}"

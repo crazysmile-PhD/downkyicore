@@ -55,6 +55,30 @@ PR 03-06 result: legacy GID, partial-file maps, completed asset keys, paused sta
 
 PR 07-15 result: Release build completed with zero warnings, 161 tests passed including real FFmpeg/ffprobe seek validation and Host smoke without Prism global container state, format verification passed, and both vulnerable and deprecated package audits were clean. Cross-RID Release builds passed for Windows x86, Linux x64/arm64, and macOS x64/arm64. An isolated Windows process smoke created the main window, accepted close, and exited with code 0 without reading or writing real user data. Native Linux/macOS execution remains owned by their CI runners.
 
+## Settings Persistence Policy
+
+- `ISettingsStore.Current` is the validated immutable read contract. The public mutable `SettingsManager` facade has been removed; production consumers must use `Current` and typed `Update` calls.
+- Correlated settings changes use one `Update` call. This prevents another consumer from observing half of a proxy, content-selection, or related multi-field update.
+- `SchemaVersion` advances only through `SettingsSchemaMigrator`, one explicit version at a time. A migration must preserve existing JSON property names unless a separately tested compatibility migration is approved.
+- Malformed settings are moved to a unique `.invalid-*` backup before safe defaults are persisted. Do not log the payload or its personal path.
+- A file with a schema newer than the running application is read only for safe fallback and must remain byte-for-byte unchanged.
+- Persistence is debounced, serialized through one async gate, written to a UTF-8 temporary file, flushed, and atomically replaced. Do not restore synchronous whole-file writes or wrap them in `Task.Run`.
+- Application shutdown must await `FlushAsync`. Owners that require pending changes to persist during disposal use `DisposeAsync`; synchronous `Dispose` only stops scheduled work.
+- The historical DES reader remains read-only. It may decrypt supported old settings once, but no code may use DES to write new data.
+
+Settings changes must pass `SettingsStoreTests`, `SettingsArchitectureTests`, the Host smoke test, and the full Release build with `AnalysisMode=All`.
+
+## Logging Policy
+
+- New code receives `ILogger<T>` from composition and must not call static `LogManager` or write diagnostics directly to Console.
+- `ApplicationLogProvider` is the single file sink and redaction boundary. Do not create another log queue, file writer, or export sanitizer.
+- Logging scopes carry correlation, download-task, or child-process context; messages must not contain raw cookies, sensitive query values, account IDs, email addresses, or full personal paths.
+- The writer queue and recent-event buffer stay bounded. A full queue may drop an entry and increments the diagnostic drop counter; logging must never block a download or UI thread.
+- Application shutdown must await `FlushAsync` and `DisposeAsync`. Explicit flush also releases the active file handle so the Log page can open it immediately on Windows.
+- Writer initialization or persistence failures must reach the caller of `FlushAsync`; do not silently report a successful flush.
+
+Logging changes must pass `ApplicationLogProviderTests`, the Host smoke test, and the full Release build with `AnalysisMode=All`.
+
 ## Host Composition Policy
 
 - `src/DownKyi.Domain` is framework-free and owns typed result/error contracts.

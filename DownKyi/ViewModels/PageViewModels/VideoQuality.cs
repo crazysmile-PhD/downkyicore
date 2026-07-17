@@ -42,15 +42,4 @@ internal class VideoQuality : BindableBase
             }
         }
     }
-
-    public VideoQuality CloneForCache()
-    {
-        return new VideoQuality
-        {
-            Quality = Quality,
-            QualityFormat = QualityFormat,
-            VideoCodecList = new List<string>(VideoCodecList),
-            SelectedVideoCodec = SelectedVideoCodec
-        };
-    }
 }

@@ -7,6 +7,7 @@ using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.FileName;
 using DownKyi.Core.Settings;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Core.Tests;
 
@@ -85,6 +86,11 @@ public sealed class EnumValueContractTests
 
     private sealed class TestAriaManager : AriaManager
     {
+        public TestAriaManager()
+            : base(NullLogger<AriaManager>.Instance)
+        {
+        }
+
         public void RaiseProgress(long totalLength, long completedLength, long speed, string gid)
         {
             OnTellStatus(totalLength, completedLength, speed, gid);

@@ -1,19 +1,21 @@
+using System;
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
-using DownKyi.Utils;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
 internal class PublicationMedia : BindableBase
 {
-    protected IEventAggregator EventAggregator { get; }
+    private readonly IAppNavigationService _navigationService;
+    private readonly AppRoute _parentRoute;
 
-    public PublicationMedia(IEventAggregator eventAggregator)
+    public PublicationMedia(IAppNavigationService navigationService, AppRoute parentRoute)
     {
-        this.EventAggregator = eventAggregator;
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
+        _parentRoute = parentRoute;
     }
 
     private string _coverUrl = string.Empty;
@@ -92,15 +94,10 @@ internal class PublicationMedia : BindableBase
     /// <param name="parameter"></param>
     private void ExecuteTitleCommand(object parameter)
     {
-        if (parameter is not string tag)
-        {
-            return;
-        }
-
-        NavigateToView.NavigationView(EventAggregator, ViewVideoDetailViewModel.Tag, tag,
-            $"{ParseEntrance.VideoUrl}{Bvid}");
-        //string url = "https://www.bilibili.com/video/" + tag;
-        //System.Diagnostics.Process.Start(url);
+        _navigationService.Navigate(new AppNavigationRequest(
+            AppRoute.VideoDetail,
+            _parentRoute,
+            $"{ParseEntrance.VideoUrl}{Bvid}"));
     }
 
     #endregion

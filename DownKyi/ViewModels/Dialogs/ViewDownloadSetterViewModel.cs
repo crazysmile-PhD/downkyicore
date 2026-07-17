@@ -1,23 +1,29 @@
+using System;
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Utils;
-using DownKyi.Events;
 using DownKyi.Images;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
 using Prism.Dialogs;
-using Prism.Events;
 
 namespace DownKyi.ViewModels.Dialogs;
 
 internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogDownloadSetter";
-    private readonly IEventAggregator _eventAggregator;
+    private readonly IUserNotificationService _notifications;
+    private readonly IFilePickerService _filePickerService;
+    private readonly ISettingsStore _settingsStore;
+    private readonly ILogger<ViewDownloadSetterViewModel> _logger;
 
     // 历史文件夹的数量
     private const int MaxDirectoryListCount = 20;
@@ -61,9 +67,21 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         {
             SetProperty(ref _directory, value);
 
-            if (string.IsNullOrEmpty(_directory)) return;
-            DriveName = _directory[..1].ToUpperInvariant();
-            DriveNameFreeSpace = Format.FormatFileSize(HardDisk.GetHardDiskFreeSpace(DriveName));
+            if (string.IsNullOrEmpty(_directory) || !Path.IsPathFullyQualified(_directory))
+            {
+                return;
+            }
+
+            DriveName = Path.GetPathRoot(_directory) ?? _directory;
+            try
+            {
+                DriveNameFreeSpace = Format.FormatFileSize(HardDisk.GetHardDiskFreeSpace(_directory));
+            }
+            catch (Exception e) when (e is DriveNotFoundException or IOException or UnauthorizedAccessException)
+            {
+                DriveNameFreeSpace = Format.FormatFileSize(0);
+                _logger.LogErrorMessage("Available download disk space could not be read.", e);
+            }
         }
     }
 
@@ -133,9 +151,16 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 
     #endregion
 
-    public ViewDownloadSetterViewModel(IEventAggregator eventAggregator)
+    public ViewDownloadSetterViewModel(
+        IUserNotificationService notifications,
+        IFilePickerService filePickerService,
+        ISettingsStore settingsStore,
+        ILogger<ViewDownloadSetterViewModel> logger)
     {
-        _eventAggregator = eventAggregator;
+        _notifications = notifications ?? throw new ArgumentNullException(nameof(notifications));
+        _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
 
@@ -148,7 +173,8 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         FolderIcon.Fill = DictionaryResource.GetColor("ColorPrimary");
 
         // 下载内容
-        var videoContent = SettingsManager.Instance.GetVideoContent();
+        var videoSettings = _settingsStore.Current.Video;
+        var videoContent = videoSettings.Content;
 
         DownloadAudio = videoContent.DownloadAudio;
         DownloadVideo = videoContent.DownloadVideo;
@@ -166,8 +192,8 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         }
 
         // 历史下载目录
-        DirectoryList = new ObservableCollection<string>(SettingsManager.Instance.GetHistoryVideoRootPaths());
-        var directory = SettingsManager.Instance.GetSaveVideoRootPath();
+        DirectoryList = new ObservableCollection<string>(videoSettings.HistoryVideoRootPaths);
+        var directory = videoSettings.SaveVideoRootPath;
         if (!DirectoryList.Contains(directory))
         {
             ListHelper.InsertUnique(DirectoryList, directory, 0);
@@ -176,7 +202,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         Directory = directory;
 
         // 是否使用默认下载目录
-        IsDefaultDownloadDirectory = SettingsManager.Instance.GetIsUseSaveVideoRootPath() == AllowStatus.Yes;
+        IsDefaultDownloadDirectory = videoSettings.IsUseSaveVideoRootPath == AllowStatus.Yes;
 
         #endregion
     }
@@ -186,7 +212,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     // 浏览文件夹事件
     private DownKyiAsyncDelegateCommand? _browseCommand;
 
-    public DownKyiAsyncDelegateCommand BrowseCommand => _browseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteBrowseCommand);
+    public DownKyiAsyncDelegateCommand BrowseCommand => _browseCommand ??= new DownKyiAsyncDelegateCommand(ExecuteBrowseCommand, _logger);
 
     /// <summary>
     /// 浏览文件夹事件
@@ -197,7 +223,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
 
         if (directory == null)
         {
-            _eventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("WarningNullDirectory"));
+            _notifications.Show(DictionaryResource.GetString("WarningNullDirectory"));
         }
         else
         {
@@ -371,17 +397,21 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
             return;
         }
 
-        // 设此文件夹为默认下载文件夹
-        SettingsManager.Instance.SetIsUseSaveVideoRootPath(IsDefaultDownloadDirectory ? AllowStatus.Yes : AllowStatus.No);
-
         // 将Directory移动到第一项
         // 如果直接在ComboBox中选择的就需要
         // 否则选中项不会在下次出现在第一项
         ListHelper.InsertUnique(DirectoryList, Directory, 0, ref _directory);
 
-        // 将更新后的DirectoryList写入历史中
-        SettingsManager.Instance.SetSaveVideoRootPath(Directory);
-        SettingsManager.Instance.SetHistoryVideoRootPaths(DirectoryList.ToList());
+        // 将更新后的目录设置一次写入，避免其他消费者看到半套状态
+        _settingsStore.Update(settings => settings with
+        {
+            Video = settings.Video with
+            {
+                IsUseSaveVideoRootPath = IsDefaultDownloadDirectory ? AllowStatus.Yes : AllowStatus.No,
+                SaveVideoRootPath = Directory,
+                HistoryVideoRootPaths = DirectoryList.ToImmutableArray()
+            }
+        });
 
         // 返回数据
         IDialogParameters parameters = new DialogParameters
@@ -404,27 +434,31 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     /// </summary>
     private void SetVideoContent()
     {
-        var videoContent = new VideoContentSettings
+        _settingsStore.Update(settings => settings with
         {
-            DownloadAudio = DownloadAudio,
-            DownloadVideo = DownloadVideo,
-            DownloadDanmaku = DownloadDanmaku,
-            DownloadSubtitle = DownloadSubtitle,
-            DownloadCover = DownloadCover
-        };
-
-        SettingsManager.Instance.SetVideoContent(videoContent);
+            Video = settings.Video with
+            {
+                Content = settings.Video.Content with
+                {
+                    DownloadAudio = DownloadAudio,
+                    DownloadVideo = DownloadVideo,
+                    DownloadDanmaku = DownloadDanmaku,
+                    DownloadSubtitle = DownloadSubtitle,
+                    DownloadCover = DownloadCover
+                }
+            }
+        });
     }
 
     /// <summary>
     /// 设置下载路径
     /// </summary>
     /// <returns></returns>
-    private static async Task<string?> SetDirectory()
+    private async Task<string?> SetDirectory()
     {
         // 下载目录
         // 弹出选择下载目录的窗口
-        return await DialogUtils.SetDownloadDirectory().ConfigureAwait(true);
+        return await _filePickerService.SelectFolderAsync().ConfigureAwait(true);
         // if (path == null || path == string.Empty)
         // {
         //     return null;

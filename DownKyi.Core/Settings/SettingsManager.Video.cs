@@ -34,20 +34,7 @@ public partial class SettingsManager
     private readonly VideoContentSettings _videoContent = new();
 
     // 文件命名格式
-    private readonly List<FileNamePart> _fileNameParts = new()
-    {
-        FileNamePart.MainTitle,
-        FileNamePart.Slash,
-        FileNamePart.Section,
-        FileNamePart.Slash,
-        FileNamePart.Order,
-        FileNamePart.Hyphen,
-        FileNamePart.PageTitle,
-        FileNamePart.Hyphen,
-        FileNamePart.VideoQuality,
-        FileNamePart.Hyphen,
-        FileNamePart.VideoCodec,
-    };
+    private readonly IReadOnlyList<FileNamePart> _fileNameParts = ApplicationSettingsDefaults.FileNameParts;
 
     // 文件命名中的时间格式
     private const string FileNamePartTimeFormat = "yyyy-MM-dd";

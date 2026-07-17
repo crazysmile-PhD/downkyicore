@@ -4,14 +4,24 @@ using System.Text;
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
-using Console = DownKyi.Core.Utils.Debugging.Console;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Core.Aria2cNet.Server
 {
-    public static class AriaServer
+    public sealed class AriaServer
     {
-        public static int ListenPort { get; private set; } // 服务器端口
-        private static readonly AriaProcessSupervisor ProcessSupervisor = new();
+        private readonly ILogger<AriaServer> _logger;
+        private readonly AriaProcessSupervisor _processSupervisor;
+
+        public AriaServer(ILoggerFactory loggerFactory)
+        {
+            ArgumentNullException.ThrowIfNull(loggerFactory);
+            _logger = loggerFactory.CreateLogger<AriaServer>();
+            _processSupervisor = new AriaProcessSupervisor(
+                loggerFactory.CreateLogger<AriaProcessSupervisor>());
+        }
+
+        public int ListenPort { get; private set; } // 服务器端口
 
         /// <summary>
         /// 启动aria2c服务器
@@ -19,7 +29,7 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// <param name="config"></param>
         /// <param name="action"></param>
         /// <returns></returns>
-        public static async Task<bool> StartServerAsync(AriaConfig config, Action<string> action)
+        public async Task<bool> StartServerAsync(AriaConfig config, Action<string> action)
         {
             ArgumentNullException.ThrowIfNull(config);
             ArgumentNullException.ThrowIfNull(action);
@@ -72,18 +82,15 @@ namespace DownKyi.Core.Aria2cNet.Server
                     }
                     catch (IOException e)
                     {
-                        Console.PrintLine("StartServerAsync()发生IO异常: {0}", e);
-                        LogManager.Error("AriaServer", e);
+                        _logger.LogErrorMessage("aria2 log rotation failed.", e);
                     }
                     catch (UnauthorizedAccessException e)
                     {
-                        Console.PrintLine("StartServerAsync()没有文件权限: {0}", e);
-                        LogManager.Error("AriaServer", e);
+                        _logger.LogErrorMessage("aria2 log rotation was denied.", e);
                     }
                     catch (InvalidOperationException e)
                     {
-                        Console.PrintLine("StartServerAsync()进程状态无效: {0}", e);
-                        LogManager.Error("AriaServer", e);
+                        _logger.LogErrorMessage("aria2 log rotation encountered an invalid stream state.", e);
                     }
                 }
 
@@ -130,8 +137,7 @@ namespace DownKyi.Core.Aria2cNet.Server
                             return;
                         }
 
-                        Console.PrintLine(e.Data);
-                        LogManager.Debug("AriaServer", e.Data);
+                        _logger.LogDebugMessage(e.Data);
 
                         action.Invoke(e.Data);
                     });
@@ -144,7 +150,7 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// 关闭aria2c服务器，异步方法
         /// </summary>
         /// <returns></returns>
-        public static async Task<bool> CloseServerAsync(TimeSpan? timeout = null)
+        public async Task<bool> CloseServerAsync(TimeSpan? timeout = null)
         {
             var waitTimeout = timeout ?? TimeSpan.FromSeconds(5);
             try
@@ -168,37 +174,34 @@ namespace DownKyi.Core.Aria2cNet.Server
             }
             catch (HttpRequestException e)
             {
-                Console.PrintLine("CloseServerAsync()发生异常: {0}", e);
-                LogManager.Error("AriaServer", e);
+                _logger.LogErrorMessage("aria2 shutdown request failed.", e);
                 KillTrackedServer("aria2 shutdown failed.");
                 return false;
             }
             catch (InvalidOperationException e)
             {
-                Console.PrintLine("CloseServerAsync()进程状态无效: {0}", e);
-                LogManager.Error("AriaServer", e);
+                _logger.LogErrorMessage("aria2 shutdown encountered an invalid process state.", e);
                 KillTrackedServer("aria2 shutdown failed.");
                 return false;
             }
             catch (Newtonsoft.Json.JsonException e)
             {
-                Console.PrintLine("CloseServerAsync()响应格式无效: {0}", e);
-                LogManager.Error("AriaServer", e);
+                _logger.LogErrorMessage("aria2 shutdown returned an invalid response.", e);
                 KillTrackedServer("aria2 shutdown response was invalid.");
                 return false;
             }
         }
 
-        private static async Task<bool> WaitForExitOrKillAsync(TimeSpan timeout)
+        private async Task<bool> WaitForExitOrKillAsync(TimeSpan timeout)
         {
-            return await ProcessSupervisor.WaitForExitOrKillAsync(timeout).ConfigureAwait(false);
+            return await _processSupervisor.WaitForExitOrKillAsync(timeout).ConfigureAwait(false);
         }
 
         /// <summary>
         /// 强制关闭aria2c服务器，异步方法
         /// </summary>
         /// <returns></returns>
-        public static async Task<bool> ForceCloseServerAsync(TimeSpan? timeout = null)
+        public async Task<bool> ForceCloseServerAsync(TimeSpan? timeout = null)
         {
             try
             {
@@ -222,40 +225,37 @@ namespace DownKyi.Core.Aria2cNet.Server
             }
             catch (HttpRequestException e)
             {
-                Console.PrintLine("ForceCloseServerAsync()发生异常: {0}", e);
-                LogManager.Error("AriaServer", e);
+                _logger.LogErrorMessage("aria2 force-shutdown request failed.", e);
                 KillTrackedServer("aria2 force shutdown failed.");
                 return false;
             }
             catch (InvalidOperationException e)
             {
-                Console.PrintLine("ForceCloseServerAsync()进程状态无效: {0}", e);
-                LogManager.Error("AriaServer", e);
+                _logger.LogErrorMessage("aria2 force shutdown encountered an invalid process state.", e);
                 KillTrackedServer("aria2 force shutdown failed.");
                 return false;
             }
             catch (Newtonsoft.Json.JsonException e)
             {
-                Console.PrintLine("ForceCloseServerAsync()响应格式无效: {0}", e);
-                LogManager.Error("AriaServer", e);
+                _logger.LogErrorMessage("aria2 force shutdown returned an invalid response.", e);
                 KillTrackedServer("aria2 force shutdown response was invalid.");
                 return false;
             }
         }
 
-        public static bool KillTrackedServer(string reason)
+        public bool KillTrackedServer(string reason)
         {
-            return ProcessSupervisor.Kill(reason);
+            return _processSupervisor.Kill(reason);
         }
 
-        internal static void SetTrackedServerForTests(Process? process)
+        internal void SetTrackedServerForTests(Process? process)
         {
-            ProcessSupervisor.SetTrackedProcessForTests(process);
+            _processSupervisor.SetTrackedProcessForTests(process);
         }
 
-        internal static bool HasTrackedServerForTests()
+        internal bool HasTrackedServerForTests()
         {
-            return ProcessSupervisor.HasTrackedProcess;
+            return _processSupervisor.HasTrackedProcess;
         }
 
         internal static string GetLogLevelArgument(AriaConfigLogLevel logLevel)
@@ -284,11 +284,11 @@ namespace DownKyi.Core.Aria2cNet.Server
             };
         }
 
-        private static void ExecuteProcess(string exe, string arg, string? workingDirectory,
+        private void ExecuteProcess(string exe, string arg, string? workingDirectory,
             DataReceivedEventHandler output)
         {
             var p = new Process();
-            ProcessSupervisor.Track(p);
+            _processSupervisor.Track(p);
 
             p.StartInfo.FileName = exe;
             p.StartInfo.Arguments = arg;
@@ -318,7 +318,7 @@ namespace DownKyi.Core.Aria2cNet.Server
             }
             catch
             {
-                ProcessSupervisor.SetTrackedProcessForTests(null);
+                _processSupervisor.SetTrackedProcessForTests(null);
                 p.Dispose();
                 throw;
             }

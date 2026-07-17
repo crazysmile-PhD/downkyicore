@@ -275,13 +275,7 @@
                 Grid.Column="1"
                 Margin="30,0,0,0"
                 ItemsSource="{Binding FavoritesMedias, Mode=TwoWay}"
-                SelectionMode="Multiple">
-                <Interaction.Behaviors>
-                    <EventTriggerBehavior EventName="SelectionChanged">
-                        <InvokeCommandAction Command="{Binding FavoritesMediasCommand}"
-                                             CommandParameter="{Binding ElementName=NameFavoritesMedias, Path=SelectedItem}" />
-                    </EventTriggerBehavior>
-                </Interaction.Behaviors>
+                SelectionMode="Multiple,Toggle">
                 <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
                         <VirtualizingStackPanel />

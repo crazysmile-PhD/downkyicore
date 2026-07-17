@@ -1,7 +1,6 @@
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
 using Newtonsoft.Json;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.Users;
 
@@ -15,7 +14,7 @@ public static class UserStatus
     /// </summary>
     /// <param name="mid"></param>
     /// <returns></returns>
-    public static UserRelationStat? GetUserRelationStat(long mid)
+    public static UserRelationStat? GetUserRelationStat(long mid, CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/relation/stat?vmid={mid}";
         const string referer = "https://www.bilibili.com";
@@ -23,7 +22,8 @@ public static class UserStatus
             url,
             referer,
             nameof(GetUserRelationStat),
-            "UserStatus");
+            "UserStatus",
+            cancellationToken);
 
         return userRelationStat?.Data;
     }

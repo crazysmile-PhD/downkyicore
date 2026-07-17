@@ -1,14 +1,20 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using DownKyi.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Core.Aria2cNet.Server;
 
 internal sealed class AriaProcessSupervisor
 {
-    private const string Tag = nameof(AriaProcessSupervisor);
     private readonly Lock _sync = new();
+    private readonly ILogger<AriaProcessSupervisor> _logger;
     private Process? _process;
+
+    public AriaProcessSupervisor(ILogger<AriaProcessSupervisor> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
 
     public bool HasTrackedProcess
     {
@@ -80,7 +86,7 @@ internal sealed class AriaProcessSupervisor
         {
             if (!process.HasExited)
             {
-                LogManager.Error(Tag, new TimeoutException(reason));
+                _logger.LogErrorMessage(reason, new TimeoutException(reason));
                 process.Kill(entireProcessTree: true);
             }
 
@@ -88,12 +94,12 @@ internal sealed class AriaProcessSupervisor
         }
         catch (InvalidOperationException e)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("aria2 process cleanup failed because its state changed.", e);
             return false;
         }
         catch (Win32Exception e)
         {
-            LogManager.Error(Tag, e);
+            _logger.LogErrorMessage("aria2 process cleanup failed at the operating-system boundary.", e);
             return false;
         }
     }

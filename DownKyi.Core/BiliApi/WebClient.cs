@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Web;
 using DownKyi.Core.BiliApi.Login;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 
@@ -11,10 +10,7 @@ namespace DownKyi.Core.BiliApi;
 
 public static class WebClient
 {
-    private static readonly SocketsHttpHandler SocketsHandler = CreateSocketsHandler();
-    private static readonly HttpClient HttpClient = CreateHttpClient(SocketsHandler);
-    private static BilibiliHttpClient _client = new(HttpClient);
-    private static int _resourcesDisposed;
+    private static BilibiliHttpClient? _client;
     private static string? _bvuid3 = string.Empty;
     private static string? _bvuid4 = string.Empty;
     internal static Func<HttpRequestMessage, CancellationToken, HttpResponseMessage>? SendOverrideForTests { get; set; }
@@ -25,33 +21,17 @@ public static class WebClient
         Volatile.Write(ref _client, client);
     }
 
-    private static HttpClient CreateHttpClient(SocketsHttpHandler socketsHandler)
-    {
-        var httpClient = new HttpClient(socketsHandler, disposeHandler: false);
-        ConfigureDefaults(httpClient);
-        return httpClient;
-    }
-
-    internal static void ConfigureDefaults(HttpClient httpClient)
+    internal static void ConfigureDefaults(HttpClient httpClient, ISettingsStore settingsStore)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
-        httpClient.DefaultRequestHeaders.Add("User-Agent", SettingsManager.Instance.GetUserAgent());
+        ArgumentNullException.ThrowIfNull(settingsStore);
+        httpClient.DefaultRequestHeaders.Add("User-Agent", settingsStore.Current.Network.UserAgent);
         httpClient.DefaultRequestHeaders.Add("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
     }
 
-    public static void DisposeSharedResources()
+    internal static SocketsHttpHandler CreateSocketsHandler(ISettingsStore settingsStore)
     {
-        if (Interlocked.Exchange(ref _resourcesDisposed, 1) != 0)
-        {
-            return;
-        }
-
-        HttpClient.Dispose();
-        SocketsHandler.Dispose();
-    }
-
-    internal static SocketsHttpHandler CreateSocketsHandler()
-    {
+        ArgumentNullException.ThrowIfNull(settingsStore);
         var socketsHandler = new SocketsHttpHandler
         {
             PooledConnectionLifetime = TimeSpan.FromMinutes(10),
@@ -59,7 +39,8 @@ public static class WebClient
             AutomaticDecompression = DecompressionMethods.All,
             ConnectTimeout = TimeSpan.FromSeconds(8)
         };
-        switch (SettingsManager.Instance.GetNetworkProxy())
+        var network = settingsStore.Current.Network;
+        switch (network.NetworkProxy)
         {
             case NetworkProxy.None:
                 socketsHandler.UseProxy = false;
@@ -74,13 +55,12 @@ public static class WebClient
                     try
                     {
                         socketsHandler.UseProxy = true;
-                        socketsHandler.Proxy = new WebProxy(SettingsManager.Instance.GetCustomProxy());
+                        socketsHandler.Proxy = new WebProxy(network.CustomNetworkProxy);
                     }
-                    catch (UriFormatException e)
+                    catch (UriFormatException)
                     {
                         socketsHandler.UseProxy = false;
                         socketsHandler.Proxy = null;
-                        LogManager.Error(nameof(WebClient), e);
                     }
                 }
                 break;
@@ -123,29 +103,17 @@ public static class WebClient
         ArgumentException.ThrowIfNullOrWhiteSpace(requestAddress);
 
         var attempts = Math.Max(1, retry);
-        try
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrEmpty(_bvuid3) && requestAddress != "https://api.bilibili.com/x/frontend/finger/spi")
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (string.IsNullOrEmpty(_bvuid3) && requestAddress != "https://api.bilibili.com/x/frontend/finger/spi")
-            {
-                GetBuvid(cancellationToken);
-            }
+            GetBuvid(cancellationToken);
+        }
 
-            return Volatile.Read(ref _client).Send(
-                () => BuildRequest(requestAddress, referer, method, parameters, json),
-                attempts,
-                SendOverrideForTests,
-                cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException)
-        {
-            LogManager.Error(nameof(RequestWeb), e);
-            throw;
-        }
+        return GetConfiguredClient().Send(
+            () => BuildRequest(requestAddress, referer, method, parameters, json),
+            attempts,
+            SendOverrideForTests,
+            cancellationToken);
     }
 
     internal static void ResetBuvidForTests()
@@ -166,6 +134,11 @@ public static class WebClient
     {
         SendOverrideForTests = null;
         ResetBuvidForTests();
+    }
+
+    internal static void ResetConfigurationForTests()
+    {
+        Volatile.Write(ref _client, null);
     }
 
     internal static TimeSpan GetRetryDelayForTests(int attempt)
@@ -280,13 +253,13 @@ public static class WebClient
             {
                 File.Delete(temporaryFile);
             }
-            catch (IOException e)
+            catch (IOException)
             {
-                LogManager.Debug(nameof(DownloadFile), $"Temporary download cleanup failed: {e.Message}");
+                // Preserve the original download failure.
             }
-            catch (UnauthorizedAccessException e)
+            catch (UnauthorizedAccessException)
             {
-                LogManager.Debug(nameof(DownloadFile), $"Temporary download cleanup was denied: {e.Message}");
+                // Preserve the original download failure.
             }
 
             throw;
@@ -315,7 +288,7 @@ public static class WebClient
             }
         }
 
-        var response = Volatile.Read(ref _client)
+        var response = GetConfiguredClient()
             .SendResponse(request, SendOverrideForTests, cancellationToken);
         try
         {
@@ -379,6 +352,13 @@ public static class WebClient
             _request.Dispose();
             await base.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    private static BilibiliHttpClient GetConfiguredClient()
+    {
+        return Volatile.Read(ref _client)
+               ?? throw new InvalidOperationException(
+                   "The Bilibili HTTP client has not been configured by the application host.");
     }
 
 }

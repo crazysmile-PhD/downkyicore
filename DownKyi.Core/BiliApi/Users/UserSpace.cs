@@ -1,10 +1,9 @@
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.Logging;
+using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.Core.BiliApi.Users;
 
@@ -18,7 +17,7 @@ public static class UserSpace
     /// </summary>
     /// <param name="mid"></param>
     /// <returns></returns>
-    public static SpaceSettings? GetSpaceSettings(long mid)
+    public static SpaceSettings? GetSpaceSettings(long mid, CancellationToken cancellationToken = default)
     {
         var url = $"https://space.bilibili.com/ajax/settings/getSettings?mid={mid}";
         const string referer = "https://www.bilibili.com";
@@ -26,7 +25,8 @@ public static class UserSpace
             url,
             referer,
             nameof(GetSpaceSettings),
-            "UserSpace");
+            "UserSpace",
+            cancellationToken);
 
         return settings is not { Status: true } ? null : settings.Data;
     }
@@ -38,11 +38,13 @@ public static class UserSpace
     /// </summary>
     /// <param name="mid">用户id</param>
     /// <returns></returns>
-    public static IReadOnlyList<SpacePublicationListTypeVideoZone>? GetPublicationType(long mid)
+    public static IReadOnlyList<SpacePublicationListTypeVideoZone>? GetPublicationType(
+        ISettingsStore settingsStore,
+        long mid)
     {
         const int pn = 1;
         const int ps = 1;
-        var publication = GetPublication(mid, pn, ps);
+        var publication = GetPublication(settingsStore, mid, pn, ps);
         return GetPublicationType(publication);
     }
 
@@ -79,7 +81,12 @@ public static class UserSpace
     /// <param name="tid">视频分区</param>
     /// <param name="keyword">搜索关键词</param>
     /// <returns></returns>
-    public static IReadOnlyList<SpacePublicationListVideo> GetAllPublication(long mid, int tid = 0, PublicationOrder order = PublicationOrder.PUBDATE, string keyword = "")
+    public static IReadOnlyList<SpacePublicationListVideo> GetAllPublication(
+        ISettingsStore settingsStore,
+        long mid,
+        int tid = 0,
+        PublicationOrder order = PublicationOrder.PUBDATE,
+        string keyword = "")
     {
         var result = new List<SpacePublicationListVideo>();
 
@@ -89,7 +96,7 @@ public static class UserSpace
             i++;
             const int ps = 100;
 
-            var data = GetPublication(mid, i, ps, tid, order, keyword);
+            var data = GetPublication(settingsStore, mid, i, ps, tid, order, keyword);
             if (data?.Vlist == null || data.Vlist.Count == 0)
             {
                 break;
@@ -111,8 +118,17 @@ public static class UserSpace
     /// <param name="tid">视频分区</param>
     /// <param name="keyword">搜索关键词</param>
     /// <returns></returns>
-    public static SpacePublicationList? GetPublication(long mid, int pn, int ps, long tid = 0, PublicationOrder order = PublicationOrder.PUBDATE, string keyword = "")
+    public static SpacePublicationList? GetPublication(
+        ISettingsStore settingsStore,
+        long mid,
+        int pn,
+        int ps,
+        long tid = 0,
+        PublicationOrder order = PublicationOrder.PUBDATE,
+        string keyword = "",
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(settingsStore);
         var parameters = new Dictionary<string, object?>
         {
             { "mid", mid },
@@ -130,13 +146,13 @@ public static class UserSpace
             parameters.Add("dm_img_inter", "{\"ds\":[],\"wh\":[0,0,0],\"of\":[0,0,0]}");
         }
 
-        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
+        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters, settingsStore));
         var url = $"https://api.bilibili.com/x/space/wbi/arc/search?{query}";
         const string referer = "https://www.bilibili.com";
 
         try
         {
-            var response = WebClient.RequestWeb(url, referer);
+            var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
             // 忽略play的值为“--”时的类型错误
             var settings = new JsonSerializerSettings
             {
@@ -156,16 +172,12 @@ public static class UserSpace
         {
             throw;
         }
-        catch (HttpRequestException e)
+        catch (HttpRequestException)
         {
-            Console.PrintLine("GetPublication()发生异常: {0}", e);
-            LogManager.Error("UserSpace", e);
             return null;
         }
-        catch (JsonException e)
+        catch (JsonException)
         {
-            Console.PrintLine("GetPublication()JSON解析异常: {0}", e);
-            LogManager.Error("UserSpace", e);
             return null;
         }
     }
@@ -404,7 +416,12 @@ public static class UserSpace
     /// <param name="pn">页码</param>
     /// <param name="ps">每页项数</param>
     /// <returns></returns>
-    public static BangumiFollowData? GetBangumiFollow(long mid, BangumiType type, int pn, int ps)
+    public static BangumiFollowData? GetBangumiFollow(
+        long mid,
+        BangumiType type,
+        int pn,
+        int ps,
+        CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/space/bangumi/follow/list?vmid={mid}&type={type:D}&pn={pn}&ps={ps}";
         const string referer = "https://www.bilibili.com";
@@ -412,7 +429,8 @@ public static class UserSpace
             url,
             referer,
             nameof(GetBangumiFollow),
-            "UserSpace");
+            "UserSpace",
+            cancellationToken);
 
         return bangumiFollow?.Data;
     }

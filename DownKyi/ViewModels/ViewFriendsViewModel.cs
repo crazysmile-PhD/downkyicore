@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using DownKyi.Events;
+using DownKyi.Application.Desktop;
 using DownKyi.Images;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Friends;
 using DownKyi.ViewModels.PageViewModels;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
@@ -15,8 +14,6 @@ namespace DownKyi.ViewModels
     internal class ViewFriendsViewModel : ViewModelBase
     {
         public const string Tag = "PageFriends";
-
-        private readonly IRegionManager _regionManager;
 
         private long mid = -1;
 
@@ -48,11 +45,9 @@ namespace DownKyi.ViewModels
 
         #endregion
 
-        public ViewFriendsViewModel(IRegionManager regionManager, IEventAggregator eventAggregator) : base(
-            eventAggregator)
+        public ViewFriendsViewModel(IDesktopInteractionContext desktopInteractions)
+            : base(desktopInteractions)
         {
-            _regionManager = regionManager;
-
             #region 属性初始化
 
             ArrowBack = NavigationIcon.Instance().ArrowBack;
@@ -83,13 +78,7 @@ namespace DownKyi.ViewModels
 
             ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
 
-            var parameter = new NavigationParam
-            {
-                ViewName = ParentView,
-                ParentViewName = null,
-                Parameter = null
-            };
-            EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+            NavigateToParent();
         }
 
         // 顶部tab点击事件
@@ -125,19 +114,25 @@ namespace DownKyi.ViewModels
             // isFirst参数表示是否是从PageFriends的headerTable的item点击进入的
             // true表示加载PageFriends后第一次进入
             // false表示从headerTable的item点击进入
-            var param = new NavigationParameters()
+            var parameters = new Dictionary<string, object?>
             {
-                { "mid", mid },
-                { "isFirst", isFirst },
+                ["mid"] = mid,
+                ["isFirst"] = isFirst
             };
 
             switch (id)
             {
                 case 0:
-                    _regionManager.RequestNavigate("FriendContentRegion", ViewFollowingViewModel.Tag, param);
+                    Navigation.NavigateRegion(
+                        AppNavigationRegion.Friends,
+                        AppRoute.Following,
+                        parameters);
                     break;
                 case 1:
-                    _regionManager.RequestNavigate("FriendContentRegion", ViewFollowerViewModel.Tag, param);
+                    Navigation.NavigateRegion(
+                        AppNavigationRegion.Friends,
+                        AppRoute.Follower,
+                        parameters);
                     break;
             }
         }

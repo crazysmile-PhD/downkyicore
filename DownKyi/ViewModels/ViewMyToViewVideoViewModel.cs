@@ -1,21 +1,22 @@
 using System;
 using System.Collections;
-using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
-using DownKyi.Core.BiliApi.History;
-using DownKyi.Core.BiliApi.VideoStream;
-using DownKyi.Events;
+using DownKyi.Core.Logging;
 using DownKyi.Images;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Download;
+using DownKyi.Services.Media;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -23,8 +24,11 @@ namespace DownKyi.ViewModels;
 internal class ViewMyToViewVideoViewModel : ViewModelBase
 {
     public const string Tag = "PageMyToView";
-
-    private CancellationTokenSource? _tokenSource;
+    private readonly IContentDownloadCoordinator _downloadCoordinator;
+    private readonly ILogger<ViewMyToViewVideoViewModel> _logger;
+    private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
+    private CancellationTokenSource? _loadCancellation;
+    private CancellationTokenSource? _downloadCancellation;
 
     #region 页面属性申明
 
@@ -60,9 +64,9 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         set => SetProperty(ref _contentVisibility, value);
     }
 
-    private ObservableCollection<ToViewMedia> _medias = new();
+    private RangeObservableCollection<ToViewMedia> _medias = new();
 
-    public ObservableCollection<ToViewMedia> Medias
+    public RangeObservableCollection<ToViewMedia> Medias
     {
         get => _medias;
         private set => SetProperty(ref _medias, value);
@@ -102,10 +106,16 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
 
     #endregion
 
-    public ViewMyToViewVideoViewModel(IEventAggregator eventAggregator, IDialogService dialogService) : base(
-        eventAggregator)
+    public ViewMyToViewVideoViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        IContentDownloadCoordinator downloadCoordinator,
+        IPersonalMediaCoordinator personalMediaCoordinator,
+        ILogger<ViewMyToViewVideoViewModel> logger) : base(desktopInteractions)
     {
-        DialogService = dialogService;
+        _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
+        _personalMediaCoordinator = personalMediaCoordinator
+            ?? throw new ArgumentNullException(nameof(personalMediaCoordinator));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region 属性初始化
 
@@ -123,7 +133,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         DownloadManage.Width = 24;
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
-        Medias = new ObservableCollection<ToViewMedia>();
+        Medias = new RangeObservableCollection<ToViewMedia>();
 
         #endregion
     }
@@ -145,15 +155,9 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
 
         // 结束任务
-        _tokenSource?.Cancel();
+        CancelOperations();
 
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent();
     }
 
     // 前往下载管理页面
@@ -166,13 +170,9 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     /// </summary>
     private void ExecuteDownloadManagerCommand()
     {
-        var parameter = new NavigationParam
-        {
-            ViewName = ViewDownloadManagerViewModel.Tag,
-            ParentViewName = Tag,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.DownloadManager,
+            AppRoute.MyToViewVideo));
     }
 
     // 全选按钮点击事件
@@ -224,7 +224,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     // 添加选中项到下载列表事件
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true));
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand => _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
 
     /// <summary>
     /// 添加选中项到下载列表事件
@@ -232,7 +232,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     // 添加所有视频到下载列表事件
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
-    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false));
+    public DownKyiAsyncDelegateCommand AddAllToDownloadCommand => _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
 
     /// <summary>
     /// 添加所有视频到下载列表事件
@@ -245,51 +245,31 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     /// <param name="isOnlySelected"></param>
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        // 稍后再看里只有视频
-        var addToDownloadService = new AddToDownloadService(PlayStreamType.Video);
-
-        // 选择文件夹
-        var directory = await addToDownloadService.SetDirectory(DialogService).ConfigureAwait(true);
-
-        // 视频计数
-        var i = 0;
-        await Task.Run(async () =>
+        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var items = Medias
+            .Select(media => new ContentDownloadItem(media.Bvid, DownloadInfoKind.Video, media.IsSelected))
+            .ToArray();
+        try
         {
-            // 为了避免执行其他操作时，
-            // Medias变化导致的异常
-            var list = Medias.ToList();
-
-            // 添加到下载
-            foreach (var media in list)
+            var addedCount = await _downloadCoordinator.AddAsync(
+                items,
+                isOnlySelected,
+                cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (addedCount != null)
             {
-                // 只下载选中项，跳过未选中项
-                if (isOnlySelected && !media.IsSelected)
-                {
-                    continue;
-                }
-
-                /// 有分P的就下载全部
-
-                // 开启服务
-                var videoInfoService = new VideoInfoService(media.Bvid);
-
-                addToDownloadService.SetVideoInfoService(videoInfoService);
-                addToDownloadService.GetVideo();
-                addToDownloadService.ParseVideo(videoInfoService);
-                // 下载
-                i += await addToDownloadService.AddToDownload(EventAggregator, DialogService, directory).ConfigureAwait(true);
+                PublishAddedCount(addedCount.Value);
             }
-        }).ConfigureAwait(true);
-
-        if (directory == null)
-        {
-            return;
         }
-
-        // 通知用户添加到下载列表的结果
-        EventAggregator.GetEvent<MessageEvent>().Publish(i <= 0
-            ? DictionaryResource.GetString("TipAddDownloadingZero")
-            : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{i}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
+            or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
+        {
+            _logger.LogErrorMessage("Watch-later download preparation failed.", e);
+            Notifications.Show(e.Message);
+        }
     }
 
     private async Task UpdateToViewMediaListAsync()
@@ -297,67 +277,35 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         LoadingVisibility = true;
         NoDataVisibility = false;
         Medias.Clear();
-        var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
-
-        await Task.Run(() =>
+        var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
+        try
         {
-            var toViewList = ToView.GetToView();
-            if (toViewList == null || toViewList.Count == 0)
+            var medias = await _personalMediaCoordinator
+                .LoadToViewAsync(cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (medias.Count == 0)
             {
                 LoadingVisibility = false;
                 NoDataVisibility = true;
                 return;
             }
 
-            foreach (var toView in toViewList)
-            {
-                // 查询、保存封面
-                var coverUrl = toView.Pic;
-                if (!coverUrl.StartsWith("http", System.StringComparison.OrdinalIgnoreCase))
-                {
-                    coverUrl = $"https:{toView.Pic}";
-                }
-
-                // 获取用户头像
-                long upMid = -1;
-                string upName;
-                if (toView.Owner != null && toView.Owner.Face != null)
-                {
-                    upMid = toView.Owner.Mid;
-                    upName = toView.Owner.Name;
-                }
-                else
-                {
-                    upName = "";
-                }
-
-                App.PropertyChangeAsync(() =>
-                {
-                    var media = new ToViewMedia(EventAggregator)
-                    {
-                        Aid = toView.Aid,
-                        Bvid = toView.Bvid,
-                        UpMid = upMid,
-                        Cover = coverUrl,
-                        Title = toView.Title,
-                        UpName = upName,
-                        UpHeader = toView.Owner?.Face ?? ""
-                    };
-
-                    Medias.Add(media);
-
-                    ContentVisibility = true;
-                    LoadingVisibility = false;
-                    NoDataVisibility = false;
-                });
-
-                // 判断是否该结束线程，若为true，跳出循环
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-            }
-        }, cancellationToken).ConfigureAwait(true);
+            Medias.AddRange(medias);
+            ContentVisibility = true;
+            LoadingVisibility = false;
+            NoDataVisibility = false;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
+        {
+            LoadingVisibility = false;
+            NoDataVisibility = true;
+            _logger.LogErrorMessage("Watch-later page loading failed.", e);
+        }
     }
 
     /// <summary>
@@ -406,16 +354,34 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
 
         InitView();
 
-        RunFireAndForget(UpdateToViewMediaListAsync(), nameof(UpdateToViewMediaListAsync));
+        RunFireAndForget(UpdateToViewMediaListAsync(), nameof(UpdateToViewMediaListAsync), _logger);
+    }
+
+    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    {
+        CancelOperations();
+        LoadingVisibility = false;
+        base.OnNavigatedFrom(navigationContext);
+    }
+
+    private void PublishAddedCount(int addedCount)
+    {
+        Notifications.Show(addedCount <= 0
+            ? DictionaryResource.GetString("TipAddDownloadingZero")
+            : $"{DictionaryResource.GetString("TipAddDownloadingFinished1")}{addedCount}{DictionaryResource.GetString("TipAddDownloadingFinished2")}");
+    }
+
+    private void CancelOperations()
+    {
+        CancelAndDispose(ref _loadCancellation);
+        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing && !IsDisposed)
         {
-            _tokenSource?.Cancel();
-            _tokenSource?.Dispose();
-            _tokenSource = null;
+            CancelOperations();
         }
 
         base.Dispose(disposing);

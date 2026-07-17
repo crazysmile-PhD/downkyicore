@@ -1,20 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Globalization;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Login;
-using DownKyi.Core.BiliApi.Users;
-using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.Storage;
-using DownKyi.Events;
+using DownKyi.Core.Logging;
+using DownKyi.Core.Settings;
 using DownKyi.Images;
+using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
@@ -23,7 +23,10 @@ internal class ViewMySpaceViewModel : ViewModelBase
 {
     public const string Tag = "PageMySpace";
 
-    private CancellationTokenSource? _tokenSource;
+    private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
+    private readonly ILogger<ViewMySpaceViewModel> _logger;
+    private readonly ISettingsStore _settingsStore;
+    private CancellationTokenSource? _loadCancellation;
 
     // mid
     private long _mid = -1;
@@ -288,8 +291,15 @@ internal class ViewMySpaceViewModel : ViewModelBase
 
     #endregion
 
-    public ViewMySpaceViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewMySpaceViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        IUserSpacePageCoordinator userSpaceCoordinator,
+        ISettingsStore settingsStore,
+        ILogger<ViewMySpaceViewModel> logger) : base(desktopInteractions)
     {
+        _userSpaceCoordinator = userSpaceCoordinator ?? throw new ArgumentNullException(nameof(userSpaceCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         // 返回按钮
@@ -334,15 +344,9 @@ internal class ViewMySpaceViewModel : ViewModelBase
     protected internal override void ExecuteBackSpace()
     {
         // 结束任务
-        _tokenSource?.Cancel();
+        CancelAndDispose(ref _loadCancellation);
 
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = null
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent();
     }
 
     // 退出登录事件
@@ -356,16 +360,10 @@ internal class ViewMySpaceViewModel : ViewModelBase
     private void ExecuteLogoutCommand()
     {
         // 注销
-        LoginHelper.Logout();
+        LoginHelper.Logout(_settingsStore);
 
         // 返回上一页
-        var parameter = new NavigationParam
-        {
-            ViewName = ParentView,
-            ParentViewName = null,
-            Parameter = "logout"
-        };
-        EventAggregator.GetEvent<NavigationEvent>().Publish(parameter);
+        NavigateToParent("logout");
     }
 
     // 页面选择事件
@@ -393,15 +391,24 @@ internal class ViewMySpaceViewModel : ViewModelBase
         {
             case 0:
                 data["friendId"] = 0;
-                NavigateToView.NavigationView(EventAggregator, ViewFriendsViewModel.Tag, Tag, data);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.Friends,
+                    AppRoute.MySpace,
+                    data));
                 break;
             case 1:
                 data["friendId"] = 0;
-                NavigateToView.NavigationView(EventAggregator, ViewFriendsViewModel.Tag, Tag, data);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.Friends,
+                    AppRoute.MySpace,
+                    data));
                 break;
             case 2:
                 data["friendId"] = 1;
-                NavigateToView.NavigationView(EventAggregator, ViewFriendsViewModel.Tag, Tag, data);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.Friends,
+                    AppRoute.MySpace,
+                    data));
                 break;
             default:
                 break;
@@ -428,16 +435,28 @@ internal class ViewMySpaceViewModel : ViewModelBase
         switch (SelectedPackage)
         {
             case 0:
-                NavigateToView.NavigationView(EventAggregator, ViewMyFavoritesViewModel.Tag, Tag, _mid);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.MyFavorites,
+                    AppRoute.MySpace,
+                    _mid));
                 break;
             case 1:
-                NavigateToView.NavigationView(EventAggregator, ViewMyBangumiFollowViewModel.Tag, Tag, _mid);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.MyBangumiFollow,
+                    AppRoute.MySpace,
+                    _mid));
                 break;
             case 2:
-                NavigateToView.NavigationView(EventAggregator, ViewMyToViewVideoViewModel.Tag, Tag, _mid);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.MyToViewVideo,
+                    AppRoute.MySpace,
+                    _mid));
                 break;
             case 3:
-                NavigateToView.NavigationView(EventAggregator, ViewMyHistoryViewModel.Tag, Tag, _mid);
+                Navigation.Navigate(new AppNavigationRequest(
+                    AppRoute.MyHistory,
+                    AppRoute.MySpace,
+                    _mid));
                 break;
             default:
                 break;
@@ -524,163 +543,89 @@ internal class ViewMySpaceViewModel : ViewModelBase
     /// </summary>
     private async Task UpdateSpaceInfoAsync()
     {
-        var isCancel = false;
-        var isNoData = true;
-        string? toutuUri = null;
-        string? headerUri = null;
-        Uri? sexUri = null;
-        Uri? levelUri = null;
-        var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
-
-        await Task.Run(() =>
+        var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
+        try
         {
-            // 背景图片
-            var spaceSettings = Core.BiliApi.Users.UserSpace.GetSpaceSettings(_mid);
-            toutuUri = spaceSettings != null ? $"https://i0.hdslb.com/{spaceSettings.Toutu.Limg}" : "avares://DownKyi/Resources/backgound/9-绿荫秘境.png";
-
-            // 我的用户信息
-            var myInfo = UserInfo.GetMyInfo();
-            if (myInfo != null)
+            var profile = await _userSpaceCoordinator.LoadMyProfileAsync(_mid, cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (profile == null)
             {
-                isNoData = false;
-
-                // 头像
-                headerUri = myInfo.Face;
-                // 用户名
-                UserName = myInfo.Name;
-                // 性别
-                if (myInfo.Sex == "男")
-                {
-                    sexUri = new Uri("avares://DownKyi/Resources/sex/male.png");
-                }
-                else if (myInfo.Sex == "女")
-                {
-                    sexUri = new Uri("avares://DownKyi/Resources/sex/female.png");
-                }
-
-                // 显示vip信息
-                if (myInfo.Vip.Label?.Text is null or "")
-                {
-                    VipTypeVisibility = false;
-                }
-                else
-                {
-                    VipTypeVisibility = true;
-                    VipType = myInfo.Vip.Label.Text;
-                }
-
-                // 等级
-                levelUri = new Uri($"avares://DownKyi/Resources/level/lv{myInfo.Level}.png");
-                // 签名
-                Sign = myInfo.Sign;
-                // 绑定邮箱&手机
-                if (myInfo.EmailStatus == 0)
-                {
-                    BindingEmailVisibility = false;
-                }
-
-                if (myInfo.TelStatus == 0)
-                {
-                    BindingPhoneVisibility = false;
-                }
-
-                // 等级
-                PropertyChangeAsync(() => { LevelText = $"{DictionaryResource.GetString("Level")}{myInfo.LevelExp.CurrentLevel}"; });
-                CurrentExp = myInfo.LevelExp.NextExp == -1 ? $"{myInfo.LevelExp.CurrentExp}/--" : $"{myInfo.LevelExp.CurrentExp}/{myInfo.LevelExp.NextExp}";
-
-                // 经验
-                MaxExp = myInfo.LevelExp.NextExp;
-                ExpProgress = myInfo.LevelExp.CurrentExp;
-                // 节操值
-                StatusList[4].Subtitle = myInfo.Moral.ToString(CultureInfo.CurrentCulture);
-                // 封禁状态                   
-                if (myInfo.Silence == 0)
-                {
-                    PropertyChangeAsync(() => { StatusList[5].Subtitle = DictionaryResource.GetString("Normal"); });
-                }
-                else if (myInfo.Silence == 1)
-                {
-                    PropertyChangeAsync(() => { StatusList[5].Subtitle = DictionaryResource.GetString("Ban"); });
-                }
-            }
-            else
-            {
-                // 没有数据
-                isNoData = true;
+                ShowNoData();
+                return;
             }
 
-            // 判断是否该结束线程
-            if (cancellationToken.IsCancellationRequested)
-            {
-                isCancel = true;
-            }
-        }, cancellationToken).ConfigureAwait(true);
+            ApplyProfile(profile);
 
-        // 是否该结束线程
-        if (isCancel)
-        {
-            return;
+            try
+            {
+                var stats = await _userSpaceCoordinator.LoadMyStatsAsync(_mid, cancellationToken).ConfigureAwait(true);
+                cancellationToken.ThrowIfCancellationRequested();
+                ApplyStats(stats);
+            }
+            catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
+                or FormatException or Newtonsoft.Json.JsonException)
+            {
+                _logger.LogErrorMessage("Personal space section loading failed.", e);
+            }
         }
-
-        // 是否获取到数据
-        if (isNoData)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            TopNavigationBg = "#00FFFFFF"; // 透明
-            ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
-            Logout.Fill = DictionaryResource.GetColor("ColorTextDark");
-            Background = null;
-
-            ViewVisibility = false;
-            LoadingVisibility = false;
-            NoDataVisibility = true;
-            return;
         }
-        else
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
+            or FormatException or Newtonsoft.Json.JsonException)
         {
-            // 头像
-            Header = headerUri;
-            // 性别
-            Sex = sexUri == null ? null : ImageHelper.LoadFromResource(sexUri);
-            // 等级
-            Level = levelUri == null ? null : ImageHelper.LoadFromResource(levelUri);
-
-            ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
-            Logout.Fill = DictionaryResource.GetColor("ColorText");
-            TopNavigationBg = DictionaryResource.GetColor("ColorMask100");
-            Background = toutuUri ?? "";
-
-            ViewVisibility = true;
-            LoadingVisibility = false;
-            NoDataVisibility = false;
+            _logger.LogErrorMessage("Personal space loading failed.", e);
+            ShowNoData();
         }
+    }
 
-        await Task.Run(() =>
-        {
-            // 导航栏信息
-            var navData = UserInfo.GetUserInfoForNavigation();
-            if (navData is { IsLogin: false }) return;
-            if (navData != null)
-            {
-                ContentVisibility = true;
+    private void ApplyProfile(MySpaceProfileSnapshot profile)
+    {
+        Header = profile.Header;
+        UserName = profile.UserName;
+        Sex = profile.SexResource == null ? null : ImageHelper.LoadFromResource(new Uri(profile.SexResource));
+        Level = ImageHelper.LoadFromResource(new Uri(profile.LevelResource));
+        VipTypeVisibility = profile.VipVisible;
+        VipType = profile.VipType;
+        Sign = profile.Sign;
+        BindingEmailVisibility = profile.EmailBound;
+        BindingPhoneVisibility = profile.PhoneBound;
+        LevelText = profile.LevelText;
+        CurrentExp = profile.CurrentExperience;
+        MaxExp = profile.MaximumExperience;
+        ExpProgress = profile.ExperienceProgress;
+        StatusList[4].Subtitle = profile.Moral;
+        StatusList[5].Subtitle = profile.Silence;
 
-                // 硬币
-                Coin = navData.Money == 0 ? "0.0" : navData.Money.ToString("F1", CultureInfo.CurrentCulture);
-                // B币
-                Money = navData.Wallet.BcoinBalance == 0 ? "0.0" : navData.Wallet.BcoinBalance.ToString("F1", CultureInfo.CurrentCulture);
-            }
+        ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
+        Logout.Fill = DictionaryResource.GetColor("ColorText");
+        TopNavigationBg = DictionaryResource.GetColor("ColorMask100");
+        Background = profile.Background;
+        ViewVisibility = true;
+        LoadingVisibility = false;
+        NoDataVisibility = false;
+    }
 
-            //用户的关系状态数
-            var relationStat = UserStatus.GetUserRelationStat(_mid);
-            if (relationStat == null) return;
-            // 关注数
-            StatusList[0].Subtitle = relationStat.Following.ToString(CultureInfo.CurrentCulture);
-            // 悄悄关注数
-            StatusList[1].Subtitle = relationStat.Whisper.ToString(CultureInfo.CurrentCulture);
-            // 粉丝数
-            StatusList[2].Subtitle = relationStat.Follower.ToString(CultureInfo.CurrentCulture);
-            // 黑名单数
-            StatusList[3].Subtitle = relationStat.Black.ToString(CultureInfo.CurrentCulture);
-        }).ConfigureAwait(true);
+    private void ApplyStats(MySpaceStatsSnapshot stats)
+    {
+        ContentVisibility = stats.ShowBalances;
+        Coin = stats.Coin;
+        Money = stats.Money;
+        StatusList[0].Subtitle = stats.Following ?? StatusList[0].Subtitle;
+        StatusList[1].Subtitle = stats.Whisper ?? StatusList[1].Subtitle;
+        StatusList[2].Subtitle = stats.Follower ?? StatusList[2].Subtitle;
+        StatusList[3].Subtitle = stats.Black ?? StatusList[3].Subtitle;
+    }
+
+    private void ShowNoData()
+    {
+        TopNavigationBg = "#00FFFFFF";
+        ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
+        Logout.Fill = DictionaryResource.GetColor("ColorTextDark");
+        Background = null;
+        ViewVisibility = false;
+        LoadingVisibility = false;
+        NoDataVisibility = true;
     }
 
     /// <summary>
@@ -702,16 +647,21 @@ internal class ViewMySpaceViewModel : ViewModelBase
         _mid = parameter;
 
         InitView();
-        RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync));
+        RunFireAndForget(UpdateSpaceInfoAsync(), nameof(UpdateSpaceInfoAsync), _logger);
+    }
+
+    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    {
+        CancelAndDispose(ref _loadCancellation);
+        LoadingVisibility = false;
+        base.OnNavigatedFrom(navigationContext);
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing && !IsDisposed)
         {
-            _tokenSource?.Cancel();
-            _tokenSource?.Dispose();
-            _tokenSource = null;
+            CancelAndDispose(ref _loadCancellation);
         }
 
         base.Dispose(disposing);

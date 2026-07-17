@@ -1,10 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Utils;
 using DownKyi.ViewModels.PageViewModels;
 
@@ -17,8 +17,9 @@ internal static class Utils
     /// </summary>
     /// <param name="playUrl"></param>
     /// <param name="page"></param>
-    internal static void VideoPageInfo(PlayUrl? playUrl, VideoPage page)
+    internal static void VideoPageInfo(PlayUrl? playUrl, VideoPage page, ISettingsStore settingsStore)
     {
+        ArgumentNullException.ThrowIfNull(settingsStore);
         if (playUrl == null)
         {
             return;
@@ -28,10 +29,11 @@ internal static class Utils
         page.PlayUrl = playUrl;
 
         // 获取设置
-        var userInfo = SettingsManager.Instance.GetUserInfo();
-        var defaultQuality = SettingsManager.Instance.GetQuality();
-        var videoCodecs = SettingsManager.Instance.GetVideoCodecs();
-        var defaultAudioQuality = SettingsManager.Instance.GetAudioQuality();
+        var settings = settingsStore.Current;
+        var userInfo = settings.User;
+        var defaultQuality = settings.Video.Quality;
+        var videoCodecs = settings.Video.VideoCodecs;
+        var defaultAudioQuality = settings.Video.AudioQuality;
 
         // 未登录时，最高仅720P
         if (userInfo.Mid == -1)
@@ -176,7 +178,7 @@ internal static class Utils
     /// <param name="userInfo"></param>
     /// <param name="videoCodecs"></param>
     /// <returns></returns>
-    private static List<VideoQuality> GetVideoQualityList(PlayUrl playUrl, UserInfoSettings userInfo, int defaultQuality, int videoCodecs)
+    private static List<VideoQuality> GetVideoQualityList(PlayUrl playUrl, UserApplicationSettings userInfo, int defaultQuality, int videoCodecs)
     {
         var videoQualityList = new List<VideoQuality>();
         var codeIds = Constant.GetCodecIds();

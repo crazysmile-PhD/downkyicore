@@ -1,19 +1,20 @@
 using System;
 using System.Globalization;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
-using DownKyi.Utils;
-using DownKyi.ViewModels;
-using Prism.Events;
+using DownKyi.Core.Settings;
 
 namespace DownKyi.Services;
 
 internal class SearchService
 {
-    private readonly IEventAggregator? _defaultEventAggregator;
+    private readonly IAppNavigationService _navigationService;
+    private readonly ISettingsStore _settingsStore;
 
-    public SearchService(IEventAggregator? defaultEventAggregator = null)
+    public SearchService(ISettingsStore settingsStore, IAppNavigationService navigationService)
     {
-        _defaultEventAggregator = defaultEventAggregator;
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
     }
 
     /// <summary>
@@ -30,14 +31,12 @@ internal class SearchService
     /// 用户空间：uid928123, UID928123, uid:928123, UID:928123, https://space.bilibili.com/928123
     /// </summary>
     /// <param name="input"></param>
-    /// <param name="parentViewName"></param>
-    /// <param name="eventAggregator"></param>
+    /// <param name="parentRoute"></param>
     /// <returns></returns>
-    public bool BiliInput(string input, string parentViewName, IEventAggregator? eventAggregator = null)
+    public bool BiliInput(string input, AppRoute parentRoute)
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        eventAggregator = ResolveEventAggregator(eventAggregator);
         // 移除剪贴板id
         var justId = input.Replace(AppConstant.ClipboardId, "", StringComparison.Ordinal);
 
@@ -45,70 +44,76 @@ internal class SearchService
         if (ParseEntrance.IsAvId(justId))
         {
             var avid = ParseEntrance.GetAvId(justId).ToString(CultureInfo.InvariantCulture);
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.VideoUrl}av{avid}");
+            NavigateToVideo(parentRoute, $"{ParseEntrance.VideoUrl}av{avid}");
         }
         else if (ParseEntrance.IsAvUrl(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, input);
+            NavigateToVideo(parentRoute, input);
         }
         else if (ParseEntrance.IsBvId(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.VideoUrl}{input}");
+            NavigateToVideo(parentRoute, $"{ParseEntrance.VideoUrl}{input}");
         }
         else if (ParseEntrance.IsBvUrl(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, input);
+            NavigateToVideo(parentRoute, input);
         }
         // 番剧（电影、电视剧）
         else if (ParseEntrance.IsBangumiSeasonId(justId))
         {
             var seasonId = ParseEntrance.GetBangumiSeasonId(justId).ToString(CultureInfo.InvariantCulture);
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiUrl}ss{seasonId}");
+            NavigateToVideo(parentRoute, $"{ParseEntrance.BangumiUrl}ss{seasonId}");
         }
         else if (ParseEntrance.IsBangumiSeasonUrl(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, input);
+            NavigateToVideo(parentRoute, input);
         }
         else if (ParseEntrance.IsBangumiEpisodeId(justId))
         {
             var episodeId = ParseEntrance.GetBangumiEpisodeId(justId).ToString(CultureInfo.InvariantCulture);
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiUrl}ep{episodeId}");
+            NavigateToVideo(parentRoute, $"{ParseEntrance.BangumiUrl}ep{episodeId}");
         }
         else if (ParseEntrance.IsBangumiEpisodeUrl(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, input);
+            NavigateToVideo(parentRoute, input);
         }
         else if (ParseEntrance.IsBangumiMediaId(justId))
         {
             var mediaId = ParseEntrance.GetBangumiMediaId(justId).ToString(CultureInfo.InvariantCulture);
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, $"{ParseEntrance.BangumiMediaUrl}md{mediaId}");
+            NavigateToVideo(parentRoute, $"{ParseEntrance.BangumiMediaUrl}md{mediaId}");
         }
         else if (ParseEntrance.IsBangumiMediaUrl(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, input);
+            NavigateToVideo(parentRoute, input);
         }
         // 课程
         else if (ParseEntrance.IsCheeseSeasonUrl(justId) || ParseEntrance.IsCheeseEpisodeUrl(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewVideoDetailViewModel.Tag, parentViewName, input);
+            NavigateToVideo(parentRoute, input);
         }
         // 用户（参数传入mid）
         else if (ParseEntrance.IsUserId(justId))
         {
-            NavigateToView.NavigateToViewUserSpace(eventAggregator, ViewIndexViewModel.Tag, ParseEntrance.GetUserId(justId));
+            NavigateToUserSpace(ParseEntrance.GetUserId(justId));
         }
         else if (ParseEntrance.IsUserUrl(justId))
         {
-            NavigateToView.NavigateToViewUserSpace(eventAggregator, ViewIndexViewModel.Tag, ParseEntrance.GetUserId(justId));
+            NavigateToUserSpace(ParseEntrance.GetUserId(justId));
         }
         // 收藏夹
         else if (ParseEntrance.IsFavoritesId(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewPublicFavoritesViewModel.Tag, parentViewName, ParseEntrance.GetFavoritesId(justId));
+            _navigationService.Navigate(new AppNavigationRequest(
+                AppRoute.PublicFavorites,
+                parentRoute,
+                ParseEntrance.GetFavoritesId(justId)));
         }
         else if (ParseEntrance.IsFavoritesUrl(justId))
         {
-            NavigateToView.NavigationView(eventAggregator, ViewPublicFavoritesViewModel.Tag, parentViewName, ParseEntrance.GetFavoritesId(justId));
+            _navigationService.Navigate(new AppNavigationRequest(
+                AppRoute.PublicFavorites,
+                parentRoute,
+                ParseEntrance.GetFavoritesId(justId)));
         }
         else
         {
@@ -122,17 +127,22 @@ internal class SearchService
     /// 搜索关键词
     /// </summary>
     /// <param name="key"></param>
-    /// <param name="parentViewName"></param>
-    /// <param name="eventAggregator"></param>
-    public void SearchKey(string key, string parentViewName, IEventAggregator? eventAggregator = null)
+    /// <param name="parentRoute"></param>
+    public static void SearchKey(string key, AppRoute parentRoute)
     {
-        eventAggregator = ResolveEventAggregator(eventAggregator);
         // TODO
     }
 
-    private IEventAggregator ResolveEventAggregator(IEventAggregator? eventAggregator)
+    private void NavigateToVideo(AppRoute parentRoute, string input)
     {
-        return eventAggregator ?? _defaultEventAggregator
-            ?? throw new System.InvalidOperationException("Search navigation requires an event aggregator.");
+        _navigationService.Navigate(new AppNavigationRequest(AppRoute.VideoDetail, parentRoute, input));
+    }
+
+    private void NavigateToUserSpace(long mid)
+    {
+        var route = _settingsStore.Current.User.Mid == mid
+            ? AppRoute.MySpace
+            : AppRoute.UserSpace;
+        _navigationService.Navigate(new AppNavigationRequest(route, AppRoute.Index, mid));
     }
 }

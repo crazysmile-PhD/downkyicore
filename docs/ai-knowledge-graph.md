@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-07-13
+Last reviewed: 2026-07-15
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -64,20 +64,41 @@ tests:
 flowchart TD
     Program["app.program\nDownKyi/Program.cs"]
     App["app.application\nDownKyi/App.axaml.cs"]
+    Lifecycle["service.application-lifecycle\nIApplicationLifecycle + Avalonia adapter"]
     Host["app.host-composition\nsrc/DownKyi.Desktop/Composition/DownKyiHost.cs"]
     Domain["core.domain-contracts\nsrc/DownKyi.Domain"]
     ApplicationLayer["service.application-contracts\nsrc/DownKyi.Application"]
     Infrastructure["core.infrastructure\nsrc/DownKyi.Infrastructure"]
     MainWindow["ui.main-window\nDownKyi/Views/MainWindow.axaml"]
+    AsyncImage["ui.async-image-loader\nCustomControl/AsyncImageLoader"]
     MainVm["viewmodel.main-window\nDownKyi/ViewModels/MainWindowViewModel.cs"]
+    IndexVm["viewmodel.index\nViewIndexViewModel.cs"]
+    LoginVm["viewmodel.login\nViewLoginViewModel.cs"]
+    AccountSession["service.account-session\nServices/Account"]
+    FriendVms["viewmodel.friend-relations\nFriends ViewModels"]
+    FriendRelations["service.friend-relations\nFriendRelationCoordinator.cs"]
+    SeasonsSeriesVm["viewmodel.seasons-series\nViewSeasonsSeriesViewModel.cs"]
+    SeasonsSeries["service.seasons-series\nSeasonsSeriesCoordinator.cs"]
+    FavoritesVms["viewmodel.favorites\nPrivate/Public Favorites ViewModels"]
+    Favorites["service.favorites\nFavoritesCoordinator.cs"]
+    PersonalMediaVms["viewmodel.personal-media\nHistory/Watch-later ViewModels"]
+    PersonalMedia["service.personal-media\nPersonalMediaCoordinator.cs"]
+    UserSpacePageVms["viewmodel.user-space-pages\nPublication/My-space ViewModels"]
+    UserSpacePages["service.user-space-pages\nUserSpacePageCoordinator.cs"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
-    Resolver["service.video-input-resolver\nDownKyi/Services/Video/VideoInputResolver.cs"]
+    SettingsVms["viewmodel.settings-pages\nSettings ViewModels"]
+    NetworkSettings["service.network-settings\nNetworkSettingsCoordinator.cs"]
+    BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
+    BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
+    Resolver["service.video-input-resolver\nsrc/DownKyi.Application/Media"]
     Parser["service.video-parse-coordinator\nDownKyi/Services/Video/VideoParseCoordinator.cs"]
     InfoServices["service.info-services\nVideo/Bangumi/Cheese services"]
     BiliApi["core.bili-api\nDownKyi.Core/BiliApi"]
     WebClient["core.web-client\nDownKyi.Core/BiliApi/WebClient.cs"]
+    Settings["core.settings\nISettingsStore + SettingsManager"]
     LegacySettings["core.legacy-settings-migration\nLegacySettingsDecryptor.cs"]
     DownloadAdd["service.download-add\nAddToDownloadService + DownloadAddCoordinator"]
+    DownloadBootstrap["service.download-bootstrap\nDownloadBootstrapHostedService"]
     DownloadService["service.download-runtime\nDownloadService and implementations"]
     DownloadDomain["core.download-domain\nimmutable task aggregate"]
     StoreContract["service.application-contracts\nIDownloadTaskStore"]
@@ -85,7 +106,7 @@ flowchart TD
     Storage["core.storage\nlegacy projection + StorageManager"]
     Aria["external.aria2\naria2c process"]
     FFmpeg["external.ffmpeg\nffmpeg process"]
-    Logs["core.logging\nLogManager + diagnostic export"]
+    Logs["core.logging\nApplicationLogProvider + diagnostic export"]
     Tests["test.suites\ntests/*"]
     ArchitectureTests["test.architecture-boundaries\nDownKyi.Architecture.Tests"]
     UiSmoke["test.ui-smoke\nDownKyi.Desktop.Tests"]
@@ -94,7 +115,9 @@ flowchart TD
     AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
 
     Program -->|calls| App
+    Program -->|runs restart helper| Lifecycle
     App -->|creates| Host
+    App -->|attaches Host and shell| Lifecycle
     Host -->|injects| MainWindow
     Host -->|registers| ApplicationLayer
     Host -->|registers| Infrastructure
@@ -108,18 +131,49 @@ flowchart TD
     Storage -->|projects legacy UI| DownloadDomain
     Storage -->|calls| StoreContract
     MainWindow -->|binds| MainVm
+    MainWindow -->|awaits close cleanup| Lifecycle
+    MainWindow -->|renders remote artwork| AsyncImage
+    MainVm -->|navigates| IndexVm
+    MainVm -->|navigates| LoginVm
     MainVm -->|navigates| VideoVm
+    IndexVm -->|refreshes| AccountSession
+    LoginVm -->|polls and persists| AccountSession
+    AccountSession -->|calls| BiliApi
+    FriendVms -->|loads pages| FriendRelations
+    FriendRelations -->|calls| BiliApi
+    SeasonsSeriesVm -->|loads and queues| SeasonsSeries
+    SeasonsSeries -->|calls| BiliApi
+    FavoritesVms -->|loads snapshots| Favorites
+    Favorites -->|calls| BiliApi
+    FavoritesVms -->|queues selected media| DownloadAdd
+    PersonalMediaVms -->|loads snapshots| PersonalMedia
+    PersonalMedia -->|calls| BiliApi
+    PersonalMediaVms -->|queues selected media| DownloadAdd
+    UserSpacePageVms -->|loads snapshots| UserSpacePages
+    UserSpacePages -->|calls| BiliApi
+    UserSpacePageVms -->|queues publications| DownloadAdd
+    BiliHelperVm -->|calls| BiliHelper
+    BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
     VideoVm -->|calls| Parser
+    SettingsVms -->|network commands| NetworkSettings
+    SettingsVms -->|other pages read and write| Settings
+    NetworkSettings -->|validates and writes| Settings
+    NetworkSettings -->|requests restart| Lifecycle
     Parser -->|calls| InfoServices
     InfoServices -->|calls| BiliApi
     BiliApi -->|calls| WebClient
-    App -->|reads old settings only| LegacySettings
+    Lifecycle -->|stops| Host
+    Lifecycle -->|flushes on shutdown| Settings
+    Lifecycle -->|flushes on shutdown| Logs
+    VideoVm -->|reads| Settings
+    Settings -->|migrates old format through| LegacySettings
     VideoVm -->|calls| DownloadAdd
     DownloadAdd -->|persists| Storage
     DownloadAdd -->|queues| DownloadService
-    App -->|loads startup state| Storage
-    App -->|starts background service| DownloadService
+    Host -->|starts and stops| DownloadBootstrap
+    DownloadBootstrap -->|loads startup state| Storage
+    DownloadBootstrap -->|starts and stops| DownloadService
     DownloadService -->|persists| Storage
     DownloadService -->|executes optional| Aria
     DownloadService -->|executes| FFmpeg
@@ -149,18 +203,20 @@ id: app.program
 type: app
 paths:
   - DownKyi/Program.cs
-responsibility: Builds the Avalonia AppBuilder and starts the classic desktop lifetime.
+responsibility: Runs the internal restart-helper mode when requested, otherwise builds the Avalonia AppBuilder and starts the classic desktop lifetime.
 inbound:
   - external.os-process
 outbound:
   - app.application
 contracts:
   - Do not run Avalonia-dependent code before AppMain/lifetime initialization.
+  - Restart-helper mode waits asynchronously for the old process, relaunches without helper arguments, and never initializes Avalonia or acquires the single-instance guard.
   - Debug-only developer tooling must not enter Release output.
 hazards:
   - Avalonia major upgrades often change AppBuilder extension methods.
 tests:
   - test.ui-smoke
+  - test.application-lifetime
 ```
 
 ### app.application
@@ -171,30 +227,80 @@ type: app
 paths:
   - DownKyi/App.axaml.cs
   - DownKyi/Composition/LegacyDesktopComposition.cs
-responsibility: Bridges legacy Prism registrations into the Host, shows the shell, owns global download projections, and coordinates startup and exit cleanup.
+  - DownKyi/Composition/LegacyPrismComposition.cs
+responsibility: Keeps App focused on XAML initialization, composition attachment, shell creation, and final resource disposal while named lifecycle and compatibility owners handle operational work.
 inbound:
   - app.program
 outbound:
   - app.host-composition
+  - service.application-lifecycle
   - ui.main-window
-  - service.download-runtime
+  - service.download-bootstrap
+  - service.download-list-state
   - core.storage
+  - core.settings
   - core.logging
 contracts:
   - UI shell should appear before heavy download state and service startup finish.
   - The Host is created with default configuration sources disabled and must not redirect database, settings, login, portable-mode, or aria2 session paths.
-  - Download startup and shutdown must be cancellation-aware.
-  - Global downloading/downloaded lists are shared UI state and must be mutated on the UI thread.
+  - Download startup and shutdown are delegated to a Host-owned IHostedService and must remain cancellation-aware.
+  - MainWindow defers final close through `IApplicationLifecycle`; App cannot own the cleanup Task, restart process, main-window service locator, Mutex naming, or Host stop implementation.
+  - Host stop shares the outer five-second cleanup budget; a shorter nested timeout must not interrupt resumable-state persistence before the outer fallback runs.
+  - Storage retention maintenance is an IHostedService and cannot be an App-owned fire-and-forget Task.
+  - `DownloadListState` owns one stable downloading/history collection pair shared by Prism, Host services, and ViewModels; App must not expose static list properties.
+  - App cannot contain concrete service, navigation, or dialog registration; `LegacyPrismComposition` is the only temporary Prism registration owner.
+  - Download runtime construction and hosted-service wiring stay in `LegacyDesktopComposition`, not App.
+  - App startup, Host services, and lifecycle adapter share one injected `ISettingsStore`; shutdown flush must not block the UI thread.
+  - App creates one `ApplicationLogProvider`; Prism and Host typed loggers share its `ILoggerFactory`, while the lifecycle adapter awaits provider flush before App disposes the provider.
   - App, download runtime, ViewModels, shared HTTP state, and process owners release their cancellation and disposable resources explicitly.
   - UI continuations use the Avalonia context; background and Core continuations do not depend on it.
 hazards:
   - Any synchronous database, aria2, or file scan here directly hurts startup time.
-  - Exit cleanup can leave aria2 running if cancellation and timeout paths drift.
-  - Controlled lifetime exit still synchronously waits up to 15 seconds; PR 16-24 owns replacement with bounded Host shutdown.
-  - `LegacyDesktopComposition` and `MainWindow.AttachLegacyRegion` still bridge Prism global region state; PR 25-29 owns deletion after typed navigation takes over.
+  - Exit cleanup can leave aria2 running if cancellation and timeout paths drift; the tracked-process timeout fallback must remain bounded.
+  - `LegacyPrismComposition`, `LegacyDesktopComposition`, and `MainWindow.AttachLegacyRegion` still bridge Prism state; PR 25-29 owns deletion after typed navigation takes over.
 tests:
   - test.ui-smoke
   - test.composition-root
+```
+
+### service.application-lifecycle
+
+```yaml
+id: service.application-lifecycle
+type: service
+paths:
+  - src/DownKyi.Application/Lifetime/IApplicationLifecycle.cs
+  - DownKyi/Platform/AvaloniaApplicationLifecycle.cs
+  - DownKyi/Platform/AvaloniaDesktopContext.cs
+  - DownKyi/Platform/ProcessRestartLauncher.cs
+  - DownKyi/Platform/SingleInstanceGuard.cs
+responsibility: Owns idempotent Host startup/shutdown, bounded cleanup, settings/log flush, desktop exit, restart handoff, attached main-window access, and per-install single-instance guarding.
+inbound:
+  - app.program
+  - app.application
+  - ui.main-window
+  - viewmodel.settings-pages
+  - legacy upgrade dialog
+outbound:
+  - app.host-composition
+  - core.settings
+  - core.logging
+  - external.aria2
+  - external.os-process
+contracts:
+  - Shutdown cancellation is requested once; Host stop, startup completion, and settings flush share one five-second budget before tracked aria2 fallback.
+  - Repeated shutdown calls return the same Task and never synchronously wait.
+  - Restart launches a non-shell helper before cleanup; helper failure keeps the current process alive, while success waits for the old process and its Mutex to exit before relaunch.
+  - Framework-dependent execution preserves the managed entry assembly argument; packaged execution relaunches the current executable directly.
+  - Single-instance identity is stable per absolute install directory and contains only a truncated SHA-256 path hash, not the personal path.
+  - ViewModels cannot access `App.Current`, Avalonia lifetime objects, or `System.Diagnostics.Process` for lifecycle work.
+hazards:
+  - Bypassing the helper can race the old process Mutex and make restart appear to do nothing.
+  - Moving cleanup back into App or a ViewModel recreates untestable shutdown paths and can leave resumable tasks active.
+tests:
+  - test.application-lifetime
+  - test.composition-root
+  - test.architecture-boundaries
 ```
 
 ### app.host-composition
@@ -211,8 +317,10 @@ outbound:
   - core.domain-contracts
   - service.application-contracts
   - core.infrastructure
+  - service.download-bootstrap
 contracts:
-  - `DisableDefaults=true` prevents implicit configuration, logging, environment, and path side effects during composition.
+  - `DisableDefaults=true` prevents implicit configuration, environment, and path side effects; `AddLogging()` explicitly enables typed loggers without adding an implicit console or file provider.
+  - Production composition supplies the App-owned logger factory/provider, while isolated Host tests receive the same `ILogger<T>` contract with no filesystem sink.
   - Host stop signals the shared application shutdown token before services are disposed.
   - Only this target-architecture project references Microsoft.Extensions.Hosting.
 hazards:
@@ -320,16 +428,318 @@ responsibility: Owns main window commands, clipboard debounce, navigation entry 
 inbound:
   - ui.main-window
 outbound:
+  - viewmodel.index
+  - viewmodel.login
   - viewmodel.video-detail
   - core.logging
+  - service.desktop-platform-boundaries
 contracts:
   - Commands should be cached properties, not rebuilt on every getter call.
   - Clipboard detection must be debounced and cancellation-aware.
+  - Clipboard polling comes from the injected desktop monitor; the ViewModel cannot construct a listener from a global MainWindow.
+  - Automatic update checks carry the window lifetime token; closing the window cancels network work and expected shutdown cancellation is not reported as an error.
+  - Update failures use the injected typed logger and never include a repository response body or request URL.
+  - Shell notifications, dialogs, active-view lookup, startup routing, and clipboard URL routing use framework-neutral Desktop contracts; MainWindowViewModel cannot reference Prism events, regions, dialog types, or route tags.
 hazards:
   - Recreating commands breaks command identity and can cause UI churn.
   - Background clipboard work can outlive the window if cancellation is not wired.
 tests:
   - test.ui-smoke
+```
+
+### viewmodel.index
+
+```yaml
+id: viewmodel.index
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewIndexViewModel.cs
+responsibility: Binds the home search entry, user header state, and navigation commands without performing account network work.
+inbound:
+  - viewmodel.main-window
+outbound:
+  - service.account-session
+  - viewmodel.video-detail
+contracts:
+  - Construction does not start user API work; the first `start` navigation performs exactly one refresh.
+  - A newer navigation refresh cancels the previous operation and stale results cannot change the header or login state.
+  - Background settings refresh does not clear or rewrite the search input.
+  - Search input produces typed `AppNavigationRequest` values; SearchService and the index ViewModel cannot publish Prism navigation events.
+hazards:
+  - Starting refresh in both the constructor and navigation doubles startup requests and delays first interaction.
+  - A failed foreground refresh must restore login-panel visibility instead of leaving the panel hidden.
+tests:
+  - test.account-session
+  - test.ui-smoke
+  - test.architecture-boundaries
+```
+
+### viewmodel.login
+
+```yaml
+id: viewmodel.login
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewLoginViewModel.cs
+responsibility: Projects QR login state, messages, and navigation while delegating blocking account operations.
+inbound:
+  - viewmodel.index
+outbound:
+  - service.account-session
+contracts:
+  - Restarting, leaving, or disposing the page cancels the active QR generation/poll operation.
+  - QR bitmap and bound-state mutation stay on the UI dispatcher; synchronous HTTP and cookie-file writes do not.
+hazards:
+  - Wrapping the entire UI workflow in Task.Run causes cross-thread UI/event access and hides cancellation ownership.
+tests:
+  - test.account-session
+  - test.architecture-boundaries
+```
+
+### service.account-session
+
+```yaml
+id: service.account-session
+type: service
+paths:
+  - DownKyi/Services/Account/UserSessionCoordinator.cs
+  - DownKyi/Services/Account/LoginCoordinator.cs
+responsibility: Runs synchronous account API and cookie persistence operations away from the UI thread and returns cancellable snapshots/results.
+inbound:
+  - viewmodel.index
+  - viewmodel.login
+outbound:
+  - core.bili-api
+  - core.legacy-settings-migration
+contracts:
+  - Caller cancellation is checked before and after every synchronous network or file operation.
+  - Navigation user data maps to the existing `UserInfoSettings` schema without changing keys or login-file location.
+  - WBI key extraction accepts absolute and protocol-relative addresses and strips query/fragment suffixes using ordinal parsing.
+hazards:
+  - Legacy synchronous Bilibili calls cannot abort an in-flight socket request yet; cancellation prevents later persistence and stale UI projection.
+  - The public settings boundary is immutable, but its compatibility persistence implementation still delegates to `SettingsManager` until PR 25-29 removes the legacy owner.
+tests:
+  - test.account-session
+  - test.ui-smoke
+  - test.architecture-boundaries
+```
+
+### viewmodel.friend-relations
+
+```yaml
+id: viewmodel.friend-relations
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/Friends/ViewFollowingViewModel.cs
+  - DownKyi/ViewModels/Friends/ViewFollowerViewModel.cs
+responsibility: Projects following groups, following/follower pages, pager state, loading state, and user navigation.
+inbound:
+  - typed or legacy navigation
+outbound:
+  - service.friend-relations
+contracts:
+  - ViewModels never perform relation API work or mutate bound collections from worker threads.
+  - Each page result is projected with one `AddRange` notification rather than one dispatcher post per user.
+  - Replacing or disposing a pager detaches `CurrentChanging` and `CountChanged` handlers.
+  - New navigation/page work and `OnNavigatedFrom` cancel the previous request; stale results cannot change visibility or contents.
+  - Leaving during a load restores enabled/non-loading UI state so a cached page remains usable when revisited.
+hazards:
+  - Per-item dispatcher posts make large relation lists stutter and can reorder results after navigation.
+  - Retaining old pager event subscriptions keeps ViewModels alive and can issue duplicate page requests.
+tests:
+  - test.friend-relations
+  - test.architecture-boundaries
+```
+
+### service.friend-relations
+
+```yaml
+id: service.friend-relations
+type: service
+paths:
+  - DownKyi/Services/Friends/FriendRelationCoordinator.cs
+responsibility: Loads relation overview, private groups, following pages, and follower pages as cancellation-aware snapshots.
+inbound:
+  - viewmodel.friend-relations
+outbound:
+  - core.bili-api
+contracts:
+  - Private whisper/group data is requested only for the current logged-in user.
+  - Coordinator methods return API models without accessing Avalonia, Prism, settings paths, or bound collections.
+  - Caller cancellation is checked before and after every legacy synchronous API operation.
+hazards:
+  - Legacy synchronous relation calls cannot abort an in-flight socket request; cancellation still blocks stale projection and subsequent calls.
+tests:
+  - test.friend-relations
+  - test.architecture-boundaries
+```
+
+### viewmodel.seasons-series
+
+```yaml
+id: viewmodel.seasons-series
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewSeasonsSeriesViewModel.cs
+responsibility: Projects one season/series page, selection state, pager state, navigation, and add-to-download results.
+inbound:
+  - viewmodel.user-space
+outbound:
+  - service.seasons-series
+  - service.download-add
+contracts:
+  - Season and series pages share one result projection and one batched collection update.
+  - Canceling directory selection returns before parsing or queueing any media.
+  - Navigation, pager replacement, and disposal cancel outstanding page/download work and detach pager events.
+  - Back navigation uses the Prism journal when available, then falls back to the typed parent route.
+hazards:
+  - Duplicated season/series loops drift in cover normalization, dates, loading flags, and cancellation behavior.
+  - Running parse/add after a null directory silently queues work the user canceled.
+tests:
+  - test.seasons-series
+  - test.download-add
+  - test.architecture-boundaries
+```
+
+### service.seasons-series
+
+```yaml
+id: service.seasons-series
+type: service
+paths:
+  - DownKyi/Services/UserSpace/SeasonsSeriesCoordinator.cs
+responsibility: Loads season/series archive snapshots and delegates legacy per-video parse/add work to the shared media coordinator.
+inbound:
+  - viewmodel.seasons-series
+outbound:
+  - core.bili-api
+  - service.download-add
+contracts:
+  - `SeasonsSeriesKind` selects the matching Bilibili endpoint and invalid values fail explicitly.
+  - Page calls check caller cancellation before and after synchronous legacy API work.
+  - Add work checks cancellation between items and receives a confirmed non-empty directory.
+hazards:
+  - Legacy synchronous page and parse calls cannot abort in flight; cancellation blocks subsequent work and stale UI projection.
+  - The add path depends only on typed dialog and notification contracts; Prism compatibility is isolated behind Desktop adapters.
+tests:
+  - test.seasons-series
+  - test.architecture-boundaries
+```
+
+### viewmodel.favorites
+
+```yaml
+id: viewmodel.favorites
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewMyFavoritesViewModel.cs
+  - DownKyi/ViewModels/ViewPublicFavoritesViewModel.cs
+  - DownKyi/Views/ViewMyFavorites.axaml
+  - DownKyi/Views/ViewPublicFavorites.axaml
+responsibility: Projects private/public favorite folders and media snapshots, selection, pager, navigation, and add-to-download results.
+inbound:
+  - viewmodel.user-space
+  - viewmodel.main-window
+outbound:
+  - service.favorites
+  - service.download-add
+contracts:
+  - ViewModels never perform favorite API or parse/add work on their own worker tasks.
+  - Network results are returned as snapshots and applied with one `AddRange` UI notification.
+  - Canceling directory selection returns before creating a download snapshot or parsing media.
+  - Leaving, replacing a request, or disposing cancels folder, page, and download work; pager replacement detaches old handlers.
+  - Favorite lists use `Multiple,Toggle`, so an ordinary click toggles each selected item without a modifier key.
+hazards:
+  - Mutating observable collections from the worker thread can fault Avalonia bindings and leave stale rows after navigation.
+  - Starting parse/add before checking a null directory performs work after the user explicitly canceled.
+  - Replacing a pager without detaching events retains the ViewModel and issues duplicate page requests.
+tests:
+  - test.favorites
+  - test.download-add
+  - test.architecture-boundaries
+```
+
+### service.favorites
+
+```yaml
+id: service.favorites
+type: service
+paths:
+  - DownKyi/Services/FavoritesCoordinator.cs
+  - DownKyi/Services/FavoritesService.cs
+  - DownKyi/Services/IFavoritesService.cs
+responsibility: Loads favorite folders, metadata, and media off the UI thread and returns fully mapped read-only snapshots.
+inbound:
+  - viewmodel.favorites
+outbound:
+  - core.bili-api
+contracts:
+  - `FavoritesService` is a pure mapper/API adapter and never accesses `App`, Dispatcher, or observable collections.
+  - Pre-canceled requests cannot start legacy synchronous API work.
+  - Invalid favorite videos remain filtered and timestamp/number projection preserves the existing UI contract.
+hazards:
+  - Legacy synchronous Bilibili calls cannot abort in flight; cancellation prevents subsequent calls and stale UI projection.
+  - API model and UI model both use `FavoritesMedia`; aliases must remain explicit at the mapping boundary.
+tests:
+  - test.favorites
+  - test.architecture-boundaries
+```
+
+### viewmodel.personal-media
+
+```yaml
+id: viewmodel.personal-media
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewMyHistoryViewModel.cs
+  - DownKyi/ViewModels/ViewMyToViewVideoViewModel.cs
+  - DownKyi/Views/ViewMyHistory.axaml
+  - DownKyi/Views/ViewMyToViewVideo.axaml
+responsibility: Projects history/watch-later snapshots, history cursor state, selection, navigation, and add-to-download results.
+inbound:
+  - viewmodel.user-space
+outbound:
+  - service.personal-media
+  - service.download-add
+contracts:
+  - ViewModels do not own worker tasks or mutate bound collections from background threads.
+  - History paging applies only the current request version; canceled or stale responses cannot replace newer state.
+  - `LoadMoreCommand` has stable identity and concurrent load-more requests are rejected.
+  - Canceling directory selection returns before snapshot creation or media parsing.
+  - Lists use `Multiple,Toggle`, allowing ordinary clicks to toggle independent selections.
+hazards:
+  - Recreating `LoadMoreCommand` on every binding read creates avoidable command/event churn.
+  - An old history response can overwrite a newer navigation request unless both cancellation and request version are checked.
+  - Unknown history business types must be skipped; they must not abort supported items later in the batch.
+tests:
+  - test.personal-media
+  - test.download-add
+  - test.architecture-boundaries
+```
+
+### service.personal-media
+
+```yaml
+id: service.personal-media
+type: service
+paths:
+  - DownKyi/Services/Media/PersonalMediaCoordinator.cs
+  - DownKyi.Core/BiliApi/History/ToView.cs
+responsibility: Loads and maps history/watch-later API data into read-only UI snapshots away from the UI thread.
+inbound:
+  - viewmodel.personal-media
+outbound:
+  - core.bili-api
+contracts:
+  - Watch-later and history requests pass caller cancellation into the Bilibili API boundary.
+  - Pre-canceled requests cannot start API work and mapping checks cancellation between watch-later items.
+  - Only archive and pgc history entries are projected; protocol-relative image addresses are normalized without `Uri.Scheme` access.
+hazards:
+  - Legacy synchronous requests may remain in flight until their current HTTP operation returns; stale projection is still blocked.
+  - Platform icon creation remains a desktop mapping concern and must not migrate into `DownKyi.Core`.
+tests:
+  - test.personal-media
+  - test.architecture-boundaries
 ```
 
 ### viewmodel.video-detail
@@ -339,24 +749,95 @@ id: viewmodel.video-detail
 type: viewmodel
 paths:
   - DownKyi/ViewModels/ViewVideoDetailViewModel.cs
-responsibility: Exposes video-detail binding state and wires parse, selection, and add-to-download commands.
+  - DownKyi/ViewModels/UiState/VideoDetailUiState.cs
+  - DownKyi/Views/ViewVideoDetail.axaml
+responsibility: Wires video-detail commands, navigation, and UI result projection while one CommunityToolkit state object exposes mutually consistent bindings.
 inbound:
   - viewmodel.main-window
 outbound:
   - service.video-input-resolver
   - service.video-parse-coordinator
   - service.video-selection-state
+  - service.video-search-state
+  - service.video-detail-workflow
   - service.download-add
+  - service.desktop-platform-boundaries
 contracts:
   - Keep UI state and command wiring here; keep pure parsing and selection rules in services.
   - Canceling directory selection must not enqueue download work.
+  - `Idle`, `Busy`, `Content`, and `Empty` are one mutually exclusive CommunityToolkit state model.
+  - Input, video metadata, selected page, select-all, splitter reset, and display mode bindings are owned by the same generated state object.
+  - Ordinary row clicks toggle selection; repeated clicks clear the item and select-all has an explicit clear-selection peer.
+  - Avalonia `DataGrid` selection and splitter reset mechanics live in View behaviors; this ViewModel exposes only selection intent and a scalar reset version.
+  - Search filtering projects from one shallow source of the original `VideoPage` objects; clearing a search must preserve parsed stream, quality, and selection mutations.
+  - Only the current operation generation may project detail/stream results or restore display state; canceled work cannot overwrite a newer request.
+  - The ViewModel remains at or below 425 lines and cannot regain parse-service construction, search-source ownership, cancellation-source ownership, or download-service construction.
 hazards:
   - This file historically accumulated unrelated parsing, selection, and download orchestration logic.
-  - Any JSON clone/deep-copy pattern here is a performance and schema-fragility smell.
+  - Reintroducing a complete cached section/page object graph duplicates memory and can restore stale parsed or selected state.
 tests:
   - test.video-input-resolver
   - test.video-selection-state
+  - test.video-search-state
   - test.download-add
+  - test.video-detail-download
+```
+
+### viewmodel.settings-pages
+
+```yaml
+id: viewmodel.settings-pages
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/Settings/ViewBasicViewModel.cs
+  - DownKyi/ViewModels/Settings/ViewNetworkViewModel.cs
+  - DownKyi/ViewModels/Settings/ViewNetworkViewModel.State.cs
+  - DownKyi/ViewModels/Settings/ViewVideoViewModel.cs
+  - DownKyi/ViewModels/Settings/ViewDanmakuViewModel.cs
+  - DownKyi/ViewModels/Settings/ViewAboutViewModel.cs
+responsibility: Projects current settings into Avalonia binding state and wires commands to typed settings owners.
+inbound:
+  - typed navigation through the temporary Prism adapter
+outbound:
+  - core.settings
+  - service.network-settings
+  - service.desktop-platform-boundaries
+contracts:
+  - Basic, video, danmaku, and about pages receive `ISettingsStore`; the network page receives only `INetworkSettingsCoordinator` and cannot persist, validate, prompt, or restart directly.
+  - Existing setting getter/setter behavior, persisted JSON names, and enum values remain unchanged during the compatibility migration.
+  - Network binding properties live in a dedicated partial state file; the main file remains below 700 lines and contains navigation projection plus command wiring.
+tests:
+  - test.network-settings
+  - test.architecture-boundaries
+```
+
+### service.network-settings
+
+```yaml
+id: service.network-settings
+type: coordinator
+paths:
+  - DownKyi/Services/Settings/NetworkSettingsCoordinator.cs
+responsibility: Owns immutable option catalogs, validated network-setting updates, localized feedback, restart confirmation, and asynchronous restart requests.
+inbound:
+  - viewmodel.settings-pages
+outbound:
+  - core.settings
+  - service.application-lifecycle
+  - service.desktop-platform-boundaries
+contracts:
+  - Option catalogs are immutable and constructed once; opening the settings page does not allocate repeated range/list graphs.
+  - Every update passes through `ISettingsStore.Update` and a post-validation predicate before success is reported.
+  - Initialization-triggered binding commands can persist normalized values but cannot display feedback, open restart dialogs, or restart the process.
+  - Failed validation never opens a restart prompt; accepted prompts call only the cancellation-aware `IApplicationLifecycle.RestartAsync` boundary.
+  - The coordinator changes no JSON names, enum values, validation ranges, or settings storage paths.
+hazards:
+  - Prompting during initial binding projection can restart the app merely by opening the page.
+  - Bypassing the post-validation predicate reports invalid or clamped settings as successfully applied.
+tests:
+  - test.network-settings
+  - test.ui-smoke
+  - test.architecture-boundaries
 ```
 
 ### service.video-input-resolver
@@ -365,19 +846,217 @@ tests:
 id: service.video-input-resolver
 type: service
 paths:
+  - src/DownKyi.Application/Media/VideoInputResolver.cs
   - DownKyi/Services/Video/VideoInputResolver.cs
 responsibility: Classifies and normalizes BV/AV, video URL, bangumi, and cheese/course entry inputs.
 inbound:
   - viewmodel.video-detail
 outbound:
-  - core.bili-api
+  - service.video-parse-coordinator
 contracts:
   - Input classification must match the parse flow and add-to-download flow.
-  - Resolver functions should stay pure and fast.
+  - Application owns pure classification; the legacy adapter only maps the result to external `PlayStreamType`.
 hazards:
   - Divergence between parse and download input handling causes "can parse but cannot download" bugs.
 tests:
   - test.video-input-resolver
+```
+
+### service.video-detail-workflow
+
+```yaml
+id: service.video-detail-workflow
+type: coordinator
+paths:
+  - DownKyi/Services/Video/VideoDetailWorkflowCoordinator.cs
+responsibility: Owns the current normalized input, cancellable operation generation, parse-service lifetime, and shallow search source for the video-detail page.
+inbound:
+  - viewmodel.video-detail
+outbound:
+  - service.video-input-resolver
+  - service.video-parse-coordinator
+  - service.video-selection-state
+  - service.video-search-state
+contracts:
+  - Starting another detail, parse, or add operation cancels and invalidates the previous generation.
+  - Only a current operation can load or return detail and stream results.
+  - Reset clears the cached info service, current input, and search source without mutating a bound page graph from a worker thread.
+hazards:
+  - Disposing the workflow while work is active must cancel it before releasing the cancellation source.
+tests:
+  - test.video-parse-coordinator
+  - test.architecture-boundaries
+```
+
+### service.desktop-platform-boundaries
+
+```yaml
+id: service.desktop-platform-boundaries
+type: service
+paths:
+  - src/DownKyi.Application/Desktop
+  - DownKyi/Platform
+responsibility: Keeps lifecycle, notifications, dialogs, typed navigation, clipboard, file/folder picker, and external launch contracts independent of Avalonia while Desktop adapters own framework integration and diagnostics.
+inbound:
+  - viewmodel.video-detail
+  - application ViewModels and dialog coordinators
+outbound:
+  - external.os-desktop
+contracts:
+  - Application interfaces contain no Avalonia, Prism, path-policy, or global App references.
+  - Picker cancellation returns null or an empty list and never becomes a fake path.
+  - External launch requests return success/failure, preserve cancellation, and log only redacted operational failures; ViewModels own localized user feedback.
+  - Linux launch uses `xdg-open` with `ProcessStartInfo.ArgumentList`; no path or URI is interpolated into `/bin/sh -c`.
+  - Disk-space probes use the complete platform path; low-level helpers propagate typed failures and the injected ViewModel logger owns redacted diagnostics.
+  - Delayed DataGrid scrolling invalidates stale requests by version and cannot retain a disposable cancellation source in an Avalonia behavior.
+  - Host smoke injects a fake clipboard and resolves key ViewModels without initializing Prism ContainerLocator.
+  - Platform adapters receive `AvaloniaDesktopContext`; they cannot recover MainWindow through `App.Current`.
+  - Clipboard polling is one disposable injected monitor, starts with its first subscriber, and stops after its final subscriber.
+  - Every app route, nested region, and dialog has one enum value and one tested compatibility mapping; ViewModels never pass Prism region names or dialog tags through the new contracts.
+  - `DesktopNotificationService` publishes a typed event without depending on Prism; MainWindow owns presentation timing and UI dispatch.
+  - Media page-item models receive `IAppNavigationService` plus a typed parent route from their coordinator or ViewModel; they cannot publish Prism events or infer parent routes from command strings.
+  - `IDesktopInteractionContext` groups notification, navigation, and dialog contracts for `ViewModelBase` without exposing framework types or a service locator.
+  - Non-dialog ViewModels cannot reference Prism EventAggregator, RegionManager, dialog services, navigation events, message events, or the string-route helper.
+  - The Prism dialog adapter marshals calls to Avalonia's UI thread; download/add services await only `IAppDialogService` and cannot dispatch framework work themselves.
+hazards:
+  - Prism navigation and dialog adapters remain as compatibility owners until PR 25-29 replaces framework composition; application callers cannot bypass the typed contracts.
+tests:
+  - test.desktop-interactions
+  - test.architecture-boundaries
+  - test.ui-smoke
+```
+
+### viewmodel.bili-helper
+
+```yaml
+id: viewmodel.bili-helper
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/Toolbox/ViewBiliHelperViewModel.cs
+responsibility: Binds AV/BV conversion, danmaku sender lookup, and external navigation results to the Bili Helper page.
+inbound:
+  - typed or legacy navigation
+outbound:
+  - service.bili-helper
+  - service.desktop-platform-boundaries
+contracts:
+  - The ViewModel never creates background CPU work directly; it awaits the injected coordinator.
+  - Starting a new lookup or disposing the page cancels the previous operation and prevents stale result projection.
+hazards:
+  - Assigning a canceled lookup result after a newer request overwrites the current user input result.
+tests:
+  - test.bili-helper
+  - test.architecture-boundaries
+```
+
+### service.bili-helper
+
+```yaml
+id: service.bili-helper
+type: service
+paths:
+  - DownKyi/Services/Toolbox/BiliHelperCoordinator.cs
+  - DownKyi.Core/BiliApi/BiliUtils/BvId.cs
+  - DownKyi.Core/BiliApi/BiliUtils/DanmakuSender.cs
+responsibility: Validates AV/BV conversion inputs and runs the expensive danmaku-sender reverse lookup outside the UI thread with cancellation.
+inbound:
+  - viewmodel.bili-helper
+outbound:
+  - core.bili-api
+contracts:
+  - Invalid or empty AV/BV input leaves the existing UI value unchanged.
+  - The public synchronous danmaku lookup remains compatible, while the coordinator always uses the cancellation-aware overload.
+  - The coordinator passes caller cancellation into both Task scheduling and the core CPU loop.
+hazards:
+  - Danmaku sender reversal can inspect up to 100,000,000 candidates; running it on the UI thread freezes the application.
+  - A cancellation check only before Task.Run cannot stop a search already consuming CPU; the core loop must poll the token.
+tests:
+  - test.bili-helper
+  - test.architecture-boundaries
+```
+
+### viewmodel.user-space
+
+```yaml
+id: viewmodel.user-space
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewUserSpaceViewModel.cs
+  - DownKyi/Services/UserSpace/UserSpaceLoadCoordinator.cs
+responsibility: Projects one background-loaded user-space snapshot into profile, publication, collection, relation, and statistics UI state.
+inbound:
+  - typed or legacy navigation
+outbound:
+  - core.bili-api
+contracts:
+  - Background API work returns a snapshot and never mutates Avalonia-bound properties.
+  - A new navigation cancels the previous load; leaving or disposing the page cancels projection of stale results.
+  - Back first uses the navigation journal and falls back to the recorded parent or index.
+hazards:
+  - Legacy synchronous Bilibili API methods cannot abort an in-flight socket call yet; cancellation prevents subsequent calls and stale UI projection.
+tests:
+  - test.architecture-boundaries
+```
+
+### viewmodel.user-space-pages
+
+```yaml
+id: viewmodel.user-space-pages
+type: viewmodel
+paths:
+  - DownKyi/ViewModels/ViewPublicationViewModel.cs
+  - DownKyi/ViewModels/ViewMySpaceViewModel.cs
+  - DownKyi/ViewModels/ViewMyBangumiFollowViewModel.cs
+  - DownKyi/Views/ViewPublication.axaml
+  - DownKyi/Views/ViewMyBangumiFollow.axaml
+responsibility: Projects publication pages and the signed-in user's profile/statistics while owning pager, selection, navigation, and visibility state.
+inbound:
+  - viewmodel.user-space
+  - viewmodel.main-window
+outbound:
+  - service.user-space-pages
+  - service.download-add
+contracts:
+  - ViewModels never perform user-space API work or mutate bindings from worker threads.
+  - Publication and bangumi-follow results use one `AddRange` notification and ordinary clicks toggle independent selections.
+  - Replacing/leaving publication or bangumi pagers detaches handlers and cancels page/download work.
+  - My-space renders the primary profile first; balance/relation failure does not hide an already loaded profile.
+  - Canceling publication directory selection returns before media parsing.
+hazards:
+  - Per-item dispatcher calls stutter on large publication pages and can project stale rows after navigation.
+  - Worker-thread mutation of profile properties and `StatusList` is unsafe for Avalonia bindings.
+  - Binding status flags must be assigned both true and false; retaining an old false value hides a newly bound account.
+tests:
+  - test.user-space-pages
+  - test.download-add
+  - test.architecture-boundaries
+```
+
+### service.user-space-pages
+
+```yaml
+id: service.user-space-pages
+type: service
+paths:
+  - DownKyi/Services/UserSpace/UserSpacePageCoordinator.cs
+  - DownKyi.Core/BiliApi/Users/UserSpace.cs
+  - DownKyi.Core/BiliApi/Users/UserInfo.cs
+  - DownKyi.Core/BiliApi/Users/UserStatus.cs
+responsibility: Loads publication, signed-in profile, balance, and relation data off the UI thread and returns immutable snapshots.
+inbound:
+  - viewmodel.user-space-pages
+outbound:
+  - core.bili-api
+contracts:
+  - Publication, bangumi-follow, settings, my-info, navigation-info, and relation-stat requests pass cancellation to the HTTP boundary.
+  - Pre-canceled requests cannot start API work and mapping checks cancellation between publication items.
+  - Profile and statistics are separate operations so secondary API latency does not delay first content.
+hazards:
+  - `Services.UserSpace` and the core `UserSpace` API share a name; use an explicit alias at the boundary.
+  - Legacy custom publication JSON handling remains because Bilibili sometimes returns `"--"` for play counts.
+tests:
+  - test.user-space-pages
+  - test.architecture-boundaries
 ```
 
 ### service.video-parse-coordinator
@@ -390,18 +1069,22 @@ paths:
   - DownKyi/Services/VideoInfoService.cs
   - DownKyi/Services/BangumiInfoService.cs
   - DownKyi/Services/CheeseInfoService.cs
-responsibility: Chooses the correct info service and coordinates refresh/cancellation for parsed video detail data.
+responsibility: Chooses the correct info service, builds complete detail/stream results in background work, and owns one cancellable operation generation plus search-source lifetime before UI projection.
 inbound:
-  - viewmodel.video-detail
+  - service.video-detail-workflow
 outbound:
   - service.info-services
 contracts:
   - Cancellation must propagate to Bili API calls.
   - Info-service selection must follow VideoInputResolver results.
+  - Info services return data and never dispatch to Avalonia; the ViewModel projects a complete result on the UI dispatcher.
+  - A service is cached only after its operation succeeds, and reuse is limited to the exact input string.
+  - Starting another detail, parse, or add operation cancels the previous generation; only the current generation can return projectable results.
 hazards:
-  - Caching the wrong info service across input kinds can leak stale state.
+  - Caching before cancellation checks or across a different input can leak stale service state into a later parse.
 tests:
   - test.video-input-resolver
+  - test.video-parse-coordinator
 ```
 
 ### service.video-selection-state
@@ -417,10 +1100,57 @@ inbound:
 outbound: []
 contracts:
   - Selection state should be deterministic and unit-testable without Avalonia UI.
+  - Selection deltas affect only pages still visible in the current section; an ItemsSource swap must not clear another section's selections.
 hazards:
   - Direct ObservableCollection mutation from background threads can destabilize UI.
 tests:
   - test.video-selection-state
+```
+
+### ui.video-page-selection
+
+```yaml
+id: ui.video-page-selection
+type: behavior
+paths:
+  - DownKyi/CustomAction/VideoPageSelectionBehavior.cs
+  - DownKyi/CustomAction/ResetGridSplitterBehavior.cs
+  - DownKyi/Views/ViewVideoDetail.axaml
+responsibility: Maps pointer, keyboard, checkbox, select-all, section changes, and splitter reset bindings to Avalonia controls.
+inbound:
+  - viewmodel.video-detail
+outbound:
+  - service.video-selection-state
+contracts:
+  - The original `VideoPage.IsSelected` values are the durable UI selection source; DataGrid `SelectedItems` is only a synchronized projection.
+  - Switching ItemsSource preserves selections owned by the previous section.
+  - Behavior properties update bound scalar state without placing Avalonia controls or behavior objects in the ViewModel.
+hazards:
+  - Treating DataGrid selection clearing during an ItemsSource swap as a user action loses cross-section selections.
+tests:
+  - test.video-selection-state
+  - test.ui-smoke
+  - test.architecture-boundaries
+```
+
+### service.video-search-state
+
+```yaml
+id: service.video-search-state
+type: service
+paths:
+  - DownKyi/Services/Video/VideoSearchState.cs
+responsibility: Maintains the original page references for each video section and applies a visible search projection without cloning the media graph.
+inbound:
+  - viewmodel.video-detail
+outbound: []
+contracts:
+  - Reset captures one shallow source list per section; filters and clears always reuse the same `VideoPage` instances.
+  - Search uses explicit ordinal matching and never mutates parsed stream, quality, or selection values.
+hazards:
+  - Deep-copying pages creates stale parallel state and increases memory for large collections.
+tests:
+  - test.video-search-state
 ```
 
 ### core.bili-api
@@ -435,13 +1165,21 @@ responsibility: Wraps Bilibili API endpoints, response parsing, and shared reque
 inbound:
   - service.info-services
   - service.download-runtime
+  - service.bili-helper
+  - service.account-session
+  - service.friend-relations
+  - service.seasons-series
 outbound:
   - core.web-client
-  - core.logging
+  - core.settings
 contracts:
   - API failures should be visible at the API boundary; do not turn errors into valid empty payloads.
+  - Typed transport and parser failures propagate to injected application coordinators; legacy recoverable `null`/`false` results are logged there without URL, cookie, path, or account identifiers.
+  - Subtitle parsing remains per-track fault tolerant; parser exceptions are reported to the injected download caller without exposing the subtitle address.
+  - Static endpoint facades cannot write through `LogManager` or terminal output.
   - OperationCanceledException must be rethrown.
   - WBI request signatures must match the fixed protocol vector; MD5 is limited to that external format.
+  - WBI keys come from the caller's injected settings owner; signing cannot read process-global settings.
 hazards:
   - Bilibili schema changes can deserialize into null and fail later in UI/download flows.
   - Logging full URLs can leak tokens, cookies, and personal query data.
@@ -465,15 +1203,17 @@ inbound:
   - core.bili-api
 outbound:
   - external.bilibili
-  - core.logging
+  - core.settings
 contracts:
+  - Host composition creates the typed client and handler from the shared injected settings owner before any legacy API call.
+  - The static WebClient facade does not create a fallback client, read process-global settings, or dispose the Host-owned connection pool.
   - Retry is iterative, not recursive.
   - Retry exhaustion throws HttpRequestException.
   - HTTP 200 with an empty body is a failed request, not a valid payload.
   - Cancellation is never swallowed by retry.
   - HTTP 401/403 and rejected API schemas are non-retryable; HTTP 429 honors Retry-After with a bounded delay.
   - JSON metadata uses source-generated System.Text.Json contexts; legacy endpoint DTO materialization remains Newtonsoft-compatible.
-  - Sanitized URLs are used in diagnostics.
+  - The static compatibility facade emits no request diagnostics; injected callers own redacted operational context.
 hazards:
   - Synchronous legacy endpoint signatures keep the WebClient facade alive until PR 16-24 moves callers to cancellable use cases; do not add new facade callers.
   - Cookie handling must not be emitted to console or public logs.
@@ -488,22 +1228,141 @@ id: service.download-add
 type: service
 paths:
   - DownKyi/Services/Download/AddToDownloadService.cs
-  - DownKyi/Services/Download/DownloadAddCoordinator.cs
-responsibility: Converts selected parsed media into download tasks, handles duplicate decisions, and writes queue state.
+  - DownKyi/Services/Download/AddToDownloadServiceFactory.cs
+  - DownKyi/Services/Download/IAddToDownloadSession.cs
+  - src/DownKyi.Application/Downloads/DownloadAddCoordinator.cs
+  - DownKyi/Services/Video/VideoDetailDownloadCoordinator.cs
+  - DownKyi/Services/Media/ContentDownloadCoordinator.cs
+responsibility: Converts immutable selected-media snapshots into download tasks, centralizes directory selection and cancellable per-item parsing, handles duplicate decisions, and writes queue state.
 inbound:
   - viewmodel.video-detail
+  - viewmodel.seasons-series
+  - viewmodel.favorites
+  - viewmodel.personal-media
+  - viewmodel.user-space-pages
   - other viewmodels that support add-to-download
 outbound:
   - core.storage
   - service.download-runtime
+  - service.download-list-state
 contracts:
+  - `ContentDownloadCoordinator` owns the session factory, checks selection/cancellation before opening a dialog, selects one directory, and checks cancellation between queued items.
+  - Video and bangumi info-service construction is selected by an injected factory and receives the operation cancellation token; ViewModels cannot construct sessions, select directories, or duplicate parse/add loops.
   - Directory selection returning null means user canceled; no task should be queued.
   - Existing downloaded/downloading records must be checked before inserting duplicates.
+  - Video-detail receives `IVideoDetailDownloadCoordinator`; favorites, history, watch-later, publication, bangumi-follow, and season/series pages receive only their shared coordinator.
+  - `IAddToDownloadSession` isolates the legacy mutable add implementation so queue orchestration is tested without network, SQLite, dialogs, or user paths.
+  - Duplicate-task feedback goes through the injected `IUserNotificationService`; add sessions and coordinators cannot accept or publish Prism event-bus messages.
+  - Directory selection, duplicate confirmation, parsing, and persistence propagate the operation cancellation token through the typed dialog boundary.
+  - The add service receives list/storage owners explicitly and cannot resolve them through App.
+  - Add factory, content coordinator, and info-service construction share the injected settings owner; file naming, quality selection, and duplicate policy cannot read a global singleton.
 hazards:
   - Running add logic on stale VideoInfoView snapshots can enqueue wrong media.
   - Duplicate dialog paths can accidentally remove completed records.
 tests:
   - test.download-add
+  - test.video-detail-download
+```
+
+### service.download-list-state
+
+```yaml
+id: service.download-list-state
+type: ui-state
+paths:
+  - DownKyi/Services/Download/DownloadListState.cs
+  - DownKyi/Services/Download/DownloadManagerCoordinator.cs
+  - DownKyi/Services/Download/DownloadTaskFileService.cs
+  - DownKyi/ViewModels/DownloadManager
+responsibility: Owns stable observable downloading/history projections and coordinates download-manager pause, resume, retry, deletion, history, and artifact-open operations outside ViewModels.
+inbound:
+  - service.download-bootstrap
+  - service.download-add
+  - service.download-runtime
+outbound: []
+contracts:
+  - Sorting and replacement mutate the existing collection instance so XAML bindings and runtime references never diverge.
+  - Collection mutation is projected on the UI thread by the calling desktop boundary.
+  - Headless construction must not synchronously wait on an uninitialized Avalonia dispatcher.
+  - Download-manager ViewModels own only confirmation, localized feedback, binding state, and command wiring; they cannot access storage, generated files, or platform launch APIs directly.
+  - Single and bulk pause/resume transitions are persisted before the command completes; persistence failure restores the prior UI projection.
+  - Explicit deletion persists a paused state, cancels the active backend, removes media and resume sidecars, deletes the store row, and only then removes the UI projection.
+  - If generated-file cleanup reports a failure, the database row and UI projection remain so deletion can be retried; once physical deletion starts, store/list cleanup is not interrupted by shutdown cancellation.
+  - File and folder probing belongs to the coordinator and returns a typed open result without exposing filesystem checks to ViewModels.
+hazards:
+  - Replacing the collection object disconnects existing views and download workers.
+  - Dispatching resource lookup without an initialized Application can deadlock parallel tests and early startup.
+  - aria2 cancellation still crosses the temporary static client boundary until the legacy runtime is deleted in PR 25-29.
+tests:
+  - test.download-list-state
+  - test.download-manager
+  - test.ui-smoke
+  - test.architecture-boundaries
+```
+
+### service.legacy-upgrade
+
+```yaml
+id: service.legacy-upgrade
+type: migration-service
+paths:
+  - DownKyi/Services/Migration/LegacyUpgradeCoordinator.cs
+  - DownKyi/ViewModels/Dialogs/ViewUpgradingDialogViewModel.cs
+responsibility: Converts legacy NRBF login/download data into current storage while the dialog owns only progress, cancellation, result projection, and restart state.
+inbound:
+  - app.application
+outbound:
+  - core.storage
+  - service.download-list-state
+contracts:
+  - Closing or disposing the dialog cancels migration; cancellation is rethrown by the coordinator and never reported as data corruption.
+  - Missing legacy login data does not skip an independently present legacy download database.
+  - A malformed legacy login payload is logged and isolated; it cannot prevent an independently present download database from migrating.
+  - Each legacy SQLite connection is validated, read, and disposed before the source database is deleted, moved, or renamed.
+  - Valid records are persisted in bounded batches; one malformed record is logged and skipped without discarding the rest of its batch.
+  - Failed databases are preserved under a collision-resistant backup name and UI diagnostics reveal only the backup filename, never a full personal path.
+  - Migration context owns typed diagnostics; the low-level SQLite helper rethrows without duplicating or printing failures.
+  - The dialog cannot own NRBF, SQLite, storage lookup, worker scheduling, or dispatcher code.
+hazards:
+  - Deleting the source database before every batch is committed loses user download history.
+  - Retrying after partial writes must remain idempotent through the current storage upsert contract.
+tests:
+  - test.legacy-upgrade
+  - test.architecture-boundaries
+```
+
+### service.download-bootstrap
+
+```yaml
+id: service.download-bootstrap
+type: hosted-service
+paths:
+  - DownKyi/Services/Download/DownloadBootstrapHostedService.cs
+  - DownKyi/Services/Download/DownloadRuntimeFactory.cs
+  - DownKyi/Platform/IUiDispatcher.cs
+  - DownKyi/Platform/AvaloniaUiDispatcher.cs
+responsibility: Restores persisted download projections, pages history, selects the configured backend, and owns download runtime start/stop inside the Host lifecycle.
+inbound:
+  - app.host-composition
+outbound:
+  - core.storage
+  - service.download-list-state
+  - service.download-runtime
+contracts:
+  - Shell construction completes before Host startup performs database reads or starts a downloader backend.
+  - Startup restores every unfinished task and the newest 100 history items before loading remaining history in the background.
+  - Observable collection mutation crosses the explicit `IUiDispatcher` boundary; the hosted service cannot reference Avalonia Dispatcher directly.
+  - Runtime creation is isolated behind `IDownloadRuntimeFactory`, and Host stop awaits runtime recovery plus any outstanding history load together.
+  - Download completion projects observable collection mutations through injected `IUiDispatcher`; runtime code cannot call App dispatcher helpers.
+  - Host shutdown does not impose a shorter cancellation deadline than the App-level bounded cleanup fallback.
+  - Cancellation must not turn active persisted rows into abandoned `Downloading` state; runtime shutdown owns resumable-state recovery.
+hazards:
+  - Starting storage or aria2 work during shell construction regresses first-window latency.
+  - Disposing the selected backend before its asynchronous shutdown recovery completes can corrupt resume state.
+tests:
+  - test.download-bootstrap
+  - test.ui-smoke
+  - test.architecture-boundaries
 ```
 
 ### service.download-runtime
@@ -519,15 +1378,18 @@ paths:
   - DownKyi/Services/Download/DownloadTaskFileService.cs
   - DownKyi/Services/Download/DownloadFileIntegrity.cs
   - DownKyi/Services/Download/DownloadDiagnosticLogger.cs
+  - DownKyi/Services/Download/DownloadShutdownCoordinator.cs
 responsibility: Executes queued downloads, updates UI state, verifies file integrity, cleans partial files, and finalizes media.
 inbound:
-  - app.application
+  - service.download-bootstrap
   - service.download-add
 outbound:
   - core.storage
+  - service.download-list-state
   - external.aria2
   - external.ffmpeg
   - core.logging
+  - core.settings
 contracts:
   - A bounded Channel and fixed workers own queue consumption; global shutdown and per-task cancellation cannot create unbounded transfer tasks.
   - Built-in and aria2 backends share key generation, resume path selection, integrity checks, and awaited persistence; CustomAria only selects the shared aria backend.
@@ -537,9 +1399,17 @@ contracts:
   - DURL merge input is sorted by Order and success requires ffprobe stream, duration, and middle/tail seek-decode validation.
   - Multi-segment DURL output is re-encoded to rebuild timestamps, keyframes, and MP4 indexes; hardware failure falls back to `libx264 + aac`.
   - State transitions await persistence; high-rate progress uses the bounded write-behind boundary.
+  - Runtime receives `DownloadListState` and `DownloadStorageService` through construction; it cannot resolve either through App/Prism.
+  - Runtime factory, backends, workers, and diagnostic logger share the Host-injected `ISettingsStore`; no download service reads the global settings singleton.
+  - Runtime alerts depend on `IAppDialogService`; backend constructors cannot accept the legacy Prism dialog service.
+  - Runtime factory creates a typed backend logger, and every download/file-lifecycle/maintenance owner uses the shared provider; this directory cannot call static `LogManager`.
+  - Download diagnostic throttling belongs to the injected runtime logger instance; scopes contain only a SHA-256-derived short task ID and cannot retain raw task IDs in process-wide static state.
+  - `DownloadTaskFileService` is an injected instance so cancellation, sidecar cleanup, retry, and permission failures use the same logger without a static owner.
+  - Shutdown cancellation while dispatch waits for capacity cannot skip fixed-worker drain or resumable-state recovery; active `Downloading` rows return to `WaitForDownload` and are persisted before exit completes.
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
   - Blocking waits in download lifecycle can freeze UI or prevent process exit.
+  - Letting an expected shutdown `OperationCanceledException` escape before state recovery leaves rows stored as active and prevents clean resume after restart.
   - Resume behavior depends on preserving partial files while delete behavior must remove them.
   - aria2 process cleanup is platform-sensitive.
   - Reusing Id+codec or runtime GetHashCode values across DURL segments overwrites temporary files and can produce non-seekable MP4 output.
@@ -563,7 +1433,7 @@ paths:
   - DownKyi.Core/Storage/Database/SqliteDatabase.cs
 responsibility: Projects immutable tasks into temporary legacy UI models and owns app data directories, portable mode, and storage paths; SQLite persistence itself belongs to core.infrastructure.
 inbound:
-  - app.application
+  - service.download-bootstrap
   - service.download-add
   - service.download-runtime
 outbound:
@@ -589,9 +1459,12 @@ tests:
 id: core.logging
 type: core
 paths:
-  - DownKyi.Core/Logging/LogManager.cs
-  - DownKyi.Core/Logging/LogInfo.cs
-responsibility: Writes rotating logs, emits log events, exports sanitized diagnostic logs, and masks sensitive data.
+  - DownKyi.Core/Logging/ApplicationLogProvider.cs
+  - DownKyi.Core/Logging/ApplicationLogOptions.cs
+  - DownKyi.Core/Logging/ApplicationLogRecord.cs
+  - DownKyi.Core/Logging/IApplicationLogService.cs
+  - DownKyi.Core/Logging/SensitiveDataRedactor.cs
+responsibility: Provides the Microsoft.Extensions.Logging sink, bounded asynchronous persistence, rotation/retention, recent-event diagnostics, export, and one sensitive-data redaction policy.
 inbound:
   - app.application
   - core.bili-api
@@ -600,12 +1473,75 @@ outbound:
   - external.filesystem
 contracts:
   - Diagnostic export must redact cookies, tokens, sensitive URLs, and personal local paths.
-  - Flush should be available during shutdown.
+  - Accepted entries pass through one redactor before entering either the bounded recent-event buffer or the bounded writer queue.
+  - Every entry records timestamp, category, event ID, process ID, thread ID, and captured scope context.
+  - Explicit flush drains accepted entries, closes the active file handle so logs are immediately readable on Windows, and reports writer failures.
+  - Rotation is size/day based; startup retention bounds both age and file count.
+  - Async disposal drains accepted entries without a synchronous wait.
+  - Async commands and ViewModel fire-and-forget observation require an injected logger; cancellation retains cancellation semantics while operational failures are sanitized and recorded.
+  - Production code cannot restore `LogManager`, the legacy terminal wrapper, or direct terminal diagnostics.
 hazards:
-  - Synchronous or unbounded logging can block shutdown and hide errors.
-  - Console logging bypasses sanitization policy.
+  - Bypassing the shared provider loses redaction, bounded buffering, retention, and export consistency.
 tests:
   - test.diagnostic-log-redaction
+  - test.architecture-boundaries
+```
+
+### core.settings
+
+```yaml
+id: core.settings
+type: core
+paths:
+  - DownKyi.Core/Settings/ISettingsStore.cs
+  - DownKyi.Core/Settings/ApplicationSettings.cs
+  - DownKyi.Core/Settings/SettingsManager.cs
+  - DownKyi.Core/Settings/SettingsManager.Snapshot.cs
+  - DownKyi.Core/Settings/SettingsSchemaMigrator.cs
+responsibility: Publishes validated immutable settings snapshots, applies typed updates, migrates persisted schemas, and owns debounced atomic persistence plus shutdown flush.
+inbound:
+  - app.application
+  - app.host-composition
+  - ui.main-window
+  - viewmodel.main-window
+  - viewmodel.index
+  - viewmodel.video-detail
+  - viewmodel.settings-pages
+  - legacy dialogs and download/friend ViewModels
+  - service.account-session
+  - service.download-runtime
+  - service.video-parse-coordinator
+  - service.download-add
+  - service.user-space-navigation
+  - core.login-session
+outbound:
+  - core.legacy-settings-migration
+  - external.filesystem
+contracts:
+  - Prism and Microsoft Host composition share the same store instance; they must not create competing settings owners.
+  - Production consumers cannot reach through `SettingsManager.Instance`; only the private store implementation may own the compatibility manager until PR 25-29 deletes its singleton constructor.
+  - `ISettingsStore` exposes only validated immutable `Current`, typed `Update`, explicit flush, and disposal contracts; it cannot expose the mutable manager.
+  - Basic, network, video, danmaku, and about settings pages use the same injected owner for reads and writes.
+  - MainWindow has no parameterless singleton fallback; Host composition supplies its ViewModel, settings owner, and application lifecycle.
+  - Video, bangumi, and cheese info services receive settings from their parse/add coordinator; manually constructed info services cannot fall back to global state.
+  - User-space navigation compares the target MID with the user from its injected settings owner; it cannot inspect process-global settings.
+  - Logout deletes the existing login file, invalidates the in-memory cookie cache, and resets the user through the caller's injected settings owner.
+  - The persisted JSON property names, enum values, and storage path remain compatible with existing user settings.
+  - Schema migrations advance one explicit version at a time; schema zero preserves the historical DTO field names.
+  - A malformed settings file is moved to a unique `.invalid-*` backup before defaults can be written.
+  - A settings file from a newer schema is never overwritten by an older application.
+  - Updates publish a new immutable `ApplicationSettings` value; rejected enum, range, proxy, FFmpeg, danmaku, and window values are replaced with safe defaults before persistence.
+  - HTTP, WBI, logout, UI, navigation, media, download planning/runtime, diagnostics, and FFmpeg consume validated snapshots instead of the mutable compatibility manager.
+  - Debounced and explicit flushes share one async write gate and replace the destination only after a complete UTF-8 temporary file is flushed.
+  - Shutdown flush is awaited without synchronously blocking the UI thread.
+  - Production composition constructs the settings owner with the shared `ILoggerFactory`; validation, migration, load, flush, and cleanup diagnostics cannot use static `LogManager` or terminal output.
+hazards:
+  - `SettingsManager.Instance` remains a private construction bridge inside `SettingsStore`; PR 25-29 must replace that owner without changing the user settings path or persisted schema.
+  - Synchronous disposal intentionally stops scheduled writes without flushing; application shutdown and owners that require persistence must call `FlushAsync` or `DisposeAsync`.
+  - Timer callbacks and shutdown flush must not race into partial or non-atomic writes.
+tests:
+  - test.settings-store
+  - test.architecture-boundaries
 ```
 
 ### core.legacy-settings-migration
@@ -624,7 +1560,7 @@ outbound:
 contracts:
   - This path is read-only and cannot encrypt new settings.
   - Invalid legacy payloads fail visibly to SettingsManager and never masquerade as valid JSON.
-  - Successful migration uses the existing atomic settings writer and preserves user values.
+  - Successful migration uses the existing atomic settings writer, advances through `SettingsSchemaMigrator`, and preserves user values.
 hazards:
   - DES is cryptographically broken and must never be reused for credentials, integrity, or new storage.
   - Deleting the reader before the migration support window closes loses old user settings.
@@ -651,9 +1587,13 @@ outbound:
 contracts:
   - Stream copy may be used for ordinary compatible merge operations, but never for multi-segment DURL concat.
   - Hardware encode failure must fall back to CPU for success rate.
+  - Prism creates one `FfmpegProcessor` and Host receives that same instance; downloads and toolbox operations share one concurrency gate.
+  - `FfmpegProcessor.Instance` is forbidden because separate or implicit owners can exceed the configured CPU/GPU concurrency.
   - Multi-segment completion is accepted only after ffprobe verifies a video stream, positive expected duration, and decodable middle/tail seeks.
   - Command generation is separate from the async process runner; every process has cancellation, a timeout, captured stderr, and process-tree cleanup.
   - Hardware encoder discovery is cached and runs through the same bounded async process runner.
+  - `FfmpegProcessor`, concat validation, and hardware encoder detection use typed loggers from the shared application `ILoggerFactory`; static `LogManager` access is forbidden in this boundary.
+  - The hardware encoder cache is owned by the injected detector instance, which in production belongs to the singleton `FfmpegProcessor` composition owner.
   - Release packages must include cross-platform ffmpeg and ffprobe binaries with checksums.
   - FFmpeg concurrency state belongs to the singleton runtime instance; every operation, including frame extraction, must enter and release the same bounded slot gate.
 hazards:
@@ -682,12 +1622,43 @@ contracts:
   - RPC server startup/shutdown must be cancellation-aware.
   - Split, max connection, min split size, and limits should match settings.
   - Only the tracked aria2 child process may be terminated; shutdown is bounded and never kills unrelated aria2 processes by name.
+  - Host owns one injected `AriaServer`; normal backend shutdown and App timeout cleanup must address that same tracked-process owner.
+  - Manager, server, and process-supervisor diagnostics use typed loggers from the shared application factory; `Aria2cNet` cannot call static `LogManager`.
+  - RPC requests use iterative asynchronous retry and cannot occupy a worker thread with synchronous `HttpClient.Send` or recursive retry.
 hazards:
   - Orphaned aria2 processes prevent clean app exit and lock output files.
   - Temporary `.aria2` files must be removed when user deletes a task.
 tests:
   - test.fake-http-download
   - test.process-cleanup
+```
+
+### ui.async-image-loader
+
+```yaml
+id: ui.async-image-loader
+type: ui-service
+paths:
+  - DownKyi/CustomControl/AsyncImageLoader/Loaders/AdvancedImage.axaml.cs
+  - DownKyi/CustomControl/AsyncImageLoader/Loaders/BaseWebImageLoader.cs
+  - DownKyi/CustomControl/AsyncImageLoader/Loaders/ImageSourceUriResolver.cs
+responsibility: Resolves Avalonia assets, local images, and remote artwork without faulting asynchronous bindings.
+inbound:
+  - ui.main-window
+  - viewmodel.video-detail
+outbound:
+  - Avalonia.Platform.AssetLoader
+  - System.Net.Http.HttpClient
+contracts:
+  - URI scheme access is allowed only after absolute-URI validation.
+  - Protocol-relative image addresses are normalized to HTTPS only at the image-loader boundary; raw Bilibili wire-model strings remain unchanged.
+  - Ordinary relative sources remain Avalonia asset candidates and are never sent as HTTP requests.
+  - Malformed, unavailable, unauthorized, or missing image sources return `null` so the control can retain its fallback instead of faulting the binding task.
+hazards:
+  - Treating `//host/path` as an Avalonia relative asset can throw before remote fallback begins.
+  - Globally rewriting API address fields would alter external wire contracts and cache identity.
+tests:
+  - test.image-loader
 ```
 
 ### workflow.strict-pr-ci
@@ -748,8 +1719,8 @@ contracts:
   - Test names use analyzer-compliant identifiers. Renamed enum members preserve their numeric settings values; aria2 change-position strings are produced by `AriaClient.GetChangePositionValue`, and Bilibili history still maps `ArticleList` to `article-list`.
   - `VideoStreamApi` is the static Bilibili playback/subtitle API facade; it is not a `System.IO.Stream`. xUnit nonparallel fixtures use `...TestGroup` types while retaining their collection-name constants.
   - Favorites API models map `bv_id` to `LegacyBvid` and `bvid` to `Bvid`; both wire fields remain distinct and are covered by a JSON contract test.
-  - Download diagnostic IDs use uppercase truncated SHA-256 values. NFO boolean attributes use explicit lowercase literals, and FFmpeg cleanup errors go only through `LogManager` rather than duplicate terminal output.
-  - Aria2, clipboard, logging, and pager notifications use standard `EventHandler` contracts. Pager veto semantics use `CancelEventArgs` plus `ProposedCurrent`; `ClipboardListener` remains desktop-internal.
+  - Download diagnostic IDs use uppercase truncated SHA-256 values. NFO boolean attributes use explicit lowercase literals, and FFmpeg cleanup errors go only through the shared injected logger rather than duplicate terminal output.
+  - Aria2, clipboard, logging, and pager notifications use standard `EventHandler` contracts. Pager veto semantics use `CancelEventArgs` plus `ProposedCurrent`; `AvaloniaClipboardMonitor` remains desktop-internal.
   - DURL descriptors are selected from an `Order`-sorted list and use `Order` plus the literal codec marker `durl` to form stable download keys; BVID and codec hashes are prohibited as segment identity.
   - Role-specific names replace namespace collisions: `HistoryApi`, `DynamicApi`, `FileNameBuilder`, `FfmpegProcessor`, `BilibiliDanmakuConverter`, `FavoritesPageItem`, and `ThemedDialog`. Bilibili protobuf danmaku parsing lives under `DownKyi.Core.BiliApi.DanmakuApi`.
   - Executable-only application/UI types are internal. BenchmarkDotNet cases are the deliberate exception: public, non-sealed types live in `DownKyi.BenchmarkCases`, while the executable runner remains internal and discovers the case assembly explicitly.
@@ -772,7 +1743,9 @@ sequenceDiagram
     participant OS as OS process
     participant Program as Program
     participant App as App.axaml.cs
+    participant Host as Microsoft Host
     participant Shell as MainWindow
+    participant Bootstrap as DownloadBootstrapHostedService
     participant Projection as DownloadStorageService
     participant Store as SqliteDownloadTaskStore
     participant Runtime as DownloadService
@@ -781,12 +1754,15 @@ sequenceDiagram
     Program->>App: BuildAvaloniaApp()
     App->>App: RegisterTypes()
     App->>Shell: CreateShell()
-    App-->>Projection: load unfinished + newest history page
+    App-->>Host: StartAsync after shell creation
+    Host->>Bootstrap: StartAsync
+    Bootstrap->>Projection: load unfinished + newest history page
     Projection->>Store: async keyset queries
     Store-->>Projection: immutable tasks
-    Projection-->>App: legacy UI projections
-    App-->>Projection: load remaining history after first screen
-    App-->>Runtime: StartAsync()
+    Projection-->>Bootstrap: legacy UI projections
+    Bootstrap-->>Shell: project through IUiDispatcher
+    Bootstrap-->>Projection: load remaining history in background
+    Bootstrap->>Runtime: StartAsync()
 ```
 
 Rule: create the shell first, restore every unfinished task plus at most 100 recent history items, then page remaining history after the first screen; aria2 startup cannot block shell construction.
@@ -807,6 +1783,8 @@ sequenceDiagram
     VM->>Parser: parse with cancellation
     Parser->>API: request JSON/text
     API-->>Parser: parsed data or visible failure
+    Parser-->>VM: complete detail/stream result
+    VM->>VM: verify operation generation and project on UI dispatcher
     VM->>Add: add selected media
     Add->>Add: ask directory
     alt user cancels
@@ -849,6 +1827,8 @@ test.web-client:
     - tests/DownKyi.Core.Tests/WebClientLoopbackTests.cs
     - tests/DownKyi.Core.Tests/BilibiliHttpClientTests.cs
     - tests/DownKyi.Core.Tests/BiliApiContractSampleTests.cs
+    - tests/DownKyi.Core.Tests/WebClientConfigurationTests.cs
+    - tests/DownKyi.Core.Tests/WebClientTestContext.cs
     - tests/DownKyi.Core.Tests/Infrastructure/LoopbackHttpServer.cs
   guards:
     - retry exhaustion throws HttpRequestException
@@ -860,13 +1840,139 @@ test.web-client:
     - cancellation is not retried or swallowed
     - query parameter URL building stays stable
     - typed client registration, Retry-After handling, and API failure contracts remain explicit
+    - requests fail clearly before Host configuration instead of silently constructing a global fallback
+    - User-Agent and proxy configuration come only from an isolated injected settings owner
 
 test.download-add:
   paths:
     - tests/DownKyi.Tests/DownloadAddCoordinatorTests.cs
+    - tests/DownKyi.Tests/ContentDownloadCoordinatorTests.cs
+    - tests/DownKyi.Tests/SeasonsSeriesCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
     - canceling directory selection does not call add
     - selected directory reaches add service
+    - pre-canceled and empty-selection requests cannot create a download session or open directory selection
+    - mixed video/bangumi snapshots select one directory and queue in stable input order
+    - cancellation reaches info-service construction and stops before mutable session state changes
+    - content ViewModels cannot regain factory ownership, directory selection, or per-item parse loops
+    - page-item navigation and add-to-download notifications cannot regain Prism event-bus dependencies
+
+test.bili-helper:
+  paths:
+    - tests/DownKyi.Tests/BiliHelperCoordinatorTests.cs
+    - tests/DownKyi.Core.Tests/DanmakuSenderTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - supported AV/BV identifiers round-trip without background UI mutation
+    - invalid identifiers do not produce fabricated values
+    - danmaku sender lookup preserves cancellation before and during CPU search
+    - Bili Helper ViewModel cannot regain direct Task.Run calls
+
+test.account-session:
+  paths:
+    - tests/DownKyi.Tests/UserSessionCoordinatorTests.cs
+    - tests/DownKyi.Tests/LoginCoordinatorTests.cs
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - constructing ViewIndexViewModel performs no account API work
+    - missing and logged-in navigation users map to the unchanged settings schema
+    - WBI keys remain stable for absolute and protocol-relative image addresses
+    - pre-canceled login work cannot start a network request
+    - the real Host resolves ViewIndexViewModel with its injected session coordinator
+    - index and login ViewModels cannot regain direct Task.Run calls
+
+test.friend-relations:
+  paths:
+    - tests/DownKyi.Tests/FriendRelationCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - pre-canceled overview, following, and follower requests cannot start API work
+    - friend relation ViewModels cannot regain Task.Run, dispatcher-per-item projection, or direct Dispatcher access
+    - relation page projection uses AddRange and pager replacement detaches old event handlers
+
+test.seasons-series:
+  paths:
+    - tests/DownKyi.Tests/SeasonsSeriesCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - pre-canceled season and series page requests cannot start user-space API work
+    - season/series ViewModel cannot regain Task.Run, App UI dispatch, duplicated page methods, or dead channel loader code
+    - page projection uses AddRange and directory cancellation precedes the coordinator add call
+
+test.favorites:
+  paths:
+    - tests/DownKyi.Tests/FavoritesCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - pre-canceled private/public favorite requests cannot start API work
+    - favorite ViewModels cannot regain Task.Run or App dispatcher projection
+    - favorite services return snapshots rather than mutating observable collections
+    - directory cancellation precedes shared download coordination and list selection remains click-toggle capable
+
+test.personal-media:
+  paths:
+    - tests/DownKyi.Tests/PersonalMediaCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - pre-canceled history and watch-later requests cannot start API work
+    - history mapping accepts archive/pgc, rejects unsupported business types, and normalizes protocol-relative covers
+    - personal-media ViewModels cannot regain Task.Run or per-item App dispatcher projection
+    - load-more command identity, directory cancellation ordering, batch projection, and click-toggle selection remain stable
+
+test.user-space-pages:
+  paths:
+    - tests/DownKyi.Tests/UserSpacePageCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - pre-canceled publication, bangumi-follow, profile, and statistics requests cannot start API work
+    - publication, bangumi-follow, and my-space ViewModels cannot regain Task.Run, App dispatch, or worker-thread binding mutation
+    - core user-space account/stat APIs preserve cancellation through the HTTP boundary
+    - publication batching, pager cleanup, directory cancellation ordering, and click-toggle selection remain stable
+
+test.legacy-upgrade:
+  paths:
+    - tests/DownKyi.Tests/LegacyUpgradeViewModelTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - closing the upgrade dialog cancels an active migration
+    - successful migration replaces the existing downloaded projection and exposes restart state
+    - migration, storage, worker, and dispatcher implementation cannot return to the dialog ViewModel
+    - legacy database ownership is scoped and migration diagnostics do not use Console
+
+test.download-list-state:
+  paths:
+    - tests/DownKyi.Tests/DownloadListStateTests.cs
+    - tests/DownKyi.Architecture.Tests/AppLifecycleArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/DownloadRuntimeArchitectureTests.cs
+  guards:
+    - sort and replacement preserve the collection object used by bindings and workers
+    - self-replacement snapshots before clearing
+    - App has no static downloading/history collections and download runtime has no App service locator
+
+test.download-manager:
+  paths:
+    - tests/DownKyi.Tests/DownloadManagerCoordinatorTests.cs
+    - tests/DownKyi.Tests/DownloadTaskFileServiceTests.cs
+    - tests/DownKyi.Architecture.Tests/DownloadRuntimeArchitectureTests.cs
+  guards:
+    - pause and resume update both the stable UI projection and the persisted domain phase
+    - explicit deletion removes generated media, aria2/download sidecars, the database row, and the projection in one ordered operation
+    - cancellation before deletion preserves files, persistence, and projection state
+    - completed video open probes MP4 then FLV through the injected platform launcher
+    - download-manager ViewModels cannot regain direct storage, generated-file, filesystem, or item-owned command behavior
+
+test.download-bootstrap:
+  paths:
+    - tests/DownKyi.Tests/DownloadBootstrapHostedServiceTests.cs
+    - tests/DownKyi.Architecture.Tests/AppLifecycleArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/DownloadRuntimeArchitectureTests.cs
+  guards:
+    - Host start restores download projections and starts the selected runtime
+    - Host stop awaits runtime shutdown and remaining history work together
+    - App cannot regain storage reads, backend creation, or runtime ownership
+    - UI projection remains behind IUiDispatcher
 
 test.download-file-integrity:
   paths:
@@ -877,10 +1983,21 @@ test.download-file-integrity:
 test.download-lifecycle:
   paths:
     - tests/DownKyi.Tests/DownloadTaskFileServiceTests.cs
+    - tests/DownKyi.Tests/DownloadShutdownCoordinatorTests.cs
   guards:
     - generated file discovery includes media, assets, and resume sidecars
     - deleting a task removes partial files and resume sidecars
     - cancellation before deletion preserves resume data
+    - shutdown cancellation while dispatch waits still drains workers and runs state recovery exactly once
+    - unexpected dispatch failures recover state before they propagate
+
+test.image-loader:
+  paths:
+    - tests/DownKyi.Tests/ImageSourceUriResolverTests.cs
+  guards:
+    - protocol-relative image sources use HTTPS without faulting the loader
+    - ordinary relative image sources do not become external HTTP requests
+    - missing Avalonia assets fail gracefully when the asset service is unavailable
 
 test.storage-resume:
   paths:
@@ -893,6 +2010,7 @@ test.wbi-signature:
     - tests/DownKyi.Core.Tests/WbiSignTests.cs
   guards:
     - fixed Bilibili WBI keys, timestamp, and parameters produce the expected w_rid
+    - the same protocol vector succeeds when keys come from an isolated injected settings owner
 
 test.legacy-settings-migration:
   paths:
@@ -944,6 +2062,7 @@ test.architecture-boundaries:
   paths:
     - tests/DownKyi.Architecture.Tests/ProjectDependencyTests.cs
     - tests/DownKyi.Architecture.Tests/RootViewArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/SettingsArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/DownloadRuntimeArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
@@ -957,6 +2076,67 @@ test.architecture-boundaries:
     - production C# cannot reference Prism ContainerLocator directly
     - download and FFmpeg runtime cannot restore synchronous async/process waits
     - Host composition must register the typed Bilibili client and API parsing cannot return null fallbacks
+    - video-detail search cannot restore `CaCheVideoSections`, `CloneForCache`, or another cloned media graph
+    - video-detail ViewModel cannot own `DataGrid`, Avalonia control, or behavior instances
+    - Bili Helper CPU work cannot move back into the ViewModel or lose core-loop cancellation
+    - account network and cookie work cannot move back into index/login ViewModels
+    - friend relation API work cannot move back into ViewModels or per-item dispatcher posts
+    - season/series loading and add work cannot move back into the ViewModel or bypass directory cancellation
+    - legacy upgrade migration cannot move NRBF, SQLite, storage lookup, Task.Run, or Dispatcher work back into the dialog ViewModel
+    - migrated App, shell, ViewModels, dialogs, account session, video-detail, and settings-page owners cannot restore direct SettingsManager singleton access
+    - no production source outside the compatibility settings owner can reference SettingsManager.Instance
+    - Prism and Host composition must share one injected settings owner
+    - the settings store retains immutable Current and typed Update contracts, explicit version migration, cancellation-aware flush, and atomic replacement
+    - no production source can read through a mutable Settings facade, and `ISettingsStore` cannot expose `SettingsManager`
+    - download runtime and file cleanup cannot restore static LogManager or a static DownloadTaskFileService owner
+    - download runtime cannot duplicate typed diagnostics to terminal output; empty subtitle results emit only a sanitized task-level warning
+    - FFmpeg processor, concat, and hardware detection cannot restore static LogManager or a static detector owner
+    - aria2 manager/server/process supervision cannot restore static LogManager, static server ownership, synchronous HTTP send, or recursive retry
+    - settings validation/persistence and legacy migration cannot restore static LogManager, Console diagnostics, or duplicate low-level SQLite logging
+    - Bilibili Core facades cannot log or print request data; injected account and user-space coordinators own sanitized outcome diagnostics
+    - migrated update, disk, cookie serialization, and delayed-scroll files cannot restore static or terminal diagnostics
+    - all production C# roots reject legacy LogManager, the removed Console wrapper, and terminal Print calls; legacy logging source files must remain deleted
+    - async commands and ViewModel fire-and-forget observation require injected diagnostics and preserve normal cancellation semantics
+    - ViewModels cannot restore PlatformHelper, and the platform launcher cannot restore shell-string execution
+
+test.settings-store:
+  paths:
+    - tests/DownKyi.Core.Tests/SettingsStoreTests.cs
+    - tests/DownKyi.Tests/NavigateToViewTests.cs
+    - tests/DownKyi.Core.Tests/LoginHelperTests.cs
+  guards:
+    - an isolated settings owner flushes modified values to its assigned file
+    - schema-zero JSON and a real legacy DES AppSettings fixture migrate to the current schema without renaming persisted fields
+    - malformed input is preserved before defaults are atomically written, while future-schema files remain byte-for-byte unchanged
+    - immutable updates and legacy setters both pass through validation before values can be persisted
+    - a canceled flush leaves pending state available to the next successful flush, and async disposal flushes pending changes
+    - a new unmodified store does not write a defaults-only file; its first actual setting change does
+    - tests never read or write the user's real settings path
+    - user-space navigation routes the signed-in MID to My Space and other MIDs to public User Space using the injected owner
+    - logout removes an isolated login file and clears only the injected settings owner
+
+test.network-settings:
+  paths:
+    - tests/DownKyi.Tests/NetworkSettingsCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/SettingsArchitectureTests.cs
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+  guards:
+    - immutable option catalogs retain the supported downloader, split, log-level, and file-allocation choices
+    - validated updates persist through an isolated settings owner and report success or failure once
+    - initialization projection cannot show feedback, open a dialog, or request restart
+    - rejected values cannot open a restart prompt, while an accepted prompt requests exactly one asynchronous restart
+    - ViewNetworkViewModel cannot regain settings persistence, lifecycle, dialog, option-construction, or resource-feedback ownership
+    - Host smoke resolves ViewNetworkViewModel and its coordinator without Prism ContainerLocator
+
+test.diagnostic-log-redaction:
+  paths:
+    - tests/DownKyi.Core.Tests/ApplicationLogProviderTests.cs
+  guards:
+    - message, exception, and scope data share the same cookie, query-secret, email, account-ID, and personal-path redactor
+    - the recent-event buffer is bounded and diagnostic export includes only its retained entries
+    - accepted entries are drained by async disposal and explicit flush releases the current log file
+    - size rotation and age/count retention remain bounded
+    - writer initialization failures are visible to flush callers
 
 test.ui-smoke:
   paths:
@@ -972,10 +2152,31 @@ test.ui-smoke:
 test.composition-root:
   paths:
     - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+    - tests/DownKyi.Tests/LoggingCompositionTests.cs
+    - tests/DownKyi.Architecture.Tests/AppLifecycleArchitectureTests.cs
   guards:
     - the real Host starts and stops without Prism global container state
     - Host stop signals the shared application shutdown token
+    - video-page selection behavior synchronizes model/Grid state and preserves another section's selections
     - the shell and key ViewModels resolve from the same service provider
+    - Prism and Host resolve typed loggers from the same factory in production composition
+    - App crash/shutdown and About log-management paths cannot return to static LogManager
+
+test.desktop-interactions:
+  paths:
+    - tests/DownKyi.Tests/DesktopInteractionServiceTests.cs
+    - tests/DownKyi.Architecture.Tests/DesktopInteractionArchitectureTests.cs
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+  guards:
+    - every typed route, nested region, and dialog maps to one distinct non-empty Prism compatibility name
+    - notification publication uses one framework-neutral typed event and rejects empty messages
+    - typed search routes signed-in and external user IDs without publishing NavigationEvent
+    - Application Desktop contracts cannot reference Prism or Avalonia
+    - MainWindowViewModel and SearchService cannot regain EventAggregator, RegionManager, Prism dialog, MessageEvent, or NavigationEvent dependencies
+    - migrated media page-item models and download-add services cannot regain EventAggregator, MessageEvent, or string-route helper dependencies
+    - every non-dialog ViewModel rejects Prism EventAggregator, RegionManager, dialog service, event-message, and string-route dependencies
+    - download runtime alerts cannot regain a legacy Prism dialog dependency
+    - production Prism adapters and all three contract instances resolve through both Prism and Host composition
 
 test.domain-results:
   paths:
@@ -995,9 +2196,19 @@ test.download-domain:
 test.application-lifetime:
   paths:
     - tests/DownKyi.Application.Tests/ApplicationCancellationTests.cs
+    - tests/DownKyi.Tests/AvaloniaApplicationLifecycleTests.cs
+    - tests/DownKyi.Tests/ProcessRestartLauncherTests.cs
+    - tests/DownKyi.Tests/SingleInstanceGuardTests.cs
+    - tests/DownKyi.Architecture.Tests/AppLifecycleArchitectureTests.cs
   guards:
     - application shutdown cancels every linked operation
     - caller cancellation does not cancel unrelated work or global shutdown
+    - lifecycle shutdown is idempotent, stops Host-owned work, and flushes settings/log state once
+    - a known hosted-service stop failure is logged but cannot strand the main window in a canceled close
+    - a restart-helper launch failure leaves the current application running
+    - helper arguments accept only one positive parent PID and use `ProcessStartInfo.ArgumentList`
+    - single-instance names are stable per install, do not expose the install path, and can be reacquired after disposal
+    - ViewModels cannot regain App, desktop lifetime, or process-restart ownership
 
 test.infrastructure-clock:
   paths:
@@ -1046,6 +2257,7 @@ test.performance-baseline:
 
 test.video-input-resolver:
   paths:
+    - tests/DownKyi.Application.Tests/VideoInputResolverTests.cs
     - tests/DownKyi.Tests/VideoInputResolverTests.cs
   guards:
     - BV/AV/video/bangumi/cheese inputs classify consistently
@@ -1055,6 +2267,35 @@ test.video-selection-state:
     - tests/DownKyi.Tests/VideoSelectionStateTests.cs
   guards:
     - page/section selection behavior is deterministic
+
+test.video-search-state:
+  paths:
+    - tests/DownKyi.Tests/VideoSearchStateTests.cs
+  guards:
+    - filtering reuses original page instances instead of cloning the media graph
+    - clearing a filter preserves selection and parsed state changes
+
+test.video-parse-coordinator:
+  paths:
+    - tests/DownKyi.Tests/VideoParseCoordinatorTests.cs
+    - tests/DownKyi.Tests/VideoDetailWorkflowCoordinatorTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+  guards:
+    - detail results are complete before they are returned for UI projection
+    - cancellation prevents section/page reads and prevents a canceled service from entering the cache
+    - stream parsing returns detached results and does not mutate bound `VideoPage` objects on worker threads
+    - video info services do not dispatch through `App` or Avalonia
+    - a newer operation cancels the previous generation and stale results cannot project
+    - detail search reuses original page objects after the complete result is returned
+
+test.video-detail-download:
+  paths:
+    - tests/DownKyi.Tests/VideoDetailDownloadCoordinatorTests.cs
+    - tests/DownKyi.Application.Tests/DownloadAddCoordinatorTests.cs
+  guards:
+    - pre-canceled add work cannot create a download service or open directory selection
+    - unsupported input cannot create a download service
+    - canceling directory selection does not invoke queue insertion
 ```
 
 ## Backlog Nodes

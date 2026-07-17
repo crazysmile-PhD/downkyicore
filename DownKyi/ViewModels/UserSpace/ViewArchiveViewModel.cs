@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Avalonia.Media;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Utils;
 using Prism.Commands;
-using Prism.Events;
 using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.UserSpace;
@@ -41,7 +41,8 @@ internal class ViewArchiveViewModel : ViewModelBase
 
     #endregion
 
-    public ViewArchiveViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewArchiveViewModel(IDesktopInteractionContext desktopInteractions)
+        : base(desktopInteractions)
     {
         #region 属性初始化
 
@@ -76,7 +77,10 @@ internal class ViewArchiveViewModel : ViewModelBase
         };
 
         // 进入视频页面
-        NavigateToView.NavigationView(EventAggregator, ViewPublicationViewModel.Tag, ViewUserSpaceViewModel.Tag, data);
+        Navigation.Navigate(new AppNavigationRequest(
+            AppRoute.Publication,
+            AppRoute.UserSpace,
+            data));
 
         SelectedItem = -1;
     }

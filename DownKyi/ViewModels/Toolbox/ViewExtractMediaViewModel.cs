@@ -4,12 +4,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.VisualTree;
+using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.FFMpeg;
-using DownKyi.Events;
 using DownKyi.Utils;
+using Microsoft.Extensions.Logging;
 using Prism.Commands;
-using Prism.Events;
 
 namespace DownKyi.ViewModels.Toolbox;
 
@@ -19,6 +19,9 @@ internal class ViewExtractMediaViewModel : ViewModelBase
 
     // 是否正在执行任务
     private bool _isExtracting;
+    private readonly IFilePickerService _filePickerService;
+    private readonly FfmpegProcessor _ffmpegProcessor;
+    private readonly ILogger<ViewExtractMediaViewModel> _logger;
 
     #region 页面属性申明
 
@@ -52,8 +55,15 @@ internal class ViewExtractMediaViewModel : ViewModelBase
 
     #endregion
 
-    public ViewExtractMediaViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+    public ViewExtractMediaViewModel(
+        IDesktopInteractionContext desktopInteractions,
+        IFilePickerService filePickerService,
+        FfmpegProcessor ffmpegProcessor,
+        ILogger<ViewExtractMediaViewModel> logger) : base(desktopInteractions)
     {
+        _filePickerService = filePickerService ?? throw new ArgumentNullException(nameof(filePickerService));
+        _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         #region 属性初始化
 
         VideoPaths = Array.Empty<string>();
@@ -66,7 +76,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     // 选择视频事件
     private DownKyiAsyncDelegateCommand? _selectVideoCommand;
 
-    public DownKyiAsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSelectVideoCommand);
+    public DownKyiAsyncDelegateCommand SelectVideoCommand => _selectVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteSelectVideoCommand, _logger);
 
     /// <summary>
     /// 选择视频事件
@@ -75,17 +85,17 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     {
         if (_isExtracting)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
+            Notifications.Show(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
 
-        VideoPaths = await DialogUtils.SelectMultiVideoFile().ConfigureAwait(true) ?? Array.Empty<string>();
+        VideoPaths = await _filePickerService.SelectVideosAsync().ConfigureAwait(true);
     }
 
     // 提取音频事件
     private DownKyiAsyncDelegateCommand? _extractAudioCommand;
 
-    public DownKyiAsyncDelegateCommand ExtractAudioCommand => _extractAudioCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExtractAudioCommand);
+    public DownKyiAsyncDelegateCommand ExtractAudioCommand => _extractAudioCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExtractAudioCommand, _logger);
 
     /// <summary>
     /// 提取音频事件
@@ -94,13 +104,13 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     {
         if (_isExtracting)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
+            Notifications.Show(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
 
         if (VideoPaths.Count <= 0)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipNoSelectedVideo"));
+            Notifications.Show(DictionaryResource.GetString("TipNoSelectedVideo"));
             return;
         }
 
@@ -112,7 +122,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
             foreach (var item in VideoPaths)
             {
                 var audioFileName = item.Remove(item.Length - 4, 4) + ".aac";
-                await FfmpegProcessor.Instance.ExtractAudioAsync(
+                await _ffmpegProcessor.ExtractAudioAsync(
                     item,
                     audioFileName,
                     output => { Status += output + "\n"; }).ConfigureAwait(true);
@@ -127,7 +137,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     // 提取视频事件
     private DownKyiAsyncDelegateCommand? _extractVideoCommand;
 
-    public DownKyiAsyncDelegateCommand ExtractVideoCommand => _extractVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExtractVideoCommand);
+    public DownKyiAsyncDelegateCommand ExtractVideoCommand => _extractVideoCommand ??= new DownKyiAsyncDelegateCommand(ExecuteExtractVideoCommand, _logger);
 
     /// <summary>
     /// 提取视频事件
@@ -136,13 +146,13 @@ internal class ViewExtractMediaViewModel : ViewModelBase
     {
         if (_isExtracting)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipWaitTaskFinished"));
+            Notifications.Show(DictionaryResource.GetString("TipWaitTaskFinished"));
             return;
         }
 
         if (VideoPaths.Count <= 0)
         {
-            EventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("TipNoSeletedVideo"));
+            Notifications.Show(DictionaryResource.GetString("TipNoSeletedVideo"));
             return;
         }
 
@@ -154,7 +164,7 @@ internal class ViewExtractMediaViewModel : ViewModelBase
             foreach (var item in VideoPaths)
             {
                 var videoFileName = item.Remove(item.Length - 4, 4) + "_onlyVideo.mp4";
-                await FfmpegProcessor.Instance.ExtractVideoAsync(
+                await _ffmpegProcessor.ExtractVideoAsync(
                     item,
                     videoFileName,
                     output => { Status += output + "\n"; }).ConfigureAwait(true);

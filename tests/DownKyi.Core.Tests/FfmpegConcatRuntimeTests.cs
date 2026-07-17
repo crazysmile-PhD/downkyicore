@@ -1,4 +1,5 @@
 using DownKyi.Core.FFMpeg;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Core.Tests;
 
@@ -20,7 +21,11 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         var second = CreateSegment("second.flv");
         var runner = new RecordingConcatRunner();
         var validator = new StubMediaValidator(isValid: true);
-        var runtime = new FfmpegConcatRuntime(runner, validator, () => 1);
+        var runtime = new FfmpegConcatRuntime(
+            runner,
+            validator,
+            () => 1,
+            NullLogger<FfmpegConcatRuntime>.Instance);
         var output = Path.Combine(_testDirectory, "result.mp4");
 
         var result = await runtime.ConcatAsync(
@@ -48,7 +53,11 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         var segment = CreateSegment("bad.flv");
         var runner = new RecordingConcatRunner();
         var validator = new StubMediaValidator(isValid: false);
-        var runtime = new FfmpegConcatRuntime(runner, validator, () => 1);
+        var runtime = new FfmpegConcatRuntime(
+            runner,
+            validator,
+            () => 1,
+            NullLogger<FfmpegConcatRuntime>.Instance);
         var output = Path.Combine(_testDirectory, "result.mp4");
 
         var result = await runtime.ConcatAsync(

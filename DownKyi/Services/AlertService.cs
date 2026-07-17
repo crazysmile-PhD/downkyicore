@@ -1,19 +1,20 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Images;
 using DownKyi.Utils;
-using DownKyi.ViewModels.Dialogs;
-using Prism.Dialogs;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.Services;
 
 internal class AlertService
 {
-    private readonly IDialogService? _dialogService;
+    private readonly IAppDialogService _dialogService;
 
-    public AlertService(IDialogService? dialogService)
+    public AlertService(IAppDialogService dialogService)
     {
-        _dialogService = dialogService;
+        _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
     }
 
     /// <summary>
@@ -22,11 +23,14 @@ internal class AlertService
     /// <param name="message"></param>
     /// <param name="buttonNumber"></param>
     /// <returns></returns>
-    public Task<ButtonResult> ShowInfo(string message, int buttonNumber = 2)
+    public Task<AppDialogOutcome> ShowInfo(
+        string message,
+        int buttonNumber = 2,
+        CancellationToken cancellationToken = default)
     {
         var image = SystemIcon.Instance().Info;
         var title = DictionaryResource.GetString("Info");
-        return ShowMessage(image, title, message, buttonNumber);
+        return ShowMessage(image, title, message, buttonNumber, cancellationToken);
     }
 
     /// <summary>
@@ -35,11 +39,14 @@ internal class AlertService
     /// <param name="message"></param>
     /// <param name="buttonNumber"></param>
     /// <returns></returns>
-    public Task<ButtonResult> ShowWarning(string message, int buttonNumber = 1)
+    public Task<AppDialogOutcome> ShowWarning(
+        string message,
+        int buttonNumber = 1,
+        CancellationToken cancellationToken = default)
     {
         var image = SystemIcon.Instance().Warning;
         var title = DictionaryResource.GetString("Warning");
-        return ShowMessage(image, title, message, buttonNumber);
+        return ShowMessage(image, title, message, buttonNumber, cancellationToken);
     }
 
     /// <summary>
@@ -47,30 +54,32 @@ internal class AlertService
     /// </summary>
     /// <param name="message"></param>
     /// <returns></returns>
-    public Task<ButtonResult> ShowError(string message)
+    public Task<AppDialogOutcome> ShowError(
+        string message,
+        CancellationToken cancellationToken = default)
     {
         var image = SystemIcon.Instance().Error;
         var title = DictionaryResource.GetString("Error");
-        return ShowMessage(image, title, message, 1);
+        return ShowMessage(image, title, message, 1, cancellationToken);
     }
 
-    public async Task<ButtonResult> ShowMessage(VectorImage image, string title, string message, int buttonNumber)
+    public async Task<AppDialogOutcome> ShowMessage(
+        VectorImage image,
+        string title,
+        string message,
+        int buttonNumber,
+        CancellationToken cancellationToken = default)
     {
-        var result = ButtonResult.None;
-        if (_dialogService == null)
+        var parameters = new Dictionary<string, object?>
         {
-            return result;
-        }
-
-        var param = new DialogParameters
-        {
-            { "image", image },
-            { "title", title },
-            { "message", message },
-            { "button_number", buttonNumber }
+            ["image"] = image,
+            ["title"] = title,
+            ["message"] = message,
+            ["button_number"] = buttonNumber
         };
-
-        await _dialogService.ShowDialogAsync(ViewAlertDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; }).ConfigureAwait(true);
-        return result;
+        var result = await _dialogService.ShowAsync(
+            new AppDialogRequest(AppDialog.Alert, parameters),
+            cancellationToken).ConfigureAwait(true);
+        return result.Outcome;
     }
 }

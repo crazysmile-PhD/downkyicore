@@ -1,48 +1,88 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Core.Aria2cNet;
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Client.Entity;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi.Login;
+using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Images;
 using DownKyi.Models;
-using DownKyi.PrismExtension.Dialog;
+using DownKyi.Platform;
 using DownKyi.Utils;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
 internal class AriaDownloadService : DownloadService, IDownloadService
 {
+    private readonly AriaServer _ariaServer;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly bool _ownsAriaServer;
 
     public AriaDownloadService(
-        ImmutableObservableCollection<DownloadingItem> downloadingList,
-        ImmutableObservableCollection<DownloadedItem> downloadedList,
-        IDialogService? dialogService)
-        : this(downloadingList, downloadedList, dialogService, ownsAriaServer: true)
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService,
+        IAppDialogService dialogService,
+        IUiDispatcher uiDispatcher,
+        ISettingsStore settingsStore,
+        DownloadDiagnosticLogger diagnosticLogger,
+        FfmpegProcessor ffmpegProcessor,
+        AriaServer ariaServer,
+        ILoggerFactory loggerFactory,
+        ILogger logger)
+        : this(
+            downloadLists,
+            downloadStorageService,
+            dialogService,
+            uiDispatcher,
+            settingsStore,
+            diagnosticLogger,
+            ffmpegProcessor,
+            ariaServer,
+            loggerFactory,
+            logger,
+            ownsAriaServer: true)
     {
     }
 
     protected AriaDownloadService(
-        ImmutableObservableCollection<DownloadingItem> downloadingList,
-        ImmutableObservableCollection<DownloadedItem> downloadedList,
-        IDialogService? dialogService,
+        DownloadListState downloadLists,
+        DownloadStorageService downloadStorageService,
+        IAppDialogService dialogService,
+        IUiDispatcher uiDispatcher,
+        ISettingsStore settingsStore,
+        DownloadDiagnosticLogger diagnosticLogger,
+        FfmpegProcessor ffmpegProcessor,
+        AriaServer ariaServer,
+        ILoggerFactory loggerFactory,
+        ILogger logger,
         bool ownsAriaServer)
-        : base(downloadingList, downloadedList, dialogService)
+        : base(
+            downloadLists,
+            downloadStorageService,
+            dialogService,
+            uiDispatcher,
+            settingsStore,
+            diagnosticLogger,
+            ffmpegProcessor,
+            logger)
     {
+        _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _ownsAriaServer = ownsAriaServer;
         Tag = ownsAriaServer ? nameof(AriaDownloadService) : nameof(CustomAriaDownloadService);
     }
@@ -59,6 +99,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var network = Settings.Network;
         if (_ownsAriaServer)
         {
             AriaClient.SetToken();
@@ -66,11 +107,11 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         }
         else
         {
-            AriaClient.SetToken(SettingsManager.Instance.GetAriaToken());
-            AriaClient.SetHost(SettingsManager.Instance.GetAriaHost());
+            AriaClient.SetToken(network.AriaToken);
+            AriaClient.SetHost(network.AriaHost);
         }
 
-        AriaClient.SetListenPort(SettingsManager.Instance.GetAriaListenPort());
+        AriaClient.SetListenPort(network.AriaListenPort);
         if (_ownsAriaServer)
         {
             await StartAriaServerAsync(cancellationToken).ConfigureAwait(true);
@@ -113,8 +154,8 @@ internal class AriaDownloadService : DownloadService, IDownloadService
             return DownloadTransferOutcome.Failed;
         }
 
-        DownloadDiagnosticLogger.LogAriaTaskStart(Tag, activeGid, urls.Count);
-        var ariaManager = new AriaManager();
+        DiagnosticLogger.LogAriaTaskStart(Tag, activeGid, urls.Count);
+        var ariaManager = new AriaManager(_loggerFactory.CreateLogger<AriaManager>());
         ariaManager.TellStatus += AriaTellStatus;
         var result = await ariaManager.GetDownloadStatusAsync(
             activeGid,
@@ -158,6 +199,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
 
         if (gid == null)
         {
+            var network = Settings.Network;
             var option = new AriaSendOption
             {
                 Dir = path,
@@ -165,15 +207,15 @@ internal class AriaDownloadService : DownloadService, IDownloadService
                 Continue = "true",
                 AllowOverwrite = "true",
                 AutoFileRenaming = "false",
-                UserAgent = SettingsManager.Instance.GetUserAgent(),
-                Split = SettingsManager.Instance.GetAriaSplit().ToString(CultureInfo.InvariantCulture),
-                MaxConnectionPerServer = SettingsManager.Instance.GetAriaMaxConnectionPerServer()
+                UserAgent = network.UserAgent,
+                Split = network.AriaSplit.ToString(CultureInfo.InvariantCulture),
+                MaxConnectionPerServer = network.AriaMaxConnectionPerServer
                     .ToString(CultureInfo.InvariantCulture),
-                MinSplitSize = $"{SettingsManager.Instance.GetAriaMinSplitSize()}M"
+                MinSplitSize = $"{network.AriaMinSplitSize}M"
             };
-            if (SettingsManager.Instance.GetIsAriaHttpProxy() == AllowStatus.Yes)
+            if (network.IsAriaHttpProxy == AllowStatus.Yes)
             {
-                option.HttpProxy = $"http://{SettingsManager.Instance.GetAriaHttpProxy()}:{SettingsManager.Instance.GetAriaHttpProxyListenPort()}";
+                option.HttpProxy = $"http://{network.AriaHttpProxy}:{network.AriaHttpProxyListenPort}";
             }
 
             var added = await AriaClient.AddUriAsync(urls.ToList(), option).ConfigureAwait(true);
@@ -196,39 +238,40 @@ internal class AriaDownloadService : DownloadService, IDownloadService
 
     private async Task StartAriaServerAsync(CancellationToken cancellationToken)
     {
+        var network = Settings.Network;
         var config = new AriaConfig
         {
-            ListenPort = SettingsManager.Instance.GetAriaListenPort(),
+            ListenPort = network.AriaListenPort,
             Token = "downkyi",
-            LogLevel = SettingsManager.Instance.GetAriaLogLevel(),
-            MaxConcurrentDownloads = SettingsManager.Instance.GetMaxCurrentDownloads(),
-            MaxConnectionPerServer = SettingsManager.Instance.GetAriaMaxConnectionPerServer(),
-            Split = SettingsManager.Instance.GetAriaSplit(),
-            MinSplitSize = SettingsManager.Instance.GetAriaMinSplitSize(),
-            MaxOverallDownloadLimit = SettingsManager.Instance.GetAriaMaxOverallDownloadLimit() * 1024L,
-            MaxDownloadLimit = SettingsManager.Instance.GetAriaMaxDownloadLimit() * 1024L,
+            LogLevel = network.AriaLogLevel,
+            MaxConcurrentDownloads = network.MaxCurrentDownloads,
+            MaxConnectionPerServer = network.AriaMaxConnectionPerServer,
+            Split = network.AriaSplit,
+            MinSplitSize = network.AriaMinSplitSize,
+            MaxOverallDownloadLimit = network.AriaMaxOverallDownloadLimit * 1024L,
+            MaxDownloadLimit = network.AriaMaxDownloadLimit * 1024L,
             ContinueDownload = true,
-            FileAllocation = SettingsManager.Instance.GetAriaFileAllocation(),
+            FileAllocation = network.AriaFileAllocation,
             Headers =
             [
                 $"Cookie: {LoginHelper.GetLoginInfoCookiesString()}",
                 "Origin: https://www.bilibili.com",
                 "Referer: https://www.bilibili.com",
-                $"User-Agent: {SettingsManager.Instance.GetUserAgent()}"
+                $"User-Agent: {network.UserAgent}"
             ]
         };
-        DownloadDiagnosticLogger.LogAriaServerConfig(Tag, config);
+        DiagnosticLogger.LogAriaServerConfig(Tag, config);
 
-        var errors = new StringBuilder();
-        await AriaServer.StartServerAsync(config, output =>
+        var errors = new ConcurrentQueue<string>();
+        await _ariaServer.StartServerAsync(config, output =>
         {
             if (!string.IsNullOrWhiteSpace(output))
             {
-                errors.AppendLine(output);
+                errors.Enqueue(output);
             }
         }).ConfigureAwait(true);
 
-        var message = errors.ToString();
+        var message = string.Join(Environment.NewLine, errors);
         if (message.Contains("ERROR", StringComparison.OrdinalIgnoreCase))
         {
             var alertService = new AlertService(DialogService);
@@ -236,7 +279,8 @@ internal class AriaDownloadService : DownloadService, IDownloadService
                 SystemIcon.Instance().Error,
                 $"Aria2 {DictionaryResource.GetString("Error")}",
                 message,
-                1).ConfigureAwait(true);
+                1,
+                cancellationToken).ConfigureAwait(true);
             return;
         }
 
@@ -261,12 +305,12 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         catch (Exception e) when (e is TimeoutException or HttpRequestException or IOException
             or InvalidOperationException or Newtonsoft.Json.JsonException)
         {
-            LogManager.Error(Tag, e);
+            Logger.LogErrorMessage("Aria server shutdown failed.", e);
         }
 
-        if (!await AriaServer.CloseServerAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true))
+        if (!await _ariaServer.CloseServerAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true))
         {
-            await AriaServer.ForceCloseServerAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
+            await _ariaServer.ForceCloseServerAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
         }
     }
 
@@ -289,7 +333,7 @@ internal class AriaDownloadService : DownloadService, IDownloadService
         video.Progress = percent;
         video.DownloadingFileSize = $"{Format.FormatFileSize(eventArgs.CompletedLength)}/{Format.FormatFileSize(eventArgs.TotalLength)}";
         video.SpeedDisplay = Format.FormatSpeedWithBandwidth(eventArgs.Speed);
-        DownloadDiagnosticLogger.LogSpeed(
+        DiagnosticLogger.LogSpeed(
             Tag,
             eventArgs.Gid,
             eventArgs.CompletedLength,

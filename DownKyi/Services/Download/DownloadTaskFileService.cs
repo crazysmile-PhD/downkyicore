@@ -9,18 +9,24 @@ using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Logging;
 using DownKyi.Models;
 using DownKyi.ViewModels.DownloadManager;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
-internal static class DownloadTaskFileService
+internal sealed class DownloadTaskFileService
 {
-    private const string Tag = nameof(DownloadTaskFileService);
     private static readonly string[] MediaExtensions = { ".mp4", ".aac", ".mp3", ".flac" };
     private static readonly string[] TextExtensions = { ".ass", ".srt", ".nfo" };
     private static readonly string[] ImageExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif" };
     private static readonly string[] TempExtensions = { "", ".aria2", ".download" };
+    private readonly ILogger<DownloadTaskFileService> _logger;
 
-    public static async Task CancelActiveDownloadAsync(DownloadingItem downloading)
+    public DownloadTaskFileService(ILogger<DownloadTaskFileService> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public async Task CancelActiveDownloadAsync(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -32,7 +38,7 @@ internal static class DownloadTaskFileService
         }
         catch (InvalidOperationException e)
         {
-            LogManager.Debug(Tag, $"Cancel builtin downloader failed: {e.Message}");
+            _logger.LogDebugMessage($"Cancel built-in downloader failed: {e.Message}");
         }
         finally
         {
@@ -54,11 +60,11 @@ internal static class DownloadTaskFileService
         }
         catch (TimeoutException e)
         {
-            LogManager.Debug(Tag, $"Cancel aria downloader failed: {e.Message}");
+            _logger.LogDebugMessage($"Cancel aria downloader failed: {e.Message}");
         }
         catch (HttpRequestException e)
         {
-            LogManager.Debug(Tag, $"Cancel aria downloader failed: {e.Message}");
+            _logger.LogDebugMessage($"Cancel aria downloader failed: {e.Message}");
         }
         finally
         {
@@ -69,13 +75,15 @@ internal static class DownloadTaskFileService
         }
     }
 
-    public static Task DeleteGeneratedFilesAsync(DownloadingItem downloading, CancellationToken cancellationToken = default)
+    public Task<DownloadFileDeletionResult> DeleteGeneratedFilesAsync(
+        DownloadingItem downloading,
+        CancellationToken cancellationToken = default)
     {
         var files = GetGeneratedFiles(downloading);
         return DeleteFilesAsync(files, cancellationToken);
     }
 
-    internal static Task DeleteFilesAsync(
+    internal Task<DownloadFileDeletionResult> DeleteFilesAsync(
         IEnumerable<string> files,
         CancellationToken cancellationToken = default)
     {
@@ -83,18 +91,26 @@ internal static class DownloadTaskFileService
         return Task.Run(() => DeleteFilesCoreAsync(files, cancellationToken), cancellationToken);
     }
 
-    private static async Task DeleteFilesCoreAsync(
+    private async Task<DownloadFileDeletionResult> DeleteFilesCoreAsync(
         IEnumerable<string> files,
         CancellationToken cancellationToken)
     {
+        var attemptedCount = 0;
+        var failedCount = 0;
         foreach (var file in files)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await TryDeleteFileAsync(file, cancellationToken).ConfigureAwait(false);
+            attemptedCount++;
+            if (!await TryDeleteFileAsync(file, cancellationToken).ConfigureAwait(false))
+            {
+                failedCount++;
+            }
         }
+
+        return new DownloadFileDeletionResult(attemptedCount, failedCount);
     }
 
-    public static IReadOnlyCollection<string> GetGeneratedFiles(DownloadingItem downloading)
+    public IReadOnlyCollection<string> GetGeneratedFiles(DownloadingItem downloading)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -103,7 +119,7 @@ internal static class DownloadTaskFileService
             downloading.Downloading.DownloadFiles?.Values);
     }
 
-    internal static IReadOnlyCollection<string> GetGeneratedFiles(
+    internal IReadOnlyCollection<string> GetGeneratedFiles(
         string? filePath,
         IEnumerable<string>? downloadFiles)
     {
@@ -150,7 +166,7 @@ internal static class DownloadTaskFileService
         }
     }
 
-    private static void AddSubtitleVariants(ISet<string> files, string basePath)
+    private void AddSubtitleVariants(ISet<string> files, string basePath)
     {
         var directory = Path.GetDirectoryName(basePath);
         var name = Path.GetFileName(basePath);
@@ -168,11 +184,11 @@ internal static class DownloadTaskFileService
         }
         catch (IOException e)
         {
-            LogManager.Debug(Tag, $"Enumerate subtitle variants failed: {e.Message}");
+            _logger.LogDebugMessage($"Enumerate subtitle variants failed: {e.Message}");
         }
         catch (UnauthorizedAccessException e)
         {
-            LogManager.Debug(Tag, $"Enumerate subtitle variants was denied: {e.Message}");
+            _logger.LogDebugMessage($"Enumerate subtitle variants was denied: {e.Message}");
         }
     }
 
@@ -204,7 +220,7 @@ internal static class DownloadTaskFileService
             : path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
     }
 
-    private static async Task TryDeleteFileAsync(string file, CancellationToken cancellationToken)
+    private async Task<bool> TryDeleteFileAsync(string file, CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 5; attempt++)
         {
@@ -216,28 +232,35 @@ internal static class DownloadTaskFileService
                     File.Delete(file);
                 }
 
-                return;
+                return true;
             }
             catch (IOException e) when (attempt < 4)
             {
-                LogManager.Debug(Tag, $"Delete generated file retry {attempt + 1}: {e.Message}");
+                _logger.LogDebugMessage($"Delete generated file retry {attempt + 1}: {e.Message}");
                 await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
             }
             catch (UnauthorizedAccessException e) when (attempt < 4)
             {
-                LogManager.Debug(Tag, $"Delete generated file retry {attempt + 1}: {e.Message}");
+                _logger.LogDebugMessage($"Delete generated file retry {attempt + 1}: {e.Message}");
                 await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
             }
             catch (IOException e)
             {
-                LogManager.Error(Tag, e);
-                return;
+                _logger.LogErrorMessage("Generated file deletion failed.", e);
+                return false;
             }
             catch (UnauthorizedAccessException e)
             {
-                LogManager.Error(Tag, e);
-                return;
+                _logger.LogErrorMessage("Generated file deletion was denied.", e);
+                return false;
             }
         }
+
+        return false;
     }
+}
+
+internal readonly record struct DownloadFileDeletionResult(int AttemptedCount, int FailedCount)
+{
+    public bool Succeeded => FailedCount == 0;
 }

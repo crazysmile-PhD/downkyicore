@@ -2,6 +2,7 @@ namespace DownKyi.Core.Settings.Models;
 
 public class AppSettings
 {
+    public int SchemaVersion { get; set; }
     public BasicSettings Basic { get; set; } = new();
     public NetworkSettings Network { get; set; } = new();
     public VideoSettings Video { get; set; } = new();
