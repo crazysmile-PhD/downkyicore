@@ -4,6 +4,7 @@ using DownKyi.Application.Lifetime;
 using DownKyi.Composition;
 using DownKyi.Core.Storage;
 using DownKyi.Desktop.Composition;
+using DownKyi.Events;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.ViewModels;
 using DownKyi.Views;
@@ -18,6 +19,40 @@ namespace DownKyi.Desktop.Tests;
 
 public sealed class UiSmokeTests
 {
+    [Fact]
+    public void ReturnNavigationPreservesThePreviousParentForAnotherBackStep()
+    {
+        var forwardToMiddle = MainWindowViewModel.CreateNavigationParameters(new NavigationParam
+        {
+            ViewName = ViewMySpaceViewModel.Tag,
+            ParentViewName = ViewIndexViewModel.Tag,
+            Parameter = 42L
+        });
+        var middleParent = ViewModelBase.ResolveParentView(
+            string.Empty,
+            forwardToMiddle.GetValue<string>("Parent"));
+
+        var returnToMiddle = MainWindowViewModel.CreateNavigationParameters(new NavigationParam
+        {
+            ViewName = ViewMySpaceViewModel.Tag
+        });
+        middleParent = ViewModelBase.ResolveParentView(
+            middleParent,
+            returnToMiddle.GetValue<string>("Parent"));
+
+        Assert.Equal(ViewIndexViewModel.Tag, middleParent);
+        Assert.Null(returnToMiddle.GetValue<string>("Parent"));
+        Assert.Null(returnToMiddle.GetValue<object>("Parameter"));
+    }
+
+    [Fact]
+    public void EmptyLegacyReturnParentDoesNotEraseAValidParent()
+    {
+        var parent = ViewModelBase.ResolveParentView(ViewIndexViewModel.Tag, string.Empty);
+
+        Assert.Equal(ViewIndexViewModel.Tag, parent);
+    }
+
     [Fact]
     public async Task RealHostResolvesShellAndKeyViewModelsWithoutGlobalContainerState()
     {

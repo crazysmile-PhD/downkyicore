@@ -132,11 +132,13 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
         _eventAggregator.GetEvent<NavigationEvent>().Subscribe(view =>
         {
-            var param = new NavigationParameters
+            if (string.IsNullOrWhiteSpace(view.ViewName))
             {
-                { "Parent", view.ParentViewName ?? string.Empty },
-                { "Parameter", view.Parameter ?? string.Empty }
-            };
+                LogManager.Error(nameof(MainWindowViewModel), "Ignored navigation request with an empty view name.");
+                return;
+            }
+
+            var param = CreateNavigationParameters(view);
             regionManager.RequestNavigate(ContentRegion, view.ViewName, param);
         });
 
@@ -178,6 +180,24 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             };
             _regionManager.RequestNavigate("ContentRegion", ViewIndexViewModel.Tag, param);
         });
+    }
+
+    internal static NavigationParameters CreateNavigationParameters(NavigationParam view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        var parameters = new NavigationParameters();
+        if (view.ParentViewName != null)
+        {
+            parameters.Add("Parent", view.ParentViewName);
+        }
+
+        if (view.Parameter != null)
+        {
+            parameters.Add("Parameter", view.Parameter);
+        }
+
+        return parameters;
     }
 
     private static async Task DelayAsync(int milliseconds, CancellationToken cancellationToken)

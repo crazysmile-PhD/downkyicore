@@ -36,10 +36,12 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
 
         Journal = navigationContext.NavigationService.Journal;
         var viewName = navigationContext.Parameters.GetValue<string>("Parent");
-        if (viewName != null)
-        {
-            ParentView = viewName;
-        }
+        ParentView = ResolveParentView(ParentView, viewName);
+    }
+
+    internal static string ResolveParentView(string currentParent, string? requestedParent)
+    {
+        return string.IsNullOrWhiteSpace(requestedParent) ? currentParent : requestedParent;
     }
 
     protected internal virtual void ExecuteBackSpace()
