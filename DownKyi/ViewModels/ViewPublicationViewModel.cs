@@ -178,8 +178,6 @@ namespace DownKyi.ViewModels
         /// </summary>
         protected internal override void ExecuteBackSpace()
         {
-            ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
-
             // 结束任务
             _tokenSource?.Cancel();
             _tokenSource?.Dispose();

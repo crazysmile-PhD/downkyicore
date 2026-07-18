@@ -3,14 +3,14 @@ namespace DownKyi.Images;
 internal class NavigationIcon
 {
     private static NavigationIcon? _instance;
+
     public static NavigationIcon Instance()
     {
         return _instance ??= new NavigationIcon();
     }
 
-    public NavigationIcon()
-    {
-        ArrowBack = new VectorImage
+    private readonly VectorImage _arrowBack =
+        new()
         {
             Height = 24,
             Width = 24,
@@ -19,7 +19,8 @@ internal class NavigationIcon
             Fill = "#FF000000"
         };
 
-        Logout = new VectorImage
+    private readonly VectorImage _logout =
+        new()
         {
             Height = 18.75,//100,
             Width = 24,//128,
@@ -34,9 +35,19 @@ internal class NavigationIcon
                  L16,18.2z",
             Fill = "#FF000000"
         };
+
+    public VectorImage ArrowBack => Clone(_arrowBack);
+
+    public VectorImage Logout => Clone(_logout);
+
+    private static VectorImage Clone(VectorImage source)
+    {
+        return new VectorImage
+        {
+            Width = source.Width,
+            Height = source.Height,
+            Data = source.Data,
+            Fill = source.Fill
+        };
     }
-
-    public VectorImage ArrowBack { get; private set; }
-    public VectorImage Logout { get; private set; }
-
 }

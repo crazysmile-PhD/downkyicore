@@ -81,8 +81,6 @@ namespace DownKyi.ViewModels
         {
             //InitView();
 
-            ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
-
             var parameter = new NavigationParam
             {
                 ViewName = ParentView,

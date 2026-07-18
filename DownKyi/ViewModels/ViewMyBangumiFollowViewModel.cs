@@ -190,8 +190,6 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
     {
         InitView();
 
-        ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
-
         // 结束任务
         _tokenSource?.Cancel();
 

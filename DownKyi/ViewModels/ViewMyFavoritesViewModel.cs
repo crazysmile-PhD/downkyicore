@@ -222,8 +222,6 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     protected internal override void ExecuteBackSpace()
     {
         InitView();
-
-        ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
         // 结束任务
         _tokenSource1?.Cancel();
         _tokenSource2?.Cancel();

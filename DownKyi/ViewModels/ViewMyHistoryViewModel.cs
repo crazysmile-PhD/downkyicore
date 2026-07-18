@@ -152,8 +152,6 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         _loadCancellation?.Cancel();
         InitView();
 
-        ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
-
         var parameter = new NavigationParam
         {
             ViewName = ParentView,

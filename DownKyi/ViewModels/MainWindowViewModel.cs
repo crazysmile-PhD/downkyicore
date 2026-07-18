@@ -132,6 +132,16 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
         _eventAggregator.GetEvent<NavigationEvent>().Subscribe(view =>
         {
+            if (IsHistoryBackRequest(view))
+            {
+                var journal = regionManager.Regions[ContentRegion].NavigationService.Journal;
+                if (journal.CanGoBack)
+                {
+                    journal.GoBack();
+                    return;
+                }
+            }
+
             var param = new NavigationParameters
             {
                 { "Parent", view.ParentViewName ?? string.Empty },
@@ -178,6 +188,12 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             };
             _regionManager.RequestNavigate("ContentRegion", ViewIndexViewModel.Tag, param);
         });
+    }
+
+    internal static bool IsHistoryBackRequest(NavigationParam view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        return view.ParentViewName == null && view.Parameter == null;
     }
 
     private static async Task DelayAsync(int milliseconds, CancellationToken cancellationToken)

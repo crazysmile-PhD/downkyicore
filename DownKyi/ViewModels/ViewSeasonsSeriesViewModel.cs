@@ -169,8 +169,6 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     /// </summary>
     protected internal override void ExecuteBackSpace()
     {
-        ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
-
         // 结束任务
         tokenSource?.Cancel();
 
