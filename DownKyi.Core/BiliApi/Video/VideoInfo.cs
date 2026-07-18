@@ -47,7 +47,7 @@ public static class VideoInfo
             "VideoInfo",
             cancellationToken);
 
-        return videoView?.Data;
+        return BiliApiRequest.RequirePayload(videoView.Data);
     }
 
     /// <summary>
@@ -72,7 +72,7 @@ public static class VideoInfo
             "VideoInfo",
             cancellationToken);
 
-        return desc?.Data;
+        return BiliApiRequest.RequirePayload(desc.Data);
     }
 
     /// <summary>
@@ -97,7 +97,7 @@ public static class VideoInfo
             "VideoInfo",
             cancellationToken);
 
-        return pagelist?.Data;
+        return BiliApiRequest.RequirePayload(pagelist.Data);
     }
 
     public static IReadOnlyList<BiliTagInfo>? GetBiliTagInfo(string bvid, long? cid = null, CancellationToken cancellationToken = default)
@@ -112,7 +112,7 @@ public static class VideoInfo
             "GetBiliTagInfo()",
             cancellationToken);
 
-        return result?.Data;
+        return BiliApiRequest.RequirePayload(result.Data);
     }
 
 

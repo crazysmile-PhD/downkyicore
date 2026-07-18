@@ -23,6 +23,6 @@ public static class DynamicApi
             nameof(RegionDynamicList),
             "Dynamic");
 
-        return dynamic?.Data?.Archives;
+        return BiliApiRequest.RequirePayload(dynamic.Data).Archives;
     }
 }

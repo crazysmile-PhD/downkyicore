@@ -12,7 +12,7 @@ public class FavoritesMediaIdOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public IReadOnlyList<FavoritesMediaId> Data { get; set; } = Array.Empty<FavoritesMediaId>();
+    [JsonProperty("data")] public IReadOnlyList<FavoritesMediaId>? Data { get; set; }
 }
 
 public class FavoritesMediaId : BaseModel

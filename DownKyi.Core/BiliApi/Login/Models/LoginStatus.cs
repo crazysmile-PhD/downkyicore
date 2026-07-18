@@ -9,7 +9,7 @@ namespace DownKyi.Core.BiliApi.Login.Models
         [JsonProperty("code")] public int Code { get; set; }
         [JsonProperty("message")] public string Message { get; set; } = string.Empty;
 
-        [JsonProperty("data")] public LoginStatusData Data { get; set; } = new();
+        [JsonProperty("data")] public LoginStatusData? Data { get; set; }
     }
 
     [JsonObject]

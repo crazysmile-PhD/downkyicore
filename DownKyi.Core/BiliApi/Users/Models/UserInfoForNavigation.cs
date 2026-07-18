@@ -9,7 +9,7 @@ public class UserInfoForNavigationOrigin : BaseModel
 {
     //[JsonProperty("code")]
     //public int Code { get; set; }
-    [JsonProperty("data")] public UserInfoForNavigation Data { get; set; } = new();
+    [JsonProperty("data")] public UserInfoForNavigation? Data { get; set; }
     //[JsonProperty("message")]
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]

@@ -13,10 +13,10 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public AriaTellStatusResult Result { get; set; } = new();
+        public AriaTellStatusResult? Result { get; set; }
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; } = new();
+        public AriaError? Error { get; set; }
 
         public override string ToString()
         {
@@ -34,10 +34,10 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public IReadOnlyList<AriaTellStatusResult> Result { get; set; } = Array.Empty<AriaTellStatusResult>();
+        public IReadOnlyList<AriaTellStatusResult>? Result { get; set; }
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; } = new();
+        public AriaError? Error { get; set; }
 
         public override string ToString()
         {

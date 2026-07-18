@@ -54,7 +54,7 @@ namespace DownKyi.Core.BiliApi.History
                 "History",
                 cancellationToken);
 
-            return history?.Data;
+            return BiliApiRequest.RequirePayload(history.Data);
         }
 
     }

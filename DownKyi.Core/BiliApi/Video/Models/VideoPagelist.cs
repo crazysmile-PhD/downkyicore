@@ -12,5 +12,5 @@ public class VideoPagelist : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public IReadOnlyList<VideoPage> Data { get; set; } = Array.Empty<VideoPage>();
+    [JsonProperty("data")] public IReadOnlyList<VideoPage>? Data { get; set; }
 }

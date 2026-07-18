@@ -7,7 +7,7 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/relation/followings?vmid={mid}&pn={pn}&ps={ps}&order_type={orderType}
 public class RelationFollowOrigin : BaseModel
 {
-    [JsonProperty("data")] public RelationFollow Data { get; set; } = new();
+    [JsonProperty("data")] public RelationFollow? Data { get; set; }
 }
 
 public class RelationFollow : BaseModel

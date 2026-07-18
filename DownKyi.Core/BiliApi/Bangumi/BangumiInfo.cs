@@ -22,7 +22,7 @@ public static class BangumiInfo
             "BangumiInfo",
             cancellationToken);
 
-        return media?.Result?.Media;
+        return BiliApiRequest.RequirePayload(media.Result, "result").Media;
     }
 
     /// <summary>
@@ -56,6 +56,6 @@ public static class BangumiInfo
             "BangumiInfo",
             cancellationToken);
 
-        return bangumiSeason?.Result;
+        return BiliApiRequest.RequirePayload(bangumiSeason.Result, "result");
     }
 }

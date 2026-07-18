@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Newtonsoft.Json;
 using JsonException = Newtonsoft.Json.JsonException;
@@ -33,11 +34,40 @@ public sealed class BilibiliApiResponseException : InvalidOperationException
 
 internal static class BiliApiRequest
 {
+    public static TPayload RequirePayload<TPayload>(
+        TPayload? payload,
+        string fieldName = "data",
+        [CallerMemberName] string operationName = "unknown")
+        where TPayload : class
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fieldName);
+        return payload ?? throw new BilibiliApiResponseException(
+            operationName,
+            $"{operationName} returned a successful response without the required '{fieldName}' payload.");
+    }
+
     public static T RequestJson<T>(
         string url,
         string? referer,
         string operationName,
         string logTag,
+        CancellationToken cancellationToken = default)
+    {
+        return RequestJson<T>(
+            url,
+            referer,
+            operationName,
+            logTag,
+            serializerSettings: null,
+            cancellationToken);
+    }
+
+    public static T RequestJson<T>(
+        string url,
+        string? referer,
+        string operationName,
+        string logTag,
+        JsonSerializerSettings? serializerSettings,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operationName);
@@ -55,7 +85,7 @@ internal static class BiliApiRequest
                     $"{operationName} was rejected by Bilibili. code={code}; message={metadata.Message ?? "unknown"}");
             }
 
-            var result = JsonConvert.DeserializeObject<T>(response);
+            var result = JsonConvert.DeserializeObject<T>(response, serializerSettings);
             return result is null
                 ? throw new BilibiliApiResponseException(
                     operationName,

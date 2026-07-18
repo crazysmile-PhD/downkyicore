@@ -28,7 +28,12 @@ public static class UserSpace
             "UserSpace",
             cancellationToken);
 
-        return settings is not { Status: true } ? null : settings.Data;
+        if (!settings.Status)
+        {
+            return null;
+        }
+
+        return BiliApiRequest.RequirePayload(settings.Data);
     }
 
     #region 投稿
@@ -150,36 +155,26 @@ public static class UserSpace
         var url = $"https://api.bilibili.com/x/space/wbi/arc/search?{query}";
         const string referer = "https://www.bilibili.com";
 
-        try
+        var serializerSettings = new JsonSerializerSettings
         {
-            var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
             // 忽略play的值为“--”时的类型错误
-            var settings = new JsonSerializerSettings
+            Error = (sender, args) =>
             {
-                Error = (sender, args) =>
+                if (Equals(args.ErrorContext.Member, "play") && args.ErrorContext.OriginalObject?.GetType() == typeof(SpacePublicationListVideo))
                 {
-                    if (Equals(args.ErrorContext.Member, "play") && args.ErrorContext.OriginalObject?.GetType() == typeof(SpacePublicationListVideo))
-                    {
-                        args.ErrorContext.Handled = true;
-                    }
+                    args.ErrorContext.Handled = true;
                 }
-            };
+            }
+        };
+        var spacePublication = BiliApiRequest.RequestJson<SpacePublicationOrigin>(
+            url,
+            referer,
+            nameof(GetPublication),
+            "UserSpace",
+            serializerSettings,
+            cancellationToken);
 
-            var spacePublication = JsonConvert.DeserializeObject<SpacePublicationOrigin>(response, settings);
-            return spacePublication?.Data?.List;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (HttpRequestException)
-        {
-            return null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        return BiliApiRequest.RequirePayload(spacePublication.Data).List;
     }
 
     internal static string GetPublicationOrderValue(PublicationOrder order)
@@ -213,7 +208,7 @@ public static class UserSpace
             nameof(GetChannelList),
             "UserSpace");
 
-        return spaceChannel?.Data.List;
+        return BiliApiRequest.RequirePayload(spaceChannel.Data).List;
     }
 
     /// <summary>
@@ -262,7 +257,7 @@ public static class UserSpace
             nameof(GetChannelVideoList),
             "UserSpace");
 
-        return spaceChannelVideo?.Data.List.Archives;
+        return BiliApiRequest.RequirePayload(spaceChannelVideo.Data).List.Archives;
     }
 
     #endregion
@@ -287,7 +282,7 @@ public static class UserSpace
             nameof(GetSeasonsSeries),
             "UserSpace");
 
-        return origin?.Data.ItemsLists;
+        return BiliApiRequest.RequirePayload(origin.Data).ItemsLists;
     }
 
     /// <summary>
@@ -308,7 +303,7 @@ public static class UserSpace
             nameof(GetSeasonsDetail),
             "UserSpace");
 
-        return origin?.Data;
+        return BiliApiRequest.RequirePayload(origin.Data);
     }
 
     /// <summary>
@@ -327,7 +322,7 @@ public static class UserSpace
             nameof(GetSeriesMeta),
             "UserSpace");
 
-        return origin?.Data;
+        return BiliApiRequest.RequirePayload(origin.Data);
     }
 
     /// <summary>
@@ -350,7 +345,7 @@ public static class UserSpace
             nameof(GetSeriesDetail),
             "UserSpace");
 
-        return origin?.Data;
+        return BiliApiRequest.RequirePayload(origin.Data);
     }
 
     #endregion
@@ -374,7 +369,7 @@ public static class UserSpace
             nameof(GetCheese),
             "UserSpace");
 
-        return cheese?.Data.Items;
+        return BiliApiRequest.RequirePayload(cheese.Data).Items;
     }
 
     /// <summary>
@@ -432,7 +427,7 @@ public static class UserSpace
             "UserSpace",
             cancellationToken);
 
-        return bangumiFollow?.Data;
+        return BiliApiRequest.RequirePayload(bangumiFollow.Data);
     }
 
     /// <summary>

@@ -25,7 +25,7 @@ public static class UserStatus
             "UserStatus",
             cancellationToken);
 
-        return userRelationStat?.Data;
+        return BiliApiRequest.RequirePayload(userRelationStat.Data);
     }
 
     /// <summary>
@@ -45,6 +45,6 @@ public static class UserStatus
             nameof(GetUpStat),
             "UserStatus");
 
-        return upStat?.Data;
+        return BiliApiRequest.RequirePayload(upStat.Data);
     }
 }

@@ -14,7 +14,7 @@ namespace DownKyi.Core.BiliApi.History.Models
         //[JsonProperty("ttl")]
         //public int Ttl { get; set; }
         [JsonProperty("data")]
-        public HistoryData Data { get; set; } = new();
+        public HistoryData? Data { get; set; }
     }
 
     public class HistoryData : BaseModel

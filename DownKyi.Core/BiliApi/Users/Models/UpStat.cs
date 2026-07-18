@@ -6,7 +6,7 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/space/upstat?mid={mid}
 public class UpStatOrigin : BaseModel
 {
-    [JsonProperty("data")] public UpStat Data { get; set; } = new();
+    [JsonProperty("data")] public UpStat? Data { get; set; }
 }
 
 public class UpStat : BaseModel

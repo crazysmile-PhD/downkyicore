@@ -37,7 +37,7 @@ public static class CheeseInfo
             "CheeseInfo",
             cancellationToken);
 
-        return cheese?.Data;
+        return BiliApiRequest.RequirePayload(cheese.Data);
     }
 
     /// <summary>
@@ -58,6 +58,6 @@ public static class CheeseInfo
             "CheeseInfo",
             cancellationToken);
 
-        return cheese?.Data;
+        return BiliApiRequest.RequirePayload(cheese.Data);
     }
 }

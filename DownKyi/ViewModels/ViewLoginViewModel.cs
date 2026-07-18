@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Logging;
 using DownKyi.Services.Account;
@@ -137,7 +138,10 @@ internal class ViewLoginViewModel : ViewModelBase
                 continue;
             }
 
-            switch (loginStatus.Data.Code)
+            var loginData = loginStatus.Data ?? throw new BilibiliApiResponseException(
+                nameof(GetLoginStatusAsync),
+                "Login status response did not contain its required data payload.");
+            switch (loginData.Code)
             {
                 case 86038:
                     // 二维码已失效
@@ -168,7 +172,7 @@ internal class ViewLoginViewModel : ViewModelBase
                     // 保存登录信息
                     try
                     {
-                        var redirectUri = new Uri(loginStatus.Data.RedirectAddress, UriKind.Absolute);
+                        var redirectUri = new Uri(loginData.RedirectAddress, UriKind.Absolute);
                         var isSucceed = await _loginCoordinator
                             .SaveLoginCookiesAsync(redirectUri, cancellationToken)
                             .ConfigureAwait(true);

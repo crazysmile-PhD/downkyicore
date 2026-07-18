@@ -27,7 +27,7 @@ public static class UserInfo
             "UserInfo",
             cancellationToken);
 
-        return userInfo?.Data;
+        return BiliApiRequest.RequirePayload(userInfo.Data);
     }
 
     /// <summary>
@@ -60,7 +60,7 @@ public static class UserInfo
             nameof(GetUserInfoForSpace),
             "UserInfo");
 
-        return spaceInfo?.Data;
+        return BiliApiRequest.RequirePayload(spaceInfo.Data);
     }
 
     /// <summary>
@@ -78,6 +78,6 @@ public static class UserInfo
             "UserInfo",
             cancellationToken);
 
-        return myInfo?.Data;
+        return BiliApiRequest.RequirePayload(myInfo.Data);
     }
 }

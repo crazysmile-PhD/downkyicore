@@ -12,7 +12,7 @@ public class VideoViewOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public VideoView Data { get; set; } = new();
+    [JsonProperty("data")] public VideoView? Data { get; set; }
 }
 
 public class VideoView : BaseModel

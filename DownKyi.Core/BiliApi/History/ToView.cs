@@ -24,7 +24,7 @@ namespace DownKyi.Core.BiliApi.History
                 "ToView",
                 cancellationToken);
 
-            return toView?.Data?.List;
+            return BiliApiRequest.RequirePayload(toView.Data).List;
         }
     }
 }

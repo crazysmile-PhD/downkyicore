@@ -7,7 +7,7 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 public class SpaceSettingsOrigin : BaseModel
 {
     [JsonProperty("status")] public bool Status { get; set; }
-    [JsonProperty("data")] public SpaceSettings Data { get; set; } = new();
+    [JsonProperty("data")] public SpaceSettings? Data { get; set; }
 }
 
 public class SpaceSettings : BaseModel

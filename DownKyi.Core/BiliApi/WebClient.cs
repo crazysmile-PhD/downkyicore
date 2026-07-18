@@ -87,8 +87,16 @@ public static class WebClient
         const string url = "https://api.bilibili.com/x/frontend/finger/spi";
         var response = RequestWeb(url, cancellationToken: cancellationToken);
         var spi = JsonSerializer.Deserialize(response, BilibiliWebJsonContext.Default.SpiOrigin);
-        _bvuid3 = spi?.Data?.Bvuid3;
-        _bvuid4 = spi?.Data?.Bvuid4;
+        if (spi?.Code is { } code and not 0)
+        {
+            throw new BilibiliApiResponseException(
+                nameof(GetBuvid),
+                $"Bilibili fingerprint request failed. code={code}; message={spi.Message ?? "unknown"}");
+        }
+
+        var data = BiliApiRequest.RequirePayload(spi?.Data, operationName: nameof(GetBuvid));
+        _bvuid3 = data.Bvuid3;
+        _bvuid4 = data.Bvuid4;
     }
 
     public static string RequestWeb(

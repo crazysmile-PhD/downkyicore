@@ -1,0 +1,16 @@
+{
+  "code": 0,
+  "message": "success",
+  "result": {
+    "quality": 80,
+    "durl": [
+      {
+        "order": 1,
+        "length": 1000,
+        "size": 1024,
+        "url": "https://media.invalid/bangumi",
+        "backup_url": []
+      }
+    ]
+  }
+}

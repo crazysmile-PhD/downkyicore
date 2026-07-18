@@ -9,6 +9,12 @@ namespace DownKyi.Core.BiliApi.VideoStream;
 
 public static class VideoStreamApi
 {
+    internal enum PlayUrlPayloadField
+    {
+        Data,
+        Result
+    }
+
     /// <summary>
     /// 获取播放器信息（web端）
     /// </summary>
@@ -51,7 +57,7 @@ public static class VideoStreamApi
             "PlayerV2()",
             cancellationToken);
 
-        return playUrl?.Data;
+        return BiliApiRequest.RequirePayload(playUrl.Data);
     }
 
     /// <summary>
@@ -215,7 +221,11 @@ public static class VideoStreamApi
         var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters, settingsStore));
         var url = $"https://api.bilibili.com/x/player/wbi/playurl?{query}";
 
-        return GetPlayUrl(url, cancellationToken);
+        return GetPlayUrl(
+            url,
+            PlayUrlPayloadField.Data,
+            nameof(GetVideoPlayUrl),
+            cancellationToken);
     }
 
     /// <summary>
@@ -284,7 +294,11 @@ public static class VideoStreamApi
             return null;
         }
 
-        return GetPlayUrl(url, cancellationToken);
+        return GetPlayUrl(
+            url,
+            PlayUrlPayloadField.Result,
+            nameof(GetBangumiPlayUrl),
+            cancellationToken);
     }
 
     /// <summary>
@@ -318,7 +332,11 @@ public static class VideoStreamApi
             url += $"&ep_id={episodeId}";
         }
 
-        return GetPlayUrl(url, cancellationToken);
+        return GetPlayUrl(
+            url,
+            PlayUrlPayloadField.Data,
+            nameof(GetCheesePlayUrl),
+            cancellationToken);
     }
 
     /// <summary>
@@ -326,32 +344,59 @@ public static class VideoStreamApi
     /// </summary>
     /// <param name="url"></param>
     /// <returns></returns>
-    private static PlayUrl? GetPlayUrl(string url, CancellationToken cancellationToken = default)
+    private static PlayUrl GetPlayUrl(
+        string url,
+        PlayUrlPayloadField payloadField,
+        string operationName,
+        CancellationToken cancellationToken = default)
     {
         const string referer = "https://www.bilibili.com";
-        var playUrl = BiliApiRequest.RequestJson<PlayUrlOrigin>(
+        var response = BiliApiRequest.RequestJson<PlayUrlOrigin>(
             url,
             referer,
-            nameof(GetPlayUrl),
+            operationName,
             "GetPlayUrl()",
             cancellationToken);
 
-        if (playUrl == null)
+        return SelectPlayUrlPayload(response, payloadField, operationName);
+    }
+
+    internal static PlayUrl SelectPlayUrlPayload(
+        PlayUrlOrigin response,
+        PlayUrlPayloadField payloadField,
+        string operationName)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationName);
+        var payload = payloadField switch
         {
-            return null;
+            PlayUrlPayloadField.Data => response.Data,
+            PlayUrlPayloadField.Result => response.Result,
+            _ => throw new ArgumentOutOfRangeException(nameof(payloadField), payloadField, null)
+        };
+        var fieldName = payloadField == PlayUrlPayloadField.Data ? "data" : "result";
+        if (payload == null)
+        {
+            throw new BilibiliApiResponseException(
+                operationName,
+                $"{operationName} returned no '{fieldName}' playback payload.");
         }
 
-        if (playUrl.Data != null)
+        if (!HasPlayableMedia(payload))
         {
-            return playUrl.Data;
+            throw new BilibiliApiResponseException(
+                operationName,
+                $"{operationName} returned an empty '{fieldName}' playback payload.");
         }
 
-        if (playUrl.Result != null)
-        {
-            return playUrl.Result;
-        }
+        return payload;
+    }
 
-        return null;
+    private static bool HasPlayableMedia(PlayUrl payload)
+    {
+        return payload.Durl.Count > 0
+               || payload.Dash.Video.Count > 0
+               || payload.Dash.Audio.Count > 0;
     }
 
     /// <summary>
@@ -388,17 +433,10 @@ public static class VideoStreamApi
                 return null;
             }
 
-            if (playUrl.Data != null)
-            {
-                return playUrl.Data;
-            }
-
-            if (playUrl.Result != null)
-            {
-                return playUrl.Result;
-            }
-
-            return null;
+            return SelectPlayUrlPayload(
+                playUrl,
+                PlayUrlPayloadField.Data,
+                nameof(GetPlayUrlWebPage));
         }
         catch (OperationCanceledException)
         {
@@ -409,6 +447,10 @@ public static class VideoStreamApi
             return null;
         }
         catch (RegexMatchTimeoutException)
+        {
+            return null;
+        }
+        catch (BilibiliApiResponseException)
         {
             return null;
         }

@@ -14,11 +14,13 @@ public static class LoginQr
     public static LoginUrlOrigin? GetLoginUrl()
     {
         const string getLoginUrl = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
-        return BiliApiRequest.RequestJson<LoginUrlOrigin>(
+        var response = BiliApiRequest.RequestJson<LoginUrlOrigin>(
             getLoginUrl,
             null,
             nameof(GetLoginUrl),
             "LoginQR");
+        BiliApiRequest.RequirePayload(response.Data);
+        return response;
     }
 
     /// <summary>
@@ -30,11 +32,13 @@ public static class LoginQr
     {
         var url = $"https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key={qrcodeKey}";
 
-        return BiliApiRequest.RequestJson<LoginStatus>(
+        var response = BiliApiRequest.RequestJson<LoginStatus>(
             url,
             null,
             nameof(GetLoginStatus),
             "LoginQR");
+        BiliApiRequest.RequirePayload(response.Data);
+        return response;
     }
 
     /// <summary>

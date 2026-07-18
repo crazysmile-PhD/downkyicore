@@ -9,9 +9,9 @@ public class AriaVersion
 
     [JsonProperty("jsonrpc")] public string Jsonrpc { get; set; } = string.Empty;
 
-    [JsonProperty("result")] public AriaVersionResult Result { get; set; } = new();
+    [JsonProperty("result")] public AriaVersionResult? Result { get; set; }
 
-    [JsonProperty("error")] public AriaError Error { get; set; } = new();
+    [JsonProperty("error")] public AriaError? Error { get; set; }
 
     public override string ToString()
     {

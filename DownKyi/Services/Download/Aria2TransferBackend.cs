@@ -132,7 +132,7 @@ internal sealed class Aria2TransferBackend : ITransferBackend
         {
             var status = await AriaClient.TellStatus(gid).ConfigureAwait(true);
             if (status?.Result == null ||
-                status.Error.Message.Contains("is not found", StringComparison.OrdinalIgnoreCase))
+                status.Error?.Message.Contains("is not found", StringComparison.OrdinalIgnoreCase) == true)
             {
                 gid = null;
                 downloading.Downloading.Gid = null;

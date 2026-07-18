@@ -12,10 +12,10 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
         public string Jsonrpc { get; set; } = string.Empty;
 
         [JsonProperty("result")]
-        public int Result { get; set; }
+        public int? Result { get; set; }
 
         [JsonProperty("error")]
-        public AriaError Error { get; set; } = new();
+        public AriaError? Error { get; set; }
 
         public override string ToString()
         {

@@ -9,9 +9,9 @@ public class SystemListNotifications
 
     [JsonProperty("jsonrpc")] public string Jsonrpc { get; set; } = string.Empty;
 
-    [JsonProperty("result")] public IReadOnlyList<string> Result { get; set; } = Array.Empty<string>();
+    [JsonProperty("result")] public IReadOnlyList<string>? Result { get; set; }
 
-    [JsonProperty("error")] public AriaError Error { get; set; } = new();
+    [JsonProperty("error")] public AriaError? Error { get; set; }
 
     public override string ToString()
     {

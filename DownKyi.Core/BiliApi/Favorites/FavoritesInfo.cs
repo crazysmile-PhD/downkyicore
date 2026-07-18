@@ -21,7 +21,7 @@ public static class FavoritesInfo
             "FavoritesInfo",
             cancellationToken);
 
-        return info?.Data;
+        return BiliApiRequest.RequirePayload(info.Data);
     }
 
     /// <summary>
@@ -42,7 +42,7 @@ public static class FavoritesInfo
             "FavoritesInfo",
             cancellationToken);
 
-        return favorites?.Data.List;
+        return BiliApiRequest.RequirePayload(favorites.Data).List;
     }
 
     /// <summary>
@@ -91,7 +91,7 @@ public static class FavoritesInfo
             "FavoritesInfo",
             cancellationToken);
 
-        return favorites?.Data?.List;
+        return BiliApiRequest.RequirePayload(favorites.Data).List;
     }
 
     /// <summary>

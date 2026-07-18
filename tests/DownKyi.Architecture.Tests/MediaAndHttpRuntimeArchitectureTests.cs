@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace DownKyi.Architecture.Tests;
 
 public sealed class MediaAndHttpRuntimeArchitectureTests
@@ -146,6 +148,31 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("BilibiliApiResponseException", source, StringComparison.Ordinal);
         Assert.DoesNotContain("return null", source, StringComparison.Ordinal);
         Assert.DoesNotContain("return default", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void JsonEnvelopeFieldsCannotHideMissingPayloadsWithDefaultInitializers()
+    {
+        const string defaultEnvelopePattern =
+            @"\[JsonProperty(?:Name)?\(\""(?:data|result|error|payload)\""\)\]\s*" +
+            @"public[^\{\r\n]+\{\s*get;\s*set;\s*\}\s*=\s*(?:new\b|Array\.Empty)";
+        var roots = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "Aria2cNet", "Client", "Entity")
+        };
+        var violations = roots
+            .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+            .Where(path => Regex.IsMatch(
+                File.ReadAllText(path),
+                defaultEnvelopePattern,
+                RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(2)))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
     }
 
     [Fact]

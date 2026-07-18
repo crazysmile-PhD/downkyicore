@@ -6,7 +6,7 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/space/bangumi/follow/list?vmid={mid}&type={type:D}&pn={pn}&ps={ps}
 public class BangumiFollowOrigin : BaseModel
 {
-    [JsonProperty("data")] public BangumiFollowData Data { get; set; } = new();
+    [JsonProperty("data")] public BangumiFollowData? Data { get; set; }
 }
 
 public class BangumiFollowData : BaseModel

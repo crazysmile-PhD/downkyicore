@@ -12,7 +12,7 @@ public class FavoritesListOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public FavoritesList Data { get; set; } = new();
+    [JsonProperty("data")] public FavoritesList? Data { get; set; }
 }
 
 public class FavoritesList : BaseModel
