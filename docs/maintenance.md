@@ -64,6 +64,10 @@ PR 07-15 result: Release build completed with zero warnings, 161 tests passed in
 - Malformed settings are moved to a unique `.invalid-*` backup before safe defaults are persisted. Do not log the payload or its personal path.
 - A file with a schema newer than the running application is read only for safe fallback and must remain byte-for-byte unchanged.
 - Persistence is debounced, serialized through one async gate, written to a UTF-8 temporary file, flushed, and atomically replaced. Do not restore synchronous whole-file writes or wrap them in `Task.Run`.
+- Debounce uses one tracked cancellation-aware Task, not a `Timer` callback. A replacement update cancels the previous delay; final async disposal awaits the last accepted write before releasing the gate.
+- The temporary JSON file must parse as one complete object before atomic replacement. Invalid or interrupted temporary output cannot replace the last valid settings file.
+- Each HTTP, download-planning, transfer, artifact, diagnostic, and FFmpeg operation captures one immutable snapshot. Dynamic setting suppliers are reserved for policy selection for the next queued worker slot, never for changing an operation already in progress.
+- Nested settings collections are immutable arrays. Publishing a later update cannot mutate an earlier operation snapshot.
 - Application shutdown must await `FlushAsync`. Owners that require pending changes to persist during disposal use `DisposeAsync`; synchronous `Dispose` only stops scheduled work.
 - The historical DES reader remains read-only. It may decrypt supported old settings once, but no code may use DES to write new data.
 
@@ -77,8 +81,20 @@ Settings changes must pass `SettingsStoreTests`, `SettingsArchitectureTests`, th
 - The writer queue and recent-event buffer stay bounded. A full queue may drop an entry and increments the diagnostic drop counter; logging must never block a download or UI thread.
 - Application shutdown must await `FlushAsync` and `DisposeAsync`. Explicit flush also releases the active file handle so the Log page can open it immediately on Windows.
 - Writer initialization or persistence failures must reach the caller of `FlushAsync`; do not silently report a successful flush.
+- Files use UTC `yyyy-MM-dd` directories and JSONL records. Rotation defaults to 32 MiB, hard retention to seven days, and the storage safety cap to 512 MiB; maintenance protects the active file and runs at startup, hourly, day change, rotation, and before export.
+- Diagnostic export writes a redacted JSON manifest plus bounded events. Metrics expose capacity ratio, age/capacity deletion counts, and bytes/events written; capacity changes require deterministic retention evidence first.
 
 Logging changes must pass `ApplicationLogProviderTests`, the Host smoke test, and the full Release build with `AnalysisMode=All`.
+
+## Desktop Theme Policy
+
+- Desktop uses `Avalonia.Themes.Fluent` and the Fluent DataGrid theme. Do not reintroduce the Simple theme or load two control themes in the same App.
+- Shared typography, spacing, radius, elevation, control-height, and progress-thickness values live in `DownKyi/Themes/DesignTokens.axaml`.
+- `ThemeDefault.axaml` retains both `Default` and `Dark` color dictionaries. Theme work must preserve keyboard focus, high-DPI sizing, and existing localized resources.
+- Download, history, and favorites lists must retain `VirtualizingStackPanel`; styling changes cannot trade large-list responsiveness for visual uniformity.
+- Theme changes require `UiThemeArchitectureTests`, real Host XAML smoke, and an isolated packaged-App startup on Windows. Native Linux/macOS construction remains enforced by the CI matrix.
+
+PR 30-32 validation: strict `AnalysisMode=All` Release build completed with zero warnings, all 468 tests passed, format verification changed 0/719 files, and vulnerable/deprecated package audits were empty. `actionlint` accepted the quality, system-baseline, and release workflows. The isolated Windows x64 quick system suite produced all shell, restore, SQLite, transfer, UI, CPU-FFmpeg, and NVENC scenarios with complete environment metadata. Real Windows x64 and x86 publishes passed version/binary/theme validation, created the main window from isolated data, and terminated their aria2 child after forced parent exit. GitHub Actions run `29636597704` then passed all native Windows/Linux/macOS release gates plus Windows x86/x64 ZIP, Linux x64/arm64 AppImage/deb/rpm, and macOS x64/arm64 DMG package jobs; manual execution correctly skipped release publication.
 
 ## Host Composition Policy
 
@@ -133,8 +149,9 @@ Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
 
 - `script/aria2.ps1` and `script/aria2.sh` manage aria2 assets.
 - `script/ffmpeg.ps1` and `script/ffmpeg.sh` manage FFmpeg and ffprobe assets.
-- Windows x64 and Linux packages prefer FFmpeg builds with hardware encoders.
+- Windows and Linux packages prefer FFmpeg builds with hardware encoders. Windows x86 uses the pinned yt-dlp FFmpeg build because the former compact archive omitted ffprobe.
 - macOS packages prefer builds that expose VideoToolbox when available.
+- Packaged local aria2 RPC listens only on loopback. It receives `--stop-with-process` on every OS and also joins a kill-on-close Windows Job Object, so an abrupt App termination cannot leave a local child running. Custom remote aria2 endpoints are not started or terminated by this owner.
 
 When updating an external binary:
 
@@ -149,11 +166,14 @@ When updating an external binary:
 Before pushing a release tag:
 
 1. Confirm `version.txt` matches the planned tag.
-2. Run the quality commands from the dependency section.
-3. Run `git diff --check`.
-4. Review `README.md` and `CHANGELOG.md` for user-visible changes.
-5. Push `main`, then push the `v*` tag so `.github/workflows/build.yml` creates packages.
-6. Verify generated Windows, Linux, and macOS artifacts are attached to the release.
+2. Manually dispatch `.github/workflows/build.yml` on the release commit and require all Windows, Linux, and macOS release-gate/package jobs to pass.
+3. Confirm each uploaded publish manifest contains non-empty DownKyi, aria2, FFmpeg, and ffprobe binaries with SHA-256 values and the expected application version.
+4. Run the quality commands from the dependency section and `git diff --check`.
+5. Review `README.md` and `CHANGELOG.md` for user-visible changes.
+6. Push `main`, then push the `v*` tag so the same workflow recreates the validated packages.
+7. Verify generated packages, per-package `.sha256` files, and publish manifests are attached to the release.
+
+`script/validate-publish-output.ps1` is the common package-content gate. It also rejects a runtime that drops the Fluent theme, restores the Simple theme, omits ffprobe, or publishes a mismatched assembly version. Do not replace it with a file-exists check in only one platform job.
 
 ## Regression Checklist
 

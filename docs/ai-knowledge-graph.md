@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-07-16
+Last reviewed: 2026-07-18
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -70,6 +70,7 @@ flowchart TD
     ApplicationLayer["service.application-contracts\nsrc/DownKyi.Application"]
     Infrastructure["core.infrastructure\nsrc/DownKyi.Infrastructure"]
     MainWindow["ui.main-window\nDownKyi/Views/MainWindow.axaml"]
+    UiTheme["ui.desktop-theme\nFluentTheme + DesignTokens.axaml"]
     AsyncImage["ui.async-image-loader\nCustomControl/AsyncImageLoader"]
     MainVm["viewmodel.main-window\nDownKyi/ViewModels/MainWindowViewModel.cs"]
     IndexVm["viewmodel.index\nViewIndexViewModel.cs"]
@@ -114,7 +115,10 @@ flowchart TD
     ArchitectureTests["test.architecture-boundaries\nDownKyi.Architecture.Tests"]
     UiSmoke["test.ui-smoke\nDownKyi.Desktop.Tests"]
     Benchmarks["test.performance-baseline\nBenchmarkCases + runner"]
+    SystemBenchmarks["test.system-performance\nisolated system scenarios"]
     CI["workflow.strict-pr-ci\n.github/workflows/quality.yml"]
+    Release["workflow.release-packaging\n.github/workflows/build.yml"]
+    Nightly["workflow.system-baselines\nnightly cross-platform reports"]
     AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
 
     Program -->|calls| App
@@ -122,6 +126,7 @@ flowchart TD
     App -->|creates| Host
     App -->|attaches Host and shell| Lifecycle
     Host -->|injects| MainWindow
+    App -->|loads| UiTheme
     Host -->|registers| ApplicationLayer
     Host -->|registers| Infrastructure
     ApplicationLayer -->|depends on| Domain
@@ -133,6 +138,11 @@ flowchart TD
     SqliteStore -->|persists| DownloadDomain
     Storage -->|projects legacy UI| DownloadDomain
     Storage -->|calls| StoreContract
+    SystemBenchmarks -->|measures| Host
+    SystemBenchmarks -->|measures| SqliteStore
+    SystemBenchmarks -->|measures| DownloadService
+    SystemBenchmarks -->|measures| FFmpeg
+    Nightly -->|runs| SystemBenchmarks
     MainWindow -->|binds| MainVm
     MainWindow -->|awaits close cleanup| Lifecycle
     MainWindow -->|renders remote artwork| AsyncImage
@@ -197,11 +207,14 @@ flowchart TD
     ArchitectureTests -->|guards dependency direction| ApplicationLayer
     ArchitectureTests -->|guards dependency direction| Infrastructure
     ArchitectureTests -->|guards dependency direction| Host
+    ArchitectureTests -->|guards| UiTheme
     UiSmoke -->|guards XAML construction| MainWindow
     Benchmarks -->|measures| WebClient
     CI -->|guards| Tests
     CI -->|guards| ArchitectureTests
     CI -->|guards| UiSmoke
+    Release -->|gates and packages| App
+    Release -->|runs| Tests
     AnalyzerInventory -->|documents diagnostics| CI
 ```
 
@@ -271,6 +284,38 @@ hazards:
 tests:
   - test.ui-smoke
   - test.composition-root
+```
+
+### ui.desktop-theme
+
+```yaml
+id: ui.desktop-theme
+type: ui
+paths:
+  - DownKyi/App.axaml
+  - DownKyi/Themes/DesignTokens.axaml
+  - DownKyi/Themes/ThemeDefault.axaml
+  - DownKyi/Themes/Styles
+responsibility: Applies one Fluent control theme plus centralized design tokens while preserving the existing light/dark color resources and large-list virtualization.
+inbound:
+  - app.application
+  - all Avalonia views
+outbound:
+  - Avalonia.Themes.Fluent
+  - Avalonia.Controls.DataGrid Fluent theme
+contracts:
+  - Desktop is the only project that references `Avalonia.Themes.Fluent`; Core and framework-neutral layers cannot own UI styling.
+  - App loads exactly one Fluent control theme, the Fluent DataGrid theme, and the shared design-token dictionary; the Simple theme cannot coexist.
+  - `ThemeDefault.axaml` retains both `Default` and `Dark` color dictionaries and historical localized resource paths remain unchanged.
+  - Typography, spacing, radius, elevation, control height, and progress thickness use named resources from `DesignTokens.axaml` instead of scattered new literals.
+  - Download, history, and favorites views retain virtualizing panels after style changes.
+hazards:
+  - Loading tokens through both App and a merged theme dictionary creates duplicate resource ownership and order-dependent overrides.
+  - Replacing virtualizing panels or increasing row/control size without a large-list check can regress first-screen and scroll performance.
+tests:
+  - test.ui-theme
+  - test.ui-smoke
+  - test.release-packaging
 ```
 
 ### service.application-lifecycle
@@ -1510,6 +1555,7 @@ paths:
   - DownKyi/Services/Download/DownloadPipeline.cs
   - DownKyi/Services/Download/BuiltinTransferBackend.cs
   - DownKyi/Services/Download/Aria2TransferBackend.cs
+  - DownKyi/Services/Download/AriaRuntimeClientRegistry.cs
   - DownKyi/Services/Download/DownloadArtifactWriter.cs
   - DownKyi/Services/Download/DownloadTaskStateWriter.cs
   - DownKyi/Services/Download/DownloadTaskFileService.cs
@@ -1538,6 +1584,8 @@ contracts:
   - State transitions await persistence; high-rate progress uses the bounded write-behind boundary.
   - Runtime receives `DownloadListState`, `DownloadTaskProjectionStore`, and dedicated state/artifact writers through construction; it cannot resolve dependencies through App or a global container.
   - Runtime factory, backends, workers, and diagnostic logger share the Host-injected `ISettingsStore`; no download service reads the global settings singleton.
+  - Runtime factory captures one immutable network settings snapshot and creates a dedicated `AriaClient`; local and custom endpoints cannot overwrite process-global host, port, or token fields.
+  - The same runtime client is injected into transfer, polling, server shutdown, and task cancellation. `AriaRuntimeClientRegistry` exposes only the currently active runtime client and releases it deterministically on stop or failed startup.
   - Runtime alerts depend on `IAppDialogService`; backend constructors cannot accept framework-specific dialog services.
   - Runtime factory creates a typed backend logger, and every download/file-lifecycle/maintenance owner uses the shared provider; this directory cannot call static `LogManager`.
   - Download diagnostic throttling belongs to the injected runtime logger instance; scopes contain only a SHA-256-derived short task ID and cannot retain raw task IDs in process-wide static state.
@@ -1617,7 +1665,9 @@ contracts:
   - Accepted entries pass through one redactor before entering either the bounded recent-event buffer or the bounded writer queue.
   - Every entry records timestamp, category, event ID, process ID, thread ID, and captured scope context.
   - Explicit flush drains accepted entries, closes the active file handle so logs are immediately readable on Windows, and reports writer failures.
-  - Rotation is size/day based; startup retention bounds both age and file count.
+  - UTC JSONL files live under `yyyy-MM-dd` directories, rotate at 32 MiB, retain at most seven days, and observe a 512 MiB hard safety cap while protecting the active file.
+  - Maintenance runs at startup, hourly, day change, rotation, and before export; storage metrics report capacity ratio, age/capacity deletions, and bytes/events written.
+  - Diagnostic export contains a redacted bounded event stream and a machine-readable manifest; it cannot copy raw application logs or user paths.
   - Async disposal drains accepted entries without a synchronous wait.
   - Async commands and ViewModel fire-and-forget observation require an injected logger; cancellation retains cancellation semantics while operational failures are sanitized and recorded.
   - Production code cannot restore `LogManager`, the legacy terminal wrapper, or direct terminal diagnostics.
@@ -1674,6 +1724,10 @@ contracts:
   - Updates publish a new immutable `ApplicationSettings` value; rejected enum, range, proxy, FFmpeg, danmaku, and window values are replaced with safe defaults before persistence.
   - HTTP, WBI, logout, UI, navigation, media, download planning/runtime, diagnostics, and FFmpeg consume validated snapshots instead of the mutable compatibility manager.
   - Debounced and explicit flushes share one async write gate and replace the destination only after a complete UTF-8 temporary file is flushed.
+  - Debounce ownership is one tracked cancellation-aware Task. Synchronous disposal stops scheduling, while async disposal awaits the last accepted callback/write before releasing the gate.
+  - A temporary settings file must parse as one complete JSON object before replacement; malformed or interrupted output cannot replace the last valid file.
+  - Nested settings collections are immutable arrays, so a later update cannot mutate a snapshot already captured by an operation.
+  - HTTP, download planning, transfer, artifact, diagnostics, and FFmpeg capture one snapshot per operation. A dynamic supplier may select only the next queued worker policy.
   - Shutdown flush is awaited without synchronously blocking the UI thread.
   - Production composition constructs the settings owner with the shared `ILoggerFactory`; validation, migration, load, flush, and cleanup diagnostics cannot use static `LogManager` or terminal output.
 hazards:
@@ -1728,6 +1782,7 @@ outbound:
 contracts:
   - Stream copy may be used for ordinary compatible merge operations, but never for multi-segment DURL concat.
   - Hardware encode failure must fall back to CPU for success rate.
+  - Windows x86 uses a pinned full FFmpeg build containing both ffmpeg and ffprobe; a compact ffmpeg-only archive is not a valid release asset.
   - Host composition creates one `FfmpegProcessor`; downloads and toolbox operations share one concurrency gate.
   - `FfmpegProcessor.Instance` is forbidden because separate or implicit owners can exceed the configured CPU/GPU concurrency.
   - Multi-segment completion is accepted only after ffprobe verifies a video stream, positive expected duration, and decodable middle/tail seeks.
@@ -1752,6 +1807,11 @@ id: external.aria2
 type: external
 paths:
   - DownKyi.Core/Aria2cNet
+  - DownKyi.Core/Aria2cNet/Server/AriaProcessSupervisor.cs
+  - DownKyi.Core/Aria2cNet/Server/WindowsProcessJob.cs
+  - DownKyi/Services/Download/AriaRuntimeClientRegistry.cs
+  - tests/DownKyi.Core.Tests/AriaClientIsolationTests.cs
+  - tests/DownKyi.Tests/AriaRuntimeClientRegistryTests.cs
   - script/aria2.ps1
   - script/aria2.sh
 responsibility: Provides optional aria2 RPC download backend and release-packaged aria2 binaries.
@@ -1766,12 +1826,18 @@ contracts:
   - Host owns one injected `AriaServer`; normal backend shutdown and App timeout cleanup must address that same tracked-process owner.
   - Manager, server, and process-supervisor diagnostics use typed loggers from the shared application factory; `Aria2cNet` cannot call static `LogManager`.
   - RPC requests use iterative asynchronous retry and cannot occupy a worker thread with synchronous `HttpClient.Send` or recursive retry.
+  - Each runtime owns an immutable RPC endpoint and secret; `AriaClient` has no mutable static host, port, or token configuration.
+  - Local and custom clients can execute concurrently without endpoint or authentication-token cross-contamination.
+  - Packaged local RPC listens only on loopback; wildcard listening and allow-origin-all are prohibited for the App-owned child.
+  - The child receives `--stop-with-process` on every platform. On Windows it also joins a kill-on-close Job Object, so abrupt parent termination cannot strand aria2.
+  - Session input/output and `--continue=true` remain present when process-lifetime hardening is changed; crash cleanup cannot discard resumable state.
 hazards:
   - Orphaned aria2 processes prevent clean app exit and lock output files.
   - Temporary `.aria2` files must be removed when user deletes a task.
 tests:
   - test.fake-http-download
   - test.process-cleanup
+  - test.release-packaging
 ```
 
 ### ui.async-image-loader
@@ -1873,6 +1939,69 @@ hazards:
 tests:
   - clean Release build with AnalysisMode=All
   - git diff --check
+```
+
+### workflow.system-baselines
+
+```yaml
+id: workflow.system-baselines
+type: workflow
+paths:
+  - .github/workflows/system-benchmarks.yml
+  - benchmarks/DownKyi.SystemBenchmarks
+  - docs/performance-baseline.md
+responsibility: Runs isolated, metadata-complete system performance scenarios on Windows, Linux, and macOS and uploads JSON evidence without enforcing unstable metric thresholds.
+inbound:
+  - github.schedule
+  - github.workflow_dispatch
+outbound:
+  - test.system-performance
+contracts:
+  - Every report identifies runtime, OS, architecture, dataset, backend, and commit SHA.
+  - Each scenario owns a fresh process boundary when the full suite runs.
+  - Scenario execution and report generation are required; metric values remain non-gating.
+hazards:
+  - Loopback throughput does not represent Bilibili or CDN limits.
+  - Results from different machines or runner images are not directly comparable.
+tests:
+  - github.actions
+```
+
+### workflow.release-packaging
+
+```yaml
+id: workflow.release-packaging
+type: workflow
+paths:
+  - .github/workflows/build.yml
+  - script/validate-publish-output.ps1
+  - script/assets/external-assets.json
+  - script/aria2.ps1
+  - script/aria2.sh
+  - script/ffmpeg.ps1
+  - script/ffmpeg.sh
+responsibility: Gates tags and manual release rehearsals on strict cross-platform tests, builds every supported package, verifies required runtime contents, and publishes SHA-256 evidence.
+inbound:
+  - github.tag
+  - github.workflow_dispatch
+outbound:
+  - app.application
+  - external.aria2
+  - external.ffmpeg
+  - github.release
+contracts:
+  - Windows, Linux, and macOS run strict Release build and all tests before changelog or package jobs can start.
+  - Manual dispatch builds and uploads the same packages without publishing a GitHub Release; tag execution alone may create the Release.
+  - Each RID validates a fixed publish directory containing non-empty DownKyi, aria2, FFmpeg, ffprobe, and dependency-manifest files.
+  - Publish validation checks the expected assembly version, requires Fluent, rejects Simple, and emits per-file SHA-256 values.
+  - Every package uploads its own `.sha256` sidecar and publish manifest with the artifact.
+  - External archives are accepted only after their manifest SHA-256 matches.
+hazards:
+  - Inspecting PupNet's temporary publish path is not stable; validation publish directories must be explicit.
+  - Cross-compiling proves package shape, not native execution. Native Host/XAML tests remain owned by each matrix runner.
+tests:
+  - test.release-packaging
+  - github.actions
 ```
 
 ## Important Call Flows
@@ -2191,6 +2320,25 @@ test.process-cleanup:
     - tests/DownKyi.Core.Tests/AriaServerProcessTests.cs
   guards:
     - tracked aria2-compatible process is terminated and released
+    - packaged aria arguments keep loopback-only RPC, parent monitoring, session persistence, and continuation
+    - releasing a Windows Job Object terminates its assigned process
+
+test.ui-theme:
+  paths:
+    - tests/DownKyi.Architecture.Tests/UiThemeArchitectureTests.cs
+  guards:
+    - Desktop owns one Fluent theme dependency and App cannot restore Simple
+    - design tokens are centralized while light/dark dictionaries remain available
+    - large download, history, and favorites lists retain virtualizing panels
+
+test.release-packaging:
+  paths:
+    - tests/DownKyi.Architecture.Tests/ReleaseWorkflowArchitectureTests.cs
+    - script/validate-publish-output.ps1
+  guards:
+    - release workflow remains manually dispatchable and gates packages on strict Windows/Linux/macOS build and tests
+    - all three platform package jobs run the shared publish validator and emit SHA-256 sidecars
+    - publish output requires DownKyi, aria2, FFmpeg, ffprobe, expected version, and Fluent without Simple
 
 test.null-contracts:
   paths:
@@ -2215,6 +2363,8 @@ test.architecture-boundaries:
     - tests/DownKyi.Architecture.Tests/SettingsArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/DownloadRuntimeArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/UiThemeArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/ReleaseWorkflowArchitectureTests.cs
   guards:
     - production project references remain acyclic
     - target Domain/Application/Infrastructure/Desktop dependency direction is enforced
@@ -2249,6 +2399,8 @@ test.architecture-boundaries:
     - all production C# roots reject legacy LogManager, the removed Console wrapper, and terminal Print calls; legacy logging source files must remain deleted
     - async commands and ViewModel fire-and-forget observation require injected diagnostics and preserve normal cancellation semantics
     - ViewModels cannot restore PlatformHelper, and the platform launcher cannot restore shell-string execution
+    - Desktop cannot restore the Simple theme, duplicate design-token ownership, or non-virtualized large lists
+    - release packaging cannot lose manual rehearsal, cross-platform strict gates, required external binaries, or checksum manifests
 
 test.settings-store:
   paths:
@@ -2261,6 +2413,9 @@ test.settings-store:
     - malformed input is preserved before defaults are atomically written, while future-schema files remain byte-for-byte unchanged
     - immutable updates and legacy setters both pass through validation before values can be persisted
     - a canceled flush leaves pending state available to the next successful flush, and async disposal flushes pending changes
+    - deterministic debounce replacement cancels the previous scheduled write and disposal awaits the final accepted write
+    - malformed temporary JSON cannot replace a valid destination file
+    - nested collection snapshots remain immutable across later updates
     - a new unmodified store does not write a defaults-only file; its first actual setting change does
     - tests never read or write the user's real settings path
     - user-space navigation routes the signed-in MID to My Space and other MIDs to public User Space using the injected owner
@@ -2406,6 +2561,20 @@ test.performance-baseline:
     - request preparation and JSON allocation baselines are reproducible
     - a benchmark run must produce a result row; process exit code zero alone does not prove BenchmarkDotNet executed a case
 
+test.system-performance:
+  paths:
+    - benchmarks/DownKyi.SystemBenchmarks
+    - tests/DownKyi.Tests/DownloadProgressUiUpdaterTests.cs
+    - docs/performance-baseline.md
+  guards:
+    - cold and warm shell startup include Host composition, MainWindow resolution, and full XAML loading
+    - unfinished-task restore reports peak working set from an isolated process
+    - SQLite progress samples coalesce to bounded writes per task-minute
+    - built-in loopback throughput is measured at 1, 4, and 8 concurrent tasks
+    - production UI progress projection is bounded while completion and maximum speed remain visible
+    - actual CPU and available hardware FFmpeg encoders report concurrency and peak child-process working set
+    - complete reports include runtime, OS, architecture, dataset, backend, and commit SHA
+
 test.video-input-resolver:
   paths:
     - tests/DownKyi.Application.Tests/VideoInputResolverTests.cs
@@ -2477,17 +2646,6 @@ test.json-contracts:
     - empty string and HTML error pages fail as JSON
     - optional endpoint envelopes preserve missing versus present-but-empty states and select ordinary/bangumi/cheese payload fields explicitly
 
-test.system-performance:
-  status: planned-for-pr-30-32
-  should_guard:
-    - cold and warm shell startup time
-    - peak working set during unfinished-task restore
-    - SQLite writes per task-minute
-    - aggregate throughput at 1, 4, and 8 tasks
-    - UI progress notifications per second
-    - FFmpeg CPU/GPU concurrency and peak memory
-  metadata:
-    - runtime, OS, architecture, dataset size, backend, and commit SHA
 ```
 
 ## AI Edit Protocol

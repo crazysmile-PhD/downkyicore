@@ -19,6 +19,7 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="/Languanges/Default.axaml" />
+                <ResourceInclude Source="/Themes/DesignTokens.axaml" />
                 <ResourceInclude Source="/Themes/ThemeDefault.axaml" />
                 <ResourceInclude Source="avares://DownKyi.Core/BiliApi/Zone/ZoneImages.axaml" />
                 <ResourceInclude Source="avares://DownKyi.Core/BiliApi/BilibiliImages.axaml" />
@@ -61,14 +62,28 @@
         <DataTemplate DataType="userSpaceVm:ViewSeasonsSeriesViewModel"><userSpaceViews:ViewSeasonsSeries /></DataTemplate>
     </Application.DataTemplates>
     <Application.Styles>
-        <SimpleTheme />
-        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Simple.xaml" />
+        <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
         <StyleInclude Source="/Themes/Styles/loading.axaml" />
         <Style Selector="Window">
             <Setter Property="FontFamily" Value="{DynamicResource ProgramFont}" />
         </Style>
         <Style Selector="TemplatedControl">
             <Setter Property="FontFamily" Value="{DynamicResource ProgramFont}" />
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="MinHeight" Value="{DynamicResource DownKyiControlMinHeight}" />
+            <Setter Property="CornerRadius" Value="{DynamicResource DownKyiRadiusSmall}" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="MinHeight" Value="{DynamicResource DownKyiControlMinHeight}" />
+            <Setter Property="CornerRadius" Value="{DynamicResource DownKyiRadiusSmall}" />
+        </Style>
+        <Style Selector="ProgressBar">
+            <Setter Property="Height" Value="{DynamicResource DownKyiProgressThickness}" />
+        </Style>
+        <Style Selector="DataGrid">
+            <Setter Property="FontSize" Value="{DynamicResource DownKyiFontSizeBody}" />
         </Style>
         <Style Selector="HeaderedContentControl">
             <Setter Property="Template">
@@ -77,10 +92,10 @@
                         <Grid RowDefinitions="Auto,*" ColumnDefinitions="Auto,*">
                             <Border
                                 ZIndex="1"
-                                CornerRadius="{TemplateBinding CornerRadius}"
-                                Padding="5,0,5,0"
+                                CornerRadius="{DynamicResource DownKyiRadiusSmall}"
+                                Padding="{DynamicResource DownKyiHeaderPadding}"
                                 Background="{DynamicResource ThemeBackgroundBrush}"
-                                Margin="5,0,0,0">
+                                Margin="{DynamicResource DownKyiHeaderMargin}">
                                 <TextBlock
                                     Text="{TemplateBinding Header}"
                                     FontSize="{TemplateBinding FontSize}"

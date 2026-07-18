@@ -89,13 +89,17 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
             var targetFile = Path.Combine(path, localFileName);
             var totalBytesToReceive = expectedBytes;
             var receivedBytes = 0L;
+            var progressUpdater = new DownloadProgressUiUpdater(
+                TimeProvider.System,
+                DownloadProgressUiUpdater.DefaultMinimumInterval);
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _diagnosticLogger.LogBuiltInTaskStart(
                 Name,
                 localFileName,
                 urls.Count,
                 configuration.ChunkCount,
-                configuration.ParallelCount);
+                configuration.ParallelCount,
+                network);
 
             var downloader = new Downloader.DownloadService(configuration);
             downloader.DownloadStarted += (_, args) =>
@@ -113,17 +117,21 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
                     totalBytesToReceive = (long)args.TotalBytesToReceive;
                 }
 
-                downloading.Progress = (float)args.ProgressPercentage;
-                downloading.DownloadingFileSize = $"{Format.FormatFileSize(args.ReceivedBytesSize)}/{Format.FormatFileSize(args.TotalBytesToReceive)}";
                 var speed = (long)args.BytesPerSecondSpeed;
-                downloading.SpeedDisplay = Format.FormatSpeedWithBandwidth(speed);
-                _diagnosticLogger.LogSpeed(
-                    Name,
-                    localFileName,
-                    args.ReceivedBytesSize,
-                    args.TotalBytesToReceive,
-                    speed);
-                downloading.Downloading.MaxSpeed = Math.Max(downloading.Downloading.MaxSpeed, speed);
+                if (progressUpdater.TryUpdate(
+                        downloading,
+                        args.ProgressPercentage,
+                        args.ReceivedBytesSize,
+                        args.TotalBytesToReceive,
+                        speed))
+                {
+                    _diagnosticLogger.LogSpeed(
+                        Name,
+                        localFileName,
+                        args.ReceivedBytesSize,
+                        args.TotalBytesToReceive,
+                        speed);
+                }
             };
             downloader.DownloadFileCompleted += (_, args) =>
             {

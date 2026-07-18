@@ -30,12 +30,12 @@
     }
   },
   "ffmpeg": {
-    "version": "btbn-autobuild-2026-07-08-13-30_martin-riedl-2026-07",
-    "repository": "Windows/Linux: https://github.com/BtbN/FFmpeg-Builds; macOS: https://ffmpeg.martin-riedl.de",
+    "version": "btbn-autobuild-2026-07-08-13-30_ytdlp-autobuild-2026-07-12-15-07_martin-riedl-2026-07",
+    "repository": "Windows x64/Linux: https://github.com/BtbN/FFmpeg-Builds; Windows x86: https://github.com/yt-dlp/FFmpeg-Builds; macOS: https://ffmpeg.martin-riedl.de",
     "assets": {
       "win-x86": {
-        "url": "https://github.com/yaobiao131/downkyi-ffmpeg-build/releases/download/continuous/ffmpeg-i686-w64-mingw32_static.zip",
-        "sha256": "969a75924bfaa642d54dafea771cc1cf77103915428b1eaeac061eda7f837471"
+        "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-07-12-15-07/ffmpeg-N-125551-ga09be9b91e-win32-gpl.zip",
+        "sha256": "a794b4229a64f2cef817c20c0f2a3bf6c2cf20e5ec527f6b6893e6e7a6ec5e26"
       },
       "win-x64": {
         "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-08-13-30/ffmpeg-N-125505-gc57660fb18-win64-gpl.zip",

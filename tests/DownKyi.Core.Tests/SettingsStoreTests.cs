@@ -1,5 +1,7 @@
 using System.Text.Json;
+using DownKyi.Core.FileName;
 using DownKyi.Core.Settings;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Core.Tests;
 
@@ -238,6 +240,66 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
+    public async Task PublishedSnapshotsKeepNestedCollectionsImmutableAcrossUpdates()
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+
+        try
+        {
+            using var store = new SettingsStore(settingsPath);
+            var original = store.Current;
+
+            var updated = store.Update(settings => settings with
+            {
+                Video = settings.Video with
+                {
+                    HistoryVideoRootPaths = ["D:/DownKyi"],
+                    FileNameParts = [FileNamePart.MainTitle]
+                }
+            });
+
+            Assert.Empty(original.Video.HistoryVideoRootPaths);
+            Assert.NotEqual(["D:/DownKyi"], original.Video.HistoryVideoRootPaths);
+            Assert.Equal(["D:/DownKyi"], updated.Video.HistoryVideoRootPaths);
+            Assert.Equal([FileNamePart.MainTitle], updated.Video.FileNameParts);
+            Assert.NotEqual(updated.Video.FileNameParts, original.Video.FileNameParts);
+
+            await store.FlushAsync(TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Theory]
+    [InlineData("not-json")]
+    [InlineData("[]")]
+    public async Task TemporarySettingsValidationRejectsInvalidPayloads(string payload)
+    {
+        var directory = CreateTestDirectory();
+        var temporaryPath = Path.Combine(directory, "settings.tmp");
+
+        try
+        {
+            await File.WriteAllTextAsync(
+                temporaryPath,
+                payload,
+                TestContext.Current.CancellationToken);
+
+            await Assert.ThrowsAsync<Newtonsoft.Json.JsonSerializationException>(() =>
+                SettingsManager.ValidateTemporarySettingsFileAsync(
+                    temporaryPath,
+                    TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
     public async Task LegacySettersCannotPersistValuesRejectedByTheSnapshotContract()
     {
         var directory = CreateTestDirectory();
@@ -319,6 +381,68 @@ public sealed class SettingsStoreTests
         }
     }
 
+    [Fact]
+    public async Task AsyncDisposeCancelsPendingDebounceAndFlushesWithoutWaitingForDelay()
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        var delay = new ControlledDelay();
+
+        try
+        {
+            var manager = new SettingsManager(
+                settingsPath,
+                NullLogger<SettingsManager>.Instance,
+                TimeSpan.FromDays(1),
+                delay.WaitAsync);
+            manager.SetThemeMode(ThemeMode.Dark);
+            await delay.Started.WaitAsync(TestContext.Current.CancellationToken);
+
+            await manager.DisposeAsync().ConfigureAwait(true);
+
+            await delay.Canceled.WaitAsync(TestContext.Current.CancellationToken);
+            Assert.True(File.Exists(settingsPath));
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
+                settingsPath,
+                TestContext.Current.CancellationToken));
+            Assert.Equal(
+                (int)ThemeMode.Dark,
+                document.RootElement.GetProperty("Basic").GetProperty("ThemeMode").GetInt32());
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void SynchronousDisposeStopsPendingDebounceWithoutPersisting()
+    {
+        var directory = CreateTestDirectory();
+        var settingsPath = Path.Combine(directory, "settings.json");
+        var delay = new ControlledDelay();
+
+        try
+        {
+            var manager = new SettingsManager(
+                settingsPath,
+                NullLogger<SettingsManager>.Instance,
+                TimeSpan.FromDays(1),
+                delay.WaitAsync);
+            manager.SetThemeMode(ThemeMode.Dark);
+            Assert.True(delay.Started.IsCompletedSuccessfully);
+
+            manager.Dispose();
+
+            Assert.True(delay.Canceled.IsCompletedSuccessfully);
+            Assert.False(File.Exists(settingsPath));
+        }
+        finally
+        {
+            DeleteDirectory(directory);
+        }
+    }
+
     private static string CreateTestDirectory()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"downkyi-settings-{Guid.NewGuid():N}");
@@ -331,6 +455,34 @@ public sealed class SettingsStoreTests
         if (Directory.Exists(directory))
         {
             Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private sealed class ControlledDelay
+    {
+        private readonly TaskCompletionSource _canceled = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _started = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Started => _started.Task;
+
+        public Task Canceled => _canceled.Task;
+
+        public async Task WaitAsync(TimeSpan _, CancellationToken cancellationToken)
+        {
+            _started.TrySetResult();
+            using var registration = cancellationToken.Register(
+                static state => ((TaskCompletionSource)state!).TrySetResult(),
+                _canceled);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
         }
     }
 }

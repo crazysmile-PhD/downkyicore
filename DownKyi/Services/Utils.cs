@@ -17,9 +17,9 @@ internal static class Utils
     /// </summary>
     /// <param name="playUrl"></param>
     /// <param name="page"></param>
-    internal static void VideoPageInfo(PlayUrl? playUrl, VideoPage page, ISettingsStore settingsStore)
+    internal static void VideoPageInfo(PlayUrl? playUrl, VideoPage page, ApplicationSettings settings)
     {
-        ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(settings);
         if (playUrl == null)
         {
             return;
@@ -29,7 +29,6 @@ internal static class Utils
         page.PlayUrl = playUrl;
 
         // 获取设置
-        var settings = settingsStore.Current;
         var userInfo = settings.User;
         var defaultQuality = settings.Video.Quality;
         var videoCodecs = settings.Video.VideoCodecs;

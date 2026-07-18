@@ -117,6 +117,7 @@ public sealed class DownloadManagerCoordinatorTests
             State = new DownloadListState();
             Launcher = new RecordingPlatformLauncher();
             var fileService = new DownloadTaskFileService(
+                new AriaRuntimeClientRegistry(),
                 NullLogger<DownloadTaskFileService>.Instance);
             Coordinator = new DownloadManagerCoordinator(Storage, fileService, State, Launcher);
         }

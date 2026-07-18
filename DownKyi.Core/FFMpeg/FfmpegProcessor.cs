@@ -33,13 +33,15 @@ public sealed class FfmpegProcessor
     }
 
     public async Task<FfmpegOperationResult> ConcatDurlVideosAsync(
+        VideoApplicationSettings videoSettings,
         IReadOnlyList<FfmpegConcatSegment> segments,
         string outputVideo,
         Action<string>? action = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(videoSettings);
         var encoder = await _hardwareEncoderDetector.SelectAsync(
-                _settingsStore.Current.Video.FfmpegHardwareAcceleration,
+                videoSettings.FfmpegHardwareAcceleration,
                 cancellationToken)
             .ConfigureAwait(false);
         return await _concatRuntime.ConcatAsync(
@@ -53,11 +55,13 @@ public sealed class FfmpegProcessor
     }
 
     public async Task<bool> MergeVideoAsync(
+        VideoApplicationSettings videoSettings,
         string? audio,
         string? video,
         string destination,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(videoSettings);
         var audioPath = !string.IsNullOrWhiteSpace(audio) && File.Exists(audio) ? audio : null;
         var videoPath = !string.IsNullOrWhiteSpace(video) && File.Exists(video) ? video : null;
         if (audioPath == null && videoPath == null)
@@ -70,7 +74,7 @@ public sealed class FfmpegProcessor
                 audioPath,
                 videoPath,
                 temporaryOutput,
-                _settingsStore.Current.Video.IsTranscodingAacToMp3 == AllowStatus.Yes),
+                videoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes),
             destination,
             action: null,
             cancellationToken).ConfigureAwait(false);

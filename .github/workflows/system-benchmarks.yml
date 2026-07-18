@@ -1,0 +1,82 @@
+name: System Performance Baselines
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * *'
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  BENCHMARK_PROJECT: ./benchmarks/DownKyi.SystemBenchmarks/DownKyi.SystemBenchmarks.csproj
+
+jobs:
+  baseline:
+    name: Baseline (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+          - macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: ./script
+        run: ./ffmpeg.ps1 x64
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        working-directory: ./script
+        run: |
+          chmod +x ./ffmpeg.sh
+          ./ffmpeg.sh linux x64
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        working-directory: ./script
+        run: |
+          chmod +x ./ffmpeg.sh
+          if [ "$(uname -m)" = "arm64" ]; then
+            ./ffmpeg.sh mac arm64
+          else
+            ./ffmpeg.sh mac x64
+          fi
+      - name: Restore
+        run: dotnet restore ${{ env.BENCHMARK_PROJECT }}
+      - name: Build
+        run: >
+          dotnet build ${{ env.BENCHMARK_PROJECT }}
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+      - name: Run isolated system baselines
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:GITHUB_WORKSPACE "BenchmarkDotNet.Artifacts/system-$env:RUNNER_OS.json"
+          dotnet run --project $env:BENCHMARK_PROJECT -c Release --no-build -- --output $report
+      - name: Upload baseline report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: system-baseline-${{ runner.os }}-${{ runner.arch }}
+          path: BenchmarkDotNet.Artifacts/system-*.json
+          if-no-files-found: error

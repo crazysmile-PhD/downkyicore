@@ -7,15 +7,51 @@ namespace DownKyi.Core.Aria2cNet.Client;
 /// <summary>
 /// http://aria2.github.io/manual/en/html/aria2c.html#methods
 /// </summary>
-public static class AriaClient
+public sealed class AriaClient
 {
     private const string JSONRPC = "2.0";
     private const string LOCAL_HOST = "http://localhost";
     private const string TOKEN = "downkyi";
     private const int LISTEN_PORT = 35076;
-    private static string host = LOCAL_HOST;
-    private static string token = TOKEN;
-    private static int listenPort = LISTEN_PORT;
+    private static readonly HttpClient HttpClient = new();
+    private readonly Func<Uri, string, Task<string?>> _requestAsync;
+    private readonly Uri _rpcUri;
+    private readonly string _token;
+
+    public AriaClient(
+        string host = LOCAL_HOST,
+        int listenPort = LISTEN_PORT,
+        string token = TOKEN)
+        : this(host, listenPort, token, static (url, parameters) => RequestAsync(url, parameters))
+    {
+    }
+
+    internal AriaClient(
+        string host,
+        int listenPort,
+        string token,
+        Func<Uri, string, Task<string?>> requestAsync)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ArgumentOutOfRangeException.ThrowIfLessThan(listenPort, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(listenPort, 65535);
+        if (!Uri.TryCreate(host, UriKind.Absolute, out var hostUri)
+            || (!string.Equals(hostUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(hostUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ArgumentException("The aria2 RPC host must be an absolute HTTP or HTTPS URI.", nameof(host));
+        }
+
+        _rpcUri = new UriBuilder(hostUri)
+        {
+            Port = listenPort,
+            Path = "jsonrpc",
+            Query = string.Empty,
+            Fragment = string.Empty
+        }.Uri;
+        _token = token ?? string.Empty;
+        _requestAsync = requestAsync ?? throw new ArgumentNullException(nameof(requestAsync));
+    }
 
     /// <summary>
     /// This method adds a new download.
@@ -36,11 +72,11 @@ public static class AriaClient
     /// <param name="dir"></param>
     /// <param name="outFile"></param>
     /// <returns></returns>
-    public static async Task<AriaAddUri> AddUriAsync(IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
+    public async Task<AriaAddUri> AddUriAsync(IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             uris,
             option
         };
@@ -86,11 +122,11 @@ public static class AriaClient
     /// <param name="uris"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public static async Task<AriaAddTorrent> AddTorrentAsync(string torrent, IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
+    public async Task<AriaAddTorrent> AddTorrentAsync(string torrent, IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             torrent,
             uris,
             option
@@ -131,11 +167,11 @@ public static class AriaClient
     /// <param name="uris"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public static async Task<AriaAddMetalink> AddMetalinkAsync(string metalink, IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
+    public async Task<AriaAddMetalink> AddMetalinkAsync(string metalink, IReadOnlyList<string> uris, AriaSendOption option, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             metalink,
             uris,
             option
@@ -163,11 +199,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaRemove> RemoveAsync(string gid)
+    public async Task<AriaRemove> RemoveAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -188,11 +224,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaRemove> ForceRemoveAsync(string gid)
+    public async Task<AriaRemove> ForceRemoveAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -215,11 +251,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaPause> PauseAsync(string gid)
+    public async Task<AriaPause> PauseAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -237,11 +273,11 @@ public static class AriaClient
     /// This methods returns OK.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaPause> PauseAllAsync()
+    public async Task<AriaPause> PauseAllAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -261,11 +297,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaPause> ForcePauseAsync(string gid)
+    public async Task<AriaPause> ForcePauseAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -283,11 +319,11 @@ public static class AriaClient
     /// This methods returns OK.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaPause> ForcePauseAllAsync()
+    public async Task<AriaPause> ForcePauseAllAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -306,11 +342,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaPause> UnpauseAsync(string gid)
+    public async Task<AriaPause> UnpauseAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -328,11 +364,11 @@ public static class AriaClient
     /// This methods returns OK.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaPause> UnpauseAllAsync()
+    public async Task<AriaPause> UnpauseAllAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -355,11 +391,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaTellStatus> TellStatus(string gid)
+    public async Task<AriaTellStatus> TellStatus(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -379,11 +415,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaGetUris> GetUrisAsync(string gid)
+    public async Task<AriaGetUris> GetUrisAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -403,11 +439,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaGetFiles> GetFilesAsync(string gid)
+    public async Task<AriaGetFiles> GetFilesAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -428,11 +464,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaGetPeers> GetPeersAsync(string gid)
+    public async Task<AriaGetPeers> GetPeersAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -452,11 +488,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaGetServers> GetServersAsync(string gid)
+    public async Task<AriaGetServers> GetServersAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -475,11 +511,11 @@ public static class AriaClient
     /// For the keys parameter, please refer to the aria2.tellStatus() method.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaTellStatusList> TellActiveAsync()
+    public async Task<AriaTellStatusList> TellActiveAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -515,11 +551,11 @@ public static class AriaClient
     /// <param name="offset"></param>
     /// <param name="num"></param>
     /// <returns></returns>
-    public static async Task<AriaTellStatusList> TellWaitingAsync(int offset, int num)
+    public async Task<AriaTellStatusList> TellWaitingAsync(int offset, int num)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             offset,
             num
         };
@@ -547,11 +583,11 @@ public static class AriaClient
     /// <param name="offset"></param>
     /// <param name="num"></param>
     /// <returns></returns>
-    public static async Task<AriaTellStatusList> TellStoppedAsync(int offset, int num)
+    public async Task<AriaTellStatusList> TellStoppedAsync(int offset, int num)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             offset,
             num
         };
@@ -586,11 +622,11 @@ public static class AriaClient
     /// <param name="pos"></param>
     /// <param name="how"></param>
     /// <returns></returns>
-    public static async Task<AriaChangePosition> ChangePositionAsync(string gid, int pos, HowChangePosition how)
+    public async Task<AriaChangePosition> ChangePositionAsync(string gid, int pos, HowChangePosition how)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid,
             pos,
             GetChangePositionValue(how)
@@ -642,11 +678,11 @@ public static class AriaClient
     /// <param name="addUris"></param>
     /// <param name="position"></param>
     /// <returns></returns>
-    public static async Task<AriaChangeUri> ChangeUriAsync(string gid, int fileIndex, IReadOnlyList<string> delUris, IReadOnlyList<string> addUris, int position = -1)
+    public async Task<AriaChangeUri> ChangeUriAsync(string gid, int fileIndex, IReadOnlyList<string> delUris, IReadOnlyList<string> addUris, int position = -1)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid,
             fileIndex,
             delUris,
@@ -676,11 +712,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaGetOption> GetOptionAsync(string gid)
+    public async Task<AriaGetOption> GetOptionAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
 
@@ -712,11 +748,11 @@ public static class AriaClient
     /// <param name="gid"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public static async Task<AriaChangeOption> ChangeOptionAsync(string gid, object option)
+    public async Task<AriaChangeOption> ChangeOptionAsync(string gid, object option)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid,
             option
         };
@@ -742,11 +778,11 @@ public static class AriaClient
     /// the response contains keys returned by the aria2.getOption() method.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaGetOption> GetGlobalOptionAsync()
+    public async Task<AriaGetOption> GetGlobalOptionAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
 
         AriaSendData ariaSend = new AriaSendData
@@ -777,11 +813,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="option"></param>
     /// <returns></returns>
-    public static async Task<AriaChangeOption> ChangeGlobalOptionAsync(object option)
+    public async Task<AriaChangeOption> ChangeGlobalOptionAsync(object option)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             option
         };
 
@@ -800,11 +836,11 @@ public static class AriaClient
     /// The response is a struct and contains the following keys. Values are strings.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaGetGlobalStat> GetGlobalStatAsync()
+    public async Task<AriaGetGlobalStat> GetGlobalStatAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -821,11 +857,11 @@ public static class AriaClient
     /// This method returns OK.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaRemove> PurgeDownloadResultAsync()
+    public async Task<AriaRemove> PurgeDownloadResultAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -843,11 +879,11 @@ public static class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public static async Task<AriaRemove> RemoveDownloadResultAsync(string gid)
+    public async Task<AriaRemove> RemoveDownloadResultAsync(string gid)
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
             gid
         };
         AriaSendData ariaSend = new AriaSendData
@@ -865,11 +901,11 @@ public static class AriaClient
     /// The response is a struct and contains following keys.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaVersion> GetAriaVersionAsync()
+    public async Task<AriaVersion> GetAriaVersionAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -888,11 +924,11 @@ public static class AriaClient
     /// Session ID, which is generated each time when aria2 is invoked.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaGetSessionInfo> GetSessionInfoAsync()
+    public async Task<AriaGetSessionInfo> GetSessionInfoAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -909,11 +945,11 @@ public static class AriaClient
     /// This method returns OK.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaShutdown> ShutdownAsync()
+    public async Task<AriaShutdown> ShutdownAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -933,11 +969,11 @@ public static class AriaClient
     /// This method returns OK.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaShutdown> ForceShutdownAsync()
+    public async Task<AriaShutdown> ForceShutdownAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -954,11 +990,11 @@ public static class AriaClient
     /// This method returns OK if it succeeds.
     /// </summary>
     /// <returns></returns>
-    public static async Task<AriaSaveSession> SaveSessionAsync()
+    public async Task<AriaSaveSession> SaveSessionAsync()
     {
         List<object> ariaParams = new List<object>
         {
-            "token:" + token,
+            "token:" + _token,
         };
         AriaSendData ariaSend = new AriaSendData
         {
@@ -979,7 +1015,7 @@ public static class AriaClient
     /// </summary>
     /// <param name="systemMulticallMathods"></param>
     /// <returns></returns>
-    public static async Task<List<SystemMulticall>> MulticallAsync(IReadOnlyList<SystemMulticallMathod> systemMulticallMathods)
+    public async Task<List<SystemMulticall>> MulticallAsync(IReadOnlyList<SystemMulticallMathod> systemMulticallMathods)
     {
         List<object> ariaParams = new List<object>
         {
@@ -1001,7 +1037,7 @@ public static class AriaClient
     /// This is safe because this method just returns the available method names.
     /// </summary>
     /// <returns></returns>
-    public static async Task<SystemListMethods> ListMethodsAsync()
+    public async Task<SystemListMethods> ListMethodsAsync()
     {
         AriaSendData ariaSend = new AriaSendData
         {
@@ -1018,7 +1054,7 @@ public static class AriaClient
     /// This is safe because this method just returns the available notifications names.
     /// </summary>
     /// <returns></returns>
-    public static async Task<SystemListNotifications> ListNotificationsAsync()
+    public async Task<SystemListNotifications> ListNotificationsAsync()
     {
         AriaSendData ariaSend = new AriaSendData
         {
@@ -1030,44 +1066,12 @@ public static class AriaClient
     }
 
     /// <summary>
-    /// 设置aria token
-    /// </summary>
-    /// <param name="token"></param>
-    public static void SetToken(string token = TOKEN)
-    {
-        AriaClient.token = token;
-    }
-
-    /// <summary>
-    /// 设置aria host
-    /// </summary>
-    /// <param name="host"></param>
-    public static void SetHost(string host = LOCAL_HOST)
-    {
-        AriaClient.host = host;
-    }
-
-    public static void SetListenPort(int listenPort = LISTEN_PORT)
-    {
-        AriaClient.listenPort = listenPort;
-    }
-
-    /// <summary>
-    /// 获取jsonrpc的地址
-    /// </summary>
-    /// <returns></returns>
-    private static string GetRpcUri()
-    {
-        return $"{host}:{listenPort}/jsonrpc";
-    }
-
-    /// <summary>
     /// 发送http请求，并将返回的json反序列化
     /// </summary>
     /// <typeparam name="T"></typeparam>
     /// <param name="ariaSend"></param>
     /// <returns></returns>
-    private static async Task<T> GetRpcResponseAsync<T>(AriaSendData ariaSend)
+    private async Task<T> GetRpcResponseAsync<T>(AriaSendData ariaSend)
         where T : class
     {
         // 去掉null
@@ -1075,7 +1079,7 @@ public static class AriaClient
         // 转换为json字符串
         string sendJson = JsonConvert.SerializeObject(ariaSend, Formatting.Indented, jsonSetting);
         // 向服务器请求数据
-        var result = await RequestAsync(GetRpcUri(), sendJson).ConfigureAwait(false);
+        var result = await _requestAsync(_rpcUri, sendJson).ConfigureAwait(false);
         if (result == null)
         {
             throw new HttpRequestException("aria2 RPC retry attempts were exhausted.");
@@ -1092,7 +1096,6 @@ public static class AriaClient
         return aria ?? throw new JsonSerializationException("aria2 RPC returned an empty JSON value.");
     }
 
-    private static readonly HttpClient HttpClient = new();
     /// <summary>
     /// http请求
     /// </summary>
@@ -1100,7 +1103,7 @@ public static class AriaClient
     /// <param name="parameters"></param>
     /// <param name="retry"></param>
     /// <returns></returns>
-    private static async Task<string?> RequestAsync(string url, string parameters, int retry = 3)
+    private static async Task<string?> RequestAsync(Uri url, string parameters, int retry = 3)
     {
         for (var attempt = 0; attempt < retry; attempt++)
         {

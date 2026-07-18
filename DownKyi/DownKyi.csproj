@@ -24,7 +24,7 @@
         <PackageReference Include="Avalonia.Desktop"/>
         <!--Condition below keeps the Avalonia developer tooling bridge out of Release output.-->
         <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="AvaloniaUI.DiagnosticsSupport"/>
-        <PackageReference Include="Avalonia.Themes.Simple"/>
+        <PackageReference Include="Avalonia.Themes.Fluent"/>
         <PackageReference Include="CommunityToolkit.Mvvm"/>
         <PackageReference Include="Downloader"/>
         <PackageReference Include="Microsoft.Extensions.Logging"/>

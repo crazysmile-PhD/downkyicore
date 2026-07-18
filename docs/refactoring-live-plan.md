@@ -1,9 +1,9 @@
 # DownKyi Core Live Refactoring Plan
 
-Status: active
+Status: complete
 Last updated: 2026-07-18
-Current group: PR 30-32
-Next branch: `refactor/pr-30-32-release-hardening`
+Current group: none
+Current branch: none
 
 This file contains only unfinished work. Completed items are removed in the same PR that finishes them; newly discovered debt is added immediately with an owning PR or phase.
 
@@ -18,27 +18,9 @@ This file contains only unfinished work. Completed items are removed in the same
 - A group may contain multiple ordered commits, but it must not be split into smaller public PRs or combined with another numbered range.
 - The next group starts only after the previous group has completed its full scope and passed build, tests, data compatibility checks, documentation updates, and `git diff --check`.
 
-## Active Next: PR 30-32 - Profiling, UI, And Release Hardening
+## Active Work
 
-Branch: `refactor/pr-30-32-release-hardening`
-
-- Add deterministic cold/warm shell startup time baselines.
-- Measure peak working set while restoring unfinished tasks.
-- Measure SQLite progress writes per task-minute.
-- Measure aggregate transfer throughput with 1, 4, and 8 concurrent tasks.
-- Measure UI progress notifications per second.
-- Measure FFmpeg CPU/GPU concurrency and peak memory.
-- Every system baseline must record runtime, OS, architecture, dataset size, downloader backend, and commit SHA; never compare ad-hoc stopwatch values from different machines.
-- Investigate the current 1,488 B/request URL-building allocation only if traces show it is hot.
-- Optimize startup history loading, progress batching, worker limits, caches, and controlled collection parsing with benchmark or trace evidence.
-- Replace the remaining process-global aria RPC configuration with an injected per-runtime client without changing local/custom aria ownership, GID persistence, or resume behavior.
-- Complete the logging modernization task derived from `deep-research-report.md` against the current `ApplicationLogProvider`: UTC `YYYY-MM-DD` directories, JSONL streams, 32 MiB rotation, seven-day hard retention, 512 MiB safety cap, active-file protection, startup/hourly/day-change/rotation/pre-export maintenance, and an AI-first redacted export manifest.
-- Add deterministic logging retention/rotation/export tests and storage metrics (`capacity_ratio`, age/capacity deletion counts, bytes/events written) before changing the current capacity limit.
-- Audit timer/debounce/background-writer ownership across settings and runtime services. Synchronous `Dispose` stops scheduling only; `DisposeAsync` awaits callbacks/pending writes before gates are released. Race tests must use controlled synchronization points, not timing delays.
-- Enforce one immutable settings snapshot per HTTP/download/FFmpeg operation while retaining dynamic suppliers only for next-slot global scheduling policy. Add architecture and behavior tests for snapshot consistency and mutable-facade exclusion.
-- Audit immutable settings snapshots for mutable nested collections, shallow-copy leaks, staged migration, temporary-file validation, atomic replacement, and interruption safety.
-- Apply FluentUI/design tokens only after core ownership and lifecycle are stable; retain virtualization, high-DPI, keyboard, theme, and cross-platform checks.
-- Run full Windows/Linux/macOS package smoke tests, binary checksum verification, data migration rehearsal, pause/resume/delete regression, and release artifact validation.
+None. Add newly discovered debt here with an explicit owner and scope; do not restore completed PR 02-32 tasks.
 
 ## Execution Rules
 

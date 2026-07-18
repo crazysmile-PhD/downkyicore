@@ -101,6 +101,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
     private async Task ExecuteInputCommandAsync(string? requestedInput)
     {
         var operation = _workflow.StartOperation();
+        var settings = _settingsStore.Current;
         ResetView();
         if (string.IsNullOrWhiteSpace(requestedInput))
         {
@@ -114,7 +115,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
             _logger.LogDebugMessage("Processing captured video input.");
             var result = await _workflow.LoadDetailAsync(operation).ConfigureAwait(true);
             await UiDispatcher.InvokeAsync(() => ApplyVideoDetailResult(result, operation.CancellationToken));
-            if (_workflow.IsCurrent(operation) && _settingsStore.Current.Basic.IsAutoParseVideo == AllowStatus.Yes)
+            if (_workflow.IsCurrent(operation) && settings.Basic.IsAutoParseVideo == AllowStatus.Yes)
             {
                 RunFireAndForget(ExecuteParseAllVideoCommandAsync(), nameof(ExecuteParseAllVideoCommandAsync), _logger);
             }
@@ -160,13 +161,17 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         }
 
         var operation = _workflow.StartOperation();
+        var settings = _settingsStore.Current;
         SetDisplayState(VideoDetailDisplayState.Busy);
         await RunOperationAsync(operation, async () =>
         {
             var result = await _workflow.LoadPageStreamAsync(page, operation).ConfigureAwait(true);
             if (result != null)
             {
-                await UiDispatcher.InvokeAsync(() => ApplyVideoStreamResults([result], operation.CancellationToken));
+                await UiDispatcher.InvokeAsync(() => ApplyVideoStreamResults(
+                    [result],
+                    settings,
+                    operation.CancellationToken));
             }
 
             RestoreDisplayStateIfCurrent(operation);
@@ -195,20 +200,24 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
     private async Task ExecuteParseAsync(ParseScope parseScope)
     {
         var operation = _workflow.StartOperation();
+        var settings = _settingsStore.Current;
         SetDisplayState(VideoDetailDisplayState.Busy);
         await RunOperationAsync(operation, async () =>
         {
             var results = await _workflow
                 .LoadPageStreamsAsync(VideoSections, parseScope, operation)
                 .ConfigureAwait(true);
-            await UiDispatcher.InvokeAsync(() => ApplyVideoStreamResults(results, operation.CancellationToken));
+            await UiDispatcher.InvokeAsync(() => ApplyVideoStreamResults(
+                results,
+                settings,
+                operation.CancellationToken));
             if (!_workflow.IsCurrent(operation))
             {
                 return;
             }
 
             RestoreDisplayState();
-            if (parseScope != ParseScope.None && _settingsStore.Current.Basic.IsAutoDownloadAll == AllowStatus.Yes)
+            if (parseScope != ParseScope.None && settings.Basic.IsAutoDownloadAll == AllowStatus.Yes)
             {
                 await AddToDownloadAsync(true).ConfigureAwait(true);
             }
@@ -270,14 +279,15 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         SetDisplayState(VideoDetailDisplayState.Content);
     }
 
-    private void ApplyVideoStreamResults(
+    private static void ApplyVideoStreamResults(
         IReadOnlyList<VideoStreamParseResult> results,
+        ApplicationSettings settings,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         foreach (var result in results)
         {
-            Services.Utils.VideoPageInfo(result.PlayUrl, result.Page, _settingsStore);
+            Services.Utils.VideoPageInfo(result.PlayUrl, result.Page, settings);
         }
     }
 

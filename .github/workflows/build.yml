@@ -1,17 +1,53 @@
 name: Build
 
 permissions:
-  contents: write
+  contents: read
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
+  release-gate:
+    name: Release gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+          - macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore ./DownKyi.sln
+      - name: Strict Release build
+        run: >
+          dotnet build ./DownKyi.sln
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
+      - name: Test
+        run: dotnet test ./DownKyi.sln -c Release --no-restore --no-build
+
   changelog:
     name: Generate changelog
     runs-on: ubuntu-latest
+    needs: release-gate
     outputs:
       release_body: ${{ steps.git-cliff.outputs.content }}
     steps:
@@ -33,6 +69,7 @@ jobs:
     runs-on: windows-latest
     needs: changelog
     strategy:
+      fail-fast: false
       matrix:
         cpu: [ x64, x86 ]
         kind: [ zip ]
@@ -57,19 +94,44 @@ jobs:
           .\ffmpeg.ps1 ${{ matrix.cpu }}
           .\aria2.ps1 ${{ matrix.cpu }}
         working-directory: ./script
+      - name: Build validation publish
+        run: >
+          dotnet publish ./DownKyi/DownKyi.csproj
+          -c Release
+          -r win-${{ matrix.cpu }}
+          --self-contained
+          -p:Version=${{ steps.version.outputs.content }}
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o ./artifacts/publish/win-${{ matrix.cpu }}
       - name: Package
         run: |
           & "$env:GITHUB_WORKSPACE\.tools\pupnet.exe" DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r win-${{ matrix.cpu }} -y
         working-directory: ./script/pupnet
+      - name: Validate packaged runtime
+        shell: pwsh
+        run: |
+          ./script/validate-publish-output.ps1 `
+            -PublishDirectory "artifacts/publish/win-${{ matrix.cpu }}" `
+            -RuntimeIdentifier "win-${{ matrix.cpu }}" `
+            -ExpectedVersion "${{ steps.version.outputs.content }}" `
+            -OutputPath "script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json"
+          $package = "script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}"
+          $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload build artifacts ${{ matrix.kind }}
         uses: actions/upload-artifact@v7
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
-          path: script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
+          path: |
+            script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
+            script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}.sha256
+            script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json
   build-linux:
     runs-on: ubuntu-22.04
     needs: changelog
     strategy:
+      fail-fast: false
       matrix:
         cpu: [ x64, arm64 ]
         kind: [ AppImage, deb, rpm ]
@@ -121,25 +183,51 @@ jobs:
           ./ffmpeg.sh linux ${{ matrix.cpu }}
           ./aria2.sh linux-${{ matrix.cpu }}
         working-directory: ./script
+      - name: Build validation publish
+        run: >
+          dotnet publish ./DownKyi/DownKyi.csproj
+          -c Release
+          -r linux-${{ matrix.cpu }}
+          --self-contained
+          -p:Version=${{ steps.version.outputs.content }}
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o ./artifacts/publish/linux-${{ matrix.cpu }}
       - name: Package
         run: |
           "$GITHUB_WORKSPACE/.tools/pupnet" DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r linux-${{ matrix.cpu }} -y
         working-directory: ./script/pupnet
       - name: Change Name
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         run: mv "${{ matrix.package-head }}${{ steps.version.outputs.content }}-1${{ matrix.package-tail }}.${{ matrix.kind }}" "${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}"
         working-directory: ./script/pupnet/output/
+      - name: Validate packaged runtime
+        shell: pwsh
+        run: |
+          ./script/validate-publish-output.ps1 `
+            -PublishDirectory "artifacts/publish/linux-${{ matrix.cpu }}" `
+            -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
+            -ExpectedVersion "${{ steps.version.outputs.content }}" `
+            -OutputPath "script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
+          $package = Get-ChildItem "script/pupnet/output" -File -Filter "*${{ matrix.package-tail }}.${{ matrix.kind }}" |
+            Select-Object -First 1
+          if ($null -eq $package) { throw "Expected Linux package was not produced." }
+          $hash = (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($package.Name)" | Set-Content -LiteralPath "$($package.FullName).sha256" -Encoding ascii
       - name: Upload build artifacts ${{ matrix.kind }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
-          path: script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
+          path: |
+            script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
+            script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}.sha256
+            script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json
   build-macos:
     runs-on: macos-15
     needs: changelog
     env:
       HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
     strategy:
+      fail-fast: false
       matrix:
         cpu: [ x64, arm64 ]
     steps:
@@ -180,6 +268,14 @@ jobs:
           chmod +x package.sh
           ./package.sh ${{ matrix.cpu }}
         working-directory: ./script/macos
+      - name: Validate packaged runtime
+        shell: pwsh
+        run: |
+          ./script/validate-publish-output.ps1 `
+            -PublishDirectory "DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish" `
+            -RuntimeIdentifier "osx-${{ matrix.cpu }}" `
+            -ExpectedVersion "${{ steps.version.outputs.content }}" `
+            -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
       - name: Sign app
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         run: |
@@ -210,14 +306,25 @@ jobs:
           xcrun notarytool submit DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.TEAM_ID }}" --password "${{ secrets.APP_SPECIFIC_PASSWORD }}" --wait
           xcrun stapler staple DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
         working-directory: ./script/macos
+      - name: Hash DMG
+        shell: pwsh
+        run: |
+          $package = "script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg"
+          $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
-          path: script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+          path: |
+            script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+            script/macos/DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg.sha256
+            script/macos/publish-manifest-osx-${{ matrix.cpu }}.json
   release:
     name: Publish release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     needs: [changelog, build-windows, build-linux, build-macos]
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:

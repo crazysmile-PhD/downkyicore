@@ -68,6 +68,7 @@ internal class CheeseInfoService : IInfoService
             return pages;
         }
 
+        var timeFormat = _settingsStore.Current.Video.FileNamePartTimeFormat;
         var order = 0;
         foreach (var episode in _cheeseView.Episodes)
         {
@@ -109,8 +110,6 @@ internal class CheeseInfoService : IInfoService
                 };
             }
 
-            // 文件命名中的时间格式
-            var timeFormat = _settingsStore.Current.Video.FileNamePartTimeFormat;
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(episode.ReleaseDate);

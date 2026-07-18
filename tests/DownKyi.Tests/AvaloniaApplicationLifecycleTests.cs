@@ -153,6 +153,11 @@ public sealed class AvaloniaApplicationLifecycleTests
             return [];
         }
 
+        public ApplicationLogMetrics GetMetrics()
+        {
+            return new ApplicationLogMetrics(0, 0, 0, 0, 0, 0, 0, 0, null);
+        }
+
         public Task FlushAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();

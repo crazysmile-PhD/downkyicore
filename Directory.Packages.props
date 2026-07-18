@@ -4,7 +4,7 @@
     <PackageVersion Include="Avalonia.Controls.DataGrid" Version="12.1.0" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.0" />
     <PackageVersion Include="Avalonia.Headless" Version="12.1.0" />
-    <PackageVersion Include="Avalonia.Themes.Simple" Version="12.1.0" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.0" />
     <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
     <PackageVersion Include="System.Formats.Nrbf" Version="10.0.9" />
     <PackageVersion Include="Xaml.Behaviors" Version="12.0.5" />
