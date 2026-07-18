@@ -28,7 +28,7 @@
                             Width="{Binding ArrowBack.Width}"
                             Height="{Binding ArrowBack.Height}"
                             Data="{Binding ArrowBack.Data}"
-                            Fill="{Binding ArrowBack.Fill}"
+                            Fill="{DynamicResource BrushTextDark}"
                             Stretch="None" />
                     </ContentControl>
                     <TextBlock
