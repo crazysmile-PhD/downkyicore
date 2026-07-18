@@ -195,20 +195,37 @@
 
             <Grid
                 Grid.Column="1"
-                Width="420"
-                Height="34"
+                Width="380"
+                Height="36"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 IsEnabled="{Binding ContentVisibility}">
+                <Grid.Styles>
+                    <Style Selector="Border.searchBorder">
+                        <Setter Property="Background" Value="{DynamicResource BrushBackground}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource BrushBorderTranslucent}" />
+                    </Style>
+                    <Style Selector="Grid:pointerover Border.searchBorder">
+                        <Setter Property="BorderBrush" Value="{DynamicResource BrushPrimaryTranslucent2}" />
+                    </Style>
+                    <Style Selector="Grid:focus-within Border.searchBorder">
+                        <Setter Property="Background" Value="{DynamicResource BrushPrimaryTranslucent3}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource BrushPrimary}" />
+                    </Style>
+                </Grid.Styles>
                 <Border
-                    BorderBrush="{DynamicResource BrushPrimary}"
+                    Classes="searchBorder"
                     BorderThickness="1"
-                    CornerRadius="17">
+                    CornerRadius="18">
                     <TextBox
-                        Height="32"
-                        Margin="14,0,40,0"
+                        Height="34"
+                        Margin="16,0,44,0"
                         VerticalContentAlignment="Center"
+                        Background="Transparent"
                         BorderThickness="0"
+                        FontSize="13"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Padding="0"
                         PlaceholderText="{DynamicResource SearchVideoByName}"
                         Text="{Binding InputSearchText, Mode=TwoWay}">
                         <TextBox.KeyBindings>
@@ -217,19 +234,19 @@
                     </TextBox>
                 </Border>
                 <Button
-                    Width="18"
-                    Height="18"
-                    Margin="0,0,12,0"
+                    Width="28"
+                    Height="28"
+                    Margin="0,0,4,0"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
                     Command="{Binding SearchCommand}"
-                    Theme="{StaticResource ImageBtnStyle}"
+                    Theme="{StaticResource SearchButtonStyle}"
                     ToolTip.Tip="{DynamicResource Search}">
                     <Path
-                        Width="{Binding SearchIcon.Width}"
-                        Height="{Binding SearchIcon.Height}"
+                        Width="14"
+                        Height="14"
                         Data="{Binding SearchIcon.Data}"
-                        Fill="{Binding SearchIcon.Fill}"
+                        Fill="{DynamicResource BrushForegroundDark}"
                         Stretch="Uniform" />
                 </Button>
             </Grid>

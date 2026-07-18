@@ -24,4 +24,34 @@
         </Setter>
     </ControlTheme>
 
+    <ControlTheme x:Key="SearchButtonStyle" TargetType="{x:Type Button}">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Background" Value="{DynamicResource BrushPrimary}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border
+                        Background="{TemplateBinding Background}"
+                        CornerRadius="14">
+                        <ContentPresenter
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Content="{TemplateBinding Content}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style Selector="^:pointerover">
+            <Setter Property="Background" Value="{DynamicResource BrushPrimaryTranslucent}" />
+        </Style>
+        <Style Selector="^:pressed">
+            <Setter Property="Background" Value="{DynamicResource BrushPrimaryTranslucent2}" />
+        </Style>
+        <Style Selector="^:disabled">
+            <Setter Property="Opacity" Value="0.5" />
+        </Style>
+    </ControlTheme>
+
 </ResourceDictionary>
