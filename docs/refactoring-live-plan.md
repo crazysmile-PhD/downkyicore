@@ -1,9 +1,9 @@
 # DownKyi Core Live Refactoring Plan
 
-Status: awaiting cross-platform package CI
+Status: complete
 Last updated: 2026-07-18
-Current group: PR 30-32
-Current branch: `refactor/pr-30-32-release-hardening`
+Current group: none
+Current branch: none
 
 This file contains only unfinished work. Completed items are removed in the same PR that finishes them; newly discovered debt is added immediately with an owning PR or phase.
 
@@ -18,12 +18,9 @@ This file contains only unfinished work. Completed items are removed in the same
 - A group may contain multiple ordered commits, but it must not be split into smaller public PRs or combined with another numbered range.
 - The next group starts only after the previous group has completed its full scope and passed build, tests, data compatibility checks, documentation updates, and `git diff --check`.
 
-## Active: PR 30-32 - Release Validation
+## Active Work
 
-Branch: `refactor/pr-30-32-release-hardening`
-
-- Push this branch, run the manually dispatchable `Build` workflow, and require every Windows, Linux, and macOS release-gate/package job to pass.
-- After the cross-platform run passes, remove this final item, mark the plan complete, and keep future debt as newly owned work rather than restoring completed PR 30-32 entries.
+None. Add newly discovered debt here with an explicit owner and scope; do not restore completed PR 02-32 tasks.
 
 ## Execution Rules
 

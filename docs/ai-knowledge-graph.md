@@ -1782,6 +1782,7 @@ outbound:
 contracts:
   - Stream copy may be used for ordinary compatible merge operations, but never for multi-segment DURL concat.
   - Hardware encode failure must fall back to CPU for success rate.
+  - Windows x86 uses a pinned full FFmpeg build containing both ffmpeg and ffprobe; a compact ffmpeg-only archive is not a valid release asset.
   - Host composition creates one `FfmpegProcessor`; downloads and toolbox operations share one concurrency gate.
   - `FfmpegProcessor.Instance` is forbidden because separate or implicit owners can exceed the configured CPU/GPU concurrency.
   - Multi-segment completion is accepted only after ffprobe verifies a video stream, positive expected duration, and decodable middle/tail seeks.
