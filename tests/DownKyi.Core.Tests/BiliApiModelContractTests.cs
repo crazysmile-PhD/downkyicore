@@ -133,4 +133,52 @@ public sealed class BiliApiModelContractTests
         Assert.Equal(20, page.PageSize);
         Assert.Equal(42, page.Total);
     }
+    [Theory]
+    [InlineData("https://www.bilibili.com/list/3546801722362343")]
+    [InlineData("https://www.bilibili.com/list/3546801722362343?oid=114070741065497")]
+    [InlineData("https://m.bilibili.com/list/3546801722362343/")]
+    public void UserVideoListUrlsExposeTheUploaderMid(string input)
+    {
+        Assert.True(ParseEntrance.IsUserVideoListUrl(input));
+        Assert.Equal(3546801722362343, ParseEntrance.GetUserVideoListId(input));
+    }
+
+    [Theory]
+    [InlineData("https://www.bilibili.com/list/ml1329019876")]
+    [InlineData("https://www.bilibili.com/list/not-a-mid")]
+    public void UserVideoListUrlsRejectOtherListTypes(string input)
+    {
+        Assert.False(ParseEntrance.IsUserVideoListUrl(input));
+        Assert.Equal(-1, ParseEntrance.GetUserVideoListId(input));
+    }
+
+    [Fact]
+    public void UserVideoListResponsePreservesPagingAndArchiveMetadata()
+    {
+        var response = JsonConvert.DeserializeObject<UserVideoListOrigin>("""
+            {
+              "data": {
+                "archives": [{
+                  "aid": 114070741065497,
+                  "bvid": "BV1T7P7eFEn5",
+                  "pic": "https://example.invalid/cover.jpg",
+                  "title": "Sample video",
+                  "duration": 294,
+                  "pubdate": 1740582876,
+                  "attr": 0,
+                  "author": { "mid": 3546801722362343, "name": "Uploader" },
+                  "stat": { "view": 405 }
+                }],
+                "page": { "count": 1224, "pn": 1, "ps": 20 }
+              }
+            }
+            """);
+
+        Assert.NotNull(response?.Data);
+        Assert.Equal(1224, response.Data.Page.Count);
+        var archive = Assert.Single(response.Data.Archives);
+        Assert.Equal("BV1T7P7eFEn5", archive.Bvid);
+        Assert.Equal(3546801722362343, archive.Author.Mid);
+        Assert.Equal(405, archive.Stat.View);
+    }
 }

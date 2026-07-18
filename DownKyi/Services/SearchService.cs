@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Utils;
@@ -27,6 +28,7 @@ internal class SearchService
     /// 课程ss号：https://www.bilibili.com/cheese/play/ss205 <para/>
     /// 课程ep号：https://www.bilibili.com/cheese/play/ep3489 <para/>
     /// 收藏夹：ml1329019876, ML1329019876, https://www.bilibili.com/medialist/detail/ml1329019876, https://www.bilibili.com/medialist/play/ml1329019876/ <para/>
+    /// UP主视频列表：https://www.bilibili.com/list/3546801722362343 <para/>
     /// 用户空间：uid928123, UID928123, uid:928123, UID:928123, https://space.bilibili.com/928123
     /// </summary>
     /// <param name="input"></param>
@@ -100,6 +102,16 @@ internal class SearchService
         else if (ParseEntrance.IsUserUrl(justId))
         {
             NavigateToView.NavigateToViewUserSpace(eventAggregator, ViewIndexViewModel.Tag, ParseEntrance.GetUserId(justId));
+        }
+        // UP主全部视频列表
+        else if (ParseEntrance.IsUserVideoListUrl(justId))
+        {
+            var data = new Dictionary<string, object>
+            {
+                { "mid", ParseEntrance.GetUserVideoListId(justId) },
+                { "userVideoList", true }
+            };
+            NavigateToView.NavigationView(eventAggregator, ViewPublicationViewModel.Tag, parentViewName, data);
         }
         // 收藏夹
         else if (ParseEntrance.IsFavoritesId(justId))

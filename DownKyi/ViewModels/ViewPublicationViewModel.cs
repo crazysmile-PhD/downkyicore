@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using DownKyi.Commands;
+using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Utils;
 using DownKyi.CustomControl;
@@ -34,6 +35,7 @@ namespace DownKyi.ViewModels
         private CancellationTokenSource? _tokenSource;
 
         private long _mid = -1;
+        private bool _isUserVideoList;
 
         // 每页视频数量，暂时在此写死，以后在设置中增加选项
         private const int VideoNumberInPage = 30;
@@ -46,6 +48,14 @@ namespace DownKyi.ViewModels
         {
             get => _pageName;
             set => SetProperty(ref _pageName, value);
+        }
+
+        private string _pageTitle = string.Empty;
+
+        public string PageTitle
+        {
+            get => _pageTitle;
+            set => SetProperty(ref _pageTitle, value);
         }
 
         private bool _loading;
@@ -149,6 +159,7 @@ namespace DownKyi.ViewModels
             Loading = true;
             LoadingVisibility = false;
             NoDataVisibility = false;
+            PageTitle = DictionaryResource.GetString("Publication");
 
             _arrowBack = NavigationIcon.Instance().ArrowBack;
             _arrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
@@ -405,6 +416,29 @@ namespace DownKyi.ViewModels
             {
                 await Task.Run(() =>
                 {
+                    if (_isUserVideoList)
+                    {
+                        var userVideoList = Core.BiliApi.Users.UserSpace.GetUserVideoList(
+                            _mid,
+                            current,
+                            VideoNumberInPage,
+                            cancellationToken);
+                        if (userVideoList == null || userVideoList.Archives.Count == 0)
+                        {
+                            LoadingVisibility = false;
+                            NoDataVisibility = true;
+                            return;
+                        }
+
+                        foreach (var video in userVideoList.Archives)
+                        {
+                            AddUserVideoListMedia(video);
+                            cancellationToken.ThrowIfCancellationRequested();
+                        }
+
+                        return;
+                    }
+
                     var publications = Core.BiliApi.Users.UserSpace.GetPublication(_mid, current, VideoNumberInPage, tab.Id);
                     if (publications == null)
                     {
@@ -477,6 +511,75 @@ namespace DownKyi.ViewModels
             }
         }
 
+        private void AddUserVideoListMedia(UserVideoListArchive video)
+        {
+            var play = video.Stat.View > 0 ? Format.FormatNumber(video.Stat.View) : "--";
+            var createTime = DateTimeOffset.FromUnixTimeSeconds(video.Pubdate)
+                .ToLocalTime()
+                .ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
+
+            App.PropertyChangeAsync(() =>
+            {
+                Medias.Add(new PublicationMedia(EventAggregator)
+                {
+                    Avid = video.Aid,
+                    Bvid = video.Bvid,
+                    Cover = _defaultPic,
+                    Duration = Format.FormatDuration2(video.Duration),
+                    Title = video.Title,
+                    PlayNumber = play,
+                    CreateTime = createTime,
+                    CoverUrl = video.Pic
+                });
+
+                LoadingVisibility = false;
+                NoDataVisibility = false;
+            });
+        }
+
+        private async Task InitializeUserVideoListAsync()
+        {
+            var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
+            try
+            {
+                LoadingVisibility = true;
+                IsEnabled = false;
+                var list = await Task.Run(
+                    () => Core.BiliApi.Users.UserSpace.GetUserVideoList(_mid, 1, 1, cancellationToken),
+                    cancellationToken).ConfigureAwait(true);
+                if (list == null || list.Page.Count <= 0)
+                {
+                    LoadingVisibility = false;
+                    NoDataVisibility = true;
+                    return;
+                }
+
+                TabHeaders.Add(new TabHeader
+                {
+                    Id = 0,
+                    Title = DictionaryResource.GetString("AllPublicationZones"),
+                    SubTitle = list.Page.Count.ToString(CultureInfo.CurrentCulture)
+                });
+                SelectTabId = 0;
+
+                Pager = new CustomPagerViewModel(
+                    1,
+                    (int)Math.Ceiling((double)list.Page.Count / VideoNumberInPage));
+                Pager.CurrentChanging += OnCurrentChangedPager;
+                Pager.CountChanged += OnCountChangedPager;
+
+                IsEnabled = true;
+                await UpdatePublication(1).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            finally
+            {
+                IsEnabled = true;
+            }
+        }
+
         /// <summary>
         /// 初始化页面数据
         /// </summary>
@@ -514,6 +617,15 @@ namespace DownKyi.ViewModels
             InitView();
 
             _mid = (long)parameter["mid"];
+            _isUserVideoList = parameter.TryGetValue("userVideoList", out var source)
+                && source is true;
+            if (_isUserVideoList)
+            {
+                PageTitle = DictionaryResource.GetString("UserVideoList");
+                RunFireAndForget(InitializeUserVideoListAsync(), nameof(InitializeUserVideoListAsync));
+                return;
+            }
+
             var tid = (int)parameter["tid"];
             var zones = (List<PublicationZone>)parameter["list"];
 

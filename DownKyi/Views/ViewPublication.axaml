@@ -141,7 +141,7 @@
                         VerticalAlignment="Center"
                         FontSize="16"
                         Foreground="{DynamicResource BrushTextDark}"
-                        Text="{DynamicResource Publication}" />
+                        Text="{Binding PageTitle}" />
                 </StackPanel>
             </Button>
             <Button

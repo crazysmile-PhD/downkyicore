@@ -184,6 +184,31 @@ public static class UserSpace
 
     #endregion
 
+    #region UP主视频列表
+
+    /// <summary>
+    /// 查询 /list/{mid} 页面中的UP主全部视频。
+    /// </summary>
+    public static UserVideoListData? GetUserVideoList(
+        long mid,
+        int pageNumber,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"https://api.bilibili.com/x/space/arc/list?mid={mid}&pn={pageNumber}&ps={pageSize}";
+        var referer = $"https://www.bilibili.com/list/{mid}";
+        var origin = BiliApiRequest.RequestJson<UserVideoListOrigin>(
+            url,
+            referer,
+            nameof(GetUserVideoList),
+            "UserSpace",
+            cancellationToken);
+
+        return origin?.Data;
+    }
+
+    #endregion
+
     #region 频道
 
     /// <summary>

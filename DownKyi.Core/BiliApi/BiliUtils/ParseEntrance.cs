@@ -15,6 +15,7 @@ namespace DownKyi.Core.BiliApi.BiliUtils;
 /// 课程ss号：https://www.bilibili.com/cheese/play/ss205 <para/>
 /// 课程ep号：https://www.bilibili.com/cheese/play/ep3489 <para/>
 /// 收藏夹：ml1329019876, ML1329019876, https://www.bilibili.com/medialist/detail/ml1329019876, https://www.bilibili.com/medialist/play/ml1329019876/, https://www.bilibili.com/list/ml1329019876 <para/>
+/// UP主视频列表：https://www.bilibili.com/list/3546801722362343 <para/>
 /// 用户空间：uid928123, UID928123, uid:928123, UID:928123, https://space.bilibili.com/928123
 /// </summary>
 public static class ParseEntrance
@@ -389,6 +390,31 @@ public static class ParseEntrance
         }
 
         return -1;
+    }
+
+    #endregion
+
+    #region UP主视频列表
+
+    /// <summary>
+    /// 是否为UP主全部视频列表URL。
+    /// </summary>
+    public static bool IsUserVideoListUrl(string input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var id = GetId(input, FavoritesUrl3);
+        return Regex.IsMatch(id, @"^\d+$");
+    }
+
+    /// <summary>
+    /// 获取UP主全部视频列表中的用户mid。
+    /// </summary>
+    public static long GetUserVideoListId(string input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        return IsUserVideoListUrl(input)
+            ? Number.GetInt(GetId(input, FavoritesUrl3))
+            : -1;
     }
 
     #endregion
