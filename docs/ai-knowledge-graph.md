@@ -114,7 +114,9 @@ flowchart TD
     ArchitectureTests["test.architecture-boundaries\nDownKyi.Architecture.Tests"]
     UiSmoke["test.ui-smoke\nDownKyi.Desktop.Tests"]
     Benchmarks["test.performance-baseline\nBenchmarkCases + runner"]
+    SystemBenchmarks["test.system-performance\nisolated system scenarios"]
     CI["workflow.strict-pr-ci\n.github/workflows/quality.yml"]
+    Nightly["workflow.system-baselines\nnightly cross-platform reports"]
     AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
 
     Program -->|calls| App
@@ -133,6 +135,11 @@ flowchart TD
     SqliteStore -->|persists| DownloadDomain
     Storage -->|projects legacy UI| DownloadDomain
     Storage -->|calls| StoreContract
+    SystemBenchmarks -->|measures| Host
+    SystemBenchmarks -->|measures| SqliteStore
+    SystemBenchmarks -->|measures| DownloadService
+    SystemBenchmarks -->|measures| FFmpeg
+    Nightly -->|runs| SystemBenchmarks
     MainWindow -->|binds| MainVm
     MainWindow -->|awaits close cleanup| Lifecycle
     MainWindow -->|renders remote artwork| AsyncImage
@@ -1875,6 +1882,32 @@ tests:
   - git diff --check
 ```
 
+### workflow.system-baselines
+
+```yaml
+id: workflow.system-baselines
+type: workflow
+paths:
+  - .github/workflows/system-benchmarks.yml
+  - benchmarks/DownKyi.SystemBenchmarks
+  - docs/performance-baseline.md
+responsibility: Runs isolated, metadata-complete system performance scenarios on Windows, Linux, and macOS and uploads JSON evidence without enforcing unstable metric thresholds.
+inbound:
+  - github.schedule
+  - github.workflow_dispatch
+outbound:
+  - test.system-performance
+contracts:
+  - Every report identifies runtime, OS, architecture, dataset, backend, and commit SHA.
+  - Each scenario owns a fresh process boundary when the full suite runs.
+  - Scenario execution and report generation are required; metric values remain non-gating.
+hazards:
+  - Loopback throughput does not represent Bilibili or CDN limits.
+  - Results from different machines or runner images are not directly comparable.
+tests:
+  - github.actions
+```
+
 ## Important Call Flows
 
 ### Startup
@@ -2406,6 +2439,20 @@ test.performance-baseline:
     - request preparation and JSON allocation baselines are reproducible
     - a benchmark run must produce a result row; process exit code zero alone does not prove BenchmarkDotNet executed a case
 
+test.system-performance:
+  paths:
+    - benchmarks/DownKyi.SystemBenchmarks
+    - tests/DownKyi.Tests/DownloadProgressUiUpdaterTests.cs
+    - docs/performance-baseline.md
+  guards:
+    - cold and warm shell startup include Host composition, MainWindow resolution, and full XAML loading
+    - unfinished-task restore reports peak working set from an isolated process
+    - SQLite progress samples coalesce to bounded writes per task-minute
+    - built-in loopback throughput is measured at 1, 4, and 8 concurrent tasks
+    - production UI progress projection is bounded while completion and maximum speed remain visible
+    - actual CPU and available hardware FFmpeg encoders report concurrency and peak child-process working set
+    - complete reports include runtime, OS, architecture, dataset, backend, and commit SHA
+
 test.video-input-resolver:
   paths:
     - tests/DownKyi.Application.Tests/VideoInputResolverTests.cs
@@ -2477,17 +2524,6 @@ test.json-contracts:
     - empty string and HTML error pages fail as JSON
     - optional endpoint envelopes preserve missing versus present-but-empty states and select ordinary/bangumi/cheese payload fields explicitly
 
-test.system-performance:
-  status: planned-for-pr-30-32
-  should_guard:
-    - cold and warm shell startup time
-    - peak working set during unfinished-task restore
-    - SQLite writes per task-minute
-    - aggregate throughput at 1, 4, and 8 tasks
-    - UI progress notifications per second
-    - FFmpeg CPU/GPU concurrency and peak memory
-  metadata:
-    - runtime, OS, architecture, dataset size, backend, and commit SHA
 ```
 
 ## AI Edit Protocol

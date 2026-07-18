@@ -22,15 +22,8 @@ This file contains only unfinished work. Completed items are removed in the same
 
 Branch: `refactor/pr-30-32-release-hardening`
 
-- Add deterministic cold/warm shell startup time baselines.
-- Measure peak working set while restoring unfinished tasks.
-- Measure SQLite progress writes per task-minute.
-- Measure aggregate transfer throughput with 1, 4, and 8 concurrent tasks.
-- Measure UI progress notifications per second.
-- Measure FFmpeg CPU/GPU concurrency and peak memory.
-- Every system baseline must record runtime, OS, architecture, dataset size, downloader backend, and commit SHA; never compare ad-hoc stopwatch values from different machines.
 - Investigate the current 1,488 B/request URL-building allocation only if traces show it is hot.
-- Optimize startup history loading, progress batching, worker limits, caches, and controlled collection parsing with benchmark or trace evidence.
+- Optimize startup history loading, worker limits, caches, and controlled collection parsing only with benchmark or trace evidence.
 - Replace the remaining process-global aria RPC configuration with an injected per-runtime client without changing local/custom aria ownership, GID persistence, or resume behavior.
 - Complete the logging modernization task derived from `deep-research-report.md` against the current `ApplicationLogProvider`: UTC `YYYY-MM-DD` directories, JSONL streams, 32 MiB rotation, seven-day hard retention, 512 MiB safety cap, active-file protection, startup/hourly/day-change/rotation/pre-export maintenance, and an AI-first redacted export manifest.
 - Add deterministic logging retention/rotation/export tests and storage metrics (`capacity_ratio`, age/capacity deletion counts, bytes/events written) before changing the current capacity limit.
