@@ -113,6 +113,20 @@ public static class UserSpace
     /// <returns></returns>
     public static SpacePublicationList? GetPublication(long mid, int pn, int ps, long tid = 0, PublicationOrder order = PublicationOrder.PUBDATE, string keyword = "")
     {
+        return GetPublicationResult(mid, pn, ps, tid, order, keyword)?.List;
+    }
+
+    /// <summary>
+    /// 查询用户投稿视频和筛选后的分页信息。
+    /// </summary>
+    public static SpacePublication? GetPublicationResult(
+        long mid,
+        int pn,
+        int ps,
+        long tid = 0,
+        PublicationOrder order = PublicationOrder.PUBDATE,
+        string keyword = "")
+    {
         var parameters = new Dictionary<string, object?>
         {
             { "mid", mid },
@@ -150,7 +164,7 @@ public static class UserSpace
             };
 
             var spacePublication = JsonConvert.DeserializeObject<SpacePublicationOrigin>(response, settings);
-            return spacePublication?.Data?.List;
+            return spacePublication?.Data;
         }
         catch (OperationCanceledException)
         {

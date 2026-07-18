@@ -36,6 +36,9 @@ namespace DownKyi.ViewModels
 
         private long _mid = -1;
         private bool _isUserVideoList;
+        private string _activeSearchText = string.Empty;
+        private IReadOnlyList<UserVideoListArchive>? _allUserVideoListArchives;
+        private IReadOnlyList<UserVideoListArchive>? _userVideoSearchResults;
 
         // 每页视频数量，暂时在此写死，以后在设置中增加选项
         private const int VideoNumberInPage = 30;
@@ -56,6 +59,14 @@ namespace DownKyi.ViewModels
         {
             get => _pageTitle;
             set => SetProperty(ref _pageTitle, value);
+        }
+
+        private string _inputSearchText = string.Empty;
+
+        public string InputSearchText
+        {
+            get => _inputSearchText;
+            set => SetProperty(ref _inputSearchText, value);
         }
 
         private bool _loading;
@@ -96,6 +107,14 @@ namespace DownKyi.ViewModels
         {
             get => _downloadManage;
             set => SetProperty(ref _downloadManage, value);
+        }
+
+        private VectorImage _searchIcon = null!;
+
+        public VectorImage SearchIcon
+        {
+            get => _searchIcon;
+            set => SetProperty(ref _searchIcon, value);
         }
 
         private ObservableCollection<TabHeader> _tabHeaders;
@@ -170,6 +189,9 @@ namespace DownKyi.ViewModels
             _downloadManage.Width = 24;
             _downloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
+            SearchIcon = ButtonIcon.Instance().GeneralSearch;
+            SearchIcon.Fill = DictionaryResource.GetColor("ColorPrimary");
+
             _tabHeaders = new ObservableCollection<TabHeader>();
             _medias = new ObservableCollection<PublicationMedia>();
             _pager = new CustomPagerViewModel(1, 1);
@@ -240,11 +262,42 @@ namespace DownKyi.ViewModels
                 return;
             }
 
+            InputSearchText = string.Empty;
+            _activeSearchText = string.Empty;
+            _userVideoSearchResults = null;
+
             // 页面选择
             Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
             Pager.CurrentChanging += OnCurrentChangedPager;
             Pager.CountChanged += OnCountChangedPager;
             Pager.Current = 1;
+        }
+
+        private DelegateCommand? _searchCommand;
+
+        public DelegateCommand SearchCommand => _searchCommand ??= new DelegateCommand(ExecuteSearchCommand);
+
+        private void ExecuteSearchCommand()
+        {
+            if (!IsEnabled || SelectTabId < 0 || SelectTabId >= TabHeaders.Count)
+            {
+                return;
+            }
+
+            _activeSearchText = InputSearchText.Trim();
+            Medias.Clear();
+            IsSelectAll = false;
+            LoadingVisibility = true;
+            NoDataVisibility = false;
+
+            if (_isUserVideoList && !string.IsNullOrWhiteSpace(_activeSearchText))
+            {
+                RunFireAndForget(SearchUserVideoListAsync(), nameof(SearchUserVideoListAsync));
+                return;
+            }
+
+            _userVideoSearchResults = null;
+            RunFireAndForget(UpdatePublication(1, true), nameof(UpdatePublication));
         }
 
         /// <summary>
@@ -399,7 +452,7 @@ namespace DownKyi.ViewModels
 
         private readonly Bitmap _defaultPic = ImageHelper.LoadFromResource(new Uri("avares://DownKyi/Resources/video-placeholder.png"));
 
-        private async Task UpdatePublication(int current)
+        private async Task UpdatePublication(int current, bool updatePager = false)
         {
             if (_tokenSource != null)
             {
@@ -418,11 +471,38 @@ namespace DownKyi.ViewModels
                 {
                     if (_isUserVideoList)
                     {
+                        if (_userVideoSearchResults != null)
+                        {
+                            var page = _userVideoSearchResults
+                                .Skip((current - 1) * VideoNumberInPage)
+                                .Take(VideoNumberInPage)
+                                .ToList();
+                            if (page.Count == 0)
+                            {
+                                LoadingVisibility = false;
+                                NoDataVisibility = true;
+                                return;
+                            }
+
+                            foreach (var video in page)
+                            {
+                                AddUserVideoListMedia(video);
+                                cancellationToken.ThrowIfCancellationRequested();
+                            }
+
+                            return;
+                        }
+
                         var userVideoList = Core.BiliApi.Users.UserSpace.GetUserVideoList(
                             _mid,
                             current,
                             VideoNumberInPage,
                             cancellationToken);
+                        if (updatePager)
+                        {
+                            App.PropertyChangeAsync(() => ConfigurePager(userVideoList?.Page.Count ?? 0));
+                        }
+
                         if (userVideoList == null || userVideoList.Archives.Count == 0)
                         {
                             LoadingVisibility = false;
@@ -439,7 +519,18 @@ namespace DownKyi.ViewModels
                         return;
                     }
 
-                    var publications = Core.BiliApi.Users.UserSpace.GetPublication(_mid, current, VideoNumberInPage, tab.Id);
+                    var publication = Core.BiliApi.Users.UserSpace.GetPublicationResult(
+                        _mid,
+                        current,
+                        VideoNumberInPage,
+                        tab.Id,
+                        keyword: _activeSearchText);
+                    if (updatePager)
+                    {
+                        App.PropertyChangeAsync(() => ConfigurePager(publication?.Page.Count ?? 0));
+                    }
+
+                    var publications = publication?.List;
                     if (publications == null)
                     {
                         // 没有数据，UI提示
@@ -509,6 +600,93 @@ namespace DownKyi.ViewModels
             {
                 IsEnabled = true;
             }
+        }
+
+        private async Task SearchUserVideoListAsync()
+        {
+            var cancellationToken = ReplaceCancellationSource(ref _tokenSource);
+            try
+            {
+                IsEnabled = false;
+                if (_allUserVideoListArchives == null)
+                {
+                    _allUserVideoListArchives = await Task.Run(
+                        () => GetAllUserVideoListArchives(_mid, cancellationToken),
+                        cancellationToken).ConfigureAwait(true);
+                }
+
+                _userVideoSearchResults = FilterUserVideoList(
+                    _allUserVideoListArchives,
+                    _activeSearchText);
+                ConfigurePager(_userVideoSearchResults.Count);
+
+                IsEnabled = true;
+                await UpdatePublication(1).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            finally
+            {
+                IsEnabled = true;
+            }
+        }
+
+        private static IReadOnlyList<UserVideoListArchive> GetAllUserVideoListArchives(
+            long mid,
+            CancellationToken cancellationToken)
+        {
+            const int pageSize = 50;
+            var first = Core.BiliApi.Users.UserSpace.GetUserVideoList(mid, 1, pageSize, cancellationToken);
+            if (first == null || first.Archives.Count == 0)
+            {
+                return Array.Empty<UserVideoListArchive>();
+            }
+
+            var result = new List<UserVideoListArchive>(first.Archives);
+            var pageCount = (int)Math.Ceiling((double)first.Page.Count / pageSize);
+            for (var page = 2; page <= pageCount; page++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var data = Core.BiliApi.Users.UserSpace.GetUserVideoList(
+                    mid,
+                    page,
+                    pageSize,
+                    cancellationToken);
+                if (data == null || data.Archives.Count == 0)
+                {
+                    break;
+                }
+
+                result.AddRange(data.Archives);
+            }
+
+            return result;
+        }
+
+        internal static IReadOnlyList<UserVideoListArchive> FilterUserVideoList(
+            IEnumerable<UserVideoListArchive> videos,
+            string keyword)
+        {
+            ArgumentNullException.ThrowIfNull(videos);
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                return videos.ToList();
+            }
+
+            var normalized = keyword.Trim();
+            return videos
+                .Where(video => video.Title.Contains(normalized, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        private void ConfigurePager(int itemCount)
+        {
+            Pager = new CustomPagerViewModel(
+                1,
+                Math.Max(1, (int)Math.Ceiling((double)itemCount / VideoNumberInPage)));
+            Pager.CurrentChanging += OnCurrentChangedPager;
+            Pager.CountChanged += OnCountChangedPager;
         }
 
         private void AddUserVideoListMedia(UserVideoListArchive video)
@@ -592,10 +770,17 @@ namespace DownKyi.ViewModels
             DownloadManage.Width = 24;
             DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
+            SearchIcon = ButtonIcon.Instance().GeneralSearch;
+            SearchIcon.Fill = DictionaryResource.GetColor("ColorPrimary");
+
             TabHeaders.Clear();
             Medias.Clear();
             SelectTabId = -1;
             IsSelectAll = false;
+            InputSearchText = string.Empty;
+            _activeSearchText = string.Empty;
+            _allUserVideoListArchives = null;
+            _userVideoSearchResults = null;
         }
 
         /// <summary>

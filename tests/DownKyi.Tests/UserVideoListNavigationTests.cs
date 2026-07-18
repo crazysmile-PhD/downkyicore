@@ -9,6 +9,23 @@ namespace DownKyi.Tests;
 public sealed class UserVideoListNavigationTests
 {
     [Fact]
+    public void NumericUserVideoSearchFiltersTitlesCaseInsensitively()
+    {
+        var videos = new[]
+        {
+            new DownKyi.Core.BiliApi.Users.Models.UserVideoListArchive { Title = "Aespa Lemonade" },
+            new DownKyi.Core.BiliApi.Users.Models.UserVideoListArchive { Title = "其他视频" },
+            new DownKyi.Core.BiliApi.Users.Models.UserVideoListArchive { Title = "AESPA Drama" }
+        };
+
+        var result = ViewPublicationViewModel.FilterUserVideoList(videos, " aespa ");
+
+        Assert.Equal(2, result.Count);
+        Assert.All(result, video =>
+            Assert.Contains("aespa", video.Title, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void NumericListUrlNavigatesToTheUploaderVideoList()
     {
         var eventAggregator = new EventAggregator();
