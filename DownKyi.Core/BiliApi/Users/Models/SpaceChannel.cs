@@ -7,7 +7,7 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 public class SpaceChannelOrigin : BaseModel
 {
     [JsonProperty("data")]
-    public SpaceChannel Data { get; set; } = new();
+    public SpaceChannel? Data { get; set; }
 }
 
 public class SpaceChannel : BaseModel

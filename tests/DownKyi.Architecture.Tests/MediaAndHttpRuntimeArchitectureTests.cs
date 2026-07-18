@@ -1,8 +1,40 @@
+using System.Text.RegularExpressions;
+
 namespace DownKyi.Architecture.Tests;
 
 public sealed class MediaAndHttpRuntimeArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+
+    [Fact]
+    public void VideoMetadataDoesNotCaptureAnOperationTokenInLazyState()
+    {
+        var videoInfoSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "VideoInfoService.cs"));
+        var pageSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "PageViewModels",
+            "VideoPage.cs"));
+        var addSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Download",
+            "AddToDownloadService.cs"));
+
+        Assert.DoesNotContain("LazyTags", videoInfoSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("_cancellationToken", videoInfoSource, StringComparison.Ordinal);
+        Assert.Contains("LoadTagsAsync = currentToken =>", videoInfoSource, StringComparison.Ordinal);
+        Assert.Contains("Func<CancellationToken, Task<IReadOnlyList<string>>> LoadTagsAsync", pageSource,
+            StringComparison.Ordinal);
+        Assert.Contains("BuildMovieMetadataAsync", addSource, StringComparison.Ordinal);
+        Assert.Contains("page.LoadTagsAsync(cancellationToken)", addSource, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void FfmpegRuntimeDoesNotRestoreSynchronousProcessWaits()
@@ -55,7 +87,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyDesktopComposition.cs"));
+            "DesktopComposition.cs"));
         var registrationSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "DownKyi.Core",
@@ -63,7 +95,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "BilibiliHttpClientRegistration.cs"));
 
         Assert.DoesNotContain("AddDownKyiBilibiliHttpClient()", appSource, StringComparison.Ordinal);
-        Assert.Contains("AddDownKyiBilibiliHttpClient(settingsStore)", compositionSource, StringComparison.Ordinal);
+        Assert.Contains("AddDownKyiBilibiliHttpClient()", compositionSource, StringComparison.Ordinal);
         Assert.Contains("AddHttpClient<BilibiliHttpClient>", registrationSource, StringComparison.Ordinal);
         Assert.Contains("ConfigurePrimaryHttpMessageHandler", registrationSource, StringComparison.Ordinal);
         Assert.Contains("ISettingsStore settingsStore", registrationSource, StringComparison.Ordinal);
@@ -116,6 +148,67 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.Contains("BilibiliApiResponseException", source, StringComparison.Ordinal);
         Assert.DoesNotContain("return null", source, StringComparison.Ordinal);
         Assert.DoesNotContain("return default", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WbiSigningUsesExplicitRuntimeKeysInsteadOfSettingsSnapshots()
+    {
+        var signSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "BiliApi",
+            "Sign",
+            "WbiSign.cs"));
+        var endpointPaths = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Video", "VideoInfo.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "VideoStream", "VideoStreamApi.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserInfo.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserSpace.cs")
+        };
+
+        Assert.DoesNotContain("ISettingsStore", signSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DateTimeOffset.Now", signSource, StringComparison.Ordinal);
+        foreach (var path in endpointPaths)
+        {
+            var source = File.ReadAllText(path);
+            Assert.DoesNotContain("ISettingsStore", source, StringComparison.Ordinal);
+            Assert.Contains("WbiKeys", source, StringComparison.Ordinal);
+        }
+
+        var navigationModel = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "BiliApi",
+            "Users",
+            "Models",
+            "UserInfoForNavigation.cs"));
+        Assert.Contains("public Wbi? Wbi", navigationModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void JsonEnvelopeFieldsCannotHideMissingPayloadsWithDefaultInitializers()
+    {
+        const string defaultEnvelopePattern =
+            @"\[JsonProperty(?:Name)?\(\""(?:data|result|error|payload)\""\)\]\s*" +
+            @"public[^\{\r\n]+\{\s*get;\s*set;\s*\}\s*=\s*(?:new\b|Array\.Empty)";
+        var roots = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "Aria2cNet", "Client", "Entity")
+        };
+        var violations = roots
+            .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+            .Where(path => Regex.IsMatch(
+                File.ReadAllText(path),
+                defaultEnvelopePattern,
+                RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(2)))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
     }
 
     [Fact]

@@ -3,10 +3,13 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
+using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Core.FileName;
@@ -14,6 +17,7 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Models;
+using DownKyi.Services.Video;
 using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.ViewModels.PageViewModels;
@@ -31,8 +35,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     private VideoInfoView? _videoInfoView;
     private IList<VideoSection>? _videoSections;
     private readonly DownloadListState _downloadLists;
-    private readonly DownloadStorageService _downloadStorageService;
+    private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly ISettingsStore _settingsStore;
+    private readonly IVideoTagProvider _tagProvider;
     private readonly IUserNotificationService _notificationService;
     private readonly IAppDialogService _dialogService;
 
@@ -48,71 +53,35 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     /// </summary>
     /// <param name="streamType"></param>
     /// <param name="downloadLists"></param>
-    /// <param name="downloadStorageService"></param>
+    /// <param name="projectionStore"></param>
     public AddToDownloadService(
         PlayStreamType streamType,
         DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService,
+        DownloadTaskProjectionStore projectionStore,
         ISettingsStore settingsStore,
+        IVideoTagProvider tagProvider,
+        IWbiKeyProvider wbiKeyProvider,
         IUserNotificationService notificationService,
         IAppDialogService dialogService,
         ILogger<AddToDownloadService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
-        _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _projectionStore = projectionStore ?? throw new ArgumentNullException(nameof(projectionStore));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
             case PlayStreamType.Video:
-                _videoInfoService = new VideoInfoService(null, settingsStore);
+                _videoInfoService = new VideoInfoService(settingsStore, _tagProvider, wbiKeyProvider);
                 break;
             case PlayStreamType.Bangumi:
                 _videoInfoService = new BangumiInfoService(null, settingsStore);
                 break;
             case PlayStreamType.Cheese:
                 _videoInfoService = new CheeseInfoService(null, settingsStore);
-                break;
-            default:
-                break;
-        }
-    }
-
-    /// <summary>
-    /// 添加下载
-    /// </summary>
-    /// <param name="id"></param>
-    /// <param name="streamType"></param>
-    /// <param name="downloadLists"></param>
-    /// <param name="downloadStorageService"></param>
-    public AddToDownloadService(
-        string id,
-        PlayStreamType streamType,
-        DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService,
-        ISettingsStore settingsStore,
-        IUserNotificationService notificationService,
-        IAppDialogService dialogService,
-        ILogger<AddToDownloadService> logger)
-    {
-        _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
-        _downloadStorageService = downloadStorageService ?? throw new ArgumentNullException(nameof(downloadStorageService));
-        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
-        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
-        _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        switch (streamType)
-        {
-            case PlayStreamType.Video:
-                _videoInfoService = new VideoInfoService(id, settingsStore);
-                break;
-            case PlayStreamType.Bangumi:
-                _videoInfoService = new BangumiInfoService(id, settingsStore);
-                break;
-            case PlayStreamType.Cheese:
-                _videoInfoService = new CheeseInfoService(id, settingsStore);
                 break;
             default:
                 break;
@@ -170,7 +139,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     /// 解析视频流
     /// </summary>
     /// <param name="videoInfoService"></param>
-    public void ParseVideo(IInfoService videoInfoService)
+    public async Task ParseVideoAsync(
+        IInfoService videoInfoService,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(videoInfoService);
 
@@ -183,8 +154,12 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         {
             foreach (var page in section.VideoPages)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 // 执行解析任务
-                Utils.VideoPageInfo(videoInfoService.GetVideoStream(page), page, _settingsStore);
+                var playUrl = await videoInfoService
+                    .GetVideoStreamAsync(page, cancellationToken)
+                    .ConfigureAwait(false);
+                Utils.VideoPageInfo(playUrl, page, _settingsStore);
             }
         }
     }
@@ -325,10 +300,10 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 while (page.VideoQuality == null && retry < 5)
                 {
                     // 执行解析任务
-                    Utils.VideoPageInfo(
-                        _videoInfoService.GetVideoStream(page, cancellationToken),
-                        page,
-                        _settingsStore);
+                    var playUrl = await _videoInfoService
+                        .GetVideoStreamAsync(page, cancellationToken)
+                        .ConfigureAwait(false);
+                    Utils.VideoPageInfo(playUrl, page, _settingsStore);
                     retry++;
                 }
 
@@ -414,7 +389,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
                                     if (result == AppDialogOutcome.Accepted)
                                     {
-                                        await _downloadStorageService
+                                        await _projectionStore
                                             .RemoveDownloadedAsync(item, cancellationToken)
                                             .ConfigureAwait(true);
                                         _downloadLists.Downloaded.Remove(item);
@@ -611,10 +586,12 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
                 if (settings.Video.Content.GenerateMovieMetadata && _downloadVideo)
                 {
-                    downloadingItem.Metadata = BuildMovieMetadata(page);
+                    downloadingItem.Metadata = await BuildMovieMetadataAsync(
+                        page,
+                        cancellationToken).ConfigureAwait(true);
                 }
 
-                await _downloadStorageService
+                await _projectionStore
                     .AddDownloadingAsync(downloadingItem, cancellationToken)
                     .ConfigureAwait(true);
                 addedItems.Add(downloadingItem);
@@ -634,7 +611,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         return parameters.TryGetValue(key, out var value) && value is true;
     }
 
-    private MovieMetadata BuildMovieMetadata(VideoPage page)
+    private async Task<MovieMetadata> BuildMovieMetadataAsync(
+        VideoPage page,
+        CancellationToken cancellationToken)
     {
         var score = _videoInfoView?.Score;
         var metadata = new MovieMetadata
@@ -652,7 +631,27 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
             metadata.Genres.Add(genre);
         }
 
-        foreach (var tag in page.LazyTags?.Value ?? Enumerable.Empty<string>())
+        IReadOnlyList<string> tags;
+        try
+        {
+            tags = await page.LoadTagsAsync(cancellationToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception e) when (e is HttpRequestException
+            or IOException
+            or BilibiliApiResponseException
+            or Newtonsoft.Json.JsonException)
+        {
+            _logger.LogWarningMessage(
+                "Optional video tags could not be loaded; the download task will continue without tags.",
+                e);
+            tags = Array.Empty<string>();
+        }
+
+        foreach (var tag in tags)
         {
             metadata.Tags.Add(tag);
         }

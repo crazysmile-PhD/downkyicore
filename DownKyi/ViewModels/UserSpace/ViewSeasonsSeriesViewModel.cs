@@ -4,13 +4,12 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Storage;
 using DownKyi.Images;
 using DownKyi.Utils;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.UserSpace;
 
@@ -56,9 +55,9 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     #region 命令申明
 
     // 视频选择事件
-    private DelegateCommand<object>? _seasonsSeriesCommand;
+    private RelayCommand<object>? _seasonsSeriesCommand;
 
-    public DelegateCommand<object> SeasonsSeriesCommand => _seasonsSeriesCommand ??= new DelegateCommand<object>(ExecuteSeasonsSeriesCommand);
+    public RelayCommand<object> SeasonsSeriesCommand => _seasonsSeriesCommand ??= RequiredParameterCommand.Create<object>(ExecuteSeasonsSeriesCommand);
 
     /// <summary>
     /// 视频选择事件
@@ -102,7 +101,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
 
     #endregion
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         base.OnNavigatedFrom(navigationContext);
 
@@ -114,7 +113,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
     /// 接收mid参数
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);

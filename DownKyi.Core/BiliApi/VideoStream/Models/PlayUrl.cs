@@ -3,7 +3,7 @@ using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.VideoStream.Models;
 
-public class PlayUrlOrigin : BaseModel
+public sealed class PlayUrlOrigin : BaseModel
 {
     //[JsonProperty("code")]
     //public int Code { get; set; }
@@ -11,8 +11,8 @@ public class PlayUrlOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public PlayUrl Data { get; set; } = new();
-    [JsonProperty("result")] public PlayUrl Result { get; set; } = new();
+    [JsonProperty("data")] public PlayUrl? Data { get; set; }
+    [JsonProperty("result")] public PlayUrl? Result { get; set; }
 }
 
 public class PlayUrl : BaseModel

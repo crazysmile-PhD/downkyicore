@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -16,8 +17,6 @@ using DownKyi.Services.Friends;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Friends;
 
@@ -181,9 +180,9 @@ internal class ViewFollowingViewModel : ViewModelBase
     #region 命令申明
 
     // 左侧tab点击事件
-    private DelegateCommand<object>? _leftTabHeadersCommand;
+    private RelayCommand<object>? _leftTabHeadersCommand;
 
-    public DelegateCommand<object> LeftTabHeadersCommand => _leftTabHeadersCommand ??= new DelegateCommand<object>(ExecuteLeftTabHeadersCommand, CanExecuteLeftTabHeadersCommand);
+    public RelayCommand<object> LeftTabHeadersCommand => _leftTabHeadersCommand ??= RequiredParameterCommand.Create<object>(ExecuteLeftTabHeadersCommand, CanExecuteLeftTabHeadersCommand);
 
     /// <summary>
     /// 左侧tab点击事件
@@ -295,6 +294,7 @@ internal class ViewFollowingViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
@@ -369,6 +369,7 @@ internal class ViewFollowingViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
@@ -422,7 +423,7 @@ internal class ViewFollowingViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
@@ -446,7 +447,7 @@ internal class ViewFollowingViewModel : ViewModelBase
         }
     }
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         CancelAndDispose(ref _loadCancellation);
         IsEnabled = true;

@@ -1,9 +1,9 @@
 using System.Collections.Generic;
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class VideoSection : BindableBase
+internal class VideoSection : ObservableObject
 {
     public long Id { get; set; }
 

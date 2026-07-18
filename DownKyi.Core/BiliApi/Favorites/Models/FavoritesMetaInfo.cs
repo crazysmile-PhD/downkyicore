@@ -12,7 +12,7 @@ public class FavoritesMetaInfoOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public FavoritesMetaInfo Data { get; set; } = new();
+    [JsonProperty("data")] public FavoritesMetaInfo? Data { get; set; }
 }
 
 public class FavoritesMetaInfo : BaseModel

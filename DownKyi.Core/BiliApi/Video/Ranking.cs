@@ -23,6 +23,6 @@ public static class Ranking
             nameof(RegionRankingList),
             "Ranking");
 
-        return ranking?.Data;
+        return BiliApiRequest.RequirePayload(ranking.Data);
     }
 }

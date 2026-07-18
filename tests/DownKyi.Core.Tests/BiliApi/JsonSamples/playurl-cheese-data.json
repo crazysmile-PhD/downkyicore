@@ -1,0 +1,17 @@
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "quality": 80,
+    "dash": {
+      "video": [],
+      "audio": [
+        {
+          "id": 30280,
+          "base_url": "https://media.invalid/cheese-audio",
+          "backup_url": []
+        }
+      ]
+    }
+  }
+}

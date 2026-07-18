@@ -1,13 +1,13 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Desktop;
 using DownKyi.Application.Lifetime;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Services.Download;
 using DownKyi.Services.Migration;
 using Microsoft.Extensions.Logging;
-using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
@@ -63,7 +63,7 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
         Message = "数据迁移中，请不要关闭软件";
     }
 
-    public override void OnDialogOpened(IDialogParameters parameters)
+    public override void OnDialogOpened(AppDialogRequest request)
     {
         CancelUpgrade();
         _upgradeCancellation = new CancellationTokenSource();
@@ -88,7 +88,7 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
             switch (result.Outcome)
             {
                 case LegacyUpgradeOutcome.NoMigration:
-                    CloseDialog(new DialogResult());
+                    CloseDialog(AppDialogOutcome.Canceled);
                     break;
                 case LegacyUpgradeOutcome.Completed:
                     _downloadLists.ReplaceDownloaded(result.DownloadedItems);
@@ -106,6 +106,7 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (InvalidOperationException e)
         {

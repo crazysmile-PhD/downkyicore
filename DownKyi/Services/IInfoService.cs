@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.ViewModels.PageViewModels;
 
@@ -12,5 +13,7 @@ internal interface IInfoService
 
     IList<VideoPage>? GetVideoPages(System.Threading.CancellationToken cancellationToken = default);
 
-    PlayUrl? GetVideoStream(VideoPage page, System.Threading.CancellationToken cancellationToken = default);
+    Task<PlayUrl?> GetVideoStreamAsync(
+        VideoPage page,
+        System.Threading.CancellationToken cancellationToken = default);
 }

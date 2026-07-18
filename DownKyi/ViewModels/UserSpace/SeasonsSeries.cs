@@ -1,10 +1,10 @@
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Images;
-using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-internal class SeasonsSeries : BindableBase
+internal class SeasonsSeries : ObservableObject
 {
     public long Id { get; set; }
 

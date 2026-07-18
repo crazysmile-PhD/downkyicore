@@ -218,11 +218,11 @@ public static class StorageManager
             }
             catch (IOException)
             {
-                // Best-effort maintenance.
+                continue;
             }
             catch (UnauthorizedAccessException)
             {
-                // Best-effort maintenance.
+                continue;
             }
         }
     }
@@ -235,11 +235,11 @@ public static class StorageManager
         }
         catch (IOException)
         {
-            // Best-effort maintenance.
+            return;
         }
         catch (UnauthorizedAccessException)
         {
-            // Best-effort maintenance.
+            return;
         }
     }
 

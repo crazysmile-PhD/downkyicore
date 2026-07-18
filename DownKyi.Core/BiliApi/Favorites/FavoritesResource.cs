@@ -24,7 +24,7 @@ public static class FavoritesResource
             "FavoritesResource",
             cancellationToken);
 
-        return resource?.Data?.Medias;
+        return BiliApiRequest.RequirePayload(resource.Data).Medias;
     }
 
     /// <summary>
@@ -71,6 +71,6 @@ public static class FavoritesResource
             "FavoritesResource",
             cancellationToken);
 
-        return media?.Data;
+        return BiliApiRequest.RequirePayload(media.Data);
     }
 }

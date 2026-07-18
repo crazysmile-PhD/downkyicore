@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
@@ -8,7 +9,6 @@ using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
 
 namespace DownKyi.ViewModels.DownloadManager;
 
@@ -71,8 +71,8 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     #region 命令申明
 
     // 下载完成列表排序事件
-    private DelegateCommand<object>? _finishedSortCommand;
-    public DelegateCommand<object> FinishedSortCommand => _finishedSortCommand ??= new DelegateCommand<object>(ExecuteFinishedSortCommand);
+    private RelayCommand<object>? _finishedSortCommand;
+    public RelayCommand<object> FinishedSortCommand => _finishedSortCommand ??= RequiredParameterCommand.Create<object>(ExecuteFinishedSortCommand);
 
     /// <summary>
     /// 下载完成列表排序事件

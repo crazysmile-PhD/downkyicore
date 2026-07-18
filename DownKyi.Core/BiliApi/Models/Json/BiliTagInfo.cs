@@ -14,5 +14,5 @@ public class BiliTagInfo
 public class TagResult
 {
     [JsonProperty("data")]
-    public IReadOnlyList<BiliTagInfo> Data { get; set; } = Array.Empty<BiliTagInfo>();
+    public IReadOnlyList<BiliTagInfo>? Data { get; set; }
 }

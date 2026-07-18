@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -12,12 +14,10 @@ using DownKyi.Models;
 using DownKyi.Platform;
 using DownKyi.Services;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Mvvm;
 
 namespace DownKyi.ViewModels;
 
-internal sealed class MainWindowViewModel : BindableBase, IDisposable
+internal sealed class MainWindowViewModel : ObservableObject, IDisposable
 {
     private bool _disposed;
     private readonly IAppDialogService _dialogService;
@@ -25,6 +25,8 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
     private readonly IUserNotificationService _notificationService;
     private readonly ISettingsStore _settingsStore;
     private readonly IClipboardMonitor _clipboardMonitor;
+    private readonly SearchService _searchService;
+    private readonly VersionCheckerService _versionChecker;
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
 
@@ -32,6 +34,14 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
     private string? _oldMessage;
     private CancellationTokenSource? _messageCancellation;
     private CancellationTokenSource? _clipboardDebounceCancellation;
+
+    private object? _mainContent;
+
+    public object? MainContent
+    {
+        get => _mainContent;
+        private set => SetProperty(ref _mainContent, value);
+    }
 
     public bool MessageVisibility
     {
@@ -47,16 +57,16 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         set => SetProperty(ref _message, value);
     }
 
-    public DelegateCommand? LoadedCommand { get; }
+    public RelayCommand? LoadedCommand { get; }
 
-    private DelegateCommand? _closingCommand;
+    private RelayCommand? _closingCommand;
 
-    public DelegateCommand ClosingCommand => _closingCommand ??= new DelegateCommand(ExecuteClosingCommand);
+    public RelayCommand ClosingCommand => _closingCommand ??= new RelayCommand(ExecuteClosingCommand);
 
-    private DelegateCommand<PointerPressedEventArgs>? _pointerPressedCommand;
+    private RelayCommand<PointerPressedEventArgs>? _pointerPressedCommand;
 
-    public DelegateCommand<PointerPressedEventArgs> PointerPressedCommand =>
-        _pointerPressedCommand ??= new DelegateCommand<PointerPressedEventArgs>(ExecutePointerPressed);
+    public RelayCommand<PointerPressedEventArgs> PointerPressedCommand =>
+        _pointerPressedCommand ??= RequiredParameterCommand.Create<PointerPressedEventArgs>(ExecutePointerPressed);
 
     private void ExecuteClosingCommand()
     {
@@ -86,6 +96,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
 
         _notificationService.NotificationRaised -= NotificationServiceOnNotificationRaised;
         _clipboardMonitor.Changed -= ClipboardMonitorOnChanged;
+        _navigationService.NavigationChanged -= NavigationServiceOnNavigationChanged;
 
         _clipboardDebounceCancellation?.Cancel();
         _clipboardDebounceCancellation?.Dispose();
@@ -102,8 +113,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         var updateKind = point.Properties.PointerUpdateKind;
         if (updateKind == PointerUpdateKind.XButton1Pressed)
         {
-            var v = GetCurrentUserControl()?.DataContext;
-            if (v is ViewModelBase vm)
+            if (_navigationService.GetActiveView(AppNavigationRegion.Main) is ViewModelBase vm)
             {
                 vm.ExecuteBackSpace();
                 e.Handled = true;
@@ -111,15 +121,14 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         }
     }
 
-    private UserControl? GetCurrentUserControl() =>
-        _navigationService.GetActiveView(AppNavigationRegion.Main) as UserControl;
-
     public MainWindowViewModel(
         IAppNavigationService navigationService,
         IUserNotificationService notificationService,
         IAppDialogService dialogService,
         ISettingsStore settingsStore,
         IClipboardMonitor clipboardMonitor,
+        SearchService searchService,
+        VersionCheckerService versionChecker,
         ILogger<MainWindowViewModel> logger)
     {
         _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
@@ -127,17 +136,21 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _clipboardMonitor = clipboardMonitor ?? throw new ArgumentNullException(nameof(clipboardMonitor));
+        _searchService = searchService ?? throw new ArgumentNullException(nameof(searchService));
+        _versionChecker = versionChecker ?? throw new ArgumentNullException(nameof(versionChecker));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         #region MyRegion
 
         // 订阅消息发送事件
         _notificationService.NotificationRaised += NotificationServiceOnNotificationRaised;
+        _navigationService.NavigationChanged += NavigationServiceOnNavigationChanged;
+        MainContent = _navigationService.GetActiveView(AppNavigationRegion.Main);
 
         #endregion
 
 
-        LoadedCommand = new DelegateCommand(() =>
+        LoadedCommand = new RelayCommand(() =>
         {
             if (Design.IsDesignMode)
             {
@@ -190,6 +203,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         }
         catch (OperationCanceledException)
         {
+            return;
         }
     }
 
@@ -221,14 +235,29 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             return;
         }
 
-        var searchService = new SearchService(_settingsStore, _navigationService);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (!cancellationToken.IsCancellationRequested)
             {
-                searchService.BiliInput(text + AppConstant.ClipboardId, AppRoute.Index);
+                _searchService.BiliInput(text + AppConstant.ClipboardId, AppRoute.Index);
             }
         });
+    }
+
+    private void NavigationServiceOnNavigationChanged(object? sender, AppNavigationChangedEventArgs e)
+    {
+        if (e.Region != AppNavigationRegion.Main)
+        {
+            return;
+        }
+
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            MainContent = e.Content;
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() => MainContent = e.Content);
     }
 
     #endregion
@@ -248,6 +277,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         }
         catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
         {
+            return;
         }
         catch (InvalidOperationException e)
         {
@@ -262,12 +292,13 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
             var about = _settingsStore.Current.About;
             var isAutoUpdate = about.AutoUpdateWhenLaunch != AllowStatus.Yes;
             if (isAutoUpdate) return;
-            var service = new VersionCheckerService(App.RepoOwner, App.RepoName,
-                about.IsReceiveBetaVersion == AllowStatus.Yes);
-            var release = await service
-                .GetLatestReleaseAsync(about.SkipVersionOnLaunch, _lifetimeCancellation.Token)
+            var release = await _versionChecker
+                .GetLatestReleaseAsync(
+                    about.IsReceiveBetaVersion == AllowStatus.Yes,
+                    about.SkipVersionOnLaunch,
+                    _lifetimeCancellation.Token)
                 .ConfigureAwait(true);
-            if (release != null && service.IsNewVersionAvailable(release.TagName))
+            if (release != null && _versionChecker.IsNewVersionAvailable(release.TagName))
             {
                 await _dialogService.ShowAsync(new AppDialogRequest(
                     AppDialog.NewVersionAvailable,
@@ -280,7 +311,7 @@ internal sealed class MainWindowViewModel : BindableBase, IDisposable
         }
         catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
         {
-            // Expected while the application window is closing.
+            return;
         }
         catch (OperationCanceledException)
         {

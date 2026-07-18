@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace DownKyi.Core.FileName;
 
 /// <summary>
@@ -6,7 +8,7 @@ namespace DownKyi.Core.FileName;
 public static class HyphenSeparated
 {
     // 文件名的分隔符
-    public static readonly Dictionary<int, string> Hyphen = new()
+    public static IReadOnlyDictionary<int, string> Hyphen { get; } = new Dictionary<int, string>
     {
         { 100, "/" },
         { 101, "_" },
@@ -23,5 +25,5 @@ public static class HyphenSeparated
         { 112, "{" },
         { 113, "}" },
         { 114, " " },
-    };
+    }.ToFrozenDictionary();
 }

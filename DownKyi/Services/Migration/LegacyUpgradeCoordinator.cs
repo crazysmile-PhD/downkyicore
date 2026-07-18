@@ -44,15 +44,15 @@ internal interface ILegacyUpgradeCoordinator
 internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
 {
     private const int BatchSize = 200;
-    private readonly DownloadStorageService _downloadStorageService;
+    private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly ILogger<LegacyUpgradeCoordinator> _logger;
 
     public LegacyUpgradeCoordinator(
-        DownloadStorageService downloadStorageService,
+        DownloadTaskProjectionStore projectionStore,
         ILogger<LegacyUpgradeCoordinator> logger)
     {
-        _downloadStorageService = downloadStorageService
-            ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _projectionStore = projectionStore
+            ?? throw new ArgumentNullException(nameof(projectionStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -94,7 +94,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
             cancellationToken.ThrowIfCancellationRequested();
             File.Delete(oldDatabasePath);
 
-            var downloadedItems = await _downloadStorageService
+            var downloadedItems = await _projectionStore
                 .GetDownloadedAsync(cancellationToken)
                 .ConfigureAwait(false);
             progress.Report(new LegacyUpgradeProgress("下载信息迁移完成", 100));
@@ -354,7 +354,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
 
             if (batch.Count >= BatchSize)
             {
-                await _downloadStorageService
+                await _projectionStore
                     .AddDownloadedBatchAsync(batch, cancellationToken)
                     .ConfigureAwait(false);
                 batch.Clear();
@@ -368,7 +368,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
 
         if (batch.Count > 0)
         {
-            await _downloadStorageService
+            await _projectionStore
                 .AddDownloadedBatchAsync(batch, cancellationToken)
                 .ConfigureAwait(false);
         }

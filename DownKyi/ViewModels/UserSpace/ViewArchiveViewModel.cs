@@ -3,12 +3,11 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Avalonia.Media;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Utils;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.UserSpace;
 
@@ -54,9 +53,9 @@ internal class ViewArchiveViewModel : ViewModelBase
     #region 命令申明
 
     // 视频选择事件
-    private DelegateCommand<object>? _publicationZonesCommand;
+    private RelayCommand<object>? _publicationZonesCommand;
 
-    public DelegateCommand<object> PublicationZonesCommand => _publicationZonesCommand ??= new DelegateCommand<object>(ExecutePublicationZonesCommand);
+    public RelayCommand<object> PublicationZonesCommand => _publicationZonesCommand ??= RequiredParameterCommand.Create<object>(ExecutePublicationZonesCommand);
 
     /// <summary>
     /// 视频选择事件
@@ -87,7 +86,7 @@ internal class ViewArchiveViewModel : ViewModelBase
 
     #endregion
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         base.OnNavigatedFrom(navigationContext);
 
@@ -99,7 +98,7 @@ internal class ViewArchiveViewModel : ViewModelBase
     /// 接收mid参数
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);

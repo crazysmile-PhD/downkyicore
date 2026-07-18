@@ -29,6 +29,24 @@ public sealed class AsyncDelegateCommandTests
     public async Task CancellationIsNotLoggedAsAnOperationalFailure()
     {
         var logger = new RecordingLogger();
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var command = new DownKyiAsyncDelegateCommand(
+            () => Task.FromException(new OperationCanceledException(cancellation.Token)),
+            logger);
+        var completion = ObserveCompletion(command);
+
+        command.Execute(null);
+        await completion.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(command.CanExecute(null));
+        Assert.Empty(logger.Entries);
+    }
+
+    [Fact]
+    public async Task UnexpectedCancellationIsLoggedAsAnOperationalFailure()
+    {
+        var logger = new RecordingLogger();
         var command = new DownKyiAsyncDelegateCommand(
             () => Task.FromException(new OperationCanceledException()),
             logger);
@@ -38,7 +56,10 @@ public sealed class AsyncDelegateCommandTests
         await completion.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.True(command.CanExecute(null));
-        Assert.Empty(logger.Entries);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.Equal("UI command was canceled unexpectedly.", entry.Message);
+        Assert.IsType<OperationCanceledException>(entry.Exception);
     }
 
     private static Task ObserveCompletion(DownKyiAsyncDelegateCommand command)

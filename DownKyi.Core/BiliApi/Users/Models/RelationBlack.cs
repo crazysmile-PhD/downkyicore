@@ -6,5 +6,5 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/relation/blacks?pn={pn}&ps={ps}
 public class RelationBlack : BaseModel
 {
-    [JsonProperty("data")] public IReadOnlyList<RelationFollowInfo> Data { get; set; } = Array.Empty<RelationFollowInfo>();
+    [JsonProperty("data")] public IReadOnlyList<RelationFollowInfo>? Data { get; set; }
 }

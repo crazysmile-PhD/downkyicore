@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
@@ -12,8 +14,6 @@ using DownKyi.Core.Utils;
 using DownKyi.Images;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
@@ -238,9 +238,9 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     }
 
     // 所有内容选择事件
-    private DelegateCommand? _downloadAllCommand;
+    private RelayCommand? _downloadAllCommand;
 
-    public DelegateCommand DownloadAllCommand => _downloadAllCommand ??= new DelegateCommand(ExecuteDownloadAllCommand);
+    public RelayCommand DownloadAllCommand => _downloadAllCommand ??= new RelayCommand(ExecuteDownloadAllCommand);
 
     /// <summary>
     /// 所有内容选择事件
@@ -268,9 +268,9 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     }
 
     // 音频选择事件
-    private DelegateCommand? _downloadAudioCommand;
+    private RelayCommand? _downloadAudioCommand;
 
-    public DelegateCommand DownloadAudioCommand => _downloadAudioCommand ??= new DelegateCommand(ExecuteDownloadAudioCommand);
+    public RelayCommand DownloadAudioCommand => _downloadAudioCommand ??= new RelayCommand(ExecuteDownloadAudioCommand);
 
     /// <summary>
     /// 音频选择事件
@@ -291,9 +291,9 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     }
 
     // 视频选择事件
-    private DelegateCommand? _downloadVideoCommand;
+    private RelayCommand? _downloadVideoCommand;
 
-    public DelegateCommand DownloadVideoCommand => _downloadVideoCommand ??= new DelegateCommand(ExecuteDownloadVideoCommand);
+    public RelayCommand DownloadVideoCommand => _downloadVideoCommand ??= new RelayCommand(ExecuteDownloadVideoCommand);
 
     /// <summary>
     /// 视频选择事件
@@ -314,9 +314,9 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     }
 
     // 弹幕选择事件
-    private DelegateCommand? _downloadDanmakuCommand;
+    private RelayCommand? _downloadDanmakuCommand;
 
-    public DelegateCommand DownloadDanmakuCommand => _downloadDanmakuCommand ??= new DelegateCommand(ExecuteDownloadDanmakuCommand);
+    public RelayCommand DownloadDanmakuCommand => _downloadDanmakuCommand ??= new RelayCommand(ExecuteDownloadDanmakuCommand);
 
     /// <summary>
     /// 弹幕选择事件
@@ -337,9 +337,9 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     }
 
     // 字幕选择事件
-    private DelegateCommand? _downloadSubtitleCommand;
+    private RelayCommand? _downloadSubtitleCommand;
 
-    public DelegateCommand DownloadSubtitleCommand => _downloadSubtitleCommand ??= new DelegateCommand(ExecuteDownloadSubtitleCommand);
+    public RelayCommand DownloadSubtitleCommand => _downloadSubtitleCommand ??= new RelayCommand(ExecuteDownloadSubtitleCommand);
 
     /// <summary>
     /// 字幕选择事件
@@ -360,9 +360,9 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     }
 
     // 封面选择事件
-    private DelegateCommand? _downloadCoverCommand;
+    private RelayCommand? _downloadCoverCommand;
 
-    public DelegateCommand DownloadCoverCommand => _downloadCoverCommand ??= new DelegateCommand(ExecuteDownloadCoverCommand);
+    public RelayCommand DownloadCoverCommand => _downloadCoverCommand ??= new RelayCommand(ExecuteDownloadCoverCommand);
 
     /// <summary>
     /// 封面选择事件
@@ -383,9 +383,9 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
     }
 
     // 确认下载事件
-    private DelegateCommand? _downloadCommand;
+    private RelayCommand? _downloadCommand;
 
-    public DelegateCommand DownloadCommand => _downloadCommand ??= new DelegateCommand(ExecuteDownloadCommand);
+    public RelayCommand DownloadCommand => _downloadCommand ??= new RelayCommand(ExecuteDownloadCommand);
 
     /// <summary>
     /// 确认下载事件
@@ -414,7 +414,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         });
 
         // 返回数据
-        IDialogParameters parameters = new DialogParameters
+        var parameters = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             { "directory", Directory },
             { "downloadAudio", DownloadAudio },
@@ -424,7 +424,7 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
             { "downloadCover", DownloadCover }
         };
 
-        CloseDialog(new DialogResult(ButtonResult.OK) { Parameters = parameters });
+        CloseDialog(AppDialogOutcome.Accepted, parameters);
     }
 
     #endregion
@@ -459,9 +459,5 @@ internal class ViewDownloadSetterViewModel : BaseDialogViewModel
         // 下载目录
         // 弹出选择下载目录的窗口
         return await _filePickerService.SelectFolderAsync().ConfigureAwait(true);
-        // if (path == null || path == string.Empty)
-        // {
-        //     return null;
-        // }
     }
 }

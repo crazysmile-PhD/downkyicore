@@ -18,7 +18,7 @@ public sealed class DesktopPlatformBoundaryTests
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyPrismComposition.cs"));
+            "DesktopComposition.cs"));
 
         Assert.Empty(violations);
         Assert.DoesNotContain("AvaloniaClipboardService", appSource, StringComparison.Ordinal);
@@ -39,7 +39,7 @@ public sealed class DesktopPlatformBoundaryTests
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyPrismComposition.cs"));
+            "DesktopComposition.cs"));
 
         Assert.Empty(violations);
         Assert.DoesNotContain("AvaloniaFilePickerService", appSource, StringComparison.Ordinal);
@@ -70,7 +70,7 @@ public sealed class DesktopPlatformBoundaryTests
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyPrismComposition.cs"));
+            "DesktopComposition.cs"));
 
         Assert.Empty(violations);
         Assert.DoesNotContain("Avalonia", interfaceSource, StringComparison.Ordinal);

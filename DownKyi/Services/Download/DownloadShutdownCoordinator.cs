@@ -37,6 +37,7 @@ internal static class DownloadShutdownCoordinator
                 }
                 catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
                 {
+                    return;
                 }
             }
         }
@@ -44,24 +45,38 @@ internal static class DownloadShutdownCoordinator
         {
             try
             {
-                try
-                {
-                    await Task.WhenAll(workerTasks)
-                        .WaitAsync(workerTimeout)
-                        .ConfigureAwait(false);
-                }
-                catch (TimeoutException e)
-                {
-                    timeoutObserver(e);
-                }
-                catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
-                {
-                }
+                await WaitForWorkersAsync(
+                    workerTasks,
+                    workerTimeout,
+                    timeoutObserver,
+                    shutdownToken).ConfigureAwait(false);
             }
             finally
             {
                 await recoverStateAsync().ConfigureAwait(false);
             }
+        }
+    }
+
+    private static async Task WaitForWorkersAsync(
+        IReadOnlyCollection<Task> workerTasks,
+        TimeSpan workerTimeout,
+        Action<TimeoutException> timeoutObserver,
+        CancellationToken shutdownToken)
+    {
+        try
+        {
+            await Task.WhenAll(workerTasks)
+                .WaitAsync(workerTimeout, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException e)
+        {
+            timeoutObserver(e);
+        }
+        catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
+        {
+            return;
         }
     }
 }

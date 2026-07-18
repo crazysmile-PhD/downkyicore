@@ -1,5 +1,17 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:DownKyi.ViewModels"
+             xmlns:views="using:DownKyi.Views"
+             xmlns:downloadVm="using:DownKyi.ViewModels.DownloadManager"
+             xmlns:downloadViews="using:DownKyi.Views.DownloadManager"
+             xmlns:friendsVm="using:DownKyi.ViewModels.Friends"
+             xmlns:friendsViews="using:DownKyi.Views.Friends"
+             xmlns:settingsVm="using:DownKyi.ViewModels.Settings"
+             xmlns:settingsViews="using:DownKyi.Views.Settings"
+             xmlns:toolboxVm="using:DownKyi.ViewModels.Toolbox"
+             xmlns:toolboxViews="using:DownKyi.Views.Toolbox"
+             xmlns:userSpaceVm="using:DownKyi.ViewModels.UserSpace"
+             xmlns:userSpaceViews="using:DownKyi.Views.UserSpace"
              x:Class="DownKyi.App">
     <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
@@ -15,6 +27,39 @@
             <FontFamily x:Key="ProgramFont">Simsun,微软雅黑,Microsoft YaHei,苹方-简,宋体-简,$Default</FontFamily>
         </ResourceDictionary>
     </Application.Resources>
+    <Application.DataTemplates>
+        <DataTemplate DataType="vm:ViewIndexViewModel"><views:ViewIndex /></DataTemplate>
+        <DataTemplate DataType="vm:ViewLoginViewModel"><views:ViewLogin /></DataTemplate>
+        <DataTemplate DataType="vm:ViewVideoDetailViewModel"><views:ViewVideoDetail /></DataTemplate>
+        <DataTemplate DataType="vm:ViewSettingsViewModel"><views:ViewSettings /></DataTemplate>
+        <DataTemplate DataType="vm:ViewToolboxViewModel"><views:ViewToolbox /></DataTemplate>
+        <DataTemplate DataType="vm:ViewDownloadManagerViewModel"><views:ViewDownloadManager /></DataTemplate>
+        <DataTemplate DataType="vm:ViewPublicFavoritesViewModel"><views:ViewPublicFavorites /></DataTemplate>
+        <DataTemplate DataType="vm:ViewUserSpaceViewModel"><views:ViewUserSpace /></DataTemplate>
+        <DataTemplate DataType="vm:ViewPublicationViewModel"><views:ViewPublication /></DataTemplate>
+        <DataTemplate DataType="vm:ViewSeasonsSeriesViewModel"><views:ViewSeasonsSeries /></DataTemplate>
+        <DataTemplate DataType="vm:ViewFriendsViewModel"><views:ViewFriends /></DataTemplate>
+        <DataTemplate DataType="vm:ViewMySpaceViewModel"><views:ViewMySpace /></DataTemplate>
+        <DataTemplate DataType="vm:ViewMyFavoritesViewModel"><views:ViewMyFavorites /></DataTemplate>
+        <DataTemplate DataType="vm:ViewMyBangumiFollowViewModel"><views:ViewMyBangumiFollow /></DataTemplate>
+        <DataTemplate DataType="vm:ViewMyToViewVideoViewModel"><views:ViewMyToViewVideo /></DataTemplate>
+        <DataTemplate DataType="vm:ViewMyHistoryViewModel"><views:ViewMyHistory /></DataTemplate>
+        <DataTemplate DataType="downloadVm:ViewDownloadingViewModel"><downloadViews:ViewDownloading /></DataTemplate>
+        <DataTemplate DataType="downloadVm:ViewDownloadFinishedViewModel"><downloadViews:ViewDownloadFinished /></DataTemplate>
+        <DataTemplate DataType="friendsVm:ViewFollowingViewModel"><friendsViews:ViewFollowing /></DataTemplate>
+        <DataTemplate DataType="friendsVm:ViewFollowerViewModel"><friendsViews:ViewFollower /></DataTemplate>
+        <DataTemplate DataType="settingsVm:ViewBasicViewModel"><settingsViews:ViewBasic /></DataTemplate>
+        <DataTemplate DataType="settingsVm:ViewNetworkViewModel"><settingsViews:ViewNetwork /></DataTemplate>
+        <DataTemplate DataType="settingsVm:ViewVideoViewModel"><settingsViews:ViewVideo /></DataTemplate>
+        <DataTemplate DataType="settingsVm:ViewDanmakuViewModel"><settingsViews:ViewDanmaku /></DataTemplate>
+        <DataTemplate DataType="settingsVm:ViewAboutViewModel"><settingsViews:ViewAbout /></DataTemplate>
+        <DataTemplate DataType="toolboxVm:ViewBiliHelperViewModel"><toolboxViews:ViewBiliHelper /></DataTemplate>
+        <DataTemplate DataType="toolboxVm:ViewDelogoViewModel"><toolboxViews:ViewDelogo /></DataTemplate>
+        <DataTemplate DataType="toolboxVm:ViewExtractMediaViewModel"><toolboxViews:ViewExtractMedia /></DataTemplate>
+        <DataTemplate DataType="userSpaceVm:ViewArchiveViewModel"><userSpaceViews:ViewArchive /></DataTemplate>
+        <DataTemplate DataType="userSpaceVm:ViewChannelViewModel"><userSpaceViews:ViewChannel /></DataTemplate>
+        <DataTemplate DataType="userSpaceVm:ViewSeasonsSeriesViewModel"><userSpaceViews:ViewSeasonsSeries /></DataTemplate>
+    </Application.DataTemplates>
     <Application.Styles>
         <SimpleTheme />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Simple.xaml" />
@@ -57,13 +102,7 @@
     </Application.Styles>
     <TrayIcon.Icons>
         <TrayIcons>
-            <TrayIcon Icon="/Resources/favicon.ico" ToolTipText="{StaticResource AppName}">
-                <!--<TrayIcon.Menu>
-                    <NativeMenu>
-                        <NativeMenuItem Header="退出" Click="NativeMenuItem_OnClick" />
-                    </NativeMenu>
-                </TrayIcon.Menu>-->
-            </TrayIcon>
+            <TrayIcon Icon="/Resources/favicon.ico" ToolTipText="{StaticResource AppName}" />
         </TrayIcons>
     </TrayIcon.Icons>
 </Application>

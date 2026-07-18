@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vmu="clr-namespace:DownKyi.ViewModels.UserSpace"
+             x:Class="DownKyi.Views.UserSpace.ViewChannel"
+             x:DataType="vmu:ViewChannelViewModel">
+    <ListBox x:Name="ChannelList"
+             Margin="30,0,0,0"
+             ItemsSource="{Binding Channels}"
+             SelectedIndex="{Binding SelectedItem}"
+             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+        <Interaction.Behaviors>
+            <EventTriggerBehavior EventName="SelectionChanged">
+                <InvokeCommandAction Command="{Binding ChannelsCommand}"
+                                     CommandParameter="{Binding ElementName=ChannelList, Path=SelectedItem}" />
+            </EventTriggerBehavior>
+        </Interaction.Behaviors>
+        <ListBox.ItemsPanel>
+            <ItemsPanelTemplate>
+                <WrapPanel />
+            </ItemsPanelTemplate>
+        </ListBox.ItemsPanel>
+        <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vmu:Channel">
+                <StackPanel Width="190" Margin="0,20,30,0">
+                    <TextBlock Text="{Binding Name}"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding Name}" />
+                    <StackPanel Margin="0,5,0,0" Orientation="Horizontal">
+                        <TextBlock Foreground="{DynamicResource BrushTextGrey2}"
+                                   Text="{Binding Count}" />
+                        <TextBlock Margin="10,0,0,0"
+                                   Foreground="{DynamicResource BrushTextGrey2}"
+                                   Text="{Binding Ctime}" />
+                    </StackPanel>
+                </StackPanel>
+            </DataTemplate>
+        </ListBox.ItemTemplate>
+    </ListBox>
+</UserControl>

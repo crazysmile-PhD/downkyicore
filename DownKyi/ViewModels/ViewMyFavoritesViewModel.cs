@@ -8,20 +8,18 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.CustomControl;
 using DownKyi.Images;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
@@ -174,7 +172,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
             }
 
             _pager = value;
-            RaisePropertyChanged(nameof(Pager));
+            OnPropertyChanged(nameof(Pager));
             value.CurrentChanging += OnCurrentChangedPager;
             value.CountChanged += OnCountChangedPager;
         }
@@ -237,9 +235,9 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     #region 命令申明
 
     // 返回事件
-    private DelegateCommand? _backSpaceCommand;
+    private RelayCommand? _backSpaceCommand;
 
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
     /// <summary>
     /// 返回事件
@@ -256,9 +254,9 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     }
 
     // 前往下载管理页面
-    private DelegateCommand? _downloadManagerCommand;
+    private RelayCommand? _downloadManagerCommand;
 
-    public DelegateCommand DownloadManagerCommand => _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
+    public RelayCommand DownloadManagerCommand => _downloadManagerCommand ??= new RelayCommand(ExecuteDownloadManagerCommand);
 
     /// <summary>
     /// 前往下载管理页面
@@ -271,9 +269,9 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     }
 
     // 左侧tab点击事件
-    private DelegateCommand<object>? _leftTabHeadersCommand;
+    private RelayCommand<object>? _leftTabHeadersCommand;
 
-    public DelegateCommand<object> LeftTabHeadersCommand => _leftTabHeadersCommand ??= new DelegateCommand<object>(ExecuteLeftTabHeadersCommand, CanExecuteLeftTabHeadersCommand);
+    public RelayCommand<object> LeftTabHeadersCommand => _leftTabHeadersCommand ??= RequiredParameterCommand.Create<object>(ExecuteLeftTabHeadersCommand, CanExecuteLeftTabHeadersCommand);
 
     /// <summary>
     /// 左侧tab点击事件
@@ -305,9 +303,9 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     }
 
     // 全选按钮点击事件
-    private DelegateCommand<object>? _selectAllCommand;
+    private RelayCommand<object>? _selectAllCommand;
 
-    public DelegateCommand<object> SelectAllCommand => _selectAllCommand ??= new DelegateCommand<object>(ExecuteSelectAllCommand);
+    public RelayCommand<object> SelectAllCommand => _selectAllCommand ??= RequiredParameterCommand.Create<object>(ExecuteSelectAllCommand);
 
     /// <summary>
     /// 全选按钮点击事件
@@ -332,9 +330,9 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     }
 
     // 列表选择事件
-    private DelegateCommand<object>? _mediasCommand;
+    private RelayCommand<object>? _mediasCommand;
 
-    public DelegateCommand<object> MediasCommand => _mediasCommand ??= new DelegateCommand<object>(ExecuteMediasCommand);
+    public RelayCommand<object> MediasCommand => _mediasCommand ??= RequiredParameterCommand.Create<object>(ExecuteMediasCommand);
 
     /// <summary>
     /// 列表选择事件
@@ -396,6 +394,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
@@ -455,6 +454,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (_mediaLoadCancellation?.IsCancellationRequested != false)
         {
+            return;
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
@@ -495,14 +495,14 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
         RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync), _logger);
     }
 
-    private async Task OnNavigatedToAsync(NavigationContext navigationContext)
+    private async Task OnNavigatedToAsync(AppNavigationContext navigationContext)
     {
         try
         {
@@ -542,6 +542,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (_folderLoadCancellation?.IsCancellationRequested != false)
         {
+            return;
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
@@ -550,7 +551,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         }
     }
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         CancelOperations();
         IsEnabled = true;

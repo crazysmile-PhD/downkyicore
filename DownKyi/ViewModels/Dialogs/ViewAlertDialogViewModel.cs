@@ -1,7 +1,7 @@
 using System;
+using CommunityToolkit.Mvvm.Input;
+using DownKyi.Application.Desktop;
 using DownKyi.Images;
-using Prism.Commands;
-using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
@@ -53,31 +53,30 @@ internal class ViewAlertDialogViewModel : BaseDialogViewModel
     #region 命令申明
 
     // 确认事件
-    private DelegateCommand? _allowCommand;
-    public DelegateCommand AllowCommand => _allowCommand ??= new DelegateCommand(ExecuteAllowCommand);
+    private RelayCommand? _allowCommand;
+    public RelayCommand AllowCommand => _allowCommand ??= new RelayCommand(ExecuteAllowCommand);
 
     /// <summary>
     /// 确认事件
     /// </summary>
     private void ExecuteAllowCommand()
     {
-        ButtonResult result = ButtonResult.OK;
-        CloseDialog(new DialogResult(result));
+        CloseDialog(AppDialogOutcome.Accepted);
     }
 
     #endregion
 
     #region 接口实现
 
-    public override void OnDialogOpened(IDialogParameters parameters)
+    public override void OnDialogOpened(AppDialogRequest request)
     {
-        ArgumentNullException.ThrowIfNull(parameters);
-        base.OnDialogOpened(parameters);
+        ArgumentNullException.ThrowIfNull(request);
+        base.OnDialogOpened(request);
 
-        Image = parameters.GetValue<VectorImage>("image");
-        Title = parameters.GetValue<string>("title");
-        Message = parameters.GetValue<string>("message");
-        var number = parameters.GetValue<int>("button_number");
+        Image = GetRequiredParameter<VectorImage>(request, "image");
+        Title = GetRequiredParameter<string>(request, "title");
+        Message = GetRequiredParameter<string>(request, "message");
+        var number = GetRequiredParameter<int>(request, "button_number");
 
         switch (number)
         {

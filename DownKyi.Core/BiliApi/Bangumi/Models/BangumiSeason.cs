@@ -12,7 +12,7 @@ public class BangumiSeasonOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("result")] public BangumiSeason Result { get; set; } = new();
+    [JsonProperty("result")] public BangumiSeason? Result { get; set; }
 }
 
 public class BangumiSeason : BaseModel

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -51,23 +53,23 @@ internal interface IDownloadManagerCoordinator
 
 internal sealed class DownloadManagerCoordinator : IDownloadManagerCoordinator
 {
-    private static readonly Dictionary<string, string[]> FileSuffixMap =
-        new Dictionary<string, string[]>(StringComparer.Ordinal)
+    private static readonly FrozenDictionary<string, ImmutableArray<string>> FileSuffixMap =
+        new Dictionary<string, ImmutableArray<string>>(StringComparer.Ordinal)
         {
             ["downloadVideo"] = [".mp4", ".flv"],
             ["downloadAudio"] = [".aac", ".mp3"],
             ["downloadCover"] = [".jpg", ".jpeg", ".png", ".webp"],
             ["downloadDanmaku"] = [".ass"],
             ["downloadSubtitle"] = [".srt"]
-        };
+        }.ToFrozenDictionary(StringComparer.Ordinal);
 
-    private readonly DownloadStorageService _storage;
+    private readonly DownloadTaskProjectionStore _storage;
     private readonly DownloadTaskFileService _fileService;
     private readonly DownloadListState _downloadLists;
     private readonly IPlatformLauncher _platformLauncher;
 
     public DownloadManagerCoordinator(
-        DownloadStorageService storage,
+        DownloadTaskProjectionStore storage,
         DownloadTaskFileService fileService,
         DownloadListState downloadLists,
         IPlatformLauncher platformLauncher)

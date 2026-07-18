@@ -14,13 +14,6 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     private readonly bool _shouldDisposeHttpClient;
 
     /// <summary>
-    ///     Initializes a new instance with new <see cref="HttpClient" /> instance
-    /// </summary>
-    public BaseWebImageLoader() : this(new HttpClient(), true)
-    {
-    }
-
-    /// <summary>
     ///     Initializes a new instance with the provided <see cref="HttpClient" />, and specifies whether that
     ///     <see cref="HttpClient" /> should be disposed when this instance is disposed.
     /// </summary>

@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -11,8 +12,6 @@ using DownKyi.Services;
 using DownKyi.Services.Account;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
@@ -129,8 +128,8 @@ internal class ViewIndexViewModel : ViewModelBase
     }
 
     // 输入确认事件
-    private DelegateCommand<object>? _inputCommand;
-    public DelegateCommand<object> InputCommand => _inputCommand ??= new DelegateCommand<object>(ExecuteInput);
+    private RelayCommand<object>? _inputCommand;
+    public RelayCommand<object> InputCommand => _inputCommand ??= RequiredParameterCommand.Create<object>(ExecuteInput);
 
     /// <summary>
     /// 处理输入事件
@@ -141,8 +140,8 @@ internal class ViewIndexViewModel : ViewModelBase
     }
 
     // 登录事件
-    private DelegateCommand? _loginCommand;
-    public DelegateCommand LoginCommand => _loginCommand ??= new DelegateCommand(ExecuteLogin);
+    private RelayCommand? _loginCommand;
+    public RelayCommand LoginCommand => _loginCommand ??= new RelayCommand(ExecuteLogin);
 
     /// <summary>
     /// 进入登录页面
@@ -170,9 +169,9 @@ internal class ViewIndexViewModel : ViewModelBase
     }
 
     // 进入设置页面
-    private DelegateCommand? _settingsCommand;
+    private RelayCommand? _settingsCommand;
 
-    public DelegateCommand SettingsCommand => _settingsCommand ??= new DelegateCommand(ExecuteSettingsCommand);
+    public RelayCommand SettingsCommand => _settingsCommand ??= new RelayCommand(ExecuteSettingsCommand);
 
     /// <summary>
     /// 进入设置页面
@@ -185,9 +184,9 @@ internal class ViewIndexViewModel : ViewModelBase
     }
 
     // 进入下载管理页面
-    private DelegateCommand? _downloadManagerCommand;
+    private RelayCommand? _downloadManagerCommand;
 
-    public DelegateCommand DownloadManagerCommand => _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
+    public RelayCommand DownloadManagerCommand => _downloadManagerCommand ??= new RelayCommand(ExecuteDownloadManagerCommand);
 
     /// <summary>
     /// 进入下载管理页面
@@ -200,9 +199,9 @@ internal class ViewIndexViewModel : ViewModelBase
     }
 
     // 进入工具箱页面
-    private DelegateCommand? _toolboxCommand;
+    private RelayCommand? _toolboxCommand;
 
-    public DelegateCommand ToolboxCommand => _toolboxCommand ??= new DelegateCommand(ExecuteToolboxCommand);
+    public RelayCommand ToolboxCommand => _toolboxCommand ??= new RelayCommand(ExecuteToolboxCommand);
 
     /// <summary>
     /// 进入工具箱页面
@@ -289,6 +288,7 @@ internal class ViewIndexViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException
             or FormatException or System.Net.Http.HttpRequestException
@@ -303,7 +303,7 @@ internal class ViewIndexViewModel : ViewModelBase
         }
     }
 
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);

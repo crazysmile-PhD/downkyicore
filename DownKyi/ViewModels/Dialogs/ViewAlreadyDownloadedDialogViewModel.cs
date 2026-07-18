@@ -1,7 +1,7 @@
 using System;
+using CommunityToolkit.Mvvm.Input;
+using DownKyi.Application.Desktop;
 using DownKyi.Images;
-using Prism.Commands;
-using Prism.Dialogs;
 
 namespace DownKyi.ViewModels.Dialogs;
 
@@ -37,32 +37,31 @@ internal class ViewAlreadyDownloadedDialogViewModel : BaseDialogViewModel
 
     #region 命令声明
 
-    private DelegateCommand? _yesCommand;
+    private RelayCommand? _yesCommand;
 
-    public DelegateCommand YesCommand => _yesCommand ??= new DelegateCommand(ExecuteYesCommand);
+    public RelayCommand YesCommand => _yesCommand ??= new RelayCommand(ExecuteYesCommand);
 
     private void ExecuteYesCommand()
     {
-        CloseDialog(new DialogResult(ButtonResult.OK));
+        CloseDialog(AppDialogOutcome.Accepted);
     }
 
     // 关闭窗口事件
-    private DelegateCommand? _closeCommand;
-    public new DelegateCommand CloseCommand => _closeCommand ??= new DelegateCommand(ExecuteCloseCommand);
+    private RelayCommand? _closeCommand;
+    public new RelayCommand CloseCommand => _closeCommand ??= new RelayCommand(ExecuteCloseCommand);
 
     /// <summary>
     /// 关闭窗口事件
     /// </summary>
     private void ExecuteCloseCommand()
     {
-        CloseDialog(new DialogResult(ButtonResult.Cancel));
+        CloseDialog(AppDialogOutcome.Canceled);
     }
 
     #endregion
 
-    public override void OnDialogOpened(IDialogParameters parameters)
+    public override void OnDialogOpened(AppDialogRequest request)
     {
-        ArgumentNullException.ThrowIfNull(parameters);
-        Message = parameters.GetValue<string>("message");
+        Message = GetRequiredParameter<string>(request, "message");
     }
 }

@@ -9,7 +9,7 @@ public class UserInfoForNavigationOrigin : BaseModel
 {
     //[JsonProperty("code")]
     //public int Code { get; set; }
-    [JsonProperty("data")] public UserInfoForNavigation Data { get; set; } = new();
+    [JsonProperty("data")] public UserInfoForNavigation? Data { get; set; }
     //[JsonProperty("message")]
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
@@ -52,7 +52,7 @@ public class UserInfoForNavigation : BaseModel
     //public int vip_theme_type { get; set; }
     [JsonProperty("wallet")] public UserInfoWallet Wallet { get; set; } = new();
 
-    [JsonProperty("wbi_img")] public Wbi Wbi { get; set; } = new();
+    [JsonProperty("wbi_img")] public Wbi? Wbi { get; set; }
 }
 
 //public class NavDataLevelInfo

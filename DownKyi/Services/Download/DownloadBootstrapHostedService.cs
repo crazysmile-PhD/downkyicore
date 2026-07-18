@@ -16,24 +16,24 @@ namespace DownKyi.Services.Download;
 internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposable
 {
     private readonly DownloadListState _downloadLists;
-    private readonly DownloadStorageService _downloadStorageService;
+    private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly IDownloadRuntimeFactory _downloadRuntimeFactory;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly ILogger<DownloadBootstrapHostedService> _logger;
-    private IDownloadService? _downloadService;
+    private IDownloadRuntime? _downloadRuntime;
     private Task? _historyLoadTask;
     private bool _disposed;
 
     public DownloadBootstrapHostedService(
         DownloadListState downloadLists,
-        DownloadStorageService downloadStorageService,
+        DownloadTaskProjectionStore projectionStore,
         IDownloadRuntimeFactory downloadRuntimeFactory,
         IUiDispatcher uiDispatcher,
         ILogger<DownloadBootstrapHostedService> logger)
     {
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
-        _downloadStorageService = downloadStorageService
-            ?? throw new ArgumentNullException(nameof(downloadStorageService));
+        _projectionStore = projectionStore
+            ?? throw new ArgumentNullException(nameof(projectionStore));
         _downloadRuntimeFactory = downloadRuntimeFactory
             ?? throw new ArgumentNullException(nameof(downloadRuntimeFactory));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
@@ -52,14 +52,15 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
             }).ConfigureAwait(false);
 
             _historyLoadTask = LoadRemainingHistoryAsync(cancellationToken);
-            _downloadService = _downloadRuntimeFactory.Create();
-            if (_downloadService != null)
+            _downloadRuntime = _downloadRuntimeFactory.Create();
+            if (_downloadRuntime != null)
             {
-                await _downloadService.StartAsync(cancellationToken).ConfigureAwait(false);
+                await _downloadRuntime.StartAsync(cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or InvalidOperationException or SqliteException)
@@ -71,9 +72,9 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         var stopTasks = new List<Task>(2);
-        if (_downloadService != null)
+        if (_downloadRuntime != null)
         {
-            stopTasks.Add(_downloadService.EndAsync());
+            stopTasks.Add(_downloadRuntime.StopAsync(cancellationToken));
         }
 
         if (_historyLoadTask != null)
@@ -89,8 +90,8 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
 
     private async Task<DownloadStartupState> LoadStartupStateAsync(CancellationToken cancellationToken)
     {
-        var downloadingItemsTask = _downloadStorageService.GetDownloadingAsync(cancellationToken);
-        var downloadedItemsTask = _downloadStorageService.GetRecentDownloadedAsync(100, cancellationToken);
+        var downloadingItemsTask = _projectionStore.GetDownloadingAsync(cancellationToken);
+        var downloadedItemsTask = _projectionStore.GetRecentDownloadedAsync(100, cancellationToken);
 
         await Task.WhenAll(downloadingItemsTask, downloadedItemsTask).ConfigureAwait(false);
         return new DownloadStartupState(
@@ -102,7 +103,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
     {
         try
         {
-            var allItems = await _downloadStorageService
+            var allItems = await _projectionStore
                 .GetDownloadedAsync(cancellationToken)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
@@ -117,6 +118,7 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or InvalidOperationException or SqliteException)
@@ -133,8 +135,8 @@ internal sealed class DownloadBootstrapHostedService : IHostedService, IDisposab
         }
 
         _disposed = true;
-        _downloadService?.Dispose();
-        _downloadService = null;
+        _downloadRuntime?.Dispose();
+        _downloadRuntime = null;
     }
 
     private sealed record DownloadStartupState(

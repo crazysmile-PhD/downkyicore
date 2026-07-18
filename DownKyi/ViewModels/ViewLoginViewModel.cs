@@ -2,14 +2,14 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Logging;
 using DownKyi.Services.Account;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
@@ -58,9 +58,9 @@ internal class ViewLoginViewModel : ViewModelBase
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    private DelegateCommand? _backSpaceCommand;
+    private RelayCommand? _backSpaceCommand;
 
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
     protected internal override void ExecuteBackSpace()
     {
@@ -112,6 +112,7 @@ internal class ViewLoginViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
@@ -137,7 +138,10 @@ internal class ViewLoginViewModel : ViewModelBase
                 continue;
             }
 
-            switch (loginStatus.Data.Code)
+            var loginData = loginStatus.Data ?? throw new BilibiliApiResponseException(
+                nameof(GetLoginStatusAsync),
+                "Login status response did not contain its required data payload.");
+            switch (loginData.Code)
             {
                 case 86038:
                     // 二维码已失效
@@ -168,7 +172,7 @@ internal class ViewLoginViewModel : ViewModelBase
                     // 保存登录信息
                     try
                     {
-                        var redirectUri = new Uri(loginStatus.Data.RedirectAddress, UriKind.Absolute);
+                        var redirectUri = new Uri(loginData.RedirectAddress, UriKind.Absolute);
                         var isSucceed = await _loginCoordinator
                             .SaveLoginCookiesAsync(redirectUri, cancellationToken)
                             .ConfigureAwait(true);
@@ -222,7 +226,7 @@ internal class ViewLoginViewModel : ViewModelBase
         LoginQrCodeStatus = false;
     }
 
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
 

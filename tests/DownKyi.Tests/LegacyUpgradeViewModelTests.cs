@@ -1,3 +1,4 @@
+using DownKyi.Application.Desktop;
 using DownKyi.Application.Lifetime;
 using DownKyi.Models;
 using DownKyi.Services.Download;
@@ -5,7 +6,6 @@ using DownKyi.Services.Migration;
 using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging.Abstractions;
-using Prism.Dialogs;
 
 namespace DownKyi.Tests;
 
@@ -21,7 +21,7 @@ public sealed class LegacyUpgradeViewModelTests
             new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
 
-        viewModel.OnDialogOpened(new DialogParameters());
+        viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
         await coordinator.Started.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         viewModel.OnDialogClosed();
@@ -44,7 +44,7 @@ public sealed class LegacyUpgradeViewModelTests
             new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
 
-        viewModel.OnDialogOpened(new DialogParameters());
+        viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
 
         Assert.Same(item, Assert.Single(state.Downloaded));
         Assert.Equal(100, viewModel.Percent);

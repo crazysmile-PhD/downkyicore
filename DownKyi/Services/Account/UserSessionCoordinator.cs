@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Settings;
@@ -21,10 +22,19 @@ internal interface IUserSessionCoordinator
 internal sealed class UserSessionCoordinator : IUserSessionCoordinator
 {
     private readonly ISettingsStore _settingsStore;
+    private readonly Func<CancellationToken, UserInfoForNavigation?> _fetchNavigation;
 
     public UserSessionCoordinator(ISettingsStore settingsStore)
+        : this(settingsStore, UserInfo.GetUserInfoForNavigation)
+    {
+    }
+
+    internal UserSessionCoordinator(
+        ISettingsStore settingsStore,
+        Func<CancellationToken, UserInfoForNavigation?> fetchNavigation)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _fetchNavigation = fetchNavigation ?? throw new ArgumentNullException(nameof(fetchNavigation));
     }
 
     public Task<UserSessionSnapshot> RefreshAsync(CancellationToken cancellationToken)
@@ -32,9 +42,23 @@ internal sealed class UserSessionCoordinator : IUserSessionCoordinator
         return Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var userInfo = UserInfo.GetUserInfoForNavigation();
+            var userInfo = _fetchNavigation(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            _settingsStore.Update(settings => settings with { User = MapSettings(userInfo) });
+            _settingsStore.Update(settings =>
+            {
+                var mapped = MapSettings(userInfo);
+                var keys = new WbiKeys(mapped.ImgKey, mapped.SubKey);
+                if (!keys.IsValid)
+                {
+                    mapped = mapped with
+                    {
+                        ImgKey = settings.User.ImgKey,
+                        SubKey = settings.User.SubKey
+                    };
+                }
+
+                return settings with { User = mapped };
+            });
             cancellationToken.ThrowIfCancellationRequested();
             return new UserSessionSnapshot(userInfo, File.Exists(StorageManager.GetLogin()));
         }, cancellationToken);
@@ -53,34 +77,13 @@ internal sealed class UserSessionCoordinator : IUserSessionCoordinator
                 SubKey: string.Empty);
         }
 
+        var wbi = userInfo.Wbi;
         return new UserApplicationSettings(
             userInfo.Mid,
             userInfo.Name,
             userInfo.IsLogin,
             userInfo.VipStatus == 1,
-            ExtractWbiKey(userInfo.Wbi.ImageAddress),
-            ExtractWbiKey(userInfo.Wbi.SubAddress));
-    }
-
-    private static string ExtractWbiKey(string? address)
-    {
-        if (string.IsNullOrEmpty(address))
-        {
-            return string.Empty;
-        }
-
-        var fileName = address[(address.LastIndexOf('/') + 1)..];
-        var queryIndex = fileName.IndexOf('?', StringComparison.Ordinal);
-        var fragmentIndex = fileName.IndexOf('#', StringComparison.Ordinal);
-        var suffixIndex = queryIndex < 0
-            ? fragmentIndex
-            : fragmentIndex < 0 ? queryIndex : Math.Min(queryIndex, fragmentIndex);
-        if (suffixIndex >= 0)
-        {
-            fileName = fileName[..suffixIndex];
-        }
-
-        var extensionIndex = fileName.IndexOf('.', StringComparison.Ordinal);
-        return extensionIndex < 0 ? fileName : fileName[..extensionIndex];
+            WbiKeyProvider.ExtractKey(wbi?.ImageAddress),
+            WbiKeyProvider.ExtractKey(wbi?.SubAddress));
     }
 }

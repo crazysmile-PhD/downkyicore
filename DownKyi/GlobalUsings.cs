@@ -1,1 +1,2 @@
-global using Prism.Navigation;
+global using DownKyi.Application.Desktop;
+global using DownKyi.Commands;

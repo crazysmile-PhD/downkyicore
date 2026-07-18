@@ -1,9 +1,9 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Images;
-using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class TabHeader : BindableBase
+internal class TabHeader : ObservableObject
 {
     private long id;
 

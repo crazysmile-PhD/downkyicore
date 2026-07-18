@@ -41,10 +41,10 @@ public static class ApplicationLoggerExtensions
         InformationMessage(logger, message, null);
     }
 
-    public static void LogWarningMessage(this ILogger logger, string message)
+    public static void LogWarningMessage(this ILogger logger, string message, Exception? exception = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
-        WarningMessage(logger, message, null);
+        WarningMessage(logger, message, exception);
     }
 
     public static void LogErrorMessage(this ILogger logger, string message, Exception? exception = null)

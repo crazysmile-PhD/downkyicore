@@ -34,7 +34,6 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi", "Services", "SearchService.cs")]
     [InlineData("DownKyi", "Services", "Video", "VideoParseCoordinator.cs")]
     [InlineData("DownKyi", "Services", "Video", "VideoDetailWorkflowCoordinator.cs")]
-    [InlineData("DownKyi", "Utils", "NavigateToView.cs")]
     [InlineData("DownKyi", "ViewModels", "PageViewModels", "FavoritesMedia.cs")]
     [InlineData("DownKyi", "ViewModels", "PageViewModels", "HistoryMedia.cs")]
     [InlineData("DownKyi", "ViewModels", "PageViewModels", "ToViewMedia.cs")]
@@ -44,12 +43,6 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi.Core", "BiliApi", "Login", "LoginHelper.cs")]
     [InlineData("DownKyi.Core", "BiliApi", "WebClient.cs")]
     [InlineData("DownKyi.Core", "BiliApi", "BilibiliHttpClientRegistration.cs")]
-    [InlineData("DownKyi.Core", "BiliApi", "Sign", "WbiSign.cs")]
-    [InlineData("DownKyi.Core", "BiliApi", "Video", "VideoInfo.cs")]
-    [InlineData("DownKyi.Core", "BiliApi", "VideoStream", "VideoStreamApi.cs")]
-    [InlineData("DownKyi.Core", "BiliApi", "Users", "UserInfo.cs")]
-    [InlineData("DownKyi.Core", "BiliApi", "Users", "UserSpace.cs")]
-    [InlineData("DownKyi", "Services", "UserSpace", "UserSpaceLoadCoordinator.cs")]
     [InlineData("DownKyi", "Services", "UserSpace", "UserSpacePageCoordinator.cs")]
     [InlineData("DownKyi", "ViewModels", "ViewUserSpaceViewModel.cs")]
     public void MigratedApplicationOwnersDoNotReachIntoTheSettingsSingleton(params string[] pathParts)
@@ -61,15 +54,15 @@ public sealed class SettingsArchitectureTests
     }
 
     [Fact]
-    public void CompositionRootsShareThePrismOwnedSettingsStore()
+    public void HostCompositionOwnsOneSettingsStoreRegistration()
     {
-        var prismSource = ReadSource("DownKyi", "Composition", "LegacyPrismComposition.cs");
-        var hostSource = ReadSource("DownKyi", "Composition", "LegacyDesktopComposition.cs");
+        var compositionSource = ReadSource("DownKyi", "Composition", "DesktopComposition.cs");
 
-        Assert.Contains("RegisterSingleton<ISettingsStore, SettingsStore>()", prismSource, StringComparison.Ordinal);
-        Assert.Contains("var settingsStore = container.Resolve<ISettingsStore>()", hostSource, StringComparison.Ordinal);
-        Assert.Contains("services.AddSingleton(settingsStore)", hostSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("new SettingsStore", hostSource, StringComparison.Ordinal);
+        Assert.Contains("AddSingleton<ISettingsStore, SettingsStore>()", compositionSource, StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            CountOccurrences(compositionSource, "AddSingleton<ISettingsStore, SettingsStore>()"));
+        Assert.DoesNotContain("new SettingsStore", compositionSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -101,8 +94,7 @@ public sealed class SettingsArchitectureTests
             "Services",
             "Settings",
             "NetworkSettingsCoordinator.cs");
-        var prismComposition = ReadSource("DownKyi", "Composition", "LegacyPrismComposition.cs");
-        var hostComposition = ReadSource("DownKyi", "Composition", "LegacyDesktopComposition.cs");
+        var composition = ReadSource("DownKyi", "Composition", "DesktopComposition.cs");
 
         Assert.Contains("INetworkSettingsCoordinator", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ISettingsStore", viewModelSource, StringComparison.Ordinal);
@@ -114,9 +106,7 @@ public sealed class SettingsArchitectureTests
         Assert.Contains("#region 页面属性申明", stateSource, StringComparison.Ordinal);
         Assert.Contains("ISettingsStore", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("ApplyWithRestartPromptAsync", coordinatorSource, StringComparison.Ordinal);
-        Assert.Contains("INetworkSettingsCoordinator, NetworkSettingsCoordinator", prismComposition,
-            StringComparison.Ordinal);
-        Assert.Contains("INetworkSettingsCoordinator, NetworkSettingsCoordinator", hostComposition,
+        Assert.Contains("INetworkSettingsCoordinator, NetworkSettingsCoordinator", composition,
             StringComparison.Ordinal);
     }
 
@@ -124,12 +114,11 @@ public sealed class SettingsArchitectureTests
     public void FfmpegProcessorIsOneInjectedCompositionOwner()
     {
         var processorSource = ReadSource("DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs");
-        var prismSource = ReadSource("DownKyi", "Composition", "LegacyPrismComposition.cs");
-        var hostSource = ReadSource("DownKyi", "Composition", "LegacyDesktopComposition.cs");
+        var compositionSource = ReadSource("DownKyi", "Composition", "DesktopComposition.cs");
 
         Assert.DoesNotContain("FfmpegProcessor.Instance", processorSource, StringComparison.Ordinal);
-        Assert.Contains("RegisterSingleton<FfmpegProcessor>()", prismSource, StringComparison.Ordinal);
-        Assert.Contains("container.Resolve<FfmpegProcessor>()", hostSource, StringComparison.Ordinal);
+        Assert.Contains("AddSingleton<FfmpegProcessor>()", compositionSource, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(compositionSource, "AddSingleton<FfmpegProcessor>()"));
     }
 
     [Fact]
@@ -141,16 +130,10 @@ public sealed class SettingsArchitectureTests
             Path.Combine(RepositoryRoot, "DownKyi.Core"),
             Path.Combine(RepositoryRoot, "src")
         };
-        var compatibilityOwner = Path.Combine(
-            RepositoryRoot,
-            "DownKyi.Core",
-            "Settings",
-            "ISettingsStore.cs");
         var violations = sourceRoots
             .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
-            .Where(path => !string.Equals(path, compatibilityOwner, StringComparison.OrdinalIgnoreCase))
             .Where(path => File.ReadAllText(path).Contains("SettingsManager.Instance", StringComparison.Ordinal))
             .Select(path => Path.GetRelativePath(RepositoryRoot, path))
             .ToArray();
@@ -170,8 +153,11 @@ public sealed class SettingsArchitectureTests
         Assert.DoesNotContain("SettingsManager Settings", storeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Run", storeSource, StringComparison.Ordinal);
         Assert.Contains("SettingsStore(ILoggerFactory loggerFactory)", storeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("public SettingsStore()", storeSource, StringComparison.Ordinal);
         Assert.Contains("ILogger<SettingsStore>", storeSource, StringComparison.Ordinal);
         Assert.Contains("ILogger<SettingsManager>", managerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("static SettingsManager Instance", managerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lazy<SettingsManager>", managerSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LogManager.", storeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LogManager.", managerSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Console.", managerSource, StringComparison.Ordinal);
@@ -209,6 +195,11 @@ public sealed class SettingsArchitectureTests
     private static string ReadSource(params string[] pathParts)
     {
         return File.ReadAllText(Path.Combine([RepositoryRoot, .. pathParts]));
+    }
+
+    private static int CountOccurrences(string source, string value)
+    {
+        return source.Split(value, StringSplitOptions.None).Length - 1;
     }
 
     private static string FindRepositoryRoot()

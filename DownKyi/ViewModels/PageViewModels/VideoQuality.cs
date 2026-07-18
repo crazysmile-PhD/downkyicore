@@ -1,9 +1,9 @@
 using System.Collections.Generic;
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class VideoQuality : BindableBase
+internal class VideoQuality : ObservableObject
 {
     private int _quality;
 

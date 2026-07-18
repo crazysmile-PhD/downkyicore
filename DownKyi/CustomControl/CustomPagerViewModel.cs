@@ -1,7 +1,7 @@
 using System;
 using System.ComponentModel;
 using Avalonia.Controls;
-using Prism.Commands;
+using CommunityToolkit.Mvvm.Input;
 
 namespace DownKyi.CustomControl;
 
@@ -306,9 +306,9 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
     #endregion
 
 
-    private DelegateCommand<object>? _previousCommand;
+    private RelayCommand<object>? _previousCommand;
 
-    public DelegateCommand<object> PreviousCommand => _previousCommand ??= new DelegateCommand<object>(PreviousExecuted);
+    public RelayCommand<object> PreviousCommand => _previousCommand ??= RequiredParameterCommand.Create<object>(PreviousExecuted);
 
     private void PreviousExecuted(object obj)
     {
@@ -317,9 +317,9 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
         SetView();
     }
 
-    private DelegateCommand<object>? _firstCommand;
+    private RelayCommand<object>? _firstCommand;
 
-    public DelegateCommand<object> FirstCommand => _firstCommand ??= new DelegateCommand<object>(FirstExecuted);
+    public RelayCommand<object> FirstCommand => _firstCommand ??= RequiredParameterCommand.Create<object>(FirstExecuted);
 
     private void FirstExecuted(object obj)
     {
@@ -328,9 +328,9 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
         SetView();
     }
 
-    private DelegateCommand<object>? _previousSecondCommand;
+    private RelayCommand<object>? _previousSecondCommand;
 
-    public DelegateCommand<object> PreviousSecondCommand => _previousSecondCommand ??= new DelegateCommand<object>(
+    public RelayCommand<object> PreviousSecondCommand => _previousSecondCommand ??= RequiredParameterCommand.Create<object>(
         PreviousSecondExecuted);
 
     private void PreviousSecondExecuted(object obj)
@@ -340,9 +340,9 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
         SetView();
     }
 
-    private DelegateCommand<object>? _previousFirstCommand;
+    private RelayCommand<object>? _previousFirstCommand;
 
-    public DelegateCommand<object> PreviousFirstCommand => _previousFirstCommand ??= new DelegateCommand<object>(PreviousFirstExecuted);
+    public RelayCommand<object> PreviousFirstCommand => _previousFirstCommand ??= RequiredParameterCommand.Create<object>(PreviousFirstExecuted);
 
     private void PreviousFirstExecuted(object obj)
     {
@@ -351,9 +351,9 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
         SetView();
     }
 
-    private DelegateCommand<object>? _nextFirstCommand;
+    private RelayCommand<object>? _nextFirstCommand;
 
-    public DelegateCommand<object> NextFirstCommand => _nextFirstCommand ??= new DelegateCommand<object>(NextFirstExecuted);
+    public RelayCommand<object> NextFirstCommand => _nextFirstCommand ??= RequiredParameterCommand.Create<object>(NextFirstExecuted);
 
     private void NextFirstExecuted(object obj)
     {
@@ -362,9 +362,9 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
         SetView();
     }
 
-    private DelegateCommand<object>? _nextSecondCommand;
+    private RelayCommand<object>? _nextSecondCommand;
 
-    public DelegateCommand<object> NextSecondCommand => _nextSecondCommand ??= new DelegateCommand<object>(NextSecondExecuted);
+    public RelayCommand<object> NextSecondCommand => _nextSecondCommand ??= RequiredParameterCommand.Create<object>(NextSecondExecuted);
 
     private void NextSecondExecuted(object obj)
     {
@@ -373,9 +373,9 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
         SetView();
     }
 
-    private DelegateCommand<object>? _lastCommand;
+    private RelayCommand<object>? _lastCommand;
 
-    public DelegateCommand<object> LastCommand => _lastCommand ??= new DelegateCommand<object>(LastExecuted);
+    public RelayCommand<object> LastCommand => _lastCommand ??= RequiredParameterCommand.Create<object>(LastExecuted);
 
     private void LastExecuted(object obj)
     {
@@ -384,9 +384,9 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
         SetView();
     }
 
-    private DelegateCommand<object>? _nextCommand;
+    private RelayCommand<object>? _nextCommand;
 
-    public DelegateCommand<object> NextCommand => _nextCommand ??= new DelegateCommand<object>(NextExecuted);
+    public RelayCommand<object> NextCommand => _nextCommand ??= RequiredParameterCommand.Create<object>(NextExecuted);
 
     private void NextExecuted(object obj)
     {
@@ -395,9 +395,9 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
         SetView();
     }
 
-    private DelegateCommand<object>? _jumpCommand;
+    private RelayCommand<object>? _jumpCommand;
 
-    public DelegateCommand<object> JumpCommand => _jumpCommand ??= new DelegateCommand<object>(JumpExecuted);
+    public RelayCommand<object> JumpCommand => _jumpCommand ??= RequiredParameterCommand.Create<object>(JumpExecuted);
 
     private void JumpExecuted(object obj)
     {

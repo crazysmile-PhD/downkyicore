@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class VideoInfoView : BindableBase
+internal class VideoInfoView : ObservableObject
 {
     private string _coverUrl = string.Empty;
 

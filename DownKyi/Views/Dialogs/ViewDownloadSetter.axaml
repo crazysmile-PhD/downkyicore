@@ -1,18 +1,8 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:prism="http://prismlibrary.com/"
              x:Class="DownKyi.Views.Dialogs.ViewDownloadSetter"
              xmlns:vmd="clr-namespace:DownKyi.ViewModels.Dialogs"
-             prism:ViewModelLocator.AutoWireViewModel="True"
              x:DataType="vmd:ViewDownloadSetterViewModel">
-    <!-- <prismExtension:Dialog.Theme> -->
-    <!--     <ControlTheme TargetType="Window"> -->
-    <!--         <Setter Property="CanResize" Value="False" /> -->
-    <!--         <Setter Property="ShowInTaskbar" Value="False" /> -->
-    <!--         <Setter Property="SizeToContent" Value="WidthAndHeight" /> -->
-    <!--         <Setter Property="SystemDecorations" Value="None" /> -->
-    <!--     </ControlTheme> -->
-    <!-- </prismExtension:Dialog.Theme> -->
     <Border BorderBrush="{DynamicResource BrushWindowBorder}" BorderThickness="1,1,1,0.6">
         <Grid RowDefinitions="40,*">
 

@@ -37,10 +37,6 @@ public class Producer
         {
             Filters.Add("scroll_filter", new ScrollFilter());
         }
-        //if (Config["custom_filter"])
-        //{
-        //    Filters.Add("custom_filter", new CustomFilter());
-        //}
     }
 
     public void ApplyFilter()
@@ -49,12 +45,10 @@ public class Producer
         {
             { "top_filter", 0 },
             { "bottom_filter", 0 },
-            { "scroll_filter", 0 },
-            //{ "custom_filter",0}
+            { "scroll_filter", 0 }
         };
 
         var danmakus = Danmakus;
-        //string[] orders = { "top_filter", "bottom_filter", "scroll_filter", "custom_filter" };
         string[] orders = { "top_filter", "bottom_filter", "scroll_filter" };
         foreach (var name in orders)
         {
@@ -86,6 +80,11 @@ public class Producer
             { "total", totalCount }
         };
 
-        return (Dictionary<string, int>)ret.Concat(FilterDetail);
+        foreach (var detail in FilterDetail)
+        {
+            ret[detail.Key] = detail.Value;
+        }
+
+        return ret;
     }
 }

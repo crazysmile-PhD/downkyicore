@@ -12,7 +12,7 @@ public class PlayerV2Origin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public PlayerV2 Data { get; set; } = new();
+    [JsonProperty("data")] public PlayerV2? Data { get; set; }
 }
 
 public class PlayerV2 : BaseModel

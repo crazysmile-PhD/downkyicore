@@ -26,7 +26,7 @@ public static class UserRelation
             nameof(GetFollowers),
             "UserRelation");
 
-        return relationFollower?.Data;
+        return BiliApiRequest.RequirePayload(relationFollower.Data);
     }
 
     /// <summary>
@@ -80,7 +80,7 @@ public static class UserRelation
             nameof(GetFollowings),
             "UserRelation");
 
-        return relationFollower?.Data;
+        return BiliApiRequest.RequirePayload(relationFollower.Data);
     }
 
     /// <summary>
@@ -127,7 +127,7 @@ public static class UserRelation
             nameof(GetWhispers),
             "UserRelation");
 
-        return relationWhisper?.Data?.List;
+        return BiliApiRequest.RequirePayload(relationWhisper.Data).List;
     }
 
     /// <summary>
@@ -146,7 +146,7 @@ public static class UserRelation
             nameof(GetBlacks),
             "UserRelation");
 
-        return relationBlack?.Data;
+        return BiliApiRequest.RequirePayload(relationBlack.Data);
     }
 
     #region 关注分组相关，只能查询当前登录账户的信息
@@ -165,7 +165,7 @@ public static class UserRelation
             nameof(GetFollowingGroup),
             "UserRelation");
 
-        return followingGroup?.Data;
+        return BiliApiRequest.RequirePayload(followingGroup.Data);
     }
 
     /// <summary>
@@ -194,7 +194,7 @@ public static class UserRelation
             nameof(GetFollowingGroupContent),
             "UserRelation");
 
-        return content?.Data;
+        return BiliApiRequest.RequirePayload(content.Data);
     }
 
     /// <summary>

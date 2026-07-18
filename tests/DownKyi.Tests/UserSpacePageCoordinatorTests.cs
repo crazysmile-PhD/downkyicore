@@ -14,7 +14,7 @@ public sealed class UserSpacePageCoordinatorTests
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
-        await Assert.ThrowsAsync<TaskCanceledException>(() => coordinator.LoadPublicationPageAsync(
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.LoadPublicationPageAsync(
             42,
             1,
             30,
@@ -66,6 +66,7 @@ public sealed class UserSpacePageCoordinatorTests
     {
         return new UserSpacePageCoordinator(
             settings.Store,
+            new TestWbiKeyProvider(),
             new TestNavigationService(),
             NullLogger<UserSpacePageCoordinator>.Instance);
     }

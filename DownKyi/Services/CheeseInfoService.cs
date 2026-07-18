@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Cheese;
 using DownKyi.Core.BiliApi.Cheese.Models;
@@ -135,11 +136,18 @@ internal class CheeseInfoService : IInfoService
     /// 获取视频流的信息，从VideoPage返回
     /// </summary>
     /// <param name="page"></param>
-    public PlayUrl? GetVideoStream(VideoPage page, System.Threading.CancellationToken cancellationToken = default)
+    public Task<PlayUrl?> GetVideoStreamAsync(
+        VideoPage page,
+        System.Threading.CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        return VideoStreamApi.GetCheesePlayUrl(page.Avid, page.Bvid, page.Cid, page.EpisodeId, cancellationToken: cancellationToken);
+        return Task.FromResult(VideoStreamApi.GetCheesePlayUrl(
+            page.Avid,
+            page.Bvid,
+            page.Cid,
+            page.EpisodeId,
+            cancellationToken: cancellationToken));
     }
 
     /// <summary>

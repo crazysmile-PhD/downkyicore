@@ -1,11 +1,11 @@
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Images;
 using DownKyi.Utils;
-using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class FavoritesPageItem : BindableBase
+internal class FavoritesPageItem : ObservableObject
 {
     private string coverUrl = string.Empty;
 

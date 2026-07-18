@@ -16,7 +16,7 @@ public sealed class AppLifecycleArchitectureTests
         Assert.DoesNotContain(".GetAwaiter().GetResult()", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain(".Wait()", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Run", appSource, StringComparison.Ordinal);
-        Assert.Contains("IApplicationLifecycle", appSource, StringComparison.Ordinal);
+        Assert.Contains("AvaloniaApplicationLifecycle", appSource, StringComparison.Ordinal);
         Assert.Contains("host.StopAsync(CancellationToken.None)", lifecycleSource, StringComparison.Ordinal);
         Assert.Contains("_settingsStore.FlushAsync", lifecycleSource, StringComparison.Ordinal);
     }
@@ -114,9 +114,10 @@ public sealed class AppLifecycleArchitectureTests
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyDesktopComposition.cs"));
+            "DesktopComposition.cs"));
 
-        Assert.Contains("CreateLegacyDesktopHost", appSource, StringComparison.Ordinal);
+        Assert.Contains("DownKyiHost.Create", appSource, StringComparison.Ordinal);
+        Assert.Contains("AddDownKyiDesktop", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("host.StopAsync", appSource, StringComparison.Ordinal);
         Assert.Contains("DownloadBootstrapHostedService", compositionSource, StringComparison.Ordinal);
         Assert.Contains("IDownloadRuntimeFactory", compositionSource, StringComparison.Ordinal);
@@ -130,25 +131,29 @@ public sealed class AppLifecycleArchitectureTests
     }
 
     [Fact]
-    public void AppDelegatesPrismRegistrationToCompatibilityComposition()
+    public void AppDelegatesAllRegistrationsToMicrosoftDiComposition()
     {
         var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
         var compositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyPrismComposition.cs"));
+            "DesktopComposition.cs"));
 
-        Assert.Contains("RegisterLegacyApplication", appSource, StringComparison.Ordinal);
+        Assert.Contains("services.AddDownKyiDesktop", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("RegisterForNavigation", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("RegisterDialog", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("RegisterSingleton", appSource, StringComparison.Ordinal);
-        Assert.Contains("RegisterForNavigation", compositionSource, StringComparison.Ordinal);
-        Assert.Contains("RegisterDialog", compositionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Prism", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DryIoc", appSource, StringComparison.Ordinal);
+        Assert.Contains("IAppNavigationService, AvaloniaNavigationService", compositionSource,
+            StringComparison.Ordinal);
+        Assert.Contains("IAppDialogService, AvaloniaDialogService", compositionSource,
+            StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ApplicationLoggingUsesOneProviderAcrossPrismAndHostComposition()
+    public void ApplicationLoggingUsesOneProviderAcrossAppAndHostComposition()
     {
         var appSource = File.ReadAllText(Path.Combine(RepositoryRoot, "DownKyi", "App.axaml.cs"));
         var aboutSource = File.ReadAllText(Path.Combine(
@@ -157,11 +162,11 @@ public sealed class AppLifecycleArchitectureTests
             "ViewModels",
             "Settings",
             "ViewAboutViewModel.cs"));
-        var legacyHostSource = File.ReadAllText(Path.Combine(
+        var compositionSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "DownKyi",
             "Composition",
-            "LegacyDesktopComposition.cs"));
+            "DesktopComposition.cs"));
         var hostSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src",
@@ -170,12 +175,12 @@ public sealed class AppLifecycleArchitectureTests
             "DownKyiHost.cs"));
 
         Assert.Contains("new ApplicationLogProvider", appSource, StringComparison.Ordinal);
-        Assert.Contains("RegisterInstance<IApplicationLogService>", appSource, StringComparison.Ordinal);
-        Assert.Contains("RegisterInstance<ILoggerFactory>", appSource, StringComparison.Ordinal);
+        Assert.Contains("services.AddDownKyiDesktop(_loggerFactory, _logProvider)", appSource,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("LogManager.", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("LogManager.", aboutSource, StringComparison.Ordinal);
-        Assert.Contains("services.AddSingleton(loggerFactory)", legacyHostSource, StringComparison.Ordinal);
-        Assert.Contains("services.AddSingleton(logService)", legacyHostSource, StringComparison.Ordinal);
+        Assert.Contains("services.AddSingleton(loggerFactory)", compositionSource, StringComparison.Ordinal);
+        Assert.Contains("services.AddSingleton(logService)", compositionSource, StringComparison.Ordinal);
         Assert.Contains("builder.Services.AddLogging()", hostSource, StringComparison.Ordinal);
     }
 

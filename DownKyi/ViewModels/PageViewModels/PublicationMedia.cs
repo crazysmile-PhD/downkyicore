@@ -1,13 +1,13 @@
 using System;
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.BiliUtils;
-using Prism.Commands;
-using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class PublicationMedia : BindableBase
+internal class PublicationMedia : ObservableObject
 {
     private readonly IAppNavigationService _navigationService;
     private readonly AppRoute _parentRoute;
@@ -84,9 +84,9 @@ internal class PublicationMedia : BindableBase
     #region 命令申明
 
     // 视频标题点击事件
-    private DelegateCommand<object>? _titleCommand;
+    private RelayCommand<object>? _titleCommand;
 
-    public DelegateCommand<object> TitleCommand => _titleCommand ??= new DelegateCommand<object>(ExecuteTitleCommand);
+    public RelayCommand<object> TitleCommand => _titleCommand ??= RequiredParameterCommand.Create<object>(ExecuteTitleCommand);
 
     /// <summary>
     /// 视频标题点击事件

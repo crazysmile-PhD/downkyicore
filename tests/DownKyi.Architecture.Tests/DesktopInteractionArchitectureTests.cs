@@ -43,30 +43,33 @@ public sealed class DesktopInteractionArchitectureTests
     }
 
     [Fact]
-    public void PrismInteractionTypesStayInsideCompatibilityAdaptersAndComposition()
+    public void TypedInteractionsUseAvaloniaAdaptersWithoutCompatibilityBridges()
     {
         var compositionSource = ReadSource(
             "DownKyi",
             "Composition",
-            "LegacyPrismComposition.cs");
+            "DesktopComposition.cs");
         var navigationAdapter = ReadSource(
             "DownKyi",
             "Platform",
-            "PrismNavigationService.cs");
+            "AvaloniaNavigationService.cs");
         var dialogAdapter = ReadSource(
             "DownKyi",
             "Platform",
-            "PrismDialogService.cs");
+            "AvaloniaDialogService.cs");
 
         Assert.Contains("IUserNotificationService, DesktopNotificationService", compositionSource,
             StringComparison.Ordinal);
-        Assert.Contains("IAppNavigationService, PrismNavigationService", compositionSource,
+        Assert.Contains("IAppNavigationService, AvaloniaNavigationService", compositionSource,
             StringComparison.Ordinal);
-        Assert.Contains("IAppDialogService, PrismDialogService", compositionSource,
+        Assert.Contains("IAppDialogService, AvaloniaDialogService", compositionSource,
             StringComparison.Ordinal);
-        Assert.Contains("IRegionManager", navigationAdapter, StringComparison.Ordinal);
-        Assert.Contains("LegacyDialogService", dialogAdapter, StringComparison.Ordinal);
+        Assert.Contains("GetViewModelType", navigationAdapter, StringComparison.Ordinal);
+        Assert.Contains("GetDialogTypes", dialogAdapter, StringComparison.Ordinal);
         Assert.Contains("Dispatcher.UIThread.CheckAccess()", dialogAdapter, StringComparison.Ordinal);
+        Assert.DoesNotContain("Prism", compositionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Prism", navigationAdapter, StringComparison.Ordinal);
+        Assert.DoesNotContain("Prism", dialogAdapter, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -139,20 +142,21 @@ public sealed class DesktopInteractionArchitectureTests
     }
 
     [Fact]
-    public void DownloadRuntimeUsesTheTypedDialogBoundary()
+    public void DownloadRuntimePublishesNotificationsWithoutOwningDialogs()
     {
         var runtimeSource = string.Join(
             Environment.NewLine,
             new[]
             {
                 ReadSource("DownKyi", "Services", "Download", "DownloadRuntimeFactory.cs"),
-                ReadSource("DownKyi", "Services", "Download", "DownloadService.cs"),
-                ReadSource("DownKyi", "Services", "Download", "AriaDownloadService.cs"),
-                ReadSource("DownKyi", "Services", "Download", "BuiltinDownloadService.cs"),
-                ReadSource("DownKyi", "Services", "Download", "CustomAriaDownloadService.cs")
+                ReadSource("DownKyi", "Services", "Download", "DownloadOrchestrator.cs"),
+                ReadSource("DownKyi", "Services", "Download", "DownloadPipeline.cs"),
+                ReadSource("DownKyi", "Services", "Download", "Aria2TransferBackend.cs"),
+                ReadSource("DownKyi", "Services", "Download", "BuiltinTransferBackend.cs")
             });
 
-        Assert.Contains("IAppDialogService", runtimeSource, StringComparison.Ordinal);
+        Assert.Contains("IUserNotificationService", runtimeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IAppDialogService", runtimeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("DownKyi.PrismExtension.Dialog", runtimeSource, StringComparison.Ordinal);
         Assert.DoesNotContain("IDialogService", runtimeSource, StringComparison.Ordinal);
     }

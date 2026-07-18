@@ -1,9 +1,7 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DownKyi.Views.Settings.ViewVideo"
-             xmlns:prism="http://prismlibrary.com/"
              xmlns:vms="clr-namespace:DownKyi.ViewModels.Settings"
-             prism:ViewModelLocator.AutoWireViewModel="True"
              x:DataType="vms:ViewVideoViewModel">
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="50,0" Orientation="Vertical">

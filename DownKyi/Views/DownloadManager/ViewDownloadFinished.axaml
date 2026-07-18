@@ -240,19 +240,6 @@
         <Image
             Width="256"
             Height="256"
-            Source="/Resources/nodata02.png" IsVisible="{Binding !DownloadedList.Count}">
-            <!--<Interaction.Behaviors>
-                <DataTriggerBehavior Binding="{Binding DownloadedList}" Value="{x:Null}">
-                    <ChangePropertyAction PropertyName="IsVisible" Value="True" />
-                </DataTriggerBehavior>
-                <DataTriggerBehavior Binding="{Binding DownloadedList.Count}" Value="0">
-                    <ChangePropertyAction PropertyName="IsVisible" Value="True" />
-                </DataTriggerBehavior>
-                <DataTriggerBehavior
-                    Binding="{Binding DownloadedList.Count, Converter={StaticResource CountConverter}}" Value="true">
-                    <ChangePropertyAction PropertyName="IsVisible" Value="False" />
-                </DataTriggerBehavior>
-            </Interaction.Behaviors>-->
-        </Image>
+            Source="/Resources/nodata02.png" IsVisible="{Binding !DownloadedList.Count}" />
     </Grid>
 </UserControl>

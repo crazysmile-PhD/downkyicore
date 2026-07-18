@@ -12,7 +12,7 @@ public class RegionDynamicOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public RegionDynamic Data { get; set; } = new();
+    [JsonProperty("data")] public RegionDynamic? Data { get; set; }
 }
 
 public class RegionDynamic : BaseModel

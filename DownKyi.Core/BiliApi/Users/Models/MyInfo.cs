@@ -12,7 +12,7 @@ public class MyInfoOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public MyInfo Data { get; set; } = new();
+    [JsonProperty("data")] public MyInfo? Data { get; set; }
 }
 
 public class MyInfo : BaseModel

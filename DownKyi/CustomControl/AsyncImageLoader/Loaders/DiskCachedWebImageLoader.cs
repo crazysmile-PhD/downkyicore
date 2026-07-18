@@ -12,11 +12,6 @@ internal class DiskCachedWebImageLoader : BaseWebImageLoader
 {
     private readonly string _cacheFolder;
 
-    public DiskCachedWebImageLoader(string cacheFolder = "Cache/Images/")
-    {
-        _cacheFolder = cacheFolder;
-    }
-
     public DiskCachedWebImageLoader(HttpClient httpClient, bool disposeHttpClient, string cacheFolder = "Cache/Images/") : base(httpClient, disposeHttpClient)
     {
         _cacheFolder = cacheFolder;

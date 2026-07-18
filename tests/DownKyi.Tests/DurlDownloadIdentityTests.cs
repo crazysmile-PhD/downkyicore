@@ -10,7 +10,7 @@ public sealed class DurlDownloadIdentityTests
     [Fact]
     public void DescriptorUsesDurlOrderAsStableDownloadKey()
     {
-        var descriptor = DownloadService.CreateDurlDownloadDescriptor(new List<PlayUrlDurl>
+        var descriptor = DownloadPipeline.CreateDurlDownloadDescriptor(new List<PlayUrlDurl>
         {
             new()
             {
@@ -32,7 +32,7 @@ public sealed class DurlDownloadIdentityTests
     [Fact]
     public void DescriptorSelectsLowestDurlOrder()
     {
-        var descriptor = DownloadService.CreateDurlDownloadDescriptor(new List<PlayUrlDurl>
+        var descriptor = DownloadPipeline.CreateDurlDownloadDescriptor(new List<PlayUrlDurl>
         {
             new() { Order = 9, SourceAddress = "https://example.invalid/segment-9" },
             new() { Order = 2, SourceAddress = "https://example.invalid/segment-2" },
@@ -43,5 +43,24 @@ public sealed class DurlDownloadIdentityTests
         Assert.Equal(2, descriptor.Id);
         Assert.Equal("2_durl", descriptor.DownloadKey);
         Assert.Equal("https://example.invalid/segment-2", descriptor.BaseUrl);
+    }
+
+    [Theory]
+    [InlineData("https://i0.example.invalid/cover.jpg?token=redacted", "jpg")]
+    [InlineData("//i0.example.invalid/cover.webp@672w_378h.webp?token=redacted", "webp")]
+    [InlineData("images/cover.png#thumbnail", "png")]
+    public void CoverExtensionIgnoresUriQueryAndFragment(string source, string expected)
+    {
+        Assert.Equal(expected, DownloadPipeline.GetImageExtension(source));
+    }
+
+    [Fact]
+    public void DownloadDirectoryUsesPathSemantics()
+    {
+        var filePath = Path.Combine("downloads", "nested", "video");
+
+        Assert.Equal(
+            Path.Combine("downloads", "nested"),
+            DownloadPipeline.GetDownloadDirectoryPath(filePath));
     }
 }

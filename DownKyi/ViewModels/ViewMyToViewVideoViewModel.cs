@@ -5,19 +5,17 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
 using DownKyi.Images;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
@@ -141,9 +139,9 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     #region 命令申明
 
     // 返回事件
-    private DelegateCommand? _backSpaceCommand;
+    private RelayCommand? _backSpaceCommand;
 
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
     /// <summary>
     /// 返回事件
@@ -161,9 +159,9 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     }
 
     // 前往下载管理页面
-    private DelegateCommand? _downloadManagerCommand;
+    private RelayCommand? _downloadManagerCommand;
 
-    public DelegateCommand DownloadManagerCommand => _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
+    public RelayCommand DownloadManagerCommand => _downloadManagerCommand ??= new RelayCommand(ExecuteDownloadManagerCommand);
 
     /// <summary>
     /// 前往下载管理页面
@@ -176,9 +174,9 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     }
 
     // 全选按钮点击事件
-    private DelegateCommand<object>? _selectAllCommand;
+    private RelayCommand<object>? _selectAllCommand;
 
-    public DelegateCommand<object> SelectAllCommand => _selectAllCommand ??= new DelegateCommand<object>(ExecuteSelectAllCommand);
+    public RelayCommand<object> SelectAllCommand => _selectAllCommand ??= RequiredParameterCommand.Create<object>(ExecuteSelectAllCommand);
 
     /// <summary>
     /// 全选按钮点击事件
@@ -203,9 +201,9 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     }
 
     // 列表选择事件
-    private DelegateCommand<object>? _mediasCommand;
+    private RelayCommand<object>? _mediasCommand;
 
-    public DelegateCommand<object> MediasCommand => _mediasCommand ??= new DelegateCommand<object>(ExecuteMediasCommand);
+    public RelayCommand<object> MediasCommand => _mediasCommand ??= RequiredParameterCommand.Create<object>(ExecuteMediasCommand);
 
     /// <summary>
     /// 列表选择事件
@@ -263,6 +261,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
@@ -298,6 +297,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
@@ -327,7 +327,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
@@ -357,7 +357,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         RunFireAndForget(UpdateToViewMediaListAsync(), nameof(UpdateToViewMediaListAsync), _logger);
     }
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         CancelOperations();
         LoadingVisibility = false;

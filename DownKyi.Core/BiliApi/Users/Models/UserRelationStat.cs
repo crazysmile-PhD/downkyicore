@@ -6,7 +6,7 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/relation/stat?vmid={mid}
 public class UserRelationStatOrigin : BaseModel
 {
-    [JsonProperty("data")] public UserRelationStat Data { get; set; } = new();
+    [JsonProperty("data")] public UserRelationStat? Data { get; set; }
 }
 
 public class UserRelationStat : BaseModel

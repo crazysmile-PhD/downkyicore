@@ -10,7 +10,7 @@ public class CheeseEpisodeListOrigin : BaseModel
     //public int Code { get; set; }
     //[JsonProperty("message")]
     //public string Message { get; set; } = string.Empty;
-    [JsonProperty("data")] public CheeseEpisodeList Data { get; set; } = new();
+    [JsonProperty("data")] public CheeseEpisodeList? Data { get; set; }
 }
 
 public class CheeseEpisodeList : BaseModel

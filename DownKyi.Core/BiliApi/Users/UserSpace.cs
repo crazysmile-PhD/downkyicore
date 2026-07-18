@@ -1,6 +1,5 @@
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -28,7 +27,12 @@ public static class UserSpace
             "UserSpace",
             cancellationToken);
 
-        return settings is not { Status: true } ? null : settings.Data;
+        if (!settings.Status)
+        {
+            return null;
+        }
+
+        return BiliApiRequest.RequirePayload(settings.Data);
     }
 
     #region 投稿
@@ -39,12 +43,13 @@ public static class UserSpace
     /// <param name="mid">用户id</param>
     /// <returns></returns>
     public static IReadOnlyList<SpacePublicationListTypeVideoZone>? GetPublicationType(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long mid)
     {
         const int pn = 1;
         const int ps = 1;
-        var publication = GetPublication(settingsStore, mid, pn, ps);
+        var publication = GetPublication(keys, unixTimeSeconds, mid, pn, ps);
         return GetPublicationType(publication);
     }
 
@@ -82,7 +87,8 @@ public static class UserSpace
     /// <param name="keyword">搜索关键词</param>
     /// <returns></returns>
     public static IReadOnlyList<SpacePublicationListVideo> GetAllPublication(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long mid,
         int tid = 0,
         PublicationOrder order = PublicationOrder.PUBDATE,
@@ -96,7 +102,7 @@ public static class UserSpace
             i++;
             const int ps = 100;
 
-            var data = GetPublication(settingsStore, mid, i, ps, tid, order, keyword);
+            var data = GetPublication(keys, unixTimeSeconds, mid, i, ps, tid, order, keyword);
             if (data?.Vlist == null || data.Vlist.Count == 0)
             {
                 break;
@@ -119,7 +125,8 @@ public static class UserSpace
     /// <param name="keyword">搜索关键词</param>
     /// <returns></returns>
     public static SpacePublicationList? GetPublication(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long mid,
         int pn,
         int ps,
@@ -128,7 +135,7 @@ public static class UserSpace
         string keyword = "",
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(keys);
         var parameters = new Dictionary<string, object?>
         {
             { "mid", mid },
@@ -146,40 +153,34 @@ public static class UserSpace
             parameters.Add("dm_img_inter", "{\"ds\":[],\"wh\":[0,0,0],\"of\":[0,0,0]}");
         }
 
-        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters, settingsStore));
+        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(
+            parameters,
+            keys.ImgKey,
+            keys.SubKey,
+            unixTimeSeconds));
         var url = $"https://api.bilibili.com/x/space/wbi/arc/search?{query}";
         const string referer = "https://www.bilibili.com";
 
-        try
+        var serializerSettings = new JsonSerializerSettings
         {
-            var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
             // 忽略play的值为“--”时的类型错误
-            var settings = new JsonSerializerSettings
+            Error = (sender, args) =>
             {
-                Error = (sender, args) =>
+                if (Equals(args.ErrorContext.Member, "play") && args.ErrorContext.OriginalObject?.GetType() == typeof(SpacePublicationListVideo))
                 {
-                    if (Equals(args.ErrorContext.Member, "play") && args.ErrorContext.OriginalObject?.GetType() == typeof(SpacePublicationListVideo))
-                    {
-                        args.ErrorContext.Handled = true;
-                    }
+                    args.ErrorContext.Handled = true;
                 }
-            };
+            }
+        };
+        var spacePublication = BiliApiRequest.RequestJson<SpacePublicationOrigin>(
+            url,
+            referer,
+            nameof(GetPublication),
+            "UserSpace",
+            serializerSettings,
+            cancellationToken);
 
-            var spacePublication = JsonConvert.DeserializeObject<SpacePublicationOrigin>(response, settings);
-            return spacePublication?.Data?.List;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (HttpRequestException)
-        {
-            return null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        return BiliApiRequest.RequirePayload(spacePublication.Data).List;
     }
 
     internal static string GetPublicationOrderValue(PublicationOrder order)
@@ -213,7 +214,7 @@ public static class UserSpace
             nameof(GetChannelList),
             "UserSpace");
 
-        return spaceChannel?.Data.List;
+        return BiliApiRequest.RequirePayload(spaceChannel.Data).List;
     }
 
     /// <summary>
@@ -262,7 +263,7 @@ public static class UserSpace
             nameof(GetChannelVideoList),
             "UserSpace");
 
-        return spaceChannelVideo?.Data.List.Archives;
+        return BiliApiRequest.RequirePayload(spaceChannelVideo.Data).List.Archives;
     }
 
     #endregion
@@ -287,7 +288,7 @@ public static class UserSpace
             nameof(GetSeasonsSeries),
             "UserSpace");
 
-        return origin?.Data.ItemsLists;
+        return BiliApiRequest.RequirePayload(origin.Data).ItemsLists;
     }
 
     /// <summary>
@@ -308,7 +309,7 @@ public static class UserSpace
             nameof(GetSeasonsDetail),
             "UserSpace");
 
-        return origin?.Data;
+        return BiliApiRequest.RequirePayload(origin.Data);
     }
 
     /// <summary>
@@ -327,7 +328,7 @@ public static class UserSpace
             nameof(GetSeriesMeta),
             "UserSpace");
 
-        return origin?.Data;
+        return BiliApiRequest.RequirePayload(origin.Data);
     }
 
     /// <summary>
@@ -350,7 +351,7 @@ public static class UserSpace
             nameof(GetSeriesDetail),
             "UserSpace");
 
-        return origin?.Data;
+        return BiliApiRequest.RequirePayload(origin.Data);
     }
 
     #endregion
@@ -374,7 +375,7 @@ public static class UserSpace
             nameof(GetCheese),
             "UserSpace");
 
-        return cheese?.Data.Items;
+        return BiliApiRequest.RequirePayload(cheese.Data).Items;
     }
 
     /// <summary>
@@ -432,7 +433,7 @@ public static class UserSpace
             "UserSpace",
             cancellationToken);
 
-        return bangumiFollow?.Data;
+        return BiliApiRequest.RequirePayload(bangumiFollow.Data);
     }
 
     /// <summary>

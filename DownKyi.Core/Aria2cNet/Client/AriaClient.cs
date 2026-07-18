@@ -1067,7 +1067,8 @@ public static class AriaClient
     /// <typeparam name="T"></typeparam>
     /// <param name="ariaSend"></param>
     /// <returns></returns>
-    private static async Task<T> GetRpcResponseAsync<T>(AriaSendData ariaSend) where T : new()
+    private static async Task<T> GetRpcResponseAsync<T>(AriaSendData ariaSend)
+        where T : class
     {
         // 去掉null
         var jsonSetting = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
@@ -1075,13 +1076,21 @@ public static class AriaClient
         string sendJson = JsonConvert.SerializeObject(ariaSend, Formatting.Indented, jsonSetting);
         // 向服务器请求数据
         var result = await RequestAsync(GetRpcUri(), sendJson).ConfigureAwait(false);
-        if (result == null) { return new T(); }
+        if (result == null)
+        {
+            throw new HttpRequestException("aria2 RPC retry attempts were exhausted.");
+        }
 
-        // 反序列化
-        var aria = JsonConvert.DeserializeObject<T>(result);
-        return aria ?? new T();
+        return DeserializeRpcResponse<T>(result);
     }
 
+    internal static T DeserializeRpcResponse<T>(string response)
+        where T : class
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(response);
+        var aria = JsonConvert.DeserializeObject<T>(response);
+        return aria ?? throw new JsonSerializationException("aria2 RPC returned an empty JSON value.");
+    }
 
     private static readonly HttpClient HttpClient = new();
     /// <summary>

@@ -1,15 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Threading;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using Newtonsoft.Json;
-using Prism.Commands;
-using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class VideoPage : BindableBase
+internal class VideoPage : ObservableObject
 {
     public PlayUrl? PlayUrl { get; set; }
 
@@ -97,13 +99,18 @@ internal class VideoPage : BindableBase
     }
 
     [JsonIgnore]
-    public Lazy<List<string>> LazyTags { get; set; } = new(() => new());
+    public Func<CancellationToken, Task<IReadOnlyList<string>>> LoadTagsAsync { get; set; } =
+        static cancellationToken =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+        };
     #region
 
     // 视频画质选择事件
-    private DelegateCommand? _videoQualitySelectedCommand;
+    private RelayCommand? _videoQualitySelectedCommand;
 
-    public DelegateCommand VideoQualitySelectedCommand => _videoQualitySelectedCommand ??= new DelegateCommand(ExecuteVideoQualitySelectedCommand);
+    public RelayCommand VideoQualitySelectedCommand => _videoQualitySelectedCommand ??= new RelayCommand(ExecuteVideoQualitySelectedCommand);
 
     /// <summary>
     /// 视频画质选择事件

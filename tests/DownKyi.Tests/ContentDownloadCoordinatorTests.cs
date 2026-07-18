@@ -4,7 +4,6 @@ using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.ViewModels.PageViewModels;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.Tests;
 
@@ -123,10 +122,6 @@ public sealed class ContentDownloadCoordinatorTests
             return session;
         }
 
-        public IAddToDownloadSession Create(string id, PlayStreamType streamType)
-        {
-            throw new NotSupportedException();
-        }
     }
 
     private sealed class RecordingSession(string? directory) : IAddToDownloadSession
@@ -164,10 +159,14 @@ public sealed class ContentDownloadCoordinatorTests
             GetVideoCount++;
         }
 
-        public void ParseVideo(IInfoService videoInfoService)
+        public Task ParseVideoAsync(
+            IInfoService videoInfoService,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Assert.NotNull(videoInfoService);
             ParseCount++;
+            return Task.CompletedTask;
         }
 
         public Task<int> AddToDownload(
@@ -187,11 +186,13 @@ public sealed class ContentDownloadCoordinatorTests
     {
         public List<DownloadInfoKind> CreatedKinds { get; } = [];
 
-        public IInfoService Create(ContentDownloadItem item, CancellationToken cancellationToken)
+        public Task<IInfoService> CreateAsync(
+            ContentDownloadItem item,
+            CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             CreatedKinds.Add(item.Kind);
-            return new RecordingInfoService();
+            return Task.FromResult<IInfoService>(new RecordingInfoService());
         }
     }
 
@@ -214,20 +215,22 @@ public sealed class ContentDownloadCoordinatorTests
             throw new NotSupportedException();
         }
 
-        public PlayUrl? GetVideoStream(
+        public Task<PlayUrl?> GetVideoStreamAsync(
             VideoPage page,
             CancellationToken cancellationToken = default)
         {
-            throw new NotSupportedException();
+            return Task.FromException<PlayUrl?>(new NotSupportedException());
         }
     }
 
     private sealed class CancelingInfoServiceFactory(CancellationTokenSource cancellation)
         : IContentInfoServiceFactory
     {
-        public IInfoService Create(ContentDownloadItem item, CancellationToken cancellationToken)
+        public async Task<IInfoService> CreateAsync(
+            ContentDownloadItem item,
+            CancellationToken cancellationToken)
         {
-            cancellation.Cancel();
+            await cancellation.CancelAsync().ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             throw new InvalidOperationException("Cancellation should have interrupted info creation.");
         }

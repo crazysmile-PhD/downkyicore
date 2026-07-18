@@ -6,7 +6,7 @@ namespace DownKyi.Core.BiliApi.Users.Models;
 // https://api.bilibili.com/x/relation/tags
 public class FollowingGroupOrigin : BaseModel
 {
-    [JsonProperty("data")] public IReadOnlyList<FollowingGroup> Data { get; set; } = Array.Empty<FollowingGroup>();
+    [JsonProperty("data")] public IReadOnlyList<FollowingGroup>? Data { get; set; }
 }
 
 public class FollowingGroup : BaseModel

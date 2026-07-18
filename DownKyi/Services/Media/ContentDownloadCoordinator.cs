@@ -4,9 +4,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Downloads;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
 using DownKyi.Services.Download;
+using DownKyi.Services.Video;
 
 namespace DownKyi.Services.Media;
 
@@ -20,28 +22,46 @@ internal sealed record ContentDownloadItem(string Source, DownloadInfoKind Kind,
 
 internal interface IContentInfoServiceFactory
 {
-    IInfoService Create(ContentDownloadItem item, CancellationToken cancellationToken);
+    Task<IInfoService> CreateAsync(ContentDownloadItem item, CancellationToken cancellationToken);
 }
 
 internal sealed class ContentInfoServiceFactory : IContentInfoServiceFactory
 {
     private readonly ISettingsStore _settingsStore;
+    private readonly IVideoTagProvider _tagProvider;
+    private readonly IWbiKeyProvider _wbiKeyProvider;
 
-    public ContentInfoServiceFactory(ISettingsStore settingsStore)
+    public ContentInfoServiceFactory(
+        ISettingsStore settingsStore,
+        IVideoTagProvider tagProvider,
+        IWbiKeyProvider wbiKeyProvider)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
+        _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
     }
 
-    public IInfoService Create(ContentDownloadItem item, CancellationToken cancellationToken)
+    public async Task<IInfoService> CreateAsync(
+        ContentDownloadItem item,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(item);
         cancellationToken.ThrowIfCancellationRequested();
-        return item.Kind switch
+        if (item.Kind == DownloadInfoKind.Video)
         {
-            DownloadInfoKind.Video => new VideoInfoService(item.Source, _settingsStore, cancellationToken),
+            return await VideoInfoService.CreateAsync(
+                item.Source,
+                _settingsStore,
+                _tagProvider,
+                _wbiKeyProvider,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return await Task.Run<IInfoService>(() => item.Kind switch
+        {
             DownloadInfoKind.Bangumi => new BangumiInfoService(item.Source, _settingsStore, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(item), item.Kind, null)
-        };
+        }, cancellationToken).ConfigureAwait(false);
     }
 }
 
@@ -105,10 +125,14 @@ internal sealed class ContentDownloadCoordinator : IContentDownloadCoordinator
             foreach (var item in items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var infoService = _infoServiceFactory.Create(item, cancellationToken);
+                var infoService = await _infoServiceFactory
+                    .CreateAsync(item, cancellationToken)
+                    .ConfigureAwait(false);
                 addToDownloadSession.SetVideoInfoService(infoService);
                 addToDownloadSession.GetVideo();
-                addToDownloadSession.ParseVideo(infoService);
+                await addToDownloadSession
+                    .ParseVideoAsync(infoService, cancellationToken)
+                    .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 addedCount += await addToDownloadSession
                     .AddToDownload(directory, cancellationToken: cancellationToken)

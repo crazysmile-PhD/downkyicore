@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
@@ -17,8 +18,6 @@ using DownKyi.ViewModels.Dialogs;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.UiState;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
@@ -47,14 +46,14 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         UiState.DownloadManage = CreateDownloadManageIcon();
-        BackSpaceCommand = new DelegateCommand(ExecuteBackSpace);
-        DownloadManagerCommand = new DelegateCommand(ExecuteDownloadManagerCommand);
+        BackSpaceCommand = new RelayCommand(ExecuteBackSpace);
+        DownloadManagerCommand = new RelayCommand(ExecuteDownloadManagerCommand);
         InputCommand = new DownKyiAsyncDelegateCommand(ExecuteInputCommandAsync, _logger, () => !UiState.IsBusy);
-        InputSearchCommand = new DelegateCommand(() => _workflow.ApplySearch(UiState.InputSearchText));
+        InputSearchCommand = new RelayCommand(() => _workflow.ApplySearch(UiState.InputSearchText));
         CopyCoverUrlCommand = new DownKyiAsyncDelegateCommand(ExecuteCopyCoverUrlCommandAsync, _logger);
-        UpperCommand = new DelegateCommand(ExecuteUpperCommand);
-        SelectAllCommand = new DelegateCommand(() => SetAllSelected(UiState.IsSelectAll));
-        ClearSelectionCommand = new DelegateCommand(() => SetAllSelected(isSelected: false));
+        UpperCommand = new RelayCommand(ExecuteUpperCommand);
+        SelectAllCommand = new RelayCommand(() => SetAllSelected(UiState.IsSelectAll));
+        ClearSelectionCommand = new RelayCommand(() => SetAllSelected(isSelected: false));
         ParseCommand = new DownKyiAsyncDelegateCommand<object>(ExecuteParseCommandAsync, _logger, _ => !UiState.IsBusy);
         ParseAllVideoCommand = new DownKyiAsyncDelegateCommand(ExecuteParseAllVideoCommandAsync, _logger, () => !UiState.IsBusy);
         AddToDownloadCommand = new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger, () => !UiState.IsBusy);
@@ -64,14 +63,14 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
 
     public RangeObservableCollection<VideoSection> VideoSections { get; } = new();
 
-    public DelegateCommand BackSpaceCommand { get; }
-    public DelegateCommand DownloadManagerCommand { get; }
+    public RelayCommand BackSpaceCommand { get; }
+    public RelayCommand DownloadManagerCommand { get; }
     public ICommand InputCommand { get; }
     public ICommand InputSearchCommand { get; }
     public ICommand CopyCoverUrlCommand { get; }
-    public DelegateCommand UpperCommand { get; }
-    public DelegateCommand SelectAllCommand { get; }
-    public DelegateCommand ClearSelectionCommand { get; }
+    public RelayCommand UpperCommand { get; }
+    public RelayCommand SelectAllCommand { get; }
+    public RelayCommand ClearSelectionCommand { get; }
     public ICommand ParseCommand { get; }
     public ICommand ParseAllVideoCommand { get; }
     public ICommand AddToDownloadCommand { get; }
@@ -242,6 +241,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (operation.CancellationToken.IsCancellationRequested)
         {
+            return;
         }
     }
 
@@ -373,13 +373,12 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         return icon;
     }
 
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         UiState.DownloadManage = CreateDownloadManageIcon();
-        if (navigationContext.Parameters.GetValue<string>("Parent") is not null)
+        if (navigationContext.Parameter is string parameter)
         {
-            var parameter = navigationContext.Parameters.GetValue<string>("Parameter");
             var input = parameter.Replace(AppConstant.ClipboardId, string.Empty, StringComparison.Ordinal);
             if (UiState.InputText != input || !parameter.EndsWith(AppConstant.ClipboardId, StringComparison.Ordinal))
             {

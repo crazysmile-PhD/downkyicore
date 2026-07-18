@@ -1,26 +1,30 @@
 using System;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Logging;
 using Microsoft.Extensions.Logging;
-using Prism.Mvvm;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
-internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
+internal class ViewModelBase : ObservableObject, IAppNavigationAware, IDisposable
 {
     private bool _disposed;
+    private AppNavigationRegion? _observedRegion;
+    private object? _regionContent;
     protected IUserNotificationService Notifications { get; }
     protected IAppNavigationService Navigation { get; }
     protected IAppDialogService AppDialogs { get; }
-    protected IRegionNavigationJournal? Journal { get; set; }
-    protected string ParentView { get; set; } = string.Empty;
     protected AppRoute ParentRoute { get; set; } = AppRoute.Index;
     protected virtual Dispatcher UiDispatcher => Dispatcher.UIThread;
+
+    public object? RegionContent
+    {
+        get => _regionContent;
+        private set => SetProperty(ref _regionContent, value);
+    }
 
     public ViewModelBase(IDesktopInteractionContext desktopInteractions)
     {
@@ -30,27 +34,10 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
         AppDialogs = desktopInteractions.Dialogs;
     }
 
-    public virtual void OnNavigatedTo(NavigationContext navigationContext)
+    public virtual void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
-
-        Journal = navigationContext.NavigationService.Journal;
-        var viewName = navigationContext.Parameters.GetValue<string>("Parent");
-        if (viewName != null)
-        {
-            ParentView = viewName;
-        }
-
-        var parentRoute = navigationContext.Parameters
-            .FirstOrDefault(parameter => string.Equals(
-                parameter.Key,
-                "ParentRoute",
-                StringComparison.Ordinal))
-            .Value;
-        if (parentRoute is AppRoute route)
-        {
-            ParentRoute = route;
-        }
+        ParentRoute = navigationContext.ParentRoute;
     }
 
     protected internal virtual void ExecuteBackSpace()
@@ -60,12 +47,12 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
 
     protected bool TryNavigateBack()
     {
-        if (Journal?.CanGoBack != true)
+        if (!Navigation.CanGoBack(AppNavigationRegion.Main))
         {
             return false;
         }
 
-        Journal.GoBack();
+        Navigation.GoBack(AppNavigationRegion.Main);
         return true;
     }
 
@@ -74,13 +61,25 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
         Navigation.Navigate(new AppNavigationRequest(ParentRoute, Parameter: parameter));
     }
 
-    public bool IsNavigationTarget(NavigationContext navigationContext)
+    public virtual void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
-        return true;
     }
 
-    public virtual void OnNavigatedFrom(NavigationContext navigationContext)
+    protected void ObserveRegion(AppNavigationRegion region)
     {
+        if (_observedRegion == region)
+        {
+            return;
+        }
+
+        if (_observedRegion != null)
+        {
+            Navigation.NavigationChanged -= NavigationOnNavigationChanged;
+        }
+
+        _observedRegion = region;
+        RegionContent = Navigation.GetActiveView(region);
+        Navigation.NavigationChanged += NavigationOnNavigationChanged;
     }
 
     /// <summary>
@@ -131,7 +130,17 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
 
     protected virtual void Dispose(bool disposing)
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
+        if (disposing && _observedRegion != null)
+        {
+            Navigation.NavigationChanged -= NavigationOnNavigationChanged;
+            _observedRegion = null;
+        }
     }
 
     protected bool IsDisposed => _disposed;
@@ -150,6 +159,7 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
         }
         catch (ObjectDisposedException)
         {
+            return;
         }
         finally
         {
@@ -163,6 +173,22 @@ internal class ViewModelBase : BindableBase, INavigationAware, IDisposable
         var replacement = new CancellationTokenSource();
         source = replacement;
         return replacement.Token;
+    }
+
+    private void NavigationOnNavigationChanged(object? sender, AppNavigationChangedEventArgs e)
+    {
+        if (_observedRegion != e.Region)
+        {
+            return;
+        }
+
+        if (UiDispatcher.CheckAccess())
+        {
+            RegionContent = e.Content;
+            return;
+        }
+
+        UiDispatcher.Post(() => RegionContent = e.Content);
     }
 
 }

@@ -14,6 +14,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -22,7 +23,6 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
 using Bitmap = Avalonia.Media.Imaging.Bitmap;
 using Path = System.IO.Path;
 
@@ -278,9 +278,9 @@ internal class ViewDelogoViewModel : ViewModelBase
     }
 
     // Status改变事件
-    private DelegateCommand<object>? _statusCommand;
+    private RelayCommand<object>? _statusCommand;
 
-    public DelegateCommand<object> StatusCommand => _statusCommand ??= new DelegateCommand<object>(ExecuteStatusCommand);
+    public RelayCommand<object> StatusCommand => _statusCommand ??= RequiredParameterCommand.Create<object>(ExecuteStatusCommand);
 
     /// <summary>
     /// Status改变事件

@@ -159,10 +159,13 @@ public sealed class VideoParseCoordinatorTests
             return VideoPages;
         }
 
-        public PlayUrl? GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
+        public Task<PlayUrl?> GetVideoStreamAsync(
+            VideoPage page,
+            CancellationToken cancellationToken = default)
         {
-            return GetStream?.Invoke(page, cancellationToken)
-                ?? throw new NotSupportedException();
+            var result = GetStream?.Invoke(page, cancellationToken)
+                         ?? throw new NotSupportedException();
+            return Task.FromResult<PlayUrl?>(result);
         }
     }
 }

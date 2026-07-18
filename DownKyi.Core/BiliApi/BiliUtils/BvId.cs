@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Numerics;
 
@@ -15,9 +16,9 @@ public static class BvId
     private const string Data = "FcwAPNKTMug3GV5Lj7EJnHpWsx4tb8haYeviqBz6rkCy12mUSDQX9RdoZf";
 
     // 为了提高BvToAv的性能，预先构建字符到索引的映射
-    private static readonly Dictionary<char, int> DataMap = CreateDataMap();
+    private static readonly FrozenDictionary<char, int> DataMap = CreateDataMap();
 
-    private static Dictionary<char, int> CreateDataMap()
+    private static FrozenDictionary<char, int> CreateDataMap()
     {
         var dataMap = new Dictionary<char, int>();
         for (var i = 0; i < Data.Length; i++)
@@ -25,7 +26,7 @@ public static class BvId
             dataMap[Data[i]] = i;
         }
 
-        return dataMap;
+        return dataMap.ToFrozenDictionary();
     }
 
     /// <summary>

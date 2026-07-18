@@ -11,7 +11,10 @@ public sealed class VideoDetailWorkflowCoordinatorTests
     public void StartingNewOperationCancelsPreviousGeneration()
     {
         using var settings = new TestSettingsStore();
-        using var coordinator = new VideoDetailWorkflowCoordinator(settings.Store);
+        using var coordinator = new VideoDetailWorkflowCoordinator(
+            settings.Store,
+            new VideoTagProvider(),
+            new TestWbiKeyProvider());
 
         var first = coordinator.StartOperation();
         var second = coordinator.StartOperation();
@@ -74,9 +77,11 @@ public sealed class VideoDetailWorkflowCoordinatorTests
             throw new NotSupportedException();
         }
 
-        public PlayUrl? GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
+        public Task<PlayUrl?> GetVideoStreamAsync(
+            VideoPage page,
+            CancellationToken cancellationToken = default)
         {
-            throw new NotSupportedException();
+            return Task.FromException<PlayUrl?>(new NotSupportedException());
         }
     }
 }

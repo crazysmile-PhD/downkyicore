@@ -13,6 +13,7 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
     private readonly Func<T?, Task> _execute;
     private readonly Func<T, bool>? _canExecute;
     private readonly ILogger _logger;
+    private readonly Func<bool>? _isCancellationExpected;
     private bool _isExecuting;
 
     public event EventHandler? CanExecuteChanged;
@@ -20,11 +21,13 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
     public DownKyiAsyncDelegateCommand(
         Func<T?, Task> execute,
         ILogger logger,
-        Func<T, bool>? canExecute = null)
+        Func<T, bool>? canExecute = null,
+        Func<bool>? isCancellationExpected = null)
     {
         _execute = execute ?? throw new ArgumentNullException(nameof(execute));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _canExecute = canExecute;
+        _isCancellationExpected = isCancellationExpected;
     }
 
     public bool CanExecute(object? parameter)
@@ -69,8 +72,13 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
         {
             await _execute(executionParameter).ConfigureAwait(true);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException e) when (IsExpectedCancellation(e))
         {
+            return;
+        }
+        catch (OperationCanceledException e)
+        {
+            _logger.LogErrorMessage("UI command was canceled unexpectedly.", e);
         }
         catch (Exception e) when (e is InvalidOperationException or HttpRequestException or IOException)
         {
@@ -81,6 +89,12 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
             _isExecuting = false;
             OnCanExecuteChanged();
         }
+    }
+
+    private bool IsExpectedCancellation(OperationCanceledException exception)
+    {
+        return _isCancellationExpected?.Invoke()
+            ?? exception.CancellationToken.IsCancellationRequested;
     }
 
     protected void OnCanExecuteChanged()
@@ -94,17 +108,20 @@ internal class DownKyiAsyncDelegateCommand : DownKyiAsyncDelegateCommand<object>
     public DownKyiAsyncDelegateCommand(
         Func<object?, Task> execute,
         ILogger logger,
-        Func<object, bool>? canExecute = null)
-        : base(execute, logger, canExecute)
+        Func<object, bool>? canExecute = null,
+        Func<bool>? isCancellationExpected = null)
+        : base(execute, logger, canExecute, isCancellationExpected)
     {
     }
 
     public DownKyiAsyncDelegateCommand(
         Func<Task> execute,
         ILogger logger,
-        Func<bool>? canExecute = null)
+        Func<bool>? canExecute = null,
+        Func<bool>? isCancellationExpected = null)
         : this(_ => execute(), logger,
-            canExecute != null ? _ => canExecute() : null)
+            canExecute != null ? _ => canExecute() : null,
+            isCancellationExpected)
     {
     }
 }

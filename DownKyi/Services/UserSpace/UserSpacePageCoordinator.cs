@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
@@ -71,36 +72,44 @@ internal interface IUserSpacePageCoordinator
 internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
 {
     private readonly ISettingsStore _settingsStore;
+    private readonly IWbiKeyProvider _wbiKeyProvider;
     private readonly ILogger<UserSpacePageCoordinator> _logger;
     private readonly IAppNavigationService _navigationService;
 
     public UserSpacePageCoordinator(
         ISettingsStore settingsStore,
+        IWbiKeyProvider wbiKeyProvider,
         IAppNavigationService navigationService,
         ILogger<UserSpacePageCoordinator> logger)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public Task<IReadOnlyList<PublicationMedia>> LoadPublicationPageAsync(
+    public async Task<IReadOnlyList<PublicationMedia>> LoadPublicationPageAsync(
         long mid,
         int page,
         int pageSize,
         long typeId,
         CancellationToken cancellationToken)
     {
-        return Task.Run<IReadOnlyList<PublicationMedia>>(() =>
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var publication = BiliUserSpace.GetPublication(
-                _settingsStore,
+        var publication = await WbiRequestExecutor.ExecuteAsync(
+            _wbiKeyProvider,
+            (keys, unixTimeSeconds) => BiliUserSpace.GetPublication(
+                keys,
+                unixTimeSeconds,
                 mid,
                 page,
                 pageSize,
                 typeId,
-                cancellationToken: cancellationToken);
+                cancellationToken: cancellationToken),
+            TimeProvider.System,
+            cancellationToken).ConfigureAwait(false);
+        return await Task.Run<IReadOnlyList<PublicationMedia>>(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             if (publication == null)
             {
                 _logger.LogWarningMessage("Bilibili publication page could not be loaded.");
@@ -132,7 +141,7 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
             }
 
             return result;
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<MySpaceProfileSnapshot?> LoadMyProfileAsync(long mid, CancellationToken cancellationToken)

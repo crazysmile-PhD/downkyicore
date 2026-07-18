@@ -1,9 +1,9 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Core.FileName;
-using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.Settings;
 
-internal class DisplayFileNamePart : BindableBase
+internal class DisplayFileNamePart : ObservableObject
 {
     public FileNamePart Id { get; set; }
 

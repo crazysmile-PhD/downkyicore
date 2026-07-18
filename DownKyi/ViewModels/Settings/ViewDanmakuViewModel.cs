@@ -2,12 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Media;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils.Validator;
 using DownKyi.Utils;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Settings;
 
@@ -127,7 +126,7 @@ internal class ViewDanmakuViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
 
@@ -176,9 +175,9 @@ internal class ViewDanmakuViewModel : ViewModelBase
     #region 命令申明
 
     // 屏蔽顶部弹幕事件
-    private DelegateCommand? _topFilterCommand;
+    private RelayCommand? _topFilterCommand;
 
-    public DelegateCommand TopFilterCommand => _topFilterCommand ??= new DelegateCommand(ExecuteTopFilterCommand);
+    public RelayCommand TopFilterCommand => _topFilterCommand ??= new RelayCommand(ExecuteTopFilterCommand);
 
     /// <summary>
     /// 屏蔽顶部弹幕事件
@@ -192,9 +191,9 @@ internal class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 屏蔽底部弹幕事件
-    private DelegateCommand? _bottomFilterCommand;
+    private RelayCommand? _bottomFilterCommand;
 
-    public DelegateCommand BottomFilterCommand => _bottomFilterCommand ??= new DelegateCommand(ExecuteBottomFilterCommand);
+    public RelayCommand BottomFilterCommand => _bottomFilterCommand ??= new RelayCommand(ExecuteBottomFilterCommand);
 
     /// <summary>
     /// 屏蔽底部弹幕事件
@@ -208,9 +207,9 @@ internal class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 屏蔽滚动弹幕事件
-    private DelegateCommand? _scrollFilterCommand;
+    private RelayCommand? _scrollFilterCommand;
 
-    public DelegateCommand ScrollFilterCommand => _scrollFilterCommand ??= new DelegateCommand(ExecuteScrollFilterCommand);
+    public RelayCommand ScrollFilterCommand => _scrollFilterCommand ??= new RelayCommand(ExecuteScrollFilterCommand);
 
     /// <summary>
     /// 屏蔽滚动弹幕事件
@@ -224,9 +223,9 @@ internal class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 设置分辨率-宽事件
-    private DelegateCommand<string>? _screenWidthCommand;
+    private RelayCommand<string>? _screenWidthCommand;
 
-    public DelegateCommand<string> ScreenWidthCommand => _screenWidthCommand ??= new DelegateCommand<string>(ExecuteScreenWidthCommand);
+    public RelayCommand<string> ScreenWidthCommand => _screenWidthCommand ??= RequiredParameterCommand.Create<string>(ExecuteScreenWidthCommand);
 
     /// <summary>
     /// 设置分辨率-宽事件
@@ -242,9 +241,9 @@ internal class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 设置分辨率-高事件
-    private DelegateCommand<string>? _screenHeightCommand;
+    private RelayCommand<string>? _screenHeightCommand;
 
-    public DelegateCommand<string> ScreenHeightCommand => _screenHeightCommand ??= new DelegateCommand<string>(ExecuteScreenHeightCommand);
+    public RelayCommand<string> ScreenHeightCommand => _screenHeightCommand ??= RequiredParameterCommand.Create<string>(ExecuteScreenHeightCommand);
 
     /// <summary>
     /// 设置分辨率-高事件
@@ -260,9 +259,9 @@ internal class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 弹幕字体选择事件
-    private DelegateCommand<string>? _fontSelectCommand;
+    private RelayCommand<string>? _fontSelectCommand;
 
-    public DelegateCommand<string> FontSelectCommand => _fontSelectCommand ??= new DelegateCommand<string>(ExecuteFontSelectCommand);
+    public RelayCommand<string> FontSelectCommand => _fontSelectCommand ??= RequiredParameterCommand.Create<string>(ExecuteFontSelectCommand);
 
     /// <summary>
     /// 弹幕字体选择事件
@@ -275,9 +274,9 @@ internal class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 弹幕字体大小事件
-    private DelegateCommand<string>? _fontSizeCommand;
+    private RelayCommand<string>? _fontSizeCommand;
 
-    public DelegateCommand<string> FontSizeCommand => _fontSizeCommand ??= new DelegateCommand<string>(ExecuteFontSizeCommand);
+    public RelayCommand<string> FontSizeCommand => _fontSizeCommand ??= RequiredParameterCommand.Create<string>(ExecuteFontSizeCommand);
 
     /// <summary>
     /// 弹幕字体大小事件
@@ -293,9 +292,9 @@ internal class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 弹幕限制行数事件
-    private DelegateCommand<string>? _lineCountCommand;
+    private RelayCommand<string>? _lineCountCommand;
 
-    public DelegateCommand<string> LineCountCommand => _lineCountCommand ??= new DelegateCommand<string>(ExecuteLineCountCommand);
+    public RelayCommand<string> LineCountCommand => _lineCountCommand ??= RequiredParameterCommand.Create<string>(ExecuteLineCountCommand);
 
     /// <summary>
     /// 弹幕限制行数事件
@@ -311,9 +310,9 @@ internal class ViewDanmakuViewModel : ViewModelBase
     }
 
     // 弹幕布局算法事件
-    private DelegateCommand<string>? _layoutAlgorithmCommand;
+    private RelayCommand<string>? _layoutAlgorithmCommand;
 
-    public DelegateCommand<string> LayoutAlgorithmCommand => _layoutAlgorithmCommand ??= new DelegateCommand<string>(ExecuteLayoutAlgorithmCommand);
+    public RelayCommand<string> LayoutAlgorithmCommand => _layoutAlgorithmCommand ??= RequiredParameterCommand.Create<string>(ExecuteLayoutAlgorithmCommand);
 
     /// <summary>
     /// 弹幕布局算法事件

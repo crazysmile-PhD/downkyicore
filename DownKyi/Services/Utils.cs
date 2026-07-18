@@ -154,9 +154,6 @@ internal static class Utils
             }
         }
 
-        //audioQualityFormatList.Sort(new StringLogicalComparer<string>());
-        //audioQualityFormatList.Reverse();
-
         foreach (var item in audioQualities)
         {
             if (audioQualityFormatList.Contains(item.Name))
@@ -215,7 +212,6 @@ internal static class Utils
 
             // 寻找是否已存在这个画质
             // 不存在则添加，存在则修改
-            //string codecName = GetVideoCodecName(video.Codecs);
             var codecName = codeIds.FirstOrDefault(t => t.Id == video.CodecId)?.Name ?? string.Empty;
             var videoQualityExist = videoQualityList.FirstOrDefault(t => t.Quality == video.Id);
             if (videoQualityExist == null)

@@ -1,14 +1,15 @@
 using System;
+using System.Collections.Generic;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using DownKyi.Application.Desktop;
 using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Utils;
-using Prism.Commands;
-using Prism.Dialogs;
-using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-internal class BaseDialogViewModel : BindableBase, IDialogAware
+internal class BaseDialogViewModel : ObservableObject
 {
     #region 页面属性申明
 
@@ -49,9 +50,9 @@ internal class BaseDialogViewModel : BindableBase, IDialogAware
     #region 命令申明
 
     // 鼠标进入关闭按钮事件
-    private DelegateCommand? _closeEnterCommand;
+    private RelayCommand? _closeEnterCommand;
 
-    public DelegateCommand CloseEnterCommand => _closeEnterCommand ??= new DelegateCommand(ExecuteCloseEnterCommand);
+    public RelayCommand CloseEnterCommand => _closeEnterCommand ??= new RelayCommand(ExecuteCloseEnterCommand);
 
     /// <summary>
     /// 鼠标进入关闭按钮事件
@@ -62,9 +63,9 @@ internal class BaseDialogViewModel : BindableBase, IDialogAware
     }
 
     // 鼠标离开关闭按钮事件
-    private DelegateCommand? _closeLeaveCommand;
+    private RelayCommand? _closeLeaveCommand;
 
-    public DelegateCommand CloseLeaveCommand => _closeLeaveCommand ??= new DelegateCommand(ExecuteCloseLeaveCommand);
+    public RelayCommand CloseLeaveCommand => _closeLeaveCommand ??= new RelayCommand(ExecuteCloseLeaveCommand);
 
     /// <summary>
     /// 鼠标离开关闭按钮事件
@@ -75,15 +76,15 @@ internal class BaseDialogViewModel : BindableBase, IDialogAware
     }
 
     // 关闭窗口事件
-    private DelegateCommand? _closeCommand;
-    public DelegateCommand CloseCommand => _closeCommand ??= new DelegateCommand(ExecuteCloseCommand);
+    private RelayCommand? _closeCommand;
+    public RelayCommand CloseCommand => _closeCommand ??= new RelayCommand(ExecuteCloseCommand);
 
     /// <summary>
     /// 关闭窗口事件
     /// </summary>
     private void ExecuteCloseCommand()
     {
-        CloseDialog(new DialogResult(ButtonResult.Cancel));
+        CloseDialog(AppDialogOutcome.Canceled);
     }
 
     #endregion
@@ -109,12 +110,16 @@ internal class BaseDialogViewModel : BindableBase, IDialogAware
     #region 接口实现
 
     //触发窗体关闭事件
-    protected void CloseDialog(IDialogResult dialogResult)
+    protected void CloseDialog(
+        AppDialogOutcome outcome,
+        IReadOnlyDictionary<string, object?>? parameters = null)
     {
-        RequestClose.Invoke(dialogResult);
+        CloseRequested?.Invoke(this, new AppDialogResult(
+            outcome,
+            parameters ?? new Dictionary<string, object?>(StringComparer.Ordinal)));
     }
 
-    public DialogCloseListener RequestClose { get; }
+    public event EventHandler<AppDialogResult>? CloseRequested;
 
     public virtual bool CanCloseDialog()
     {
@@ -125,8 +130,20 @@ internal class BaseDialogViewModel : BindableBase, IDialogAware
     {
     }
 
-    public virtual void OnDialogOpened(IDialogParameters parameters)
+    public virtual void OnDialogOpened(AppDialogRequest request)
     {
+    }
+
+    protected static T GetRequiredParameter<T>(AppDialogRequest request, string name)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (request.Parameters?.TryGetValue(name, out var value) == true && value is T typed)
+        {
+            return typed;
+        }
+
+        throw new InvalidOperationException($"Dialog parameter '{name}' is missing or invalid.");
     }
 
     #endregion

@@ -12,7 +12,7 @@ public class SpaceSeasonsDetailOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public SpaceSeasonsDetail Data { get; set; } = new();
+    [JsonProperty("data")] public SpaceSeasonsDetail? Data { get; set; }
 }
 
 public class SpaceSeasonsDetail : BaseModel

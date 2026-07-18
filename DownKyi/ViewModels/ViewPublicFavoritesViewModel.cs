@@ -4,21 +4,19 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Images;
-using DownKyi.PrismExtension.Dialog;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Media;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
@@ -177,9 +175,9 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     #region 命令申明
 
     // 返回
-    private DelegateCommand? _backSpaceCommand;
+    private RelayCommand? _backSpaceCommand;
 
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
     /// <summary>
     /// 返回
@@ -193,9 +191,9 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     }
 
     // 前往下载管理页面
-    private DelegateCommand? _downloadManagerCommand;
+    private RelayCommand? _downloadManagerCommand;
 
-    public DelegateCommand DownloadManagerCommand => _downloadManagerCommand ??= new DelegateCommand(ExecuteDownloadManagerCommand);
+    public RelayCommand DownloadManagerCommand => _downloadManagerCommand ??= new RelayCommand(ExecuteDownloadManagerCommand);
 
     /// <summary>
     /// 前往下载管理页面
@@ -205,21 +203,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         Navigation.Navigate(new AppNavigationRequest(
             AppRoute.DownloadManager,
             AppRoute.PublicFavorites));
-    }
-
-    // 复制封面事件
-    private DelegateCommand? _copyCoverCommand;
-
-    public DelegateCommand CopyCoverCommand => _copyCoverCommand ??= new DelegateCommand(ExecuteCopyCoverCommand);
-
-    /// <summary>
-    /// 复制封面事件
-    /// </summary>
-    private void ExecuteCopyCoverCommand()
-    {
-        // 复制封面图片到剪贴板
-        // Clipboard.SetImage(Favorites.Cover);
-        _logger.LogInformationMessage("Favorites cover image copied to the clipboard.");
     }
 
     // 复制封面URL事件
@@ -238,8 +221,8 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     }
 
     // 前往UP主页事件
-    private DelegateCommand? _upperCommand;
-    public DelegateCommand UpperCommand => _upperCommand ??= new DelegateCommand(ExecuteUpperCommand);
+    private RelayCommand? _upperCommand;
+    public RelayCommand UpperCommand => _upperCommand ??= new RelayCommand(ExecuteUpperCommand);
 
     /// <summary>
     /// 前往UP主页事件
@@ -297,6 +280,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
@@ -333,14 +317,14 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     /// 接收收藏夹id参数
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
         RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync), _logger);
     }
 
-    private async Task OnNavigatedToAsync(NavigationContext navigationContext)
+    private async Task OnNavigatedToAsync(AppNavigationContext navigationContext)
     {
         try
         {
@@ -380,6 +364,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (_loadCancellation?.IsCancellationRequested != false)
         {
+            return;
         }
         catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
             or FormatException or Newtonsoft.Json.JsonException)
@@ -388,7 +373,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         }
     }
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         CancelOperations();
         base.OnNavigatedFrom(navigationContext);

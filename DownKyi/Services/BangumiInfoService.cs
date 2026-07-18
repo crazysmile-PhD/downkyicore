@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Bangumi;
 using DownKyi.Core.BiliApi.Bangumi.Models;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -88,24 +89,6 @@ internal class BangumiInfoService : IInfoService
             // 标题
             string name;
 
-            // 判断title是否为数字，如果是，则将share_copy作为name，否则将title作为name
-            //if (int.TryParse(episode.Title, out int result))
-            //{
-            //    name = Regex.Replace(episode.ShareCopy, @"《.*?》", "");
-            //    //name = episode.ShareCopy;
-            //}
-            //else
-            //{
-            //    if (episode.LongTitle != null && episode.LongTitle != "")
-            //    {
-            //        name = $"{episode.Title} {episode.LongTitle}";
-            //    }
-            //    else
-            //    {
-            //        name = episode.Title;
-            //    }
-            //}
-
             // 将share_copy作为name，删除《》中的标题
             name = Regex.Replace(episode.ShareCopy, @"^《.*?》", "");
 
@@ -122,7 +105,7 @@ internal class BangumiInfoService : IInfoService
                 Order = order,
                 Name = name,
                 Duration = "N/A",
-                LazyTags = new Lazy<List<string>>(_bangumiSeason.Styles.ToList())
+                LoadTagsAsync = CreateLocalTagLoader(_bangumiSeason.Styles)
             };
 
             // UP主信息
@@ -219,7 +202,7 @@ internal class BangumiInfoService : IInfoService
                     Order = order,
                     Name = name,
                     Duration = "N/A",
-                    LazyTags = new Lazy<List<string>>(_bangumiSeason.Styles.ToList())
+                    LoadTagsAsync = CreateLocalTagLoader(_bangumiSeason.Styles)
                 };
 
                 // UP主信息
@@ -264,15 +247,30 @@ internal class BangumiInfoService : IInfoService
         return videoSections;
     }
 
+    private static Func<CancellationToken, Task<IReadOnlyList<string>>> CreateLocalTagLoader(
+        IEnumerable<string> tags)
+    {
+        var snapshot = tags.ToArray();
+        return cancellationToken =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<string>>(snapshot);
+        };
+    }
+
     /// <summary>
     /// 获取视频流的信息，从VideoPage返回
     /// </summary>
     /// <param name="page"></param>
-    public PlayUrl? GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
+    public Task<PlayUrl?> GetVideoStreamAsync(VideoPage page, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        return VideoStreamApi.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken);
+        return Task.FromResult(VideoStreamApi.GetBangumiPlayUrl(
+            page.Avid,
+            page.Bvid,
+            page.Cid,
+            cancellationToken: cancellationToken));
     }
 
     /// <summary>

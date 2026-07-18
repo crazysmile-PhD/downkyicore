@@ -63,9 +63,11 @@ internal class ScrollIntoViewBehavior : Behavior<DataGrid>
         }
         catch (InvalidOperationException)
         {
+            return;
         }
         catch (ArgumentException)
         {
+            return;
         }
     }
 

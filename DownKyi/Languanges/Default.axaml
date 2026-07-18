@@ -102,7 +102,6 @@
     <system:String x:Key="WhisperFollowing">悄悄关注</system:String>
     
     <!--  VideoDetail  -->
-    <system:String x:Key="CopyCover">复制封面图片</system:String>
     <system:String x:Key="CopyCoverUrl">复制封面URL</system:String>
     <system:String x:Key="Play">播放</system:String>
     <system:String x:Key="Danmaku">弹幕</system:String>
@@ -287,11 +286,6 @@
     <system:String x:Key="AutoUpdateWhenLaunch">启动时检查更新</system:String>
     <system:String x:Key="TipSettingUpdated">设置已更新~</system:String>
     <system:String x:Key="TipSettingFailed">设置失败！</system:String>
-    <system:String x:Key="ThirdParty">第三方</system:String>
-    <system:String x:Key="ThirdPartyName">名称</system:String>
-    <system:String x:Key="ThirdPartyAuthor">作者</system:String>
-    <system:String x:Key="ThirdPartyVersion">版本</system:String>
-    <system:String x:Key="ThirdPartyLicense">许可证</system:String>
     <system:String x:Key="Disclaimer">免责申明</system:String>
     <system:String x:Key="Disclaimer1">1. 本软件只提供视频解析，不提供任何资源上传、存储到服务器的功能。</system:String>
     <system:String x:Key="Disclaimer2">2. 本软件仅解析来自B站的内容，不会对解析到的音视频进行二次编码，部分视频会进行有限的格式转换、拼接等操作。</system:String>

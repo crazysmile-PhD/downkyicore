@@ -12,7 +12,7 @@ public class VideoViewOrigin : BaseModel
     //public string Message { get; set; } = string.Empty;
     //[JsonProperty("ttl")]
     //public int Ttl { get; set; }
-    [JsonProperty("data")] public VideoView Data { get; set; } = new();
+    [JsonProperty("data")] public VideoView? Data { get; set; }
 }
 
 public class VideoView : BaseModel
@@ -47,7 +47,7 @@ public class VideoView : BaseModel
 
     //[JsonProperty("no_cache")]
     //public bool no_cache { get; set; }
-    [JsonProperty("pages")] public IReadOnlyList<VideoPage> Pages { get; set; } = Array.Empty<VideoPage>();
+    [JsonProperty("pages")] public IReadOnlyList<VideoPage>? Pages { get; set; }
     [JsonProperty("subtitle")] public VideoSubtitle Subtitle { get; set; } = new();
 
     [JsonProperty("ugc_season")] public UgcSeason? UgcSeason { get; set; }

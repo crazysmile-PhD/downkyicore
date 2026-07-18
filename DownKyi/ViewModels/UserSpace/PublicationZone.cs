@@ -1,9 +1,9 @@
 using Avalonia.Media;
-using Prism.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.ViewModels.UserSpace;
 
-internal class PublicationZone : BindableBase
+internal class PublicationZone : ObservableObject
 {
     public int Tid { get; set; }
 

@@ -50,8 +50,53 @@ public sealed record AppNavigationRequest(
     AppRoute? Parent = null,
     object? Parameter = null);
 
+public sealed class AppNavigationParameters
+{
+    private readonly IReadOnlyDictionary<string, object?> _values;
+
+    public AppNavigationParameters(IReadOnlyDictionary<string, object?>? values = null)
+    {
+        _values = values ?? new Dictionary<string, object?>(StringComparer.Ordinal);
+    }
+
+    public T? GetValue<T>(string key)
+    {
+        return _values.TryGetValue(key, out var value) && value is T typed ? typed : default;
+    }
+
+    public bool TryGetValue(string key, out object? value) => _values.TryGetValue(key, out value);
+}
+
+public sealed record AppNavigationContext(
+    AppNavigationRegion Region,
+    AppRoute Route,
+    AppRoute ParentRoute,
+    object? Parameter,
+    AppNavigationParameters Parameters);
+
+public sealed class AppNavigationChangedEventArgs(
+    AppNavigationRegion region,
+    AppRoute? route,
+    object? content) : EventArgs
+{
+    public AppNavigationRegion Region { get; } = region;
+
+    public AppRoute? Route { get; } = route;
+
+    public object? Content { get; } = content;
+}
+
+public interface IAppNavigationAware
+{
+    void OnNavigatedTo(AppNavigationContext context);
+
+    void OnNavigatedFrom(AppNavigationContext context);
+}
+
 public interface IAppNavigationService
 {
+    event EventHandler<AppNavigationChangedEventArgs>? NavigationChanged;
+
     void Navigate(AppNavigationRequest request);
 
     void NavigateRegion(
@@ -62,4 +107,8 @@ public interface IAppNavigationService
     void ClearRegion(AppNavigationRegion region);
 
     object? GetActiveView(AppNavigationRegion region);
+
+    bool CanGoBack(AppNavigationRegion region);
+
+    void GoBack(AppNavigationRegion region);
 }

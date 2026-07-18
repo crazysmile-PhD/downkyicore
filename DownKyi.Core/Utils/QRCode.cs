@@ -25,13 +25,8 @@ public static class QrCode
         using var qrCode = new BitmapByteQRCode(codeData);
         var qrCodeAsBitmapByteArr = qrCode.GetGraphic(20);
 
-        // Bitmap icon;
-        // icon = string.IsNullOrEmpty(iconPath) ? null : new Bitmap(iconPath);
-
         using var ms = new MemoryStream(qrCodeAsBitmapByteArr);
         var bmp = new Bitmap(ms);
-
-        // Bitmap bmp = qrCode.GetGraphic(pixel, Color.FromRgb(0,0,0), Color.FromRgb(255,255,255), icon, icon_size, icon_border, white_edge);
         return bmp;
     }
 }

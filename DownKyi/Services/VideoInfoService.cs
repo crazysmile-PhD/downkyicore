@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Video;
 using DownKyi.Core.BiliApi.Video.Models;
 using DownKyi.Core.BiliApi.VideoStream;
@@ -12,6 +14,7 @@ using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
+using DownKyi.Services.Video;
 using DownKyi.ViewModels.PageViewModels;
 using VideoPage = DownKyi.ViewModels.PageViewModels.VideoPage;
 
@@ -20,32 +23,85 @@ namespace DownKyi.Services;
 internal class VideoInfoService : IInfoService
 {
     private readonly VideoView? _videoView;
-    private readonly CancellationToken _cancellationToken;
     private readonly ISettingsStore _settingsStore;
+    private readonly IVideoTagProvider _tagProvider;
+    private readonly IWbiKeyProvider _wbiKeyProvider;
 
     public VideoInfoService(
-        string? input,
         ISettingsStore settingsStore,
-        CancellationToken cancellationToken = default)
+        IVideoTagProvider tagProvider,
+        IWbiKeyProvider wbiKeyProvider)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
-        _cancellationToken = cancellationToken;
-        if (input == null)
-        {
-            return;
-        }
+        _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
+        _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
+    }
 
+    internal VideoInfoService(
+        VideoView videoView,
+        ISettingsStore settingsStore,
+        IVideoTagProvider tagProvider,
+        IWbiKeyProvider wbiKeyProvider)
+    {
+        _videoView = videoView ?? throw new ArgumentNullException(nameof(videoView));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
+        _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
+    }
+
+    public static async Task<VideoInfoService> CreateAsync(
+        string input,
+        ISettingsStore settingsStore,
+        IVideoTagProvider tagProvider,
+        IWbiKeyProvider wbiKeyProvider,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(input);
+        ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(tagProvider);
+        ArgumentNullException.ThrowIfNull(wbiKeyProvider);
+
+        VideoView? videoView = null;
         if (ParseEntrance.IsAvId(input) || ParseEntrance.IsAvUrl(input))
         {
             var avid = ParseEntrance.GetAvId(input);
-            _videoView = VideoInfo.VideoViewInfo(_settingsStore, null, avid, cancellationToken);
+            videoView = await LoadVideoViewAsync(
+                wbiKeyProvider,
+                bvid: null,
+                avid,
+                cancellationToken).ConfigureAwait(false);
         }
-
-        if (ParseEntrance.IsBvId(input) || ParseEntrance.IsBvUrl(input))
+        else if (ParseEntrance.IsBvId(input) || ParseEntrance.IsBvUrl(input))
         {
             var bvid = ParseEntrance.GetBvId(input);
-            _videoView = VideoInfo.VideoViewInfo(_settingsStore, bvid, cancellationToken: cancellationToken);
+            videoView = await LoadVideoViewAsync(
+                wbiKeyProvider,
+                bvid,
+                avid: -1,
+                cancellationToken).ConfigureAwait(false);
         }
+
+        return videoView == null
+            ? new VideoInfoService(settingsStore, tagProvider, wbiKeyProvider)
+            : new VideoInfoService(videoView, settingsStore, tagProvider, wbiKeyProvider);
+    }
+
+    private static Task<VideoView?> LoadVideoViewAsync(
+        IWbiKeyProvider wbiKeyProvider,
+        string? bvid,
+        long avid,
+        CancellationToken cancellationToken)
+    {
+        return WbiRequestExecutor.ExecuteAsync(
+            wbiKeyProvider,
+            (keys, unixTimeSeconds) => VideoInfo.VideoViewInfo(
+                keys,
+                unixTimeSeconds,
+                bvid,
+                avid,
+                cancellationToken),
+            TimeProvider.System,
+            cancellationToken);
     }
 
     /// <summary>
@@ -104,12 +160,8 @@ internal class VideoInfoService : IInfoService
                 Name = name,
                 Duration = "N/A",
                 Page = page.Page,
-                LazyTags = new Lazy<List<string>>(() =>
-                {
-                    return VideoInfo.GetBiliTagInfo(_videoView.Bvid, page.Cid, _cancellationToken)
-                        ?.Select(x => x.TagName)
-                        .ToList() ?? new List<string>();
-                })
+                LoadTagsAsync = currentToken =>
+                    _tagProvider.GetTagsAsync(_videoView.Bvid, page.Cid, currentToken)
             };
 
             // UP主信息
@@ -151,7 +203,7 @@ internal class VideoInfoService : IInfoService
         // 不需要ugc内容
         if (noUgc)
         {
-            videoSections.Add(CreateDefaultVideoSection());
+            videoSections.Add(CreateDefaultVideoSection(cancellationToken));
             return videoSections;
         }
 
@@ -197,14 +249,14 @@ internal class VideoInfoService : IInfoService
         return videoSections;
     }
 
-    private VideoSection CreateDefaultVideoSection()
+    private VideoSection CreateDefaultVideoSection(CancellationToken cancellationToken)
     {
         return new VideoSection
         {
             Id = 0,
             Title = "default",
             IsSelected = true,
-            VideoPages = GetVideoPages(_cancellationToken) ?? new List<VideoPage>()
+            VideoPages = GetVideoPages(cancellationToken) ?? new List<VideoPage>()
         };
     }
 
@@ -235,12 +287,8 @@ internal class VideoInfoService : IInfoService
                 Page = p.Page,
                 PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture),
                 OriginalPublishTime = dateTime,
-                LazyTags = new Lazy<List<string>>(() =>
-                {
-                    return VideoInfo.GetBiliTagInfo(episode.Bvid, p.Cid, _cancellationToken)
-                        ?.Select(x => x.TagName)
-                        .ToList() ?? new List<string>();
-                })
+                LoadTagsAsync = currentToken =>
+                    _tagProvider.GetTagsAsync(episode.Bvid, p.Cid, currentToken)
             });
         }
 
@@ -261,12 +309,8 @@ internal class VideoInfoService : IInfoService
             Duration = "N/A",
             Owner = _videoView?.Owner ?? new VideoOwner { Name = "", Face = "", Mid = -1 },
             Page = episode.Page.Page,
-            LazyTags = new Lazy<List<string>>(() =>
-            {
-                return VideoInfo.GetBiliTagInfo(episode.Bvid, episode.Cid, _cancellationToken)
-                    ?.Select(x => x.TagName)
-                    .ToList() ?? new List<string>();
-            })
+            LoadTagsAsync = currentToken =>
+                _tagProvider.GetTagsAsync(episode.Bvid, episode.Cid, currentToken)
         };
         var dateTime = startTime.AddSeconds(episode.Arc.Ctime);
         page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);
@@ -278,29 +322,35 @@ internal class VideoInfoService : IInfoService
     /// 获取视频流的信息，从VideoPage返回
     /// </summary>
     /// <param name="page"></param>
-    public PlayUrl? GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
+    public async Task<PlayUrl?> GetVideoStreamAsync(
+        VideoPage page,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        var playUrl = _settingsStore.Current.Video.VideoParseType switch
+        return await WbiRequestExecutor.ExecuteAsync(
+            _wbiKeyProvider,
+            (keys, unixTimeSeconds) => _settingsStore.Current.Video.VideoParseType switch
         {
             0 => VideoStreamApi.GetVideoPlayUrl(
-                _settingsStore,
+                keys,
+                unixTimeSeconds,
                 page.Avid,
                 page.Bvid,
                 page.Cid,
                 cancellationToken: cancellationToken),
             1 => VideoStreamApi.GetVideoPlayUrlWebPage(
-                _settingsStore,
+                keys,
+                unixTimeSeconds,
                 page.Avid,
                 page.Bvid,
                 page.Cid,
                 page.Page,
                 cancellationToken),
             _ => null
-        };
-
-        return playUrl;
+        },
+            TimeProvider.System,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

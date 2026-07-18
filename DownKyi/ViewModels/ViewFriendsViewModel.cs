@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Images;
 using DownKyi.Utils;
 using DownKyi.ViewModels.Friends;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels
 {
@@ -48,6 +47,7 @@ namespace DownKyi.ViewModels
         public ViewFriendsViewModel(IDesktopInteractionContext desktopInteractions)
             : base(desktopInteractions)
         {
+            ObserveRegion(AppNavigationRegion.Friends);
             #region 属性初始化
 
             ArrowBack = NavigationIcon.Instance().ArrowBack;
@@ -65,9 +65,9 @@ namespace DownKyi.ViewModels
         #region 命令申明
 
         // 返回事件
-        private DelegateCommand? _backSpaceCommand;
+        private RelayCommand? _backSpaceCommand;
 
-        public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+        public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
         /// <summary>
         /// 返回事件
@@ -82,9 +82,9 @@ namespace DownKyi.ViewModels
         }
 
         // 顶部tab点击事件
-        private DelegateCommand<object>? _tabHeadersCommand;
+        private RelayCommand<object>? _tabHeadersCommand;
 
-        public DelegateCommand<object> TabHeadersCommand => _tabHeadersCommand ??= new DelegateCommand<object>(ExecuteTabHeadersCommand);
+        public RelayCommand<object> TabHeadersCommand => _tabHeadersCommand ??= RequiredParameterCommand.Create<object>(ExecuteTabHeadersCommand);
 
         /// <summary>
         /// 顶部tab点击事件
@@ -141,7 +141,7 @@ namespace DownKyi.ViewModels
         /// 导航到页面时执行
         /// </summary>
         /// <param name="navigationContext"></param>
-        public override void OnNavigatedTo(NavigationContext navigationContext)
+        public override void OnNavigatedTo(AppNavigationContext navigationContext)
         {
             ArgumentNullException.ThrowIfNull(navigationContext);
             base.OnNavigatedTo(navigationContext);

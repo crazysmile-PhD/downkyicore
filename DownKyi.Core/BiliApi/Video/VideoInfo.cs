@@ -2,7 +2,6 @@ using DownKyi.Core.BiliApi.Models.Json;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Video.Models;
 using DownKyi.Core.Logging;
-using DownKyi.Core.Settings;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Video;
@@ -16,12 +15,13 @@ public static class VideoInfo
     /// <param name="aid"></param>
     /// <returns></returns>
     public static VideoView? VideoViewInfo(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         string? bvid = null,
         long aid = -1,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(keys);
         // https://api.bilibili.com/x/web-interface/view/detail?bvid=BV1Sg411F7cb&aid=969147110&need_operation_card=1&web_rm_repeat=1&need_elec=1&out_referer=https%3A%2F%2Fspace.bilibili.com%2F42018135%2Ffavlist%3Ffid%3D94341835
 
         var parameters = new Dictionary<string, object?>();
@@ -37,7 +37,11 @@ public static class VideoInfo
         {
             return null;
         }
-        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters, settingsStore));
+        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(
+            parameters,
+            keys.ImgKey,
+            keys.SubKey,
+            unixTimeSeconds));
         var url = $"https://api.bilibili.com/x/web-interface/wbi/view?{query}";
         const string referer = "https://www.bilibili.com";
         var videoView = BiliApiRequest.RequestJson<VideoViewOrigin>(
@@ -47,7 +51,34 @@ public static class VideoInfo
             "VideoInfo",
             cancellationToken);
 
-        return videoView?.Data;
+        return ValidateVideoView(BiliApiRequest.RequirePayload(videoView.Data));
+    }
+
+    internal static VideoView ValidateVideoView(VideoView videoView)
+    {
+        ArgumentNullException.ThrowIfNull(videoView);
+        if (videoView.Aid <= 0 || string.IsNullOrWhiteSpace(videoView.Bvid))
+        {
+            throw new BilibiliApiResponseException(
+                nameof(VideoViewInfo),
+                "Video information payload did not contain valid AV/BV identifiers.");
+        }
+
+        if (videoView.Pages is not { Count: > 0 })
+        {
+            throw new BilibiliApiResponseException(
+                nameof(VideoViewInfo),
+                "Video information payload did not contain any pages.");
+        }
+
+        if (videoView.Pages.Any(page => page.Cid <= 0))
+        {
+            throw new BilibiliApiResponseException(
+                nameof(VideoViewInfo),
+                "Video information payload contained a page without a valid CID.");
+        }
+
+        return videoView;
     }
 
     /// <summary>
@@ -72,7 +103,7 @@ public static class VideoInfo
             "VideoInfo",
             cancellationToken);
 
-        return desc?.Data;
+        return BiliApiRequest.RequirePayload(desc.Data);
     }
 
     /// <summary>
@@ -97,7 +128,7 @@ public static class VideoInfo
             "VideoInfo",
             cancellationToken);
 
-        return pagelist?.Data;
+        return BiliApiRequest.RequirePayload(pagelist.Data);
     }
 
     public static IReadOnlyList<BiliTagInfo>? GetBiliTagInfo(string bvid, long? cid = null, CancellationToken cancellationToken = default)
@@ -112,7 +143,7 @@ public static class VideoInfo
             "GetBiliTagInfo()",
             cancellationToken);
 
-        return result?.Data;
+        return BiliApiRequest.RequirePayload(result.Data);
     }
 
 

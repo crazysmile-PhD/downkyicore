@@ -1,64 +1,13 @@
+using System.Collections.Frozen;
 using DownKyi.Core.BiliApi.DanmakuApi;
 
 namespace DownKyi.Core.Danmaku2Ass;
 
-public class BilibiliDanmakuConverter
+public sealed class BilibiliDanmakuConverter
 {
-    private static BilibiliDanmakuConverter instance = null!;
-    private readonly Dictionary<int, VideoResolution> _resolutions;
-
-    private readonly Dictionary<string, bool> config = new Dictionary<string, bool>
-    {
-        { "top_filter", false },
-        { "bottom_filter", false },
-        { "scroll_filter", false }
-    };
-
-    private readonly Dictionary<int, string> mapping = new Dictionary<int, string>
-    {
-        { 0, "none" }, // 保留项
-        { 1, "scroll" },
-        { 2, "scroll" },
-        { 3, "scroll" },
-        { 4, "bottom" },
-        { 5, "top" },
-        { 6, "scroll" }, // 逆向滚动弹幕，还是当滚动处理
-        { 7, "none" }, // 高级弹幕，暂时不要考虑
-        { 8, "none" }, // 代码弹幕，暂时不要考虑
-        { 9, "none" }, // BAS弹幕，暂时不要考虑
-        { 10, "none" }, // 未知，暂时不要考虑
-        { 11, "none" }, // 保留项
-        { 12, "none" }, // 保留项
-        { 13, "none" }, // 保留项
-        { 14, "none" }, // 保留项
-        { 15, "none" }, // 保留项
-    };
-
-    // 弹幕标准字体大小
-    private readonly int normalFontSize = 25;
-
-    /// <summary>
-    /// 获取Bilibili实例
-    /// </summary>
-    public static BilibiliDanmakuConverter Instance
-    {
-        get
-        {
-            if (instance == null)
-            {
-                instance = new BilibiliDanmakuConverter();
-            }
-
-            return instance;
-        }
-    }
-
-    /// <summary>
-    /// 隐藏Bilibili()方法，必须使用单例模式
-    /// </summary>
-    private BilibiliDanmakuConverter()
-    {
-        _resolutions = new Dictionary<int, VideoResolution>
+    private const int NormalFontSize = 25;
+    private static readonly FrozenDictionary<int, VideoResolution> Resolutions =
+        new Dictionary<int, VideoResolution>
         {
             [6] = new(426, 240),
             [16] = new(640, 360),
@@ -69,8 +18,33 @@ public class BilibiliDanmakuConverter
             [112] = new(1920, 1080),
             [116] = new(1920, 1080),
             [120] = new(3840, 2160)
-        };
-    }
+        }.ToFrozenDictionary();
+    private static readonly FrozenDictionary<int, string> StyleByMode =
+        new Dictionary<int, string>
+        {
+            [0] = "none",
+            [1] = "scroll",
+            [2] = "scroll",
+            [3] = "scroll",
+            [4] = "bottom",
+            [5] = "top",
+            [6] = "scroll",
+            [7] = "none",
+            [8] = "none",
+            [9] = "none",
+            [10] = "none",
+            [11] = "none",
+            [12] = "none",
+            [13] = "none",
+            [14] = "none",
+            [15] = "none"
+        }.ToFrozenDictionary();
+    private readonly Dictionary<string, bool> _config = new(StringComparer.Ordinal)
+    {
+        { "top_filter", false },
+        { "bottom_filter", false },
+        { "scroll_filter", false }
+    };
 
     /// <summary>
     /// 是否屏蔽顶部弹幕
@@ -79,7 +53,7 @@ public class BilibiliDanmakuConverter
     /// <returns></returns>
     public BilibiliDanmakuConverter SetTopFilter(bool isFilter)
     {
-        config["top_filter"] = isFilter;
+        _config["top_filter"] = isFilter;
         return this;
     }
 
@@ -90,7 +64,7 @@ public class BilibiliDanmakuConverter
     /// <returns></returns>
     public BilibiliDanmakuConverter SetBottomFilter(bool isFilter)
     {
-        config["bottom_filter"] = isFilter;
+        _config["bottom_filter"] = isFilter;
         return this;
     }
 
@@ -101,7 +75,7 @@ public class BilibiliDanmakuConverter
     /// <returns></returns>
     public BilibiliDanmakuConverter SetScrollFilter(bool isFilter)
     {
-        config["scroll_filter"] = isFilter;
+        _config["scroll_filter"] = isFilter;
         return this;
     }
 
@@ -119,18 +93,18 @@ public class BilibiliDanmakuConverter
             {
                 // biliDanmaku.Progress单位是毫秒，所以除以1000，单位变为秒
                 Start = biliDanmaku.Progress / 1000.0f,
-                Style = mapping[biliDanmaku.Mode],
+                Style = StyleByMode[biliDanmaku.Mode],
                 Color = (int)biliDanmaku.Color,
                 Commenter = biliDanmaku.MidHash,
                 Content = biliDanmaku.Content,
-                SizeRatio = 1.0f * biliDanmaku.Fontsize / normalFontSize
+                SizeRatio = 1.0f * biliDanmaku.Fontsize / NormalFontSize
             };
 
             danmakus.Add(danmaku);
         }
 
         // 弹幕预处理
-        var producer = new Producer(config, danmakus);
+        var producer = new Producer(_config, danmakus);
         producer.StartHandle();
 
         // 字幕生成
@@ -140,9 +114,9 @@ public class BilibiliDanmakuConverter
         studio.CreateAssFile(assFile);
     }
 
-    public Dictionary<string, int> GetResolution(int quality)
+    public static Dictionary<string, int> GetResolution(int quality)
     {
-        var resolution = _resolutions.GetValueOrDefault(quality);
+        var resolution = Resolutions.GetValueOrDefault(quality);
         return new Dictionary<string, int>
         {
             ["width"] = resolution.Width,

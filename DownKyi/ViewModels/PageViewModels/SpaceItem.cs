@@ -1,9 +1,9 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Images;
-using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class SpaceItem : BindableBase
+internal class SpaceItem : ObservableObject
 {
     private bool _isEnabled;
 

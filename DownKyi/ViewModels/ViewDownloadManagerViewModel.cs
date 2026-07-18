@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Images;
 using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.ViewModels.PageViewModels;
-using Prism.Commands;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels;
 
@@ -37,6 +36,7 @@ internal class ViewDownloadManagerViewModel : ViewModelBase
     public ViewDownloadManagerViewModel(IDesktopInteractionContext desktopInteractions)
         : base(desktopInteractions)
     {
+        ObserveRegion(AppNavigationRegion.DownloadManager);
         #region 属性初始化
 
         TabHeaders = new List<TabHeader>
@@ -58,9 +58,9 @@ internal class ViewDownloadManagerViewModel : ViewModelBase
     #region 命令申明
 
     // 返回事件
-    private DelegateCommand? _backSpaceCommand;
+    private RelayCommand? _backSpaceCommand;
 
-    public DelegateCommand BackSpaceCommand => _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
+    public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
     /// <summary>
     /// 返回事件
@@ -71,9 +71,9 @@ internal class ViewDownloadManagerViewModel : ViewModelBase
     }
 
     // 左侧tab点击事件
-    private DelegateCommand<object>? _leftTabHeadersCommand;
+    private RelayCommand<object>? _leftTabHeadersCommand;
 
-    public DelegateCommand<object> LeftTabHeadersCommand => _leftTabHeadersCommand ??= new DelegateCommand<object>(ExecuteLeftTabHeadersCommand);
+    public RelayCommand<object> LeftTabHeadersCommand => _leftTabHeadersCommand ??= RequiredParameterCommand.Create<object>(ExecuteLeftTabHeadersCommand);
 
     /// <summary>
     /// 左侧tab点击事件
@@ -105,7 +105,7 @@ internal class ViewDownloadManagerViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         base.OnNavigatedTo(navigationContext);
 

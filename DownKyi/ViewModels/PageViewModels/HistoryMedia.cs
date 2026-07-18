@@ -1,14 +1,14 @@
 using System;
 using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Settings;
 using DownKyi.Images;
-using Prism.Commands;
-using Prism.Mvvm;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
-internal class HistoryMedia : BindableBase
+internal class HistoryMedia : ObservableObject
 {
     private readonly ISettingsStore _settingsStore;
     private readonly IAppNavigationService _navigationService;
@@ -160,9 +160,9 @@ internal class HistoryMedia : BindableBase
     #region 命令申明
 
     // 视频标题点击事件
-    private DelegateCommand<object>? _titleCommand;
+    private RelayCommand<object>? _titleCommand;
 
-    public DelegateCommand<object> TitleCommand => _titleCommand ??= new DelegateCommand<object>(ExecuteTitleCommand);
+    public RelayCommand<object> TitleCommand => _titleCommand ??= RequiredParameterCommand.Create<object>(ExecuteTitleCommand);
 
     /// <summary>
     /// 视频标题点击事件
@@ -174,9 +174,9 @@ internal class HistoryMedia : BindableBase
     }
 
     // UP主头像点击事件
-    private DelegateCommand<object>? _upCommand;
+    private RelayCommand<object>? _upCommand;
 
-    public DelegateCommand<object> UpCommand => _upCommand ??= new DelegateCommand<object>(ExecuteUpCommand);
+    public RelayCommand<object> UpCommand => _upCommand ??= RequiredParameterCommand.Create<object>(ExecuteUpCommand);
 
     /// <summary>
     /// UP主头像点击事件

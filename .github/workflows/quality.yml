@@ -61,6 +61,12 @@ jobs:
           -p:AnalysisMode=All
           -p:EnforceCodeStyleInBuild=true
           -p:UseSharedCompilation=false
+      - name: Enforce architecture policy
+        run: >
+          dotnet test ./tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj
+          -c Release
+          --no-restore
+          --no-build
       - name: Test
         run: >
           dotnet test ${{ env.SOLUTION_FILE }}
@@ -104,7 +110,7 @@ jobs:
             $vulnerable | ConvertTo-Json -Depth 10
             throw "Vulnerable NuGet packages found."
           }
-      - name: Deprecated package report
+      - name: Deprecated package audit
         shell: pwsh
         run: |
           dotnet package list --project $env:SOLUTION_FILE --deprecated --format json > deprecated-packages.json
@@ -116,8 +122,8 @@ jobs:
               Where-Object { $_ -and $_.deprecationReasons }
           )
           if ($deprecated.Count -gt 0) {
-            "Deprecated packages detected. This report is informational until the legacy dependency cleanup PR lands."
             $deprecated | ConvertTo-Json -Depth 10
+            throw "Deprecated NuGet packages found."
           }
       - name: Upload package audit reports
         if: always()

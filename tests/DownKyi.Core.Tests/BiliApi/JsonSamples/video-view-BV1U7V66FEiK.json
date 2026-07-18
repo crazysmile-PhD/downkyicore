@@ -1,0 +1,18 @@
+{
+  "code": 0,
+  "message": "0",
+  "data": {
+    "bvid": "BV1U7V66FEiK",
+    "aid": 114514,
+    "title": "WBI lifecycle fixture",
+    "cid": 1919810,
+    "pages": [
+      {
+        "cid": 1919810,
+        "page": 1,
+        "part": "P1",
+        "duration": 60
+      }
+    ]
+  }
+}

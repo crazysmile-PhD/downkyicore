@@ -1,4 +1,4 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DownKyi.Views.ViewFriends"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -8,9 +8,7 @@
              d:DesignHeight="620"
              xmlns:vm="clr-namespace:DownKyi.ViewModels"
              xmlns:vmp="clr-namespace:DownKyi.ViewModels.PageViewModels"
-             x:DataType="vm:ViewFriendsViewModel"
-             xmlns:prism="http://prismlibrary.com/"
-             prism:ViewModelLocator.AutoWireViewModel="True">
+             x:DataType="vm:ViewFriendsViewModel">
     <Grid RowDefinitions="50,1,*">
         <Grid Grid.Row="0" ColumnDefinitions="100,*,100">
             <Button
@@ -124,6 +122,6 @@
         <TextBlock Grid.Row="1" Background="{DynamicResource BrushBorder}" />
 
         <!--  内容区  -->
-        <ContentControl Grid.Row="2" prism:RegionManager.RegionName="FriendContentRegion" />
+        <ContentControl Grid.Row="2" Content="{Binding RegionContent}" />
     </Grid>
 </UserControl>

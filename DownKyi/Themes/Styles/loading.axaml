@@ -11,7 +11,6 @@
 
     <Style Selector="local|Loading">
         <Setter Property="Background" Value="Transparent" />
-        <!-- <Setter Property="Foreground" Value="{TemplateBinding Foreground}" /> -->
         <Setter Property="IsHitTestVisible" Value="False" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
@@ -201,9 +200,6 @@
         </Style.Animations>
     </Style>
     <Style Selector="local|Loading:active /template/ Canvas#E1R">
-        <!--<Style.Setters>
-      <Setter Property="Background" Value="LightBlue"/>
-    </Style.Setters>-->
         <Style.Animations>
             <Animation Duration="0:0:4.4" IterationCount="Infinite" Delay="0:0:0.0"
                        FillMode="None">

@@ -13,7 +13,6 @@ using DownKyi.Services.Friends;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using Microsoft.Extensions.Logging;
-using Prism.Navigation.Regions;
 
 namespace DownKyi.ViewModels.Friends;
 
@@ -180,6 +179,7 @@ internal class ViewFollowerViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException
             or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
@@ -246,7 +246,7 @@ internal class ViewFollowerViewModel : ViewModelBase
     /// 导航到页面时执行
     /// </summary>
     /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(NavigationContext navigationContext)
+    public override void OnNavigatedTo(AppNavigationContext navigationContext)
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
@@ -274,7 +274,7 @@ internal class ViewFollowerViewModel : ViewModelBase
         Pager.Current = 1;
     }
 
-    public override void OnNavigatedFrom(NavigationContext navigationContext)
+    public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
         CancelAndDispose(ref _loadCancellation);
         IsEnabled = true;
