@@ -10,6 +10,7 @@ internal sealed class AriaProcessSupervisor
     private readonly Lock _sync = new();
     private readonly ILogger<AriaProcessSupervisor> _logger;
     private Process? _process;
+    private WindowsProcessJob? _windowsProcessJob;
 
     public AriaProcessSupervisor(ILogger<AriaProcessSupervisor> logger)
     {
@@ -30,6 +31,7 @@ internal sealed class AriaProcessSupervisor
     public void Track(Process process)
     {
         ArgumentNullException.ThrowIfNull(process);
+        WindowsProcessJob? staleProcessJob;
         lock (_sync)
         {
             if (_process is { HasExited: false })
@@ -37,7 +39,28 @@ internal sealed class AriaProcessSupervisor
                 throw new InvalidOperationException("An aria2 process is already being supervised.");
             }
 
+            staleProcessJob = _windowsProcessJob;
+            _windowsProcessJob = null;
             _process = process;
+        }
+
+        staleProcessJob?.Dispose();
+    }
+
+    public void BindToParentLifetime(Process process)
+    {
+        ArgumentNullException.ThrowIfNull(process);
+        var processJob = WindowsProcessJob.TryCreateAndAssign(process, _logger);
+        lock (_sync)
+        {
+            if (!ReferenceEquals(_process, process))
+            {
+                processJob?.Dispose();
+                throw new InvalidOperationException("Only the tracked aria2 process can be bound to the App lifetime.");
+            }
+
+            _windowsProcessJob?.Dispose();
+            _windowsProcessJob = processJob;
         }
     }
 
@@ -71,10 +94,13 @@ internal sealed class AriaProcessSupervisor
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
         Process? process;
+        WindowsProcessJob? processJob;
         lock (_sync)
         {
             process = _process;
             _process = null;
+            processJob = _windowsProcessJob;
+            _windowsProcessJob = null;
         }
 
         if (process == null)
@@ -102,12 +128,18 @@ internal sealed class AriaProcessSupervisor
             _logger.LogErrorMessage("aria2 process cleanup failed at the operating-system boundary.", e);
             return false;
         }
+        finally
+        {
+            processJob?.Dispose();
+        }
     }
 
     internal void SetTrackedProcessForTests(Process? process)
     {
         lock (_sync)
         {
+            _windowsProcessJob?.Dispose();
+            _windowsProcessJob = null;
             _process = process;
         }
     }
@@ -122,12 +154,17 @@ internal sealed class AriaProcessSupervisor
 
     private void Release(Process process)
     {
+        WindowsProcessJob? processJob = null;
         lock (_sync)
         {
             if (ReferenceEquals(_process, process))
             {
                 _process = null;
+                processJob = _windowsProcessJob;
+                _windowsProcessJob = null;
             }
         }
+
+        processJob?.Dispose();
     }
 }

@@ -50,7 +50,7 @@ namespace DownKyi.Core.Aria2cNet.Server
             // 自动保存会话文件的时间间隔
             var saveSessionInterval = 120;
 
-            // --enable-rpc --rpc-listen-all=true --rpc-allow-origin-all=true --continue=true
+            // The packaged runtime is process-local; custom remote aria2 endpoints are not started here.
             await Task.Run(() =>
             {
                 // 创建目录和文件
@@ -93,41 +93,19 @@ namespace DownKyi.Core.Aria2cNet.Server
                     }
                 }
 
-                // header 解析
-                var headers = string.Empty;
-                if (config.Headers != null)
-                {
-                    headers = config.Headers.Aggregate(headers,
-                        (current, header) => current + $"--header=\"{header}\" ");
-                }
-
                 var executeName = "aria2c";
 
                 if (OperatingSystem.IsWindows())
                 {
                     executeName += ".exe";
                 }
-
                 ExecuteProcess($"aria2/{executeName}",
-                    $"--enable-rpc --rpc-listen-all=true --rpc-allow-origin-all=true " +
-                    $"--check-certificate=false " + // 解决问题 SSL/TLS handshake failure
-                    $"--rpc-listen-port={config.ListenPort} " +
-                    $"--rpc-secret={config.Token} " +
-                    $"--input-file=\"{sessionFile}\" --save-session=\"{sessionFile}\" " +
-                    $"--save-session-interval={saveSessionInterval} " +
-                    $"--log=\"{logFile}\" --log-level={GetLogLevelArgument(config.LogLevel)} " + // log-level: 'debug' 'info' 'notice' 'warn' 'error'
-                    $"--max-concurrent-downloads={config.MaxConcurrentDownloads} " + // 最大同时下载数(任务数)
-                    $"--max-connection-per-server={config.MaxConnectionPerServer} " + // 同服务器连接数
-                    $"--split={config.Split} " + // 单文件最大线程数
-                    $"--min-split-size={config.MinSplitSize}M " + // 最小文件分片大小, 下载线程数上限取决于能分出多少片, 对于小文件重要
-                    $"--max-overall-download-limit={config.MaxOverallDownloadLimit} " + // 下载速度限制
-                    $"--max-download-limit={config.MaxDownloadLimit} " + // 下载单文件速度限制
-                    $"--continue={(config.ContinueDownload ? "true" : "false")} " + // 断点续传
-                    $"--allow-overwrite=true " + // 允许复写文件
-                    $"--auto-file-renaming=false " +
-                    $"--file-allocation={GetFileAllocationArgument(config.FileAllocation)} " + // 文件预分配, none prealloc
-                    $"{headers}" + // header
-                    "",
+                    BuildArguments(
+                        config,
+                        sessionFile,
+                        logFile,
+                        saveSessionInterval,
+                        Environment.ProcessId),
                     null, (s, e) =>
                     {
                         if (string.IsNullOrWhiteSpace(e.Data))
@@ -284,6 +262,43 @@ namespace DownKyi.Core.Aria2cNet.Server
             };
         }
 
+        internal static string BuildArguments(
+            AriaConfig config,
+            string sessionFile,
+            string logFile,
+            int saveSessionInterval,
+            int parentProcessId)
+        {
+            ArgumentNullException.ThrowIfNull(config);
+            ArgumentException.ThrowIfNullOrWhiteSpace(sessionFile);
+            ArgumentException.ThrowIfNullOrWhiteSpace(logFile);
+            ArgumentOutOfRangeException.ThrowIfNegative(saveSessionInterval);
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(parentProcessId, 0);
+
+            var headers = config.Headers.Aggregate(
+                string.Empty,
+                (current, header) => current + $"--header=\"{header}\" ");
+            return $"--enable-rpc --rpc-listen-all=false --rpc-allow-origin-all=false " +
+                   $"--check-certificate=false " +
+                   $"--stop-with-process={parentProcessId} " +
+                   $"--rpc-listen-port={config.ListenPort} " +
+                   $"--rpc-secret={config.Token} " +
+                   $"--input-file=\"{sessionFile}\" --save-session=\"{sessionFile}\" " +
+                   $"--save-session-interval={saveSessionInterval} " +
+                   $"--log=\"{logFile}\" --log-level={GetLogLevelArgument(config.LogLevel)} " +
+                   $"--max-concurrent-downloads={config.MaxConcurrentDownloads} " +
+                   $"--max-connection-per-server={config.MaxConnectionPerServer} " +
+                   $"--split={config.Split} " +
+                   $"--min-split-size={config.MinSplitSize}M " +
+                   $"--max-overall-download-limit={config.MaxOverallDownloadLimit} " +
+                   $"--max-download-limit={config.MaxDownloadLimit} " +
+                   $"--continue={(config.ContinueDownload ? "true" : "false")} " +
+                   $"--allow-overwrite=true " +
+                   $"--auto-file-renaming=false " +
+                   $"--file-allocation={GetFileAllocationArgument(config.FileAllocation)} " +
+                   headers;
+        }
+
         private void ExecuteProcess(string exe, string arg, string? workingDirectory,
             DataReceivedEventHandler output)
         {
@@ -315,6 +330,7 @@ namespace DownKyi.Core.Aria2cNet.Server
             try
             {
                 p.Start();
+                _processSupervisor.BindToParentLifetime(p);
             }
             catch
             {
