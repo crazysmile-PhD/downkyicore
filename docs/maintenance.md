@@ -149,7 +149,7 @@ Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
 
 - `script/aria2.ps1` and `script/aria2.sh` manage aria2 assets.
 - `script/ffmpeg.ps1` and `script/ffmpeg.sh` manage FFmpeg and ffprobe assets.
-- Windows x64 and Linux packages prefer FFmpeg builds with hardware encoders.
+- Windows and Linux packages prefer FFmpeg builds with hardware encoders. Windows x86 uses the pinned yt-dlp FFmpeg build because the former compact archive omitted ffprobe.
 - macOS packages prefer builds that expose VideoToolbox when available.
 - Packaged local aria2 RPC listens only on loopback. It receives `--stop-with-process` on every OS and also joins a kill-on-close Windows Job Object, so an abrupt App termination cannot leave a local child running. Custom remote aria2 endpoints are not started or terminated by this owner.
 

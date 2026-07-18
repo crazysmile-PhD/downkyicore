@@ -69,6 +69,7 @@ jobs:
     runs-on: windows-latest
     needs: changelog
     strategy:
+      fail-fast: false
       matrix:
         cpu: [ x64, x86 ]
         kind: [ zip ]
@@ -130,6 +131,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: changelog
     strategy:
+      fail-fast: false
       matrix:
         cpu: [ x64, arm64 ]
         kind: [ AppImage, deb, rpm ]
@@ -225,6 +227,7 @@ jobs:
     env:
       HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
     strategy:
+      fail-fast: false
       matrix:
         cpu: [ x64, arm64 ]
     steps:

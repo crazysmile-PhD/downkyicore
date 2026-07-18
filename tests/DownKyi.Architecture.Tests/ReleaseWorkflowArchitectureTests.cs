@@ -16,6 +16,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("macos-15", workflow, StringComparison.Ordinal);
         Assert.Contains("-p:AnalysisMode=All", workflow, StringComparison.Ordinal);
         Assert.Contains("dotnet test ./DownKyi.sln", workflow, StringComparison.Ordinal);
+        Assert.Equal(4, CountOccurrences(workflow, "fail-fast: false"));
         Assert.Equal(3, CountOccurrences(workflow, "validate-publish-output.ps1"));
         Assert.Equal(3, CountOccurrences(workflow, "Get-FileHash"));
     }
