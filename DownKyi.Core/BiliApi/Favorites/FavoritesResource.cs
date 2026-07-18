@@ -15,16 +15,40 @@ public static class FavoritesResource
     /// <returns></returns>
     public static IReadOnlyList<FavoritesMedia>? GetFavoritesMedia(long mediaId, int pn, int ps, CancellationToken cancellationToken = default)
     {
-        var url = $"https://api.bilibili.com/x/v3/fav/resource/list?media_id={mediaId}&pn={pn}&ps={ps}&platform=web";
+        return GetFavoritesMediaResource(mediaId, pn, ps, null, cancellationToken)?.Medias;
+    }
+
+    /// <summary>
+    /// 获取收藏夹内容和分页信息，可按视频名称搜索。
+    /// </summary>
+    public static FavoritesMediaResource? GetFavoritesMediaResource(
+        long mediaId,
+        int pn,
+        int ps,
+        string? keyword,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildFavoritesMediaUrl(mediaId, pn, ps, keyword);
         const string referer = "https://www.bilibili.com";
         var resource = BiliApiRequest.RequestJson<FavoritesMediaResourceOrigin>(
             url,
             referer,
-            nameof(GetFavoritesMedia),
+            nameof(GetFavoritesMediaResource),
             "FavoritesResource",
             cancellationToken);
 
-        return resource?.Data?.Medias;
+        return resource?.Data;
+    }
+
+    internal static string BuildFavoritesMediaUrl(long mediaId, int pn, int ps, string? keyword)
+    {
+        var url = $"https://api.bilibili.com/x/v3/fav/resource/list?media_id={mediaId}&pn={pn}&ps={ps}&platform=web";
+        if (string.IsNullOrWhiteSpace(keyword))
+        {
+            return url;
+        }
+
+        return $"{url}&keyword={Uri.EscapeDataString(keyword.Trim())}";
     }
 
     /// <summary>

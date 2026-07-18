@@ -1,6 +1,7 @@
 using DownKyi.Core.Aria2cNet.Client.Entity;
 using DownKyi.Core.BiliApi.Bangumi.Models;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.Core.BiliApi.Favorites.Models;
 using DownKyi.Core.BiliApi.Login.Models;
 using DownKyi.Core.BiliApi.Users.Models;
@@ -180,5 +181,18 @@ public sealed class BiliApiModelContractTests
         Assert.Equal("BV1T7P7eFEn5", archive.Bvid);
         Assert.Equal(3546801722362343, archive.Author.Mid);
         Assert.Equal(405, archive.Stat.View);
+    }
+
+    [Fact]
+    public void FavoritesSearchUrlEncodesTheCurrentFolderKeyword()
+    {
+        var url = FavoritesResource.BuildFavoritesMediaUrl(123, 2, 20, "  猫 & 狗  ");
+
+        Assert.Contains("media_id=123", url, StringComparison.Ordinal);
+        Assert.Contains("pn=2", url, StringComparison.Ordinal);
+        Assert.EndsWith(
+            $"&keyword={Uri.EscapeDataString("猫 & 狗")}",
+            url,
+            StringComparison.Ordinal);
     }
 }

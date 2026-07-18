@@ -42,11 +42,20 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     #region 页面属性申明
 
     private string _pageName = Tag;
+    private string _activeSearchText = string.Empty;
 
     public string PageName
     {
         get => _pageName;
         set => SetProperty(ref _pageName, value);
+    }
+
+    private string _inputSearchText = string.Empty;
+
+    public string InputSearchText
+    {
+        get => _inputSearchText;
+        set => SetProperty(ref _inputSearchText, value);
     }
 
     private bool _contentVisibility;
@@ -129,6 +138,14 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         set => SetProperty(ref _downloadManage, value);
     }
 
+    private VectorImage _searchIcon = null!;
+
+    public VectorImage SearchIcon
+    {
+        get => _searchIcon;
+        set => SetProperty(ref _searchIcon, value);
+    }
+
     private RangeObservableCollection<TabHeader> _tabHeaders = new();
 
     public RangeObservableCollection<TabHeader> TabHeaders
@@ -203,6 +220,9 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         DownloadManage.Width = 24;
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
+        SearchIcon = ButtonIcon.Instance().GeneralSearch;
+        SearchIcon.Fill = DictionaryResource.GetColor("ColorPrimary");
+
         TabHeaders = new RangeObservableCollection<TabHeader>();
         Medias = new RangeObservableCollection<FavoritesMedia>();
 
@@ -274,12 +294,31 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
 
         // tab点击后，隐藏MediaContent
         MediaContentVisibility = false;
+        InputSearchText = string.Empty;
+        _activeSearchText = string.Empty;
 
         // 页面选择
         Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
         Pager.CurrentChanging += OnCurrentChangedPager;
         Pager.CountChanged += OnCountChangedPager;
         Pager.Current = 1;
+    }
+
+    private DelegateCommand? _searchCommand;
+
+    public DelegateCommand SearchCommand => _searchCommand ??= new DelegateCommand(ExecuteSearchCommand);
+
+    private void ExecuteSearchCommand()
+    {
+        if (!IsEnabled || SelectTabId < 0 || SelectTabId >= TabHeaders.Count)
+        {
+            return;
+        }
+
+        _activeSearchText = InputSearchText.Trim();
+        RunFireAndForget(
+            UpdateFavoritesMediaListAsync(1, true),
+            nameof(UpdateFavoritesMediaListAsync));
     }
 
     /// <summary>
@@ -422,7 +461,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         RunFireAndForget(UpdateFavoritesMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateFavoritesMediaListAsync));
     }
 
-    private async Task UpdateFavoritesMediaListAsync(int current)
+    private async Task UpdateFavoritesMediaListAsync(int current, bool updatePager = false)
     {
         try
         {
@@ -439,21 +478,35 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
             var tab = TabHeaders[SelectTabId];
             var cancellationToken = ReplaceCancellationSource(ref _tokenSource2);
 
-            await Task.Run(() =>
-            {
-                var medias = FavoritesResource.GetFavoritesMedia(tab.Id, current, VideoNumberInPage, cancellationToken);
-                if (medias == null || medias.Count == 0)
-                {
-                    MediaContentVisibility = true;
-                    MediaLoadingVisibility = false;
-                    MediaNoDataVisibility = true;
-                    return;
-                }
+            var resource = await Task.Run(
+                () => FavoritesResource.GetFavoritesMediaResource(
+                    tab.Id,
+                    current,
+                    VideoNumberInPage,
+                    _activeSearchText,
+                    cancellationToken),
+                cancellationToken).ConfigureAwait(true);
 
+            if (updatePager)
+            {
+                ConfigurePager(resource?.Info.MediaCount ?? 0);
+            }
+
+            var medias = resource?.Medias;
+            if (medias == null || medias.Count == 0)
+            {
                 MediaContentVisibility = true;
                 MediaLoadingVisibility = false;
-                MediaNoDataVisibility = false;
+                MediaNoDataVisibility = true;
+                return;
+            }
 
+            MediaContentVisibility = true;
+            MediaLoadingVisibility = false;
+            MediaNoDataVisibility = false;
+
+            await Task.Run(() =>
+            {
                 var service = new FavoritesService();
                 service.GetFavoritesMediaList(medias, Medias, EventAggregator, cancellationToken);
             }, cancellationToken).ConfigureAwait(true);
@@ -467,6 +520,15 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         {
             IsEnabled = true;
         }
+    }
+
+    private void ConfigurePager(int itemCount)
+    {
+        Pager = new CustomPagerViewModel(
+            1,
+            Math.Max(1, (int)Math.Ceiling((double)itemCount / VideoNumberInPage)));
+        Pager.CurrentChanging += OnCurrentChangedPager;
+        Pager.CountChanged += OnCountChangedPager;
     }
 
     /// <summary>
@@ -486,6 +548,8 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         NoDataVisibility = false;
         MediaLoadingVisibility = false;
         MediaNoDataVisibility = false;
+        InputSearchText = string.Empty;
+        _activeSearchText = string.Empty;
 
         TabHeaders.Clear();
         Medias.Clear();

@@ -168,7 +168,7 @@
         </ControlTheme>
     </UserControl.Resources>
     <Grid RowDefinitions="50,1,*">
-        <Grid Grid.Row="0" ColumnDefinitions="100,*,100">
+        <Grid Grid.Row="0" ColumnDefinitions="120,*,100">
             <Button
                 Grid.Column="0"
                 Margin="10,5,0,5"
@@ -192,6 +192,47 @@
                         Text="{DynamicResource PublicFavorites}" />
                 </StackPanel>
             </Button>
+
+            <Grid
+                Grid.Column="1"
+                Width="420"
+                Height="34"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                IsEnabled="{Binding ContentVisibility}">
+                <Border
+                    BorderBrush="{DynamicResource BrushPrimary}"
+                    BorderThickness="1"
+                    CornerRadius="17">
+                    <TextBox
+                        Height="32"
+                        Margin="14,0,40,0"
+                        VerticalContentAlignment="Center"
+                        BorderThickness="0"
+                        PlaceholderText="{DynamicResource SearchVideoByName}"
+                        Text="{Binding InputSearchText, Mode=TwoWay}">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Command="{Binding SearchCommand}" Gesture="Enter" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                </Border>
+                <Button
+                    Width="18"
+                    Height="18"
+                    Margin="0,0,12,0"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Command="{Binding SearchCommand}"
+                    Theme="{StaticResource ImageBtnStyle}"
+                    ToolTip.Tip="{DynamicResource Search}">
+                    <Path
+                        Width="{Binding SearchIcon.Width}"
+                        Height="{Binding SearchIcon.Height}"
+                        Data="{Binding SearchIcon.Data}"
+                        Fill="{Binding SearchIcon.Fill}"
+                        Stretch="Uniform" />
+                </Button>
+            </Grid>
 
             <Button
                 Grid.Column="2"
