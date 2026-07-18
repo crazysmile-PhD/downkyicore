@@ -75,6 +75,7 @@ internal static class DesktopComposition
         services.AddSingleton<DownloadListState>();
         services.AddSingleton<DownloadTaskFileService>();
         services.AddSingleton<IDownloadManagerCoordinator, DownloadManagerCoordinator>();
+        services.AddSingleton<IVideoTagProvider, VideoTagProvider>();
         services.AddSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
         services.AddTransient<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         services.AddSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();

@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
+using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.Zone;
@@ -14,6 +16,7 @@ using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.Models;
+using DownKyi.Services.Video;
 using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.ViewModels.PageViewModels;
@@ -33,6 +36,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
     private readonly DownloadListState _downloadLists;
     private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly ISettingsStore _settingsStore;
+    private readonly IVideoTagProvider _tagProvider;
     private readonly IUserNotificationService _notificationService;
     private readonly IAppDialogService _dialogService;
 
@@ -54,6 +58,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         DownloadListState downloadLists,
         DownloadTaskProjectionStore projectionStore,
         ISettingsStore settingsStore,
+        IVideoTagProvider tagProvider,
         IUserNotificationService notificationService,
         IAppDialogService dialogService,
         ILogger<AddToDownloadService> logger)
@@ -61,13 +66,14 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _projectionStore = projectionStore ?? throw new ArgumentNullException(nameof(projectionStore));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
             case PlayStreamType.Video:
-                _videoInfoService = new VideoInfoService(null, settingsStore);
+                _videoInfoService = new VideoInfoService((string?)null, settingsStore, _tagProvider);
                 break;
             case PlayStreamType.Bangumi:
                 _videoInfoService = new BangumiInfoService(null, settingsStore);
@@ -93,6 +99,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         DownloadListState downloadLists,
         DownloadTaskProjectionStore projectionStore,
         ISettingsStore settingsStore,
+        IVideoTagProvider tagProvider,
         IUserNotificationService notificationService,
         IAppDialogService dialogService,
         ILogger<AddToDownloadService> logger)
@@ -100,13 +107,14 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
         _projectionStore = projectionStore ?? throw new ArgumentNullException(nameof(projectionStore));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         switch (streamType)
         {
             case PlayStreamType.Video:
-                _videoInfoService = new VideoInfoService(id, settingsStore);
+                _videoInfoService = new VideoInfoService(id, settingsStore, _tagProvider);
                 break;
             case PlayStreamType.Bangumi:
                 _videoInfoService = new BangumiInfoService(id, settingsStore);
@@ -611,7 +619,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
                 if (settings.Video.Content.GenerateMovieMetadata && _downloadVideo)
                 {
-                    downloadingItem.Metadata = BuildMovieMetadata(page);
+                    downloadingItem.Metadata = await BuildMovieMetadataAsync(
+                        page,
+                        cancellationToken).ConfigureAwait(true);
                 }
 
                 await _projectionStore
@@ -634,7 +644,9 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
         return parameters.TryGetValue(key, out var value) && value is true;
     }
 
-    private MovieMetadata BuildMovieMetadata(VideoPage page)
+    private async Task<MovieMetadata> BuildMovieMetadataAsync(
+        VideoPage page,
+        CancellationToken cancellationToken)
     {
         var score = _videoInfoView?.Score;
         var metadata = new MovieMetadata
@@ -652,7 +664,27 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
             metadata.Genres.Add(genre);
         }
 
-        foreach (var tag in page.LazyTags?.Value ?? Enumerable.Empty<string>())
+        IReadOnlyList<string> tags;
+        try
+        {
+            tags = await page.LoadTagsAsync(cancellationToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception e) when (e is HttpRequestException
+            or IOException
+            or BilibiliApiResponseException
+            or Newtonsoft.Json.JsonException)
+        {
+            _logger.LogWarningMessage(
+                "Optional video tags could not be loaded; the download task will continue without tags.",
+                e);
+            tags = Array.Empty<string>();
+        }
+
+        foreach (var tag in tags)
         {
             metadata.Tags.Add(tag);
         }

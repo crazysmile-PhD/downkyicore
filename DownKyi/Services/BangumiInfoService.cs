@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using DownKyi.Core.BiliApi.Bangumi;
 using DownKyi.Core.BiliApi.Bangumi.Models;
 using DownKyi.Core.BiliApi.BiliUtils;
@@ -104,7 +105,7 @@ internal class BangumiInfoService : IInfoService
                 Order = order,
                 Name = name,
                 Duration = "N/A",
-                LazyTags = new Lazy<List<string>>(_bangumiSeason.Styles.ToList())
+                LoadTagsAsync = CreateLocalTagLoader(_bangumiSeason.Styles)
             };
 
             // UP主信息
@@ -201,7 +202,7 @@ internal class BangumiInfoService : IInfoService
                     Order = order,
                     Name = name,
                     Duration = "N/A",
-                    LazyTags = new Lazy<List<string>>(_bangumiSeason.Styles.ToList())
+                    LoadTagsAsync = CreateLocalTagLoader(_bangumiSeason.Styles)
                 };
 
                 // UP主信息
@@ -244,6 +245,17 @@ internal class BangumiInfoService : IInfoService
         }
 
         return videoSections;
+    }
+
+    private static Func<CancellationToken, Task<IReadOnlyList<string>>> CreateLocalTagLoader(
+        IEnumerable<string> tags)
+    {
+        var snapshot = tags.ToArray();
+        return cancellationToken =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<string>>(snapshot);
+        };
     }
 
     /// <summary>

@@ -30,163 +30,171 @@ namespace DownKyi.Desktop.Tests;
 public sealed class UiSmokeTests
 {
     [Fact]
-    public void TypedRouterRestoresMainHistoryAndNavigationLifecycle()
+    public Task TypedRouterRestoresMainHistoryAndNavigationLifecycle()
     {
-        EnsureHeadlessApplication();
-        var created = new List<NavigationProbe>();
-        using var navigation = new AvaloniaNavigationService(
-            route =>
-            {
-                var probe = new NavigationProbe(route);
-                created.Add(probe);
-                return probe;
-            },
-            static action => action());
+        return HeadlessUiTestHost.RunAsync(() =>
+        {
+            var created = new List<NavigationProbe>();
+            using var navigation = new AvaloniaNavigationService(
+                route =>
+                {
+                    var probe = new NavigationProbe(route);
+                    created.Add(probe);
+                    return probe;
+                },
+                static action => action());
 
-        navigation.Navigate(new AppNavigationRequest(AppRoute.Index, Parameter: "first"));
-        navigation.Navigate(new AppNavigationRequest(AppRoute.Settings, AppRoute.Index, "second"));
+            navigation.Navigate(new AppNavigationRequest(AppRoute.Index, Parameter: "first"));
+            navigation.Navigate(new AppNavigationRequest(AppRoute.Settings, AppRoute.Index, "second"));
 
-        Assert.True(navigation.CanGoBack(AppNavigationRegion.Main));
-        Assert.Same(created[1], navigation.GetActiveView(AppNavigationRegion.Main));
-        Assert.Equal(1, created[0].NavigatedFromCount);
-        Assert.Equal("first", created[0].LastContext?.Parameter);
+            Assert.True(navigation.CanGoBack(AppNavigationRegion.Main));
+            Assert.Same(created[1], navigation.GetActiveView(AppNavigationRegion.Main));
+            Assert.Equal(1, created[0].NavigatedFromCount);
+            Assert.Equal("first", created[0].LastContext?.Parameter);
 
-        navigation.GoBack(AppNavigationRegion.Main);
+            navigation.GoBack(AppNavigationRegion.Main);
 
-        Assert.Same(created[0], navigation.GetActiveView(AppNavigationRegion.Main));
-        Assert.False(navigation.CanGoBack(AppNavigationRegion.Main));
-        Assert.Equal(2, created[0].NavigatedToCount);
-        Assert.True(created[1].IsDisposed);
+            Assert.Same(created[0], navigation.GetActiveView(AppNavigationRegion.Main));
+            Assert.False(navigation.CanGoBack(AppNavigationRegion.Main));
+            Assert.Equal(2, created[0].NavigatedToCount);
+            Assert.True(created[1].IsDisposed);
+        });
     }
 
     [Fact]
-    public void TypedRouterReplacesAndDisposesNestedRegionContent()
+    public Task TypedRouterReplacesAndDisposesNestedRegionContent()
     {
-        EnsureHeadlessApplication();
-        var created = new List<NavigationProbe>();
-        using var navigation = new AvaloniaNavigationService(
-            route =>
-            {
-                var probe = new NavigationProbe(route);
-                created.Add(probe);
-                return probe;
-            },
-            static action => action());
+        return HeadlessUiTestHost.RunAsync(() =>
+        {
+            var created = new List<NavigationProbe>();
+            using var navigation = new AvaloniaNavigationService(
+                route =>
+                {
+                    var probe = new NavigationProbe(route);
+                    created.Add(probe);
+                    return probe;
+                },
+                static action => action());
 
-        navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsBasic);
-        navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsNetwork);
+            navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsBasic);
+            navigation.NavigateRegion(AppNavigationRegion.Settings, AppRoute.SettingsNetwork);
 
-        Assert.True(created[0].IsDisposed);
-        Assert.Same(created[1], navigation.GetActiveView(AppNavigationRegion.Settings));
-        Assert.False(navigation.CanGoBack(AppNavigationRegion.Settings));
+            Assert.True(created[0].IsDisposed);
+            Assert.Same(created[1], navigation.GetActiveView(AppNavigationRegion.Settings));
+            Assert.False(navigation.CanGoBack(AppNavigationRegion.Settings));
 
-        navigation.ClearRegion(AppNavigationRegion.Settings);
+            navigation.ClearRegion(AppNavigationRegion.Settings);
 
-        Assert.True(created[1].IsDisposed);
-        Assert.Null(navigation.GetActiveView(AppNavigationRegion.Settings));
+            Assert.True(created[1].IsDisposed);
+            Assert.Null(navigation.GetActiveView(AppNavigationRegion.Settings));
+        });
     }
 
     [Fact]
     public async Task RealHostResolvesShellAndKeyViewsWithoutPrismRuntime()
     {
-        AssertPrismRuntimeIsNotLoaded();
-        EnsureHeadlessApplication();
-        AssertVideoPageSelectionBehavior();
-
-        var testDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-host-smoke-{Guid.NewGuid():N}");
-        var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
-        var logProvider = new ApplicationLogProvider(
-            new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
-        var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logProvider));
-
-        try
+        await HeadlessUiTestHost.RunAsync(async () =>
         {
-            using var host = DownKyiHost.Create(services =>
-            {
-                services.AddDownKyiDesktop(loggerFactory, logProvider);
-                services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
-                services.Replace(ServiceDescriptor.Singleton(
-                    new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
-            });
-
-            var window = host.Services.GetRequiredService<MainWindow>();
-            var mainViewModel = host.Services.GetRequiredService<MainWindowViewModel>();
-            var imageLoader = host.Services.GetRequiredService<IAsyncImageLoader>();
-
-            Assert.True(window.Width >= window.MinWidth);
-            Assert.True(window.Height >= window.MinHeight);
-            Assert.NotNull(window.Content);
-            Assert.Same(mainViewModel, window.DataContext);
-            Assert.IsType<DiskCachedWebImageLoader>(imageLoader);
-            Assert.NotNull(host.Services.GetRequiredService<ViewIndexViewModel>());
-            Assert.NotNull(host.Services.GetRequiredService<ViewVideoDetailViewModel>());
-            Assert.NotNull(host.Services.GetRequiredService<ViewDownloadManagerViewModel>());
-            Assert.NotNull(host.Services.GetRequiredService<ViewNetworkViewModel>());
-
-            host.Services
-                .GetRequiredService<IAppNavigationService>()
-                .Navigate(new AppNavigationRequest(AppRoute.Index, Parameter: "smoke"));
-
-            Assert.IsType<ViewIndexViewModel>(mainViewModel.MainContent);
-            Assert.NotNull(Program.BuildAvaloniaApp());
             AssertPrismRuntimeIsNotLoaded();
-        }
-        finally
-        {
-            loggerFactory.Dispose();
-            SynchronizationContext.SetSynchronizationContext(null);
-            await logProvider.DisposeAsync();
-            await settingsStore.DisposeAsync();
-            if (Directory.Exists(testDirectory))
+            AssertVideoPageSelectionBehavior();
+
+            var testDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-host-smoke-{Guid.NewGuid():N}");
+            var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
+            var logProvider = new ApplicationLogProvider(
+                new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
+            var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logProvider));
+
+            try
             {
-                Directory.Delete(testDirectory, recursive: true);
+                using var host = DownKyiHost.Create(services =>
+                {
+                    services.AddDownKyiDesktop(loggerFactory, logProvider);
+                    services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
+                    services.Replace(ServiceDescriptor.Singleton(
+                        new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
+                });
+
+                var window = host.Services.GetRequiredService<MainWindow>();
+                var mainViewModel = host.Services.GetRequiredService<MainWindowViewModel>();
+                var imageLoader = host.Services.GetRequiredService<IAsyncImageLoader>();
+
+                Assert.True(window.Width >= window.MinWidth);
+                Assert.True(window.Height >= window.MinHeight);
+                Assert.NotNull(window.Content);
+                Assert.Same(mainViewModel, window.DataContext);
+                Assert.IsType<DiskCachedWebImageLoader>(imageLoader);
+                Assert.NotNull(host.Services.GetRequiredService<ViewIndexViewModel>());
+                Assert.NotNull(host.Services.GetRequiredService<ViewVideoDetailViewModel>());
+                Assert.NotNull(host.Services.GetRequiredService<ViewDownloadManagerViewModel>());
+                Assert.NotNull(host.Services.GetRequiredService<ViewNetworkViewModel>());
+
+                host.Services
+                    .GetRequiredService<IAppNavigationService>()
+                    .Navigate(new AppNavigationRequest(AppRoute.Index, Parameter: "smoke"));
+
+                Assert.IsType<ViewIndexViewModel>(mainViewModel.MainContent);
+                Assert.NotNull(Program.BuildAvaloniaApp());
+                AssertPrismRuntimeIsNotLoaded();
             }
-        }
+            finally
+            {
+                loggerFactory.Dispose();
+                await logProvider.DisposeAsync().ConfigureAwait(true);
+                await settingsStore.DisposeAsync().ConfigureAwait(true);
+                if (Directory.Exists(testDirectory))
+                {
+                    Directory.Delete(testDirectory, recursive: true);
+                }
+            }
+        });
     }
 
     [Fact]
     public async Task MainWindowStillClosesWhenShutdownRequestFaults()
     {
-        EnsureHeadlessApplication();
-        var testDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-close-smoke-{Guid.NewGuid():N}");
-        var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
-        var logProvider = new ApplicationLogProvider(
-            new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
-        var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logProvider));
-        var lifecycle = new ThrowingApplicationLifecycle();
-
-        try
+        await HeadlessUiTestHost.RunAsync(async () =>
         {
-            using var host = DownKyiHost.Create(services =>
-            {
-                services.AddDownKyiDesktop(loggerFactory, logProvider);
-                services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
-                services.Replace(ServiceDescriptor.Singleton<IApplicationLifecycle>(lifecycle));
-                services.Replace(ServiceDescriptor.Singleton(
-                    new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
-            });
-            var window = host.Services.GetRequiredService<MainWindow>();
-            var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            window.Closed += (_, _) => closed.TrySetResult();
+            var testDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-close-smoke-{Guid.NewGuid():N}");
+            var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
+            var logProvider = new ApplicationLogProvider(
+                new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
+            var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logProvider));
+            var lifecycle = new ThrowingApplicationLifecycle();
 
-            window.Show();
-            window.Close();
-
-            await closed.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-            Assert.Equal(1, lifecycle.ShutdownRequestCount);
-            Assert.False(window.IsVisible);
-        }
-        finally
-        {
-            loggerFactory.Dispose();
-            SynchronizationContext.SetSynchronizationContext(null);
-            await logProvider.DisposeAsync();
-            await settingsStore.DisposeAsync();
-            if (Directory.Exists(testDirectory))
+            try
             {
-                Directory.Delete(testDirectory, recursive: true);
+                using var host = DownKyiHost.Create(services =>
+                {
+                    services.AddDownKyiDesktop(loggerFactory, logProvider);
+                    services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
+                    services.Replace(ServiceDescriptor.Singleton<IApplicationLifecycle>(lifecycle));
+                    services.Replace(ServiceDescriptor.Singleton(
+                        new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
+                });
+                var window = host.Services.GetRequiredService<MainWindow>();
+                var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                window.Closed += (_, _) => closed.TrySetResult();
+
+                window.Show();
+                window.Close();
+
+                await closed.Task
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+                Assert.Equal(1, lifecycle.ShutdownRequestCount);
+                Assert.False(window.IsVisible);
             }
-        }
+            finally
+            {
+                loggerFactory.Dispose();
+                await logProvider.DisposeAsync().ConfigureAwait(true);
+                await settingsStore.DisposeAsync().ConfigureAwait(true);
+                if (Directory.Exists(testDirectory))
+                {
+                    Directory.Delete(testDirectory, recursive: true);
+                }
+            }
+        });
     }
 
     [Fact]
@@ -277,23 +285,6 @@ public sealed class UiSmokeTests
         Assert.DoesNotContain(
             AppDomain.CurrentDomain.GetAssemblies(),
             assembly => assembly.GetName().Name?.StartsWith("Prism", StringComparison.Ordinal) == true);
-    }
-
-    private static void EnsureHeadlessApplication()
-    {
-        if (Avalonia.Application.Current != null)
-        {
-            return;
-        }
-
-        AppBuilder
-            .Configure<SmokeTestApplication>()
-            .UseHeadless(new AvaloniaHeadlessPlatformOptions())
-            .SetupWithoutStarting();
-    }
-
-    private sealed class SmokeTestApplication : Avalonia.Application
-    {
     }
 
     private sealed class ThrowingApplicationLifecycle : IApplicationLifecycle

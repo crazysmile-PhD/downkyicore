@@ -17,8 +17,9 @@ internal sealed class VideoParseCoordinator
     private IInfoService? _infoService;
     private string? _infoServiceInput;
 
-    public VideoParseCoordinator(ISettingsStore settingsStore)
-        : this((input, cancellationToken) => CreateInfoService(input, settingsStore, cancellationToken))
+    public VideoParseCoordinator(ISettingsStore settingsStore, IVideoTagProvider tagProvider)
+        : this((input, cancellationToken) =>
+            CreateInfoService(input, settingsStore, tagProvider, cancellationToken))
     {
     }
 
@@ -170,12 +171,14 @@ internal sealed class VideoParseCoordinator
     internal static IInfoService? CreateInfoService(
         string input,
         ISettingsStore settingsStore,
+        IVideoTagProvider tagProvider,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(tagProvider);
         return VideoInputResolver.Resolve(input) switch
         {
-            VideoInputKind.Video => new VideoInfoService(input, settingsStore, cancellationToken),
+            VideoInputKind.Video => new VideoInfoService(input, settingsStore, tagProvider, cancellationToken),
             VideoInputKind.Bangumi => new BangumiInfoService(input, settingsStore, cancellationToken),
             VideoInputKind.Cheese => new CheeseInfoService(input, settingsStore, cancellationToken),
             _ => null

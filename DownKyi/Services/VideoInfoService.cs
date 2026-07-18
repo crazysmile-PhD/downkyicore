@@ -12,6 +12,7 @@ using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
+using DownKyi.Services.Video;
 using DownKyi.ViewModels.PageViewModels;
 using VideoPage = DownKyi.ViewModels.PageViewModels.VideoPage;
 
@@ -20,16 +21,17 @@ namespace DownKyi.Services;
 internal class VideoInfoService : IInfoService
 {
     private readonly VideoView? _videoView;
-    private readonly CancellationToken _cancellationToken;
     private readonly ISettingsStore _settingsStore;
+    private readonly IVideoTagProvider _tagProvider;
 
     public VideoInfoService(
         string? input,
         ISettingsStore settingsStore,
+        IVideoTagProvider tagProvider,
         CancellationToken cancellationToken = default)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
-        _cancellationToken = cancellationToken;
+        _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
         if (input == null)
         {
             return;
@@ -46,6 +48,16 @@ internal class VideoInfoService : IInfoService
             var bvid = ParseEntrance.GetBvId(input);
             _videoView = VideoInfo.VideoViewInfo(_settingsStore, bvid, cancellationToken: cancellationToken);
         }
+    }
+
+    internal VideoInfoService(
+        VideoView videoView,
+        ISettingsStore settingsStore,
+        IVideoTagProvider tagProvider)
+    {
+        _videoView = videoView ?? throw new ArgumentNullException(nameof(videoView));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
     }
 
     /// <summary>
@@ -104,12 +116,8 @@ internal class VideoInfoService : IInfoService
                 Name = name,
                 Duration = "N/A",
                 Page = page.Page,
-                LazyTags = new Lazy<List<string>>(() =>
-                {
-                    return VideoInfo.GetBiliTagInfo(_videoView.Bvid, page.Cid, _cancellationToken)
-                        ?.Select(x => x.TagName)
-                        .ToList() ?? new List<string>();
-                })
+                LoadTagsAsync = currentToken =>
+                    _tagProvider.GetTagsAsync(_videoView.Bvid, page.Cid, currentToken)
             };
 
             // UP主信息
@@ -151,7 +159,7 @@ internal class VideoInfoService : IInfoService
         // 不需要ugc内容
         if (noUgc)
         {
-            videoSections.Add(CreateDefaultVideoSection());
+            videoSections.Add(CreateDefaultVideoSection(cancellationToken));
             return videoSections;
         }
 
@@ -197,14 +205,14 @@ internal class VideoInfoService : IInfoService
         return videoSections;
     }
 
-    private VideoSection CreateDefaultVideoSection()
+    private VideoSection CreateDefaultVideoSection(CancellationToken cancellationToken)
     {
         return new VideoSection
         {
             Id = 0,
             Title = "default",
             IsSelected = true,
-            VideoPages = GetVideoPages(_cancellationToken) ?? new List<VideoPage>()
+            VideoPages = GetVideoPages(cancellationToken) ?? new List<VideoPage>()
         };
     }
 
@@ -235,12 +243,8 @@ internal class VideoInfoService : IInfoService
                 Page = p.Page,
                 PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture),
                 OriginalPublishTime = dateTime,
-                LazyTags = new Lazy<List<string>>(() =>
-                {
-                    return VideoInfo.GetBiliTagInfo(episode.Bvid, p.Cid, _cancellationToken)
-                        ?.Select(x => x.TagName)
-                        .ToList() ?? new List<string>();
-                })
+                LoadTagsAsync = currentToken =>
+                    _tagProvider.GetTagsAsync(episode.Bvid, p.Cid, currentToken)
             });
         }
 
@@ -261,12 +265,8 @@ internal class VideoInfoService : IInfoService
             Duration = "N/A",
             Owner = _videoView?.Owner ?? new VideoOwner { Name = "", Face = "", Mid = -1 },
             Page = episode.Page.Page,
-            LazyTags = new Lazy<List<string>>(() =>
-            {
-                return VideoInfo.GetBiliTagInfo(episode.Bvid, episode.Cid, _cancellationToken)
-                    ?.Select(x => x.TagName)
-                    .ToList() ?? new List<string>();
-            })
+            LoadTagsAsync = currentToken =>
+                _tagProvider.GetTagsAsync(episode.Bvid, episode.Cid, currentToken)
         };
         var dateTime = startTime.AddSeconds(episode.Arc.Ctime);
         page.PublishTime = dateTime.ToString(timeFormat, CultureInfo.CurrentCulture);

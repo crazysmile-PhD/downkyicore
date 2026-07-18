@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Threading;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Core.BiliApi.Models;
@@ -97,7 +99,12 @@ internal class VideoPage : ObservableObject
     }
 
     [JsonIgnore]
-    public Lazy<List<string>> LazyTags { get; set; } = new(() => new());
+    public Func<CancellationToken, Task<IReadOnlyList<string>>> LoadTagsAsync { get; set; } =
+        static cancellationToken =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+        };
     #region
 
     // 视频画质选择事件

@@ -7,6 +7,7 @@ using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
 using DownKyi.Services.Download;
+using DownKyi.Services.Video;
 
 namespace DownKyi.Services.Media;
 
@@ -26,10 +27,12 @@ internal interface IContentInfoServiceFactory
 internal sealed class ContentInfoServiceFactory : IContentInfoServiceFactory
 {
     private readonly ISettingsStore _settingsStore;
+    private readonly IVideoTagProvider _tagProvider;
 
-    public ContentInfoServiceFactory(ISettingsStore settingsStore)
+    public ContentInfoServiceFactory(ISettingsStore settingsStore, IVideoTagProvider tagProvider)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
     }
 
     public IInfoService Create(ContentDownloadItem item, CancellationToken cancellationToken)
@@ -38,7 +41,11 @@ internal sealed class ContentInfoServiceFactory : IContentInfoServiceFactory
         cancellationToken.ThrowIfCancellationRequested();
         return item.Kind switch
         {
-            DownloadInfoKind.Video => new VideoInfoService(item.Source, _settingsStore, cancellationToken),
+            DownloadInfoKind.Video => new VideoInfoService(
+                item.Source,
+                _settingsStore,
+                _tagProvider,
+                cancellationToken),
             DownloadInfoKind.Bangumi => new BangumiInfoService(item.Source, _settingsStore, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(item), item.Kind, null)
         };

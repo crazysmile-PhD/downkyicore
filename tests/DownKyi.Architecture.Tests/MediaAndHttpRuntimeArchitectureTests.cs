@@ -5,6 +5,36 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
+    public void VideoMetadataDoesNotCaptureAnOperationTokenInLazyState()
+    {
+        var videoInfoSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "VideoInfoService.cs"));
+        var pageSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "PageViewModels",
+            "VideoPage.cs"));
+        var addSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Services",
+            "Download",
+            "AddToDownloadService.cs"));
+
+        Assert.DoesNotContain("LazyTags", videoInfoSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("_cancellationToken", videoInfoSource, StringComparison.Ordinal);
+        Assert.Contains("LoadTagsAsync = currentToken =>", videoInfoSource, StringComparison.Ordinal);
+        Assert.Contains("Func<CancellationToken, Task<IReadOnlyList<string>>> LoadTagsAsync", pageSource,
+            StringComparison.Ordinal);
+        Assert.Contains("BuildMovieMetadataAsync", addSource, StringComparison.Ordinal);
+        Assert.Contains("page.LoadTagsAsync(cancellationToken)", addSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FfmpegRuntimeDoesNotRestoreSynchronousProcessWaits()
     {
         var runtimeDirectory = Path.Combine(RepositoryRoot, "DownKyi.Core", "FFMpeg");

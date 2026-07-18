@@ -45,8 +45,8 @@ internal sealed class VideoDetailWorkflowCoordinator : IVideoDetailWorkflowCoord
     private CancellationTokenSource? _operationCancellation;
     private int _operationVersion;
 
-    public VideoDetailWorkflowCoordinator(ISettingsStore settingsStore)
-        : this(new VideoParseCoordinator(settingsStore), new VideoSearchState())
+    public VideoDetailWorkflowCoordinator(ISettingsStore settingsStore, IVideoTagProvider tagProvider)
+        : this(new VideoParseCoordinator(settingsStore, tagProvider), new VideoSearchState())
     {
     }
 
