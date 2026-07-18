@@ -12,4 +12,5 @@ public sealed record ApplicationLogRecord(
     string ExceptionType,
     int ProcessId,
     int ThreadId,
-    string Scope);
+    string Scope,
+    string ExceptionText = "");

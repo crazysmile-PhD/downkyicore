@@ -6,6 +6,8 @@ public interface IApplicationLogService
 
     IReadOnlyList<ApplicationLogRecord> GetRecentEvents();
 
+    ApplicationLogMetrics GetMetrics();
+
     Task FlushAsync(CancellationToken cancellationToken = default);
 
     Task<string> ExportDiagnosticLogAsync(CancellationToken cancellationToken = default);
