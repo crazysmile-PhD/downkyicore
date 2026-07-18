@@ -9,6 +9,34 @@ namespace DownKyi.Tests;
 public sealed class UserVideoListNavigationTests
 {
     [Fact]
+    public void ReturningFromAChildPageRestoresTheCurrentNumericListState()
+    {
+        Assert.True(ViewPublicationViewModel.ShouldRestoreListState(
+            preserveStateOnReturn: true,
+            currentMid: 3546801722362343,
+            currentIsUserVideoList: true,
+            incomingMid: 3546801722362343,
+            incomingIsUserVideoList: true,
+            loadedTabCount: 1));
+
+        Assert.False(ViewPublicationViewModel.ShouldRestoreListState(
+            preserveStateOnReturn: true,
+            currentMid: 3546801722362343,
+            currentIsUserVideoList: true,
+            incomingMid: 42,
+            incomingIsUserVideoList: true,
+            loadedTabCount: 1));
+
+        Assert.False(ViewPublicationViewModel.ShouldRestoreListState(
+            preserveStateOnReturn: false,
+            currentMid: 3546801722362343,
+            currentIsUserVideoList: true,
+            incomingMid: 3546801722362343,
+            incomingIsUserVideoList: true,
+            loadedTabCount: 1));
+    }
+
+    [Fact]
     public void NumericUserVideoSearchFiltersTitlesCaseInsensitively()
     {
         var videos = new[]

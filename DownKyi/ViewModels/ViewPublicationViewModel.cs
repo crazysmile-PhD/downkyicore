@@ -39,6 +39,8 @@ namespace DownKyi.ViewModels
         private string _activeSearchText = string.Empty;
         private IReadOnlyList<UserVideoListArchive>? _allUserVideoListArchives;
         private IReadOnlyList<UserVideoListArchive>? _userVideoSearchResults;
+        private bool _preserveStateOnReturn;
+        private bool _resetStateOnNavigationAway;
 
         // 每页视频数量，暂时在此写死，以后在设置中增加选项
         private const int VideoNumberInPage = 30;
@@ -217,6 +219,7 @@ namespace DownKyi.ViewModels
             _tokenSource?.Cancel();
             _tokenSource?.Dispose();
             _tokenSource = null;
+            _resetStateOnNavigationAway = true;
             var parameter = new NavigationParam
             {
                 ViewName = ParentView,
@@ -680,6 +683,20 @@ namespace DownKyi.ViewModels
                 .ToList();
         }
 
+        internal static bool ShouldRestoreListState(
+            bool preserveStateOnReturn,
+            long currentMid,
+            bool currentIsUserVideoList,
+            long incomingMid,
+            bool incomingIsUserVideoList,
+            int loadedTabCount)
+        {
+            return preserveStateOnReturn
+                && loadedTabCount > 0
+                && currentMid == incomingMid
+                && currentIsUserVideoList == incomingIsUserVideoList;
+        }
+
         private void ConfigurePager(int itemCount)
         {
             Pager = new CustomPagerViewModel(
@@ -787,6 +804,15 @@ namespace DownKyi.ViewModels
         /// 导航到页面时执行
         /// </summary>
         /// <param name="navigationContext"></param>
+        public override void OnNavigatedFrom(NavigationContext navigationContext)
+        {
+            ArgumentNullException.ThrowIfNull(navigationContext);
+            base.OnNavigatedFrom(navigationContext);
+
+            _preserveStateOnReturn = !_resetStateOnNavigationAway;
+            _resetStateOnNavigationAway = false;
+        }
+
         public override void OnNavigatedTo(NavigationContext navigationContext)
         {
             ArgumentNullException.ThrowIfNull(navigationContext);
@@ -796,14 +822,31 @@ namespace DownKyi.ViewModels
             var parameter = navigationContext.Parameters.GetValue<Dictionary<string, object>>("Parameter");
             if (parameter == null)
             {
+                _preserveStateOnReturn = false;
                 return;
             }
 
+            var incomingMid = (long)parameter["mid"];
+            var incomingIsUserVideoList = parameter.TryGetValue("userVideoList", out var source)
+                && source is true;
+            if (ShouldRestoreListState(
+                    _preserveStateOnReturn,
+                    _mid,
+                    _isUserVideoList,
+                    incomingMid,
+                    incomingIsUserVideoList,
+                    TabHeaders.Count))
+            {
+                _preserveStateOnReturn = false;
+                return;
+            }
+
+            _preserveStateOnReturn = false;
+
             InitView();
 
-            _mid = (long)parameter["mid"];
-            _isUserVideoList = parameter.TryGetValue("userVideoList", out var source)
-                && source is true;
+            _mid = incomingMid;
+            _isUserVideoList = incomingIsUserVideoList;
             if (_isUserVideoList)
             {
                 PageTitle = DictionaryResource.GetString("UserVideoList");
