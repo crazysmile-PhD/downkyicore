@@ -262,11 +262,15 @@ internal class BangumiInfoService : IInfoService
     /// 获取视频流的信息，从VideoPage返回
     /// </summary>
     /// <param name="page"></param>
-    public PlayUrl? GetVideoStream(VideoPage page, CancellationToken cancellationToken = default)
+    public Task<PlayUrl?> GetVideoStreamAsync(VideoPage page, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
-        return VideoStreamApi.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid, cancellationToken: cancellationToken);
+        return Task.FromResult(VideoStreamApi.GetBangumiPlayUrl(
+            page.Avid,
+            page.Bvid,
+            page.Cid,
+            cancellationToken: cancellationToken));
     }
 
     /// <summary>

@@ -30,17 +30,16 @@ public sealed class SeasonsSeriesCoordinatorTests
             throw new InvalidOperationException("Page loading must not create a download session.");
         }
 
-        public IAddToDownloadSession Create(string id, PlayStreamType streamType)
-        {
-            throw new InvalidOperationException("Page loading must not create a download session.");
-        }
     }
 
     private sealed class ThrowingInfoServiceFactory : IContentInfoServiceFactory
     {
-        public IInfoService Create(ContentDownloadItem item, CancellationToken cancellationToken)
+        public Task<IInfoService> CreateAsync(
+            ContentDownloadItem item,
+            CancellationToken cancellationToken)
         {
-            throw new InvalidOperationException("Page loading must not create an info service.");
+            return Task.FromException<IInfoService>(
+                new InvalidOperationException("Page loading must not create an info service."));
         }
     }
 }

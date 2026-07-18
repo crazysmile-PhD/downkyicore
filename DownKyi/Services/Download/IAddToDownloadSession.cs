@@ -15,7 +15,9 @@ internal interface IAddToDownloadSession
 
     void GetVideo();
 
-    void ParseVideo(IInfoService videoInfoService);
+    Task ParseVideoAsync(
+        IInfoService videoInfoService,
+        CancellationToken cancellationToken = default);
 
     Task<int> AddToDownload(
         string? directory,

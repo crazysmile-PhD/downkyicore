@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.Settings;
 using DownKyi.ViewModels.PageViewModels;
 
@@ -45,8 +46,13 @@ internal sealed class VideoDetailWorkflowCoordinator : IVideoDetailWorkflowCoord
     private CancellationTokenSource? _operationCancellation;
     private int _operationVersion;
 
-    public VideoDetailWorkflowCoordinator(ISettingsStore settingsStore, IVideoTagProvider tagProvider)
-        : this(new VideoParseCoordinator(settingsStore, tagProvider), new VideoSearchState())
+    public VideoDetailWorkflowCoordinator(
+        ISettingsStore settingsStore,
+        IVideoTagProvider tagProvider,
+        IWbiKeyProvider wbiKeyProvider)
+        : this(
+            new VideoParseCoordinator(settingsStore, tagProvider, wbiKeyProvider),
+            new VideoSearchState())
     {
     }
 

@@ -52,10 +52,5 @@ public sealed class VideoDetailDownloadCoordinatorTests
             throw new InvalidOperationException("A download service should not have been created.");
         }
 
-        public IAddToDownloadSession Create(string id, PlayStreamType streamType)
-        {
-            CreateCount++;
-            throw new InvalidOperationException("A download service should not have been created.");
-        }
     }
 }

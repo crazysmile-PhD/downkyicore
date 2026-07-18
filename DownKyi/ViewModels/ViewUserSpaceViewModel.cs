@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Settings;
@@ -25,6 +26,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
 
     private readonly ILogger<ViewUserSpaceViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
+    private readonly IWbiKeyProvider _wbiKeyProvider;
     private CancellationTokenSource? _loadCancellation;
 
     // mid
@@ -189,9 +191,11 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     public ViewUserSpaceViewModel(
         IDesktopInteractionContext desktopInteractions,
         ISettingsStore settingsStore,
+        IWbiKeyProvider wbiKeyProvider,
         ILogger<ViewUserSpaceViewModel> logger) : base(desktopInteractions)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         ObserveRegion(AppNavigationRegion.UserSpace);
 
@@ -366,7 +370,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         try
         {
             snapshot = await UserSpaceLoadCoordinator
-                .LoadAsync(_settingsStore, mid, cancellationToken)
+                .LoadAsync(_wbiKeyProvider, mid, cancellationToken)
                 .ConfigureAwait(true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

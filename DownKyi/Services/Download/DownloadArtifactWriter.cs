@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using DownKyi.Core.BiliApi;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Danmaku2Ass;
 using DownKyi.Core.Logging;
@@ -21,15 +22,18 @@ namespace DownKyi.Services.Download;
 internal sealed class DownloadArtifactWriter
 {
     private readonly ISettingsStore _settingsStore;
+    private readonly IWbiKeyProvider _wbiKeyProvider;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly ILogger _logger;
 
     public DownloadArtifactWriter(
         ISettingsStore settingsStore,
+        IWbiKeyProvider wbiKeyProvider,
         DownloadTaskStateWriter stateWriter,
         ILogger logger)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -134,13 +138,18 @@ internal sealed class DownloadArtifactWriter
         downloading.SpeedDisplay = string.Empty;
 
         var srtFiles = new List<string>();
-        var subRipTexts = VideoStreamApi.GetSubtitle(
-            _settingsStore,
-            downloading.DownloadBase.Avid,
-            downloading.DownloadBase.Bvid,
-            downloading.DownloadBase.Cid,
-            e => _logger.LogErrorMessage("Subtitle response parsing failed.", e),
-            cancellationToken);
+        var subRipTexts = await WbiRequestExecutor.ExecuteAsync(
+            _wbiKeyProvider,
+            (keys, unixTimeSeconds) => VideoStreamApi.GetSubtitle(
+                keys,
+                unixTimeSeconds,
+                downloading.DownloadBase.Avid,
+                downloading.DownloadBase.Bvid,
+                downloading.DownloadBase.Cid,
+                e => _logger.LogErrorMessage("Subtitle response parsing failed.", e),
+                cancellationToken),
+            TimeProvider.System,
+            cancellationToken).ConfigureAwait(false);
         if (subRipTexts.Count == 0)
         {
             _logger.LogWarningMessage("No usable subtitles were returned for the download task.");

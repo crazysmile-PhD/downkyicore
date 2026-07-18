@@ -2,7 +2,6 @@ using System.Text.RegularExpressions;
 using DownKyi.Core.BiliApi.Models.Json;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream.Models;
-using DownKyi.Core.Settings;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.VideoStream;
@@ -23,23 +22,24 @@ public static class VideoStreamApi
     /// <param name="cid"></param>
     /// <returns></returns>
     public static PlayerV2? PlayerV2(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long avid,
         string? bvid,
         long cid,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(keys);
         var parameters = new Dictionary<string, object?>();
 
-        if (avid > 0)
+        if (!string.IsNullOrEmpty(bvid))
         {
             parameters.Add("bvid", bvid);
         }
 
-        if (bvid != null)
+        if (avid > 0)
         {
-            parameters.Add("avid", avid);
+            parameters.Add("aid", avid);
         }
 
         if (cid > 0)
@@ -47,7 +47,11 @@ public static class VideoStreamApi
             parameters.Add("cid", cid);
         }
 
-        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters, settingsStore));
+        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(
+            parameters,
+            keys.ImgKey,
+            keys.SubKey,
+            unixTimeSeconds));
         var url = $"https://api.bilibili.com/x/player/wbi/v2?{query}";
         const string referer = "https://www.bilibili.com";
         var playUrl = BiliApiRequest.RequestJson<PlayerV2Origin>(
@@ -69,14 +73,16 @@ public static class VideoStreamApi
     /// <param name="cid"></param>
     /// <returns></returns>
     public static IReadOnlyList<SubRipText> GetSubtitle(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long avid,
         string? bvid,
         long cid,
         CancellationToken cancellationToken = default)
     {
         return GetSubtitle(
-            settingsStore,
+            keys,
+            unixTimeSeconds,
             avid,
             bvid,
             cid,
@@ -85,18 +91,19 @@ public static class VideoStreamApi
     }
 
     public static IReadOnlyList<SubRipText> GetSubtitle(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long avid,
         string? bvid,
         long cid,
         Action<Exception>? reportParseFailure,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(keys);
         var subRipTexts = new List<SubRipText>();
 
         // 获取播放器信息
-        var player = PlayerV2(settingsStore, avid, bvid, cid, cancellationToken);
+        var player = PlayerV2(keys, unixTimeSeconds, avid, bvid, cid, cancellationToken);
         if (player == null)
         {
             return subRipTexts;
@@ -188,14 +195,15 @@ public static class VideoStreamApi
     /// <param name="quality"></param>
     /// <returns></returns>
     public static PlayUrl? GetVideoPlayUrl(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long avid,
         string bvid,
         long cid,
         int quality = 125,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(keys);
         var parameters = new Dictionary<string, object?>
         {
             { "fourk", 1 },
@@ -218,7 +226,11 @@ public static class VideoStreamApi
             return null;
         }
 
-        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters, settingsStore));
+        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(
+            parameters,
+            keys.ImgKey,
+            keys.SubKey,
+            unixTimeSeconds));
         var url = $"https://api.bilibili.com/x/player/wbi/playurl?{query}";
 
         return GetPlayUrl(
@@ -236,7 +248,8 @@ public static class VideoStreamApi
     /// <param name="p"></param>
     /// <returns></returns>
     public static PlayUrl? GetVideoPlayUrlWebPage(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long avid,
         string bvid,
         long cid,
@@ -247,7 +260,13 @@ public static class VideoStreamApi
         var playUrl = GetPlayUrlWebPage(url, cancellationToken);
         if (playUrl == null)
         {
-            playUrl = GetVideoPlayUrl(settingsStore, avid, bvid, cid, cancellationToken: cancellationToken);
+            playUrl = GetVideoPlayUrl(
+                keys,
+                unixTimeSeconds,
+                avid,
+                bvid,
+                cid,
+                cancellationToken: cancellationToken);
         }
 
         return playUrl;

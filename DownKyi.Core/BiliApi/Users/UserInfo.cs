@@ -1,7 +1,6 @@
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
-using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 
@@ -35,9 +34,13 @@ public static class UserInfo
     /// </summary>
     /// <param name="mid"></param>
     /// <returns></returns>
-    public static UserInfoForSpace? GetUserInfoForSpace(ISettingsStore settingsStore, long mid)
+    public static UserInfoForSpace? GetUserInfoForSpace(
+        WbiKeys keys,
+        long unixTimeSeconds,
+        long mid,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(keys);
         var parameters = new Dictionary<string, object?>
         {
             { "mid", mid }
@@ -51,14 +54,19 @@ public static class UserInfo
             parameters.Add("dm_img_inter", "{\"ds\":[],\"wh\":[0,0,0],\"of\":[0,0,0]}");
         }
 
-        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters, settingsStore));
+        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(
+            parameters,
+            keys.ImgKey,
+            keys.SubKey,
+            unixTimeSeconds));
         var url = $"https://api.bilibili.com/x/space/wbi/acc/info?{query}";
         const string referer = "https://www.bilibili.com";
         var spaceInfo = BiliApiRequest.RequestJson<UserInfoForSpaceOrigin>(
             url,
             referer,
             nameof(GetUserInfoForSpace),
-            "UserInfo");
+            "UserInfo",
+            cancellationToken);
 
         return BiliApiRequest.RequirePayload(spaceInfo.Data);
     }

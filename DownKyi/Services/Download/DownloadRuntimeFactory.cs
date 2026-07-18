@@ -1,6 +1,7 @@
 using System;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.Aria2cNet.Server;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Platform;
@@ -23,6 +24,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly FfmpegProcessor _ffmpegProcessor;
     private readonly ISettingsStore _settingsStore;
+    private readonly IWbiKeyProvider _wbiKeyProvider;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly ILoggerFactory _loggerFactory;
 
@@ -32,6 +34,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         IUserNotificationService notificationService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
+        IWbiKeyProvider wbiKeyProvider,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
         AriaServer ariaServer,
@@ -43,6 +46,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
         _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
@@ -85,6 +89,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
             _loggerFactory.CreateLogger<DownloadTaskStateWriter>());
         var artifactWriter = new DownloadArtifactWriter(
             _settingsStore,
+            _wbiKeyProvider,
             stateWriter,
             _loggerFactory.CreateLogger<DownloadArtifactWriter>());
         var pipeline = new DownloadPipeline(
@@ -93,6 +98,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _notificationService,
                 _uiDispatcher,
                 _settingsStore,
+                _wbiKeyProvider,
                 _diagnosticLogger,
                 _ffmpegProcessor,
                 artifactWriter,

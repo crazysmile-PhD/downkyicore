@@ -1,8 +1,8 @@
 using System.Net;
 using DownKyi.Core.BiliApi;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
-using DownKyi.Core.Settings;
 using Newtonsoft.Json;
 using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 
@@ -12,10 +12,8 @@ public sealed class PlayUrlEnvelopeContractTests : IDisposable
 {
     private const string ImgKey = "12345678901234567890123456789012";
     private const string SubKey = "abcdefghijklmnopqrstuvwxyzABCDEF";
+    private static readonly WbiKeys Keys = new(ImgKey, SubKey);
     private readonly WebClientTestContext _webClientContext = new();
-    private readonly string _testDirectory = Path.Combine(
-        Path.GetTempPath(),
-        $"downkyi-playurl-contract-{Guid.NewGuid():N}");
     private static readonly string SampleDirectory = Path.Combine(
         FindRepositoryRoot(),
         "tests",
@@ -92,13 +90,13 @@ public sealed class PlayUrlEnvelopeContractTests : IDisposable
     }
 
     [Fact]
-    public async Task OrdinaryVideoEndpointUsesDataEnvelope()
+    public void OrdinaryVideoEndpointUsesDataEnvelope()
     {
         ConfigureResponse("playurl-video-data.json");
-        await using var settings = CreateSettingsStore();
 
         var payload = VideoStreamApi.GetVideoPlayUrl(
-            settings,
+            Keys,
+            1702204169,
             1,
             "BV1fixture",
             2,
@@ -137,14 +135,14 @@ public sealed class PlayUrlEnvelopeContractTests : IDisposable
     }
 
     [Fact]
-    public async Task OrdinaryVideoEndpointRejectsEmptyDataEnvelope()
+    public void OrdinaryVideoEndpointRejectsEmptyDataEnvelope()
     {
         ConfigureResponse("playurl-empty-data.json");
-        await using var settings = CreateSettingsStore();
 
         var exception = Assert.Throws<BilibiliApiResponseException>(() =>
             VideoStreamApi.GetVideoPlayUrl(
-                settings,
+                Keys,
+                1702204169,
                 1,
                 "BV1fixture",
                 2,
@@ -156,27 +154,7 @@ public sealed class PlayUrlEnvelopeContractTests : IDisposable
     public void Dispose()
     {
         _webClientContext.Dispose();
-        if (Directory.Exists(_testDirectory))
-        {
-            Directory.Delete(_testDirectory, recursive: true);
-        }
-
         GC.SuppressFinalize(this);
-    }
-
-    private SettingsStore CreateSettingsStore()
-    {
-        Directory.CreateDirectory(_testDirectory);
-        var settings = new SettingsStore(Path.Combine(_testDirectory, $"{Guid.NewGuid():N}.json"));
-        settings.Update(current => current with
-        {
-            User = current.User with
-            {
-                ImgKey = ImgKey,
-                SubKey = SubKey
-            }
-        });
-        return settings;
     }
 
     private static PlayUrlOrigin ReadSample(string name)

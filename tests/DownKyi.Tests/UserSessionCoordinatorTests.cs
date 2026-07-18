@@ -70,6 +70,33 @@ public sealed class UserSessionCoordinatorTests
         Assert.Equal("sub-key", settings.SubKey);
     }
 
+    [Fact]
+    public async Task RefreshWithoutValidWbiMetadataPreservesExistingKeys()
+    {
+        const string imgKey = "7cd084941338484aae1ad9425b84077c";
+        const string subKey = "4932caff0ff746eab6f01bf08b70ac45";
+        using var settings = new TestSettingsStore();
+        settings.Store.Update(current => current with
+        {
+            User = current.User with { ImgKey = imgKey, SubKey = subKey }
+        });
+        var coordinator = new UserSessionCoordinator(
+            settings.Store,
+            _ => new UserInfoForNavigation
+            {
+                Mid = 42,
+                Name = "updated-user",
+                IsLogin = true,
+                Wbi = null
+            });
+
+        await coordinator.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("updated-user", settings.Store.Current.User.Name);
+        Assert.Equal(imgKey, settings.Store.Current.User.ImgKey);
+        Assert.Equal(subKey, settings.Store.Current.User.SubKey);
+    }
+
     private sealed class RecordingUserSessionCoordinator : IUserSessionCoordinator
     {
         public int RefreshCount { get; private set; }

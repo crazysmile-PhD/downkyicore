@@ -151,6 +151,42 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     }
 
     [Fact]
+    public void WbiSigningUsesExplicitRuntimeKeysInsteadOfSettingsSnapshots()
+    {
+        var signSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "BiliApi",
+            "Sign",
+            "WbiSign.cs"));
+        var endpointPaths = new[]
+        {
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Video", "VideoInfo.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "VideoStream", "VideoStreamApi.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserInfo.cs"),
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi", "Users", "UserSpace.cs")
+        };
+
+        Assert.DoesNotContain("ISettingsStore", signSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DateTimeOffset.Now", signSource, StringComparison.Ordinal);
+        foreach (var path in endpointPaths)
+        {
+            var source = File.ReadAllText(path);
+            Assert.DoesNotContain("ISettingsStore", source, StringComparison.Ordinal);
+            Assert.Contains("WbiKeys", source, StringComparison.Ordinal);
+        }
+
+        var navigationModel = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "BiliApi",
+            "Users",
+            "Models",
+            "UserInfoForNavigation.cs"));
+        Assert.Contains("public Wbi? Wbi", navigationModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void JsonEnvelopeFieldsCannotHideMissingPayloadsWithDefaultInitializers()
     {
         const string defaultEnvelopePattern =

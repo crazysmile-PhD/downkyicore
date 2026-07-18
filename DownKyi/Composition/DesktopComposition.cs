@@ -6,6 +6,7 @@ using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.FFMpeg;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
@@ -69,6 +70,7 @@ internal static class DesktopComposition
                 disposeHttpClient: true,
                 Path.Combine(StorageManager.GetCache(), "Images")));
         services.AddSingleton<ISettingsStore, SettingsStore>();
+        services.AddSingleton<IWbiKeyProvider, WbiKeyProvider>();
         services.AddSingleton<FfmpegProcessor>();
         services.AddSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
         services.AddSingleton<DownloadTaskProjectionStore>();

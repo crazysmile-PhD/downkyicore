@@ -1,6 +1,5 @@
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -44,12 +43,13 @@ public static class UserSpace
     /// <param name="mid">用户id</param>
     /// <returns></returns>
     public static IReadOnlyList<SpacePublicationListTypeVideoZone>? GetPublicationType(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long mid)
     {
         const int pn = 1;
         const int ps = 1;
-        var publication = GetPublication(settingsStore, mid, pn, ps);
+        var publication = GetPublication(keys, unixTimeSeconds, mid, pn, ps);
         return GetPublicationType(publication);
     }
 
@@ -87,7 +87,8 @@ public static class UserSpace
     /// <param name="keyword">搜索关键词</param>
     /// <returns></returns>
     public static IReadOnlyList<SpacePublicationListVideo> GetAllPublication(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long mid,
         int tid = 0,
         PublicationOrder order = PublicationOrder.PUBDATE,
@@ -101,7 +102,7 @@ public static class UserSpace
             i++;
             const int ps = 100;
 
-            var data = GetPublication(settingsStore, mid, i, ps, tid, order, keyword);
+            var data = GetPublication(keys, unixTimeSeconds, mid, i, ps, tid, order, keyword);
             if (data?.Vlist == null || data.Vlist.Count == 0)
             {
                 break;
@@ -124,7 +125,8 @@ public static class UserSpace
     /// <param name="keyword">搜索关键词</param>
     /// <returns></returns>
     public static SpacePublicationList? GetPublication(
-        ISettingsStore settingsStore,
+        WbiKeys keys,
+        long unixTimeSeconds,
         long mid,
         int pn,
         int ps,
@@ -133,7 +135,7 @@ public static class UserSpace
         string keyword = "",
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(settingsStore);
+        ArgumentNullException.ThrowIfNull(keys);
         var parameters = new Dictionary<string, object?>
         {
             { "mid", mid },
@@ -151,7 +153,11 @@ public static class UserSpace
             parameters.Add("dm_img_inter", "{\"ds\":[],\"wh\":[0,0,0],\"of\":[0,0,0]}");
         }
 
-        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters, settingsStore));
+        var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(
+            parameters,
+            keys.ImgKey,
+            keys.SubKey,
+            unixTimeSeconds));
         var url = $"https://api.bilibili.com/x/space/wbi/arc/search?{query}";
         const string referer = "https://www.bilibili.com";
 

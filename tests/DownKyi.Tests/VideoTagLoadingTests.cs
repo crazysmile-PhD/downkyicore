@@ -48,7 +48,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                 }
             ]
         };
-        var service = new VideoInfoService(videoView, settings, provider);
+        var service = new VideoInfoService(videoView, settings, provider, new TestWbiKeyProvider());
         var page = Assert.Single(service.GetVideoPages(parseCancellation.Token)!);
 
         await parseCancellation.CancelAsync();
@@ -250,6 +250,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                 _projectionStore,
                 _settings,
                 new VideoTagProvider(),
+                new TestWbiKeyProvider(),
                 desktop.Notifications,
                 desktop.Dialogs,
                 Logger);

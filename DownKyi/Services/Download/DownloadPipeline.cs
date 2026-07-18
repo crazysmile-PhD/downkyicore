@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.BiliUtils;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.FFMpeg;
@@ -43,6 +44,7 @@ internal sealed class DownloadPipeline : IDisposable
     private DownloadTaskStateWriter StateWriter { get; }
     private ApplicationSettings Settings => SettingsStore.Current;
     private ISettingsStore SettingsStore { get; }
+    private IWbiKeyProvider WbiKeyProvider { get; }
     private ILogger Logger { get; }
 
     private CancellationToken? CancellationToken { get; set; }
@@ -116,6 +118,7 @@ internal sealed class DownloadPipeline : IDisposable
         IUserNotificationService notificationService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
+        IWbiKeyProvider wbiKeyProvider,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
         DownloadArtifactWriter artifactWriter,
@@ -130,6 +133,7 @@ internal sealed class DownloadPipeline : IDisposable
         NotificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         UiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         SettingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        WbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         DiagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         FfmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
         ArtifactWriter = artifactWriter ?? throw new ArgumentNullException(nameof(artifactWriter));
@@ -501,14 +505,18 @@ internal sealed class DownloadPipeline : IDisposable
         switch (downloading.Downloading.PlayStreamType)
         {
             case PlayStreamType.Video:
-                playUrl = downloading.PlayUrl ?? Settings.Video.VideoParseType switch
+                playUrl = downloading.PlayUrl ?? await WbiRequestExecutor.ExecuteAsync(
+                    WbiKeyProvider,
+                    (keys, unixTimeSeconds) => Settings.Video.VideoParseType switch
                 {
-                    0 => VideoStreamApi.GetVideoPlayUrl(SettingsStore, downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
+                    0 => VideoStreamApi.GetVideoPlayUrl(keys, unixTimeSeconds, downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         cancellationToken: CancellationToken.GetValueOrDefault()),
-                    1 => VideoStreamApi.GetVideoPlayUrlWebPage(SettingsStore, downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
+                    1 => VideoStreamApi.GetVideoPlayUrlWebPage(keys, unixTimeSeconds, downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         downloading.DownloadBase.Page, CancellationToken.GetValueOrDefault()),
                     _ => throw new ArgumentException("Invalid video parse type. Valid values are: 0 (WebAPI) or 1 (WebPage).")
-                };
+                },
+                    TimeProvider.System,
+                    CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
                 break;
             case PlayStreamType.Bangumi:
                 playUrl = downloading.PlayUrl ?? VideoStreamApi.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid,

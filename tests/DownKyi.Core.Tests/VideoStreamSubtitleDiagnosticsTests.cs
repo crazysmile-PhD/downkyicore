@@ -1,6 +1,6 @@
 using System.Net;
+using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.VideoStream;
-using DownKyi.Core.Settings;
 using Newtonsoft.Json;
 using BiliWebClient = DownKyi.Core.BiliApi.WebClient;
 
@@ -9,24 +9,9 @@ namespace DownKyi.Core.Tests;
 public sealed class VideoStreamSubtitleDiagnosticsTests : IDisposable
 {
     private readonly WebClientTestContext _context = new();
-    private readonly string _directory = Path.Combine(
-        Path.GetTempPath(),
-        $"downkyi-subtitle-diagnostics-{Guid.NewGuid():N}");
-    private readonly SettingsStore _settingsStore;
-
-    public VideoStreamSubtitleDiagnosticsTests()
-    {
-        Directory.CreateDirectory(_directory);
-        _settingsStore = new SettingsStore(Path.Combine(_directory, "settings.json"));
-        _settingsStore.Update(settings => settings with
-        {
-            User = settings.User with
-            {
-                ImgKey = "7cd084941338484aae1ad9425b84077c",
-                SubKey = "4932caff0ff746eab6f01bf08b70ac45"
-            }
-        });
-    }
+    private static readonly WbiKeys Keys = new(
+        "7cd084941338484aae1ad9425b84077c",
+        "4932caff0ff746eab6f01bf08b70ac45");
 
     [Fact]
     public void MalformedAiSubtitleIsSkippedAndReportedToTheCaller()
@@ -43,7 +28,8 @@ public sealed class VideoStreamSubtitleDiagnosticsTests : IDisposable
         Exception? reported = null;
 
         var result = VideoStreamApi.GetSubtitle(
-            _settingsStore,
+            Keys,
+            1702204169,
             1,
             "BV1xx411c7mD",
             2,
@@ -57,8 +43,6 @@ public sealed class VideoStreamSubtitleDiagnosticsTests : IDisposable
 
     public void Dispose()
     {
-        _settingsStore.Dispose();
         _context.Dispose();
-        Directory.Delete(_directory, recursive: true);
     }
 }

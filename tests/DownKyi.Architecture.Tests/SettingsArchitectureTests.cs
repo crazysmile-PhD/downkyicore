@@ -43,12 +43,6 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi.Core", "BiliApi", "Login", "LoginHelper.cs")]
     [InlineData("DownKyi.Core", "BiliApi", "WebClient.cs")]
     [InlineData("DownKyi.Core", "BiliApi", "BilibiliHttpClientRegistration.cs")]
-    [InlineData("DownKyi.Core", "BiliApi", "Sign", "WbiSign.cs")]
-    [InlineData("DownKyi.Core", "BiliApi", "Video", "VideoInfo.cs")]
-    [InlineData("DownKyi.Core", "BiliApi", "VideoStream", "VideoStreamApi.cs")]
-    [InlineData("DownKyi.Core", "BiliApi", "Users", "UserInfo.cs")]
-    [InlineData("DownKyi.Core", "BiliApi", "Users", "UserSpace.cs")]
-    [InlineData("DownKyi", "Services", "UserSpace", "UserSpaceLoadCoordinator.cs")]
     [InlineData("DownKyi", "Services", "UserSpace", "UserSpacePageCoordinator.cs")]
     [InlineData("DownKyi", "ViewModels", "ViewUserSpaceViewModel.cs")]
     public void MigratedApplicationOwnersDoNotReachIntoTheSettingsSingleton(params string[] pathParts)

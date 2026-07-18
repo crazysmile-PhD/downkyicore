@@ -22,14 +22,21 @@ public sealed class BilibiliApiResponseException : InvalidOperationException
     {
     }
 
-    public BilibiliApiResponseException(string operation, string message, Exception? innerException = null)
+    public BilibiliApiResponseException(
+        string operation,
+        string message,
+        Exception? innerException = null,
+        int? code = null)
         : base(message, innerException)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
         Operation = operation;
+        Code = code;
     }
 
     public string Operation { get; }
+
+    public int? Code { get; }
 }
 
 internal static class BiliApiRequest
@@ -82,7 +89,8 @@ internal static class BiliApiRequest
             {
                 throw new BilibiliApiResponseException(
                     operationName,
-                    $"{operationName} was rejected by Bilibili. code={code}; message={metadata.Message ?? "unknown"}");
+                    $"{operationName} was rejected by Bilibili. code={code}; message={metadata.Message ?? "unknown"}",
+                    code: code);
             }
 
             var result = JsonConvert.DeserializeObject<T>(response, serializerSettings);

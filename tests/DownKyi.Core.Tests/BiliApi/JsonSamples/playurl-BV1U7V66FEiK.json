@@ -1,0 +1,22 @@
+{
+  "code": 0,
+  "message": "0",
+  "data": {
+    "dash": {
+      "video": [
+        {
+          "id": 80,
+          "base_url": "https://fixture.invalid/video.m4s",
+          "codecs": "avc1.640028"
+        }
+      ],
+      "audio": [
+        {
+          "id": 30280,
+          "base_url": "https://fixture.invalid/audio.m4s",
+          "codecs": "mp4a.40.2"
+        }
+      ]
+    }
+  }
+}
