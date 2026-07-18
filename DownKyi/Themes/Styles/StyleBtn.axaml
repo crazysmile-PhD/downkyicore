@@ -3,17 +3,18 @@
     <!-- Add Resources Here -->
     <ControlTheme x:Key="BtnStyle" TargetType="Button">
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="MinHeight" Value="{DynamicResource DownKyiControlMinHeight}" />
         <Setter Property="Background" Value="{DynamicResource BrushPrimary}" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="BorderBrush" Value="{x:Null}" />
         <Setter Property="Template">
             <ControlTemplate TargetType="{x:Type Button}">
                 <Border
-                    Padding="10,5"
+                    Padding="{DynamicResource DownKyiControlPadding}"
                     Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="5">
+                    CornerRadius="{DynamicResource DownKyiRadiusSmall}">
                     <ContentPresenter
                         Name="content"
                         HorizontalAlignment="Center"
@@ -29,17 +30,18 @@
 
     <ControlTheme x:Key="BtnBorderStyle" TargetType="Button">
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="MinHeight" Value="{DynamicResource DownKyiControlMinHeight}" />
         <Setter Property="Background" Value="{DynamicResource BrushBackground}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="BorderBrush" Value="{x:Null}" />
         <Setter Property="Template">
             <ControlTemplate TargetType="{x:Type Button}">
                 <Border
-                    Padding="10,5"
+                    Padding="{DynamicResource DownKyiControlPadding}"
                     Background="{TemplateBinding Background}"
                     BorderBrush="{DynamicResource BrushPrimary}"
                     BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="5">
+                    CornerRadius="{DynamicResource DownKyiRadiusSmall}">
                     <ContentPresenter
                         Name="content"
                         HorizontalAlignment="Center"
