@@ -3,6 +3,7 @@ using DownKyi.Core.BiliApi.Bangumi.Models;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Favorites.Models;
 using DownKyi.Core.BiliApi.Login.Models;
+using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
@@ -132,5 +133,34 @@ public sealed class BiliApiModelContractTests
         Assert.Equal(2, page.PageNum);
         Assert.Equal(20, page.PageSize);
         Assert.Equal(42, page.Total);
+    }
+
+    [Fact]
+    public void PublicationTypesExcludeEmptyDefaultZones()
+    {
+        var publication = new SpacePublicationList
+        {
+            Tlist = new SpacePublicationListType
+            {
+                Dance = new SpacePublicationListTypeVideoZone { Tid = 129, Name = "舞蹈", Count = 68 },
+                Life = new SpacePublicationListTypeVideoZone { Tid = 160, Name = "生活", Count = 34 }
+            }
+        };
+
+        var zones = UserSpace.GetPublicationType(publication);
+
+        Assert.NotNull(zones);
+        Assert.Collection(
+            zones,
+            zone =>
+            {
+                Assert.Equal(129, zone.Tid);
+                Assert.Equal(68, zone.Count);
+            },
+            zone =>
+            {
+                Assert.Equal(160, zone.Tid);
+                Assert.Equal(34, zone.Count);
+            });
     }
 }

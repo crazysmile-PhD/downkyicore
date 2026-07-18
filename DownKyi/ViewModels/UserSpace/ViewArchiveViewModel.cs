@@ -116,6 +116,11 @@ internal class ViewArchiveViewModel : ViewModelBase
         var videoCount = 0;
         foreach (var zone in parameter)
         {
+            if (zone.Count <= 0)
+            {
+                continue;
+            }
+
             videoCount += zone.Count;
             var iconKey = VideoZoneIcon.Instance().GetZoneImageKey(zone.Tid);
 

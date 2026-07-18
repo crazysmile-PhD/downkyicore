@@ -64,7 +64,7 @@ public static class UserSpace
         {
             if (item.Value == null) continue;
             var value = JsonConvert.DeserializeObject<SpacePublicationListTypeVideoZone>(item.Value.ToString());
-            if (value != null)
+            if (value is { Count: > 0 })
                 result.Add(value);
         }
 

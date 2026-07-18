@@ -153,6 +153,7 @@ internal partial class App : PrismApplication, IDisposable
         containerRegistry.RegisterForNavigation<ViewArchive>(ViewArchiveViewModel.Tag);
         // containerRegistry.RegisterForNavigation<Views.UserSpace.ViewChannel>(ViewModels.UserSpace.ViewChannelViewModel.Tag);
         containerRegistry.RegisterForNavigation<Views.UserSpace.ViewSeasonsSeries>(ViewModels.UserSpace.ViewSeasonsSeriesViewModel.Tag);
+        containerRegistry.RegisterForNavigation<Views.UserSpace.ViewFavorites>(ViewModels.UserSpace.ViewFavoritesViewModel.Tag);
 
         // dialogs
         containerRegistry.RegisterDialog<ViewAlertDialog>(ViewAlertDialogViewModel.Tag);

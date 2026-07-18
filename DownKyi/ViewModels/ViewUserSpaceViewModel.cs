@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using DownKyi.Core.BiliApi.Favorites;
+using DownKyi.Core.BiliApi.Favorites.Models;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Storage;
@@ -259,6 +262,9 @@ internal class ViewUserSpaceViewModel : ViewModelBase
                 _regionManager.RequestNavigate("UserSpaceContentRegion", UserSpace.ViewSeasonsSeriesViewModel.Tag,
                     param);
                 break;
+            case 3: // 收藏夹
+                _regionManager.RequestNavigate("UserSpaceContentRegion", UserSpace.ViewFavoritesViewModel.Tag, param);
+                break;
         }
     }
 
@@ -481,6 +487,25 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         }
 
         // 收藏夹
+        IReadOnlyList<FavoritesMetaInfo>? favorites = null;
+        await Task.Run(() =>
+        {
+            favorites = FavoritesInfo.GetAllCreatedFavorites(mid)
+                .Where(item => item.MediaCount > 0)
+                .ToList();
+        }).ConfigureAwait(true);
+        if (favorites is { Count: > 0 })
+        {
+            TabLeftBanners.Add(new TabLeftBanner
+            {
+                NavigationData = favorites,
+                Id = 3,
+                Icon = NormalIcon.Instance().FavoriteOutline,
+                IconColor = "#FFFF6699",
+                Title = DictionaryResource.GetString("PublicFavorites")
+            });
+        }
+
         // 订阅
 
         // 关系状态数
