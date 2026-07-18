@@ -112,6 +112,7 @@
                                 Width="185"
                                 Height="35"
                                 Margin="0,5"
+                                Classes.unavailable="{Binding IsUnavailable}"
                                 Cursor="Hand"
                                 Foreground="{DynamicResource BrushTextDark}"
                                 Text="{Binding Title}"
@@ -164,6 +165,14 @@
             </Style>
             <Style Selector="^ /template/ TextBlock#NameTitle:pointerover">
                 <Setter Property="Foreground" Value="{DynamicResource BrushPrimary}" />
+            </Style>
+            <Style Selector="^ /template/ TextBlock#NameTitle.unavailable">
+                <Setter Property="Cursor" Value="Arrow" />
+                <Setter Property="Foreground" Value="Red" />
+                <Setter Property="TextDecorations" Value="Strikethrough" />
+            </Style>
+            <Style Selector="^ /template/ TextBlock#NameTitle.unavailable:pointerover">
+                <Setter Property="Foreground" Value="Red" />
             </Style>
         </ControlTheme>
     </UserControl.Resources>

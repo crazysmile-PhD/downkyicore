@@ -305,7 +305,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     {
         if (IsSelectAll)
         {
-            foreach (var item in Medias)
+            foreach (var item in Medias.Where(item => !item.IsUnavailable))
             {
                 item.IsSelected = true;
             }
@@ -335,7 +335,11 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
             return;
         }
 
-        IsSelectAll = selectedMedia.Count == Medias.Count;
+        var availableCount = Medias.Count(item => !item.IsUnavailable);
+        var selectedAvailableCount = selectedMedia
+            .Cast<FavoritesMedia>()
+            .Count(item => !item.IsUnavailable);
+        IsSelectAll = availableCount > 0 && selectedAvailableCount == availableCount;
     }
 
     // 添加选中项到下载列表事件
@@ -379,6 +383,11 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
             // 添加到下载
             foreach (var media in list)
             {
+                if (media.IsUnavailable)
+                {
+                    continue;
+                }
+
                 // 只下载选中项，跳过未选中项
                 if (isOnlySelected && !media.IsSelected)
                 {

@@ -12,6 +12,7 @@ public class FavoritesMedia : BaseModel
     [JsonProperty("intro")] public string Intro { get; set; } = string.Empty;
     [JsonProperty("page")] public int Page { get; set; }
     [JsonProperty("duration")] public long Duration { get; set; }
+    [JsonProperty("attr")] public int Attr { get; set; }
 
     [JsonProperty("upper")] public FavUpper Upper { get; set; } = new();
 

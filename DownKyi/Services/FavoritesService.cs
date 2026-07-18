@@ -17,6 +17,8 @@ namespace DownKyi.Services;
 
 internal class FavoritesService : IFavoritesService
 {
+    private const string UnavailableMediaTitle = "已失效视频";
+
     /// <summary>
     /// 获取收藏夹元数据
     /// </summary>
@@ -111,44 +113,8 @@ internal class FavoritesService : IFavoritesService
         foreach (var media in medias)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (media.Title == "已失效视频")
-            {
-                continue;
-            }
-
             order++;
-
-            // 查询、保存封面
-            var coverUrl = media.Cover;
-
-            // 当地时区
-            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); ;
-
-            // 创建时间
-            var dateCTime = startTime.AddSeconds(media.Ctime);
-            var ctime = dateCTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
-
-            // 收藏时间
-            var dateFavTime = startTime.AddSeconds(media.FavTime);
-            var favTime = dateFavTime.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
-
-            mappedMedias.Add(new ViewModels.PageViewModels.FavoritesMedia(eventAggregator)
-            {
-                Avid = media.Id,
-                Bvid = media.Bvid,
-                Order = order,
-                Cover = coverUrl,
-                Title = media.Title,
-                PlayNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Play) : "0",
-                DanmakuNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Danmaku) : "0",
-                FavoriteNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Collect) : "0",
-                Duration = Format.FormatDuration2(media.Duration),
-                UpName = media.Upper != null ? media.Upper.Name : string.Empty,
-                UpMid = media.Upper != null ? media.Upper.Mid : -1,
-                CreateTime = ctime,
-                FavTime = favTime
-            });
+            mappedMedias.Add(MapFavoritesMedia(media, eventAggregator, order));
         }
 
         App.PropertyChangeAsync(() =>
@@ -166,6 +132,48 @@ internal class FavoritesService : IFavoritesService
                 result.Add(item);
             }
         });
+    }
+
+    internal static ViewModels.PageViewModels.FavoritesMedia MapFavoritesMedia(
+        FavoritesMedia media,
+        IEventAggregator eventAggregator,
+        int order)
+    {
+        ArgumentNullException.ThrowIfNull(media);
+        ArgumentNullException.ThrowIfNull(eventAggregator);
+
+        var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);
+        var createTime = startTime.AddSeconds(media.Ctime).ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
+        var favoriteTime = startTime.AddSeconds(media.FavTime).ToString("yyyy-MM-dd", CultureInfo.CurrentCulture);
+
+        var isUnavailable = IsUnavailable(media);
+        var title = isUnavailable && string.IsNullOrWhiteSpace(media.Title)
+            ? UnavailableMediaTitle
+            : media.Title;
+
+        return new ViewModels.PageViewModels.FavoritesMedia(eventAggregator)
+        {
+            Avid = media.Id,
+            Bvid = media.Bvid,
+            Order = order,
+            Cover = media.Cover,
+            Title = title,
+            IsUnavailable = isUnavailable,
+            PlayNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Play) : "0",
+            DanmakuNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Danmaku) : "0",
+            FavoriteNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Collect) : "0",
+            Duration = Format.FormatDuration2(media.Duration),
+            UpName = media.Upper != null ? media.Upper.Name : string.Empty,
+            UpMid = media.Upper != null ? media.Upper.Mid : -1,
+            CreateTime = createTime,
+            FavTime = favoriteTime
+        };
+    }
+
+    internal static bool IsUnavailable(FavoritesMedia media)
+    {
+        ArgumentNullException.ThrowIfNull(media);
+        return media.Attr != 0 || string.Equals(media.Title, UnavailableMediaTitle, StringComparison.Ordinal);
     }
 
     /// <summary>

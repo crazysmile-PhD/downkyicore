@@ -348,6 +348,7 @@
                                                 Grid.Row="0"
                                                 HorizontalAlignment="Left"
                                                 VerticalAlignment="Top"
+                                                Classes.unavailable="{Binding IsUnavailable}"
                                                 Cursor="Hand"
                                                 FontSize="14"
                                                 Text="{Binding Title}"
@@ -366,6 +367,14 @@
                                                         <Style Selector="^:pointerover">
                                                             <Setter Property="Foreground"
                                                                     Value="{DynamicResource BrushPrimary}" />
+                                                        </Style>
+                                                        <Style Selector="^.unavailable">
+                                                            <Setter Property="Cursor" Value="Arrow" />
+                                                            <Setter Property="Foreground" Value="Red" />
+                                                            <Setter Property="TextDecorations" Value="Strikethrough" />
+                                                        </Style>
+                                                        <Style Selector="^.unavailable:pointerover">
+                                                            <Setter Property="Foreground" Value="Red" />
                                                         </Style>
                                                     </Style>
                                                 </TextBlock.Styles>

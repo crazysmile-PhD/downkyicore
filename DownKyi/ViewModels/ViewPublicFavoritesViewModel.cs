@@ -301,6 +301,11 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
             // 添加到下载
             foreach (var media in list)
             {
+                if (media.IsUnavailable)
+                {
+                    continue;
+                }
+
                 // 只下载选中项，跳过未选中项
                 if (isOnlySelected && !media.IsSelected)
                 {
