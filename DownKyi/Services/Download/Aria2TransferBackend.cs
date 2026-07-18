@@ -23,22 +23,29 @@ namespace DownKyi.Services.Download;
 
 internal sealed class Aria2TransferBackend : ITransferBackend
 {
-    private readonly ISettingsStore _settingsStore;
+    private readonly AriaClient _ariaClient;
+    private readonly AriaRuntimeClientRegistry _clientRegistry;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly AriaServer _ariaServer;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly NetworkApplicationSettings _networkSettings;
     private readonly bool _ownsAriaServer;
     private readonly ILogger<Aria2TransferBackend> _logger;
+    private IDisposable? _runtimeRegistration;
 
     public Aria2TransferBackend(
-        ISettingsStore settingsStore,
+        NetworkApplicationSettings networkSettings,
+        AriaClient ariaClient,
+        AriaRuntimeClientRegistry clientRegistry,
         DownloadDiagnosticLogger diagnosticLogger,
         AriaServer ariaServer,
         ILoggerFactory loggerFactory,
         ILogger<Aria2TransferBackend> logger,
         bool ownsAriaServer)
     {
-        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _networkSettings = networkSettings ?? throw new ArgumentNullException(nameof(networkSettings));
+        _ariaClient = ariaClient ?? throw new ArgumentNullException(nameof(ariaClient));
+        _clientRegistry = clientRegistry ?? throw new ArgumentNullException(nameof(clientRegistry));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
@@ -51,31 +58,38 @@ internal sealed class Aria2TransferBackend : ITransferBackend
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var network = _settingsStore.Current.Network;
-        if (_ownsAriaServer)
+        _runtimeRegistration ??= _clientRegistry.Activate(_ariaClient);
+        try
         {
-            AriaClient.SetToken();
-            AriaClient.SetHost();
+            if (_ownsAriaServer)
+            {
+                await StartAriaServerAsync(cancellationToken).ConfigureAwait(true);
+            }
         }
-        else
+        catch
         {
-            AriaClient.SetToken(network.AriaToken);
-            AriaClient.SetHost(network.AriaHost);
-        }
+            if (_ownsAriaServer)
+            {
+                _ariaServer.KillTrackedServer("aria2 runtime startup failed.");
+            }
 
-        AriaClient.SetListenPort(network.AriaListenPort);
-        if (_ownsAriaServer)
-        {
-            await StartAriaServerAsync(cancellationToken).ConfigureAwait(true);
+            ReleaseRuntimeRegistration();
+            throw;
         }
-
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        if (_ownsAriaServer)
+        try
         {
-            await CloseAriaServerAsync(cancellationToken).ConfigureAwait(true);
+            if (_ownsAriaServer)
+            {
+                await CloseAriaServerAsync(cancellationToken).ConfigureAwait(true);
+            }
+        }
+        finally
+        {
+            ReleaseRuntimeRegistration();
         }
     }
 
@@ -91,7 +105,9 @@ internal sealed class Aria2TransferBackend : ITransferBackend
         }
 
         _diagnosticLogger.LogAriaTaskStart(Name, activeGid, request.Urls.Count);
-        var ariaManager = new AriaManager(_loggerFactory.CreateLogger<AriaManager>());
+        var ariaManager = new AriaManager(
+            _ariaClient,
+            _loggerFactory.CreateLogger<AriaManager>());
         EventHandler<AriaProgressEventArgs> progressHandler = (_, eventArgs) =>
             UpdateProgress(downloading, eventArgs);
         ariaManager.TellStatus += progressHandler;
@@ -105,7 +121,7 @@ internal sealed class Aria2TransferBackend : ITransferBackend
                     request.EnsureActive();
                     if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause)
                     {
-                        await AriaClient.PauseAsync(activeGid).ConfigureAwait(false);
+                        await _ariaClient.PauseAsync(activeGid).ConfigureAwait(false);
                         throw new OperationCanceledException("Download was paused.");
                     }
                 },
@@ -130,7 +146,7 @@ internal sealed class Aria2TransferBackend : ITransferBackend
         var gid = downloading.Downloading.Gid;
         if (!string.IsNullOrWhiteSpace(gid))
         {
-            var status = await AriaClient.TellStatus(gid).ConfigureAwait(true);
+            var status = await _ariaClient.TellStatus(gid).ConfigureAwait(true);
             if (status?.Result == null ||
                 status.Error?.Message.Contains("is not found", StringComparison.OrdinalIgnoreCase) == true)
             {
@@ -142,7 +158,6 @@ internal sealed class Aria2TransferBackend : ITransferBackend
 
         if (gid == null)
         {
-            var network = _settingsStore.Current.Network;
             var option = new AriaSendOption
             {
                 Dir = request.Directory,
@@ -150,18 +165,18 @@ internal sealed class Aria2TransferBackend : ITransferBackend
                 Continue = "true",
                 AllowOverwrite = "true",
                 AutoFileRenaming = "false",
-                UserAgent = network.UserAgent,
-                Split = network.AriaSplit.ToString(CultureInfo.InvariantCulture),
-                MaxConnectionPerServer = network.AriaMaxConnectionPerServer
+                UserAgent = _networkSettings.UserAgent,
+                Split = _networkSettings.AriaSplit.ToString(CultureInfo.InvariantCulture),
+                MaxConnectionPerServer = _networkSettings.AriaMaxConnectionPerServer
                     .ToString(CultureInfo.InvariantCulture),
-                MinSplitSize = $"{network.AriaMinSplitSize}M"
+                MinSplitSize = $"{_networkSettings.AriaMinSplitSize}M"
             };
-            if (network.IsAriaHttpProxy == AllowStatus.Yes)
+            if (_networkSettings.IsAriaHttpProxy == AllowStatus.Yes)
             {
-                option.HttpProxy = $"http://{network.AriaHttpProxy}:{network.AriaHttpProxyListenPort}";
+                option.HttpProxy = $"http://{_networkSettings.AriaHttpProxy}:{_networkSettings.AriaHttpProxyListenPort}";
             }
 
-            var added = await AriaClient.AddUriAsync(request.Urls.ToList(), option).ConfigureAwait(true);
+            var added = await _ariaClient.AddUriAsync(request.Urls.ToList(), option).ConfigureAwait(true);
             if (string.IsNullOrWhiteSpace(added?.Result))
             {
                 return null;
@@ -173,7 +188,7 @@ internal sealed class Aria2TransferBackend : ITransferBackend
         }
         else
         {
-            await AriaClient.UnpauseAsync(gid).ConfigureAwait(true);
+            await _ariaClient.UnpauseAsync(gid).ConfigureAwait(true);
         }
 
         return gid;
@@ -181,26 +196,25 @@ internal sealed class Aria2TransferBackend : ITransferBackend
 
     private async Task StartAriaServerAsync(CancellationToken cancellationToken)
     {
-        var network = _settingsStore.Current.Network;
         var config = new AriaConfig
         {
-            ListenPort = network.AriaListenPort,
+            ListenPort = _networkSettings.AriaListenPort,
             Token = "downkyi",
-            LogLevel = network.AriaLogLevel,
-            MaxConcurrentDownloads = network.MaxCurrentDownloads,
-            MaxConnectionPerServer = network.AriaMaxConnectionPerServer,
-            Split = network.AriaSplit,
-            MinSplitSize = network.AriaMinSplitSize,
-            MaxOverallDownloadLimit = network.AriaMaxOverallDownloadLimit * 1024L,
-            MaxDownloadLimit = network.AriaMaxDownloadLimit * 1024L,
+            LogLevel = _networkSettings.AriaLogLevel,
+            MaxConcurrentDownloads = _networkSettings.MaxCurrentDownloads,
+            MaxConnectionPerServer = _networkSettings.AriaMaxConnectionPerServer,
+            Split = _networkSettings.AriaSplit,
+            MinSplitSize = _networkSettings.AriaMinSplitSize,
+            MaxOverallDownloadLimit = _networkSettings.AriaMaxOverallDownloadLimit * 1024L,
+            MaxDownloadLimit = _networkSettings.AriaMaxDownloadLimit * 1024L,
             ContinueDownload = true,
-            FileAllocation = network.AriaFileAllocation,
+            FileAllocation = _networkSettings.AriaFileAllocation,
             Headers =
             [
                 $"Cookie: {LoginHelper.GetLoginInfoCookiesString()}",
                 "Origin: https://www.bilibili.com",
                 "Referer: https://www.bilibili.com",
-                $"User-Agent: {network.UserAgent}"
+                $"User-Agent: {_networkSettings.UserAgent}"
             ]
         };
         _diagnosticLogger.LogAriaServerConfig(Name, config);
@@ -223,20 +237,22 @@ internal sealed class Aria2TransferBackend : ITransferBackend
         for (var attempt = 0; attempt < 10; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (await AriaClient.GetGlobalOptionAsync().ConfigureAwait(true) != null)
+            if (await _ariaClient.GetGlobalOptionAsync().ConfigureAwait(true) != null)
             {
                 return;
             }
 
             await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(true);
         }
+
+        throw new TimeoutException("The local aria2 process did not accept RPC requests in time.");
     }
 
     private async Task CloseAriaServerAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await AriaClient.PauseAllAsync()
+            await _ariaClient.PauseAllAsync()
                 .WaitAsync(TimeSpan.FromSeconds(2), cancellationToken)
                 .ConfigureAwait(true);
         }
@@ -246,9 +262,13 @@ internal sealed class Aria2TransferBackend : ITransferBackend
             _logger.LogErrorMessage("Aria server shutdown failed.", e);
         }
 
-        if (!await _ariaServer.CloseServerAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true))
+        if (!await _ariaServer.CloseServerAsync(
+                _ariaClient,
+                TimeSpan.FromSeconds(3)).ConfigureAwait(true))
         {
-            await _ariaServer.ForceCloseServerAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(true);
+            await _ariaServer.ForceCloseServerAsync(
+                _ariaClient,
+                TimeSpan.FromSeconds(2)).ConfigureAwait(true);
         }
     }
 
@@ -281,5 +301,16 @@ internal sealed class Aria2TransferBackend : ITransferBackend
 
     public void Dispose()
     {
+        if (_ownsAriaServer)
+        {
+            _ariaServer.KillTrackedServer("aria2 runtime disposed before graceful shutdown completed.");
+        }
+
+        ReleaseRuntimeRegistration();
+    }
+
+    private void ReleaseRuntimeRegistration()
+    {
+        Interlocked.Exchange(ref _runtimeRegistration, null)?.Dispose();
     }
 }

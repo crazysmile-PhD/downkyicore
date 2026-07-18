@@ -1517,6 +1517,7 @@ paths:
   - DownKyi/Services/Download/DownloadPipeline.cs
   - DownKyi/Services/Download/BuiltinTransferBackend.cs
   - DownKyi/Services/Download/Aria2TransferBackend.cs
+  - DownKyi/Services/Download/AriaRuntimeClientRegistry.cs
   - DownKyi/Services/Download/DownloadArtifactWriter.cs
   - DownKyi/Services/Download/DownloadTaskStateWriter.cs
   - DownKyi/Services/Download/DownloadTaskFileService.cs
@@ -1545,6 +1546,8 @@ contracts:
   - State transitions await persistence; high-rate progress uses the bounded write-behind boundary.
   - Runtime receives `DownloadListState`, `DownloadTaskProjectionStore`, and dedicated state/artifact writers through construction; it cannot resolve dependencies through App or a global container.
   - Runtime factory, backends, workers, and diagnostic logger share the Host-injected `ISettingsStore`; no download service reads the global settings singleton.
+  - Runtime factory captures one immutable network settings snapshot and creates a dedicated `AriaClient`; local and custom endpoints cannot overwrite process-global host, port, or token fields.
+  - The same runtime client is injected into transfer, polling, server shutdown, and task cancellation. `AriaRuntimeClientRegistry` exposes only the currently active runtime client and releases it deterministically on stop or failed startup.
   - Runtime alerts depend on `IAppDialogService`; backend constructors cannot accept framework-specific dialog services.
   - Runtime factory creates a typed backend logger, and every download/file-lifecycle/maintenance owner uses the shared provider; this directory cannot call static `LogManager`.
   - Download diagnostic throttling belongs to the injected runtime logger instance; scopes contain only a SHA-256-derived short task ID and cannot retain raw task IDs in process-wide static state.
@@ -1759,6 +1762,9 @@ id: external.aria2
 type: external
 paths:
   - DownKyi.Core/Aria2cNet
+  - DownKyi/Services/Download/AriaRuntimeClientRegistry.cs
+  - tests/DownKyi.Core.Tests/AriaClientIsolationTests.cs
+  - tests/DownKyi.Tests/AriaRuntimeClientRegistryTests.cs
   - script/aria2.ps1
   - script/aria2.sh
 responsibility: Provides optional aria2 RPC download backend and release-packaged aria2 binaries.
@@ -1773,6 +1779,8 @@ contracts:
   - Host owns one injected `AriaServer`; normal backend shutdown and App timeout cleanup must address that same tracked-process owner.
   - Manager, server, and process-supervisor diagnostics use typed loggers from the shared application factory; `Aria2cNet` cannot call static `LogManager`.
   - RPC requests use iterative asynchronous retry and cannot occupy a worker thread with synchronous `HttpClient.Send` or recursive retry.
+  - Each runtime owns an immutable RPC endpoint and secret; `AriaClient` has no mutable static host, port, or token configuration.
+  - Local and custom clients can execute concurrently without endpoint or authentication-token cross-contamination.
 hazards:
   - Orphaned aria2 processes prevent clean app exit and lock output files.
   - Temporary `.aria2` files must be removed when user deletes a task.

@@ -50,6 +50,31 @@ public sealed class DownloadRuntimeArchitectureTests
     }
 
     [Fact]
+    public void AriaRpcConfigurationIsOwnedByEachDownloadRuntime()
+    {
+        var clientSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "Aria2cNet",
+            "Client",
+            "AriaClient.cs"));
+        var runtimeDirectory = Path.Combine(RepositoryRoot, "DownKyi", "Services", "Download");
+        var factorySource = File.ReadAllText(Path.Combine(runtimeDirectory, "DownloadRuntimeFactory.cs"));
+        var backendSource = File.ReadAllText(Path.Combine(runtimeDirectory, "Aria2TransferBackend.cs"));
+
+        Assert.Contains("public sealed class AriaClient", clientSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("public static class AriaClient", clientSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetToken(", clientSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetHost(", clientSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetListenPort(", clientSource, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            factorySource.Split("new AriaClient(", StringSplitOptions.None).Length - 1);
+        Assert.Contains("private readonly AriaClient _ariaClient", backendSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AriaClient.", backendSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void OrchestratorUsesBoundedWorkersAndHasNoSynchronousPersistenceBridge()
     {
         var source = File.ReadAllText(Path.Combine(

@@ -6,7 +6,9 @@ namespace DownKyi.Tests;
 public sealed class DownloadTaskFileServiceTests : IDisposable
 {
     private static readonly string[] GeneratedFileNames = { "video-stream.mp4", "audio-stream.aac" };
-    private readonly DownloadTaskFileService _service = new(NullLogger<DownloadTaskFileService>.Instance);
+    private readonly DownloadTaskFileService _service = new(
+        new AriaRuntimeClientRegistry(),
+        NullLogger<DownloadTaskFileService>.Instance);
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(),
         "downkyi-file-lifecycle-tests",

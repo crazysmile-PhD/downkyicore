@@ -1,5 +1,6 @@
 using System;
 using DownKyi.Application.Desktop;
+using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.FFMpeg;
@@ -18,6 +19,7 @@ internal interface IDownloadRuntimeFactory
 internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
 {
     private readonly DownloadListState _downloadLists;
+    private readonly AriaRuntimeClientRegistry _ariaClientRegistry;
     private readonly AriaServer _ariaServer;
     private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly IUserNotificationService _notificationService;
@@ -37,6 +39,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         IWbiKeyProvider wbiKeyProvider,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
+        AriaRuntimeClientRegistry ariaClientRegistry,
         AriaServer ariaServer,
         ILoggerFactory loggerFactory)
     {
@@ -49,13 +52,17 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        _ariaClientRegistry = ariaClientRegistry
+            ?? throw new ArgumentNullException(nameof(ariaClientRegistry));
         _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
     }
 
     public IDownloadRuntime? Create()
     {
-        var downloader = _settingsStore.Current.Network.Downloader;
+        var settingsSnapshot = _settingsStore.Current;
+        var network = settingsSnapshot.Network;
+        var downloader = network.Downloader;
         ITransferBackend? transferBackend = downloader switch
         {
             DownloaderSetting.BuiltIn => new BuiltinTransferBackend(
@@ -63,14 +70,18 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _diagnosticLogger,
                 _loggerFactory.CreateLogger<BuiltinTransferBackend>()),
             DownloaderSetting.Aria => new Aria2TransferBackend(
-                _settingsStore,
+                network,
+                new AriaClient(listenPort: network.AriaListenPort),
+                _ariaClientRegistry,
                 _diagnosticLogger,
                 _ariaServer,
                 _loggerFactory,
                 _loggerFactory.CreateLogger<Aria2TransferBackend>(),
                 ownsAriaServer: true),
             DownloaderSetting.CustomAria => new Aria2TransferBackend(
-                _settingsStore,
+                network,
+                new AriaClient(network.AriaHost, network.AriaListenPort, network.AriaToken),
+                _ariaClientRegistry,
                 _diagnosticLogger,
                 _ariaServer,
                 _loggerFactory,

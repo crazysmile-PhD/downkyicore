@@ -33,10 +33,12 @@ public sealed class AriaGlobalStatusEventArgs(long speed) : EventArgs
 public class AriaManager
 {
     private const int PollDelayMilliseconds = 500;
+    private readonly AriaClient _ariaClient;
     private readonly ILogger<AriaManager> _logger;
 
-    public AriaManager(ILogger<AriaManager> logger)
+    public AriaManager(AriaClient ariaClient, ILogger<AriaManager> logger)
     {
+        _ariaClient = ariaClient ?? throw new ArgumentNullException(nameof(ariaClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -82,7 +84,7 @@ public class AriaManager
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var status = await AriaClient.TellStatus(gid).ConfigureAwait(false);
+            var status = await _ariaClient.TellStatus(gid).ConfigureAwait(false);
             if (status?.Result == null)
             {
                 if (status?.Error?.Message?.Contains("is not found", StringComparison.OrdinalIgnoreCase) == true)
@@ -127,7 +129,7 @@ public class AriaManager
                     _logger.LogErrorMessage($"aria2 reported a download failure: {result.ErrorMessage}");
                 }
 
-                var ariaRemove = await AriaClient.RemoveDownloadResultAsync(gid).ConfigureAwait(false);
+                var ariaRemove = await _ariaClient.RemoveDownloadResultAsync(gid).ConfigureAwait(false);
                 if (ariaRemove?.Result != null)
                 {
                     _logger.LogDebugMessage("aria2 removed the failed download result.");
@@ -148,7 +150,7 @@ public class AriaManager
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            var globalStatus = await AriaClient.GetGlobalStatAsync().ConfigureAwait(false);
+            var globalStatus = await _ariaClient.GetGlobalStatAsync().ConfigureAwait(false);
             if (globalStatus?.Result == null)
             {
                 await Task.Delay(PollDelayMilliseconds, cancellationToken).ConfigureAwait(false);

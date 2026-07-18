@@ -76,6 +76,7 @@ internal static class DesktopComposition
         services.AddSingleton<DownloadTaskProjectionStore>();
         services.AddSingleton<DownloadListState>();
         services.AddSingleton<DownloadTaskFileService>();
+        services.AddSingleton<AriaRuntimeClientRegistry>();
         services.AddSingleton<IDownloadManagerCoordinator, DownloadManagerCoordinator>();
         services.AddSingleton<IVideoTagProvider, VideoTagProvider>();
         services.AddSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();

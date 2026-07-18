@@ -5,7 +5,6 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Logging;
 using DownKyi.Models;
 using DownKyi.ViewModels.DownloadManager;
@@ -19,10 +18,15 @@ internal sealed class DownloadTaskFileService
     private static readonly string[] TextExtensions = { ".ass", ".srt", ".nfo" };
     private static readonly string[] ImageExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif" };
     private static readonly string[] TempExtensions = { "", ".aria2", ".download" };
+    private readonly AriaRuntimeClientRegistry _ariaClientRegistry;
     private readonly ILogger<DownloadTaskFileService> _logger;
 
-    public DownloadTaskFileService(ILogger<DownloadTaskFileService> logger)
+    public DownloadTaskFileService(
+        AriaRuntimeClientRegistry ariaClientRegistry,
+        ILogger<DownloadTaskFileService> logger)
     {
+        _ariaClientRegistry = ariaClientRegistry
+            ?? throw new ArgumentNullException(nameof(ariaClientRegistry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -52,10 +56,17 @@ internal sealed class DownloadTaskFileService
         }
 
         var removed = false;
+        var ariaClient = _ariaClientRegistry.Current;
+        if (ariaClient == null)
+        {
+            _logger.LogDebugMessage("Cancel aria downloader skipped because no aria2 runtime is active.");
+            return;
+        }
+
         try
         {
-            await AriaClient.RemoveAsync(gid).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
-            await AriaClient.RemoveDownloadResultAsync(gid).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+            await ariaClient.RemoveAsync(gid).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+            await ariaClient.RemoveDownloadResultAsync(gid).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
             removed = true;
         }
         catch (TimeoutException e)

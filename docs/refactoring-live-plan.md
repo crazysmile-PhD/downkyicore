@@ -24,7 +24,6 @@ Branch: `refactor/pr-30-32-release-hardening`
 
 - Investigate the current 1,488 B/request URL-building allocation only if traces show it is hot.
 - Optimize startup history loading, worker limits, caches, and controlled collection parsing only with benchmark or trace evidence.
-- Replace the remaining process-global aria RPC configuration with an injected per-runtime client without changing local/custom aria ownership, GID persistence, or resume behavior.
 - Complete the logging modernization task derived from `deep-research-report.md` against the current `ApplicationLogProvider`: UTC `YYYY-MM-DD` directories, JSONL streams, 32 MiB rotation, seven-day hard retention, 512 MiB safety cap, active-file protection, startup/hourly/day-change/rotation/pre-export maintenance, and an AI-first redacted export manifest.
 - Add deterministic logging retention/rotation/export tests and storage metrics (`capacity_ratio`, age/capacity deletion counts, bytes/events written) before changing the current capacity limit.
 - Audit timer/debounce/background-writer ownership across settings and runtime services. Synchronous `Dispose` stops scheduling only; `DisposeAsync` awaits callbacks/pending writes before gates are released. Race tests must use controlled synchronization points, not timing delays.

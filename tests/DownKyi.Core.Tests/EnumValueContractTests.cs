@@ -87,7 +87,7 @@ public sealed class EnumValueContractTests
     private sealed class TestAriaManager : AriaManager
     {
         public TestAriaManager()
-            : base(NullLogger<AriaManager>.Instance)
+            : base(new AriaClient(), NullLogger<AriaManager>.Instance)
         {
         }
 

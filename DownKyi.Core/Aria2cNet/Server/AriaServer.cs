@@ -148,12 +148,13 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// 关闭aria2c服务器，异步方法
         /// </summary>
         /// <returns></returns>
-        public async Task<bool> CloseServerAsync(TimeSpan? timeout = null)
+        public async Task<bool> CloseServerAsync(AriaClient ariaClient, TimeSpan? timeout = null)
         {
+            ArgumentNullException.ThrowIfNull(ariaClient);
             var waitTimeout = timeout ?? TimeSpan.FromSeconds(5);
             try
             {
-                var shutdown = AriaClient.ShutdownAsync();
+                var shutdown = ariaClient.ShutdownAsync();
                 var completed = await Task.WhenAny(shutdown, Task.Delay(waitTimeout)).ConfigureAwait(false);
                 if (completed != shutdown)
                 {
@@ -199,12 +200,13 @@ namespace DownKyi.Core.Aria2cNet.Server
         /// 强制关闭aria2c服务器，异步方法
         /// </summary>
         /// <returns></returns>
-        public async Task<bool> ForceCloseServerAsync(TimeSpan? timeout = null)
+        public async Task<bool> ForceCloseServerAsync(AriaClient ariaClient, TimeSpan? timeout = null)
         {
+            ArgumentNullException.ThrowIfNull(ariaClient);
             try
             {
                 var waitTimeout = timeout ?? TimeSpan.FromSeconds(3);
-                var shutdown = AriaClient.ForceShutdownAsync();
+                var shutdown = ariaClient.ForceShutdownAsync();
                 var completed = await Task.WhenAny(shutdown, Task.Delay(waitTimeout)).ConfigureAwait(false);
                 if (completed != shutdown)
                 {
