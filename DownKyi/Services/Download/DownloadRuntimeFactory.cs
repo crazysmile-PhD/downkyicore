@@ -99,7 +99,6 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
             _projectionStore,
             _loggerFactory.CreateLogger<DownloadTaskStateWriter>());
         var artifactWriter = new DownloadArtifactWriter(
-            _settingsStore,
             _wbiKeyProvider,
             stateWriter,
             _loggerFactory.CreateLogger<DownloadArtifactWriter>());

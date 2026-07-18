@@ -42,7 +42,6 @@ internal sealed class DownloadPipeline : IDisposable
     private FfmpegProcessor FfmpegProcessor { get; }
     private DownloadArtifactWriter ArtifactWriter { get; }
     private DownloadTaskStateWriter StateWriter { get; }
-    private ApplicationSettings Settings => SettingsStore.Current;
     private ISettingsStore SettingsStore { get; }
     private IWbiKeyProvider WbiKeyProvider { get; }
     private ILogger Logger { get; }
@@ -255,13 +254,17 @@ internal sealed class DownloadPipeline : IDisposable
         };
     }
 
-    public Task<string?> DownloadAudioAsync(DownloadingItem downloading)
+    private Task<string?> DownloadAudioAsync(
+        DownloadingItem downloading,
+        ApplicationSettings settings)
     {
         ArgumentNullException.ThrowIfNull(downloading);
-        return DownloadMediaAsync(downloading, BaseDownloadAudio(downloading));
+        return DownloadMediaAsync(downloading, BaseDownloadAudio(downloading), settings);
     }
 
-    public Task<string?> DownloadVideoAsync(DownloadingItem downloading)
+    private Task<string?> DownloadVideoAsync(
+        DownloadingItem downloading,
+        ApplicationSettings settings)
     {
         ArgumentNullException.ThrowIfNull(downloading);
         var descriptor = BaseDownloadVideo(downloading);
@@ -274,12 +277,13 @@ internal sealed class DownloadPipeline : IDisposable
                 BaseAddress = descriptor.BaseUrl,
                 BackupUrl = descriptor.BackupUrl,
                 ExpectedSize = descriptor.ExpectedSize
-            });
+            }, settings);
     }
 
     private async Task<string?> DownloadMediaAsync(
         DownloadingItem downloading,
-        PlayUrlDashVideo? media)
+        PlayUrlDashVideo? media,
+        ApplicationSettings settings)
     {
         if (media == null)
         {
@@ -337,7 +341,7 @@ internal sealed class DownloadPipeline : IDisposable
                 CancellationToken.GetValueOrDefault()).ConfigureAwait(true);
         }
 
-        NormalizeTransferSchemes(urls, Settings.Network.UseSsl == AllowStatus.Yes);
+        NormalizeTransferSchemes(urls, settings.Network.UseSsl == AllowStatus.Yes);
         var targetFile = Path.Combine(path, fileName);
         var outcome = await TransferAsync(
             downloading,
@@ -392,6 +396,7 @@ internal sealed class DownloadPipeline : IDisposable
         DownloadingItem downloading,
         string? audioUid,
         string? videoUid,
+        VideoApplicationSettings videoSettings,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(downloading);
@@ -408,7 +413,7 @@ internal sealed class DownloadPipeline : IDisposable
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
         if (videoUid == null)
         {
-            finalFile = Settings.Video.IsTranscodingAacToMp3 == AllowStatus.Yes
+            finalFile = videoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes
                 ? $"{downloading.DownloadBase.FilePath}.mp3"
                 : downloading.AudioCodec.Id == 30251
                     ? $"{downloading.DownloadBase.FilePath}.flac"
@@ -417,7 +422,7 @@ internal sealed class DownloadPipeline : IDisposable
 
         // 合并音视频
         var succeeded = await FfmpegProcessor
-            .MergeVideoAsync(audioUid, videoUid, finalFile, cancellationToken)
+            .MergeVideoAsync(videoSettings, audioUid, videoUid, finalFile, cancellationToken)
             .ConfigureAwait(true);
         if (!succeeded)
         {
@@ -443,6 +448,7 @@ internal sealed class DownloadPipeline : IDisposable
     private async Task<FfmpegOperationResult> ConcatDurlVideosAsync(
         DownloadingItem downloading,
         IReadOnlyList<DurlDownloadResult> downloads,
+        VideoApplicationSettings videoSettings,
         CancellationToken cancellationToken)
     {
         downloading.DownloadStatusTitle = DictionaryResource.GetString("ConcatVideos");
@@ -459,7 +465,11 @@ internal sealed class DownloadPipeline : IDisposable
                 TimeSpan.FromMilliseconds(download.Durl.Length)))
             .ToArray();
         var result = await FfmpegProcessor
-            .ConcatDurlVideosAsync(segments, finalFile, cancellationToken: cancellationToken)
+            .ConcatDurlVideosAsync(
+                videoSettings,
+                segments,
+                finalFile,
+                cancellationToken: cancellationToken)
             .ConfigureAwait(true);
         if (result.Succeeded && result.OutputPath != null)
         {
@@ -477,7 +487,9 @@ internal sealed class DownloadPipeline : IDisposable
     private sealed record DurlDownloadResult(PlayUrlDurl Durl, string FilePath);
 
 
-    private async Task ParseAsync(DownloadingItem downloading)
+    private async Task ParseAsync(
+        DownloadingItem downloading,
+        ApplicationSettings settings)
     {
         ArgumentNullException.ThrowIfNull(downloading);
 
@@ -507,7 +519,7 @@ internal sealed class DownloadPipeline : IDisposable
             case PlayStreamType.Video:
                 playUrl = downloading.PlayUrl ?? await WbiRequestExecutor.ExecuteAsync(
                     WbiKeyProvider,
-                    (keys, unixTimeSeconds) => Settings.Video.VideoParseType switch
+                    (keys, unixTimeSeconds) => settings.Video.VideoParseType switch
                 {
                     0 => VideoStreamApi.GetVideoPlayUrl(keys, unixTimeSeconds, downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                         cancellationToken: CancellationToken.GetValueOrDefault()),
@@ -550,6 +562,7 @@ internal sealed class DownloadPipeline : IDisposable
         CancellationToken cancellationToken)
     {
         CancellationToken = cancellationToken;
+        var settings = SettingsStore.Current;
         downloading.DownloadBase.FilePath = downloading.DownloadBase.FilePath.Replace("\\", "/", StringComparison.Ordinal);
         var path = GetDownloadDirectoryPath(downloading.DownloadBase.FilePath);
 
@@ -586,7 +599,7 @@ internal sealed class DownloadPipeline : IDisposable
                 downloading.DownloadContent = string.Empty;
 
                 // 解析并依次下载音频、视频、弹幕、字幕、封面等内容
-                await ParseAsync(downloading).ConfigureAwait(true);
+                await ParseAsync(downloading, settings).ConfigureAwait(true);
 
                 // 暂停
                 EnsureDownloadIsActive(downloading);
@@ -603,7 +616,7 @@ internal sealed class DownloadPipeline : IDisposable
                     {
                         for (var i = 0; i < Retry; i++)
                         {
-                            audioUid = await DownloadAudioAsync(downloading).ConfigureAwait(true);
+                            audioUid = await DownloadAudioAsync(downloading, settings).ConfigureAwait(true);
                             if (audioUid != null && audioUid != NullMark)
                             {
                                 break;
@@ -626,7 +639,7 @@ internal sealed class DownloadPipeline : IDisposable
                         //videoUid = DownloadVideo(downloading);
                         for (var i = 0; i < Retry; i++)
                         {
-                            videoUid = await DownloadVideoAsync(downloading).ConfigureAwait(true);
+                            videoUid = await DownloadVideoAsync(downloading, settings).ConfigureAwait(true);
                             if (videoUid != null && videoUid != NullMark)
                             {
                                 break;
@@ -651,6 +664,7 @@ internal sealed class DownloadPipeline : IDisposable
                             downloading,
                             audioUid,
                             videoUid,
+                            settings.Video,
                             cancellationToken).ConfigureAwait(true);
                     }
 
@@ -689,7 +703,9 @@ internal sealed class DownloadPipeline : IDisposable
                                     }
 
                                     downloading.PlayUrl.Durl = new[] { downloadStatus[index].Durl };
-                                    var result = await DownloadVideoAsync(downloading).ConfigureAwait(true);
+                                    var result = await DownloadVideoAsync(
+                                        downloading,
+                                        settings).ConfigureAwait(true);
                                     downloadStatus[index] = downloadStatus[index] with
                                     {
                                         FilePath = result ?? NullMark
@@ -725,6 +741,7 @@ internal sealed class DownloadPipeline : IDisposable
                             var concatResult = await ConcatDurlVideosAsync(
                                     downloading,
                                     downloadStatus,
+                                    settings.Video,
                                     cancellationToken)
                                 .ConfigureAwait(true);
                             isMediaSuccess = concatResult.Succeeded;
@@ -735,6 +752,7 @@ internal sealed class DownloadPipeline : IDisposable
                                 downloading,
                                 null,
                                 downloadStatus[0].FilePath,
+                                settings.Video,
                                 cancellationToken).ConfigureAwait(true);
                             isMediaSuccess = File.Exists(outputMedia);
                         }
@@ -756,7 +774,7 @@ internal sealed class DownloadPipeline : IDisposable
 
 
                 //nfo
-                if (Settings.Video.Content.GenerateMovieMetadata)
+                if (settings.Video.Content.GenerateMovieMetadata)
                 {
                     ArtifactWriter.GenerateNfoFile(downloading);
                 }
@@ -767,6 +785,7 @@ internal sealed class DownloadPipeline : IDisposable
                 {
                     outputDanmaku = await ArtifactWriter.DownloadDanmakuAsync(
                         downloading,
+                        settings.Danmaku,
                         cancellationToken).ConfigureAwait(true);
                 }
 
@@ -885,7 +904,7 @@ internal sealed class DownloadPipeline : IDisposable
                     DownloadingList.Remove(downloading);
 
                     // 下载完成列表排序
-                    var finishedSort = Settings.Basic.DownloadFinishedSort;
+                    var finishedSort = settings.Basic.DownloadFinishedSort;
                     DownloadLists.SortDownloaded(finishedSort);
                 }).ConfigureAwait(true);
             }

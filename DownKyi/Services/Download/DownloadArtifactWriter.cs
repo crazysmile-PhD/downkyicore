@@ -21,18 +21,15 @@ namespace DownKyi.Services.Download;
 
 internal sealed class DownloadArtifactWriter
 {
-    private readonly ISettingsStore _settingsStore;
     private readonly IWbiKeyProvider _wbiKeyProvider;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly ILogger _logger;
 
     public DownloadArtifactWriter(
-        ISettingsStore settingsStore,
         IWbiKeyProvider wbiKeyProvider,
         DownloadTaskStateWriter stateWriter,
         ILogger logger)
     {
-        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -87,9 +84,11 @@ internal sealed class DownloadArtifactWriter
 
     public async Task<string> DownloadDanmakuAsync(
         DownloadingItem downloading,
+        DanmakuApplicationSettings settings,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(downloading);
+        ArgumentNullException.ThrowIfNull(settings);
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingDanmaku");
         downloading.DownloadingFileSize = string.Empty;
@@ -101,7 +100,6 @@ internal sealed class DownloadArtifactWriter
             await _stateWriter.UpdateAsync(downloading, cancellationToken).ConfigureAwait(false);
         }
 
-        var settings = _settingsStore.Current.Danmaku;
         var subtitleConfig = new Config
         {
             Title = downloading.Name,

@@ -25,7 +25,6 @@ public sealed class SettingsArchitectureTests
     [InlineData("DownKyi", "Services", "VideoInfoService.cs")]
     [InlineData("DownKyi", "Services", "BangumiInfoService.cs")]
     [InlineData("DownKyi", "Services", "CheeseInfoService.cs")]
-    [InlineData("DownKyi", "Services", "Utils.cs")]
     [InlineData("DownKyi", "Services", "Download", "AddToDownloadService.cs")]
     [InlineData("DownKyi", "Services", "Download", "AddToDownloadServiceFactory.cs")]
     [InlineData("DownKyi", "Services", "Media", "ContentDownloadCoordinator.cs")]
@@ -162,8 +161,32 @@ public sealed class SettingsArchitectureTests
         Assert.DoesNotContain("LogManager.", managerSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Console.", managerSource, StringComparison.Ordinal);
         Assert.Contains("File.Replace", managerSource, StringComparison.Ordinal);
+        Assert.Contains("ValidateTemporarySettingsFileAsync", managerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("new Timer", managerSource, StringComparison.Ordinal);
+        Assert.Contains("_scheduledFlushTask", managerSource, StringComparison.Ordinal);
         Assert.Contains("FlushAsync(CancellationToken", managerSource, StringComparison.Ordinal);
         Assert.Contains("switch (settings.SchemaVersion)", migratorSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LongRunningOperationsUseExplicitImmutableSettingsSnapshots()
+    {
+        var utilitySource = ReadSource("DownKyi", "Services", "Utils.cs");
+        var addSource = ReadSource("DownKyi", "Services", "Download", "AddToDownloadService.cs");
+        var pipelineSource = ReadSource("DownKyi", "Services", "Download", "DownloadPipeline.cs");
+        var artifactSource = ReadSource("DownKyi", "Services", "Download", "DownloadArtifactWriter.cs");
+        var diagnosticSource = ReadSource("DownKyi", "Services", "Download", "DownloadDiagnosticLogger.cs");
+        var ffmpegSource = ReadSource("DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs");
+
+        Assert.Contains("ApplicationSettings settings", utilitySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", utilitySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("settingsStore.Current", utilitySource, StringComparison.Ordinal);
+        Assert.DoesNotContain("VideoPageInfo(playUrl, page, _settingsStore)", addSource, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(pipelineSource, "SettingsStore.Current"));
+        Assert.DoesNotContain("ISettingsStore", artifactSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", diagnosticSource, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(ffmpegSource, "_settingsStore.Current.Video.FfmpegMaxParallelJobs"));
+        Assert.Equal(2, CountOccurrences(ffmpegSource, "_settingsStore.Current"));
     }
 
     [Fact]

@@ -104,7 +104,7 @@ internal sealed class Aria2TransferBackend : ITransferBackend
             return DownloadTransferOutcome.Failed;
         }
 
-        _diagnosticLogger.LogAriaTaskStart(Name, activeGid, request.Urls.Count);
+        _diagnosticLogger.LogAriaTaskStart(Name, activeGid, request.Urls.Count, _networkSettings);
         var ariaManager = new AriaManager(
             _ariaClient,
             _loggerFactory.CreateLogger<AriaManager>());
@@ -217,7 +217,7 @@ internal sealed class Aria2TransferBackend : ITransferBackend
                 $"User-Agent: {_networkSettings.UserAgent}"
             ]
         };
-        _diagnosticLogger.LogAriaServerConfig(Name, config);
+        _diagnosticLogger.LogAriaServerConfig(Name, config, _networkSettings);
 
         var errors = new ConcurrentQueue<string>();
         await _ariaServer.StartServerAsync(config, output =>

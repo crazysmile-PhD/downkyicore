@@ -123,6 +123,7 @@ internal class VideoInfoService : IInfoService
 
         var videoPages = new List<VideoPage>();
 
+        var timeFormat = _settingsStore.Current.Video.FileNamePartTimeFormat;
         var order = 0;
         foreach (var page in _videoView.Pages)
         {
@@ -176,8 +177,6 @@ internal class VideoInfoService : IInfoService
                 };
             }
 
-            // 文件命名中的时间格式
-            var timeFormat = _settingsStore.Current.Video.FileNamePartTimeFormat;
             // 视频发布时间
             var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(_videoView.Pubdate);
@@ -328,9 +327,10 @@ internal class VideoInfoService : IInfoService
     {
         ArgumentNullException.ThrowIfNull(page);
         cancellationToken.ThrowIfCancellationRequested();
+        var videoParseType = _settingsStore.Current.Video.VideoParseType;
         return await WbiRequestExecutor.ExecuteAsync(
             _wbiKeyProvider,
-            (keys, unixTimeSeconds) => _settingsStore.Current.Video.VideoParseType switch
+            (keys, unixTimeSeconds) => videoParseType switch
         {
             0 => VideoStreamApi.GetVideoPlayUrl(
                 keys,

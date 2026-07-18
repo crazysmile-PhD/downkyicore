@@ -12,6 +12,8 @@ namespace DownKyi.Core.Settings;
 public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan FlushDelay = TimeSpan.FromMilliseconds(750);
+    private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
+    private readonly TimeSpan _flushDelay;
     private readonly object _settingsLock = new();
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly string _settingsName;
@@ -19,7 +21,8 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
     private readonly ILogger<SettingsManager> _logger;
     private readonly string password = "YO1J$4#p";
     private AppSettings _appSettings;
-    private Timer? _flushTimer;
+    private CancellationTokenSource? _flushDelayCancellation;
+    private Task _scheduledFlushTask = Task.CompletedTask;
     private bool _dirty;
     private bool _persistenceDisabled;
     private long _changeVersion;
@@ -35,9 +38,25 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
     }
 
     internal SettingsManager(string settingsName, ILogger<SettingsManager> logger)
+        : this(
+            settingsName,
+            logger,
+            FlushDelay,
+            static (delay, cancellationToken) => Task.Delay(delay, cancellationToken))
+    {
+    }
+
+    internal SettingsManager(
+        string settingsName,
+        ILogger<SettingsManager> logger,
+        TimeSpan flushDelay,
+        Func<TimeSpan, CancellationToken, Task> delayAsync)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsName);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(flushDelay, TimeSpan.Zero);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _flushDelay = flushDelay;
+        _delayAsync = delayAsync ?? throw new ArgumentNullException(nameof(delayAsync));
         _settingsName = settingsName;
         var loadResult = LoadFromFile();
         _appSettings = loadResult.Settings;
@@ -252,19 +271,24 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
 
         _dirty = true;
         _changeVersion = checked(_changeVersion + 1);
-        _flushTimer ??= new Timer(
-            static state => _ = ((SettingsManager)state!).FlushDebouncedAsync(),
-            this,
-            Timeout.InfiniteTimeSpan,
-            Timeout.InfiniteTimeSpan);
-        _flushTimer.Change(FlushDelay, Timeout.InfiniteTimeSpan);
+        var previousCancellation = _flushDelayCancellation;
+        var cancellation = new CancellationTokenSource();
+        _flushDelayCancellation = cancellation;
+        _scheduledFlushTask = FlushDebouncedAsync(cancellation.Token);
+        previousCancellation?.Cancel();
+        previousCancellation?.Dispose();
     }
 
-    private async Task FlushDebouncedAsync()
+    private async Task FlushDebouncedAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await FlushAsync().ConfigureAwait(false);
+            await _delayAsync(_flushDelay, cancellationToken).ConfigureAwait(false);
+            await FlushCoreAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
         }
         catch (IOException e)
         {
@@ -283,11 +307,12 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
     public async Task FlushAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        lock (_settingsLock)
-        {
-            _flushTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-        }
+        StopScheduledFlush();
+        await FlushCoreAsync(cancellationToken).ConfigureAwait(false);
+    }
 
+    private async Task FlushCoreAsync(CancellationToken cancellationToken)
+    {
         await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -357,6 +382,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            await ValidateTemporarySettingsFileAsync(tempFile, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             if (File.Exists(_settingsName))
             {
@@ -384,6 +410,40 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         }
     }
 
+    internal static async Task ValidateTemporarySettingsFileAsync(
+        string temporaryFile,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(temporaryFile);
+        try
+        {
+            var stream = new FileStream(
+                temporaryFile,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await using (stream.ConfigureAwait(false))
+            {
+                using var document = await System.Text.Json.JsonDocument
+                    .ParseAsync(stream, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+                if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                {
+                    throw new JsonSerializationException(
+                        "The temporary settings payload must contain one JSON object.");
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException e)
+        {
+            throw new JsonSerializationException(
+                "The temporary settings payload is not valid JSON.",
+                e);
+        }
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposeState, 1) != 0)
@@ -391,14 +451,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
             return;
         }
 
-        Timer? timer;
-        lock (_settingsLock)
-        {
-            timer = _flushTimer;
-            _flushTimer = null;
-        }
-
-        timer?.Dispose();
+        StopScheduledFlush();
         GC.SuppressFinalize(this);
     }
 
@@ -409,21 +462,39 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
             return;
         }
 
-        Timer? timer;
+        CancellationTokenSource? delayedFlushCancellation;
+        Task scheduledFlushTask;
         lock (_settingsLock)
         {
-            timer = _flushTimer;
-            _flushTimer = null;
+            delayedFlushCancellation = _flushDelayCancellation;
+            _flushDelayCancellation = null;
+            scheduledFlushTask = _scheduledFlushTask;
         }
 
-        if (timer != null)
+        if (delayedFlushCancellation != null)
         {
-            await timer.DisposeAsync().ConfigureAwait(false);
+            await delayedFlushCancellation.CancelAsync().ConfigureAwait(false);
+            delayedFlushCancellation.Dispose();
         }
+        await scheduledFlushTask.ConfigureAwait(false);
+        await FlushCoreAsync(CancellationToken.None).ConfigureAwait(false);
 
         await _writeGate.WaitAsync().ConfigureAwait(false);
         _writeGate.Release();
         _writeGate.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    private void StopScheduledFlush()
+    {
+        CancellationTokenSource? cancellation;
+        lock (_settingsLock)
+        {
+            cancellation = _flushDelayCancellation;
+            _flushDelayCancellation = null;
+        }
+
+        cancellation?.Cancel();
+        cancellation?.Dispose();
     }
 }

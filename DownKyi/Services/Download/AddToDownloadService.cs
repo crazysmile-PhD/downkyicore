@@ -150,6 +150,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
             return;
         }
 
+        var settings = _settingsStore.Current;
         foreach (var section in _videoSections)
         {
             foreach (var page in section.VideoPages)
@@ -159,7 +160,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 var playUrl = await videoInfoService
                     .GetVideoStreamAsync(page, cancellationToken)
                     .ConfigureAwait(false);
-                Utils.VideoPageInfo(playUrl, page, _settingsStore);
+                Utils.VideoPageInfo(playUrl, page, settings);
             }
         }
     }
@@ -303,7 +304,7 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                     var playUrl = await _videoInfoService
                         .GetVideoStreamAsync(page, cancellationToken)
                         .ConfigureAwait(false);
-                    Utils.VideoPageInfo(playUrl, page, _settingsStore);
+                    Utils.VideoPageInfo(playUrl, page, settings);
                     retry++;
                 }
 

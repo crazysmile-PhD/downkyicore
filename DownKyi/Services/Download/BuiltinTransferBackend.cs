@@ -98,7 +98,8 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
                 localFileName,
                 urls.Count,
                 configuration.ChunkCount,
-                configuration.ParallelCount);
+                configuration.ParallelCount,
+                network);
 
             var downloader = new Downloader.DownloadService(configuration);
             downloader.DownloadStarted += (_, args) =>
