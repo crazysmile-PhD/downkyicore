@@ -1,483 +1,208 @@
-# AGENTS.md — DownKyi 代码库 AI 编码代理指南
+# AGENTS.md - DownKyi AI Agent Guide
 
-本文件为 AI 编码代理在此代码库中高效工作提供所需的全部信息。
+本文件是 AI Agent 的儲存庫入口。內容必須描述目前可執行的架構，不得保留已移除架構的操作指引。
 
-## 强制架构入口
+## 強制閱讀順序
 
-> 在分析或修改 DownKyi 程式碼前，必須先閱讀 `ai-knowledge-graph.md`，確認受影響的節點、依賴關係、穩定契約、風險與對應測試。
+1. 在分析或修改 DownKyi 程式碼前，必須先閱讀 `docs/ai-knowledge-graph.md`，確認受影響節點、依賴、穩定契約、風險與測試。
+2. 執行重構前閱讀 `docs/refactoring-live-plan.md`，只處理目前分組，不得拆分或合併計畫指定的 PR 範圍。
+3. 涉及建置、依賴、外部 binary、分析器或發版時，再閱讀 `docs/maintenance.md`。
+4. 新增、刪除、移動或重新導向模組責任的 PR，必須同步更新知識圖譜與即時計畫。
 
-本仓库中的实际路径是 `docs/ai-knowledge-graph.md`。任何新增、删除、移动或重新导向模块责任与依赖关系的变更，都必须在同一个分支、commit 组和 Pull Request 中同步更新该文件。执行重构时还必须阅读 `docs/refactoring-live-plan.md`，遵守其中的分支分组与未完成工作清单。
+## 專案概況
 
----
+DownKyi 是 .NET 10 與 Avalonia 12 的跨平台 Bilibili 下載器。主要技術如下：
 
-## 目录
+- Microsoft Generic Host 與 `Microsoft.Extensions.DependencyInjection`：生命週期和 composition root。
+- CommunityToolkit.Mvvm：binding 狀態與 `ObservableObject`。
+- typed navigation/dialog contracts：UI 導航、對話框與通知，不依賴全域容器。
+- SQLite3 Multiple Ciphers + `Microsoft.Data.Sqlite.Core`：下載任務、歷史與舊加密資料相容。
+- Downloader / aria2：內建與 RPC 傳輸後端。
+- FFmpeg/ffprobe：混流、轉碼、硬體編碼 fallback 與輸出驗證。
+- xUnit v3：Domain、Application、Infrastructure、Core、Desktop、App 與架構測試。
 
-1. [项目概述](#项目概述)
-2. [仓库结构](#仓库结构)
-3. [构建与运行](#构建与运行)
-4. [测试](#测试)
-5. [架构](#架构)
-6. [命名规范](#命名规范)
-7. [代码风格](#代码风格)
-8. [MVVM 模式](#mvvm-模式)
-9. [异步模式](#异步模式)
-10. [错误处理](#错误处理)
-11. [核心工具类](#核心工具类)
-12. [包管理](#包管理)
+Prism、DryIoc、EventAggregator、RegionManager、ContainerLocator、靜態 `LogManager`、Debugging Console wrapper 與 `SettingsManager` singleton 已移除。不得重新引入。
 
----
+## 儲存庫結構
 
-## 项目概述
+```text
+DownKyi.sln
+Directory.Build.props              全域 nullable、分析器與 warning policy
+Directory.Packages.props           Central Package Management
+version.txt                        版本唯一來源
 
-**DownKyi** 是一个跨平台的 Bilibili 视频下载器，使用以下技术构建：
+src/DownKyi.Domain/                immutable domain state 與 typed results
+src/DownKyi.Application/           use-case contracts、desktop contracts、lifetime
+src/DownKyi.Infrastructure/        SQLite store、clock、write-behind 等 adapters
+src/DownKyi.Desktop/               framework-neutral Host 建立入口
 
-- **Avalonia 12** — 跨平台 XAML UI（Windows、Linux、macOS）
-- **Prism.DryIoc.Avalonia** — MVVM 框架、依赖注入、导航、发布/订阅事件
-- **Microsoft.Data.Sqlite** — SQLite 原生 SQL 存储（下载队列、历史记录）
-- **FFMpegCore** — 音视频混流
-- **Downloader** — 内置 HTTP 下载引擎
-- **Newtonsoft.Json** — 设置项与 API 响应的序列化
+DownKyi.Core/                      Bilibili API、設定、日誌、aria2、FFmpeg 相容核心
+DownKyi/                           Avalonia App、composition、views、ViewModels、runtime services
+  Composition/DesktopComposition.cs
+  Platform/                        Avalonia navigation/dialog/lifecycle adapters
+  Services/Download/               download orchestration and transfer runtime
+  Views/
+  ViewModels/
 
-当前旧生产代码包含两个项目，此外还有四个测试项目与一个 benchmark 项目。PR 02 会新增目标分层项目：
+tests/DownKyi.Domain.Tests/
+tests/DownKyi.Application.Tests/
+tests/DownKyi.Infrastructure.Tests/
+tests/DownKyi.Core.Tests/
+tests/DownKyi.Desktop.Tests/
+tests/DownKyi.Tests/
+tests/DownKyi.Architecture.Tests/
 
-| 项目 | 类型 | 目标框架 |
-|---|---|---|
-| `DownKyi` | WinExe（Avalonia UI） | `net10.0` |
-| `DownKyi.Core` | 类库 | `net10.0` |
-| `tests/*` | xUnit v3 测试 | `net10.0` |
-| `benchmarks/DownKyi.Benchmarks` | BenchmarkDotNet | `net10.0` |
-
-目标运行时：`win-x64`、`win-x86`、`linux-x64`、`linux-arm64`、`osx-x64`、`osx-arm64`。
-
----
-
-## 仓库结构
-
-```
-DownKyi/
-├── AGENTS.md                       ← 本文件
-├── DownKyi.sln
-├── Directory.Build.props           ← 全局配置：Nullable=enable，CPM=true
-├── Directory.Build.targets         ← 空文件
-├── Directory.Packages.props        ← 所有 NuGet 包版本（CPM）
-├── version.txt                     ← 版本号的唯一来源
-├── .github/workflows/build.yml     ← CI：全平台构建与发布
-│
-├── DownKyi/                        ← UI 项目
-│   ├── App.axaml.cs                ← Prism DryIoc 引导、DI 注册
-│   ├── Program.cs                  ← Avalonia AppBuilder 入口点
-│   ├── AppConstant.cs              ← 全局应用常量
-│   ├── ViewModels/                 ← MVVM ViewModel（Prism BindableBase）
-│   │   ├── ViewModelBase.cs        ← 基类，含属性变更辅助方法
-│   │   ├── Dialogs/                ← 对话框 VM（IDialogAware）
-│   │   └── DownloadManager/        ← 下载列表项 VM
-│   ├── Views/                      ← Avalonia .axaml 视图（CompiledBindings）
-│   ├── Services/                   ← IInfoService、IDownloadService 抽象
-│   │   └── Download/               ← DownloadService 及内置/Aria 实现
-│   ├── Events/                     ← Prism PubSubEvent<T> 定义
-│   ├── Models/                     ← 数据库实体（纯 POCO，无 ORM 注解）
-│   ├── PrismExtension/             ← 自定义异步 IDialogService 扩展
-│   └── Utils/                      ← DictionaryResource（国际化）
-│
-└── DownKyi.Core/                   ← 领域/API 项目
-    ├── BiliApi/                    ← Bilibili HTTP API
-    │   ├── WebClient.cs            ← 单例 HttpClient 封装
-    │   ├── VideoStream/            ← playURL / 字幕 API
-    │   └── BiliUtils/              ← URL 解析、BvId <-> AvId 转换
-    ├── Settings/                   ← SettingsManager 单例（partial 类）
-    ├── Storage/                    ← StorageManager（路径解析）、SQLite DB
-    ├── Logging/                    ← LogManager（异步文件写入器）
-    ├── FFMpeg/                     ← FFMpegCore 封装
-    ├── Aria2cNet/                  ← aria2 RPC 客户端
-    └── Utils/                      ← Format、HardDisk、Debugging.Console、Encryptor
+benchmarks/DownKyi.BenchmarkCases/
+benchmarks/DownKyi.Benchmarks/
+docs/
 ```
 
----
+`DownKyi.Core` 與根層 `DownKyi` 仍含既有產品模型及 Bilibili API 相容面。不要僅為目錄整齊搬動它們；跨層移動必須先有測試保護資料格式、XAML binding 與外部協定。
 
-## 构建与运行
+## 啟動與 Composition
 
-### 前置条件
+啟動鏈如下：
 
-- .NET 10 SDK
-- 系统 PATH 中存在 FFmpeg 二进制文件（开发时混流操作所需）
-- `PupNet` 工具（仅打包时需要，开发构建无需）
-
-### 常用命令
-
-```bash
-# 还原包
-dotnet restore
-
-# Debug 构建
-dotnet build
-
-# Release 构建
-dotnet build -c Release
-
-# 运行应用
-dotnet run --project DownKyi/DownKyi.csproj
-
-# 自包含发布（示例：macOS arm64）
-dotnet publish DownKyi/DownKyi.csproj \
-  --self-contained \
-  -r osx-arm64 \
-  -c Release \
-  -p:DebugType=None \
-  -p:DebugSymbols=false
+```text
+Program
+  -> Avalonia App
+  -> DownKyiHost.Create()
+  -> DesktopComposition.AddDownKyiDesktop()
+  -> Microsoft DI
+  -> MainWindow + MainWindowViewModel
+  -> AvaloniaApplicationLifecycle.StartHostAsync()
 ```
 
-`-r` 支持的值：`win-x64`、`win-x86`、`linux-x64`、`linux-arm64`、`osx-x64`、`osx-arm64`。
+規則：
 
----
+- `App.axaml.cs` 只管理 Avalonia 啟動、Host 接線、全域例外觀察與結束釋放。
+- 所有服務與 ViewModel 註冊集中於 `DownKyi/Composition/DesktopComposition.cs`。
+- 依賴一律透過建構子注入；禁止 service locator、靜態 App 服務屬性與第二個容器。
+- `MainWindow` 建構時載入完整 XAML，並由 Host 注入 ViewModel、設定與生命週期。
+- Host root XAML 禁止 `ViewModelLocator.AutoWireViewModel` 與 `RegionManager.RegionName`。
 
-## 测试
+## UI 邊界
 
-本仓库使用 xUnit v3，并包含以下测试层：
+Application 層的 desktop contracts 位於 `src/DownKyi.Application/Desktop`。Avalonia adapters 位於 `DownKyi/Platform`：
 
-- `tests/DownKyi.Core.Tests`：HTTP、aria2、FFmpeg 与 Core 行为。
-- `tests/DownKyi.Tests`：下载流程、储存相容性与应用服务。
-- `tests/DownKyi.Desktop.Tests`：Avalonia headless UI smoke tests。
-- `tests/DownKyi.Architecture.Tests`：项目依赖方向与循环引用。
+- `IAppNavigationService` / `AvaloniaNavigationService`
+- `IAppDialogService` / `AvaloniaDialogService`
+- `IUserNotificationService` / `DesktopNotificationService`
+- `IApplicationLifecycle` / `AvaloniaApplicationLifecycle`
+- clipboard、file picker、platform launcher 與 UI dispatcher contracts
 
-提交前至少依序执行：
+導航使用 `AppRoute`、`AppNavigationRegion`、`AppNavigationRequest` 和 `AppNavigationContext`。不得傳遞 View 名稱字串、region 名稱字串或依賴導航 framework 的 journal。
 
-```bash
-dotnet restore ./DownKyi.sln
-dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental
-dotnet test ./DownKyi.sln -c Release --no-restore --no-build
-dotnet format ./DownKyi.sln --verify-no-changes --no-restore
-git diff --check
+ViewModel 應只保留 binding state、command wiring、導航與 UI 投影。網路、解析、SQLite、下載建立、檔案 IO、FFmpeg 與 aria2 工作屬於 coordinator/service/runtime。
+
+## 下載 Runtime
+
+目前下載鏈如下：
+
+```text
+DownloadBootstrapHostedService
+  -> IDownloadRuntimeFactory / DownloadRuntimeFactory
+  -> DownloadOrchestrator                 bounded channel + workers + shutdown
+  -> DownloadPipeline                     task workflow and media stages
+     -> ITransferBackend                  Builtin or Aria2
+     -> DownloadArtifactWriter            cover, subtitle, danmaku, NFO
+     -> DownloadTaskStateWriter           projection persistence boundary
+  -> DownloadTaskProjectionStore
+  -> IDownloadTaskStore / SqliteDownloadTaskStore
 ```
 
-不要并行执行同一工作树的 `dotnet build` 与 `dotnet test`，两者可能同时写入 PDB 而产生假失败。测试必须通过 `DOWNKYI_DATA_DIR` 使用隔离目录，禁止读取真实 Cookie、设置或下载数据库。
-
----
-
-## 架构
-
-`docs/ai-knowledge-graph.md` 是当前代码责任、调用关系、稳定契约、风险和测试入口的权威索引。下述 Prism 架构属于迁移中的旧实现；新代码必须遵守 `DownKyi.Desktop -> DownKyi.Application -> DownKyi.Domain`，以及 `DownKyi.Infrastructure -> Application/Domain` 的目标依赖方向。
-
-### 依赖关系
-
-```
-DownKyi（UI） → DownKyi.Core（领域/API）
-```
-
-`DownKyi.Core` 不依赖 `DownKyi`。所有 Bilibili API 调用、设置、日志和存储均在 `Core` 中实现。
-
-### Prism DI 注册
-
-所有服务在 `App.axaml.cs` 的 `RegisterTypes` 方法中注册，接口通过 DryIoc 容器解析。ViewModel 中使用构造函数注入，尽量少用 `IContainerProvider`。
-
-### 导航
-
-使用 Prism 区域导航。视图通过区域名称注册自身。导航通过 `IRegionManager.RequestNavigate(regionName, viewName, parameters)` 触发。ViewModel 实现 `INavigationAware`（`OnNavigatedTo`、`OnNavigatedFrom`、`IsNavigationTarget`）。
-
-### 事件（发布/订阅）
-
-事件定义在 `DownKyi/Events/`。在 ViewModel 中注入 `IEventAggregator` 使用。示例：
-
-```csharp
-_eventAggregator.GetEvent<NavigationEvent>().Publish(param);
-_eventAggregator.GetEvent<MessageEvent>().Publish(message);
-```
-
----
-
-## 命名规范
-
-| 目标 | 规范 | 示例 |
-|---|---|---|
-| 私有实例字段 | `_camelCase` | `_inputText`、`_downloadService` |
-| 公共属性 | `PascalCase` | `InputText`、`VideoSections` |
-| `static readonly` 字段 | `PascalCase` | `LogQueue`、`HttpClient` |
-| `const` 字段 | `PascalCase` | `Tag`、`NullMark`、`Retry` |
-| 方法 | `PascalCase` | `ExecuteInputCommand`、`GetVideoPages` |
-| 命令后备字段 | `_xyzCommand` | `_inputCommand` |
-| 命令属性 | `XyzCommand` | `InputCommand` |
-| 命令执行方法 | `ExecuteXyzCommand` | `ExecuteInputCommand` |
-| 命令可执行断言 | `CanExecuteXyzCommand` | `CanExecuteInputCommand` |
-| 类级别标签常量 | `public const string Tag` | `"PageVideoDetail"` |
-| 接口 | `IPascalCase` | `IDownloadService`、`IInfoService` |
-
----
-
-## 代码风格
-
-### 文件范围命名空间（C# 10）
-
-所有文件使用文件范围命名空间：
-
-```csharp
-namespace DownKyi.ViewModels;
-
-public class MyViewModel : ViewModelBase { }
-```
-
-### using 指令
-
-顺序：`System.*` → 第三方 → 项目内部。存在名称冲突时使用别名：
-
-```csharp
-using System;
-using System.Collections.Generic;
-using Avalonia.Threading;
-using Prism.Commands;
-using DownKyi.Core.Logging;
-using Console = DownKyi.Core.Utils.Debugging.Console;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
-```
-
-### 隐式 using
-
-- `DownKyi.Core`：`<ImplicitUsings>enable</ImplicitUsings>` — 无需手动添加 `using System;` 等。
-- `DownKyi`（UI）：隐式 using **已禁用** — 所有 using 必须显式声明。
-
-### 可空引用类型
-
-通过 `Directory.Build.props` 全局启用。所有可能为 null 的引用类型字段和参数均须加 `?` 注解。仅在无法避免时用 `!`（null 宽恕运算符）抑制警告。
-
-### Region 块
-
-使用带中文标签的 `#region` / `#endregion` 组织 ViewModel 文件的逻辑结构：
-
-```csharp
-#region 页面属性申明   // 页面属性声明
-
-#region 命令申明       // 命令声明
-
-#region 业务逻辑       // 业务逻辑
-```
-
-### 注释
-
-代码库中中英文注释并存，新代码使用任意语言均可。
-
----
-
-## MVVM 模式
-
-### ViewModel 基类
-
-所有 ViewModel 继承 `ViewModelBase`（继承自 `Prism.Mvvm.BindableBase`）。对话框 ViewModel 还需继承 `BaseDialogViewModel`（实现 `IDialogAware`）。
-
-### 可绑定属性
-
-```csharp
-private string? _inputText;
-public string? InputText
-{
-    get => _inputText;
-    set => SetProperty(ref _inputText, value);
-}
-```
-
-### 命令（使用空合并运算符懒初始化）
-
-```csharp
-private DelegateCommand? _backSpaceCommand;
-public DelegateCommand BackSpaceCommand =>
-    _backSpaceCommand ??= new DelegateCommand(ExecuteBackSpace);
-
-private void ExecuteBackSpace() { /* ... */ }
-```
-
-带可执行条件的命令：
-
-```csharp
-private DelegateCommand? _confirmCommand;
-public DelegateCommand ConfirmCommand =>
-    _confirmCommand ??= new DelegateCommand(ExecuteConfirm, CanExecuteConfirm)
-        .ObservesProperty(() => IsReady);
-
-private bool CanExecuteConfirm() => IsReady;
-private void ExecuteConfirm() { /* ... */ }
-```
-
-### 每个 ViewModel 的标签常量
-
-每个 ViewModel 须声明用于日志的标签：
-
-```csharp
-public const string Tag = "PageVideoDetail";
-```
-
-### UI 线程调度
-
-所有从非 UI 线程发起的属性变更，均须调度回 UI 线程：
-
-```csharp
-// 异步方式（async 方法中首选）
-await Dispatcher.UIThread.InvokeAsync(() => MyProperty = value);
-
-// 同步方式（仅在同步上下文中使用）
-Dispatcher.UIThread.Invoke(() => MyProperty = value);
-
-// ViewModelBase 上的辅助方法
-App.PropertyChangeAsync(() => MyProperty = value);
-```
-
-### ObservableCollection
-
-对于可能被并发修改的集合，使用 `ImmutableObservableCollection<T>`（定义于 `DownKyi/ViewModels/ImmutableObservableCollection.cs`）代替 `ObservableCollection<T>`，以避免枚举过程中被修改的异常。
-
----
-
-## 异步模式
-
-### 命令处理器
-
-命令处理流程必须返回 `Task`，并通过现有异步命令或后续 CommunityToolkit AsyncRelayCommand 接线。除 UI 事件处理器外禁止新增 `async void`：
-
-```csharp
-private DownKyiAsyncDelegateCommand? _loadCommand;
-public DownKyiAsyncDelegateCommand LoadCommand =>
-    _loadCommand ??= new DownKyiAsyncDelegateCommand(ExecuteLoadAsync);
-
-private async Task ExecuteLoadAsync()
-{
-    try
-    {
-        await _useCase.ExecuteAsync(cancellationToken);
-    }
-    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-    {
-        throw;
-    }
-    catch (Exception e)
-    {
-        LogManager.Error(Tag, e);
-    }
-}
-```
-
-### 后台工作
-
-ViewModel 不得使用 `Task.Run` 包装同步网络、数据库或业务流程。阻塞 API 必须在 Infrastructure 边界明确隔离；ViewModel 只 await 可取消的 Application use case：
-
-```csharp
-var result = await _useCase.ExecuteAsync(cancellationToken);
-await Dispatcher.UIThread.InvokeAsync(() => MyCollection.Add(result));
-```
-
-### 取消操作
-
-长时间运行的循环接受 `CancellationToken`。使用 `SemaphoreSlim` 限制并发数量：
-
-```csharp
-var semaphore = new SemaphoreSlim(maxConcurrent);
-await semaphore.WaitAsync(cancellationToken);
-try { /* 工作 */ }
-finally { semaphore.Release(); }
-```
-
----
-
-## 错误处理
-
-### 标准模式
-
-所有异常边界必须保留 stack trace，并通过统一 diagnostics 记录。禁止为了日志重复输出敏感路径、Cookie、Token 或完整 URL；禁止依赖 Console wrapper 作为错误契约。用户可见失败应转换为 typed UI state 或通知：
-
-```csharp
-catch (Exception e)
-{
-    LogManager.Error(Tag, e);
-    return OperationResult.Failure(OperationError.Unexpected(e));
-}
-```
-
-### 失败契约
-
-新 Application 与 Infrastructure API 必须使用 typed result 或明确例外，不得把网络、JSON、数据库或外部程序错误伪装成 `null`、空字串或空集合。`OperationCanceledException` 必须保留取消语意。
-
-### HTTP 重试
-
-旧 `WebClient` 使用迭代式、可取消的有限重试；重试耗尽或 HTTP 200 空回应会抛出 `HttpRequestException`。后续 typed Bilibili client 必须区分可恢复错误、429 `Retry-After`、不可重试的 401/403/schema 错误与取消。
-
-### 有意吞掉异常
-
-禁止空 catch。仅在关闭、清理或释放等明确 best-effort 边界捕获可预期例外，并至少写入经过遮蔽的 diagnostics；取消必须重新抛出：
-
-```csharp
-catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-{
-    throw;
-}
-catch (IOException e)
-{
-    LogManager.Error(Tag, e);
-}
-```
-
----
-
-## 核心工具类
-
-### `LogManager`（`DownKyi.Core.Logging`）
-
-基于异步文件的日志记录器，使用由后台线程消费的 `ConcurrentQueue`。
-
-```csharp
-LogManager.Debug(Tag, "消息");
-LogManager.Info(Tag, "消息");
-LogManager.Warning(Tag, "消息");
-LogManager.Error(Tag, exception);
-```
-
-日志文件写入 `StorageManager` 解析的应用数据目录。
-
-### `Debugging.Console`（`DownKyi.Core.Utils.Debugging`）
-
-仅用于调试的控制台封装，Release 构建中输出被抑制。使用该类型的文件须设置别名以避免与 `System.Console` 冲突：
-
-```csharp
-using Console = DownKyi.Core.Utils.Debugging.Console;
-```
-
-使用方式：
-
-```csharp
-Console.PrintLine("value: {0}", someValue);
-```
-
-### `SettingsManager`（`DownKyi.Core.Settings`）
-
-将设置持久化到 JSON 文件的单例，按功能区域拆分为 partial 类：
-
-- `SettingsManager.cs` — 核心、加载/保存
-- `SettingsManager.Basic.cs` — 基本应用设置
-- `SettingsManager.Network.cs` — 代理、Cookie
-- `SettingsManager.Video.cs` — 画质、编码偏好
-- `SettingsManager.Danmaku.cs` — 弹幕选项
-- `SettingsManager.UserInfo.cs` — 已登录用户
-- `SettingsManager.About.cs` — 版本信息
-- `SettingsManager.WindowSetting.cs` — 窗口大小/位置
-
-访问方式：`SettingsManager.GetInstance().GetXxx()` / `SetXxx(value)`。
-
-### `StorageManager`（`DownKyi.Core.Storage`）
-
-解析标准路径（应用数据、日志、临时文件、下载根目录）。路径解析始终使用 `StorageManager`，禁止硬编码路径。
-
-### `WebClient`（`DownKyi.Core.BiliApi`）
-
-所有 Bilibili API 调用的单例 `HttpClient` 封装，处理 Cookie 注入、User-Agent、重试和 JSON 反序列化。请使用静态辅助方法（`GetObject<T>`、`PostObject<T>`），而非直接构造 `HttpClient`。
-
----
-
-## 包管理
-
-本仓库使用**中央包管理（CPM）**。所有 NuGet 包版本在 `Directory.Packages.props` 中统一声明，各 `.csproj` 文件引用包时**不加** `Version` 属性：
+穩定契約：
+
+- 未完成任務、GID、partial file map、已完成分段 key、pause/progress 與 optimistic version 必須跨重啟保存。
+- 關閉取消不能跳過 `Downloading -> WaitForDownload` 的恢復寫入。
+- DURL 依 `Order` 排序且每段 key 包含 order；多段輸出必須經 ffprobe 驗證 seek/decode。
+- 刪除下載中任務必須清除實體暫存與 sidecar；取消與失敗不得把空檔或錯誤頁標記為成功。
+- 進度寫入走 bounded write-behind；UI 通知與 SQLite 寫入不得退回每個 byte/chunk 一次。
+- `DownloadPipeline` 不得重新持有字幕 API、彈幕轉換、NFO XML 或 SQLite 例外處理實作。
+
+## 設定、資料與隱私
+
+- 設定入口是注入的 `ISettingsStore`；讀取 `Current` immutable snapshot，修改使用 typed `Update`，持久化使用 cancellation-aware flush。
+- `SettingsStore` 必須保留既有 JSON property 名稱、schema migration、atomic replace 與 legacy DES 設定遷移。
+- 路徑由 `StorageManager` 解析；測試必須用隔離目錄，禁止讀取真實 cookie、設定、下載 DB 或 aria2 session。
+- SQLite schema 變更必須有版本 migration、備份、rollback 與 reopen 測試。
+- 日誌使用注入的 `ILogger` 與 `ApplicationLogProvider`。不得記錄 cookie、token、完整敏感 URL、email、帳號 ID 或完整個人路徑。
+- 低階 API 不得直接輸出到 terminal，也不得同時在多層重複記錄同一失敗。
+
+## MVVM 與非同步
+
+- ViewModel 繼承 `ViewModelBase` / `ObservableObject`，使用 `SetProperty` 或 source-generated observable properties。
+- 非同步 command 使用現有 `DownKyiAsyncDelegateCommand`，command 實例應快取或在建構子建立。
+- 除真正 UI event handler 外禁止 `async void`。
+- ViewModel 禁止 `Task.Run`。CPU 或阻塞相容 API 只可在明確 service/infrastructure 邊界隔離。
+- 不得使用 `.Result`、`.Wait()` 或 `.GetAwaiter().GetResult()`。
+- 所有長工作接受並傳遞 `CancellationToken`；`OperationCanceledException` 必須保留取消語意。
+- fire-and-forget 必須由 `RunFireAndForget` 或明確 observer 記錄 fault，不得丟棄 Task。
+- UI collection/property 更新經 `IUiDispatcher` 或既有 UI dispatch helper；背景 service 不得直接依賴 Avalonia control。
+
+## HTTP 與外部程序
+
+- Bilibili HTTP 使用已注入的 `BilibiliHttpClient`/既有 API facade；禁止每次要求 `new HttpClient()`。
+- retry 必須迭代、有限、尊重 cancellation/backoff；耗盡後丟出明確例外，不得回傳空字串偽裝成功。
+- JSON 空字串、HTML 錯誤頁與 schema failure 必須可見。
+- WBI 簽名必須從 `IWbiKeyProvider` 取得目前有效金鑰；`WbiSign` 不得讀取 settings。只有 WBI request 的 `-403` 可強制刷新並重試一次。
+- `data`、`result` 等可選 envelope 欄位必須保留缺失狀態；端點明確選擇契約欄位，禁止用預設空 DTO 偽裝成功。
+- FFmpeg/ffprobe 與 aria2 由現有 processor/server/backend owner 啟動與釋放；禁止 shell command string 拼接。
+- 硬體編碼採成功率優先：能力偵測後使用 GPU，失敗再 fallback 到軟體編碼。
+- 外部 binary 版本、來源與 checksum 依 `docs/maintenance.md` 維護。
+
+## 分析器與風格
+
+根層 `Directory.Build.props` 預設啟用：
 
 ```xml
-<!-- Directory.Packages.props -->
-<PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
-
-<!-- DownKyi.Core.csproj -->
-<PackageReference Include="Newtonsoft.Json" />
+<EnableNETAnalyzers>true</EnableNETAnalyzers>
+<AnalysisMode>All</AnalysisMode>
+<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+<CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
 ```
 
-添加新包时：
-1. 在 `Directory.Packages.props` 中添加 `<PackageVersion Include="..." Version="..." />`。
-2. 在对应的 `.csproj` 中添加 `<PackageReference Include="..." />`（不含版本号）。
+禁止為通過建置而新增廣域 `NoWarn`、`#pragma warning disable`、`SuppressMessage`、`GlobalSuppressions.cs`、`severity = none/silent`、`#nullable disable` 或關閉分析器。協定要求的最小範圍例外必須有理由與測試。
+
+新 C# 使用 file-scoped namespace、nullable annotation、明確 cancellation 與最小必要註解。遵守 `.editorconfig`；不要在功能 PR 混入無關格式化。
+
+## 建置與測試
+
+提交前依序執行，禁止在同一工作樹平行跑 build/test：
+
+```powershell
+dotnet restore .\DownKyi.sln
+
+dotnet build .\DownKyi.sln `
+  -c Release `
+  --no-restore `
+  --no-incremental `
+  -p:EnableNETAnalyzers=true `
+  -p:AnalysisMode=All `
+  -p:EnforceCodeStyleInBuild=true `
+  -p:TreatWarningsAsErrors=true `
+  -p:CodeAnalysisTreatWarningsAsErrors=true
+
+dotnet test .\DownKyi.sln -c Release --no-restore --no-build
+dotnet format .\DownKyi.sln --no-restore --verify-no-changes
+git diff --check
+dotnet package list .\DownKyi.sln --vulnerable --include-transitive
+dotnet package list .\DownKyi.sln --deprecated
+```
+
+關鍵永久防線：
+
+- `UiSmokeTests.RealHostResolvesShellAndKeyViewsWithoutPrismRuntime`
+- `RootViewArchitectureTests`
+- `LegacyPatternArchitectureTests`
+- `DownloadRuntimeArchitectureTests`
+- SQLite migration/resume、download shutdown recovery、DURL identity/seekability tests
+
+每次修正行為都應新增能在舊實作上失敗的測試；不要只以 build 成功代表 runtime 正常。
+
+## Package 與發版
+
+- 套件使用 Central Package Management；版本只放 `Directory.Packages.props`。
+- 應用版本只讀 `version.txt`，更新檢查與 GitHub tag 必須使用同一語意版本。
+- PR CI 擋確定錯誤；nightly 執行跨平台整合、效能與資源報告；release gate 驗證所有平台 package、binary checksum、資料 migration 與下載回歸。
+- 系統效能基準必須記錄 runtime、OS、architecture、dataset、backend 與 commit SHA，不得比較不同機器的臨時計時器數值。
