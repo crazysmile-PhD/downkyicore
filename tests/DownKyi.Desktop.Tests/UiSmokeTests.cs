@@ -145,6 +145,51 @@ public sealed class UiSmokeTests
     }
 
     [Fact]
+    public async Task MainWindowStillClosesWhenShutdownRequestFaults()
+    {
+        EnsureHeadlessApplication();
+        var testDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-close-smoke-{Guid.NewGuid():N}");
+        var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
+        var logProvider = new ApplicationLogProvider(
+            new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
+        var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logProvider));
+        var lifecycle = new ThrowingApplicationLifecycle();
+
+        try
+        {
+            using var host = DownKyiHost.Create(services =>
+            {
+                services.AddDownKyiDesktop(loggerFactory, logProvider);
+                services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
+                services.Replace(ServiceDescriptor.Singleton<IApplicationLifecycle>(lifecycle));
+                services.Replace(ServiceDescriptor.Singleton(
+                    new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
+            });
+            var window = host.Services.GetRequiredService<MainWindow>();
+            var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            window.Closed += (_, _) => closed.TrySetResult();
+
+            window.Show();
+            window.Close();
+
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.Equal(1, lifecycle.ShutdownRequestCount);
+            Assert.False(window.IsVisible);
+        }
+        finally
+        {
+            loggerFactory.Dispose();
+            SynchronizationContext.SetSynchronizationContext(null);
+            await logProvider.DisposeAsync();
+            await settingsStore.DisposeAsync();
+            if (Directory.Exists(testDirectory))
+            {
+                Directory.Delete(testDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void CreatingHostDoesNotRedirectExistingUserDataPaths()
     {
         var pathsBefore = GetUserDataPaths();
@@ -249,6 +294,30 @@ public sealed class UiSmokeTests
 
     private sealed class SmokeTestApplication : Avalonia.Application
     {
+    }
+
+    private sealed class ThrowingApplicationLifecycle : IApplicationLifecycle
+    {
+        public int ShutdownRequestCount { get; private set; }
+
+        public Task RequestShutdownAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShutdownRequestCount++;
+            return Task.FromException(new InvalidOperationException("Expected shutdown failure."));
+        }
+
+        public Task ExitAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> RestartAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(false);
+        }
     }
 
     private sealed class NavigationProbe(AppRoute route) : IAppNavigationAware, IDisposable

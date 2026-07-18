@@ -3,15 +3,18 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using DownKyi.Application.Lifetime;
+using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
 using DownKyi.ViewModels;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Views;
 
 internal partial class MainWindow : Window
 {
     private readonly IApplicationLifecycle _applicationLifecycle;
+    private readonly ILogger<MainWindow> _logger;
     private readonly ISettingsStore _settingsStore;
     private WindowSettings _windowSettings;
     private bool _closeConfirmed;
@@ -20,12 +23,14 @@ internal partial class MainWindow : Window
     public MainWindow(
         MainWindowViewModel viewModel,
         ISettingsStore settingsStore,
-        IApplicationLifecycle applicationLifecycle)
+        IApplicationLifecycle applicationLifecycle,
+        ILogger<MainWindow> logger)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _applicationLifecycle = applicationLifecycle
             ?? throw new ArgumentNullException(nameof(applicationLifecycle));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         InitializeComponent();
         var window = _settingsStore.Current.Window;
         _windowSettings = new WindowSettings
@@ -70,7 +75,7 @@ internal partial class MainWindow : Window
 
         _closeInProgress = true;
         SaveWindowSettings();
-        _ = CompleteCloseAsync();
+        ObserveCloseCompletion(CompleteCloseAsync());
     }
 
     private void SaveWindowSettings()
@@ -100,9 +105,26 @@ internal partial class MainWindow : Window
 
     private async Task CompleteCloseAsync()
     {
-        await _applicationLifecycle.RequestShutdownAsync().ConfigureAwait(true);
+        try
+        {
+            await _applicationLifecycle.RequestShutdownAsync().ConfigureAwait(true);
+        }
+        finally
+        {
+            _closeConfirmed = true;
+            _closeInProgress = false;
+            Close();
+        }
+    }
 
-        _closeConfirmed = true;
-        Close();
+    private void ObserveCloseCompletion(Task closeTask)
+    {
+        _ = closeTask.ContinueWith(
+            completed => _logger.LogErrorMessage(
+                "Application shutdown failed while closing the main window.",
+                completed.Exception!.GetBaseException()),
+            System.Threading.CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously | TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
     }
 }
