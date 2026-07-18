@@ -38,6 +38,8 @@ Environment:
 
 The URL preparation path allocates substantially more than the representative JSON parse. Treat this as an investigation lead, not proof that it limits download throughput; end-to-end traces must show that the path is hot before it is optimized.
 
+PR 30-32 found no end-to-end trace showing request URL construction limits startup, transfer throughput, or UI projection. The 1,488 B/request result therefore remains a non-gating investigation lead; no speculative query-building rewrite was made.
+
 ## System Baselines
 
 Run the complete quick suite from the repository root:
@@ -64,3 +66,19 @@ Every report records runtime, OS, architecture, dataset size, downloader backend
 Do not compare ad-hoc stopwatch values from different machines. Record runtime, OS, architecture, dataset size, downloader backend, and commit SHA with every system baseline.
 
 Loopback transfer throughput isolates local downloader scheduling and copying; it does not measure Bilibili or CDN capacity. A hardware encoder listed by FFmpeg is reported as available only after a real synthetic encode succeeds. Unsupported or unavailable GPU paths remain explicit and preserve the production CPU fallback rule.
+
+## Windows Quick Baseline 2026-07-18
+
+Environment: commit `0664617570e32b362e688cfa3e11c38aa79421f5`, .NET 10.0.10, Windows 10.0.26200, x64. This is a same-machine smoke baseline, not a cross-machine performance target.
+
+| Scenario | Dataset | Result |
+| --- | --- | --- |
+| Shell startup | isolated empty profile; 2 warm iterations | cold 742.57 ms; warm median 5.24 ms |
+| Unfinished restore | 50 SQLite tasks; 1,351,176-byte DB | 32.00 ms; 2,490,368-byte peak working-set delta |
+| Progress persistence | 4 tasks; 5 simulated seconds; 400 source samples | 20 SQLite writes; 60 writes/task-minute |
+| UI projection | 1,000 source samples/s | 11 published updates/s; 33 property notifications/s |
+| Built-in transfer | 2 MiB/task loopback Range server | 1 task 55.72 Mbps; 4 tasks 671.38 Mbps; 8 tasks 1,075.79 Mbps |
+| FFmpeg CPU | 2 jobs; concurrency 1 | 2 successful; 21,090,304-byte peak child working set |
+| FFmpeg NVENC | 2 jobs; concurrency 1 | 2 successful; 167,690,240-byte peak child working set |
+
+The committed report schema, rather than this one machine's values, is the long-term contract. Nightly artifacts remain the source for per-run evidence.

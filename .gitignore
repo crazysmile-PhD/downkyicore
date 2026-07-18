@@ -11,6 +11,8 @@ DownKyi.Core/Binary/*
 
 script/downloads
 script/pupnet/output
+.tools/
+artifacts/
 script/macos/*.dmg
 script/macos/*.app
 
