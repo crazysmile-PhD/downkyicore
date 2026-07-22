@@ -2,8 +2,8 @@
 
 Status: active
 Last updated: 2026-07-22
-Current group: PR #79/#80 typed integration
-Current branch: `refactor/gate-02-list-search-navigation`
+Current group: Gate 3 Bilibili API contract audit
+Current branch: `audit/gate-03-bilibili-api-contracts`
 
 This file contains only unfinished or not-yet-integrated work. Completed PR 02-32 items are not restored. Design rationale belongs in `design-docs`; product acceptance belongs in `product-specs`.
 
@@ -14,55 +14,27 @@ The previous `Status: complete` was incorrect.
 - `origin/refactor/pr-30-32-release-hardening` is not an ancestor of `origin/main`.
 - PR #78 was merged into the stacked base `refactor/pr-25-29-remove-legacy`, not into `main`.
 - PR #75 and PR #77 are closed after their replacement was validated in PR #82.
-- PR #79 and PR #80 remain open against old `main` architecture; Gate 2 replaces both without merging their Prism-era code.
+- PR #79 and PR #80 were superseded by green PR #83, closed, and their typed replacement was merged into the stacked release-hardening base.
 - `version.txt` remains `1.0.32`; v1.1.0 has not passed its release gate.
 
 No release tag may be created while any release blocker below remains.
 
 ## Execution Order
 
-### Gate 2: Port PR #79 And PR #80 As One Integration PR
+### Gate 3: Bilibili API Inventory And Runtime Contract Audit
 
-Required base: `refactor/pr-30-32-release-hardening` or its approved successor after Gate 0/1.
-
-Owner branch: `refactor/gate-02-list-search-navigation`
+Owner branch: `audit/gate-03-bilibili-api-contracts` from the latest integrated architecture head.
 
 Progress (2026-07-22):
 
-- Implemented strict bare `/list/<mid>` parsing and typed publication navigation; series URLs with `sid` are intentionally rejected until Gate 3 audits their endpoint contract.
-- Implemented private-favorites and publication search with cancellation-aware page snapshots.
-- Implemented exact publication totals and `has_more`-driven incremental favorite search paging because the favorite API reports the unfiltered folder total during keyword search.
-- Added headless back-navigation tests proving query, page number, media object identity, and the original ViewModel instance survive child navigation.
-- Final local verification is green: strict Release build `0 warning / 0 error`, all `536/536` tests, architecture tests `169/169`, format `0/738` changed files, clean dependency vulnerability/deprecation audits, module-boundary inventory, and `git diff --check`.
-- The remaining Gate 2 work is publishing the integration PR, waiting for remote CI, superseding PR #79/#80, and merging into the stacked architecture base.
-
-Scope:
-
-- Support `bilibili.com/list/<number>` input.
-- Add favorites and publication list search.
-- Preserve page number, query and list snapshot after back navigation.
-- Fix nested back navigation and arrow-state isolation using current navigation history.
-- Do not merge or rebase PR #79/#80 and do not reintroduce Prism.
-
-Verification:
-
-- parser fixtures cover numeric list URLs and invalid list inputs.
-- search, paging and retained-state tests run without real network.
-- deep navigation history tests prove instance reuse, disposal and no duplicate forward records.
-- strict full solution verification passes.
-
-Completion:
-
-- Create one integration PR whose description says it supersedes #79 and #80.
-- After the new PR is green, comment `Superseded by #<new number>` on both old PRs and close them.
-
-Rollback:
-
-- Revert the integration PR. Persisted user data format must remain unchanged.
-
-### Gate 3: Bilibili API Inventory And Runtime Contract Audit
-
-Owner branch: new API-audit branch from the latest integrated architecture head.
+- Inventoried all 47 fixed Bilibili endpoints in Core with method, envelope, authentication/WBI requirement, runtime use, evidence, alternative, decision and tests.
+- Added an explicit anonymous live-probe script that records Runtime, OS, architecture and Commit SHA while refusing to load local cookies or account state.
+- Confirmed and fixed anonymous WBI bootstrap: `/x/web-interface/nav` returns `-101` with valid public WBI metadata, so only this endpoint may deserialize that code.
+- Cross-checked maintained yt-dlp, bilibili-api endpoint maps, community protocol docs and controlled live probes.
+- Migrated bangumi playback from the working legacy v1 route to current v2 and made `result.video_info` a nullable required contract.
+- Recorded retired channel APIs, the invalid unused nickname query, legacy danmaku and authenticated watch-later ambiguity without speculative remapping.
+- Full local gates are green: strict Release build `0 warning / 0 error`, all `543/543` tests, format `0/742` changed files, clean vulnerable/deprecated package audits, module-boundary inventory, anonymous live-probe `27/27` HTTP results, and `git diff --check`.
+- Remaining Gate 3 work is commit/PR publication, remote Windows/Linux/macOS CI, review, and merge into the stacked release-hardening base.
 
 Scope:
 

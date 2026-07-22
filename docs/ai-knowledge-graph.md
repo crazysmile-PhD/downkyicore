@@ -1360,8 +1360,12 @@ type: core
 paths:
   - DownKyi.Core/BiliApi
   - DownKyi.Core/BiliApi/BiliApiRequest.cs
+  - DownKyi.Core/BiliApi/Users/UserInfo.cs
+  - DownKyi.Core/BiliApi/VideoStream/BangumiPlayUrlV2Contract.cs
+  - DownKyi.Core/BiliApi/VideoStream/Models/BangumiPlayUrlV2Origin.cs
   - DownKyi.Core/BiliApi/Favorites/FavoritesResource.cs
   - DownKyi.Core/BiliApi/Users/UserSpace.cs
+  - docs/operations/bilibili-api-audit.md
 responsibility: Wraps Bilibili API endpoints, response parsing, and shared request failure handling.
 inbound:
   - service.info-services
@@ -1383,6 +1387,9 @@ contracts:
   - WBI endpoint methods receive explicit keys and timestamp; signing cannot read settings or initialize user state.
   - Optional `data`/`result` fields remain nullable, and each endpoint selects its documented field before validating a non-empty payload.
   - Publication search uses `x/space/wbi/arc/search` and retains `data.page.count`; favorite search uses `x/v3/fav/resource/list` and retains `data.has_more`.
+  - Anonymous navigation alone may accept API code `-101` because `/x/web-interface/nav` still supplies public WBI metadata; the exception cannot spread to other endpoints.
+  - Ordinary playback selects `data`, bangumi v2 playback selects `result.video_info`, and cheese playback selects `data`.
+  - Every fixed endpoint literal in Core must appear in the API audit with status, evidence, alternative and deterministic coverage.
 hazards:
   - Bilibili schema changes must fail at this boundary rather than deserialize into a plausible empty success object.
   - Logging full URLs can leak tokens, cookies, and personal query data.
@@ -1390,6 +1397,30 @@ tests:
   - test.web-client
   - test.json-contracts
   - test.wbi-signature
+  - test.bilibili-api-contract-audit
+```
+
+### ops.bilibili-api-audit
+
+```yaml
+id: ops.bilibili-api-audit
+type: operations
+paths:
+  - docs/operations/bilibili-api-audit.md
+  - script/audit-bilibili-api.ps1
+responsibility: Records every fixed Bilibili Core endpoint and provides an explicit anonymous live probe that emits only sanitized contract diagnostics.
+inbound:
+  - core.bili-api
+outbound: []
+contracts:
+  - The probe never loads local settings, cookies, browser profiles, download data, or account identifiers.
+  - Authenticated endpoints remain auth-deferred unless a redacted deterministic fixture proves their payload contract.
+  - Conflicting external evidence is recorded as risk; it does not justify speculative endpoint replacement.
+hazards:
+  - Live responses are time-dependent evidence and never run as unit tests or PR CI prerequisites.
+  - HTTP 200 alone does not prove success; API code, envelope presence and usable payload remain separate checks.
+tests:
+  - test.bilibili-api-contract-audit
 ```
 
 ### core.wbi-key-provider
@@ -2413,6 +2444,20 @@ test.wbi-signature:
     - only one `-403` refresh/retry is allowed and non-signature failures never refresh
     - `BV1U7V66FEiK` fixtures retain video identity, page/CID, and non-empty playback streams without live network access
 
+test.bilibili-api-contract-audit:
+  paths:
+    - tests/DownKyi.Core.Tests/UserNavigationContractTests.cs
+    - tests/DownKyi.Core.Tests/PlayUrlEnvelopeContractTests.cs
+    - tests/DownKyi.Core.Tests/BiliApi/JsonSamples/user-navigation-anonymous.json
+    - tests/DownKyi.Core.Tests/BiliApi/JsonSamples/playurl-bangumi-v2-result.json
+    - tests/DownKyi.Architecture.Tests/BilibiliApiInventoryArchitectureTests.cs
+  guards:
+    - anonymous navigation preserves public WBI metadata while nonzero API codes remain rejected everywhere else
+    - bangumi v2 requires a non-empty `result.video_info` payload
+    - optional `data` and `result` envelopes cannot invent payloads with default initializers
+    - every hard-coded Core endpoint is listed in the maintained API audit
+    - the live probe requires explicit consent and cannot load local login state
+
 test.legacy-settings-migration:
   paths:
     - tests/DownKyi.Core.Tests/LegacySettingsDecryptorTests.cs
@@ -2487,6 +2532,7 @@ test.architecture-boundaries:
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/UiThemeArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/ReleaseWorkflowArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/BilibiliApiInventoryArchitectureTests.cs
   guards:
     - production project references remain acyclic
     - target Domain/Application/Infrastructure/Desktop dependency direction is enforced
@@ -2517,6 +2563,7 @@ test.architecture-boundaries:
     - aria2 manager/server/process supervision cannot restore static LogManager, static server ownership, synchronous HTTP send, or recursive retry
     - settings validation/persistence and legacy migration cannot restore static LogManager, Console diagnostics, or duplicate low-level SQLite logging
     - Bilibili Core facades cannot log or print request data; injected account and user-space coordinators own sanitized outcome diagnostics
+    - fixed Bilibili endpoint literals cannot escape the maintained audit, optional envelopes cannot invent payloads, and the anonymous navigation exception cannot become a global code policy
     - migrated update, disk, cookie serialization, and delayed-scroll files cannot restore static or terminal diagnostics
     - all production C# roots reject legacy LogManager, the removed Console wrapper, and terminal Print calls; legacy logging source files must remain deleted
     - async commands and ViewModel fire-and-forget observation require injected diagnostics and preserve normal cancellation semantics

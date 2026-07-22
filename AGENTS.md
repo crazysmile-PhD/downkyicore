@@ -7,8 +7,9 @@
 1. 在分析或修改 DownKyi 程式碼前，必須先閱讀 `docs/ai-knowledge-graph.md`，確認受影響節點、依賴、穩定契約、風險與測試。
 2. 閱讀 `ARCHITECTURE.md`，區分目前可執行拓樸與目標拓樸，不得把目標設計誤報為已完成。
 3. 執行重構前閱讀 `docs/refactoring-live-plan.md`，只處理目前分組，不得拆分或合併計畫指定的 PR 範圍。
-4. 涉及建置、依賴、外部 binary、分析器或發版時，再閱讀 `docs/maintenance.md` 與 `docs/operations/verification-and-rollback.md`。
-5. 新增、刪除、移動或重新導向模組責任的 PR，必須同步更新知識圖譜、架構文件與即時計畫。
+4. 涉及 Bilibili API、WBI、JSON envelope 或登入契約時，先閱讀並同步更新 `docs/operations/bilibili-api-audit.md`。
+5. 涉及建置、依賴、外部 binary、分析器或發版時，再閱讀 `docs/maintenance.md` 與 `docs/operations/verification-and-rollback.md`。
+6. 新增、刪除、移動或重新導向模組責任的 PR，必須同步更新知識圖譜、架構文件與即時計畫。
 
 ## 專案概況
 
