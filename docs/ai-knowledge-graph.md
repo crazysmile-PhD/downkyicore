@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-07-18
+Last reviewed: 2026-07-22
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -12,6 +12,18 @@ This document is the first file an AI agent should read before changing DownKyi.
 - Prefer stable responsibilities over implementation trivia. Link exact files only when they are useful entry points.
 - Use the node and edge vocabulary below so future tooling can parse this document.
 - If reality and this graph disagree, trust the code, fix the code task, then fix this graph.
+
+## Current Boundary Truth
+
+The target projects exist, but the target ownership model is not complete. Read `ARCHITECTURE.md` and `docs/design-docs/module-boundary-naming-audit.md` before interpreting the graph.
+
+- `src/DownKyi.Desktop` currently owns only Host creation. Views, ViewModels, navigation/dialog adapters, UI projections, and lifecycle remain in the `DownKyi` executable assembly.
+- `src/DownKyi.Infrastructure` currently owns SQLite task persistence, write-behind, and clock. Bilibili HTTP, aria2, FFmpeg, filesystem paths, and logging implementation remain mainly in `DownKyi.Core` or `DownKyi`.
+- `DownKyi.Domain.DownloadTask` is not yet the runtime source of truth. Download workers still operate on `DownloadingItem`; `DownloadTaskProjectionStore` reconstructs Domain tasks from legacy mutable projections.
+- `DownloadOrchestrator` still scans the UI downloading collection every 500 ms before writing `DownloadingItem` values to its channel.
+- `DownloadPipeline` is still a mixed workflow/presentation/persistence owner and the HTTP compatibility layer still uses a static facade plus synchronous send/read/backoff.
+- These facts are tracked debt, not stable contracts. The ordered migration and release blockers live in `docs/refactoring-live-plan.md`.
+- `ModuleBoundaryBaselineTests` allows every listed debt item to disappear, but rejects new owners, consumers, duplicate names, UI dependencies, synchronous HTTP debt, or oversized-file growth.
 
 ## Vocabulary
 
@@ -381,6 +393,8 @@ contracts:
   - Only this target-architecture project references Microsoft.Extensions.Hosting.
 hazards:
   - Adding implicit Host defaults can redirect configuration or user-data paths during startup and tests.
+  - `DownKyi.Desktop` is not yet the complete Desktop assembly boundary; most Desktop code remains in the executable project.
+  - Architecture checks that inspect only the four `src` projects can miss cross-layer coupling inside `DownKyi` and `DownKyi.Core`.
 tests:
   - test.composition-root
   - test.architecture-boundaries
@@ -1392,6 +1406,8 @@ contracts:
   - The static compatibility facade emits no request diagnostics; injected callers own redacted operational context.
 hazards:
   - Synchronous compatibility endpoint signatures keep the WebClient facade alive; isolate them behind application services and do not add UI callers.
+  - The typed client currently performs synchronous `HttpClient.Send`, `ReadToEnd`, and blocking retry waits; the factory-managed handler alone does not make the request path asynchronous.
+  - `WebClient.Configure()` keeps client ownership process-global and prevents isolated concurrent API clients.
   - Cookie handling must not be emitted to console or public logs.
 tests:
   - test.web-client
@@ -1470,6 +1486,8 @@ contracts:
   - File and folder probing belongs to the coordinator and returns a typed open result without exposing filesystem checks to ViewModels.
 hazards:
   - Replacing the collection object disconnects existing views and download workers.
+  - `ImmutableObservableCollection<T>` is mutable, is consumed by runtime services, and has non-generic `IList` members that throw `NotImplementedException`.
+  - Immutable backing storage does not make collection updates atomic or remove Avalonia UI-thread requirements.
   - Dispatching resource lookup without an initialized Application can deadlock parallel tests and early startup.
   - aria2 cancellation still crosses a static RPC client compatibility boundary; configuration mutation must not race active runtimes.
 tests:
@@ -1597,6 +1615,10 @@ contracts:
   - Diagnostic logs should include downloader, split/parallel count, speed, and limit values without full local paths or sensitive URLs.
 hazards:
   - Blocking waits in download lifecycle can freeze UI or prevent process exit.
+  - The bounded channel is fed by a 500 ms scan of `DownloadListState.Downloading`, so the UI projection remains a runtime input and scheduling has polling latency.
+  - Workers and stages operate on `DownloadingItem`; Domain transition rules do not yet own the runtime state machine.
+  - Pipeline retry and backend URL fallback can multiply attempts because one typed retry budget does not yet own both decisions.
+  - `DownloadPipeline` still owns UI-facing state and remains over the current 500-line architecture budget.
   - Letting an expected shutdown `OperationCanceledException` escape before state recovery leaves rows stored as active and prevents clean resume after restart.
   - Resume behavior depends on preserving partial files while delete behavior must remove them.
   - aria2 process cleanup is platform-sensitive.
@@ -1673,6 +1695,8 @@ contracts:
   - Production code cannot restore `LogManager`, the legacy terminal wrapper, or direct terminal diagnostics.
 hazards:
   - Bypassing the shared provider loses redaction, bounded buffering, retention, and export consistency.
+  - The provider also owns queueing, file writing, rotation, retention, recent-event buffering, metrics, and diagnostic export; changing its lifecycle requires focused shutdown and privacy tests.
+  - Replacing it with a third-party sink requires an ADR and evidence that redaction occurs before every persistent or cached destination.
 tests:
   - test.diagnostic-log-redaction
   - test.architecture-boundaries
@@ -2117,7 +2141,7 @@ test.web-client:
 
 test.download-add:
   paths:
-    - tests/DownKyi.Tests/DownloadAddCoordinatorTests.cs
+    - tests/DownKyi.Application.Tests/DownloadAddCoordinatorTests.cs
     - tests/DownKyi.Tests/ContentDownloadCoordinatorTests.cs
     - tests/DownKyi.Tests/SeasonsSeriesCoordinatorTests.cs
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
@@ -2273,7 +2297,7 @@ test.image-loader:
 
 test.storage-resume:
   paths:
-    - tests/DownKyi.Tests/DownloadStorageResumeTests.cs
+    - tests/DownKyi.Tests/DownloadTaskProjectionStoreResumeTests.cs
   guards:
     - gid, partial file map, downloaded assets, paused state, and progress survive reopen
 
@@ -2405,7 +2429,6 @@ test.architecture-boundaries:
 test.settings-store:
   paths:
     - tests/DownKyi.Core.Tests/SettingsStoreTests.cs
-    - tests/DownKyi.Tests/NavigateToViewTests.cs
     - tests/DownKyi.Core.Tests/LoginHelperTests.cs
   guards:
     - an isolated settings owner flushes modified values to its assigned file
@@ -2525,7 +2548,7 @@ test.infrastructure-clock:
 test.download-store:
   paths:
     - tests/DownKyi.Infrastructure.Tests/SqliteDownloadTaskStoreTests.cs
-    - tests/DownKyi.Tests/DownloadStorageResumeTests.cs
+    - tests/DownKyi.Tests/DownloadTaskProjectionStoreResumeTests.cs
   guards:
     - fresh schema initialization and legacy schema migration reach the current version
     - every legacy migration writes a pre-migration backup and failed migration rolls back columns and version
@@ -2616,6 +2639,24 @@ test.video-detail-download:
     - pre-canceled add work cannot create a download service or open directory selection
     - unsupported input cannot create a download service
     - canceling directory selection does not invoke queue insertion
+
+test.module-boundary-ratchets:
+  paths:
+    - tests/DownKyi.Architecture.Tests/ModuleBoundaryBaselineTests.cs
+    - tests/DownKyi.Architecture.Tests/AgentEnvironmentArchitectureTests.cs
+    - script/audit-module-boundaries.ps1
+    - ARCHITECTURE.md
+    - docs/design-docs/module-boundary-naming-audit.md
+    - docs/testing/module-boundary-ratchets.md
+  guards:
+    - Core UI/Avalonia dependencies can decrease but cannot gain another file, package, or resource owner
+    - service contracts cannot add another dependency on ViewModel types
+    - duplicate simple-name sets, generic buckets, and file/type mismatch sets cannot grow
+    - existing files over 500 physical lines cannot grow and new oversized files are rejected
+    - Domain-to-legacy reconstruction, UI collection polling, and static/synchronous HTTP debt cannot spread to another owner
+    - the custom mutable observable collection cannot gain consumers or unsupported interface members
+    - repository knowledge, testing, operations, and release entry points remain discoverable by an Agent
+    - inventory output records the exact commit SHA and current measurable state
 ```
 
 ## Backlog Nodes
@@ -2632,7 +2673,7 @@ test.json-contracts:
     - tests/DownKyi.Core.Tests/JsonEnvelopePresenceTests.cs
     - tests/DownKyi.Core.Tests/PlayUrlEnvelopeContractTests.cs
     - tests/DownKyi.Core.Tests/BvFixtureContractTests.cs
-    - tests/DownKyi.Tests/DownloadStorageResumeTests.cs
+    - tests/DownKyi.Tests/DownloadTaskProjectionStoreResumeTests.cs
     - tests/DownKyi.Tests/NfoModelContractTests.cs
   should_guard:
     - sample Bilibili JSON arrays deserialize into read-only public collection contracts without changing wire format
