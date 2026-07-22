@@ -19,6 +19,8 @@ using DownKyi.Infrastructure.Downloads;
 using DownKyi.Platform;
 using DownKyi.Services;
 using DownKyi.Services.Download;
+using DownKyi.Services.Media;
+using DownKyi.Services.UserSpace;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.PageViewModels;
 using DownKyi.ViewModels.Settings;
@@ -32,6 +34,101 @@ namespace DownKyi.Desktop.Tests;
 
 public sealed class UiSmokeTests
 {
+    [Fact]
+    public async Task PublicationSearchPageAndSnapshotSurviveTypedBackNavigation()
+    {
+        await HeadlessUiTestHost.RunAsync(() =>
+        {
+            EnsureProductThemeResources();
+            ViewPublicationViewModel? publication = null;
+            using var navigation = new AvaloniaNavigationService(
+                route => route switch
+                {
+                    AppRoute.Publication => publication!,
+                    AppRoute.VideoDetail => new NavigationProbe(route),
+                    _ => throw new InvalidOperationException($"Unexpected route {route}.")
+                },
+                static action => action());
+            var coordinator = new PublicationPageCoordinatorStub(navigation);
+            publication = new ViewPublicationViewModel(
+                new DesktopInteractionContextStub(navigation),
+                new ContentDownloadCoordinatorStub(),
+                coordinator,
+                NullLogger<ViewPublicationViewModel>.Instance);
+            var payload = PublicationNavigationPayload.All(42);
+
+            navigation.Navigate(new AppNavigationRequest(AppRoute.Publication, AppRoute.Index, payload));
+            publication.InputSearchText = "needle";
+            publication.SearchCommand.Execute(null);
+            publication.Pager.Current = 2;
+            var originalMedia = Assert.Single(publication.Medias);
+
+            navigation.Navigate(new AppNavigationRequest(AppRoute.VideoDetail, AppRoute.Publication, "video"));
+            navigation.GoBack(AppNavigationRegion.Main);
+
+            Assert.Same(publication, navigation.GetActiveView(AppNavigationRegion.Main));
+            Assert.Equal("needle", publication.InputSearchText);
+            Assert.Equal(2, publication.Pager.Current);
+            Assert.Same(originalMedia, Assert.Single(publication.Medias));
+            Assert.Equal("needle", coordinator.LastKeyword);
+            Assert.Equal(2, coordinator.LastPage);
+        }).ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task FavoritesSearchPageAndSnapshotSurviveTypedBackNavigation()
+    {
+        await HeadlessUiTestHost.RunAsync(async () =>
+        {
+            EnsureProductThemeResources();
+            var directory = Path.Combine(Path.GetTempPath(), $"downkyi-favorites-state-{Guid.NewGuid():N}");
+            var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
+            try
+            {
+                ViewMyFavoritesViewModel? favorites = null;
+                using var navigation = new AvaloniaNavigationService(
+                    route => route switch
+                    {
+                        AppRoute.MyFavorites => favorites!,
+                        AppRoute.VideoDetail => new NavigationProbe(route),
+                        _ => throw new InvalidOperationException($"Unexpected route {route}.")
+                    },
+                    static action => action());
+                var coordinator = new FavoritesCoordinatorStub(navigation, settings);
+                favorites = new ViewMyFavoritesViewModel(
+                    new DesktopInteractionContextStub(navigation),
+                    new ContentDownloadCoordinatorStub(),
+                    coordinator,
+                    NullLogger<ViewMyFavoritesViewModel>.Instance);
+
+                navigation.Navigate(new AppNavigationRequest(AppRoute.MyFavorites, AppRoute.Index, 42L));
+                favorites.InputSearchText = "needle";
+                favorites.SearchCommand.Execute(null);
+                favorites.Pager.Current = 2;
+                var originalMedia = Assert.Single(favorites.Medias);
+
+                navigation.Navigate(new AppNavigationRequest(AppRoute.VideoDetail, AppRoute.MyFavorites, "video"));
+                navigation.GoBack(AppNavigationRegion.Main);
+
+                Assert.Same(favorites, navigation.GetActiveView(AppNavigationRegion.Main));
+                Assert.Equal("needle", favorites.InputSearchText);
+                Assert.Equal(2, favorites.Pager.Current);
+                Assert.Same(originalMedia, Assert.Single(favorites.Medias));
+                Assert.Equal("needle", coordinator.LastKeyword);
+                Assert.Equal(2, coordinator.LastPage);
+            }
+            finally
+            {
+                await settings.DisposeAsync().ConfigureAwait(true);
+            }
+
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }).ConfigureAwait(true);
+    }
+
     [Fact]
     public Task PublicFavoritesBackArrowRemainsVisibleInLightAndDarkThemes()
     {
@@ -447,6 +544,143 @@ public sealed class UiSmokeTests
         public void Dispose()
         {
             IsDisposed = true;
+        }
+    }
+
+    private sealed class PublicationPageCoordinatorStub(IAppNavigationService navigation) : IUserSpacePageCoordinator
+    {
+        private readonly Dictionary<(string Keyword, int Page), PublicationMedia> _medias = [];
+
+        public string? LastKeyword { get; private set; }
+
+        public int LastPage { get; private set; }
+
+        public Task<PublicationPageSnapshot> LoadPublicationPageAsync(
+            long mid,
+            int page,
+            int pageSize,
+            long typeId,
+            string? keyword,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastKeyword = keyword;
+            LastPage = page;
+            var key = (keyword ?? string.Empty, page);
+            if (!_medias.TryGetValue(key, out var media))
+            {
+                media = new PublicationMedia(navigation, AppRoute.Publication)
+                {
+                    Bvid = $"BV1fixture{page}",
+                    Title = $"fixture {page}"
+                };
+                _medias.Add(key, media);
+            }
+
+            return Task.FromResult(new PublicationPageSnapshot([media], string.IsNullOrEmpty(keyword) ? 60 : 35));
+        }
+
+        public Task<MySpaceProfileSnapshot?> LoadMyProfileAsync(long mid, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<MySpaceStatsSnapshot> LoadMyStatsAsync(long mid, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<BangumiFollowPageSnapshot> LoadBangumiFollowPageAsync(
+            long mid,
+            DownKyi.Core.BiliApi.Users.Models.BangumiType type,
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class FavoritesCoordinatorStub(
+        IAppNavigationService navigation,
+        ISettingsStore settingsStore) : IFavoritesCoordinator
+    {
+        private readonly Dictionary<(string Keyword, int Page), FavoritesMedia> _medias = [];
+
+        public string? LastKeyword { get; private set; }
+
+        public int LastPage { get; private set; }
+
+        public Task<IReadOnlyList<TabHeader>> LoadFoldersAsync(long mid, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<TabHeader>>(
+                [new TabHeader { Id = 7, Title = "fixture folder", SubTitle = "60" }]);
+        }
+
+        public Task<FavoritesMediaPageSnapshot> LoadMediaPageAsync(
+            long favoritesId,
+            int page,
+            int pageSize,
+            string? keyword,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastKeyword = keyword;
+            LastPage = page;
+            var key = (keyword ?? string.Empty, page);
+            if (!_medias.TryGetValue(key, out var media))
+            {
+                media = new FavoritesMedia(navigation, AppRoute.MyFavorites, settingsStore)
+                {
+                    Bvid = $"BV1fixture{page}",
+                    Title = $"fixture {page}"
+                };
+                _medias.Add(key, media);
+            }
+
+            return Task.FromResult(new FavoritesMediaPageSnapshot([media], !string.IsNullOrEmpty(keyword) && page == 1));
+        }
+
+        public Task<PublicFavoritesSnapshot?> LoadPublicFavoritesAsync(
+            long favoritesId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class ContentDownloadCoordinatorStub : IContentDownloadCoordinator
+    {
+        public Task<int?> AddAsync(
+            IReadOnlyList<ContentDownloadItem> items,
+            bool onlySelected,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<int?>(0);
+        }
+    }
+
+    private sealed class DesktopInteractionContextStub(IAppNavigationService navigation) : IDesktopInteractionContext
+    {
+        public IUserNotificationService Notifications { get; } = new NotificationServiceStub();
+
+        public IAppNavigationService Navigation { get; } = navigation;
+
+        public IAppDialogService Dialogs { get; } = new DialogServiceStub();
+    }
+
+    private sealed class NotificationServiceStub : IUserNotificationService
+    {
+        public event EventHandler<UserNotificationEventArgs>? NotificationRaised;
+
+        public void Show(string message)
+        {
+            NotificationRaised?.Invoke(this, new UserNotificationEventArgs(message));
+        }
+    }
+
+    private sealed class DialogServiceStub : IAppDialogService
+    {
+        public Task<AppDialogResult> ShowAsync(
+            AppDialogRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new AppDialogResult(
+                AppDialogOutcome.Canceled,
+                new Dictionary<string, object?>()));
         }
     }
 }

@@ -187,11 +187,30 @@
                 </Interaction.Behaviors>
             </ListBox>
 
-            <Grid Name="NameMediaPanel" Grid.Column="1" RowDefinitions="*,1,50">
+            <Grid Name="NameMediaPanel" Grid.Column="1" RowDefinitions="50,*,1,50">
+
+                <Grid Grid.Row="0" Margin="12,8" ColumnDefinitions="*,80">
+                    <TextBox
+                        Grid.Column="0"
+                        IsEnabled="{Binding IsEnabled}"
+                        PlaceholderText="{DynamicResource SearchVideoByName}"
+                        Text="{Binding InputSearchText, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Command="{Binding SearchCommand}" Gesture="Enter" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                    <Button
+                        Grid.Column="1"
+                        Margin="8,0,0,0"
+                        Command="{Binding SearchCommand}"
+                        Content="{DynamicResource Search}"
+                        Foreground="{DynamicResource BrushText}"
+                        Theme="{StaticResource BtnStyle}" />
+                </Grid>
 
                 <ListBox
                     x:Name="NameMedias"
-                    Grid.Row="0"
+                    Grid.Row="1"
                     BorderThickness="0"
                     ItemsSource="{Binding Medias}"
                     ItemContainerTheme="{StaticResource MediaListStyle}"
@@ -232,7 +251,7 @@
 
                 <!--  加载gif  -->
                 <StackPanel
-                    Grid.Row="0"
+                    Grid.Row="1"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Orientation="Vertical"
@@ -251,13 +270,13 @@
 
                 <!--  没有数据提示  -->
                 <Image
-                    Grid.Row="0"
+                    Grid.Row="1"
                     Width="256"
                     Height="256"
                     Source="/Resources/no-data.png"
                     IsVisible="{Binding NoDataVisibility}" />
-                <TextBlock Grid.Row="1" Background="{DynamicResource BrushBorder}" />
-                <Grid Grid.Row="2" ColumnDefinitions="80,*,100,90">
+                <TextBlock Grid.Row="2" Background="{DynamicResource BrushBorder}" />
+                <Grid Grid.Row="3" ColumnDefinitions="80,*,100,90">
                     <CheckBox
                         Grid.Column="0"
                         Margin="10,0,0,0"

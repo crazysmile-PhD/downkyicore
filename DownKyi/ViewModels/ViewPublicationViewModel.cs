@@ -1,8 +1,6 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -20,12 +18,11 @@ using DownKyi.Services.Media;
 using DownKyi.Services.UserSpace;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
-using DownKyi.ViewModels.UserSpace;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.ViewModels
 {
-    internal class ViewPublicationViewModel : ViewModelBase
+    internal partial class ViewPublicationViewModel : ViewModelBase
     {
         public const string Tag = "PagePublication";
         private readonly IContentDownloadCoordinator _downloadCoordinator;
@@ -234,14 +231,12 @@ namespace DownKyi.ViewModels
         /// <param name="parameter"></param>
         private void ExecuteLeftTabHeadersCommand(object parameter)
         {
-            if (parameter is not TabHeader tabHeader)
+            if (_suppressTabSelection || parameter is not TabHeader tabHeader)
             {
                 return;
             }
 
-            // 页面选择
-            Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
-            Pager.Current = 1;
+            SelectPublicationType(tabHeader);
         }
 
         /// <summary>
@@ -377,113 +372,6 @@ namespace DownKyi.ViewModels
                 UpdatePublicationAsync(((CustomPagerViewModel)sender!).ProposedCurrent),
                 nameof(UpdatePublicationAsync),
                 _logger);
-        }
-
-        private async Task UpdatePublicationAsync(int current)
-        {
-            IsEnabled = false;
-            var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
-            var tab = TabHeaders[SelectTabId];
-            try
-            {
-                var medias = await _userSpaceCoordinator.LoadPublicationPageAsync(
-                    _mid,
-                    current,
-                    VideoNumberInPage,
-                    tab.Id,
-                    cancellationToken).ConfigureAwait(true);
-                cancellationToken.ThrowIfCancellationRequested();
-                LoadingVisibility = false;
-                if (medias.Count == 0)
-                {
-                    NoDataVisibility = true;
-                    return;
-                }
-
-                Medias.AddRange(medias);
-                NoDataVisibility = false;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception e) when (e is HttpRequestException or InvalidOperationException or ArgumentException
-                or FormatException or Newtonsoft.Json.JsonException)
-            {
-                LoadingVisibility = false;
-                NoDataVisibility = true;
-                _logger.LogErrorMessage("Publication page loading failed.", e);
-            }
-            finally
-            {
-                IsEnabled = true;
-            }
-        }
-
-        /// <summary>
-        /// 初始化页面数据
-        /// </summary>
-        private void InitView()
-        {
-            ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
-
-            DownloadManage = ButtonIcon.Instance().DownloadManage;
-            DownloadManage.Height = 24;
-            DownloadManage.Width = 24;
-            DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
-
-            TabHeaders.Clear();
-            Medias.Clear();
-            SelectTabId = -1;
-            IsSelectAll = false;
-        }
-
-        /// <summary>
-        /// 导航到页面时执行
-        /// </summary>
-        /// <param name="navigationContext"></param>
-        public override void OnNavigatedTo(AppNavigationContext navigationContext)
-        {
-            ArgumentNullException.ThrowIfNull(navigationContext);
-            base.OnNavigatedTo(navigationContext);
-
-            // 根据传入参数不同执行不同任务
-            var parameter = navigationContext.Parameters.GetValue<Dictionary<string, object>>("Parameter");
-            if (parameter == null)
-            {
-                return;
-            }
-
-            InitView();
-
-            _mid = (long)parameter["mid"];
-            var tid = (int)parameter["tid"];
-            var zones = (List<PublicationZone>)parameter["list"];
-
-            foreach (var item in zones)
-            {
-                TabHeaders.Add(new TabHeader
-                {
-                    Id = item.Tid,
-                    Title = item.Name,
-                    SubTitle = item.Count.ToString(CultureInfo.CurrentCulture)
-                });
-            }
-
-            // 初始选中项
-            var selectTab = TabHeaders.FirstOrDefault(item => item.Id == tid);
-            if (selectTab == null)
-            {
-                NoDataVisibility = true;
-                return;
-            }
-
-            SelectTabId = TabHeaders.IndexOf(selectTab);
-
-            // 页面选择
-            Pager = new CustomPagerViewModel(1,
-            (int)Math.Ceiling(double.Parse(selectTab.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
-            Pager.Current = 1;
         }
 
         public override void OnNavigatedFrom(AppNavigationContext navigationContext)

@@ -135,6 +135,32 @@ public static class UserSpace
         string keyword = "",
         CancellationToken cancellationToken = default)
     {
+        return GetPublicationPage(
+            keys,
+            unixTimeSeconds,
+            mid,
+            pn,
+            ps,
+            tid,
+            order,
+            keyword,
+            cancellationToken)?.List;
+    }
+
+    /// <summary>
+    /// 查询用户投稿视频及服务端分页信息。
+    /// </summary>
+    public static SpacePublication? GetPublicationPage(
+        WbiKeys keys,
+        long unixTimeSeconds,
+        long mid,
+        int pn,
+        int ps,
+        long tid = 0,
+        PublicationOrder order = PublicationOrder.PUBDATE,
+        string keyword = "",
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(keys);
         var parameters = new Dictionary<string, object?>
         {
@@ -175,12 +201,12 @@ public static class UserSpace
         var spacePublication = BiliApiRequest.RequestJson<SpacePublicationOrigin>(
             url,
             referer,
-            nameof(GetPublication),
+            nameof(GetPublicationPage),
             "UserSpace",
             serializerSettings,
             cancellationToken);
 
-        return BiliApiRequest.RequirePayload(spacePublication.Data).List;
+        return BiliApiRequest.RequirePayload(spacePublication.Data);
     }
 
     internal static string GetPublicationOrderValue(PublicationOrder order)

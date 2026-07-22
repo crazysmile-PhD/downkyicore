@@ -549,6 +549,11 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "DownKyi",
             "ViewModels",
             "ViewPublicationViewModel.cs");
+        var publicationSearchPath = Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "ViewPublicationViewModel.Search.cs");
         var mySpacePath = Path.Combine(
             RepositoryRoot,
             "DownKyi",
@@ -559,9 +564,13 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "DownKyi",
             "ViewModels",
             "ViewMyBangumiFollowViewModel.cs");
-        var viewModelSource = string.Join(
+        var publicationSource = string.Join(
             Environment.NewLine,
             File.ReadAllText(publicationPath),
+            File.ReadAllText(publicationSearchPath));
+        var viewModelSource = string.Join(
+            Environment.NewLine,
+            publicationSource,
             File.ReadAllText(mySpacePath),
             File.ReadAllText(bangumiPath));
         var coordinatorSource = File.ReadAllText(Path.Combine(
@@ -576,8 +585,8 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.DoesNotContain("PropertyChangeAsync(", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("IUserSpacePageCoordinator", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("IContentDownloadCoordinator", File.ReadAllText(publicationPath), StringComparison.Ordinal);
-        Assert.Contains("Medias.AddRange", File.ReadAllText(publicationPath), StringComparison.Ordinal);
-        Assert.Contains("CurrentChanging -=", File.ReadAllText(publicationPath), StringComparison.Ordinal);
+        Assert.Contains("Medias.AddRange", publicationSource, StringComparison.Ordinal);
+        Assert.Contains("CurrentChanging -=", publicationSource, StringComparison.Ordinal);
         Assert.Contains("LoadMyProfileAsync", File.ReadAllText(mySpacePath), StringComparison.Ordinal);
         Assert.Contains("LoadMyStatsAsync", File.ReadAllText(mySpacePath), StringComparison.Ordinal);
         Assert.Contains("LoadBangumiFollowPageAsync", File.ReadAllText(bangumiPath), StringComparison.Ordinal);

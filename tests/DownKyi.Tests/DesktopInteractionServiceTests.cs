@@ -84,6 +84,35 @@ public sealed class DesktopInteractionServiceTests
         Assert.Empty(navigation.Requests);
     }
 
+    [Fact]
+    public void NumericListUrlUsesTypedPublicationPayload()
+    {
+        using var settings = new TestSettingsStore();
+        var navigation = new RecordingNavigationService();
+        var search = new SearchService(settings.Store, navigation);
+
+        Assert.True(search.BiliInput("https://www.bilibili.com/list/3546801722362343", AppRoute.Index));
+
+        var request = Assert.Single(navigation.Requests);
+        Assert.Equal(AppRoute.Publication, request.Route);
+        Assert.Equal(AppRoute.Index, request.Parent);
+        var payload = Assert.IsType<PublicationNavigationPayload>(request.Parameter);
+        Assert.Equal(3546801722362343, payload.Mid);
+        Assert.Equal(0, payload.SelectedTypeId);
+        Assert.Empty(payload.Zones);
+    }
+
+    [Fact]
+    public void SeriesListUrlDoesNotMasqueradeAsUploaderList()
+    {
+        using var settings = new TestSettingsStore();
+        var navigation = new RecordingNavigationService();
+        var search = new SearchService(settings.Store, navigation);
+
+        Assert.False(search.BiliInput("https://www.bilibili.com/list/42?sid=99", AppRoute.Index));
+        Assert.Empty(navigation.Requests);
+    }
+
     private sealed class RecordingNavigationService : IAppNavigationService
     {
         public event EventHandler<AppNavigationChangedEventArgs>? NavigationChanged

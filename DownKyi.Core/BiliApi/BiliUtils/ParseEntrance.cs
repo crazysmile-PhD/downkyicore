@@ -17,7 +17,7 @@ namespace DownKyi.Core.BiliApi.BiliUtils;
 /// 收藏夹：ml1329019876, ML1329019876, https://www.bilibili.com/medialist/detail/ml1329019876, https://www.bilibili.com/medialist/play/ml1329019876/, https://www.bilibili.com/list/ml1329019876 <para/>
 /// 用户空间：uid928123, UID928123, uid:928123, UID:928123, https://space.bilibili.com/928123
 /// </summary>
-public static class ParseEntrance
+public static partial class ParseEntrance
 {
     public static readonly string WwwUrl = "https://www.bilibili.com";
     public static readonly string ShareWwwUrl = "https://www.bilibili.com/s";

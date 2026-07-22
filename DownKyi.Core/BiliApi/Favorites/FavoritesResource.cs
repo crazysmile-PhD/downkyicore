@@ -15,7 +15,20 @@ public static class FavoritesResource
     /// <returns></returns>
     public static IReadOnlyList<FavoritesMedia>? GetFavoritesMedia(long mediaId, int pn, int ps, CancellationToken cancellationToken = default)
     {
-        var url = $"https://api.bilibili.com/x/v3/fav/resource/list?media_id={mediaId}&pn={pn}&ps={ps}&platform=web";
+        return GetFavoritesMediaResource(mediaId, pn, ps, null, cancellationToken).Medias;
+    }
+
+    /// <summary>
+    /// 获取收藏夹内容和服务端的后续分页标记。
+    /// </summary>
+    public static FavoritesMediaResource GetFavoritesMediaResource(
+        long mediaId,
+        int pn,
+        int ps,
+        string? keyword,
+        CancellationToken cancellationToken = default)
+    {
+        var url = BuildFavoritesMediaUrl(mediaId, pn, ps, keyword);
         const string referer = "https://www.bilibili.com";
         var resource = BiliApiRequest.RequestJson<FavoritesMediaResourceOrigin>(
             url,
@@ -24,7 +37,16 @@ public static class FavoritesResource
             "FavoritesResource",
             cancellationToken);
 
-        return BiliApiRequest.RequirePayload(resource.Data).Medias;
+        return BiliApiRequest.RequirePayload(resource.Data);
+    }
+
+    internal static string BuildFavoritesMediaUrl(long mediaId, int pn, int ps, string? keyword)
+    {
+        var url = $"https://api.bilibili.com/x/v3/fav/resource/list?media_id={mediaId}&pn={pn}&ps={ps}&platform=web";
+        var normalizedKeyword = keyword?.Trim();
+        return string.IsNullOrEmpty(normalizedKeyword)
+            ? url
+            : $"{url}&keyword={Uri.EscapeDataString(normalizedKeyword)}";
     }
 
     /// <summary>

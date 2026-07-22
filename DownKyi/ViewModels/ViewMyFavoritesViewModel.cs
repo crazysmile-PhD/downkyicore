@@ -1,8 +1,6 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -23,7 +21,7 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.ViewModels;
 
-internal class ViewMyFavoritesViewModel : ViewModelBase
+internal partial class ViewMyFavoritesViewModel : ViewModelBase
 {
     public const string Tag = "PageMyFavorites";
     private readonly IContentDownloadCoordinator _downloadCoordinator;
@@ -284,17 +282,12 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteLeftTabHeadersCommand(object parameter)
     {
-        if (parameter is not TabHeader tabHeader)
+        if (_suppressTabSelection || parameter is not TabHeader tabHeader)
         {
             return;
         }
 
-        // tab点击后，隐藏MediaContent
-        MediaContentVisibility = false;
-
-        // 页面选择
-        Pager = new CustomPagerViewModel(1, (int)Math.Ceiling(double.Parse(tabHeader.SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
-        Pager.Current = 1;
+        SelectFavoritesFolder(tabHeader);
     }
 
     /// <summary>
@@ -407,138 +400,6 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         }
 
         RunFireAndForget(UpdateFavoritesMediaListAsync(((CustomPagerViewModel)sender!).ProposedCurrent), nameof(UpdateFavoritesMediaListAsync), _logger);
-    }
-
-    private async Task UpdateFavoritesMediaListAsync(int current)
-    {
-        try
-        {
-            Medias.Clear();
-            IsSelectAll = false;
-
-            MediaLoadingVisibility = true;
-            MediaNoDataVisibility = false;
-
-            // 是否正在获取数据
-            // 在所有的退出分支中都需要设为true
-            IsEnabled = false;
-
-            var tab = TabHeaders[SelectTabId];
-            var cancellationToken = ReplaceCancellationSource(ref _mediaLoadCancellation);
-            var medias = await _favoritesCoordinator.LoadMediaPageAsync(
-                tab.Id,
-                current,
-                VideoNumberInPage,
-                cancellationToken).ConfigureAwait(true);
-            cancellationToken.ThrowIfCancellationRequested();
-            MediaContentVisibility = true;
-            MediaLoadingVisibility = false;
-            if (medias.Count == 0)
-            {
-                MediaNoDataVisibility = true;
-                return;
-            }
-
-            MediaNoDataVisibility = false;
-            Medias.AddRange(medias);
-        }
-        catch (OperationCanceledException) when (_mediaLoadCancellation?.IsCancellationRequested != false)
-        {
-            return;
-        }
-        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
-            or FormatException or Newtonsoft.Json.JsonException)
-        {
-            _logger.LogErrorMessage("Favorites media loading failed.", e);
-        }
-        finally
-        {
-            IsEnabled = true;
-        }
-    }
-
-    /// <summary>
-    /// 初始化页面数据
-    /// </summary>
-    private void InitView()
-    {
-        ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
-
-        DownloadManage = ButtonIcon.Instance().DownloadManage;
-        DownloadManage.Height = 24;
-        DownloadManage.Width = 24;
-        DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
-
-        ContentVisibility = false;
-        LoadingVisibility = true;
-        NoDataVisibility = false;
-        MediaLoadingVisibility = false;
-        MediaNoDataVisibility = false;
-
-        TabHeaders.Clear();
-        Medias.Clear();
-        SelectTabId = -1;
-        IsSelectAll = false;
-    }
-
-    /// <summary>
-    /// 导航到页面时执行
-    /// </summary>
-    /// <param name="navigationContext"></param>
-    public override void OnNavigatedTo(AppNavigationContext navigationContext)
-    {
-        ArgumentNullException.ThrowIfNull(navigationContext);
-        base.OnNavigatedTo(navigationContext);
-        RunFireAndForget(OnNavigatedToAsync(navigationContext), nameof(OnNavigatedToAsync), _logger);
-    }
-
-    private async Task OnNavigatedToAsync(AppNavigationContext navigationContext)
-    {
-        try
-        {
-            // 根据传入参数不同执行不同任务
-            _mid = navigationContext.Parameters.GetValue<long>("Parameter");
-            if (_mid == 0)
-            {
-                return;
-            }
-
-            InitView();
-            var cancellationToken = ReplaceCancellationSource(ref _folderLoadCancellation);
-            var folders = await _favoritesCoordinator.LoadFoldersAsync(_mid, cancellationToken).ConfigureAwait(true);
-            cancellationToken.ThrowIfCancellationRequested();
-            TabHeaders.AddRange(folders);
-
-            if (TabHeaders.Count == 0)
-            {
-                ContentVisibility = false;
-                LoadingVisibility = false;
-                NoDataVisibility = true;
-
-                return;
-            }
-
-            ContentVisibility = true;
-            LoadingVisibility = false;
-            NoDataVisibility = false;
-
-            // 初始选中项
-            SelectTabId = 0;
-
-            // 页面选择
-            Pager = new CustomPagerViewModel(1,
-            (int)Math.Ceiling(double.Parse(TabHeaders[0].SubTitle, CultureInfo.CurrentCulture) / VideoNumberInPage));
-            Pager.Current = 1;
-        }
-        catch (OperationCanceledException) when (_folderLoadCancellation?.IsCancellationRequested != false)
-        {
-            return;
-        }
-        catch (Exception e) when (e is System.Net.Http.HttpRequestException or InvalidOperationException or ArgumentException
-            or FormatException or Newtonsoft.Json.JsonException)
-        {
-            _logger.LogErrorMessage("Favorites folder loading failed.", e);
-        }
     }
 
     public override void OnNavigatedFrom(AppNavigationContext navigationContext)
