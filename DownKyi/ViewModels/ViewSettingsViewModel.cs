@@ -47,7 +47,7 @@ internal class ViewSettingsViewModel : ViewModelBase
         ObserveRegion(AppNavigationRegion.Settings);
         #region 属性初始化
 
-        ArrowBack = NavigationIcon.Instance().ArrowBack;
+        ArrowBack = NavigationIcon.CreateArrowBack();
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
         TabHeaders = new List<TabHeader>
@@ -74,6 +74,11 @@ internal class ViewSettingsViewModel : ViewModelBase
     /// </summary>
     protected internal override void ExecuteBackSpace()
     {
+        if (TryNavigateBack())
+        {
+            return;
+        }
+
         NavigateToParent();
     }
 

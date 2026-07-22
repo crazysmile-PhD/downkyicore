@@ -2,8 +2,8 @@
 
 Status: active
 Last updated: 2026-07-22
-Current group: module-boundary audit and AI engineering baseline
-Current branch: `audit/module-boundary-naming`
+Current group: PR #79/#80 typed integration
+Current branch: `refactor/gate-02-list-search-navigation` (create after PR #82 merges)
 
 This file contains only unfinished or not-yet-integrated work. Completed PR 02-32 items are not restored. Design rationale belongs in `design-docs`; product acceptance belongs in `product-specs`.
 
@@ -13,70 +13,19 @@ The previous `Status: complete` was incorrect.
 
 - `origin/refactor/pr-30-32-release-hardening` is not an ancestor of `origin/main`.
 - PR #78 was merged into the stacked base `refactor/pr-25-29-remove-legacy`, not into `main`.
-- PR #75, #77, #79 and #80 remain open against old `main` architecture.
+- PR #75 and PR #77 are closed after their replacement was validated in PR #82.
+- PR #79 and PR #80 remain open against old `main` architecture; Gate 2 replaces both without merging their Prism-era code.
 - `version.txt` remains `1.0.32`; v1.1.0 has not passed its release gate.
 
 No release tag may be created while any release blocker below remains.
 
 ## Execution Order
 
-### Gate 0: Make The Repository Truthful And Observable
-
-Owner branch: `audit/module-boundary-naming`
-
-Scope:
-
-- Add `ARCHITECTURE.md` with current and target topology.
-- Add the required `docs/design-docs`, `docs/exec-plans`, `docs/product-specs`, `docs/testing` and `docs/operations` indexes.
-- Add reproducible module-boundary inventory output.
-- Add ratchet tests that permit existing debt to shrink but reject new debt.
-- Correct `AGENTS.md` and `ai-knowledge-graph.md` so they do not describe target boundaries as already complete.
-
-Verification:
-
-- `script/audit-module-boundaries.ps1` produces valid JSON with commit SHA.
-- `ModuleBoundaryBaselineTests` and `AgentEnvironmentArchitectureTests` pass.
-- strict Release build, full tests, format and `git diff --check` pass.
-
-Completion:
-
-- Audit PR is merged into the latest architecture branch.
-- Another Agent can recover current state from repository files without conversation history.
-
-Rollback:
-
-- Revert the audit commit. No user data or production schema is modified.
-
-### Gate 1: Port PR #75 And PR #77 Without Legacy Navigation
-
-Owner branch: create from the latest architecture head after Gate 0.
-
-Scope:
-
-- Replace direct `NavigateToParent()` back commands with `TryNavigateBack()` plus parent fallback where history semantics apply.
-- Preserve cancellation, cleanup, lifecycle callbacks, instance reuse and disposal.
-- Port PR #77 public favorites, unavailable media retention, empty-zone filtering and themed back-arrow behavior through current coordinators and typed routes.
-- Do not merge or rebase old Prism patches.
-
-Verification:
-
-- A -> B -> C -> B -> A shrinks the same history and reuses original A/B instances.
-- UserSpace -> UserSpaceFavorites -> PublicFavorites -> Back returns to the original UserSpace instance.
-- unavailable media is visible but cannot be selected, opened or downloaded.
-- UI smoke covers light/dark back-arrow visibility.
-
-Completion:
-
-- New implementation supersedes old behavior with deterministic tests.
-- PR #75 and PR #77 receive a superseded comment and are closed.
-
-Rollback:
-
-- Revert the typed-navigation/functionality commits together; no database migration is allowed in this gate.
-
 ### Gate 2: Port PR #79 And PR #80 As One Integration PR
 
 Required base: `refactor/pr-30-32-release-hardening` or its approved successor after Gate 0/1.
+
+Owner branch: `refactor/gate-02-list-search-navigation`
 
 Scope:
 

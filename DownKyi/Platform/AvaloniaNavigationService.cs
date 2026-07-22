@@ -297,6 +297,7 @@ internal sealed class AvaloniaNavigationService : IAppNavigationService, IDispos
             AppRoute.Archive => typeof(ViewArchiveViewModel),
             AppRoute.UserSpaceChannel => typeof(ViewChannelViewModel),
             AppRoute.UserSpaceSeasonsSeries => typeof(UserSpaceSeasonsSeriesViewModel),
+            AppRoute.UserSpaceFavorites => typeof(ViewFavoritesViewModel),
             _ => throw new ArgumentOutOfRangeException(nameof(route), route, null)
         };
     }

@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
-using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Settings;
@@ -20,14 +19,15 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.ViewModels;
 
-internal class ViewUserSpaceViewModel : ViewModelBase
+internal partial class ViewUserSpaceViewModel : ViewModelBase
 {
     public const string Tag = "PageUserSpace";
 
     private readonly ILogger<ViewUserSpaceViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
-    private readonly IWbiKeyProvider _wbiKeyProvider;
+    private readonly IUserSpaceLoadCoordinator _loadCoordinator;
     private CancellationTokenSource? _loadCancellation;
+    private long? _loadedMid;
 
     // mid
     private long mid = -1;
@@ -191,18 +191,18 @@ internal class ViewUserSpaceViewModel : ViewModelBase
     public ViewUserSpaceViewModel(
         IDesktopInteractionContext desktopInteractions,
         ISettingsStore settingsStore,
-        IWbiKeyProvider wbiKeyProvider,
+        IUserSpaceLoadCoordinator loadCoordinator,
         ILogger<ViewUserSpaceViewModel> logger) : base(desktopInteractions)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
-        _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
+        _loadCoordinator = loadCoordinator ?? throw new ArgumentNullException(nameof(loadCoordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         ObserveRegion(AppNavigationRegion.UserSpace);
 
         #region 属性初始化
 
         // 返回按钮
-        ArrowBack = NavigationIcon.Instance().ArrowBack;
+        ArrowBack = NavigationIcon.CreateArrowBack();
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
         // 初始化loading
@@ -258,26 +258,17 @@ internal class ViewUserSpaceViewModel : ViewModelBase
             ["mid"] = mid
         };
 
-        switch (banner.Id)
+        var route = banner.Id switch
         {
-            case 0: // 投稿
-                Navigation.NavigateRegion(
-                    AppNavigationRegion.UserSpace,
-                    AppRoute.Archive,
-                    parameters);
-                break;
-            case 1: // 频道（弃用）
-                Navigation.NavigateRegion(
-                    AppNavigationRegion.UserSpace,
-                    AppRoute.UserSpaceChannel,
-                    parameters);
-                break;
-            case 2: // 合集和列表
-                Navigation.NavigateRegion(
-                    AppNavigationRegion.UserSpace,
-                    AppRoute.UserSpaceSeasonsSeries,
-                    parameters);
-                break;
+            0 => AppRoute.Archive,
+            1 => AppRoute.UserSpaceChannel,
+            2 => AppRoute.UserSpaceSeasonsSeries,
+            3 => AppRoute.UserSpaceFavorites,
+            _ => (AppRoute?)null
+        };
+        if (route != null)
+        {
+            Navigation.NavigateRegion(AppNavigationRegion.UserSpace, route.Value, parameters);
         }
     }
 
@@ -369,8 +360,8 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         UserSpaceSnapshot snapshot;
         try
         {
-            snapshot = await UserSpaceLoadCoordinator
-                .LoadAsync(_wbiKeyProvider, mid, cancellationToken)
+            snapshot = await _loadCoordinator
+                .LoadAsync(mid, cancellationToken)
                 .ConfigureAwait(true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -390,6 +381,7 @@ internal class ViewUserSpaceViewModel : ViewModelBase
             ViewVisibility = false;
             LoadingVisibility = false;
             NoDataVisibility = true;
+            _loadedMid = mid;
             return;
         }
         else
@@ -456,7 +448,8 @@ internal class ViewUserSpaceViewModel : ViewModelBase
             });
         }
 
-        // 收藏夹
+        AddFavoriteFolders(snapshot.FavoriteFolders);
+
         // 订阅
 
         // 关系状态数
@@ -517,6 +510,8 @@ internal class ViewUserSpaceViewModel : ViewModelBase
                 Count = Format.FormatNumber(upStat.Article.View)
             });
         }
+
+        _loadedMid = mid;
     }
 
     /// <summary>
@@ -531,6 +526,11 @@ internal class ViewUserSpaceViewModel : ViewModelBase
         // 根据传入参数不同执行不同任务
         var parameter = navigationContext.Parameters.GetValue<long>("Parameter");
         if (parameter == 0)
+        {
+            return;
+        }
+
+        if (_loadedMid == parameter)
         {
             return;
         }

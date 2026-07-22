@@ -67,6 +67,11 @@ internal class ViewDownloadManagerViewModel : ViewModelBase
     /// </summary>
     protected internal override void ExecuteBackSpace()
     {
+        if (TryNavigateBack())
+        {
+            return;
+        }
+
         NavigateToParent();
     }
 

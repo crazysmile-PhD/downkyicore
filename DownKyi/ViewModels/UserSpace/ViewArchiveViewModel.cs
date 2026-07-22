@@ -107,7 +107,8 @@ internal class ViewArchiveViewModel : ViewModelBase
         SelectedItem = -1;
 
         // 根据传入参数不同执行不同任务
-        var parameter = navigationContext.Parameters.GetValue<List<SpacePublicationListTypeVideoZone>>("object");
+        var parameter = navigationContext.Parameters
+            .GetValue<IReadOnlyList<SpacePublicationListTypeVideoZone>>("object");
         if (parameter == null)
         {
             return;
@@ -119,6 +120,11 @@ internal class ViewArchiveViewModel : ViewModelBase
         var videoCount = 0;
         foreach (var zone in parameter)
         {
+            if (zone.Count <= 0)
+            {
+                continue;
+            }
+
             videoCount += zone.Count;
             var iconKey = VideoZoneIcon.Instance().GetZoneImageKey(zone.Tid);
 

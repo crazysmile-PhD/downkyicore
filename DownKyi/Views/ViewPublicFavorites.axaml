@@ -23,10 +23,11 @@
                 <StackPanel Orientation="Horizontal">
                     <ContentControl Width="24" Height="24">
                         <Path
+                            x:Name="BackArrowPath"
                             Width="{Binding ArrowBack.Width}"
                             Height="{Binding ArrowBack.Height}"
                             Data="{Binding ArrowBack.Data}"
-                            Fill="{Binding ArrowBack.Fill}"
+                            Fill="{DynamicResource BrushTextDark}"
                             Stretch="None" />
                     </ContentControl>
                     <TextBlock
@@ -338,6 +339,7 @@
                                                 Grid.Row="0"
                                                 HorizontalAlignment="Left"
                                                 VerticalAlignment="Top"
+                                                Classes.unavailable="{Binding IsUnavailable}"
                                                 Cursor="Hand"
                                                 FontSize="14"
                                                 Text="{Binding Title}"
@@ -356,6 +358,14 @@
                                                         <Style Selector="^:pointerover">
                                                             <Setter Property="Foreground"
                                                                     Value="{DynamicResource BrushPrimary}" />
+                                                        </Style>
+                                                        <Style Selector="^.unavailable">
+                                                            <Setter Property="Cursor" Value="Arrow" />
+                                                            <Setter Property="Foreground" Value="Red" />
+                                                            <Setter Property="TextDecorations" Value="Strikethrough" />
+                                                        </Style>
+                                                        <Style Selector="^.unavailable:pointerover">
+                                                            <Setter Property="Foreground" Value="Red" />
                                                         </Style>
                                                     </Style>
                                                 </TextBlock.Styles>

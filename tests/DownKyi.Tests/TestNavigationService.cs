@@ -11,6 +11,8 @@ internal sealed class TestNavigationService : IAppNavigationService
     }
 
     public List<AppNavigationRequest> Requests { get; } = [];
+    public List<AppNavigationRegion> BackRequests { get; } = [];
+    public bool CanGoBackResult { get; set; }
 
     public void Navigate(AppNavigationRequest request)
     {
@@ -36,10 +38,11 @@ internal sealed class TestNavigationService : IAppNavigationService
 
     public bool CanGoBack(AppNavigationRegion region)
     {
-        return false;
+        return CanGoBackResult;
     }
 
     public void GoBack(AppNavigationRegion region)
     {
+        BackRequests.Add(region);
     }
 }

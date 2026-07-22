@@ -94,6 +94,7 @@ internal static class DesktopComposition
         services.AddSingleton<IFriendRelationCoordinator, FriendRelationCoordinator>();
         services.AddSingleton<ISeasonsSeriesCoordinator, SeasonsSeriesCoordinator>();
         services.AddSingleton<IUserSpacePageCoordinator, UserSpacePageCoordinator>();
+        services.AddSingleton<IUserSpaceLoadCoordinator, UserSpaceLoadCoordinator>();
         services.AddSingleton<INetworkSettingsCoordinator, NetworkSettingsCoordinator>();
 
         services.AddSingleton<AvaloniaDesktopContext>();
@@ -159,6 +160,7 @@ internal static class DesktopComposition
         services.AddTransient<ViewArchiveViewModel>();
         services.AddTransient<ViewChannelViewModel>();
         services.AddTransient<UserSpaceSeasonsSeriesViewModel>();
+        services.AddTransient<ViewFavoritesViewModel>();
     }
 
     private static void AddDialogViewModelsAndViews(IServiceCollection services)

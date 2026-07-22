@@ -69,6 +69,11 @@ internal class ViewLoginViewModel : ViewModelBase
 
         // 结束任务
         _tokenSource?.Cancel();
+        if (TryNavigateBack())
+        {
+            return;
+        }
+
         NavigateToParent("login");
     }
 

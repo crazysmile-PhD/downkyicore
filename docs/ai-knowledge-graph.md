@@ -82,6 +82,7 @@ flowchart TD
     ApplicationLayer["service.application-contracts\nsrc/DownKyi.Application"]
     Infrastructure["core.infrastructure\nsrc/DownKyi.Infrastructure"]
     MainWindow["ui.main-window\nDownKyi/Views/MainWindow.axaml"]
+    Navigation["service.typed-navigation\nAvaloniaNavigationService"]
     UiTheme["ui.desktop-theme\nFluentTheme + DesignTokens.axaml"]
     AsyncImage["ui.async-image-loader\nCustomControl/AsyncImageLoader"]
     MainVm["viewmodel.main-window\nDownKyi/ViewModels/MainWindowViewModel.cs"]
@@ -98,6 +99,7 @@ flowchart TD
     PersonalMedia["service.personal-media\nPersonalMediaCoordinator.cs"]
     UserSpacePageVms["viewmodel.user-space-pages\nPublication/My-space ViewModels"]
     UserSpacePages["service.user-space-pages\nUserSpacePageCoordinator.cs"]
+    UserSpaceVm["viewmodel.user-space\nUserSpace + public favorites"]
     VideoVm["viewmodel.video-detail\nDownKyi/ViewModels/ViewVideoDetailViewModel.cs"]
     SettingsVms["viewmodel.settings-pages\nSettings ViewModels"]
     NetworkSettings["service.network-settings\nNetworkSettingsCoordinator.cs"]
@@ -156,6 +158,7 @@ flowchart TD
     SystemBenchmarks -->|measures| FFmpeg
     Nightly -->|runs| SystemBenchmarks
     MainWindow -->|binds| MainVm
+    MainVm -->|navigates through| Navigation
     MainWindow -->|awaits close cleanup| Lifecycle
     MainWindow -->|renders remote artwork| AsyncImage
     MainVm -->|navigates| IndexVm
@@ -177,6 +180,9 @@ flowchart TD
     UserSpacePageVms -->|loads snapshots| UserSpacePages
     UserSpacePages -->|calls| BiliApi
     UserSpacePageVms -->|queues publications| DownloadAdd
+    UserSpaceVm -->|loads profile and public folders| BiliApi
+    UserSpaceVm -->|navigates through| Navigation
+    Navigation -->|restores existing views| MainWindow
     BiliHelperVm -->|calls| BiliHelper
     BiliHelper -->|uses cancellable CPU helpers| BiliApi
     VideoVm -->|calls| Resolver
@@ -705,6 +711,7 @@ type: viewmodel
 paths:
   - DownKyi/ViewModels/ViewMyFavoritesViewModel.cs
   - DownKyi/ViewModels/ViewPublicFavoritesViewModel.cs
+  - DownKyi/ViewModels/FavoritesSelectionPolicy.cs
   - DownKyi/Views/ViewMyFavorites.axaml
   - DownKyi/Views/ViewPublicFavorites.axaml
 responsibility: Projects private/public favorite folders and media snapshots, selection, pager, navigation, and add-to-download results.
@@ -720,6 +727,8 @@ contracts:
   - Canceling directory selection returns before creating a download snapshot or parsing media.
   - Leaving, replacing a request, or disposing cancels folder, page, and download work; pager replacement detaches old handlers.
   - Favorite lists use `Multiple,Toggle`, so an ordinary click toggles each selected item without a modifier key.
+  - API media marked unavailable by `attr` or the exact masked title remain visible for diagnostics, but cannot be selected, opened, or converted into download items.
+  - Selection and download projection pass through `FavoritesSelectionPolicy`; unavailable rows cannot re-enter the workflow through Select All or stale selection state.
 hazards:
   - Mutating observable collections from the worker thread can fault Avalonia bindings and leave stale rows after navigation.
   - Starting parse/add before checking a null directory performs work after the user explicitly canceled.
@@ -747,7 +756,8 @@ outbound:
 contracts:
   - `FavoritesService` is a pure mapper/API adapter and never accesses `App`, Dispatcher, or observable collections.
   - Pre-canceled requests cannot start legacy synchronous API work.
-  - Invalid favorite videos remain filtered and timestamp/number projection preserves the existing UI contract.
+  - Unavailable favorite videos preserve API title, cover, identifier, and availability state instead of disappearing or being represented as valid media.
+  - Timestamp/number projection preserves the existing UI contract.
 hazards:
   - Legacy synchronous Bilibili calls cannot abort in flight; cancellation prevents subsequent calls and stale UI projection.
   - API model and UI model both use `FavoritesMedia`; aliases must remain explicit at the mapping boundary.
@@ -984,6 +994,8 @@ contracts:
   - Platform adapters receive `AvaloniaDesktopContext`; they cannot recover MainWindow through `App.Current`.
   - Clipboard polling is one disposable injected monitor, starts with its first subscriber, and stops after its final subscriber.
   - Every app route, nested region, and dialog has one enum value and one concrete Avalonia mapping; ViewModels never pass view names, region names, or dialog tags through the contracts.
+  - Main-region back commands call `TryNavigateBack()` first and use their typed `ParentRoute` only when no history exists; back navigation shrinks history and restores the original view instance.
+  - Removing a history entry runs `OnNavigatedFrom` and disposes the removed ViewModel; repeated back operations cannot create forward navigation records.
   - `DesktopNotificationService` publishes one typed event; MainWindow owns presentation timing and UI dispatch.
   - Media page-item models receive `IAppNavigationService` plus a typed parent route from their coordinator or ViewModel; they cannot publish global navigation events or infer parent routes from command strings.
   - `IDesktopInteractionContext` groups notification, navigation, and dialog contracts for `ViewModelBase` without exposing framework types or a service locator.
@@ -993,8 +1005,37 @@ hazards:
   - Bypassing typed routes/dialog results with raw view construction would reintroduce untestable UI ownership and history drift.
 tests:
   - test.desktop-interactions
+  - test.typed-navigation
   - test.architecture-boundaries
   - test.ui-smoke
+```
+
+### service.typed-navigation
+
+```yaml
+id: service.typed-navigation
+type: service
+paths:
+  - src/DownKyi.Application/Desktop/IAppNavigationService.cs
+  - DownKyi/Platform/AvaloniaNavigationService.cs
+  - DownKyi/ViewModels/ViewModelBase.cs
+responsibility: Maps typed routes to DI-created ViewModels, owns bounded main-region instance history, and provides history-first back navigation with typed parent fallback.
+inbound:
+  - application ViewModels
+outbound:
+  - ui.main-window
+contracts:
+  - `Navigate` creates one forward entry and invokes navigation lifecycle callbacks without string route names or framework service location.
+  - `GoBack` removes and disposes the current entry, restores the exact previous ViewModel instance, and never appends another entry.
+  - Main-region history is bounded; nested regions replace and dispose content instead of accumulating back history.
+  - A ViewModel calls its typed `ParentRoute` only after `TryNavigateBack()` reports that no previous entry exists.
+hazards:
+  - Calling parent navigation directly from a back command creates duplicate A/B instances and an ever-growing forward journal.
+  - Sharing mutable icon state between page instances can make a restored page inherit another page's theme mutation.
+tests:
+  - test.typed-navigation
+  - test.ui-smoke
+  - test.architecture-boundaries
 ```
 
 ### viewmodel.bili-helper
@@ -1053,19 +1094,28 @@ id: viewmodel.user-space
 type: viewmodel
 paths:
   - DownKyi/ViewModels/ViewUserSpaceViewModel.cs
+  - DownKyi/ViewModels/ViewUserSpaceViewModel.Favorites.cs
+  - DownKyi/ViewModels/UserSpace/ViewFavoritesViewModel.cs
+  - DownKyi/Views/UserSpace/ViewFavorites.axaml
   - DownKyi/Services/UserSpace/UserSpaceLoadCoordinator.cs
-responsibility: Projects one background-loaded user-space snapshot into profile, publication, collection, relation, and statistics UI state.
+responsibility: Projects one injected, background-loaded user-space snapshot into profile, publication, collection, public favorites, relation, and statistics UI state.
 inbound:
-  - typed or legacy navigation
+  - typed navigation
 outbound:
   - core.bili-api
+  - service.typed-navigation
 contracts:
   - Background API work returns a snapshot and never mutates Avalonia-bound properties.
   - A new navigation cancels the previous load; leaving or disposing the page cancels projection of stale results.
   - Back first uses the navigation journal and falls back to the recorded parent or index.
+  - Returning to the same MID restores the existing UserSpace instance and its tab/list state instead of clearing and reloading the snapshot.
+  - Public favorite folders with zero media are omitted; selecting a folder uses the typed `UserSpaceFavorites -> PublicFavorites` route chain.
+  - Favorite-folder API failure is optional profile metadata: known network/schema failures produce a sanitized warning and an empty folder tab, while cancellation still propagates.
 hazards:
   - Legacy synchronous Bilibili API methods cannot abort an in-flight socket call yet; cancellation prevents subsequent calls and stale UI projection.
 tests:
+  - test.user-space-favorites
+  - test.typed-navigation
   - test.architecture-boundaries
 ```
 
@@ -2200,12 +2250,35 @@ test.seasons-series:
 test.favorites:
   paths:
     - tests/DownKyi.Tests/FavoritesCoordinatorTests.cs
+    - tests/DownKyi.Tests/FavoritesServiceTests.cs
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
     - pre-canceled private/public favorite requests cannot start API work
     - favorite ViewModels cannot regain Task.Run or App dispatcher projection
     - favorite services return snapshots rather than mutating observable collections
     - directory cancellation precedes shared download coordination and list selection remains click-toggle capable
+    - unavailable media remains visible but cannot be opened, selected, or included in a download snapshot
+
+test.user-space-favorites:
+  paths:
+    - tests/DownKyi.Tests/UserSpaceFavoritesTests.cs
+    - tests/DownKyi.Architecture.Tests/UserSpaceArchitectureTests.cs
+  guards:
+    - public favorite folders are loaded by the injected coordinator and empty folders are omitted
+    - the user-space favorites tab uses typed routes without Prism or direct WBI ownership in the ViewModel
+    - returning to the same MID does not discard the existing loaded projection
+
+test.typed-navigation:
+  paths:
+    - tests/DownKyi.Tests/BackNavigationTests.cs
+    - tests/DownKyi.Architecture.Tests/BackNavigationArchitectureTests.cs
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+  guards:
+    - A to B to C then two back operations restore the original B and A instances and shrink history to zero
+    - removed B and C ViewModels receive lifecycle callbacks and are disposed exactly once
+    - main-region back commands use history first and typed parent fallback only without history
+    - repeated back operations cannot add forward navigation records
+    - every production main-region ViewModel retains the history-first back pattern
 
 test.personal-media:
   paths:
@@ -2474,7 +2547,10 @@ test.ui-smoke:
     - Avalonia headless platform initializes
     - MainWindow XAML and its ViewModel binding resolve from the real Host without setting Prism ContainerLocator
     - no Prism assembly is loaded before Host creation or after root XAML construction
-    - MainWindow, index, video-detail, and download-manager ViewModels resolve from Microsoft DI
+    - MainWindow, index, video-detail, download-manager, and user-space favorites ViewModels resolve from Microsoft DI
+    - three-level main-region history restores the same A/B instances, disposes removed B/C instances, and reaches an empty history
+    - the UserSpace to UserSpaceFavorites to PublicFavorites route chain returns to the original folder and UserSpace instances
+    - the public-favorites back arrow resolves to visible black and white brushes under Light and Dark theme variants
     - Host creation does not redirect database, settings, login, portable-mode, or aria2 paths
     - production AppBuilder can be created
 
@@ -2494,6 +2570,7 @@ test.composition-root:
 test.desktop-interactions:
   paths:
     - tests/DownKyi.Tests/DesktopInteractionServiceTests.cs
+    - tests/DownKyi.Tests/NavigationIconTests.cs
     - tests/DownKyi.Architecture.Tests/DesktopInteractionArchitectureTests.cs
     - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
   guards:
@@ -2504,6 +2581,7 @@ test.desktop-interactions:
     - MainWindowViewModel and SearchService cannot regain EventAggregator, RegionManager, Prism dialog, MessageEvent, or NavigationEvent dependencies
     - migrated media page-item models and download-add services cannot regain EventAggregator, MessageEvent, or string-route helper dependencies
     - every non-dialog ViewModel rejects Prism EventAggregator, RegionManager, dialog service, event-message, and string-route dependencies
+    - back-arrow geometry instances are isolated, so changing one ViewModel theme fill cannot alter another page
     - download runtime alerts cannot regain a legacy Prism dialog dependency
     - production Avalonia adapters and all three contract instances resolve through the single Host composition
 

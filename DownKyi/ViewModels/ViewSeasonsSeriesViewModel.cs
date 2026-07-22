@@ -135,7 +135,7 @@ internal class ViewSeasonsSeriesViewModel : ViewModelBase
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        ArrowBack = NavigationIcon.Instance().ArrowBack;
+        ArrowBack = NavigationIcon.CreateArrowBack();
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
         DownloadManage = ButtonIcon.Instance().DownloadManage;

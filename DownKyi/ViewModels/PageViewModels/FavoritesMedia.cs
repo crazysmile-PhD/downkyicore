@@ -35,7 +35,29 @@ internal class FavoritesMedia : ObservableObject
     public bool IsSelected
     {
         get => isSelected;
-        set => SetProperty(ref isSelected, value);
+        set
+        {
+            if (IsUnavailable && value)
+            {
+                return;
+            }
+
+            SetProperty(ref isSelected, value);
+        }
+    }
+
+    private bool _isUnavailable;
+
+    public bool IsUnavailable
+    {
+        get => _isUnavailable;
+        set
+        {
+            if (SetProperty(ref _isUnavailable, value) && value)
+            {
+                IsSelected = false;
+            }
+        }
     }
 
     private int order;
@@ -133,6 +155,11 @@ internal class FavoritesMedia : ObservableObject
     /// <param name="parameter"></param>
     private void ExecuteTitleCommand(object parameter)
     {
+        if (IsUnavailable)
+        {
+            return;
+        }
+
         _navigationService.Navigate(new AppNavigationRequest(
             AppRoute.VideoDetail,
             _parentRoute,

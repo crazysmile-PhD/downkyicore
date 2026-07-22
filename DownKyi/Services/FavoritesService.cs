@@ -13,6 +13,7 @@ namespace DownKyi.Services;
 
 internal sealed class FavoritesService : IFavoritesService
 {
+    internal const string UnavailableMediaTitle = "已失效视频";
     private readonly ISettingsStore _settingsStore;
     private readonly IAppNavigationService _navigationService;
 
@@ -62,19 +63,18 @@ internal sealed class FavoritesService : IFavoritesService
         foreach (var media in medias)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (string.Equals(media.Title, "已失效视频", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
             order++;
+            var unavailable = IsUnavailable(media);
             result.Add(new FavoritesMedia(_navigationService, parentRoute, _settingsStore)
             {
                 Avid = media.Id,
                 Bvid = media.Bvid,
                 Order = order,
                 Cover = media.Cover,
-                Title = media.Title,
+                Title = unavailable && string.IsNullOrWhiteSpace(media.Title)
+                    ? UnavailableMediaTitle
+                    : media.Title,
+                IsUnavailable = unavailable,
                 PlayNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Play) : "0",
                 DanmakuNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Danmaku) : "0",
                 FavoriteNumber = media.CntInfo != null ? Format.FormatNumber(media.CntInfo.Collect) : "0",
@@ -87,6 +87,13 @@ internal sealed class FavoritesService : IFavoritesService
         }
 
         return result;
+    }
+
+    internal static bool IsUnavailable(ApiFavoritesMedia media)
+    {
+        ArgumentNullException.ThrowIfNull(media);
+        return media.Attr != 0 ||
+               string.Equals(media.Title, UnavailableMediaTitle, StringComparison.Ordinal);
     }
 
     public IReadOnlyList<TabHeader> GetCreatedFavorites(long mid, CancellationToken cancellationToken)

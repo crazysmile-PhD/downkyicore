@@ -217,7 +217,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         MediaLoadingVisibility = false;
         MediaNoDataVisibility = false;
 
-        ArrowBack = NavigationIcon.Instance().ArrowBack;
+        ArrowBack = NavigationIcon.CreateArrowBack();
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
         // 下载管理按钮
@@ -249,6 +249,11 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
         // 结束任务
         CancelOperations();
+
+        if (TryNavigateBack())
+        {
+            return;
+        }
 
         NavigateToParent();
     }
@@ -313,20 +318,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private void ExecuteSelectAllCommand(object parameter)
     {
-        if (IsSelectAll)
-        {
-            foreach (var item in Medias)
-            {
-                item.IsSelected = true;
-            }
-        }
-        else
-        {
-            foreach (var item in Medias)
-            {
-                item.IsSelected = false;
-            }
-        }
+        FavoritesSelectionPolicy.SetAllAvailableSelected(Medias, IsSelectAll);
     }
 
     // 列表选择事件
@@ -345,7 +337,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
             return;
         }
 
-        IsSelectAll = selectedMedia.Count == Medias.Count;
+        IsSelectAll = FavoritesSelectionPolicy.AreAllAvailableSelected(Medias);
     }
 
     // 添加选中项到下载列表事件
@@ -373,9 +365,7 @@ internal class ViewMyFavoritesViewModel : ViewModelBase
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
-        var items = Medias
-            .Select(media => new ContentDownloadItem(media.Bvid, DownloadInfoKind.Video, media.IsSelected))
-            .ToArray();
+        var items = FavoritesSelectionPolicy.CreateDownloadItems(Medias);
         try
         {
             var addedCount = await _downloadCoordinator.AddAsync(

@@ -109,7 +109,7 @@ public sealed class ModuleBoundaryBaselineTests
         ["DownKyi/ViewModels/Settings/ViewNetworkViewModel.cs"] = 649,
         ["DownKyi/ViewModels/Settings/ViewVideoViewModel.cs"] = 1020,
         ["DownKyi/ViewModels/ViewMyBangumiFollowViewModel.cs"] = 531,
-        ["DownKyi/ViewModels/ViewMyFavoritesViewModel.cs"] = 582,
+        ["DownKyi/ViewModels/ViewMyFavoritesViewModel.cs"] = 572,
         ["DownKyi/ViewModels/ViewMySpaceViewModel.cs"] = 669,
         ["DownKyi/ViewModels/ViewPublicationViewModel.cs"] = 515,
         ["DownKyi/ViewModels/ViewUserSpaceViewModel.cs"] = 569,
