@@ -119,6 +119,14 @@ flowchart TD
 
 需要 .NET 10 SDK。
 
+开始修改前先阅读：
+
+- `AGENTS.md`：Agent 与贡献者入口、禁止事项和常用命令。
+- `ARCHITECTURE.md`：目前可执行拓扑与目标拓扑；两者尚未完全一致。
+- `docs/ai-knowledge-graph.md`：模块、调用关系、稳定契约与测试锚点。
+- `docs/refactoring-live-plan.md`：只包含尚未完成的工作和发布阻塞项。
+- `docs/design-docs/module-boundary-naming-audit.md`：可重现的模块边界与命名审查。
+
 ```powershell
 dotnet restore
 dotnet build .\DownKyi.sln -c Release --no-restore --no-incremental
@@ -134,6 +142,8 @@ dotnet run --project .\DownKyi\DownKyi.csproj
 开发时建议同时跑：
 
 ```powershell
+pwsh .\script\audit-module-boundaries.ps1 `
+  -OutputPath artifacts\architecture\module-boundary-audit.json
 dotnet format .\DownKyi.sln --verify-no-changes --no-restore
 dotnet package list --project .\DownKyi.sln --vulnerable --include-transitive
 dotnet package list --project .\DownKyi.sln --deprecated
@@ -153,6 +163,8 @@ git diff --check
 - `script`: release workflow 使用的 aria2、FFmpeg、PupNet 和平台打包脚本。
 - `docs/maintenance.md`: 依赖更新、外部 binary checksum、release tag 和回归 checklist。
 - `docs/ai-knowledge-graph.md`: 给 AI/维护者使用的代码结构、模块职责和调用关系索引。
+
+注意：这些 `src` projects 已建立正确的目标依赖方向，但尚未承接全部实际责任。Views、ViewModels、desktop adapters 与下载 runtime 仍主要位于 `DownKyi`，Bilibili HTTP、aria2、FFmpeg 和 logging compatibility implementations 仍主要位于 `DownKyi.Core`。不要仅凭 project 名称假设迁移已经完成。
 
 主要数据流：
 
