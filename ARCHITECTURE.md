@@ -59,6 +59,25 @@ Program
 
 `DownKyiHost` 與 `DesktopComposition` 目前共同形成 composition root。這是受測試保護的相容狀態，但目標是讓 executable 只保留最小啟動與最外層組合。
 
+## 目前導航與 UserSpace 資料流
+
+```mermaid
+flowchart LR
+    Command["ViewModel typed command"] --> Request["AppNavigationRequest"]
+    Request --> Router["AvaloniaNavigationService"]
+    Router --> History["Main-region instance history"]
+    History --> View["Existing View + ViewModel"]
+    Back["TryNavigateBack"] --> History
+    Back -->|"no history"| Parent["typed ParentRoute fallback"]
+    UserSpace["UserSpace coordinator snapshot"] --> Tabs["publications / collections / favorites"]
+    Tabs --> FavoriteFolders["UserSpaceFavorites"]
+    FavoriteFolders --> PublicFavorites["PublicFavorites"]
+```
+
+Main region 的返回操作必須先縮減 `AvaloniaNavigationService` 的既有歷史，並恢復原本的 View/ViewModel instance；只有沒有歷史時才建立 typed parent route。UserSpace 的公開收藏夾由注入的 coordinator 一次映射到 snapshot，返回同一個 MID 時保留原頁面與清單狀態。失效收藏項目保留在 UI 供辨識，但不能選取、開啟或加入下載。
+
+導航箭頭 path 必須由 factory 建立獨立 geometry；不得讓不同 ViewModel 共用可變的 `PathIconData`，否則單頁主題更新會改壞其他頁面。
+
 ## 目前下載資料流
 
 ```mermaid
