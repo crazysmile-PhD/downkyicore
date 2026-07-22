@@ -128,7 +128,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         LoadingVisibility = false;
         NoDataVisibility = false;
 
-        ArrowBack = NavigationIcon.Instance().ArrowBack;
+        ArrowBack = NavigationIcon.CreateArrowBack();
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
         // 下载管理按钮
@@ -160,6 +160,11 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         InitView();
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
+
+        if (TryNavigateBack())
+        {
+            return;
+        }
 
         NavigateToParent();
     }

@@ -1,6 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Xaml.Interactivity;
 using DownKyi.Application.Desktop;
 using DownKyi.Application.Lifetime;
@@ -30,7 +33,44 @@ namespace DownKyi.Desktop.Tests;
 public sealed class UiSmokeTests
 {
     [Fact]
-    public Task TypedRouterRestoresMainHistoryAndNavigationLifecycle()
+    public Task PublicFavoritesBackArrowRemainsVisibleInLightAndDarkThemes()
+    {
+        return HeadlessUiTestHost.RunAsync(() =>
+        {
+            var application = EnsureProductThemeResources();
+            var originalTheme = application.RequestedThemeVariant;
+            var view = new ViewPublicFavorites();
+            var window = new Window
+            {
+                Content = view,
+                Width = 840,
+                Height = 620
+            };
+
+            try
+            {
+                window.Show();
+                var arrow = view.FindControl<Avalonia.Controls.Shapes.Path>("BackArrowPath");
+                Assert.NotNull(arrow);
+
+                application.RequestedThemeVariant = ThemeVariant.Light;
+                window.UpdateLayout();
+                Assert.Equal(Colors.Black, Assert.IsType<SolidColorBrush>(arrow.Fill).Color);
+
+                application.RequestedThemeVariant = ThemeVariant.Dark;
+                window.UpdateLayout();
+                Assert.Equal(Colors.White, Assert.IsType<SolidColorBrush>(arrow.Fill).Color);
+            }
+            finally
+            {
+                application.RequestedThemeVariant = originalTheme;
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public Task TypedRouterShrinksThreeLevelHistoryAndRestoresOriginalInstances()
     {
         return HeadlessUiTestHost.RunAsync(() =>
         {
@@ -46,11 +86,21 @@ public sealed class UiSmokeTests
 
             navigation.Navigate(new AppNavigationRequest(AppRoute.Index, Parameter: "first"));
             navigation.Navigate(new AppNavigationRequest(AppRoute.Settings, AppRoute.Index, "second"));
+            navigation.Navigate(new AppNavigationRequest(AppRoute.Toolbox, AppRoute.Settings, "third"));
 
             Assert.True(navigation.CanGoBack(AppNavigationRegion.Main));
-            Assert.Same(created[1], navigation.GetActiveView(AppNavigationRegion.Main));
+            Assert.Same(created[2], navigation.GetActiveView(AppNavigationRegion.Main));
             Assert.Equal(1, created[0].NavigatedFromCount);
             Assert.Equal("first", created[0].LastContext?.Parameter);
+            Assert.Equal(1, created[1].NavigatedFromCount);
+
+            navigation.GoBack(AppNavigationRegion.Main);
+
+            Assert.Same(created[1], navigation.GetActiveView(AppNavigationRegion.Main));
+            Assert.True(navigation.CanGoBack(AppNavigationRegion.Main));
+            Assert.Equal(2, created[1].NavigatedToCount);
+            Assert.True(created[2].IsDisposed);
+            Assert.False(created[0].IsDisposed);
 
             navigation.GoBack(AppNavigationRegion.Main);
 
@@ -58,6 +108,47 @@ public sealed class UiSmokeTests
             Assert.False(navigation.CanGoBack(AppNavigationRegion.Main));
             Assert.Equal(2, created[0].NavigatedToCount);
             Assert.True(created[1].IsDisposed);
+            Assert.Equal(3, created.Count);
+        });
+    }
+
+    [Fact]
+    public Task UserSpaceFavoritesBackPathRestoresOriginalUserSpaceInstance()
+    {
+        return HeadlessUiTestHost.RunAsync(() =>
+        {
+            var created = new List<NavigationProbe>();
+            using var navigation = new AvaloniaNavigationService(
+                route =>
+                {
+                    var probe = new NavigationProbe(route);
+                    created.Add(probe);
+                    return probe;
+                },
+                static action => action());
+
+            navigation.Navigate(new AppNavigationRequest(AppRoute.UserSpace, Parameter: 42L));
+            var originalUserSpace = navigation.GetActiveView(AppNavigationRegion.Main);
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.UserSpaceFavorites,
+                AppRoute.UserSpace,
+                Parameter: "folders"));
+            var originalFolders = navigation.GetActiveView(AppNavigationRegion.Main);
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.PublicFavorites,
+                AppRoute.UserSpace,
+                Parameter: 7L));
+
+            navigation.GoBack(AppNavigationRegion.Main);
+            Assert.Same(originalFolders, navigation.GetActiveView(AppNavigationRegion.Main));
+            Assert.True(navigation.CanGoBack(AppNavigationRegion.Main));
+            Assert.True(created[2].IsDisposed);
+
+            navigation.GoBack(AppNavigationRegion.Main);
+            Assert.Same(originalUserSpace, navigation.GetActiveView(AppNavigationRegion.Main));
+            Assert.False(navigation.CanGoBack(AppNavigationRegion.Main));
+            Assert.True(created[1].IsDisposed);
+            Assert.Equal(3, created.Count);
         });
     }
 
@@ -127,6 +218,7 @@ public sealed class UiSmokeTests
                 Assert.NotNull(host.Services.GetRequiredService<ViewVideoDetailViewModel>());
                 Assert.NotNull(host.Services.GetRequiredService<ViewDownloadManagerViewModel>());
                 Assert.NotNull(host.Services.GetRequiredService<ViewNetworkViewModel>());
+                Assert.NotNull(host.Services.GetRequiredService<DownKyi.ViewModels.UserSpace.ViewFavoritesViewModel>());
 
                 host.Services
                     .GetRequiredService<IAppNavigationService>()
@@ -267,6 +359,23 @@ public sealed class UiSmokeTests
         {
             behaviors.Remove(behavior);
         }
+    }
+
+    private static Avalonia.Application EnsureProductThemeResources()
+    {
+        var application = Avalonia.Application.Current
+            ?? throw new InvalidOperationException("Avalonia application is not initialized.");
+        if (application.TryGetResource("ImageBtnStyle", ThemeVariant.Default, out _))
+        {
+            return application;
+        }
+
+        application.Resources.MergedDictionaries.Add(new ResourceInclude(
+            new Uri("avares://DownKyi.Desktop.Tests/"))
+        {
+            Source = new Uri("avares://DownKyi/Themes/ThemeDefault.axaml")
+        });
+        return application;
     }
 
     private static string[] GetUserDataPaths()

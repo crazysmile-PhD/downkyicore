@@ -60,6 +60,7 @@
         <DataTemplate DataType="userSpaceVm:ViewArchiveViewModel"><userSpaceViews:ViewArchive /></DataTemplate>
         <DataTemplate DataType="userSpaceVm:ViewChannelViewModel"><userSpaceViews:ViewChannel /></DataTemplate>
         <DataTemplate DataType="userSpaceVm:ViewSeasonsSeriesViewModel"><userSpaceViews:ViewSeasonsSeries /></DataTemplate>
+        <DataTemplate DataType="userSpaceVm:ViewFavoritesViewModel"><userSpaceViews:ViewFavorites /></DataTemplate>
     </Application.DataTemplates>
     <Application.Styles>
         <FluentTheme />

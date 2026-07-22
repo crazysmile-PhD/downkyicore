@@ -50,7 +50,7 @@ namespace DownKyi.ViewModels
             ObserveRegion(AppNavigationRegion.Friends);
             #region 属性初始化
 
-            ArrowBack = NavigationIcon.Instance().ArrowBack;
+            ArrowBack = NavigationIcon.CreateArrowBack();
             ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
             TabHeaders = new ObservableCollection<TabHeader>
@@ -77,6 +77,11 @@ namespace DownKyi.ViewModels
             //InitView();
 
             ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
+
+            if (TryNavigateBack())
+            {
+                return;
+            }
 
             NavigateToParent();
         }

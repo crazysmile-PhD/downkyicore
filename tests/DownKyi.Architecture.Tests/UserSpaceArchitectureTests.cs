@@ -14,10 +14,35 @@ public sealed class UserSpaceArchitectureTests
             "ViewUserSpaceViewModel.cs"));
 
         Assert.DoesNotContain("Task.Run", source, StringComparison.Ordinal);
-        Assert.Contains("UserSpaceLoadCoordinator", source, StringComparison.Ordinal);
-        Assert.Contains(".LoadAsync(_wbiKeyProvider, mid, cancellationToken)", source, StringComparison.Ordinal);
+        Assert.Contains("IUserSpaceLoadCoordinator", source, StringComparison.Ordinal);
+        Assert.Contains(".LoadAsync(mid, cancellationToken)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("IWbiKeyProvider", source, StringComparison.Ordinal);
+        Assert.Contains("if (_loadedMid == parameter)", source, StringComparison.Ordinal);
         Assert.Contains("OnNavigatedFrom", source, StringComparison.Ordinal);
         Assert.Contains("_loadCancellation?.Cancel()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PublicFavoriteFoldersUseTypedRegionNavigationWithoutPrism()
+    {
+        var viewModel = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "ViewModels",
+            "UserSpace",
+            "ViewFavoritesViewModel.cs"));
+        var view = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi",
+            "Views",
+            "UserSpace",
+            "ViewFavorites.axaml"));
+
+        Assert.Contains("AppRoute.PublicFavorites", viewModel, StringComparison.Ordinal);
+        Assert.Contains("AppRoute.UserSpace", viewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("Prism", viewModel, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("prism:", view, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ViewModelLocator", view, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FindRepositoryRoot()

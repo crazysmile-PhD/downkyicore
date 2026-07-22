@@ -181,7 +181,7 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
         LoadingVisibility = false;
         NoDataVisibility = false;
 
-        ArrowBack = NavigationIcon.Instance().ArrowBack;
+        ArrowBack = NavigationIcon.CreateArrowBack();
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
         // 下载管理按钮
@@ -203,22 +203,22 @@ internal class ViewMyBangumiFollowViewModel : ViewModelBase
 
     #region 命令申明
 
-    // 返回事件
     private RelayCommand? _backSpaceCommand;
 
     public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
-    /// <summary>
-    /// 返回事件
-    /// </summary>
     protected internal override void ExecuteBackSpace()
     {
         InitView();
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
 
-        // 结束任务
         CancelOperations();
+
+        if (TryNavigateBack())
+        {
+            return;
+        }
 
         NavigateToParent();
     }

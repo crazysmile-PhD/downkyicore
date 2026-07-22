@@ -170,7 +170,7 @@ namespace DownKyi.ViewModels
             LoadingVisibility = false;
             NoDataVisibility = false;
 
-            _arrowBack = NavigationIcon.Instance().ArrowBack;
+            _arrowBack = NavigationIcon.CreateArrowBack();
             _arrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
             // 下载管理按钮
@@ -190,20 +190,20 @@ namespace DownKyi.ViewModels
 
         #region 命令申明
 
-        // 返回事件
         private RelayCommand? _backSpaceCommand;
 
         public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
-        /// <summary>
-        /// 返回事件
-        /// </summary>
         protected internal override void ExecuteBackSpace()
         {
             ArrowBack.Fill = DictionaryResource.GetColor("ColorText");
 
-            // 结束任务
             CancelOperations();
+            if (TryNavigateBack())
+            {
+                return;
+            }
+
             NavigateToParent();
         }
 

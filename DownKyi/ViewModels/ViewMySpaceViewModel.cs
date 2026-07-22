@@ -302,11 +302,11 @@ internal class ViewMySpaceViewModel : ViewModelBase
         #region 属性初始化
 
         // 返回按钮
-        ArrowBack = NavigationIcon.Instance().ArrowBack;
+        ArrowBack = NavigationIcon.CreateArrowBack();
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
         // 退出登录按钮
-        Logout = NavigationIcon.Instance().Logout;
+        Logout = NavigationIcon.CreateLogout();
         Logout.Fill = DictionaryResource.GetColor("ColorTextDark");
 
         // 初始化loading
@@ -332,23 +332,22 @@ internal class ViewMySpaceViewModel : ViewModelBase
 
     #region 命令申明
 
-    // 返回事件
     private RelayCommand? _backSpaceCommand;
 
     public RelayCommand BackSpaceCommand => _backSpaceCommand ??= new RelayCommand(ExecuteBackSpace);
 
-    /// <summary>
-    /// 返回事件
-    /// </summary>
     protected internal override void ExecuteBackSpace()
     {
-        // 结束任务
         CancelAndDispose(ref _loadCancellation);
+
+        if (TryNavigateBack())
+        {
+            return;
+        }
 
         NavigateToParent();
     }
 
-    // 退出登录事件
     private RelayCommand? _logoutCommand;
 
     public RelayCommand LogoutCommand => _logoutCommand ??= new RelayCommand(ExecuteLogoutCommand);
@@ -361,11 +360,12 @@ internal class ViewMySpaceViewModel : ViewModelBase
         // 注销
         LoginHelper.Logout(_settingsStore);
 
-        // 返回上一页
-        NavigateToParent("logout");
+        if (!TryNavigateBack())
+        {
+            NavigateToParent("logout");
+        }
     }
 
-    // 页面选择事件
     private RelayCommand? _statusListCommand;
 
     public RelayCommand StatusListCommand => _statusListCommand ??= new RelayCommand(ExecuteStatusListCommand);

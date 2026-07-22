@@ -60,6 +60,11 @@ namespace DownKyi.ViewModels
         /// </summary>
         protected internal override void ExecuteBackSpace()
         {
+            if (TryNavigateBack())
+            {
+                return;
+            }
+
             NavigateToParent();
         }
 

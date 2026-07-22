@@ -158,7 +158,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
         MediaLoadingVisibility = false;
         MediaNoDataVisibility = false;
 
-        ArrowBack = NavigationIcon.Instance().ArrowBack;
+        ArrowBack = NavigationIcon.CreateArrowBack();
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
         // 下载管理按钮
@@ -186,6 +186,11 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     {
         // 结束任务
         CancelOperations();
+
+        if (TryNavigateBack())
+        {
+            return;
+        }
 
         NavigateToParent();
     }
@@ -259,9 +264,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
         var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
-        var items = FavoritesMedias
-            .Select(media => new ContentDownloadItem(media.Bvid, DownloadInfoKind.Video, media.IsSelected))
-            .ToArray();
+        var items = FavoritesSelectionPolicy.CreateDownloadItems(FavoritesMedias);
         try
         {
             var addedCount = await _downloadCoordinator.AddAsync(

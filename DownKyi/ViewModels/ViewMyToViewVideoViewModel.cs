@@ -122,7 +122,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
         LoadingVisibility = false;
         NoDataVisibility = false;
 
-        ArrowBack = NavigationIcon.Instance().ArrowBack;
+        ArrowBack = NavigationIcon.CreateArrowBack();
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
         // 下载管理按钮
@@ -154,6 +154,11 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
 
         // 结束任务
         CancelOperations();
+
+        if (TryNavigateBack())
+        {
+            return;
+        }
 
         NavigateToParent();
     }
