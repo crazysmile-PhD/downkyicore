@@ -1,6 +1,6 @@
 # Typed Navigation And User-Space Compatibility
 
-Status: implemented locally, pending Gate 1 integration
+Status: implemented and verified by PR #82
 Last reviewed: 2026-07-22
 Supersedes behavior proposed by: PR #75 and PR #77
 

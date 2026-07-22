@@ -2,8 +2,8 @@
 
 Status: active
 Last updated: 2026-07-22
-Current group: typed navigation and user-space compatibility
-Current branch: `refactor/gate-01-navigation-user-space`
+Current group: PR #79/#80 typed integration
+Current branch: `refactor/gate-02-list-search-navigation` (create after PR #82 merges)
 
 This file contains only unfinished or not-yet-integrated work. Completed PR 02-32 items are not restored. Design rationale belongs in `design-docs`; product acceptance belongs in `product-specs`.
 
@@ -13,45 +13,19 @@ The previous `Status: complete` was incorrect.
 
 - `origin/refactor/pr-30-32-release-hardening` is not an ancestor of `origin/main`.
 - PR #78 was merged into the stacked base `refactor/pr-25-29-remove-legacy`, not into `main`.
-- PR #75, #77, #79 and #80 remain open against old `main` architecture; Gate 1 replaces #75/#77 and Gate 2 replaces #79/#80.
+- PR #75 and PR #77 are closed after their replacement was validated in PR #82.
+- PR #79 and PR #80 remain open against old `main` architecture; Gate 2 replaces both without merging their Prism-era code.
 - `version.txt` remains `1.0.32`; v1.1.0 has not passed its release gate.
 
 No release tag may be created while any release blocker below remains.
 
 ## Execution Order
 
-### Gate 1: Port PR #75 And PR #77 Without Legacy Navigation
-
-Owner branch: `refactor/gate-01-navigation-user-space`
-
-Current state: implementation and local strict verification complete; remote PR, CI, superseding comments, old-PR closure, and integration remain.
-
-Scope:
-
-- Replace direct `NavigateToParent()` back commands with `TryNavigateBack()` plus parent fallback where history semantics apply.
-- Preserve cancellation, cleanup, lifecycle callbacks, instance reuse and disposal.
-- Port PR #77 public favorites, unavailable media retention, empty-zone filtering and themed back-arrow behavior through current coordinators and typed routes.
-- Do not merge or rebase old Prism patches.
-
-Verification:
-
-- A -> B -> C -> B -> A shrinks the same history and reuses original A/B instances.
-- UserSpace -> UserSpaceFavorites -> PublicFavorites -> Back returns to the original UserSpace instance.
-- unavailable media is visible but cannot be selected, opened or downloaded.
-- UI smoke covers light/dark back-arrow visibility.
-
-Completion:
-
-- New implementation supersedes old behavior with deterministic tests.
-- PR #75 and PR #77 receive a superseded comment and are closed.
-
-Rollback:
-
-- Revert the typed-navigation/functionality commits together; no database migration is allowed in this gate.
-
 ### Gate 2: Port PR #79 And PR #80 As One Integration PR
 
 Required base: `refactor/pr-30-32-release-hardening` or its approved successor after Gate 0/1.
+
+Owner branch: `refactor/gate-02-list-search-navigation`
 
 Scope:
 
