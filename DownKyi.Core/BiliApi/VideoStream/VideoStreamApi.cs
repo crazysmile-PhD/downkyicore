@@ -298,7 +298,7 @@ public static class VideoStreamApi
     // /// <returns></returns>
     public static PlayUrl? GetBangumiPlayUrl(long avid, string bvid, long cid, int quality = 125, CancellationToken cancellationToken = default)
     {
-        var baseUrl = $"https://api.bilibili.com/pgc/player/web/playurl?cid={cid}&qn={quality}&fourk=1&fnver=0&fnval=4048";
+        var baseUrl = $"https://api.bilibili.com/pgc/player/web/v2/playurl?cid={cid}&qn={quality}&fourk=1&fnver=0&fnval=4048";
         string url;
         if (bvid != null)
         {
@@ -313,11 +313,15 @@ public static class VideoStreamApi
             return null;
         }
 
-        return GetPlayUrl(
+        const string referer = "https://www.bilibili.com";
+        var response = BiliApiRequest.RequestJson<BangumiPlayUrlV2Origin>(
             url,
-            PlayUrlPayloadField.Result,
+            referer,
             nameof(GetBangumiPlayUrl),
+            "GetBangumiPlayUrl()",
             cancellationToken);
+
+        return BangumiPlayUrlV2Contract.SelectPayload(response, nameof(GetBangumiPlayUrl));
     }
 
     /// <summary>

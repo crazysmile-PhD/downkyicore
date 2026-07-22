@@ -77,6 +77,51 @@ internal static class BiliApiRequest
         JsonSerializerSettings? serializerSettings,
         CancellationToken cancellationToken = default)
     {
+        return RequestJsonCore<T>(
+            url,
+            referer,
+            operationName,
+            logTag,
+            serializerSettings,
+            allowedNonSuccessCode: null,
+            cancellationToken);
+    }
+
+    public static T RequestJsonAllowingCode<T>(
+        string url,
+        string? referer,
+        string operationName,
+        string logTag,
+        int allowedNonSuccessCode,
+        CancellationToken cancellationToken = default)
+    {
+        if (allowedNonSuccessCode == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(allowedNonSuccessCode),
+                allowedNonSuccessCode,
+                "The explicit exception must be a non-success API code.");
+        }
+
+        return RequestJsonCore<T>(
+            url,
+            referer,
+            operationName,
+            logTag,
+            serializerSettings: null,
+            allowedNonSuccessCode,
+            cancellationToken);
+    }
+
+    private static T RequestJsonCore<T>(
+        string url,
+        string? referer,
+        string operationName,
+        string logTag,
+        JsonSerializerSettings? serializerSettings,
+        int? allowedNonSuccessCode,
+        CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(operationName);
         ArgumentException.ThrowIfNullOrWhiteSpace(logTag);
         var response = WebClient.RequestWeb(url, referer, cancellationToken: cancellationToken);
@@ -85,7 +130,8 @@ internal static class BiliApiRequest
             var metadata = System.Text.Json.JsonSerializer.Deserialize(
                 response,
                 BilibiliWebJsonContext.Default.BilibiliResponseMetadata);
-            if (metadata?.Code is { } code and not 0)
+            if (metadata?.Code is { } code and not 0
+                && code != allowedNonSuccessCode)
             {
                 throw new BilibiliApiResponseException(
                     operationName,

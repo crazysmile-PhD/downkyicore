@@ -79,7 +79,7 @@ flowchart LR
 
 Main region 的返回操作必須先縮減 `AvaloniaNavigationService` 的既有歷史，並恢復原本的 View/ViewModel instance；只有沒有歷史時才建立 typed parent route。UserSpace 的公開收藏夾由注入的 coordinator 一次映射到 snapshot，返回同一個 MID 時保留原頁面與清單狀態。失效收藏項目保留在 UI 供辨識，但不能選取、開啟或加入下載。
 
-投稿路由只接受 `PublicationNavigationPayload`。裸 `bilibili.com/list/<MID>` 代表該使用者全部投稿；帶 `sid` 的系列 URL 在 API contract audit 完成前不會被猜成全部投稿。投稿搜尋採 WBI 回應的精確 `page.count`；收藏搜尋的 `media_count` 是未篩選總數，因此分頁只能依 `has_more` 逐頁擴展。兩頁返回時保留 query、頁碼與既有 media instances；被取消的未完成頁才會補載。
+投稿路由只接受 `PublicationNavigationPayload`。裸 `bilibili.com/list/<MID>` 代表該使用者全部投稿；`x/series/archives` 契約已完成審查，但帶 `sid` 的 URL 在建立獨立 typed series payload 與產品測試前仍不得被猜成全部投稿。投稿搜尋採 WBI 回應的精確 `page.count`；收藏搜尋的 `media_count` 是未篩選總數，因此分頁只能依 `has_more` 逐頁擴展。兩頁返回時保留 query、頁碼與既有 media instances；被取消的未完成頁才會補載。
 
 導航箭頭 path 必須由 factory 建立獨立 geometry；不得讓不同 ViewModel 共用可變的 `PathIconData`，否則單頁主題更新會改壞其他頁面。
 
@@ -211,6 +211,7 @@ FinalizeStage
 - 既有 JSON property 名稱與 migration 必須保持可讀。
 - SQLite 下載紀錄、未完成任務、partial files、aria2 GID 與續傳資料不可遺失。
 - 外部 Bilibili envelope、WBI、DURL 與 protobuf contract 必須由 fixture 測試保護。
+- 固定 Bilibili 端點必須登錄於 `docs/operations/bilibili-api-audit.md`；匿名 live probe 只提供時點證據，不可取代 deterministic contract tests。
 - XAML resource URI、compiled binding 和 typed route 改名必須有 UI smoke coverage。
 - 任何跨層搬移都先建立 adapter 或 migration，再移除舊 owner。
 
@@ -219,7 +220,9 @@ FinalizeStage
 - `tests/DownKyi.Architecture.Tests/ProjectDependencyTests.cs`
 - `tests/DownKyi.Architecture.Tests/ModuleBoundaryBaselineTests.cs`
 - `tests/DownKyi.Architecture.Tests/AgentEnvironmentArchitectureTests.cs`
+- `tests/DownKyi.Architecture.Tests/BilibiliApiInventoryArchitectureTests.cs`
 - `script/audit-module-boundaries.ps1`
+- `script/audit-bilibili-api.ps1`
 - `tests/DownKyi.Desktop.Tests/UiSmokeTests.cs`
 
 基線測試採 ratchet 模式：現有違規可以減少或移除，新增違規或擴大巨檔會失敗。基線不是豁免，也不能成為長期目標。

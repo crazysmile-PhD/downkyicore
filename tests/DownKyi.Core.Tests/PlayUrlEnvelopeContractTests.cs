@@ -106,9 +106,9 @@ public sealed class PlayUrlEnvelopeContractTests : IDisposable
     }
 
     [Fact]
-    public void BangumiEndpointUsesResultEnvelope()
+    public void BangumiEndpointUsesResultVideoInfoEnvelope()
     {
-        ConfigureResponse("playurl-bangumi-result.json");
+        ConfigureResponse("playurl-bangumi-v2-result.json");
 
         var payload = VideoStreamApi.GetBangumiPlayUrl(
             1,
@@ -117,6 +117,21 @@ public sealed class PlayUrlEnvelopeContractTests : IDisposable
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, Assert.Single(payload?.Durl ?? []).Order);
+    }
+
+    [Fact]
+    public void BangumiV2MissingVideoInfoThrowsTypedContractFailure()
+    {
+        var response = new BangumiPlayUrlV2Origin
+        {
+            Result = new BangumiPlayUrlV2Result()
+        };
+
+        var exception = Assert.Throws<BilibiliApiResponseException>(() =>
+            BangumiPlayUrlV2Contract.SelectPayload(response, "bangumi-v2"));
+
+        Assert.Equal("bangumi-v2", exception.Operation);
+        Assert.Contains("result.video_info", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

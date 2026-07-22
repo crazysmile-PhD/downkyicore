@@ -1,0 +1,14 @@
+{
+  "code": -101,
+  "message": "account not logged in",
+  "ttl": 1,
+  "data": {
+    "isLogin": false,
+    "mid": 0,
+    "uname": "",
+    "wbi_img": {
+      "img_url": "https://i0.hdslb.com/bfs/wbi/11111111111111111111111111111111.png",
+      "sub_url": "https://i0.hdslb.com/bfs/wbi/22222222222222222222222222222222.png"
+    }
+  }
+}

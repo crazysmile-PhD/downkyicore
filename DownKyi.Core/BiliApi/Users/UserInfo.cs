@@ -11,6 +11,8 @@ namespace DownKyi.Core.BiliApi.Users;
 /// </summary>
 public static class UserInfo
 {
+    private const int AnonymousNavigationCode = -101;
+
     /// <summary>
     /// 导航栏用户信息
     /// </summary>
@@ -19,11 +21,14 @@ public static class UserInfo
     {
         const string url = "https://api.bilibili.com/x/web-interface/nav";
         const string referer = "https://www.bilibili.com";
-        var userInfo = BiliApiRequest.RequestJson<UserInfoForNavigationOrigin>(
+        // The nav endpoint returns -101 for anonymous users while still supplying
+        // the public WBI metadata required to sign ordinary video requests.
+        var userInfo = BiliApiRequest.RequestJsonAllowingCode<UserInfoForNavigationOrigin>(
             url,
             referer,
             nameof(GetUserInfoForNavigation),
             "UserInfo",
+            AnonymousNavigationCode,
             cancellationToken);
 
         return BiliApiRequest.RequirePayload(userInfo.Data);

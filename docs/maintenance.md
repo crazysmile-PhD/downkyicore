@@ -116,8 +116,11 @@ PR 25-29 local result: the real headless Host resolves `MainWindow`, loads compl
 - `WbiSign` is a deterministic protocol function: callers supply both keys and the timestamp. It cannot read settings or initialize user state.
 - A WBI request may force one refresh and one retry only when Bilibili returns code `-403` from that signed request. A second rejection and all non-WBI/non-`-403` errors propagate with the original code and message.
 - Home-page account refresh may update profile and valid WBI keys, but a missing/partial navigation payload cannot erase previously validated keys. Public video parsing cannot depend on login or home-page timing.
-- Ordinary video playback uses `data`, bangumi playback uses `result`, and cheese playback uses `data`. Missing or structurally empty expected payloads are typed contract failures.
+- Ordinary video playback uses `data`, bangumi v2 playback uses `result.video_info`, and cheese playback uses `data`. Missing or structurally empty expected payloads are typed contract failures.
+- Anonymous `/x/web-interface/nav` may return code `-101` while still carrying public WBI metadata. That exception is endpoint-scoped; every other nonzero API code remains a typed failure.
 - Fixed fixtures under `tests/DownKyi.Core.Tests/BiliApi/JsonSamples` cover `BV1U7V66FEiK` video info, page/CID, and playback without using the live Bilibili network.
+- `docs/operations/bilibili-api-audit.md` is the endpoint inventory. Any endpoint/envelope change updates it and a deterministic fixture in the same PR; `BilibiliApiInventoryArchitectureTests` enforces coverage.
+- `pwsh ./script/audit-bilibili-api.ps1 -ConfirmLive` performs an explicitly requested anonymous probe. It never loads local login data and is not a CI test.
 
 ## Analyzer Policy
 
