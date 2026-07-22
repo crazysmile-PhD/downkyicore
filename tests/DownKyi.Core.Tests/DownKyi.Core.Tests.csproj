@@ -24,6 +24,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="BiliApi\JsonSamples\space-publication-search.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

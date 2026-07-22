@@ -19,7 +19,42 @@ public sealed class UserSpacePageCoordinatorTests
             1,
             30,
             0,
+            null,
             cancellation.Token));
+    }
+
+    [Fact]
+    public void PublicationMappingPreservesServerTotalAndMediaIdentity()
+    {
+        var publication = new SpacePublication
+        {
+            Page = new SpacePublicationPage { Count = 35, Pn = 2, Ps = 30 },
+            List = new SpacePublicationList
+            {
+                Vlist =
+                [
+                    new SpacePublicationListVideo
+                    {
+                        Aid = 100,
+                        Bvid = "BV1fixture01",
+                        Title = "fixture",
+                        Length = "01:30",
+                        Created = 1_700_000_000,
+                        Play = 12,
+                        Pic = "cover"
+                    }
+                ]
+            }
+        };
+
+        var result = UserSpacePageCoordinator.MapPublicationPage(
+            publication,
+            new TestNavigationService(),
+            NullLogger.Instance,
+            CancellationToken.None);
+
+        Assert.Equal(35, result.TotalCount);
+        Assert.Equal("BV1fixture01", Assert.Single(result.Medias).Bvid);
     }
 
     [Fact]

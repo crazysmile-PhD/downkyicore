@@ -710,6 +710,7 @@ id: viewmodel.favorites
 type: viewmodel
 paths:
   - DownKyi/ViewModels/ViewMyFavoritesViewModel.cs
+  - DownKyi/ViewModels/ViewMyFavoritesViewModel.Search.cs
   - DownKyi/ViewModels/ViewPublicFavoritesViewModel.cs
   - DownKyi/ViewModels/FavoritesSelectionPolicy.cs
   - DownKyi/Views/ViewMyFavorites.axaml
@@ -729,6 +730,8 @@ contracts:
   - Favorite lists use `Multiple,Toggle`, so an ordinary click toggles each selected item without a modifier key.
   - API media marked unavailable by `attr` or the exact masked title remain visible for diagnostics, but cannot be selected, opened, or converted into download items.
   - Selection and download projection pass through `FavoritesSelectionPolicy`; unavailable rows cannot re-enter the workflow through Select All or stale selection state.
+  - Private-favorite keyword search passes a trimmed query to the API; because `media_count` remains the unfiltered folder total, filtered paging expands only from the response `has_more` marker.
+  - Typed back navigation restores the same ViewModel, query, page, and media projection; a canceled page is reloaded on return without clearing a completed snapshot.
 hazards:
   - Mutating observable collections from the worker thread can fault Avalonia bindings and leave stale rows after navigation.
   - Starting parse/add before checking a null directory performs work after the user explicitly canceled.
@@ -758,6 +761,8 @@ contracts:
   - Pre-canceled requests cannot start legacy synchronous API work.
   - Unavailable favorite videos preserve API title, cover, identifier, and availability state instead of disappearing or being represented as valid media.
   - Timestamp/number projection preserves the existing UI contract.
+  - `IFavoritesService` is the injectable API boundary for page search and all-media retrieval; the coordinator does not call the static endpoint facade directly.
+  - Favorite page snapshots retain `has_more`; they never reinterpret the folder-wide `media_count` as a filtered total.
 hazards:
   - Legacy synchronous Bilibili calls cannot abort in flight; cancellation prevents subsequent calls and stale UI projection.
   - API model and UI model both use `FavoritesMedia`; aliases must remain explicit at the mapping boundary.
@@ -1017,6 +1022,7 @@ id: service.typed-navigation
 type: service
 paths:
   - src/DownKyi.Application/Desktop/IAppNavigationService.cs
+  - src/DownKyi.Application/Desktop/PublicationNavigationPayload.cs
   - DownKyi/Platform/AvaloniaNavigationService.cs
   - DownKyi/ViewModels/ViewModelBase.cs
 responsibility: Maps typed routes to DI-created ViewModels, owns bounded main-region instance history, and provides history-first back navigation with typed parent fallback.
@@ -1029,6 +1035,7 @@ contracts:
   - `GoBack` removes and disposes the current entry, restores the exact previous ViewModel instance, and never appends another entry.
   - Main-region history is bounded; nested regions replace and dispose content instead of accumulating back history.
   - A ViewModel calls its typed `ParentRoute` only after `TryNavigateBack()` reports that no previous entry exists.
+  - Publication navigation carries MID, selected type, and zones in `PublicationNavigationPayload`; raw dictionaries and UI-model payloads are prohibited on this route.
 hazards:
   - Calling parent navigation directly from a back command creates duplicate A/B instances and an ever-growing forward journal.
   - Sharing mutable icon state between page instances can make a restored page inherit another page's theme mutation.
@@ -1126,6 +1133,7 @@ id: viewmodel.user-space-pages
 type: viewmodel
 paths:
   - DownKyi/ViewModels/ViewPublicationViewModel.cs
+  - DownKyi/ViewModels/ViewPublicationViewModel.Search.cs
   - DownKyi/ViewModels/ViewMySpaceViewModel.cs
   - DownKyi/ViewModels/ViewMyBangumiFollowViewModel.cs
   - DownKyi/Views/ViewPublication.axaml
@@ -1143,6 +1151,8 @@ contracts:
   - Replacing/leaving publication or bangumi pagers detaches handlers and cancels page/download work.
   - My-space renders the primary profile first; balance/relation failure does not hide an already loaded profile.
   - Canceling publication directory selection returns before media parsing.
+  - Publication keyword search uses the WBI endpoint's exact `page.count` and applies one batch projection.
+  - Returning from a child route preserves the same query, page, and media instances; only an interrupted page request is resumed.
 hazards:
   - Per-item dispatcher calls stutter on large publication pages and can project stale rows after navigation.
   - Worker-thread mutation of profile properties and `StatusList` is unsafe for Avalonia bindings.
@@ -1163,6 +1173,7 @@ paths:
   - DownKyi.Core/BiliApi/Users/UserSpace.cs
   - DownKyi.Core/BiliApi/Users/UserInfo.cs
   - DownKyi.Core/BiliApi/Users/UserStatus.cs
+  - DownKyi.Core/BiliApi/BiliUtils/ParseEntrance.UserVideoList.cs
 responsibility: Loads publication, signed-in profile, balance, and relation data off the UI thread and returns immutable snapshots.
 inbound:
   - viewmodel.user-space-pages
@@ -1172,6 +1183,8 @@ contracts:
   - Publication, bangumi-follow, settings, my-info, navigation-info, and relation-stat requests pass cancellation to the HTTP boundary.
   - Pre-canceled requests cannot start API work and mapping checks cancellation between publication items.
   - Profile and statistics are separate operations so secondary API latency does not delay first content.
+  - A bare `bilibili.com/list/<positive MID>` maps to all publications. A list URL with non-empty `sid` is a series contract and is not guessed as all publications.
+  - Publication page snapshots preserve the server's exact filtered total and the coordinator forwards the active keyword into WBI signing.
 hazards:
   - `Services.UserSpace` and the core `UserSpace` API share a name; use an explicit alias at the boundary.
   - Legacy custom publication JSON handling remains because Bilibili sometimes returns `"--"` for play counts.
@@ -1347,6 +1360,8 @@ type: core
 paths:
   - DownKyi.Core/BiliApi
   - DownKyi.Core/BiliApi/BiliApiRequest.cs
+  - DownKyi.Core/BiliApi/Favorites/FavoritesResource.cs
+  - DownKyi.Core/BiliApi/Users/UserSpace.cs
 responsibility: Wraps Bilibili API endpoints, response parsing, and shared request failure handling.
 inbound:
   - service.info-services
@@ -1367,6 +1382,7 @@ contracts:
   - WBI request signatures must match the fixed protocol vector; MD5 is limited to that external format.
   - WBI endpoint methods receive explicit keys and timestamp; signing cannot read settings or initialize user state.
   - Optional `data`/`result` fields remain nullable, and each endpoint selects its documented field before validating a non-empty payload.
+  - Publication search uses `x/space/wbi/arc/search` and retains `data.page.count`; favorite search uses `x/v3/fav/resource/list` and retains `data.has_more`.
 hazards:
   - Bilibili schema changes must fail at this boundary rather than deserialize into a plausible empty success object.
   - Logging full URLs can leak tokens, cookies, and personal query data.
@@ -2251,6 +2267,8 @@ test.favorites:
   paths:
     - tests/DownKyi.Tests/FavoritesCoordinatorTests.cs
     - tests/DownKyi.Tests/FavoritesServiceTests.cs
+    - tests/DownKyi.Core.Tests/FavoritesSearchContractTests.cs
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
     - pre-canceled private/public favorite requests cannot start API work
@@ -2258,6 +2276,7 @@ test.favorites:
     - favorite services return snapshots rather than mutating observable collections
     - directory cancellation precedes shared download coordination and list selection remains click-toggle capable
     - unavailable media remains visible but cannot be opened, selected, or included in a download snapshot
+    - keyword encoding and `has_more` paging are deterministic and returning from a child route preserves the filtered page instance
 
 test.user-space-favorites:
   paths:
@@ -2279,6 +2298,7 @@ test.typed-navigation:
     - main-region back commands use history first and typed parent fallback only without history
     - repeated back operations cannot add forward navigation records
     - every production main-region ViewModel retains the history-first back pattern
+    - publication and private-favorite search state retains query, page, media identity, and the original ViewModel across typed back navigation
 
 test.personal-media:
   paths:
@@ -2293,12 +2313,17 @@ test.personal-media:
 test.user-space-pages:
   paths:
     - tests/DownKyi.Tests/UserSpacePageCoordinatorTests.cs
+    - tests/DownKyi.Core.Tests/UserVideoListUrlTests.cs
+    - tests/DownKyi.Core.Tests/PublicationSearchContractTests.cs
+    - tests/DownKyi.Core.Tests/BiliApi/JsonSamples/space-publication-search.json
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
     - pre-canceled publication, bangumi-follow, profile, and statistics requests cannot start API work
     - publication, bangumi-follow, and my-space ViewModels cannot regain Task.Run, App dispatch, or worker-thread binding mutation
     - core user-space account/stat APIs preserve cancellation through the HTTP boundary
     - publication batching, pager cleanup, directory cancellation ordering, and click-toggle selection remain stable
+    - numeric list parsing rejects favorites, foreign hosts, malformed paths, and series `sid` URLs
+    - publication search preserves the WBI response total and typed media identity without a real network dependency
 
 test.legacy-upgrade:
   paths:

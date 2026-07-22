@@ -8,6 +8,7 @@ using DownKyi.Core.Settings;
 using DownKyi.Core.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using ApiFavoritesMedia = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMedia;
+using ApiFavoritesMediaResource = DownKyi.Core.BiliApi.Favorites.Models.FavoritesMediaResource;
 
 namespace DownKyi.Services;
 
@@ -49,6 +50,28 @@ internal sealed class FavoritesService : IFavoritesService
             UpHeader = metadata.Upper?.Face ?? string.Empty,
             UpperMid = metadata.Upper?.Mid ?? -1
         };
+    }
+
+    public ApiFavoritesMediaResource GetFavoritesMediaPage(
+        long mediaId,
+        int page,
+        int pageSize,
+        string? keyword,
+        CancellationToken cancellationToken)
+    {
+        return FavoritesResource.GetFavoritesMediaResource(
+            mediaId,
+            page,
+            pageSize,
+            keyword,
+            cancellationToken);
+    }
+
+    public IReadOnlyList<ApiFavoritesMedia> GetAllFavoritesMedia(
+        long mediaId,
+        CancellationToken cancellationToken)
+    {
+        return FavoritesResource.GetAllFavoritesMedia(mediaId, cancellationToken);
     }
 
     public IReadOnlyList<FavoritesMedia> MapFavoritesMedia(

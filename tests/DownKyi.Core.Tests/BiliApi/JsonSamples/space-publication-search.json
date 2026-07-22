@@ -1,0 +1,28 @@
+{
+  "code": 0,
+  "message": "0",
+  "ttl": 1,
+  "data": {
+    "list": {
+      "tlist": {},
+      "vlist": [
+        {
+          "typeid": 1,
+          "play": 12,
+          "pic": "https://example.invalid/cover.jpg",
+          "title": "fixture publication",
+          "mid": 42,
+          "created": 1700000000,
+          "length": "01:30",
+          "aid": 100,
+          "bvid": "BV1fixture01"
+        }
+      ]
+    },
+    "page": {
+      "pn": 2,
+      "ps": 30,
+      "count": 35
+    }
+  }
+}

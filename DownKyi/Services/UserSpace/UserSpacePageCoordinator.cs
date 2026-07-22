@@ -48,13 +48,18 @@ internal sealed record BangumiFollowPageSnapshot(
     IReadOnlyList<BangumiFollowMedia> Medias,
     int PageCount);
 
+internal sealed record PublicationPageSnapshot(
+    IReadOnlyList<PublicationMedia> Medias,
+    int TotalCount);
+
 internal interface IUserSpacePageCoordinator
 {
-    Task<IReadOnlyList<PublicationMedia>> LoadPublicationPageAsync(
+    Task<PublicationPageSnapshot> LoadPublicationPageAsync(
         long mid,
         int page,
         int pageSize,
         long typeId,
+        string? keyword,
         CancellationToken cancellationToken);
 
     Task<MySpaceProfileSnapshot?> LoadMyProfileAsync(long mid, CancellationToken cancellationToken);
@@ -88,60 +93,74 @@ internal sealed class UserSpacePageCoordinator : IUserSpacePageCoordinator
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<IReadOnlyList<PublicationMedia>> LoadPublicationPageAsync(
+    public async Task<PublicationPageSnapshot> LoadPublicationPageAsync(
         long mid,
         int page,
         int pageSize,
         long typeId,
+        string? keyword,
         CancellationToken cancellationToken)
     {
         var publication = await WbiRequestExecutor.ExecuteAsync(
             _wbiKeyProvider,
-            (keys, unixTimeSeconds) => BiliUserSpace.GetPublication(
+            (keys, unixTimeSeconds) => BiliUserSpace.GetPublicationPage(
                 keys,
                 unixTimeSeconds,
                 mid,
                 page,
                 pageSize,
                 typeId,
+                keyword: keyword?.Trim() ?? string.Empty,
                 cancellationToken: cancellationToken),
             TimeProvider.System,
             cancellationToken).ConfigureAwait(false);
-        return await Task.Run<IReadOnlyList<PublicationMedia>>(() =>
+        return await Task.Run(() => MapPublicationPage(
+            publication,
+            _navigationService,
+            _logger,
+            cancellationToken), cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static PublicationPageSnapshot MapPublicationPage(
+        SpacePublication? publication,
+        IAppNavigationService navigationService,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(navigationService);
+        ArgumentNullException.ThrowIfNull(logger);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (publication == null)
+        {
+            logger.LogWarningMessage("Bilibili publication page could not be loaded.");
+            return new PublicationPageSnapshot(Array.Empty<PublicationMedia>(), 0);
+        }
+
+        var videos = publication.List.Vlist;
+        if (videos == null || videos.Count == 0)
+        {
+            return new PublicationPageSnapshot(Array.Empty<PublicationMedia>(), publication.Page.Count);
+        }
+
+        var result = new List<PublicationMedia>(videos.Count);
+        foreach (var video in videos)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (publication == null)
+            result.Add(new PublicationMedia(navigationService, AppRoute.Publication)
             {
-                _logger.LogWarningMessage("Bilibili publication page could not be loaded.");
-                return Array.Empty<PublicationMedia>();
-            }
+                Avid = video.Aid,
+                Bvid = video.Bvid,
+                Duration = video.Length,
+                Title = video.Title,
+                PlayNumber = video.Play > 0 ? Format.FormatNumber(video.Play) : "--",
+                CreateTime = DateTimeOffset.FromUnixTimeSeconds(video.Created)
+                    .ToLocalTime()
+                    .ToString("yyyy-MM-dd", CultureInfo.CurrentCulture),
+                CoverUrl = video.Pic
+            });
+        }
 
-            var videos = publication.Vlist;
-            if (videos == null || videos.Count == 0)
-            {
-                return Array.Empty<PublicationMedia>();
-            }
-
-            var result = new List<PublicationMedia>(videos.Count);
-            foreach (var video in videos)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                result.Add(new PublicationMedia(_navigationService, AppRoute.Publication)
-                {
-                    Avid = video.Aid,
-                    Bvid = video.Bvid,
-                    Duration = video.Length,
-                    Title = video.Title,
-                    PlayNumber = video.Play > 0 ? Format.FormatNumber(video.Play) : "--",
-                    CreateTime = DateTimeOffset.FromUnixTimeSeconds(video.Created)
-                        .ToLocalTime()
-                        .ToString("yyyy-MM-dd", CultureInfo.CurrentCulture),
-                    CoverUrl = video.Pic
-                });
-            }
-
-            return result;
-        }, cancellationToken).ConfigureAwait(false);
+        return new PublicationPageSnapshot(result, publication.Page.Count);
     }
 
     public Task<MySpaceProfileSnapshot?> LoadMyProfileAsync(long mid, CancellationToken cancellationToken)

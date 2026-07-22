@@ -68,18 +68,18 @@ internal class ViewArchiveViewModel : ViewModelBase
             return;
         }
 
-        var data = new Dictionary<string, object>
-        {
-            { "mid", _mid },
-            { "tid", zone.Tid },
-            { "list", PublicationZones.ToList() }
-        };
+        var payload = new PublicationNavigationPayload(
+            _mid,
+            zone.Tid,
+            PublicationZones
+                .Select(item => new PublicationNavigationZone(item.Tid, item.Name, item.Count))
+                .ToArray());
 
         // 进入视频页面
         Navigation.Navigate(new AppNavigationRequest(
             AppRoute.Publication,
             AppRoute.UserSpace,
-            data));
+            payload));
 
         SelectedItem = -1;
     }

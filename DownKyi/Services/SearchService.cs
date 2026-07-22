@@ -28,6 +28,7 @@ internal class SearchService
     /// 课程ss号：https://www.bilibili.com/cheese/play/ss205 <para/>
     /// 课程ep号：https://www.bilibili.com/cheese/play/ep3489 <para/>
     /// 收藏夹：ml1329019876, ML1329019876, https://www.bilibili.com/medialist/detail/ml1329019876, https://www.bilibili.com/medialist/play/ml1329019876/ <para/>
+    /// UP主全部投稿：https://www.bilibili.com/list/3546801722362343 <para/>
     /// 用户空间：uid928123, UID928123, uid:928123, UID:928123, https://space.bilibili.com/928123
     /// </summary>
     /// <param name="input"></param>
@@ -90,6 +91,14 @@ internal class SearchService
         else if (ParseEntrance.IsCheeseSeasonUrl(justId) || ParseEntrance.IsCheeseEpisodeUrl(justId))
         {
             NavigateToVideo(parentRoute, input);
+        }
+        // UP主全部投稿列表
+        else if (ParseEntrance.IsUserVideoListUrl(justId))
+        {
+            _navigationService.Navigate(new AppNavigationRequest(
+                AppRoute.Publication,
+                parentRoute,
+                PublicationNavigationPayload.All(ParseEntrance.GetUserVideoListId(justId))));
         }
         // 用户（参数传入mid）
         else if (ParseEntrance.IsUserId(justId))

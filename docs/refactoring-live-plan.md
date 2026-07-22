@@ -3,7 +3,7 @@
 Status: active
 Last updated: 2026-07-22
 Current group: PR #79/#80 typed integration
-Current branch: `refactor/gate-02-list-search-navigation` (create after PR #82 merges)
+Current branch: `refactor/gate-02-list-search-navigation`
 
 This file contains only unfinished or not-yet-integrated work. Completed PR 02-32 items are not restored. Design rationale belongs in `design-docs`; product acceptance belongs in `product-specs`.
 
@@ -26,6 +26,15 @@ No release tag may be created while any release blocker below remains.
 Required base: `refactor/pr-30-32-release-hardening` or its approved successor after Gate 0/1.
 
 Owner branch: `refactor/gate-02-list-search-navigation`
+
+Progress (2026-07-22):
+
+- Implemented strict bare `/list/<mid>` parsing and typed publication navigation; series URLs with `sid` are intentionally rejected until Gate 3 audits their endpoint contract.
+- Implemented private-favorites and publication search with cancellation-aware page snapshots.
+- Implemented exact publication totals and `has_more`-driven incremental favorite search paging because the favorite API reports the unfiltered folder total during keyword search.
+- Added headless back-navigation tests proving query, page number, media object identity, and the original ViewModel instance survive child navigation.
+- Final local verification is green: strict Release build `0 warning / 0 error`, all `536/536` tests, architecture tests `169/169`, format `0/738` changed files, clean dependency vulnerability/deprecation audits, module-boundary inventory, and `git diff --check`.
+- The remaining Gate 2 work is publishing the integration PR, waiting for remote CI, superseding PR #79/#80, and merging into the stacked architecture base.
 
 Scope:
 

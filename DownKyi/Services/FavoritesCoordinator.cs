@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Desktop;
-using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.ViewModels.PageViewModels;
 
 namespace DownKyi.Services;
@@ -12,14 +11,19 @@ internal sealed record PublicFavoritesSnapshot(
     FavoritesPageItem Favorites,
     IReadOnlyList<FavoritesMedia> Medias);
 
+internal sealed record FavoritesMediaPageSnapshot(
+    IReadOnlyList<FavoritesMedia> Medias,
+    bool HasMore);
+
 internal interface IFavoritesCoordinator
 {
     Task<IReadOnlyList<TabHeader>> LoadFoldersAsync(long mid, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<FavoritesMedia>> LoadMediaPageAsync(
+    Task<FavoritesMediaPageSnapshot> LoadMediaPageAsync(
         long favoritesId,
         int page,
         int pageSize,
+        string? keyword,
         CancellationToken cancellationToken);
 
     Task<PublicFavoritesSnapshot?> LoadPublicFavoritesAsync(
@@ -50,23 +54,26 @@ internal sealed class FavoritesCoordinator : IFavoritesCoordinator
         }, cancellationToken);
     }
 
-    public Task<IReadOnlyList<FavoritesMedia>> LoadMediaPageAsync(
+    public Task<FavoritesMediaPageSnapshot> LoadMediaPageAsync(
         long favoritesId,
         int page,
         int pageSize,
+        string? keyword,
         CancellationToken cancellationToken)
     {
-        return Task.Run<IReadOnlyList<FavoritesMedia>>(() =>
+        return Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var medias = FavoritesResource.GetFavoritesMedia(
+            var resource = _favoritesService.GetFavoritesMediaPage(
                 favoritesId,
                 page,
                 pageSize,
+                keyword,
                 cancellationToken);
-            return medias == null || medias.Count == 0
+            var mapped = resource.Medias.Count == 0
                 ? Array.Empty<FavoritesMedia>()
-                : _favoritesService.MapFavoritesMedia(medias, AppRoute.MyFavorites, cancellationToken);
+                : _favoritesService.MapFavoritesMedia(resource.Medias, AppRoute.MyFavorites, cancellationToken);
+            return new FavoritesMediaPageSnapshot(mapped, resource.HasMore);
         }, cancellationToken);
     }
 
@@ -83,7 +90,7 @@ internal sealed class FavoritesCoordinator : IFavoritesCoordinator
                 return null;
             }
 
-            var medias = FavoritesResource.GetAllFavoritesMedia(favoritesId, cancellationToken);
+            var medias = _favoritesService.GetAllFavoritesMedia(favoritesId, cancellationToken);
             var mapped = _favoritesService.MapFavoritesMedia(medias, AppRoute.PublicFavorites, cancellationToken);
             return new PublicFavoritesSnapshot(favorites, mapped);
         }, cancellationToken);
