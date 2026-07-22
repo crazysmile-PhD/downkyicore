@@ -18,6 +18,16 @@ internal static class BangumiPlayUrlV2Contract
             result.VideoInfo,
             "result.video_info",
             operationName);
+        if (payload.Durl is null
+            || payload.Dash is null
+            || payload.Dash.Video is null
+            || payload.Dash.Audio is null)
+        {
+            throw new BilibiliApiResponseException(
+                operationName,
+                $"{operationName} returned a malformed 'result.video_info' playback payload.");
+        }
+
         if (payload.Durl.Count == 0
             && payload.Dash.Video.Count == 0
             && payload.Dash.Audio.Count == 0)

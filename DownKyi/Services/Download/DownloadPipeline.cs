@@ -532,7 +532,8 @@ internal sealed class DownloadPipeline : IDisposable
                 break;
             case PlayStreamType.Bangumi:
                 playUrl = downloading.PlayUrl ?? VideoStreamApi.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid,
-                    downloading.DownloadBase.Cid, cancellationToken: CancellationToken.GetValueOrDefault());
+                    downloading.DownloadBase.Cid, downloading.DownloadBase.EpisodeId,
+                    cancellationToken: CancellationToken.GetValueOrDefault());
                 break;
             case PlayStreamType.Cheese:
                 playUrl = downloading.PlayUrl ?? VideoStreamApi.GetCheesePlayUrl(downloading.DownloadBase.Avid,
