@@ -108,15 +108,18 @@ public sealed class PlayUrlEnvelopeContractTests : IDisposable
     [Fact]
     public void BangumiEndpointUsesResultVideoInfoEnvelope()
     {
-        ConfigureResponse("playurl-bangumi-v2-result.json");
+        Uri? requestUri = null;
+        ConfigureResponse("playurl-bangumi-v2-result.json", request => requestUri = request.RequestUri);
 
         var payload = VideoStreamApi.GetBangumiPlayUrl(
             1,
             "BV1fixture",
             2,
+            3489,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, Assert.Single(payload?.Durl ?? []).Order);
+        Assert.Contains("ep_id=3489", Assert.IsType<Uri>(requestUri).Query, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -132,6 +135,25 @@ public sealed class PlayUrlEnvelopeContractTests : IDisposable
 
         Assert.Equal("bangumi-v2", exception.Operation);
         Assert.Contains("result.video_info", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("null", "{\"video\":[],\"audio\":[]}")]
+    [InlineData("[]", "null")]
+    [InlineData("[]", "{\"video\":null,\"audio\":[]}")]
+    [InlineData("[]", "{\"video\":[],\"audio\":null}")]
+    public void BangumiV2NullPlaybackCollectionsThrowTypedContractFailure(string durl, string dash)
+    {
+        var response = JsonConvert.DeserializeObject<BangumiPlayUrlV2Origin>(
+            $"{{\"result\":{{\"video_info\":{{\"durl\":{durl},\"dash\":{dash}}}}}}}");
+
+        var exception = Assert.Throws<BilibiliApiResponseException>(() =>
+            BangumiPlayUrlV2Contract.SelectPayload(
+                Assert.IsType<BangumiPlayUrlV2Origin>(response),
+                "bangumi-v2"));
+
+        Assert.Equal("bangumi-v2", exception.Operation);
+        Assert.Contains("malformed 'result.video_info'", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -179,12 +201,16 @@ public sealed class PlayUrlEnvelopeContractTests : IDisposable
                ?? throw new InvalidDataException($"Sample '{name}' did not deserialize.");
     }
 
-    private static void ConfigureResponse(string sampleName)
+    private static void ConfigureResponse(string sampleName, Action<HttpRequestMessage>? observeRequest = null)
     {
         var body = File.ReadAllText(Path.Combine(SampleDirectory, sampleName));
-        BiliWebClient.SendOverrideForTests = (_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        BiliWebClient.SendOverrideForTests = (request, _) =>
         {
-            Content = new StringContent(body)
+            observeRequest?.Invoke(request);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body)
+            };
         };
     }
 
