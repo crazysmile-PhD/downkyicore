@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.Settings;
+
 public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan FlushDelay = TimeSpan.FromMilliseconds(750);
