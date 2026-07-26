@@ -1,0 +1,273 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:DownKyi.ViewModels"
+             xmlns:vmp="clr-namespace:DownKyi.Presentation"
+             xmlns:custom="clr-namespace:DownKyi.CustomControl"
+             xmlns:customAction="clr-namespace:DownKyi.CustomAction"
+             xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
+             x:Class="DownKyi.Views.ViewMyDynamic"
+             x:DataType="vm:ViewMyDynamicViewModel"
+             d:DesignWidth="840"
+             d:DesignHeight="620"
+             mc:Ignorable="d">
+    <Grid RowDefinitions="50,1,*">
+        <Grid Grid.Row="0" ColumnDefinitions="140,*,140">
+            <Button
+                Grid.Column="0"
+                Margin="10,5,0,5"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Center"
+                Command="{Binding BackSpaceCommand}"
+                Theme="{StaticResource ImageBtnStyle}">
+                <StackPanel Orientation="Horizontal">
+                    <ContentControl Width="24" Height="24">
+                        <Path
+                            Width="{Binding ArrowBack.Width}"
+                            Height="{Binding ArrowBack.Height}"
+                            Data="{Binding ArrowBack.Data}"
+                            Fill="{Binding ArrowBack.Fill}"
+                            Stretch="None" />
+                    </ContentControl>
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="16"
+                        Foreground="{DynamicResource BrushTextDark}"
+                        Text="{DynamicResource MyDynamic}" />
+                </StackPanel>
+            </Button>
+
+            <Button
+                Grid.Column="2"
+                MinWidth="64"
+                Height="30"
+                Margin="0,0,12,0"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center"
+                Command="{Binding RefreshCommand}"
+                Content="{DynamicResource DynamicRefresh}"
+                FontSize="12"
+                Foreground="{DynamicResource BrushText}"
+                Theme="{StaticResource BtnStyle}" />
+        </Grid>
+
+        <Border Grid.Row="1" Background="{DynamicResource BrushBorder}" />
+
+        <ListBox
+            Grid.Row="2"
+            Margin="0,4,0,0"
+            Background="Transparent"
+            BorderThickness="0"
+            IsVisible="{Binding ContentVisibility}"
+            ItemsSource="{Binding Items}"
+            SelectionMode="Single">
+            <Interaction.Behaviors>
+                <customAction:InfiniteScrollBehavior LoadMoreCommand="{Binding LoadMoreCommand}" />
+            </Interaction.Behaviors>
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemContainerTheme>
+                <ControlTheme TargetType="ListBoxItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="Template">
+                        <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                            <ContentPresenter
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}" />
+                        </ControlTemplate>
+                    </Setter>
+                </ControlTheme>
+            </ListBox.ItemContainerTheme>
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vmp:DynamicCard">
+                    <Border
+                        MaxWidth="740"
+                        Margin="20,10"
+                        Padding="16"
+                        HorizontalAlignment="Stretch"
+                        Background="{DynamicResource BrushBackground}"
+                        BorderBrush="{DynamicResource BrushBorderTranslucent}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                            <Grid Grid.Row="0" ColumnDefinitions="42,*,Auto">
+                                <Border
+                                    Grid.Column="0"
+                                    Width="36"
+                                    Height="36"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    CornerRadius="18"
+                                    Cursor="Hand">
+                                    <Interaction.Behaviors>
+                                        <EventTriggerBehavior EventName="PointerReleased">
+                                            <InvokeCommandAction Command="{Binding AuthorCommand}" />
+                                        </EventTriggerBehavior>
+                                    </Interaction.Behaviors>
+                                    <Border.Background>
+                                        <ImageBrush
+                                            asyncImageLoader:ImageBrushLoader.Source="{Binding AuthorFace}"
+                                            asyncImageLoader:ImageBrushLoader.Width="36"
+                                            asyncImageLoader:ImageBrushLoader.Height="36"
+                                            Stretch="UniformToFill" />
+                                    </Border.Background>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock
+                                        Cursor="Hand"
+                                        FontSize="14"
+                                        FontWeight="Bold"
+                                        Foreground="{DynamicResource BrushTextDark}"
+                                        Text="{Binding AuthorName}">
+                                        <Interaction.Behaviors>
+                                            <EventTriggerBehavior EventName="PointerReleased">
+                                                <InvokeCommandAction Command="{Binding AuthorCommand}" />
+                                            </EventTriggerBehavior>
+                                        </Interaction.Behaviors>
+                                    </TextBlock>
+                                    <TextBlock
+                                        Margin="0,3,0,0"
+                                        FontSize="11"
+                                        Foreground="{DynamicResource BrushTextGrey}"
+                                        Text="{Binding PublishText}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock
+                                Grid.Row="1"
+                                Margin="42,12,0,0"
+                                FontSize="13"
+                                Foreground="{DynamicResource BrushTextDark}"
+                                IsVisible="{Binding HasDescription}"
+                                MaxLines="8"
+                                Text="{Binding Description}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="Wrap" />
+
+                            <ItemsControl
+                                Grid.Row="2"
+                                Margin="42,12,0,0"
+                                IsVisible="{Binding HasPictures}"
+                                ItemsSource="{Binding Pictures}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vmp:DynamicPictureView">
+                                        <Border
+                                            Width="150"
+                                            Height="100"
+                                            Margin="0,0,8,8"
+                                            CornerRadius="6">
+                                            <Border.Background>
+                                                <ImageBrush
+                                                    asyncImageLoader:ImageBrushLoader.Source="{Binding Source}"
+                                                    asyncImageLoader:ImageBrushLoader.Width="150"
+                                                    asyncImageLoader:ImageBrushLoader.Height="100"
+                                                    Stretch="UniformToFill" />
+                                            </Border.Background>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Border
+                                Grid.Row="3"
+                                Margin="42,12,0,0"
+                                Padding="10"
+                                Background="{DynamicResource BrushPrimaryTranslucent3}"
+                                CornerRadius="8"
+                                Cursor="Hand"
+                                IsVisible="{Binding HasCard}">
+                                <Interaction.Behaviors>
+                                    <EventTriggerBehavior EventName="PointerReleased">
+                                        <InvokeCommandAction Command="{Binding OpenContentCommand}" />
+                                    </EventTriggerBehavior>
+                                </Interaction.Behaviors>
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <Border
+                                        Grid.Column="0"
+                                        Width="150"
+                                        Height="94"
+                                        CornerRadius="6"
+                                        IsVisible="{Binding HasCover}">
+                                        <Border.Background>
+                                            <ImageBrush
+                                                asyncImageLoader:ImageBrushLoader.Source="{Binding Cover}"
+                                                asyncImageLoader:ImageBrushLoader.Width="150"
+                                                asyncImageLoader:ImageBrushLoader.Height="94"
+                                                Stretch="UniformToFill" />
+                                        </Border.Background>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock
+                                            FontSize="14"
+                                            FontWeight="Bold"
+                                            Foreground="{DynamicResource BrushTextDark}"
+                                            MaxLines="2"
+                                            Text="{Binding CardTitle}"
+                                            TextTrimming="CharacterEllipsis"
+                                            TextWrapping="Wrap" />
+                                        <TextBlock
+                                            Margin="0,6,0,0"
+                                            FontSize="12"
+                                            Foreground="{DynamicResource BrushTextGrey2}"
+                                            MaxLines="2"
+                                            Text="{Binding CardDescription}"
+                                            TextTrimming="CharacterEllipsis"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <StackPanel
+                                Grid.Row="4"
+                                Margin="42,12,0,0"
+                                HorizontalAlignment="Right"
+                                Orientation="Horizontal"
+                                Spacing="22">
+                                <TextBlock FontSize="12" Foreground="{DynamicResource BrushTextGrey}" Text="{Binding ForwardText}" />
+                                <TextBlock FontSize="12" Foreground="{DynamicResource BrushTextGrey}" Text="{Binding CommentText}" />
+                                <TextBlock FontSize="12" Foreground="{DynamicResource BrushTextGrey}" Text="{Binding LikeText}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <StackPanel
+            Grid.Row="2"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            IsVisible="{Binding LoadingVisibility}">
+            <custom:Loading Width="40" Height="40" Foreground="Gray" IsActive="True" />
+            <TextBlock
+                Margin="0,10,0,0"
+                FontSize="14"
+                Foreground="{DynamicResource BrushTextDark}"
+                Text="{DynamicResource MySpaceWait}" />
+        </StackPanel>
+
+        <StackPanel
+            Grid.Row="2"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            IsVisible="{Binding NoDataVisibility}">
+            <Image Width="220" Height="220" Source="/Resources/no-data.png" />
+            <TextBlock
+                Margin="0,8,0,0"
+                HorizontalAlignment="Center"
+                FontSize="13"
+                Foreground="{DynamicResource BrushTextGrey}"
+                Text="{DynamicResource DynamicNoData}" />
+        </StackPanel>
+    </Grid>
+</UserControl>

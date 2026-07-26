@@ -8,6 +8,7 @@ public class AppSettings
     public VideoSettings Video { get; set; } = new();
     public DanmakuSettings Danmaku { get; set; } = new();
     public AboutSettings About { get; set; } = new();
+    public HistorySettings History { get; set; } = new();
     public UserInfoSettings UserInfo { get; set; } = new();
     public WindowSettings WindowSettings { get; set; } = new();
 }

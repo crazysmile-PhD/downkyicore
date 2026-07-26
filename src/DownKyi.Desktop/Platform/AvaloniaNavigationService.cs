@@ -282,6 +282,7 @@ internal sealed class AvaloniaNavigationService : IAppNavigationService, IDispos
             AppRoute.MyBangumiFollow => typeof(ViewMyBangumiFollowViewModel),
             AppRoute.MyToViewVideo => typeof(ViewMyToViewVideoViewModel),
             AppRoute.MyHistory => typeof(ViewMyHistoryViewModel),
+            AppRoute.MyDynamic => typeof(ViewMyDynamicViewModel),
             AppRoute.Downloading => typeof(ViewDownloadingViewModel),
             AppRoute.DownloadFinished => typeof(ViewDownloadFinishedViewModel),
             AppRoute.Following => typeof(ViewFollowingViewModel),
