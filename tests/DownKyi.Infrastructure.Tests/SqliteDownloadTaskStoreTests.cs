@@ -61,6 +61,19 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task OrphanedLegacyDownloadingRecordIsIgnoredDuringRecovery()
+    {
+        await CreateLegacyDatabaseAsync();
+        await InsertOrphanedLegacyDownloadingRecordAsync();
+        using var store = CreateStore();
+
+        var restored = await store.GetUnfinishedAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("legacy-resume", Assert.Single(restored).Id.Value);
+        Assert.DoesNotContain(restored, task => task.Id.Value == "orphaned-download");
+    }
+
+    [Fact]
     public async Task PausedTaskPreservesResumeStateAcrossReopen()
     {
         var expected = CreatePausedTask("resume-01");
@@ -313,6 +326,21 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var command = connection.CreateCommand();
         command.CommandText = "UPDATE downloading SET download_status = @status";
         command.Parameters.AddWithValue("@status", status);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task InsertOrphanedLegacyDownloadingRecordAsync()
+    {
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            PRAGMA foreign_keys = OFF;
+            INSERT INTO downloading
+                (id, download_files, downloaded_files, play_stream_type, download_status,
+                 progress, max_speed)
+            VALUES
+                ('orphaned-download', '{}', '[]', 0, 0, 0, 0)
+            """;
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
     }
 
