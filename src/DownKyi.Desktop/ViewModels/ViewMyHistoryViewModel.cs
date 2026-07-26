@@ -3,12 +3,14 @@ using System.Collections;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Logging;
+using DownKyi.Core.Settings;
 using DownKyi.Images;
 using DownKyi.Presentation;
 using DownKyi.Services;
@@ -19,7 +21,7 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.ViewModels;
 
-internal class ViewMyHistoryViewModel : ViewModelBase
+internal partial class ViewMyHistoryViewModel : ViewModelBase
 {
     public const string Tag = "PageMyHistory";
     private readonly IContentDownloadCoordinator _downloadCoordinator;
@@ -114,12 +116,15 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         IDesktopInteractionContext desktopInteractions,
         IContentDownloadCoordinator downloadCoordinator,
         IPersonalMediaCoordinator personalMediaCoordinator,
+        ISettingsStore settingsStore,
         ILogger<ViewMyHistoryViewModel> logger) : base(desktopInteractions)
     {
         _downloadCoordinator = downloadCoordinator ?? throw new ArgumentNullException(nameof(downloadCoordinator));
         _personalMediaCoordinator = personalMediaCoordinator
             ?? throw new ArgumentNullException(nameof(personalMediaCoordinator));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _nextRefreshFormat = CompositeFormat.Parse(DictionaryResource.GetString("HistoryNextRefresh"));
 
         #region 属性初始化
 
@@ -138,6 +143,9 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         DownloadManage.Fill = DictionaryResource.GetColor("ColorPrimary");
 
         Medias = new RangeObservableCollection<HistoryMedia>();
+        _isHistoryAutoRefreshEnabled = _settingsStore.Current.History.IsAutoRefreshEnabled;
+        _historyAutoRefreshIntervalSeconds =
+            _settingsStore.Current.History.AutoRefreshIntervalSeconds;
 
         #endregion
     }
@@ -418,6 +426,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     {
         ArgumentNullException.ThrowIfNull(navigationContext);
         base.OnNavigatedTo(navigationContext);
+        _isPageActive = true;
 
         ArrowBack.Fill = DictionaryResource.GetColor("ColorTextDark");
 
@@ -436,16 +445,19 @@ internal class ViewMyHistoryViewModel : ViewModelBase
                 media.IsSelected = false;
             }
 
+            RestartAutoRefresh();
             return;
         }
 
         InitView();
 
         RunFireAndForget(UpdateHistoryMediaListAsync(), nameof(UpdateHistoryMediaListAsync), _logger);
+        RestartAutoRefresh();
     }
 
     public override void OnNavigatedFrom(AppNavigationContext navigationContext)
     {
+        _isPageActive = false;
         CancelOperations();
         LoadingVisibility = false;
         _isLoadingPage = false;
@@ -457,6 +469,8 @@ internal class ViewMyHistoryViewModel : ViewModelBase
         Interlocked.Increment(ref _loadVersion);
         CancelAndDispose(ref _loadCancellation);
         CancelAndDispose(ref _downloadCancellation);
+        CancelAndDispose(ref _autoRefreshCancellation);
+        NextAutoRefreshText = string.Empty;
     }
 
     protected override void Dispose(bool disposing)

@@ -224,6 +224,15 @@ internal class NormalIcon
             Fill = "#FF000000"
         };
 
+        Dynamic = new VectorImage
+        {
+            Height = 24,
+            Width = 24,
+            Data = @"M512 42 L632 392 L982 512 L632 632 L512 982 L392 632 L42 512 L392 392 Z
+                     M512 330 L452 452 L330 512 L452 572 L512 694 L572 572 L694 512 L572 452 Z",
+            Fill = "#FF000000"
+        };
+
         ToView = new VectorImage
         {
             Height = 24,
@@ -408,6 +417,7 @@ internal class NormalIcon
 
     public VectorImage FavoriteOutline { get; private set; }
     public VectorImage Subscription { get; private set; }
+    public VectorImage Dynamic { get; private set; }
     public VectorImage ToView { get; private set; }
     public VectorImage History { get; private set; }
 

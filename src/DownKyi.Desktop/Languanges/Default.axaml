@@ -80,6 +80,19 @@
     
     <!--  MyHistory  -->
     <system:String x:Key="MyHistory">历史记录</system:String>
+    <system:String x:Key="HistoryAutoRefresh">自动刷新</system:String>
+    <system:String x:Key="HistoryRefreshInterval">间隔</system:String>
+    <system:String x:Key="HistoryRefreshSeconds">秒</system:String>
+    <system:String x:Key="HistoryRefreshIntervalTip">最少 10 秒；每次刷新会在设置时间上随机增加或减少 0.00 至 1.00 秒</system:String>
+    <system:String x:Key="HistoryNextRefresh">下次刷新：{0:F2} 秒</system:String>
+    <system:String x:Key="Dynamic">动态</system:String>
+    <system:String x:Key="MyDynamic">我的动态</system:String>
+    <system:String x:Key="DynamicRefresh">刷新</system:String>
+    <system:String x:Key="DynamicForward">转发</system:String>
+    <system:String x:Key="DynamicComment">评论</system:String>
+    <system:String x:Key="DynamicLike">点赞</system:String>
+    <system:String x:Key="DynamicForwardedFrom">转发自</system:String>
+    <system:String x:Key="DynamicNoData">暂无动态，或当前登录状态已失效</system:String>
     <system:String x:Key="HistoryFinished">已看完</system:String>
     <system:String x:Key="HistoryStarted">刚开始</system:String>
     <system:String x:Key="HistoryWatch">看到</system:String>

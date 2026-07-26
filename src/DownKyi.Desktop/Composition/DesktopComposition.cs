@@ -112,6 +112,7 @@ internal static class DesktopComposition
         services.AddSingleton<IContentDownloadCoordinator, ContentDownloadCoordinator>();
         services.AddSingleton<IContentInfoServiceFactory, ContentInfoServiceFactory>();
         services.AddSingleton<IPersonalMediaCoordinator, PersonalMediaCoordinator>();
+        services.AddSingleton<IDynamicFeedCoordinator, DynamicFeedCoordinator>();
         services.AddSingleton<ILegacyUpgradeCoordinator, LegacyUpgradeCoordinator>();
         services.AddSingleton<IFavoritesService, FavoritesService>();
         services.AddSingleton<IFavoritesCoordinator, FavoritesCoordinator>();
@@ -174,6 +175,7 @@ internal static class DesktopComposition
         services.AddTransient<ViewMyBangumiFollowViewModel>();
         services.AddTransient<ViewMyToViewVideoViewModel>();
         services.AddTransient<ViewMyHistoryViewModel>();
+        services.AddTransient<ViewMyDynamicViewModel>();
         services.AddTransient<ViewDownloadingViewModel>();
         services.AddTransient<ViewDownloadFinishedViewModel>();
         services.AddTransient<ViewFollowingViewModel>();

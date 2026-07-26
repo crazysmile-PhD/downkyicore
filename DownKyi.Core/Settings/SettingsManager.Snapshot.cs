@@ -116,6 +116,9 @@ public partial class SettingsManager
                 GetIsReceiveBetaVersion(),
                 GetAutoUpdateWhenLaunch(),
                 GetSkipVersionOnLaunch()),
+            new HistoryApplicationSettings(
+                IsHistoryAutoRefreshEnabled(),
+                GetHistoryAutoRefreshIntervalSeconds()),
             new UserApplicationSettings(
                 user.Mid,
                 user.Name,
@@ -217,6 +220,8 @@ public partial class SettingsManager
                     _appSettings.About.SkipVersionOnLaunch,
                     validated.About.SkipVersionOnLaunch,
                     value => _appSettings.About.SkipVersionOnLaunch = value);
+                SetHistoryAutoRefreshEnabled(validated.History.IsAutoRefreshEnabled);
+                SetHistoryAutoRefreshIntervalSeconds(validated.History.AutoRefreshIntervalSeconds);
                 SetUserInfo(new UserInfoSettings
                 {
                     Mid = validated.User.Mid,
