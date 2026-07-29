@@ -71,11 +71,18 @@ internal sealed class DownloadActivityPresenter
             cancellationToken);
     }
 
-    public static DownloadFailure CreateRetryableFailure()
+    public static DownloadFailure CreateRetryableFailure(string? errorCode = null)
     {
+        var isNetworkProblem = string.Equals(
+            errorCode,
+            "download.transfer.network",
+            StringComparison.Ordinal);
         return new DownloadFailure(
-            "download.runtime.failed",
-            DictionaryResource.GetString("DownloadFailed"),
+            string.IsNullOrWhiteSpace(errorCode)
+                ? "download.runtime.failed"
+                : errorCode,
+            DictionaryResource.GetString(
+                isNetworkProblem ? "NetworkProblem" : "DownloadFailed"),
             true);
     }
 

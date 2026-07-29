@@ -166,6 +166,7 @@
     <system:String x:Key="Pausing">暂停中……</system:String>
     <system:String x:Key="Waiting">等待中……</system:String>
     <system:String x:Key="DownloadFailed">下载失败</system:String>
+    <system:String x:Key="NetworkProblem">网络问题</system:String>
     <system:String x:Key="TotalDownloading1">正在下载</system:String>
     <system:String x:Key="TotalDownloading2">个视频！</system:String>
     <system:String x:Key="PauseAllDownloading">全部暂停</system:String>

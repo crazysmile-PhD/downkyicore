@@ -35,7 +35,7 @@ internal static class Aria2TransferFailureClassifier
 
         return errorCode switch
         {
-            "2" or "5" or "6" or "7" or "19" or "29" =>
+            "1" or "2" or "5" or "6" or "7" or "19" or "29" =>
                 Failed(DownloadTransferFailureKind.TransientNetwork, errorCode),
             "3" or "4" or "23" =>
                 Failed(DownloadTransferFailureKind.ExpiredAddress, errorCode),

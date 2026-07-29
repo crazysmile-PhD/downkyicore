@@ -176,7 +176,9 @@ internal static class DownloadTaskProjectionMapper
         {
             DownloadPhase.Queued => DictionaryResource.GetString("Waiting"),
             DownloadPhase.Pausing or DownloadPhase.Paused => DictionaryResource.GetString("Pausing"),
-            DownloadPhase.Failed => DictionaryResource.GetString("DownloadFailed"),
+            DownloadPhase.Failed => string.IsNullOrWhiteSpace(task.Failure?.Message)
+                ? DictionaryResource.GetString("DownloadFailed")
+                : task.Failure.Message,
             DownloadPhase.Downloading when string.IsNullOrWhiteSpace(task.Transfer.StatusText) =>
                 DictionaryResource.GetString("WhileDownloading"),
             _ => task.Transfer.StatusText

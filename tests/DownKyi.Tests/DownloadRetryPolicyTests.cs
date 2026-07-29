@@ -54,6 +54,55 @@ public sealed class DownloadRetryPolicyTests
     }
 
     [Fact]
+    public async Task CoordinatorRetriesTransientFailureSixTimesBeforeMarkingNetworkProblem()
+    {
+        using var backend = new RecordingBackend(
+            DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.TransientNetwork,
+                "download.transfer.aria2-1"));
+        var coordinator = CreateCoordinator(
+            backend,
+            maximumAttempts: DownloadRetryPolicy.DefaultMaximumAttempts);
+
+        var result = await coordinator.TransferAsync(
+            CreateRequest("https://primary.invalid/media"),
+            static _ => Task.FromResult<IReadOnlyList<string>>([]),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadRetryPolicy.DefaultRetryCount + 1, backend.Requests.Count);
+        Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
+        Assert.Equal("download.transfer.network", result.ErrorCode);
+    }
+
+    [Fact]
+    public void TransientNetworkRetryUsesFixedFiveSecondDelay()
+    {
+        var policy = new DownloadRetryPolicy();
+        var failure = DownloadTransferResult.Failed(
+            DownloadTransferFailureKind.TransientNetwork,
+            "download.transfer.aria2-1");
+
+        var firstRetry = policy.Decide(
+            failure,
+            attempt: 1,
+            attemptsForAddress: 1,
+            hasNextAddress: true,
+            canRefreshAddresses: true);
+        var laterRetry = policy.Decide(
+            failure,
+            attempt: DownloadRetryPolicy.DefaultMaximumAttempts - 1,
+            attemptsForAddress: 2,
+            hasNextAddress: false,
+            canRefreshAddresses: true);
+
+        Assert.Equal(DownloadRetryPolicy.DefaultMaximumAttempts, policy.MaximumAttempts);
+        Assert.Equal(DownloadRetryAction.RetrySameAddress, firstRetry.Action);
+        Assert.Equal(TimeSpan.FromSeconds(5), firstRetry.Delay);
+        Assert.Equal(DownloadRetryAction.RetrySameAddress, laterRetry.Action);
+        Assert.Equal(TimeSpan.FromSeconds(5), laterRetry.Delay);
+    }
+
+    [Fact]
     public async Task CoordinatorCarriesLatestBackendIdentityAcrossRetry()
     {
         using var backend = new IdentityPublishingBackend();
@@ -297,6 +346,7 @@ public sealed class DownloadRetryPolicyTests
     [InlineData("22", "HTTP response status was 403", (int)DownloadTransferFailureKind.ExpiredAddress)]
     [InlineData("22", "HTTP response status was 429", (int)DownloadTransferFailureKind.RateLimited)]
     [InlineData("22", "HTTP response status was 503", (int)DownloadTransferFailureKind.TransientNetwork)]
+    [InlineData("1", "Network problem has occurred", (int)DownloadTransferFailureKind.TransientNetwork)]
     [InlineData("2", "timeout", (int)DownloadTransferFailureKind.TransientNetwork)]
     [InlineData("8", "resume unsupported", (int)DownloadTransferFailureKind.ResumeRejected)]
     [InlineData("9", "disk full", (int)DownloadTransferFailureKind.Disk)]
@@ -320,7 +370,7 @@ public sealed class DownloadRetryPolicyTests
     public void AriaBackendDoesNotTreatDigitsInsideAnotherNumberAsHttpStatus()
     {
         var result = Aria2TransferFailureClassifier.Classify(
-            "1",
+            "24",
             "Downloaded 1403 bytes before an unknown failure.");
 
         Assert.Equal(DownloadTransferFailureKind.Permanent, result.FailureKind);

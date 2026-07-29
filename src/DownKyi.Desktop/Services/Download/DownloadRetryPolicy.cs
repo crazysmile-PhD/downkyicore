@@ -16,7 +16,9 @@ internal sealed record DownloadRetryDecision(
 
 internal sealed class DownloadRetryPolicy
 {
-    public const int DefaultMaximumAttempts = 5;
+    public const int DefaultRetryCount = 6;
+    public const int DefaultMaximumAttempts = DefaultRetryCount + 1;
+    public static readonly TimeSpan DefaultRetryDelay = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan MaximumServerDelay = TimeSpan.FromSeconds(30);
     private readonly TimeSpan _baseDelay;
 
@@ -26,7 +28,13 @@ internal sealed class DownloadRetryPolicy
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maximumAttempts, 1);
         MaximumAttempts = maximumAttempts;
-        _baseDelay = baseDelay ?? TimeSpan.FromMilliseconds(500);
+        _baseDelay = baseDelay ?? DefaultRetryDelay;
+        if (_baseDelay < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(baseDelay),
+                "The retry delay cannot be negative.");
+        }
     }
 
     public int MaximumAttempts { get; }
@@ -84,12 +92,14 @@ internal sealed class DownloadRetryPolicy
         {
             return new DownloadRetryDecision(
                 DownloadRetryAction.RetrySameAddress,
-                GetBackoff(attempt));
+                _baseDelay);
         }
 
-        return hasNextAddress
-            ? new DownloadRetryDecision(DownloadRetryAction.TryNextAddress, TimeSpan.Zero)
-            : Stop();
+        return new DownloadRetryDecision(
+            hasNextAddress
+                ? DownloadRetryAction.TryNextAddress
+                : DownloadRetryAction.RetrySameAddress,
+            _baseDelay);
     }
 
     private static DownloadRetryDecision RetrySameThenMove(
