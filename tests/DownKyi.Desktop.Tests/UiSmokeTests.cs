@@ -60,7 +60,7 @@ public sealed class UiSmokeTests
             navigation.Navigate(new AppNavigationRequest(AppRoute.Publication, AppRoute.Index, payload));
             publication.InputSearchText = "needle";
             publication.SearchCommand.Execute(null);
-            publication.Pager.Current = 2;
+            publication.Pager.NextFirstCommand.Execute(null);
             var originalMedia = Assert.Single(publication.Medias);
 
             navigation.Navigate(new AppNavigationRequest(AppRoute.VideoDetail, AppRoute.Publication, "video"));

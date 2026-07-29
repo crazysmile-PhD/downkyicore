@@ -306,89 +306,88 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
     #endregion
 
 
-    private RelayCommand<object>? _previousCommand;
+    private RelayCommand? _previousCommand;
 
-    public RelayCommand<object> PreviousCommand => _previousCommand ??= RequiredParameterCommand.Create<object>(PreviousExecuted);
+    public RelayCommand PreviousCommand => _previousCommand ??= new RelayCommand(PreviousExecuted);
 
-    private void PreviousExecuted(object obj)
+    private void PreviousExecuted()
     {
         Current -= 1;
 
         SetView();
     }
 
-    private RelayCommand<object>? _firstCommand;
+    private RelayCommand? _firstCommand;
 
-    public RelayCommand<object> FirstCommand => _firstCommand ??= RequiredParameterCommand.Create<object>(FirstExecuted);
+    public RelayCommand FirstCommand => _firstCommand ??= new RelayCommand(FirstExecuted);
 
-    private void FirstExecuted(object obj)
+    private void FirstExecuted()
     {
         Current = 1;
 
         SetView();
     }
 
-    private RelayCommand<object>? _previousSecondCommand;
+    private RelayCommand? _previousSecondCommand;
 
-    public RelayCommand<object> PreviousSecondCommand => _previousSecondCommand ??= RequiredParameterCommand.Create<object>(
-        PreviousSecondExecuted);
+    public RelayCommand PreviousSecondCommand => _previousSecondCommand ??= new RelayCommand(PreviousSecondExecuted);
 
-    private void PreviousSecondExecuted(object obj)
+    private void PreviousSecondExecuted()
     {
         Current -= 2;
 
         SetView();
     }
 
-    private RelayCommand<object>? _previousFirstCommand;
+    private RelayCommand? _previousFirstCommand;
 
-    public RelayCommand<object> PreviousFirstCommand => _previousFirstCommand ??= RequiredParameterCommand.Create<object>(PreviousFirstExecuted);
+    public RelayCommand PreviousFirstCommand => _previousFirstCommand ??= new RelayCommand(PreviousFirstExecuted);
 
-    private void PreviousFirstExecuted(object obj)
+    private void PreviousFirstExecuted()
     {
         Current -= 1;
 
         SetView();
     }
 
-    private RelayCommand<object>? _nextFirstCommand;
+    private RelayCommand? _nextFirstCommand;
 
-    public RelayCommand<object> NextFirstCommand => _nextFirstCommand ??= RequiredParameterCommand.Create<object>(NextFirstExecuted);
+    public RelayCommand NextFirstCommand => _nextFirstCommand ??= new RelayCommand(NextFirstExecuted);
 
-    private void NextFirstExecuted(object obj)
+    private void NextFirstExecuted()
     {
         Current += 1;
 
         SetView();
     }
 
-    private RelayCommand<object>? _nextSecondCommand;
+    private RelayCommand? _nextSecondCommand;
 
-    public RelayCommand<object> NextSecondCommand => _nextSecondCommand ??= RequiredParameterCommand.Create<object>(NextSecondExecuted);
+    public RelayCommand NextSecondCommand => _nextSecondCommand ??= new RelayCommand(NextSecondExecuted);
 
-    private void NextSecondExecuted(object obj)
+    private void NextSecondExecuted()
     {
         Current += 2;
 
         SetView();
     }
 
-    private RelayCommand<object>? _lastCommand;
+    private RelayCommand? _lastCommand;
 
-    public RelayCommand<object> LastCommand => _lastCommand ??= RequiredParameterCommand.Create<object>(LastExecuted);
+    public RelayCommand LastCommand => _lastCommand ??= new RelayCommand(LastExecuted);
 
-    private void LastExecuted(object obj)
+    private void LastExecuted()
     {
         Current = Count;
 
         SetView();
     }
 
-    private RelayCommand<object>? _nextCommand;
+    private RelayCommand? _nextCommand;
 
-    public RelayCommand<object> NextCommand => _nextCommand ??= RequiredParameterCommand.Create<object>(NextExecuted);
+    public RelayCommand NextCommand => _nextCommand ??= new RelayCommand(NextExecuted);
 
-    private void NextExecuted(object obj)
+    private void NextExecuted()
     {
         Current += 1;
 
