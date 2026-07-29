@@ -5,10 +5,10 @@ namespace DownKyi.Desktop;
 
 public static class DesktopApplication
 {
-    public static async Task RunAsync(string[] args)
+    public static void Run(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
-        if (await ProcessRestartLauncher.RunHelperIfRequestedAsync(args).ConfigureAwait(false))
+        if (ProcessRestartLauncher.RunHelperIfRequested(args))
         {
             return;
         }

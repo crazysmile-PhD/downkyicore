@@ -4,6 +4,12 @@ namespace DownKyi.Tests;
 
 public sealed class ProcessRestartLauncherTests
 {
+    [Fact]
+    public void NormalStartupDoesNotEnterRestartHelperMode()
+    {
+        Assert.False(ProcessRestartLauncher.RunHelperIfRequested([]));
+    }
+
     [Theory]
     [InlineData("--restart-after-pid", "1", 1)]
     [InlineData("--restart-after-pid", "2147483647", int.MaxValue)]
