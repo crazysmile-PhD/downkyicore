@@ -373,50 +373,52 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                         isSameVideo = isSameVideo && item.AudioCodec.Name == page.AudioQualityFormat;
                     }
 
-                    if (isSameVideo)
+                    if (!isSameVideo || !CompletedMediaOutput.Exists(item.DownloadBase))
                     {
-                        var repeatDownloadStrategy = settings.Basic.RepeatDownloadStrategy;
-                        switch (repeatDownloadStrategy)
-                        {
-                            case RepeatDownloadStrategy.Ask:
-                                {
-                                    var result = (await _dialogService.ShowAsync(
-                                        new AppDialogRequest(
-                                            AppDialog.AlreadyDownloaded,
-                                            new Dictionary<string, object?>
-                                            {
-                                                ["message"] = $"{item.Name}已下载，是否重新下载"
-                                            }),
-                                        cancellationToken).ConfigureAwait(true)).Outcome;
-
-                                    if (result == AppDialogOutcome.Accepted)
-                                    {
-                                        await _projectionStore
-                                            .RemoveDownloadedAsync(item, cancellationToken)
-                                            .ConfigureAwait(true);
-                                        _downloadLists.RemoveDownloaded(item);
-                                        isDownloaded = false;
-                                    }
-                                    else
-                                    {
-                                        isDownloaded = true;
-                                    }
-
-                                    break;
-                                }
-                            case RepeatDownloadStrategy.ReDownload:
-                                isDownloaded = false;
-                                break;
-                            case RepeatDownloadStrategy.JumpOver:
-                                isDownloaded = true;
-                                break;
-                            default:
-                                isDownloaded = true;
-                                break;
-                        }
-
-                        break;
+                        continue;
                     }
+
+                    var repeatDownloadStrategy = settings.Basic.RepeatDownloadStrategy;
+                    switch (repeatDownloadStrategy)
+                    {
+                        case RepeatDownloadStrategy.Ask:
+                            {
+                                var result = (await _dialogService.ShowAsync(
+                                    new AppDialogRequest(
+                                        AppDialog.AlreadyDownloaded,
+                                        new Dictionary<string, object?>
+                                        {
+                                            ["message"] = $"{item.Name}已下载，是否重新下载"
+                                        }),
+                                    cancellationToken).ConfigureAwait(true)).Outcome;
+
+                                if (result == AppDialogOutcome.Accepted)
+                                {
+                                    await _projectionStore
+                                        .RemoveDownloadedAsync(item, cancellationToken)
+                                        .ConfigureAwait(true);
+                                    _downloadLists.RemoveDownloaded(item);
+                                    isDownloaded = false;
+                                }
+                                else
+                                {
+                                    isDownloaded = true;
+                                }
+
+                                break;
+                            }
+                        case RepeatDownloadStrategy.ReDownload:
+                            isDownloaded = false;
+                            break;
+                        case RepeatDownloadStrategy.JumpOver:
+                            isDownloaded = true;
+                            break;
+                        default:
+                            isDownloaded = true;
+                            break;
+                    }
+
+                    break;
                 }
 
                 if (isDownloaded)
