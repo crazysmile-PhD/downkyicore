@@ -8,8 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Commands;
-using DownKyi.Core.Logging;
 using DownKyi.CustomControl;
 using DownKyi.Images;
 using DownKyi.Presentation;
@@ -124,11 +124,9 @@ namespace DownKyi.ViewModels
                 }
 
                 _pager.CurrentChanging -= OnCurrentChangedPager;
-                _pager.CountChanged -= OnCountChangedPager;
                 _pager = value;
                 OnPropertyChanged(nameof(Pager));
                 _pager.CurrentChanging += OnCurrentChangedPager;
-                _pager.CountChanged += OnCountChangedPager;
             }
         }
 
@@ -180,7 +178,6 @@ namespace DownKyi.ViewModels
             _medias = new RangeObservableCollection<PublicationMedia>();
             _pager = new CustomPagerViewModel(1, 1);
             _pager.CurrentChanging += OnCurrentChangedPager;
-            _pager.CountChanged += OnCountChangedPager;
 
             #endregion
         }
@@ -351,10 +348,6 @@ namespace DownKyi.ViewModels
             }
         }
 
-        private void OnCountChangedPager(object? sender, EventArgs e)
-        {
-        }
-
         private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
         {
             if (!IsEnabled)
@@ -394,7 +387,6 @@ namespace DownKyi.ViewModels
             {
                 CancelOperations();
                 _pager.CurrentChanging -= OnCurrentChangedPager;
-                _pager.CountChanged -= OnCountChangedPager;
             }
 
             base.Dispose(disposing);

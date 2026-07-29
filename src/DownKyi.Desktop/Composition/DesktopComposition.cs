@@ -3,12 +3,12 @@ using System.IO;
 using System.Net.Http;
 using DownKyi.Application.Bilibili;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Lifetime;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi.Sign;
-using DownKyi.Core.FFMpeg;
-using DownKyi.Core.Logging;
+using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.CustomControl.AsyncImageLoader;
@@ -38,8 +38,6 @@ using DownKyi.Views.Dialogs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using RootSeasonsSeriesViewModel = DownKyi.ViewModels.ViewSeasonsSeriesViewModel;
-using UserSpaceSeasonsSeriesViewModel = DownKyi.ViewModels.UserSpace.ViewSeasonsSeriesViewModel;
 
 namespace DownKyi.Composition;
 
@@ -56,7 +54,7 @@ internal static class DesktopComposition
 
         services.AddSingleton(loggerFactory);
         services.AddSingleton(logService);
-        services.AddSingleton(new SqliteDownloadTaskStoreOptions(StorageManager.GetDbPath()));
+        services.AddSingleton(new SqliteDownloadTaskStoreOptions(ApplicationStorage.GetDbPath()));
         services.AddHttpClient("DownKyi.Images", client =>
             client.Timeout = TimeSpan.FromSeconds(15));
         services.AddHttpClient<VersionCheckerService>(client =>
@@ -69,7 +67,7 @@ internal static class DesktopComposition
             new DiskCachedWebImageLoader(
                 provider.GetRequiredService<IHttpClientFactory>().CreateClient("DownKyi.Images"),
                 disposeHttpClient: true,
-                Path.Combine(StorageManager.GetCache(), "Images")));
+                Path.Combine(ApplicationStorage.GetCache(), "Images")));
         services.AddSingleton<ISettingsStore, SettingsStore>();
         services.AddSingleton<IBilibiliCookieProvider, BilibiliCookieProvider>();
         services.AddDownKyiBilibiliInfrastructure(provider =>
@@ -106,6 +104,8 @@ internal static class DesktopComposition
         services.AddSingleton<AriaRuntimeClientRegistry>();
         services.AddSingleton<IDownloadManagerCoordinator, DownloadManagerCoordinator>();
         services.AddSingleton<IVideoTagProvider, VideoTagProvider>();
+        services.AddSingleton<DownloadDuplicatePolicy>();
+        services.AddSingleton<DownloadMovieMetadataBuilder>();
         services.AddSingleton<IAddToDownloadServiceFactory, AddToDownloadServiceFactory>();
         services.AddTransient<IVideoDetailWorkflowCoordinator, VideoDetailWorkflowCoordinator>();
         services.AddSingleton<IVideoDetailDownloadCoordinator, VideoDetailDownloadCoordinator>();
@@ -168,7 +168,7 @@ internal static class DesktopComposition
         services.AddTransient<ViewPublicFavoritesViewModel>();
         services.AddTransient<ViewUserSpaceViewModel>();
         services.AddTransient<ViewPublicationViewModel>();
-        services.AddTransient<RootSeasonsSeriesViewModel>();
+        services.AddTransient<ViewSeasonsSeriesDetailViewModel>();
         services.AddTransient<ViewFriendsViewModel>();
         services.AddTransient<ViewMySpaceViewModel>();
         services.AddTransient<ViewMyFavoritesViewModel>();
@@ -190,7 +190,7 @@ internal static class DesktopComposition
         services.AddTransient<ViewExtractMediaViewModel>();
         services.AddTransient<ViewArchiveViewModel>();
         services.AddTransient<ViewChannelViewModel>();
-        services.AddTransient<UserSpaceSeasonsSeriesViewModel>();
+        services.AddTransient<ViewUserSpaceSeasonsSeriesViewModel>();
         services.AddTransient<ViewFavoritesViewModel>();
     }
 

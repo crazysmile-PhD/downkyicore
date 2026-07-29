@@ -25,7 +25,7 @@ DownKyi 是 .NET 10 與 Avalonia 12 的跨平台 Bilibili 下載器。主要技�
 
 Prism、DryIoc、EventAggregator、RegionManager、ContainerLocator、靜態 `LogManager`、Debugging Console wrapper 與 `SettingsManager` singleton 已移除。不得重新引入。
 
-重要現況：`DownKyi.Desktop` 已實際擁有 Avalonia App、Views、ViewModels、UI projections、desktop adapters、Host composition 與 desktop runtime；`DownKyi` 只保留最小 `Program.cs`。`DownKyi.Core` 已無 Avalonia、QRCoder 或 XAML，但 aria2、FFmpeg、filesystem 與 logging 等相容實作仍主要位於 Core。修改前先執行 `script/audit-module-boundaries.ps1`，不可只依 project 名稱推斷實際 owner。
+重要現況：`DownKyi.Desktop` 已實際擁有 Avalonia App、Views、ViewModels、UI projections、desktop adapters、Host composition 與 desktop runtime；`DownKyi` 只保留最小 `Program.cs`。`DownKyi.Application` 擁有 logging contracts，`DownKyi.Infrastructure` 擁有 logging sink、retention 與 diagnostic export；`DownKyi.Core` 已無 Avalonia、QRCoder、XAML 或 logging 實作，但 aria2、FFmpeg 與 filesystem 相容實作仍主要位於 Core。修改前先執行 `script/audit-module-boundaries.ps1`，不可只依 project 名稱推斷實際 owner。
 
 ## 儲存庫結構
 
@@ -36,11 +36,11 @@ Directory.Packages.props           Central Package Management
 version.txt                        版本唯一來源
 
 src/DownKyi.Domain/                immutable domain state 與 typed results
-src/DownKyi.Application/           use-case contracts、desktop contracts、lifetime
-src/DownKyi.Infrastructure/        SQLite store、clock、write-behind 等 adapters
+src/DownKyi.Application/           use-case、desktop、lifetime、logging contracts
+src/DownKyi.Infrastructure/        SQLite、HTTP、logging、clock、write-behind adapters
 src/DownKyi.Desktop/               Avalonia App、composition、Views、ViewModels、Presentation、desktop runtime
 
-DownKyi.Core/                      Bilibili API、設定、日誌、aria2、FFmpeg 相容核心
+DownKyi.Core/                      Bilibili API、設定、aria2、FFmpeg 相容核心
 DownKyi/                           最小可執行入口，只委派至 DownKyi.Desktop
 
 tests/DownKyi.Domain.Tests/
@@ -139,7 +139,7 @@ Durable 下載狀態只能由 `IDownloadTaskApplicationService` 依 `DownloadTas
 
 - 設定入口是注入的 `ISettingsStore`；讀取 `Current` immutable snapshot，修改使用 typed `Update`，持久化使用 cancellation-aware flush。
 - `SettingsStore` 必須保留既有 JSON property 名稱、schema migration、atomic replace 與 legacy DES 設定遷移。
-- 路徑由 `StorageManager` 解析；測試必須用隔離目錄，禁止讀取真實 cookie、設定、下載 DB 或 aria2 session。
+- 路徑由 `ApplicationStorage` 解析；測試必須用隔離目錄，禁止讀取真實 cookie、設定、下載 DB 或 aria2 session。
 - SQLite schema 變更必須有版本 migration、備份、rollback 與 reopen 測試。
 - 日誌使用注入的 `ILogger` 與 `ApplicationLogProvider`。不得記錄 cookie、token、完整敏感 URL、email、帳號 ID 或完整個人路徑。
 - 登入態 live audit 只能使用 `script/audit-bilibili-authenticated-api.ps1 -ConfirmAuthenticatedLive` 從 `~/.codex/.env` 讀取憑證；不得把值放入命令列、source、fixture、artifact、commit 或 PR。完成後必須執行 `script/scan-secrets.ps1`。

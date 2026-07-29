@@ -7,12 +7,20 @@ public sealed class DownloadRuntimeArchitectureTests
     [Fact]
     public void DownloadRuntimeDoesNotUseSynchronousAsyncWaits()
     {
+        var ariaClientDirectory = Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "Aria2cNet",
+            "Client");
         var files = Directory.EnumerateFiles(
             Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "Services", "Download"),
             "*.cs",
             SearchOption.TopDirectoryOnly).Append(
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "Aria2cNet", "AriaManager.cs")).Append(
-            Path.Combine(RepositoryRoot, "DownKyi.Core", "Aria2cNet", "Client", "AriaClient.cs"));
+            Path.Combine(RepositoryRoot, "DownKyi.Core", "Aria2cNet", "AriaManager.cs")).Concat(
+            Directory.EnumerateFiles(
+                ariaClientDirectory,
+                "AriaClient*.cs",
+                SearchOption.TopDirectoryOnly));
         var forbidden = new[]
         {
             ".GetAwaiter().GetResult()",
@@ -62,7 +70,7 @@ public sealed class DownloadRuntimeArchitectureTests
         var factorySource = File.ReadAllText(Path.Combine(runtimeDirectory, "DownloadRuntimeFactory.cs"));
         var backendSource = File.ReadAllText(Path.Combine(runtimeDirectory, "Aria2TransferBackend.cs"));
 
-        Assert.Contains("public sealed class AriaClient", clientSource, StringComparison.Ordinal);
+        Assert.Contains("public sealed partial class AriaClient", clientSource, StringComparison.Ordinal);
         Assert.DoesNotContain("public static class AriaClient", clientSource, StringComparison.Ordinal);
         Assert.DoesNotContain("SetToken(", clientSource, StringComparison.Ordinal);
         Assert.DoesNotContain("SetHost(", clientSource, StringComparison.Ordinal);
@@ -72,6 +80,43 @@ public sealed class DownloadRuntimeArchitectureTests
             factorySource.Split("new AriaClient(", StringSplitOptions.None).Length - 1);
         Assert.Contains("private readonly AriaClient _ariaClient", backendSource, StringComparison.Ordinal);
         Assert.DoesNotContain("AriaClient.", backendSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AriaRpcClientKeepsProtocolResponsibilitiesSeparated()
+    {
+        var directory = Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core",
+            "Aria2cNet",
+            "Client");
+        string[] expectedFiles =
+        [
+            "AriaClient.cs",
+            "AriaClient.Downloads.cs",
+            "AriaClient.Lifecycle.cs",
+            "AriaClient.Options.cs",
+            "AriaClient.Status.cs",
+            "AriaClient.System.cs"
+        ];
+
+        var actualFiles = Directory
+            .EnumerateFiles(directory, "AriaClient*.cs", SearchOption.TopDirectoryOnly)
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(expectedFiles.Order(StringComparer.Ordinal), actualFiles);
+        Assert.All(
+            actualFiles,
+            fileName => Assert.True(
+                File.ReadAllLines(Path.Combine(directory, fileName!)).Length <= 500,
+                $"{fileName} exceeds the 500-line owner limit."));
+
+        var coreSource = File.ReadAllText(Path.Combine(directory, "AriaClient.cs"));
+        Assert.Contains("GetRpcResponseAsync", coreSource, StringComparison.Ordinal);
+        Assert.Contains("RequestAsync", coreSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AddUriAsync", coreSource, StringComparison.Ordinal);
     }
 
     [Fact]

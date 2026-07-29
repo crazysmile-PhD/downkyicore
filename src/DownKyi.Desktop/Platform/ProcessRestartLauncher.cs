@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
-using DownKyi.Core.Logging;
+using DownKyi.Application.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Platform;

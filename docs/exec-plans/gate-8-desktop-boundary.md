@@ -1,6 +1,6 @@
 # Gate 8 Desktop Boundary Execution Plan
 
-Status: active
+Status: completed and integrated
 Owner branch: `refactor/desktop-boundary`
 Base commit: `550709030210e4fe91113c9b1c05e451a7dc2120`
 
@@ -130,3 +130,9 @@ Rollback:
 ## Final Gate
 
 Run restore, strict Release build, complete tests, format verification, package vulnerability/deprecation audits, module-boundary audit, secret scan, and `git diff --check`. Update `ARCHITECTURE.md`, `ai-knowledge-graph.md`, and `refactoring-live-plan.md`, then require Windows/Linux/macOS quality CI and CodeQL before merge.
+
+Integration:
+
+- PR #92 merged into `refactor/pr-30-32-release-hardening` as `f8e78c9a129047e168f55fcc0afc918eb0eeb4b0`.
+- strict quality run `30191251004`, protobuf run `30191250997`, and CodeQL run `30191250992` passed for head `349e8c84`.
+- the PR merge ref had zero open CodeQL alerts. GitHub emitted one platform annotation because the required single ownership PR changed 396 files and the PR diff API is capped at 300 files.

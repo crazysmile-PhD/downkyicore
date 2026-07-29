@@ -68,7 +68,7 @@ internal static class Program
         string dataRoot,
         CancellationToken cancellationToken)
     {
-        string[] scenarios = ["shell", "ui", "restore", "sqlite", "transfer", "ffmpeg"];
+        string[] scenarios = ["shell", "ui", "restore", "sqlite", "transfer", "ffmpeg", "logging"];
         var results = new List<SystemBenchmarkResult>();
         foreach (var scenario in scenarios)
         {
@@ -209,6 +209,14 @@ internal static class Program
                 quick ? 2 : 8,
                 quick ? 1 : Math.Clamp(Environment.ProcessorCount / 2, 1, 4),
                 quick ? TimeSpan.FromSeconds(1) : TimeSpan.FromSeconds(3),
+                cancellationToken).ConfigureAwait(false));
+        }
+
+        if (IsSelected(selectedScenario, "logging"))
+        {
+            results.Add(await LoggingScenario.RunAsync(
+                Path.Combine(dataRoot, "logging"),
+                quick ? 10_000 : 100_000,
                 cancellationToken).ConfigureAwait(false));
         }
 

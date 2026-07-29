@@ -6,9 +6,9 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Xaml.Interactivity;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Lifetime;
 using DownKyi.Composition;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Storage;
 using DownKyi.CustomAction;
@@ -16,6 +16,7 @@ using DownKyi.CustomControl.AsyncImageLoader;
 using DownKyi.CustomControl.AsyncImageLoader.Loaders;
 using DownKyi.Desktop.Composition;
 using DownKyi.Infrastructure.Downloads;
+using DownKyi.Infrastructure.Logging;
 using DownKyi.Platform;
 using DownKyi.Presentation;
 using DownKyi.Services;
@@ -25,6 +26,7 @@ using DownKyi.Services.UserSpace;
 using DownKyi.ViewModels;
 using DownKyi.ViewModels.Settings;
 using DownKyi.Views;
+using DownKyi.Views.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -312,10 +314,46 @@ public sealed class UiSmokeTests
                 Assert.Same(mainViewModel, window.DataContext);
                 Assert.IsType<DiskCachedWebImageLoader>(imageLoader);
                 Assert.NotNull(host.Services.GetRequiredService<ViewIndexViewModel>());
-                Assert.NotNull(host.Services.GetRequiredService<ViewVideoDetailViewModel>());
+                var videoDetailViewModel = host.Services.GetRequiredService<ViewVideoDetailViewModel>();
+                Assert.NotNull(videoDetailViewModel);
                 Assert.NotNull(host.Services.GetRequiredService<ViewDownloadManagerViewModel>());
-                Assert.NotNull(host.Services.GetRequiredService<ViewNetworkViewModel>());
+                var networkViewModel = host.Services.GetRequiredService<ViewNetworkViewModel>();
+                Assert.NotNull(networkViewModel);
                 Assert.NotNull(host.Services.GetRequiredService<DownKyi.ViewModels.UserSpace.ViewFavoritesViewModel>());
+
+                var networkView = new ViewNetwork { DataContext = networkViewModel };
+                var networkScroll = Assert.IsType<ScrollViewer>(networkView.Content);
+                var networkSections = Assert.IsType<StackPanel>(networkScroll.Content);
+                Assert.Collection(
+                    networkSections.Children,
+                    child => Assert.IsType<NetworkGeneralSettingsView>(child),
+                    child => Assert.IsType<BuiltinDownloaderSettingsView>(child),
+                    child => Assert.IsType<AriaDownloaderSettingsView>(child),
+                    child => Assert.IsType<CustomAriaSettingsView>(child),
+                    child => Assert.IsType<StackPanel>(child));
+
+                var videoDetailView = new ViewVideoDetail { DataContext = videoDetailViewModel };
+                var videoDetailRoot = Assert.IsType<Grid>(videoDetailView.Content);
+                Assert.Collection(
+                    videoDetailRoot.Children,
+                    child => Assert.IsType<VideoDetailToolbarView>(child),
+                    child => Assert.IsType<TextBlock>(child),
+                    child =>
+                    {
+                        var content = Assert.IsType<Grid>(child);
+                        Assert.Collection(
+                            content.Children,
+                            summary => Assert.IsType<VideoDetailSummaryView>(summary),
+                            selectionArea =>
+                            {
+                                var selectionGrid = Assert.IsType<Grid>(selectionArea);
+                                Assert.Collection(
+                                    selectionGrid.Children,
+                                    selection => Assert.IsType<VideoDetailSelectionView>(selection),
+                                    actions => Assert.IsType<VideoDetailActionsView>(actions));
+                            });
+                    },
+                    child => Assert.IsType<Image>(child));
 
                 host.Services
                     .GetRequiredService<IAppNavigationService>()
@@ -479,10 +517,10 @@ public sealed class UiSmokeTests
     {
         return
         [
-            StorageManager.GetDbPath(),
-            StorageManager.GetSettings(),
-            StorageManager.GetLogin(),
-            StorageManager.GetAriaDir()
+            ApplicationStorage.GetDbPath(),
+            ApplicationStorage.GetSettings(),
+            ApplicationStorage.GetLogin(),
+            ApplicationStorage.GetAriaDir()
         ];
     }
 

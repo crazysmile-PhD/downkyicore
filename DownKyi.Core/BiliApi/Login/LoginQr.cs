@@ -20,7 +20,7 @@ public static class LoginQr
             getLoginUrl,
             null,
             nameof(GetLoginUrlAsync),
-            "LoginQR",
+            nameof(LoginQr),
             includeCredentials: false,
             cancellationToken).ConfigureAwait(false);
         BiliApiRequest.RequirePayload(response.Data);
@@ -44,7 +44,7 @@ public static class LoginQr
             url,
             null,
             nameof(GetLoginStatusAsync),
-            "LoginQR",
+            nameof(LoginQr),
             includeCredentials: false,
             cancellationToken).ConfigureAwait(false);
         BiliApiRequest.RequirePayload(response.Data);

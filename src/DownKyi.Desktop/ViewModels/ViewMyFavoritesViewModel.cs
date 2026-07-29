@@ -8,8 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Commands;
-using DownKyi.Core.Logging;
 using DownKyi.CustomControl;
 using DownKyi.Images;
 using DownKyi.Presentation;
@@ -166,13 +166,11 @@ internal partial class ViewMyFavoritesViewModel : ViewModelBase
             if (_pager != null)
             {
                 _pager.CurrentChanging -= OnCurrentChangedPager;
-                _pager.CountChanged -= OnCountChangedPager;
             }
 
             _pager = value;
             OnPropertyChanged(nameof(Pager));
             value.CurrentChanging += OnCurrentChangedPager;
-            value.CountChanged += OnCountChangedPager;
         }
     }
 
@@ -387,10 +385,6 @@ internal partial class ViewMyFavoritesViewModel : ViewModelBase
         }
     }
 
-    private void OnCountChangedPager(object? sender, EventArgs e)
-    {
-    }
-
     private void OnCurrentChangedPager(object? sender, CancelEventArgs e)
     {
         if (!IsEnabled)
@@ -424,7 +418,6 @@ internal partial class ViewMyFavoritesViewModel : ViewModelBase
             if (_pager != null)
             {
                 _pager.CurrentChanging -= OnCurrentChangedPager;
-                _pager.CountChanged -= OnCountChangedPager;
             }
         }
 

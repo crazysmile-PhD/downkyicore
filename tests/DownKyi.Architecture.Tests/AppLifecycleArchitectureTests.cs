@@ -192,6 +192,7 @@ public sealed class AppLifecycleArchitectureTests
             "DownKyiHost.cs"));
 
         Assert.Contains("new ApplicationLogProvider", appSource, StringComparison.Ordinal);
+        Assert.Contains("using DownKyi.Infrastructure.Logging;", appSource, StringComparison.Ordinal);
         Assert.Contains("services.AddDownKyiDesktop(_loggerFactory, _logProvider)", appSource,
             StringComparison.Ordinal);
         Assert.DoesNotContain("LogManager.", appSource, StringComparison.Ordinal);

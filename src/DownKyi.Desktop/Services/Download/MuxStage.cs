@@ -2,7 +2,7 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Core.FFMpeg;
+using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Results;
 

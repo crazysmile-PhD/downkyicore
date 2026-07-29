@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Core.Logging;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Domain.Downloads;
 using Microsoft.Extensions.Logging;
 

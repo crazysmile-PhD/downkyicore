@@ -1,6 +1,6 @@
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Users;

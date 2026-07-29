@@ -7,7 +7,7 @@ This document records the project maintenance routine for dependencies, external
 1. Update managed package versions only in `Directory.Packages.props`.
 2. Run `dotnet restore ./DownKyi.sln`.
 3. Run `dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental -p:TreatWarningsAsErrors=true -p:CodeAnalysisTreatWarningsAsErrors=true -p:EnableNETAnalyzers=true -p:AnalysisMode=All -p:EnforceCodeStyleInBuild=true`.
-4. Run `dotnet test ./DownKyi.sln -c Release --no-restore --no-build`.
+4. Run `pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild`.
 5. Run `dotnet package list --project ./DownKyi.sln --vulnerable --include-transitive`.
 6. Run `dotnet package list --project ./DownKyi.sln --deprecated` and review the report.
 
@@ -70,7 +70,11 @@ Gate 6 retry-policy local result: `DownloadTransferCoordinator` now owns one fiv
 
 CodeQL uses explicit `manual` build mode so generated and build-resolved C# remains in the high-accuracy full database. `CODEQL_OVERLAY_DATABASE_MODE=none` disables the incompatible incremental overlay optimization; do not switch to buildless `none` mode only to remove an annotation, because that can omit generated code.
 
-Gate 8 local result: `DownKyi` is a one-file bootstrap, `DownKyi.Desktop` owns App/UI/presentation/runtime, and Core contains no Avalonia, QRCoder, or XAML. Projection models live under `DownKyi.Presentation`; `DownloadListState` exposes standard read-only wrappers over owner-only mutable collections, while service-interface references to `DownKyi.ViewModels` and production references to the deleted custom collection are both zero. Strict `AnalysisMode=All` Release build completed with zero warnings and all 610 solution tests passed. Format verification changed 0/791 files, `git diff --check` passed, the module audit reported zero Core UI dependencies and zero presentation-bound contracts, NuGet reported no vulnerable or deprecated packages, and Gitleaks reported zero findings across 916 candidate files. Moving `ColorBrush.axaml` required updating its existing exact-path/exact-line false-positive allowlist; no directory-wide or secret-pattern exclusion was added.
+Gate 8 result: `DownKyi` is a one-file bootstrap, `DownKyi.Desktop` owns App/UI/presentation/runtime, and Core contains no Avalonia, QRCoder, or XAML. Projection models live under `DownKyi.Presentation`; `DownloadListState` exposes standard read-only wrappers over owner-only mutable collections, while service-interface references to `DownKyi.ViewModels` and production references to the deleted custom collection are both zero. Strict `AnalysisMode=All` Release build completed with zero warnings and all 610 solution tests passed. Format verification changed 0/791 files, `git diff --check` passed, the module audit reported zero Core UI dependencies and zero presentation-bound contracts, NuGet reported no vulnerable or deprecated packages, and Gitleaks reported zero findings across 916 candidate files. Moving `ColorBrush.axaml` required updating its existing exact-path/exact-line false-positive allowlist; no directory-wide or secret-pattern exclusion was added. PR #92 passed Windows/Linux/macOS quality run `30191251004`, protobuf run `30191250997`, and CodeQL run `30191250992`, then merged into the stacked release-hardening base as `f8e78c9a`. The merge ref had zero open CodeQL alerts; GitHub's only annotation was its 300-file PR diff limit for this required 396-file ownership move.
+
+Gate 9 logging local result: Application owns diagnostic contracts and Infrastructure owns the private NLog 6.1.4 provider, bounded sink, redactor, recent buffer, retention and file-backed exporter; Core contains no logging implementation. A 400-record concurrent flush test first exposed whole-configuration loss, and the complete solution later exposed a final-entry disposal race that focused tests had missed. The final sink keeps its async wrapper alive, defers concurrent producers through a bounded barrier, and resets only `FileTarget` handles. Five focused logging rounds, ten complete Infrastructure rounds and all 616 solution tests passed. Strict `AnalysisMode=All` Release build had zero warnings/errors; format changed 0/800 files; module boundaries and vulnerable/deprecated package audits passed; Gitleaks found zero findings across 935 candidate files. The final same-machine 10,000-event benchmark wrote every event with zero drops; its slower flush, larger allocation and one slower producer run remain explicit non-gating evidence.
+
+Gate 9 aria RPC client local result: source history classifies `AriaClient` as hand-maintained DownKyi protocol code first added by commit `587fcfb`, not generated output or a separately synchronized package. The 1,119-line owner is now six responsibility partials between 65 and 333 lines, and the oversized production-file baseline is empty. A deterministic test invokes all 36 public RPC methods and fixes their JSON-RPC method name, ID and token-placement contracts. It exposed and fixed a pre-existing `ChangeUriAsync` defect that sent `aria2.changePosition` instead of `aria2.changeUri`. Strict `AnalysisMode=All` Release build completed with zero warnings/errors; all 713 tests passed across seven test projects; format changed 0/849 files; module boundaries, vulnerable/deprecated package audits and `git diff --check` passed; Gitleaks found zero findings across 985 candidate files. PR #111 implementation head passed Windows/Linux/macOS quality run `30424513258` and CodeQL run `30424513284`; all seven checks had zero annotations and each platform artifact contained seven distinct assembly-named TRX files. The final documentation head must pass the same gates before integration.
 
 PR 07-15 result: Release build completed with zero warnings, 161 tests passed including real FFmpeg/ffprobe seek validation and Host smoke without Prism global container state, format verification passed, and both vulnerable and deprecated package audits were clean. Cross-RID Release builds passed for Windows x86, Linux x64/arm64, and macOS x64/arm64. An isolated Windows process smoke created the main window, accepted close, and exited with code 0 without reading or writing real user data. Native Linux/macOS execution remains owned by their CI runners.
 
@@ -94,15 +98,19 @@ Settings changes must pass `SettingsStoreTests`, `SettingsArchitectureTests`, th
 ## Logging Policy
 
 - New code receives `ILogger<T>` from composition and must not call static `LogManager` or write diagnostics directly to Console.
-- `ApplicationLogProvider` is the single file sink and redaction boundary. Do not create another log queue, file writer, or export sanitizer.
+- Application-facing records, metrics and `IApplicationLogService` live in `DownKyi.Application.Diagnostics`. The provider, redactor, NLog sink, recent buffer, retention and exporter live in `DownKyi.Infrastructure.Logging`; Core and Desktop cannot own a logging implementation.
+- `ApplicationLogProvider` is the single MEL adapter and redaction boundary. It delegates to separate bounded recent-buffer, private NLog sink, retention and file-backed exporter owners. Do not create another log queue, file writer or export sanitizer.
+- Only NLog core is allowed. The sink owns a private `LogFactory`; global `LogManager` and `NLog.Extensions.Logging` are prohibited.
+- Keep per-record writes in the private `ReopenableFileTarget` batch override. NLog flushes the complete async queue as one `FileTarget` batch regardless of wrapper batch size, so the override is what guarantees a size-roll check between JSONL records while producers remain asynchronous.
 - Logging scopes carry correlation, download-task, or child-process context; messages must not contain raw cookies, sensitive query values, account IDs, email addresses, or full personal paths.
 - The writer queue and recent-event buffer stay bounded. A full queue may drop an entry and increments the diagnostic drop counter; logging must never block a download or UI thread.
-- Application shutdown must await `FlushAsync` and `DisposeAsync`. Explicit flush also releases the active file handle so the Log page can open it immediately on Windows.
-- Writer initialization or persistence failures must reach the caller of `FlushAsync`; do not silently report a successful flush.
+- Redaction completes before a record reaches NLog or the recent buffer. JSON serialization runs on NLog's async target through the thread-agnostic project layout.
+- Application shutdown must await `FlushAsync` and `DisposeAsync`. Explicit flush uses the bounded deferred-write barrier before resetting only the `FileTarget` handles, so the Log page can open the file immediately on Windows without losing concurrent records or rebuilding the async logger configuration.
+- Writer initialization or persistence failures must reach the caller of `FlushAsync`; `DisposeAsync` completes cleanup and then rethrows the first persistence failure. Do not silently report a successful flush or shutdown.
 - Files use UTC `yyyy-MM-dd` directories and JSONL records. Rotation defaults to 32 MiB, hard retention to seven days, and the storage safety cap to 512 MiB; maintenance protects the active file and runs at startup, hourly, day change, rotation, and before export.
-- Diagnostic export writes a redacted JSON manifest plus bounded events. Metrics expose capacity ratio, age/capacity deletion counts, and bytes/events written; capacity changes require deterministic retention evidence first.
+- Diagnostic export reads persisted files after flush, re-redacts defensively, skips malformed records with a metric, and writes a redacted JSON manifest plus bounded events. Metrics expose capacity ratio, age/capacity deletion counts, bytes/events written and malformed records; capacity changes require deterministic retention evidence first.
 
-Logging changes must pass `ApplicationLogProviderTests`, the Host smoke test, and the full Release build with `AnalysisMode=All`.
+Logging changes must pass Infrastructure `ApplicationLogProviderTests`, including concurrent producer/flush stress, the Host smoke test, and the full Release build with `AnalysisMode=All`.
 
 ## Desktop Theme Policy
 
@@ -212,6 +220,6 @@ Use this checklist for download, parsing, and exit-related changes:
 - Download subtitles and confirm SRT time codes are correct.
 - Export diagnostic logs and confirm local user paths, cookies, tokens, and sensitive URLs are redacted.
 
-## Historical Naming
+## Canonical Resource Naming
 
-The `Languanges` resource folder keeps its historical spelling for now because Avalonia resources and packaging scripts can depend on current paths. Rename it only in a dedicated UI resource cleanup PR with resource-path validation.
+The default language resource lives at `src/DownKyi.Desktop/Languages/Default.axaml`, and the FFmpeg runtime namespace is `DownKyi.Core.FFmpeg`. Architecture tests reject the historical `Languanges` resource spelling and `FFMpeg` source-directory casing so packaging and case-sensitive platforms cannot drift.

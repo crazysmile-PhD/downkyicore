@@ -1,4 +1,4 @@
-using DownKyi.Core.Logging;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -147,7 +147,7 @@ public sealed class SettingsStore : ISettingsStore
     {
         ArgumentNullException.ThrowIfNull(loggerFactory);
         return new SettingsManager(
-            StorageManager.GetSettings(),
+            ApplicationStorage.GetSettings(),
             loggerFactory.CreateLogger<SettingsManager>());
     }
 }

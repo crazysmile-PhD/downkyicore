@@ -18,7 +18,7 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceInclude Source="/Languanges/Default.axaml" />
+                <ResourceInclude Source="/Languages/Default.axaml" />
                 <ResourceInclude Source="/Themes/DesignTokens.axaml" />
                 <ResourceInclude Source="/Themes/ThemeDefault.axaml" />
                 <ResourceInclude Source="/Resources/Bilibili/ZoneImages.axaml" />
@@ -38,7 +38,7 @@
         <DataTemplate DataType="vm:ViewPublicFavoritesViewModel"><views:ViewPublicFavorites /></DataTemplate>
         <DataTemplate DataType="vm:ViewUserSpaceViewModel"><views:ViewUserSpace /></DataTemplate>
         <DataTemplate DataType="vm:ViewPublicationViewModel"><views:ViewPublication /></DataTemplate>
-        <DataTemplate DataType="vm:ViewSeasonsSeriesViewModel"><views:ViewSeasonsSeries /></DataTemplate>
+        <DataTemplate DataType="vm:ViewSeasonsSeriesDetailViewModel"><views:ViewSeasonsSeriesDetail /></DataTemplate>
         <DataTemplate DataType="vm:ViewFriendsViewModel"><views:ViewFriends /></DataTemplate>
         <DataTemplate DataType="vm:ViewMySpaceViewModel"><views:ViewMySpace /></DataTemplate>
         <DataTemplate DataType="vm:ViewMyFavoritesViewModel"><views:ViewMyFavorites /></DataTemplate>
@@ -60,7 +60,7 @@
         <DataTemplate DataType="toolboxVm:ViewExtractMediaViewModel"><toolboxViews:ViewExtractMedia /></DataTemplate>
         <DataTemplate DataType="userSpaceVm:ViewArchiveViewModel"><userSpaceViews:ViewArchive /></DataTemplate>
         <DataTemplate DataType="userSpaceVm:ViewChannelViewModel"><userSpaceViews:ViewChannel /></DataTemplate>
-        <DataTemplate DataType="userSpaceVm:ViewSeasonsSeriesViewModel"><userSpaceViews:ViewSeasonsSeries /></DataTemplate>
+        <DataTemplate DataType="userSpaceVm:ViewUserSpaceSeasonsSeriesViewModel"><userSpaceViews:ViewUserSpaceSeasonsSeries /></DataTemplate>
         <DataTemplate DataType="userSpaceVm:ViewFavoritesViewModel"><userSpaceViews:ViewFavorites /></DataTemplate>
     </Application.DataTemplates>
     <Application.Styles>

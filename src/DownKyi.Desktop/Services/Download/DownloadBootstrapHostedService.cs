@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using DownKyi.Core.Logging;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Domain.Downloads;
 using DownKyi.Platform;
 using DownKyi.ViewModels.DownloadManager;

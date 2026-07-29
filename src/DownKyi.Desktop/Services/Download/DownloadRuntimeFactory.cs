@@ -5,7 +5,7 @@ using DownKyi.Application.Downloads;
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.BiliApi.Sign;
-using DownKyi.Core.FFMpeg;
+using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Platform;
 using Microsoft.Extensions.Logging;

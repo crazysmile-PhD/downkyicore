@@ -10,7 +10,7 @@ namespace DownKyi.Core.BiliApi.Login;
 public static class LoginHelper
 {
     // 本地位置
-    private static readonly string LocalLoginInfo = StorageManager.GetLogin();
+    private static readonly string LocalLoginInfo = ApplicationStorage.GetLogin();
 
     // 内存缓存：读多写少，使用 ReaderWriterLockSlim 保证线程安全
     private static readonly ReaderWriterLockSlim CacheLock = new();

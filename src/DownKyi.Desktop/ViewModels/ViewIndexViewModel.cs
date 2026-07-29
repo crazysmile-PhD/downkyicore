@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
-using DownKyi.Core.Logging;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.Settings;
 using DownKyi.Images;
 using DownKyi.Services;
@@ -20,6 +20,7 @@ internal class ViewIndexViewModel : ViewModelBase
     public const string Tag = "PageIndex";
     private readonly IUserSessionCoordinator _userSessionCoordinator;
     private readonly ILogger<ViewIndexViewModel> _logger;
+    private readonly SearchService _searchService;
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _userRefreshCancellation;
 
@@ -101,11 +102,13 @@ internal class ViewIndexViewModel : ViewModelBase
         IDesktopInteractionContext desktopInteractions,
         IUserSessionCoordinator userSessionCoordinator,
         ISettingsStore settingsStore,
+        SearchService searchService,
         ILogger<ViewIndexViewModel> logger) : base(desktopInteractions)
     {
         _userSessionCoordinator = userSessionCoordinator
             ?? throw new ArgumentNullException(nameof(userSessionCoordinator));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _searchService = searchService ?? throw new ArgumentNullException(nameof(searchService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _loginPanelVisibility = true;
         Header = "avares://DownKyi.Desktop/Resources/default_header.jpg";
@@ -228,8 +231,7 @@ internal class ViewIndexViewModel : ViewModelBase
 
         _logger.LogDebugMessage("Processing search input.");
         InputText = Regex.Replace(InputText, @"[【]*[^【]*[^】]*[】 ]", "");
-        var searchService = new SearchService(_settingsStore, Navigation);
-        var isSupport = searchService.BiliInput(InputText, AppRoute.Index);
+        var isSupport = _searchService.BiliInput(InputText, AppRoute.Index);
         if (!isSupport)
         {
             // 关键词搜索

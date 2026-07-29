@@ -38,7 +38,7 @@ internal sealed class VideoDetailDownloadCoordinator : IVideoDetailDownloadCoord
         ArgumentNullException.ThrowIfNull(videoSections);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var streamType = VideoInputResolver.ResolvePlayStreamType(input);
+        var streamType = PlayStreamTypeResolver.ResolvePlayStreamType(input);
         if (streamType == null)
         {
             return Task.FromResult<int?>(null);

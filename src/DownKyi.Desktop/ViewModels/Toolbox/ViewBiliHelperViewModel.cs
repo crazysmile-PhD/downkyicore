@@ -3,8 +3,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Commands;
-using DownKyi.Core.Logging;
 using DownKyi.Services.Toolbox;
 using Microsoft.Extensions.Logging;
 

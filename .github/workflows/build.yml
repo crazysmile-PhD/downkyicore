@@ -42,7 +42,8 @@ jobs:
           -p:EnforceCodeStyleInBuild=true
           -p:UseSharedCompilation=false
       - name: Test
-        run: dotnet test ./DownKyi.sln -c Release --no-restore --no-build
+        shell: pwsh
+        run: ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 
   changelog:
     name: Generate changelog

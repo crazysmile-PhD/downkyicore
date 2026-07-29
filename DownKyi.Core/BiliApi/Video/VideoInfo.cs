@@ -1,8 +1,8 @@
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.BiliApi.Models.Json;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Video.Models;
-using DownKyi.Core.Logging;
 using Newtonsoft.Json;
 
 namespace DownKyi.Core.BiliApi.Video;

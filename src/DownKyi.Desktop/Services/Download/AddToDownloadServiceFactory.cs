@@ -17,11 +17,10 @@ internal interface IAddToDownloadServiceFactory
 
 internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
 {
-    private readonly DownloadListState _downloadLists;
-    private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly DownloadTaskAdmissionService _admission;
+    private readonly DownloadDuplicatePolicy _duplicatePolicy;
+    private readonly DownloadMovieMetadataBuilder _metadataBuilder;
     private readonly ISettingsStore _settingsStore;
-    private readonly IUserNotificationService _notificationService;
     private readonly IAppDialogService _dialogService;
     private readonly ILogger<AddToDownloadService> _logger;
     private readonly IVideoTagProvider _tagProvider;
@@ -29,25 +28,23 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
     private readonly IBilibiliApiClient _client;
 
     public AddToDownloadServiceFactory(
-        DownloadListState downloadLists,
-        DownloadTaskProjectionStore projectionStore,
         DownloadTaskAdmissionService admission,
+        DownloadDuplicatePolicy duplicatePolicy,
+        DownloadMovieMetadataBuilder metadataBuilder,
         ISettingsStore settingsStore,
         IVideoTagProvider tagProvider,
         IWbiKeyProvider wbiKeyProvider,
         IBilibiliApiClient client,
-        IUserNotificationService notificationService,
         IAppDialogService dialogService,
         ILogger<AddToDownloadService> logger)
     {
-        _downloadLists = downloadLists ?? throw new ArgumentNullException(nameof(downloadLists));
-        _projectionStore = projectionStore ?? throw new ArgumentNullException(nameof(projectionStore));
         _admission = admission ?? throw new ArgumentNullException(nameof(admission));
+        _duplicatePolicy = duplicatePolicy ?? throw new ArgumentNullException(nameof(duplicatePolicy));
+        _metadataBuilder = metadataBuilder ?? throw new ArgumentNullException(nameof(metadataBuilder));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _tagProvider = tagProvider ?? throw new ArgumentNullException(nameof(tagProvider));
         _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _client = client ?? throw new ArgumentNullException(nameof(client));
-        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -56,14 +53,13 @@ internal sealed class AddToDownloadServiceFactory : IAddToDownloadServiceFactory
     {
         return new AddToDownloadService(
             streamType,
-            _downloadLists,
-            _projectionStore,
             _admission,
+            _duplicatePolicy,
+            _metadataBuilder,
             _settingsStore,
             _tagProvider,
             _wbiKeyProvider,
             _client,
-            _notificationService,
             _dialogService,
             _logger);
     }

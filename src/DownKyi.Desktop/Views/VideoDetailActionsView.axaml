@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:DownKyi.ViewModels"
+             x:Class="DownKyi.Views.VideoDetailActionsView"
+             x:DataType="vm:ViewVideoDetailViewModel"
+             mc:Ignorable="d">
+    <Grid ColumnDefinitions="60,80,140,*,100,100">
+        <CheckBox
+            Grid.Column="0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Command="{Binding SelectAllCommand}"
+            Content="{DynamicResource SelectAll}"
+            Foreground="{DynamicResource BrushTextDark}"
+            IsChecked="{Binding UiState.IsSelectAll, Mode=TwoWay}" />
+        <Button
+            Grid.Column="1"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Command="{Binding ClearSelectionCommand}"
+            Content="{DynamicResource ClearSelection}"
+            FontSize="12"
+            Theme="{StaticResource BtnStyle}"
+            Foreground="{DynamicResource BrushText}" />
+        <Label
+            Grid.Column="3"
+            Margin="9,0,0,0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Content="{DynamicResource Search}" />
+        <TextBox
+            Grid.Column="3"
+            Width="200"
+            Margin="48,0,0,0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            VerticalContentAlignment="Center"
+            PlaceholderText="{DynamicResource SearchVideoByName}"
+            Text="{Binding Path=UiState.InputSearchText, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+            TextWrapping="Wrap">
+            <TextBox.KeyBindings>
+                <KeyBinding Command="{Binding InputSearchCommand}" Gesture="Enter" />
+            </TextBox.KeyBindings>
+        </TextBox>
+        <Button
+            Grid.Column="4"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Command="{Binding ParseAllVideoCommand}"
+            Content="{DynamicResource ParseVideo}"
+            FontSize="12"
+            Theme="{StaticResource BtnStyle}"
+            Foreground="{DynamicResource BrushText}" />
+        <Button
+            Grid.Column="5"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Command="{Binding AddToDownloadCommand}"
+            Content="{DynamicResource DownloadSelected}"
+            FontSize="12"
+            Theme="{StaticResource BtnStyle}"
+            Foreground="{DynamicResource BrushText}" />
+    </Grid>
+</UserControl>

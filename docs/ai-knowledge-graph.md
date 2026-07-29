@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-07-26
+Last reviewed: 2026-07-28
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -19,7 +19,7 @@ The target projects exist and the Desktop boundary is operational, but Infrastru
 
 - `src/DownKyi.Desktop` owns Avalonia App/XAML, Views, ViewModels, `Presentation` projections, navigation/dialog/platform adapters, lifecycle, Host composition, and desktop runtime. `DownKyi` contains only the minimal executable bootstrap.
 - `DownKyi.Core` is headless: it contains no Avalonia, QRCoder, or XAML ownership. Login QR bitmap rendering and Bilibili image dictionaries belong to Desktop.
-- `src/DownKyi.Infrastructure` currently owns SQLite task persistence, write-behind, clock, and the injected Bilibili HTTP/buvid runtime. Aria2, FFmpeg, filesystem paths, and logging implementation remain mainly in `DownKyi.Core` or `DownKyi`.
+- `src/DownKyi.Infrastructure` currently owns SQLite task persistence, write-behind, clock, the injected Bilibili HTTP/buvid runtime, and the logging sink/retention/export runtime. Aria2, FFmpeg and filesystem paths remain mainly in `DownKyi.Core`.
 - `DownKyi.Domain.DownloadTask` is the durable runtime state authority. `DownloadTaskApplicationService` loads by `DownloadTaskId`, invokes legal transitions, persists optimistic versions, and only then publishes committed snapshots. Normal runtime no longer reconstructs Domain state from mutable UI projections.
 - New tasks, resumed tasks, and persisted startup tasks directly enqueue `DownloadTaskId` through `DownloadTaskQueueGateway`; `DownloadOrchestrator` no longer scans a UI collection and each active task has its own linked cancellation owner.
 - Workers and pipeline entry points use `DownloadTaskId`. `DownloadPipeline` is a typed stage sequencer; localized activity rendering and completion-list mutation have separate Desktop owners. `DownloadListState` privately owns mutable collections and exposes stable `ReadOnlyObservableCollection<T>` projections. `DownloadExecutionContext` still exposes a transient `DownloadingItem` for playback/UI context. Bilibili HTTP uses injected Application ports with an async Infrastructure implementation; the old static/synchronous compatibility layer is gone.
@@ -34,7 +34,7 @@ Node types:
 - `ui`: Avalonia view or UI behavior.
 - `viewmodel`: binding state and command wiring.
 - `service`: application service with business workflow.
-- `core`: reusable API, storage, settings, logging, media, or utility logic.
+- `core`: reusable API, storage, settings, media, or utility compatibility logic.
 - `external`: outside process, binary, web API, or package.
 - `test`: executable test coverage.
 - `workflow`: CI, release, or maintenance automation.
@@ -88,12 +88,13 @@ flowchart TD
     AsyncImage["ui.async-image-loader\nCustomControl/AsyncImageLoader"]
     MainVm["viewmodel.main-window\nsrc/DownKyi.Desktop/ViewModels/MainWindowViewModel.cs"]
     IndexVm["viewmodel.index\nViewIndexViewModel.cs"]
+    Search["service.search-routing\nSearchService.cs"]
     LoginVm["viewmodel.login\nViewLoginViewModel.cs"]
     LoginQrRenderer["ui.login-qr-renderer\nLoginQrCodeRenderer.cs"]
     AccountSession["service.account-session\nServices/Account"]
     FriendVms["viewmodel.friend-relations\nFriends ViewModels"]
     FriendRelations["service.friend-relations\nFriendRelationCoordinator.cs"]
-    SeasonsSeriesVm["viewmodel.seasons-series\nViewSeasonsSeriesViewModel.cs"]
+    SeasonsSeriesVm["viewmodel.seasons-series\nDetail + user-space list VMs"]
     SeasonsSeries["service.seasons-series\nSeasonsSeriesCoordinator.cs"]
     FavoritesVms["viewmodel.favorites\nPrivate/Public Favorites ViewModels"]
     Favorites["service.favorites\nFavoritesCoordinator.cs"]
@@ -101,6 +102,7 @@ flowchart TD
     PersonalMedia["service.personal-media\nPersonalMediaCoordinator.cs"]
     UserSpacePageVms["viewmodel.user-space-pages\nPublication/My-space ViewModels"]
     UserSpacePages["service.user-space-pages\nUserSpacePageCoordinator.cs"]
+    Pager["ui.custom-pager\nCustomPager + focused state/command/layout owners"]
     UserSpaceVm["viewmodel.user-space\nUserSpace + public favorites"]
     VideoVm["viewmodel.video-detail\nsrc/DownKyi.Desktop/ViewModels/ViewVideoDetailViewModel.cs"]
     SettingsVms["viewmodel.settings-pages\nSettings ViewModels"]
@@ -108,6 +110,7 @@ flowchart TD
     BiliHelperVm["viewmodel.bili-helper\nViewBiliHelperViewModel.cs"]
     BiliHelper["service.bili-helper\nBiliHelperCoordinator.cs"]
     Resolver["service.video-input-resolver\nsrc/DownKyi.Application/Media"]
+    InputEntrance["core.input-entrance\nParseEntrance partial owners"]
     Parser["service.video-parse-coordinator\nsrc/DownKyi.Desktop/Services/Video/VideoParseCoordinator.cs"]
     InfoServices["service.info-services\nVideo/Bangumi/Cheese services"]
     VideoTags["service.video-tag-provider\nVideoTagProvider + VideoPage.LoadTagsAsync"]
@@ -117,7 +120,7 @@ flowchart TD
     BiliHttp["infra.bilibili-http\nApplication ports + Infrastructure transport"]
     Settings["core.settings\nISettingsStore + SettingsStore"]
     LegacySettings["core.legacy-settings-migration\nLegacySettingsDecryptor.cs"]
-    DownloadAdd["service.download-add\nAddToDownloadService + DownloadAddCoordinator"]
+    DownloadAdd["service.download-add\nsession + duplicate/draft/metadata owners"]
     DownloadBootstrap["service.download-bootstrap\nDownloadBootstrapHostedService"]
     DownloadService["service.download-runtime\nFactory + Orchestrator + Pipeline"]
     DownloadDomain["core.download-domain\nimmutable task aggregate"]
@@ -125,10 +128,10 @@ flowchart TD
     StoreContract["service.application-contracts\nIDownloadTaskStore"]
     SqliteStore["core.sqlite-download-store\nSqliteDownloadTaskStore"]
     Projection["ui.download-projection\nDownloadTaskProjectionStore + mapper"]
-    Storage["core.storage\nStorageManager"]
+    Storage["core.storage\nApplicationStorage"]
     Aria["external.aria2\naria2c process"]
     FFmpeg["external.ffmpeg\nffmpeg process"]
-    Logs["core.logging\nApplicationLogProvider + diagnostic export"]
+    Logs["infrastructure.logging\nredaction + NLog sink + diagnostic export"]
     Tests["test.suites\ntests/*"]
     ArchitectureTests["test.architecture-boundaries\nDownKyi.Architecture.Tests"]
     UiSmoke["test.ui-smoke\nDownKyi.Desktop.Tests"]
@@ -172,21 +175,29 @@ flowchart TD
     MainVm -->|navigates| IndexVm
     MainVm -->|navigates| LoginVm
     MainVm -->|navigates| VideoVm
+    MainVm -->|routes input through| Search
+    IndexVm -->|routes input through| Search
+    Search -->|parses through| InputEntrance
+    Search -->|creates typed requests through| Navigation
     IndexVm -->|refreshes| AccountSession
     LoginVm -->|polls and persists| AccountSession
     LoginVm -->|renders absolute login URI| LoginQrRenderer
     AccountSession -->|calls| BiliApi
     FriendVms -->|loads pages| FriendRelations
+    FriendVms -->|binds paging state| Pager
     FriendRelations -->|calls| BiliApi
     SeasonsSeriesVm -->|loads and queues| SeasonsSeries
+    SeasonsSeriesVm -->|binds paging state| Pager
     SeasonsSeries -->|calls| BiliApi
     FavoritesVms -->|loads snapshots| Favorites
+    FavoritesVms -->|binds paging state| Pager
     Favorites -->|calls| BiliApi
     FavoritesVms -->|queues selected media| DownloadAdd
     PersonalMediaVms -->|loads snapshots| PersonalMedia
     PersonalMedia -->|calls| BiliApi
     PersonalMediaVms -->|queues selected media| DownloadAdd
     UserSpacePageVms -->|loads snapshots| UserSpacePages
+    UserSpacePageVms -->|binds paging state| Pager
     UserSpacePages -->|calls| BiliApi
     UserSpacePageVms -->|queues publications| DownloadAdd
     UserSpaceVm -->|loads profile and public folders| BiliApi
@@ -194,6 +205,7 @@ flowchart TD
     Navigation -->|restores existing views| MainWindow
     BiliHelperVm -->|calls| BiliHelper
     BiliHelper -->|uses cancellable CPU helpers| BiliApi
+    BiliHelper -->|validates AV and BV input through| InputEntrance
     VideoVm -->|calls| Resolver
     VideoVm -->|calls| Parser
     SettingsVms -->|network commands| NetworkSettings
@@ -201,6 +213,8 @@ flowchart TD
     NetworkSettings -->|validates and writes| Settings
     NetworkSettings -->|requests restart| Lifecycle
     Parser -->|calls| InfoServices
+    InfoServices -->|normalizes media identifiers through| InputEntrance
+    UserSpacePages -->|validates publication-list routes through| InputEntrance
     InfoServices -->|executes signed requests through| WbiExecutor
     InfoServices -->|calls unsigned endpoints| BiliApi
     InfoServices -->|creates current-token loaders| VideoTags
@@ -291,7 +305,7 @@ outbound:
   - service.download-list-state
   - core.storage
   - core.settings
-  - core.logging
+  - infrastructure.logging
 contracts:
   - UI shell should appear before heavy download state and service startup finish.
   - The Host is created with default configuration sources disabled and must not redirect database, settings, login, portable-mode, or aria2 session paths.
@@ -347,6 +361,39 @@ tests:
   - test.release-packaging
 ```
 
+### ui.custom-pager
+
+```yaml
+id: ui.custom-pager
+type: ui
+paths:
+  - src/DownKyi.Desktop/CustomControl/CustomPager.axaml
+  - src/DownKyi.Desktop/CustomControl/CustomPagerViewModel.cs
+  - src/DownKyi.Desktop/CustomControl/CustomPagerViewModel.State.cs
+  - src/DownKyi.Desktop/CustomControl/CustomPagerViewModel.Commands.cs
+  - src/DownKyi.Desktop/CustomControl/PagerLayout.cs
+responsibility: Presents bounded page navigation while separating change-veto workflow, XAML state, parameterless commands, and pure layout calculation.
+inbound:
+  - viewmodel.friend-relations
+  - viewmodel.seasons-series
+  - viewmodel.favorites
+  - viewmodel.user-space-pages
+outbound: []
+contracts:
+  - Constructor state honors the requested current page and clamps it into the available range without raising navigation events.
+  - A later page request publishes `ProposedCurrent` through `CurrentChanging`; a subscriber may veto before current state changes.
+  - Previous, next, first, last, and adjacent-page XAML buttons use parameterless commands because those buttons do not provide command parameters.
+  - Jump input remains parameterized, rejects invalid/zero pages, and clamps values above the final page.
+  - Layout calculation is a framework-free value operation; XAML state and commands remain separate owners below 150 lines.
+hazards:
+  - Using `RequiredParameterCommand` for a button without `CommandParameter` silently drops every click.
+  - Requiring a listener before accepting state changes makes constructor and isolated pager use ignore the requested page.
+tests:
+  - test.custom-pager
+  - test.ui-smoke
+  - test.architecture-boundaries
+```
+
 ### service.application-lifecycle
 
 ```yaml
@@ -368,7 +415,7 @@ inbound:
 outbound:
   - app.host-composition
   - core.settings
-  - core.logging
+  - infrastructure.logging
   - external.aria2
   - external.os-process
 contracts:
@@ -512,9 +559,12 @@ type: core
 paths:
   - src/DownKyi.Infrastructure/Time/SystemClock.cs
   - src/DownKyi.Infrastructure/Downloads/SqliteDownloadTaskStore.cs
+  - src/DownKyi.Infrastructure/Downloads/DownloadTaskRecordMapper.cs
+  - src/DownKyi.Infrastructure/Downloads/DownloadTaskSqlReader.cs
+  - src/DownKyi.Infrastructure/Downloads/DownloadTaskSqlWriter.cs
   - src/DownKyi.Infrastructure/Downloads/DownloadStoreSchema.cs
   - src/DownKyi.Infrastructure/Downloads/DownloadProgressWriteBehind.cs
-responsibility: Implements Application time and download persistence contracts using pooled SQLite connections and bounded background writes.
+responsibility: Implements Application time and download persistence contracts using a transaction coordinator, dedicated row mapper/read/write owners, pooled SQLite connections, and bounded background writes.
 inbound:
   - app.host-composition
 outbound:
@@ -524,6 +574,7 @@ contracts:
   - Infrastructure never references Desktop or Prism.
   - SystemClock returns UTC time; deterministic tests replace IClock at the composition boundary.
   - SQLite uses one short pooled connection per operation, WAL, parameterized queries, optimistic versions, and transactional state moves.
+  - `SqliteDownloadTaskStore` owns initialization, transactions, and public query coordination; record restoration, quarantine reads, and SQL write commands stay in their dedicated owners.
   - Existing databases are backed up before schema migration; failed migrations roll back and never advance `user_version`.
   - One malformed row is quarantined with record ID, field, and sanitized reason; raw JSON and personal paths are not copied into diagnostics.
   - The progress writer has a one-slot bounded wake channel, a bounded task set, contiguous coalescing, and a final shutdown flush.
@@ -550,7 +601,7 @@ outbound:
   - viewmodel.index
   - viewmodel.login
   - viewmodel.video-detail
-  - core.logging
+  - infrastructure.logging
   - service.desktop-platform-boundaries
 contracts:
   - Commands should be cached properties, not rebuilt on every getter call.
@@ -725,8 +776,9 @@ tests:
 id: viewmodel.seasons-series
 type: viewmodel
 paths:
-  - src/DownKyi.Desktop/ViewModels/ViewSeasonsSeriesViewModel.cs
-responsibility: Projects one season/series page, selection state, pager state, navigation, and add-to-download results.
+  - src/DownKyi.Desktop/ViewModels/ViewSeasonsSeriesDetailViewModel.cs
+  - src/DownKyi.Desktop/ViewModels/UserSpace/ViewUserSpaceSeasonsSeriesViewModel.cs
+responsibility: Separately projects the selected season/series detail page and the user-space season/series list without colliding owner names.
 inbound:
   - viewmodel.user-space
 outbound:
@@ -903,6 +955,10 @@ paths:
   - src/DownKyi.Desktop/ViewModels/ViewVideoDetailViewModel.cs
   - src/DownKyi.Desktop/ViewModels/UiState/VideoDetailUiState.cs
   - src/DownKyi.Desktop/Views/ViewVideoDetail.axaml
+  - src/DownKyi.Desktop/Views/VideoDetailToolbarView.axaml
+  - src/DownKyi.Desktop/Views/VideoDetailSummaryView.axaml
+  - src/DownKyi.Desktop/Views/VideoDetailSelectionView.axaml
+  - src/DownKyi.Desktop/Views/VideoDetailActionsView.axaml
 responsibility: Wires video-detail commands, navigation, and UI result projection while one CommunityToolkit state object exposes mutually consistent bindings.
 inbound:
   - viewmodel.main-window
@@ -924,6 +980,10 @@ contracts:
   - Search filtering projects from one shallow source of the original `VideoPage` objects; clearing a search must preserve parsed stream, quality, and selection mutations.
   - Only the current operation generation may project detail/stream results or restore display state; canceled work cannot overwrite a newer request.
   - The ViewModel remains at or below 425 lines and cannot regain parse-service construction, search-source ownership, cancellation-source ownership, or download-service construction.
+  - The root View is an ordered composition shell. Toolbar, summary, section/page selection, and actions are separate typed views below 300 lines and inherit the same ViewModel.
+  - The five video-detail XAML owners retain 56 binding tokens, 12 named controls, 48 dynamic resources, 8 static resources, and 13 behaviors.
+  - Section selection and the page DataGrid remain in one namescope; no extra selection property or cross-view service is introduced only to support composition.
+  - DataGrid row highlight styles layer on the application-provided row theme without a child-construction-time `BasedOn` lookup; `App.axaml` must retain the DataGrid Fluent theme include.
 hazards:
   - This file historically accumulated unrelated parsing, selection, and download orchestration logic.
   - Reintroducing a complete cached section/page object graph duplicates memory and can restore stale parsed or selected state.
@@ -944,9 +1004,17 @@ paths:
   - src/DownKyi.Desktop/ViewModels/Settings/ViewBasicViewModel.cs
   - src/DownKyi.Desktop/ViewModels/Settings/ViewNetworkViewModel.cs
   - src/DownKyi.Desktop/ViewModels/Settings/ViewNetworkViewModel.State.cs
+  - src/DownKyi.Desktop/ViewModels/Settings/ViewNetworkViewModel.AriaCommands.cs
   - src/DownKyi.Desktop/ViewModels/Settings/ViewVideoViewModel.cs
+  - src/DownKyi.Desktop/ViewModels/Settings/ViewVideoViewModel.State.cs
+  - src/DownKyi.Desktop/ViewModels/Settings/ViewVideoViewModel.ContentNamingCommands.cs
   - src/DownKyi.Desktop/ViewModels/Settings/ViewDanmakuViewModel.cs
   - src/DownKyi.Desktop/ViewModels/Settings/ViewAboutViewModel.cs
+  - src/DownKyi.Desktop/Views/Settings/ViewNetwork.axaml
+  - src/DownKyi.Desktop/Views/Settings/NetworkGeneralSettingsView.axaml
+  - src/DownKyi.Desktop/Views/Settings/BuiltinDownloaderSettingsView.axaml
+  - src/DownKyi.Desktop/Views/Settings/AriaDownloaderSettingsView.axaml
+  - src/DownKyi.Desktop/Views/Settings/CustomAriaSettingsView.axaml
 responsibility: Projects current settings into Avalonia binding state and wires commands to typed settings owners.
 inbound:
   - typed navigation through the Avalonia router
@@ -957,7 +1025,12 @@ outbound:
 contracts:
   - Basic, video, danmaku, and about pages receive `ISettingsStore`; the network page receives only `INetworkSettingsCoordinator` and cannot persist, validate, prompt, or restart directly.
   - Existing setting getter/setter behavior, persisted JSON names, and enum values remain unchanged during the compatibility migration.
-  - Network binding properties live in a dedicated partial state file; the main file remains below 700 lines and contains navigation projection plus command wiring.
+  - Network binding properties, general network command wiring, and aria runtime command wiring are separate partial owners; every partial remains below 500 lines and uses the same injected coordinator.
+  - The network settings root is an ordered composition shell. General network selection, built-in downloader, bundled aria2, and external aria2 controls are separate typed views below 300 lines and inherit the same ViewModel.
+  - The five network XAML owners retain 94 binding tokens, 40 named controls, 72 dynamic resources, 4 static resources, and 26 command parameters; the aria proxy source and dependent panel remain in one namescope.
+  - Aria command properties retain their existing XAML binding names and cannot move back into the general navigation/network command owner.
+  - Video settings binding state, directory/content/filename commands, and navigation/playback/transcoding commands are separate partial owners below 500 lines; only the main owner receives `ISettingsStore`.
+  - Video settings partial extraction cannot rename XAML properties or commands, alter FFmpeg defaults, or move file-picker and persistence ownership into state.
 tests:
   - test.network-settings
   - test.architecture-boundaries
@@ -999,15 +1072,15 @@ id: service.video-input-resolver
 type: service
 paths:
   - src/DownKyi.Application/Media/VideoInputResolver.cs
-  - src/DownKyi.Desktop/Services/Video/VideoInputResolver.cs
-responsibility: Classifies and normalizes BV/AV, video URL, bangumi, and cheese/course entry inputs.
+  - src/DownKyi.Desktop/Services/Video/PlayStreamTypeResolver.cs
+responsibility: Classifies BV/AV, video URL, bangumi, and cheese/course inputs in Application, then maps that result to the external download stream type at the Desktop boundary.
 inbound:
   - viewmodel.video-detail
 outbound:
   - service.video-parse-coordinator
 contracts:
   - Input classification must match the parse flow and add-to-download flow.
-  - Application owns pure classification; the legacy adapter only maps the result to external `PlayStreamType`.
+  - Application owns pure classification; `PlayStreamTypeResolver` only maps the result to external `PlayStreamType`.
 hazards:
   - Divergence between parse and download input handling causes "can parse but cannot download" bugs.
 tests:
@@ -1167,6 +1240,7 @@ id: viewmodel.user-space
 type: viewmodel
 paths:
   - src/DownKyi.Desktop/ViewModels/ViewUserSpaceViewModel.cs
+  - src/DownKyi.Desktop/ViewModels/ViewUserSpaceViewModel.State.cs
   - src/DownKyi.Desktop/ViewModels/ViewUserSpaceViewModel.Favorites.cs
   - src/DownKyi.Desktop/ViewModels/UserSpace/ViewFavoritesViewModel.cs
   - src/DownKyi.Desktop/Views/UserSpace/ViewFavorites.axaml
@@ -1184,8 +1258,10 @@ contracts:
   - Returning to the same MID restores the existing UserSpace instance and its tab/list state instead of clearing and reloading the snapshot.
   - Public favorite folders with zero media are omitted; selecting a folder uses the typed `UserSpaceFavorites -> PublicFavorites` route chain.
   - Favorite-folder API failure is optional profile metadata: known network/schema failures produce a sanitized warning and an empty folder tab, while cancellation still propagates.
+  - Twenty XAML-facing profile/visibility/tab properties live in a service-free state partial below 200 lines. Typed navigation, same-MID preservation, cancellation, settings, load coordination and projection remain in the workflow owner below 450 lines.
 hazards:
   - Optional profile metadata failures must remain sanitized and cannot suppress cancellation.
+  - Moving coordinator, settings, cancellation, logger or navigation dependencies into the state partial would couple stable bindings back to runtime ownership.
 tests:
   - test.user-space-favorites
   - test.typed-navigation
@@ -1201,7 +1277,9 @@ paths:
   - src/DownKyi.Desktop/ViewModels/ViewPublicationViewModel.cs
   - src/DownKyi.Desktop/ViewModels/ViewPublicationViewModel.Search.cs
   - src/DownKyi.Desktop/ViewModels/ViewMySpaceViewModel.cs
+  - src/DownKyi.Desktop/ViewModels/ViewMySpaceViewModel.State.cs
   - src/DownKyi.Desktop/ViewModels/ViewMyBangumiFollowViewModel.cs
+  - src/DownKyi.Desktop/ViewModels/ViewMyBangumiFollowViewModel.State.cs
   - src/DownKyi.Desktop/Views/ViewPublication.axaml
   - src/DownKyi.Desktop/Views/ViewMyBangumiFollow.axaml
 responsibility: Projects publication pages and the signed-in user's profile/statistics while owning pager, selection, navigation, and visibility state.
@@ -1216,6 +1294,8 @@ contracts:
   - Publication and bangumi-follow results use one `AddRange` notification and ordinary clicks toggle independent selections.
   - Replacing/leaving publication or bangumi pagers detaches handlers and cancels page/download work.
   - My-space renders the primary profile first; balance/relation failure does not hide an already loaded profile.
+  - My-space binding properties and collections live in a service-free state partial below 500 lines; navigation, cancellation, settings, profile/stat loading, and projection remain in the workflow owner below 500 lines.
+  - Bangumi-follow's twelve XAML-facing properties live in a service-free state partial below 150 lines; pager events, typed navigation, cancellation, page loading, download coordination and batch projection remain in the workflow owner below 450 lines.
   - Canceling publication directory selection returns before media parsing.
   - Publication keyword search uses the WBI endpoint's exact `page.count` and applies one batch projection.
   - Returning from a child route preserves the same query, page, and media instances; only an interrupted page request is resumed.
@@ -1223,6 +1303,7 @@ hazards:
   - Per-item dispatcher calls stutter on large publication pages and can project stale rows after navigation.
   - Worker-thread mutation of profile properties and `StatusList` is unsafe for Avalonia bindings.
   - Binding status flags must be assigned both true and false; retaining an old false value hides a newly bound account.
+  - Moving pager, coordinator, cancellation, logger or navigation ownership into the bangumi-follow state partial would couple stable bindings back to runtime workflow.
 tests:
   - test.user-space-pages
   - test.download-add
@@ -1380,7 +1461,7 @@ type: behavior
 paths:
   - src/DownKyi.Desktop/CustomAction/VideoPageSelectionBehavior.cs
   - src/DownKyi.Desktop/CustomAction/ResetGridSplitterBehavior.cs
-  - src/DownKyi.Desktop/Views/ViewVideoDetail.axaml
+  - src/DownKyi.Desktop/Views/VideoDetailSelectionView.axaml
 responsibility: Maps pointer, keyboard, checkbox, select-all, section changes, and splitter reset bindings to Avalonia controls.
 inbound:
   - viewmodel.video-detail
@@ -1416,6 +1497,67 @@ hazards:
   - Deep-copying pages creates stale parallel state and increases memory for large collections.
 tests:
   - test.video-search-state
+```
+
+### service.search-routing
+
+```yaml
+id: service.search-routing
+type: service
+paths:
+  - src/DownKyi.Desktop/Services/SearchService.cs
+responsibility: Converts recognized user input into typed application navigation requests.
+inbound:
+  - viewmodel.main-window
+  - viewmodel.index
+outbound:
+  - core.input-entrance
+  - service.typed-navigation
+contracts:
+  - Recognized media, user, favorite, and publication-list input produces `AppNavigationRequest`; no Prism event or string ViewName is used.
+  - Unrecognized input returns false without navigation.
+  - Host composition owns one `SearchService`; MainWindow and Index ViewModels receive it through constructor injection and never instantiate it.
+hazards:
+  - Adding per-ViewModel instances would split navigation/settings ownership and bypass composition tests.
+tests:
+  - test.input-parsing
+  - test.typed-navigation
+  - test.architecture-boundaries
+```
+
+### core.input-entrance
+
+```yaml
+id: core.input-entrance
+type: core
+paths:
+  - DownKyi.Core/BiliApi/BiliUtils/ParseEntrance.cs
+  - DownKyi.Core/BiliApi/BiliUtils/ParseEntrance.Uri.cs
+  - DownKyi.Core/BiliApi/BiliUtils/ParseEntrance.Video.cs
+  - DownKyi.Core/BiliApi/BiliUtils/ParseEntrance.Bangumi.cs
+  - DownKyi.Core/BiliApi/BiliUtils/ParseEntrance.Cheese.cs
+  - DownKyi.Core/BiliApi/BiliUtils/ParseEntrance.Favorites.cs
+  - DownKyi.Core/BiliApi/BiliUtils/ParseEntrance.UserSpace.cs
+  - DownKyi.Core/BiliApi/BiliUtils/ParseEntrance.UserVideoList.cs
+responsibility: Normalizes supported Bilibili media, favorite, user-space, and publication-list identifiers at one headless input boundary.
+inbound:
+  - service.info-services
+  - service.bili-helper
+  - service.user-space-pages
+  - service.search-routing
+outbound: []
+contracts:
+  - Public method names and URL constants are compatibility surface; partial files divide responsibility without creating a second parser.
+  - Canonical AV/BV, bangumi, cheese, favorite, user-space, and bare publication-list forms retain their established numeric or string result.
+  - Unrecognized non-null input returns the established `-1` or empty-string sentinel; null input throws `ArgumentNullException`.
+  - User-space URLs require an HTTP(S) URI with the exact `space.bilibili.com` host and one numeric path segment; host substrings and mixed paths are rejected.
+  - A bare `bilibili.com/list/<positive MID>` is an uploader list, while `list/ml...` remains a favorites route and non-empty `sid` remains a series route.
+hazards:
+  - Broad substring matching can turn attacker-controlled hosts into trusted navigation input.
+  - Changing accepted casing, short-link mapping, or failure sentinels can silently break search and media-service routing.
+tests:
+  - test.input-parsing
+  - test.architecture-boundaries
 ```
 
 ### core.bili-api
@@ -1598,11 +1740,15 @@ type: service
 paths:
   - src/DownKyi.Desktop/Services/Download/AddToDownloadService.cs
   - src/DownKyi.Desktop/Services/Download/AddToDownloadServiceFactory.cs
+  - src/DownKyi.Desktop/Services/Download/DownloadContentSelection.cs
+  - src/DownKyi.Desktop/Services/Download/DownloadDuplicatePolicy.cs
+  - src/DownKyi.Desktop/Services/Download/DownloadTaskDraftFactory.cs
+  - src/DownKyi.Desktop/Services/Download/DownloadMovieMetadataBuilder.cs
   - src/DownKyi.Desktop/Services/Download/IAddToDownloadSession.cs
   - src/DownKyi.Application/Downloads/DownloadAddCoordinator.cs
   - src/DownKyi.Desktop/Services/Video/VideoDetailDownloadCoordinator.cs
   - src/DownKyi.Desktop/Services/Media/ContentDownloadCoordinator.cs
-responsibility: Converts immutable selected-media snapshots into download tasks, centralizes directory selection and cancellable per-item parsing, handles duplicate decisions, and writes queue state.
+responsibility: Coordinates one selected-media add session while dedicated owners decide duplicates, construct the legacy-compatible task draft, build optional movie metadata, and admit the task through the Domain-backed queue boundary.
 inbound:
   - viewmodel.video-detail
   - viewmodel.seasons-series
@@ -1620,19 +1766,24 @@ contracts:
   - `ContentDownloadCoordinator` owns the session factory, checks selection/cancellation before opening a dialog, selects one directory, and checks cancellation between queued items.
   - Video and bangumi info-service construction is selected by an injected factory and receives the operation cancellation token; ViewModels cannot construct sessions, select directories, or duplicate parse/add loops.
   - Directory selection returning null means user canceled; no task should be queued.
+  - `AddToDownloadService` owns only session state, parsing, directory/content selection and admission. It cannot scan download projections, construct legacy task models, build file names or load optional tags.
+  - `DownloadDuplicatePolicy` alone inspects active/completed projections. The accepted Ask path commits the persisted delete transition before removing the completed UI projection; rejection and JumpOver preserve both.
+  - `DownloadTaskDraftFactory` is stateless and receives one immutable `ApplicationSettings` snapshot plus immutable content selection. It owns zone, filename/collision, stream-type and legacy-compatible task construction without reading a settings singleton or service.
+  - `DownloadMovieMetadataBuilder` alone loads optional tags. Current-operation cancellation propagates; classified optional API/transport failures log one warning and continue with empty tags.
   - Existing downloaded/downloading records must be checked before inserting duplicates.
   - Video-detail receives `IVideoDetailDownloadCoordinator`; favorites, history, watch-later, publication, bangumi-follow, and season/series pages receive only their shared coordinator.
   - `IAddToDownloadSession` isolates the legacy mutable add implementation so queue orchestration is tested without network, SQLite, dialogs, or user paths.
   - Duplicate-task feedback goes through the injected `IUserNotificationService`; add sessions and coordinators cannot accept or publish global event-bus messages.
   - Directory selection, duplicate confirmation, parsing, and persistence propagate the operation cancellation token through the typed dialog boundary.
-  - The add service receives list/storage owners explicitly and cannot resolve them through App.
-  - Add factory, content coordinator, and info-service construction share the injected settings owner; file naming, quality selection, and duplicate policy cannot read a global singleton.
-  - Movie metadata is built asynchronously. Optional tags receive the current add token; expected cancellation aborts the add, while classified tag API/transport failures log one warning and continue with empty tags.
+  - The duplicate policy receives list/storage owners explicitly and cannot resolve them through App.
+  - Add factory, content coordinator, and info-service construction share the injected settings owner; file naming and quality selection receive a captured snapshot, while duplicate policy receives only the selected repeat strategy.
 hazards:
   - Running add logic on stale VideoInfoView snapshots can enqueue wrong media.
   - Duplicate dialog paths can accidentally remove completed records.
+  - Adding settings, dialog, projection or notification dependencies to the stateless draft factory would recreate the mixed owner.
 tests:
   - test.download-add
+  - test.download-add-owner
   - test.video-detail-download
   - test.video-tag-loading
 ```
@@ -1800,7 +1951,7 @@ outbound:
   - service.download-list-state
   - external.aria2
   - external.ffmpeg
-  - core.logging
+  - infrastructure.logging
   - core.settings
 contracts:
   - A bounded Channel and fixed workers own queue consumption; global shutdown and per-task cancellation cannot create unbounded transfer tasks.
@@ -1892,8 +2043,9 @@ tests:
 id: core.storage
 type: core
 paths:
-  - DownKyi.Core/Storage/StorageManager.cs
-responsibility: Resolves portable and per-user application-data, cache, log, database, media, and external-process state paths.
+  - DownKyi.Core/Storage/ApplicationDataPaths.cs
+  - DownKyi.Core/Storage/ApplicationStorage.cs
+responsibility: Resolves portable and per-user application-data paths, creates their directories, and performs bounded storage maintenance.
 inbound:
   - app.application
   - service.legacy-upgrade
@@ -1911,18 +2063,24 @@ tests:
   - test.ui-smoke
 ```
 
-### core.logging
+### infrastructure.logging
 
 ```yaml
-id: core.logging
-type: core
+id: infrastructure.logging
+type: infrastructure
 paths:
-  - DownKyi.Core/Logging/ApplicationLogProvider.cs
-  - DownKyi.Core/Logging/ApplicationLogOptions.cs
-  - DownKyi.Core/Logging/ApplicationLogRecord.cs
-  - DownKyi.Core/Logging/IApplicationLogService.cs
-  - DownKyi.Core/Logging/SensitiveDataRedactor.cs
-responsibility: Provides the Microsoft.Extensions.Logging sink, bounded asynchronous persistence, rotation/retention, recent-event diagnostics, export, and one sensitive-data redaction policy.
+  - src/DownKyi.Application/Diagnostics/ApplicationLogMetrics.cs
+  - src/DownKyi.Application/Diagnostics/ApplicationLogRecord.cs
+  - src/DownKyi.Application/Diagnostics/IApplicationLogService.cs
+  - src/DownKyi.Infrastructure/Logging/ApplicationLogProvider.cs
+  - src/DownKyi.Infrastructure/Logging/NLogAsyncRollingFileSink.cs
+  - src/DownKyi.Infrastructure/Logging/ApplicationLogJsonLayout.cs
+  - src/DownKyi.Infrastructure/Logging/ApplicationRecentLogBuffer.cs
+  - src/DownKyi.Infrastructure/Logging/DiagnosticLogExporter.cs
+  - src/DownKyi.Infrastructure/Logging/ApplicationLogRetentionManager.cs
+  - src/DownKyi.Infrastructure/Logging/ApplicationLogRetentionWorker.cs
+  - src/DownKyi.Infrastructure/Logging/SensitiveDataRedactor.cs
+responsibility: Keeps application-facing diagnostic contracts in Application and implements redaction, bounded asynchronous NLog persistence, recent-event diagnostics, file-backed export, retention, and lifecycle ownership in Infrastructure.
 inbound:
   - app.application
   - core.bili-api
@@ -1931,19 +2089,23 @@ outbound:
   - external.filesystem
 contracts:
   - Diagnostic export must redact cookies, tokens, sensitive URLs, and personal local paths.
-  - Accepted entries pass through one redactor before entering either the bounded recent-event buffer or the bounded writer queue.
+  - Accepted entries pass through the project redactor before entering either the bounded recent-event buffer or the NLog sink; NLog never receives raw structured values.
+  - Redacted-record JSON serialization runs through a thread-agnostic layout on the async target thread, not the caller thread.
+  - NLog is an Infrastructure-private sink configured through a private `LogFactory`; production code cannot use global `LogManager` or `NLog.Extensions.Logging`.
   - Every entry records timestamp, category, event ID, process ID, thread ID, and captured scope context.
-  - Explicit flush drains accepted entries, closes the active file handle so logs are immediately readable on Windows, and reports writer failures.
+  - Explicit flush drains accepted entries, closes the active file handle so logs are immediately readable on Windows, and reports writer failures; async disposal completes cleanup and then rethrows the first persistence failure.
+  - Writes concurrent with file-handle release enter a second queue with the same configured bound; flush drains it before resetting only the `FileTarget` handles and counts overflow rather than rebuilding the logger configuration or losing accepted events.
   - UTC JSONL files live under `yyyy-MM-dd` directories, rotate at 32 MiB, retain at most seven days, and observe a 512 MiB hard safety cap while protecting the active file.
   - Maintenance runs at startup, hourly, day change, rotation, and before export; storage metrics report capacity ratio, age/capacity deletions, and bytes/events written.
-  - Diagnostic export contains a redacted bounded event stream and a machine-readable manifest; it cannot copy raw application logs or user paths.
+  - Diagnostic export reads persisted JSONL files after a flush, re-redacts defensively, skips and counts malformed records, and writes a bounded event stream plus machine-readable manifest.
+  - Recent buffer, sink, retention worker, retention policy, and exporter are separate owners; the Application project contains contracts only and Core contains no logging implementation.
   - Async disposal drains accepted entries without a synchronous wait.
   - Async commands and ViewModel fire-and-forget observation require an injected logger; cancellation retains cancellation semantics while operational failures are sanitized and recorded.
   - Production code cannot restore `LogManager`, the legacy terminal wrapper, or direct terminal diagnostics.
 hazards:
   - Bypassing the shared provider loses redaction, bounded buffering, retention, and export consistency.
-  - The provider also owns queueing, file writing, rotation, retention, recent-event buffering, metrics, and diagnostic export; changing its lifecycle requires focused shutdown and privacy tests.
-  - Replacing it with a third-party sink requires an ADR and evidence that redaction occurs before every persistent or cached destination.
+  - Reconfiguring the private NLog target or flush sequence can reopen Windows file-sharing and shutdown races; changes require focused concurrent flush, disposal, and privacy tests.
+  - Adding another sink requires an ADR and proof that project redaction runs before every persistent or cached destination.
 tests:
   - test.diagnostic-log-redaction
   - test.architecture-boundaries
@@ -1958,6 +2120,8 @@ paths:
   - DownKyi.Core/Settings/ISettingsStore.cs
   - DownKyi.Core/Settings/ApplicationSettings.cs
   - DownKyi.Core/Settings/SettingsManager.cs
+  - DownKyi.Core/Settings/SettingsManager.Network.cs
+  - DownKyi.Core/Settings/SettingsManager.Aria.cs
   - DownKyi.Core/Settings/SettingsManager.Snapshot.cs
   - DownKyi.Core/Settings/SettingsSchemaMigrator.cs
 responsibility: Publishes validated immutable settings snapshots, applies typed updates, migrates persisted schemas, and owns debounced atomic persistence plus shutdown flush.
@@ -1999,10 +2163,12 @@ contracts:
   - A temporary settings file must parse as one complete JSON object before replacement; malformed or interrupted output cannot replace the last valid file.
   - Nested settings collections are immutable arrays, so a later update cannot mutate a snapshot already captured by an operation.
   - HTTP, download planning, transfer, artifact, diagnostics, and FFmpeg capture one snapshot per operation. A dynamic supplier may select only the next queued worker policy.
+  - General network/downloader/proxy defaults and aria RPC/runtime defaults are separate partial implementation owners; both preserve the existing `ApplicationSettings.Network` JSON schema and public compatibility methods.
   - Shutdown flush is awaited without synchronously blocking the UI thread.
   - Production composition constructs the settings owner with the shared `ILoggerFactory`; validation, migration, load, flush, and cleanup diagnostics cannot use static `LogManager` or terminal output.
 hazards:
   - Exposing the internal mutable manager would bypass validation and create competing in-memory snapshots.
+  - Moving aria token, RPC, allocation, limit, or proxy settings back into the general network owner would recreate an oversized mixed-responsibility file.
   - Synchronous disposal intentionally stops scheduled writes without flushing; application shutdown and owners that require persistence must call `FlushAsync` or `DisposeAsync`.
   - Timer callbacks and shutdown flush must not race into partial or non-atomic writes.
 tests:
@@ -2042,7 +2208,7 @@ retention_policy:
 id: external.ffmpeg
 type: external
 paths:
-  - DownKyi.Core/FFMpeg
+  - DownKyi.Core/FFmpeg
   - script/ffmpeg.ps1
   - script/ffmpeg.sh
 responsibility: Merges audio/video, runs delogo/extract operations, and optionally uses hardware encoders with CPU fallback.
@@ -2078,11 +2244,19 @@ id: external.aria2
 type: external
 paths:
   - DownKyi.Core/Aria2cNet
+  - DownKyi.Core/Aria2cNet/Client/AriaClient.cs
+  - DownKyi.Core/Aria2cNet/Client/AriaClient.Downloads.cs
+  - DownKyi.Core/Aria2cNet/Client/AriaClient.Status.cs
+  - DownKyi.Core/Aria2cNet/Client/AriaClient.Options.cs
+  - DownKyi.Core/Aria2cNet/Client/AriaClient.Lifecycle.cs
+  - DownKyi.Core/Aria2cNet/Client/AriaClient.System.cs
   - DownKyi.Core/Aria2cNet/Server/AriaProcessSupervisor.cs
   - DownKyi.Core/Aria2cNet/Server/WindowsProcessJob.cs
   - src/DownKyi.Desktop/Services/Download/AriaRuntimeClientRegistry.cs
   - tests/DownKyi.Core.Tests/AriaClientIsolationTests.cs
+  - tests/DownKyi.Core.Tests/AriaClientRpcContractTests.cs
   - tests/DownKyi.Tests/AriaRuntimeClientRegistryTests.cs
+  - docs/design-docs/aria2-rpc-client-ownership.md
   - script/aria2.ps1
   - script/aria2.sh
 responsibility: Provides optional aria2 RPC download backend and release-packaged aria2 binaries.
@@ -2099,6 +2273,8 @@ contracts:
   - RPC requests use iterative asynchronous retry and cannot occupy a worker thread with synchronous `HttpClient.Send` or recursive retry.
   - Each runtime owns an immutable RPC endpoint and secret; `AriaClient` has no mutable static host, port, or token configuration.
   - Local and custom clients can execute concurrently without endpoint or authentication-token cross-contamination.
+  - `AriaClient` is hand-maintained DownKyi protocol code, not generated output. Core transport, download control, status/URI, options, lifecycle and `system.*` methods have separate partial owners below 500 lines.
+  - Every public RPC method is covered by a deterministic wire-contract inventory. `aria2.*` calls keep the token first; `system.*` calls do not receive an implicit token; `ChangeUriAsync` maps to `aria2.changeUri`.
   - Packaged local RPC listens only on loopback; wildcard listening and allow-origin-all are prohibited for the App-owned child.
   - The child receives `--stop-with-process` on every platform. On Windows it also joins a kill-on-close Job Object, so abrupt parent termination cannot strand aria2.
   - Session input/output and `--continue=true` remain present when process-lifetime hardening is changed; crash cleanup cannot discard resumable state.
@@ -2146,6 +2322,8 @@ id: workflow.strict-pr-ci
 type: workflow
 paths:
   - .github/workflows/quality.yml
+  - .github/workflows/build.yml
+  - script/test-solution.ps1
 responsibility: Blocks PRs that break formatting, restore, Release build, warnings-as-errors, unit tests, or vulnerable package policy.
 inbound:
   - github.pull_request
@@ -2158,9 +2336,12 @@ contracts:
   - Windows, Linux, and macOS builds expose the same analyzer diagnostics.
   - Compiler and CA warnings block every PR on Windows, Linux, and macOS with the repository default `CodeAnalysisTreatWarningsAsErrors=true`.
   - Cleaned analyzer rules are promoted to errors and cannot regress.
+  - Test projects run in stable path order so one constrained runner cannot make independent xUnit hosts starve one another during discovery or shutdown.
+  - Every test project writes a distinct assembly-named TRX; no solution-level logger filename may overwrite earlier project evidence.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
   - Broad NoWarn, global suppressions, nullable disable, or analyzer exclusions hide new defects.
+  - Restoring one parallel solution-level `dotnet test` command can reintroduce Windows foreground-thread timeouts and TRX overwrite.
 tests:
   - github.actions
 ```
@@ -2202,7 +2383,7 @@ contracts:
   - DURL descriptors are selected from an `Order`-sorted list and use `Order` plus the literal codec marker `durl` to form stable download keys; BVID and codec hashes are prohibited as segment identity.
   - Role-specific names replace namespace collisions: `HistoryApi`, `DynamicApi`, `FileNameBuilder`, `FfmpegProcessor`, `BilibiliDanmakuConverter`, `FavoritesPageItem`, and `ThemedDialog`. Bilibili protobuf danmaku parsing lives under `DownKyi.Core.BiliApi.DanmakuApi`.
   - Executable-only application/UI types are internal. BenchmarkDotNet cases are the deliberate exception: public, non-sealed types live in `DownKyi.BenchmarkCases`, while the executable runner remains internal and discovers the case assembly explicitly.
-  - NFO XML DTOs remain public in `DownKyi.Core/Models/NfoModels.cs`; `XmlSerializer` requires public root and member types. Their `DownKyi.Models` namespace and XML contract are stable even though assembly ownership moved out of the executable.
+  - NFO XML DTOs remain public in `DownKyi.Core/Models/MovieMetadata.cs`, `Actor.cs`, `Rating.cs`, and `UniqueId.cs`; `XmlSerializer` requires public root and member types. Their `DownKyi.Models` namespace and XML contract are stable even though assembly ownership moved out of the executable.
   - Raw Bilibili and aria2 address fields remain strings with exact `JsonProperty` wire names; CLR members use semantic `...Address` names. Login QR and redirect consumers validate absolute `Uri` values before use. Do not normalize protocol-relative media addresses or aria2 option strings into `System.Uri`. Protocol, path, token, and marker comparisons use explicit ordinal semantics.
 hazards:
   - Reusing one SARIF path across projects loses rule metadata because later projects overwrite earlier output.
@@ -2784,6 +2965,7 @@ test.network-settings:
   paths:
     - tests/DownKyi.Tests/NetworkSettingsCoordinatorTests.cs
     - tests/DownKyi.Architecture.Tests/SettingsArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/NetworkSettingsViewArchitectureTests.cs
     - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
   guards:
     - immutable option catalogs retain the supported downloader, split, log-level, and file-allocation choices
@@ -2791,16 +2973,16 @@ test.network-settings:
     - initialization projection cannot show feedback, open a dialog, or request restart
     - rejected values cannot open a restart prompt, while an accepted prompt requests exactly one asynchronous restart
     - ViewNetworkViewModel cannot regain settings persistence, lifecycle, dialog, option-construction, or resource-feedback ownership
-    - Host smoke resolves ViewNetworkViewModel and its coordinator without loading or initializing Prism ContainerLocator
+    - Host smoke resolves ViewNetworkViewModel and constructs the complete ordered network-settings child-view graph without loading or initializing Prism ContainerLocator
 
 test.diagnostic-log-redaction:
   paths:
-    - tests/DownKyi.Core.Tests/ApplicationLogProviderTests.cs
+    - tests/DownKyi.Infrastructure.Tests/ApplicationLogProviderTests.cs
   guards:
     - message, exception, and scope data share the same cookie, query-secret, email, account-ID, and personal-path redactor
-    - the recent-event buffer is bounded and diagnostic export includes only its retained entries
+    - the recent-event buffer is bounded while diagnostic export reads the newest persisted entries after a provider restart
     - accepted entries are drained by async disposal and explicit flush releases the current log file
-    - size rotation and age/count retention remain bounded
+    - size rotation, age/byte retention, active-file protection, malformed-line accounting, and canceled-export cleanup remain bounded
     - writer initialization failures are visible to flush callers
 
 test.ui-smoke:
@@ -2811,6 +2993,7 @@ test.ui-smoke:
     - MainWindow XAML and its ViewModel binding resolve from the real Host without setting Prism ContainerLocator
     - no Prism assembly is loaded before Host creation or after root XAML construction
     - MainWindow, index, video-detail, download-manager, and user-space favorites ViewModels resolve from Microsoft DI
+    - the smoke application constructs the complete video-detail child-view graph without mutating global theme state
     - three-level main-region history restores the same A/B instances, disposes removed B/C instances, and reaches an empty history
     - the UserSpace to UserSpaceFavorites to PublicFavorites route chain returns to the original folder and UserSpace instances
     - the public-favorites back arrow resolves to visible black and white brushes under Light and Dark theme variants
@@ -2908,6 +3091,7 @@ test.download-store:
     - malformed JSON quarantines only the affected row and does not expose raw personal data
     - completed state moves atomically from downloading to keyset-paged history
     - a legacy success row left in downloading is queued for recovery instead of quarantined
+    - architecture tests prevent the store coordinator from reclaiming Domain row reconstruction or state-row upsert SQL
 
 test.progress-write-behind:
   paths:
@@ -2953,9 +3137,43 @@ test.system-performance:
 test.video-input-resolver:
   paths:
     - tests/DownKyi.Application.Tests/VideoInputResolverTests.cs
-    - tests/DownKyi.Tests/VideoInputResolverTests.cs
+    - tests/DownKyi.Tests/PlayStreamTypeResolverTests.cs
   guards:
     - BV/AV/video/bangumi/cheese inputs classify consistently
+
+test.input-parsing:
+  paths:
+    - tests/DownKyi.Core.Tests/ParseEntranceContractTests.cs
+    - tests/DownKyi.Core.Tests/UserVideoListUrlTests.cs
+    - tests/DownKyi.Architecture.Tests/InputParsingArchitectureTests.cs
+  guards:
+    - canonical identifier and URL forms retain their established result and failure sentinel
+    - null input has one explicit exception contract
+    - spoofed user-space hosts and malformed paths are rejected
+    - parser families remain in focused partial owners below the owner budget
+
+test.custom-pager:
+  paths:
+    - tests/DownKyi.Tests/CustomPagerViewModelTests.cs
+    - tests/DownKyi.Tests/VideoSelectionStateTests.cs
+    - tests/DownKyi.Architecture.Tests/PagerArchitectureTests.cs
+  guards:
+    - constructor and listener-free page changes retain valid state
+    - parameterless XAML buttons execute and vetoed changes do not mutate current page
+    - jump and count boundaries cannot publish an invalid page
+    - state, command, and pure layout owners remain focused and below budget
+
+test.video-detail-view:
+  paths:
+    - tests/DownKyi.Architecture.Tests/VideoDetailViewArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
+    - tests/DownKyi.Desktop.Tests/UiSmokeTests.cs
+  guards:
+    - the root remains a thin ordered toolbar, summary, selection, and action composition
+    - all five typed XAML owners remain below 300 lines and retain the binding/resource/behavior inventory
+    - section and page controls remain in one namescope while the ViewModel stays free of Avalonia controls
+    - DataGrid row styles layer on the application theme without a child-construction-time base-theme lookup, while App retains the Fluent DataGrid include
+    - the real Host constructs the complete child-view graph without global test-theme mutation
 
 test.video-selection-state:
   paths:
@@ -3004,6 +3222,7 @@ test.module-boundary-ratchets:
     - Core must contain zero UI/Avalonia/QRCoder dependencies and zero XAML resource owners
     - service contracts must contain zero dependencies on ViewModel types
     - duplicate simple-name sets, generic buckets, and file/type mismatch sets cannot grow
+    - source inventory declaration matching is line-scoped and non-backtracking so a large or malformed line cannot make Windows CI time out or hide later declarations
     - existing files over 500 physical lines cannot grow and new oversized files are rejected
     - Domain-to-legacy reconstruction and static/synchronous HTTP debt cannot spread to another owner; download work polling from UI collections is rejected entirely
     - the deleted custom mutable observable collection cannot return; download lists must expose standard read-only wrappers over owner-only backing collections

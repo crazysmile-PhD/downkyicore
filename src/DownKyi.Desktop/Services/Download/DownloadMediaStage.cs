@@ -4,9 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream.Models;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Results;
 using Microsoft.Extensions.Logging;
@@ -347,7 +347,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         var downloading = context.Downloading;
         var video = playUrl?.Dash?.Video?.FirstOrDefault(item =>
         {
-            var codec = Constant.GetCodecIds().FirstOrDefault(candidate =>
+            var codec = PlaybackQualityCatalog.GetCodecIds().FirstOrDefault(candidate =>
                 candidate.Id == item.CodecId);
             return item.Id == downloading.Resolution.Id &&
                    codec?.Name == downloading.VideoCodecName;

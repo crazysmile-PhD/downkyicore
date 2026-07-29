@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using DownKyi.Core.Logging;
+using DownKyi.Application.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Core.Aria2cNet.Server;

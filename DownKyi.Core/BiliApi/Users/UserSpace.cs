@@ -198,7 +198,7 @@ public static partial class UserSpace
             { "tid", tid },
             { "keyword", keyword },
         };
-        if (!File.Exists(StorageManager.GetLogin()))
+        if (!File.Exists(ApplicationStorage.GetLogin()))
         {
             parameters.Add("dm_img_str", "V2ViR0wgMS");
             parameters.Add("dm_img_list", "[]");

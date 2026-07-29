@@ -1,7 +1,7 @@
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 
@@ -56,7 +56,7 @@ public static class UserInfo
             { "mid", mid }
         };
 
-        if (!File.Exists(StorageManager.GetLogin()))
+        if (!File.Exists(ApplicationStorage.GetLogin()))
         {
             parameters.Add("dm_img_str", "V2ViR0wgMS");
             parameters.Add("dm_img_list", "[]");

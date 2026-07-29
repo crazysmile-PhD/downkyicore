@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using DownKyi.Core.Logging;
+using DownKyi.Application.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;

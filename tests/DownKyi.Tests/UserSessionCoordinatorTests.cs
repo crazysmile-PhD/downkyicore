@@ -1,5 +1,6 @@
 using DownKyi.Application.Desktop;
 using DownKyi.Core.BiliApi.Users.Models;
+using DownKyi.Services;
 using DownKyi.Services.Account;
 using DownKyi.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -14,10 +15,12 @@ public sealed class UserSessionCoordinatorTests
         using var settings = new TestSettingsStore();
         var coordinator = new RecordingUserSessionCoordinator();
         var navigation = new StubNavigationService();
+        var searchService = new SearchService(settings.Store, navigation);
         using var viewModel = new ViewIndexViewModel(
             new TestDesktopInteractionContext(navigation),
             coordinator,
             settings.Store,
+            searchService,
             NullLogger<ViewIndexViewModel>.Instance);
 
         Assert.Equal(0, coordinator.RefreshCount);
@@ -29,10 +32,12 @@ public sealed class UserSessionCoordinatorTests
         using var settings = new TestSettingsStore();
         var coordinator = new RecordingUserSessionCoordinator();
         var navigation = new StubNavigationService();
+        var searchService = new SearchService(settings.Store, navigation);
         using var viewModel = new ViewIndexViewModel(
             new TestDesktopInteractionContext(navigation),
             coordinator,
             settings.Store,
+            searchService,
             NullLogger<ViewIndexViewModel>.Instance)
         {
             InputText = "BV1G1421D7mL"

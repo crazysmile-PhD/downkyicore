@@ -28,7 +28,7 @@ dotnet build ./DownKyi.sln `
   -p:TreatWarningsAsErrors=true `
   -p:CodeAnalysisTreatWarningsAsErrors=true
 
-dotnet test ./DownKyi.sln -c Release --no-restore --no-build
+pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 dotnet format ./DownKyi.sln --no-restore --verify-no-changes
 git diff --check
 dotnet package list --project ./DownKyi.sln --vulnerable --include-transitive

@@ -9,27 +9,23 @@ namespace DownKyi.Tests;
 public sealed class VideoSelectionStateTests
 {
     [Fact]
-    public void PagerEventsPreserveVetoAndCountSemantics()
+    public void PagerEventPreservesVetoSemantics()
     {
         var pager = new CustomPagerViewModel(1, 3);
         CancelEventArgs? changing = null;
-        var countChanged = false;
 
         pager.CurrentChanging += (_, e) =>
         {
             changing = e;
             e.Cancel = true;
         };
-        pager.CountChanged += (_, _) => countChanged = true;
 
         pager.Current = 2;
-        pager.Count = 4;
 
         Assert.NotNull(changing);
         Assert.True(changing.Cancel);
         Assert.Equal(2, pager.ProposedCurrent);
         Assert.Equal(1, pager.Current);
-        Assert.True(countChanged);
     }
 
     [Fact]

@@ -335,25 +335,29 @@ public sealed class VideoTagLoadingTests : IDisposable
             _projectionStore = new DownloadTaskProjectionStore(_taskService, clock);
             ListState = new DownloadListState();
             Queue = new RecordingDownloadTaskQueue();
-            Logger = new RecordingLogger<AddToDownloadService>();
+            Logger = new RecordingLogger<DownloadMovieMetadataBuilder>();
             var desktop = new TestDesktopInteractionContext();
             var client = new TestBilibiliApiClient();
             var admission = new DownloadTaskAdmissionService(
                 ListState,
                 _projectionStore,
                 Queue);
-            Service = new AddToDownloadService(
-                DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video,
+            var duplicatePolicy = new DownloadDuplicatePolicy(
                 ListState,
                 _projectionStore,
+                desktop.Notifications,
+                desktop.Dialogs);
+            Service = new AddToDownloadService(
+                DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video,
                 admission,
+                duplicatePolicy,
+                new DownloadMovieMetadataBuilder(Logger),
                 _settings,
                 new VideoTagProvider(client),
                 new TestWbiKeyProvider(),
                 client,
-                desktop.Notifications,
                 desktop.Dialogs,
-                Logger);
+                new RecordingLogger<AddToDownloadService>());
         }
 
         public AddToDownloadService Service { get; }
@@ -364,7 +368,7 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         public RecordingDownloadTaskQueue Queue { get; }
 
-        public RecordingLogger<AddToDownloadService> Logger { get; }
+        public RecordingLogger<DownloadMovieMetadataBuilder> Logger { get; }
 
         public void SetRepeatDownloadStrategy(DownKyi.Core.Settings.RepeatDownloadStrategy strategy)
         {

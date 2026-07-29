@@ -10,8 +10,6 @@ using DownKyi.ViewModels.Settings;
 using DownKyi.ViewModels.Toolbox;
 using DownKyi.ViewModels.UserSpace;
 using Microsoft.Extensions.DependencyInjection;
-using RootSeasonsSeriesViewModel = DownKyi.ViewModels.ViewSeasonsSeriesViewModel;
-using UserSpaceSeasonsSeriesViewModel = DownKyi.ViewModels.UserSpace.ViewSeasonsSeriesViewModel;
 
 namespace DownKyi.Platform;
 
@@ -275,7 +273,7 @@ internal sealed class AvaloniaNavigationService : IAppNavigationService, IDispos
             AppRoute.PublicFavorites => typeof(ViewPublicFavoritesViewModel),
             AppRoute.UserSpace => typeof(ViewUserSpaceViewModel),
             AppRoute.Publication => typeof(ViewPublicationViewModel),
-            AppRoute.SeasonsSeries => typeof(RootSeasonsSeriesViewModel),
+            AppRoute.SeasonsSeries => typeof(ViewSeasonsSeriesDetailViewModel),
             AppRoute.Friends => typeof(ViewFriendsViewModel),
             AppRoute.MySpace => typeof(ViewMySpaceViewModel),
             AppRoute.MyFavorites => typeof(ViewMyFavoritesViewModel),
@@ -297,7 +295,7 @@ internal sealed class AvaloniaNavigationService : IAppNavigationService, IDispos
             AppRoute.ExtractMedia => typeof(ViewExtractMediaViewModel),
             AppRoute.Archive => typeof(ViewArchiveViewModel),
             AppRoute.UserSpaceChannel => typeof(ViewChannelViewModel),
-            AppRoute.UserSpaceSeasonsSeries => typeof(UserSpaceSeasonsSeriesViewModel),
+            AppRoute.UserSpaceSeasonsSeries => typeof(ViewUserSpaceSeasonsSeriesViewModel),
             AppRoute.UserSpaceFavorites => typeof(ViewFavoritesViewModel),
             _ => throw new ArgumentOutOfRangeException(nameof(route), route, null)
         };

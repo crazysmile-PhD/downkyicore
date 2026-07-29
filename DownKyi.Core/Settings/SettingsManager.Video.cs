@@ -22,7 +22,7 @@ public partial class SettingsManager
     private const AllowStatus IsTranscodingAacToMp3 = AllowStatus.Yes;
 
     // 默认下载目录
-    private readonly string _saveVideoRootPath = StorageManager.GetMedia();
+    private readonly string _saveVideoRootPath = ApplicationStorage.GetMedia();
 
     // 历史下载目录
     private readonly List<string> _historyVideoRootPaths = new();

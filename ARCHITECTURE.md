@@ -17,11 +17,11 @@
 ```mermaid
 flowchart TD
     Entry["DownKyi executable\nminimal Program bootstrap"]
-    Core["DownKyi.Core\nheadless Bilibili API + settings + logging + media + storage compatibility"]
+    Core["DownKyi.Core\nheadless Bilibili API + settings + media + storage compatibility"]
     Desktop["DownKyi.Desktop\nAvalonia + Host + Views + ViewModels + desktop runtime"]
     Application["DownKyi.Application\nselected contracts and use cases"]
     Domain["DownKyi.Domain\ndownload aggregate and typed results"]
-    Infrastructure["DownKyi.Infrastructure\nSQLite + async Bilibili HTTP + write-behind + clock"]
+    Infrastructure["DownKyi.Infrastructure\nSQLite + async Bilibili HTTP + logging + write-behind + clock"]
 
     Entry --> Desktop
     Desktop --> Core
@@ -40,7 +40,7 @@ flowchart TD
 - `DownKyi.Desktop` 是 Avalonia App、Views、ViewModels、`Presentation` projections、desktop adapters、Host composition 與 desktop runtime owner。Service contracts 不再引用 `DownKyi.ViewModels`。
 - `DownKyi.Core` 不含 `.axaml`、Avalonia 或 QRCoder；登入 API 留在 Core，QR bitmap renderer 與 Bilibili image dictionaries 位於 Desktop。
 - `DownKyi.Domain.DownloadTask` 已是持久化狀態轉換的權威；worker 與 pipeline 入口使用 `DownloadTaskId`，但 orchestrator channel 與部分 media stage 仍暫時持有 UI projection。
-- `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie ports；`DownKyi.Infrastructure` 已擁有其 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite 與 write-behind，但 aria2、FFmpeg、file system 與 logging sink 尚待後續切片搬入。
+- `DownKyi.Application` 已擁有 Bilibili HTTP/buvid/cookie ports 與 logging contracts；`DownKyi.Infrastructure` 已擁有 async `IHttpClientFactory` transport、single-flight buvid provider、SQLite、write-behind，以及私有 NLog logging sink、retention 與 diagnostic exporter。aria2、FFmpeg 與 file system 的最終 ownership 尚待後續切片。
 - Prism、DryIoc、EventAggregator、RegionManager 和 ContainerLocator 已從 production source 移除，不得重新引入。
 
 ## 目前啟動鏈
@@ -88,7 +88,12 @@ Main region 的返回操作必須先縮減 `AvaloniaNavigationService` 的既有
 
 ```mermaid
 flowchart LR
-    Add["AddToDownloadService"] --> Admission["DownloadTaskAdmissionService"]
+    Add["AddToDownloadService session"] --> Duplicate["DownloadDuplicatePolicy"]
+    Add --> Draft["DownloadTaskDraftFactory"]
+    Add --> Metadata["DownloadMovieMetadataBuilder"]
+    Add --> Admission["DownloadTaskAdmissionService"]
+    Duplicate --> Projection
+    Duplicate --> UiList
     Admission --> Projection["DownloadTaskProjectionStore"]
     Admission --> UiList["DownloadingItem collection"]
     Admission --> QueueGateway["DownloadTaskQueueGateway"]
@@ -199,6 +204,8 @@ DownloadMediaStage
 ```
 
 `DownloadTransferResult` 區分 transient network、rate limit、expired address、resume rejected、invalid media、disk 與 permanent failure。403 可觸發一次播放地址重解；429 在 backend 能提供 `Retry-After` 時遵守最多 30 秒的 bounded delay；resume rejected 只允許清理該 transfer 的檔案與 sidecar 後重試一次；cancellation 不會轉成失敗或 retry。Built-in Downloader 與 aria2 的內部 retry 必須停用，每個 aria RPC client call 只能送出一次實體請求，避免和 coordinator 的 budget 相乘。網路失敗保留 partial/resume sidecar，只有確定無效的 media 或被拒絕的續傳狀態才清理。aria2 RPC 層失敗必須保留最新 GID；只有 terminal task failure 或明確的 task-not-found 才能清除。
+
+`AriaClient` 是專案內維護的 JSON-RPC compatibility adapter，不是生成檔。核心 partial 只擁有 immutable endpoint/token、序列化、response decoding 與單次 HTTP transport；下載控制、狀態/URI、選項、生命週期與 `system.*` methods 各自由責任 partial 擁有。所有 `aria2.*` method 的 token 位置與 RPC method name 由全公開方法合約測試固定。來源證據、owner 表和變更流程位於 `docs/design-docs/aria2-rpc-client-ownership.md`。
 
 ## 邊界規則
 

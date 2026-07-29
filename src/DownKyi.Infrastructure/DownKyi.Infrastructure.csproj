@@ -6,6 +6,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite.Core" />
     <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="NLog" />
     <PackageReference Include="SQLite3MC.PCLRaw.bundle" />
   </ItemGroup>
   <ItemGroup>

@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
-using DownKyi.Core.FFMpeg;
+using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 

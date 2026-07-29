@@ -23,7 +23,7 @@ public sealed class AgentEnvironmentArchitectureTests
     {
         AssertPathsExist(
             "script/audit-module-boundaries.ps1",
-            "DownKyi.Core/Logging/ApplicationLogProvider.cs",
+            "src/DownKyi.Infrastructure/Logging/ApplicationLogProvider.cs",
             "tests/DownKyi.Desktop.Tests/UiSmokeTests.cs",
             "benchmarks/DownKyi.SystemBenchmarks",
             "docs/operations/verification-and-rollback.md",
@@ -38,13 +38,14 @@ public sealed class AgentEnvironmentArchitectureTests
             "DownKyi.sln",
             "version.txt",
             "Directory.Packages.props",
+            "script/test-solution.ps1",
             "docs/maintenance.md",
             "docs/operations/verification-and-rollback.md");
 
         var operations = Read("docs/operations/verification-and-rollback.md");
         Assert.Contains("dotnet restore ./DownKyi.sln", operations, StringComparison.Ordinal);
         Assert.Contains("dotnet build ./DownKyi.sln", operations, StringComparison.Ordinal);
-        Assert.Contains("dotnet test ./DownKyi.sln", operations, StringComparison.Ordinal);
+        Assert.Contains("script/test-solution.ps1", operations, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -59,9 +60,16 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("Enforce architecture policy", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("dotnet test", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("./script/test-solution.ps1", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--deprecated", qualityWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("LogFileName=test-results-${{ matrix.os }}.trx", qualityWorkflow, StringComparison.Ordinal);
+
+        var testScript = Read("script/test-solution.ps1");
+        Assert.Contains("Get-ChildItem", testScript, StringComparison.Ordinal);
+        Assert.Contains("Sort-Object FullName", testScript, StringComparison.Ordinal);
+        Assert.Contains("LogFileName=$($testProject.BaseName).trx", testScript, StringComparison.Ordinal);
+        Assert.Contains("throw \"Test project failed:", testScript, StringComparison.Ordinal);
     }
 
     [Fact]

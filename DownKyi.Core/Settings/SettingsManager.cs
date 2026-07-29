@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
-using DownKyi.Core.Logging;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Utils.Encryptor;
 using Microsoft.Extensions.Logging;

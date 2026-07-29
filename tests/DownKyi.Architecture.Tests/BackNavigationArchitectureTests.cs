@@ -15,7 +15,7 @@ public sealed class BackNavigationArchitectureTests
     [InlineData("ViewMyToViewVideoViewModel.cs")]
     [InlineData("ViewPublicationViewModel.cs")]
     [InlineData("ViewPublicFavoritesViewModel.cs")]
-    [InlineData("ViewSeasonsSeriesViewModel.cs")]
+    [InlineData("ViewSeasonsSeriesDetailViewModel.cs")]
     [InlineData("ViewSettingsViewModel.cs")]
     [InlineData("ViewToolboxViewModel.cs")]
     [InlineData("ViewUserSpaceViewModel.cs")]

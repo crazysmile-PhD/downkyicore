@@ -2,8 +2,8 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Lifetime;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -45,7 +45,7 @@ internal sealed class StorageMaintenanceHostedService : IHostedService
     {
         try
         {
-            await StorageManager.RunMaintenanceAsync(cancellationToken).ConfigureAwait(false);
+            await ApplicationStorage.RunMaintenanceAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

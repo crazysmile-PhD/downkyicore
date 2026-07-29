@@ -5,12 +5,12 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.BiliApi.Favorites;
 using DownKyi.Core.BiliApi.Favorites.Models;
 using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users;
 using DownKyi.Core.BiliApi.Users.Models;
-using DownKyi.Core.Logging;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 

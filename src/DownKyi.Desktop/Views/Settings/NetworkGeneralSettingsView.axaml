@@ -1,0 +1,152 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:settings="clr-namespace:DownKyi.Core.Settings;assembly=DownKyi.Core"
+             xmlns:vms="clr-namespace:DownKyi.ViewModels.Settings"
+             x:Class="DownKyi.Views.Settings.NetworkGeneralSettingsView"
+             x:DataType="vms:ViewNetworkViewModel">
+    <StackPanel Orientation="Vertical">
+        <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+            <TextBlock
+                FontSize="18"
+                Foreground="{DynamicResource BrushTextDark}"
+                Text="{DynamicResource Network}" />
+        </StackPanel>
+
+        <CheckBox
+            Name="NameUseSsl"
+            Margin="0,20,0,0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Command="{Binding UseSslCommand}"
+            Content="{DynamicResource UseSSL}"
+            FontSize="12"
+            Foreground="{DynamicResource BrushTextDark}"
+            IsChecked="{Binding UseSsl, Mode=TwoWay}" />
+
+        <HeaderedContentControl
+            Margin="0,20,0,0"
+            Padding="10,5"
+            HorizontalAlignment="Left"
+            FontSize="12"
+            Background="LightGray"
+            Foreground="{DynamicResource BrushTextDark}"
+            Header="{StaticResource NetworkProxySetting}">
+            <StackPanel Margin="10">
+                <RadioButton
+                    IsChecked="{Binding NetworkProxy,Converter={x:Static ObjectConverters.Equal},ConverterParameter={x:Static settings:NetworkProxy.None}}"
+                    Command="{Binding NetworkProxyCommand}"
+                    CommandParameter="{x:Static settings:NetworkProxy.None}"
+                    Content="{StaticResource NetworkProxyNone}"
+                    GroupName="proxy"
+                    Margin="0,5,0,0" />
+                <RadioButton
+                    IsChecked="{Binding NetworkProxy,Converter={x:Static ObjectConverters.Equal},ConverterParameter={x:Static settings:NetworkProxy.System}}"
+                    Command="{Binding NetworkProxyCommand}"
+                    CommandParameter="{x:Static settings:NetworkProxy.System}"
+                    Content="{StaticResource NetworkProxySystem}"
+                    GroupName="proxy"
+                    Margin="0,5,0,0" />
+                <RadioButton
+                    IsChecked="{Binding NetworkProxy,Converter={x:Static ObjectConverters.Equal},ConverterParameter={x:Static settings:NetworkProxy.Custom}}"
+                    Command="{Binding NetworkProxyCommand}"
+                    CommandParameter="{x:Static settings:NetworkProxy.Custom}"
+                    Content="{StaticResource NetworkProxyCustom}"
+                    GroupName="proxy"
+                    Margin="0,5,0,0" />
+                <StackPanel
+                    IsVisible="{Binding NetworkProxy,Converter={x:Static ObjectConverters.Equal},ConverterParameter={x:Static settings:NetworkProxy.Custom}}"
+                    Margin="0,5,0,0"
+                    Orientation="Horizontal"
+                    ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Foreground="{DynamicResource BrushTextDark}"
+                            Text="{DynamicResource HttpProxy}" />
+                        <TextBox
+                            Name="CustomNetworkProxy"
+                            Width="220"
+                            VerticalContentAlignment="Center"
+                            Text="{Binding CustomNetworkProxy}">
+                            <TextBox.KeyBindings>
+                                <KeyBinding
+                                    Command="{Binding CustomNetworkProxyCommand}"
+                                    CommandParameter="{Binding #CustomNetworkProxy.Text}"
+                                    Gesture="Enter" />
+                            </TextBox.KeyBindings>
+                        </TextBox>
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+        </HeaderedContentControl>
+
+        <TextBlock
+            Margin="0,20,0,0"
+            FontSize="12"
+            Foreground="{DynamicResource BrushTextDark}"
+            Text="{DynamicResource UserAgent}" />
+
+        <TextBox
+            Name="NameUserAgent"
+            Margin="0,10,0,0"
+            HorizontalAlignment="Stretch"
+            Text="{Binding UserAgent}">
+            <TextBox.KeyBindings>
+                <KeyBinding
+                    Command="{Binding UserAgentCommand}"
+                    CommandParameter="{Binding #NameUserAgent.Text}"
+                    Gesture="Enter" />
+            </TextBox.KeyBindings>
+        </TextBox>
+
+        <StackPanel Margin="0,20,0,0" Orientation="Vertical">
+            <TextBlock
+                FontSize="12"
+                Foreground="{DynamicResource BrushTextDark}"
+                Text="{DynamicResource SelectDownloader}" />
+
+            <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                <RadioButton
+                    Command="{Binding SelectDownloaderCommand}"
+                    CommandParameter="Builtin"
+                    Content="{DynamicResource BuiltinDownloader}"
+                    FontSize="12"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    IsChecked="{Binding Builtin}" />
+                <RadioButton
+                    Margin="20,0,0,0"
+                    Command="{Binding SelectDownloaderCommand}"
+                    CommandParameter="Aria2c"
+                    Content="{DynamicResource Aria2cDownloader}"
+                    FontSize="12"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    IsChecked="{Binding Aria2C}" />
+                <RadioButton
+                    Margin="20,0,0,0"
+                    Command="{Binding SelectDownloaderCommand}"
+                    CommandParameter="CustomAria2c"
+                    Content="{DynamicResource CustomAria2cDownloader}"
+                    FontSize="12"
+                    Foreground="{DynamicResource BrushTextDark}"
+                    IsChecked="{Binding CustomAria2C}" />
+            </StackPanel>
+        </StackPanel>
+
+        <CheckBox
+            Name="NameHighSpeedDownloadMode"
+            Margin="0,20,0,0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Command="{Binding HighSpeedDownloadModeCommand}"
+            Content="{DynamicResource HighSpeedDownloadMode}"
+            FontSize="12"
+            Foreground="{DynamicResource BrushTextDark}"
+            IsChecked="{Binding HighSpeedDownloadMode, Mode=TwoWay}"
+            ToolTip.Tip="{DynamicResource HighSpeedDownloadModeTip}" />
+        <TextBlock
+            Height="1"
+            Margin="0,20,0,0"
+            Background="{DynamicResource BrushBorder}" />
+    </StackPanel>
+</UserControl>

@@ -1,7 +1,7 @@
 # Bilibili API Contract Audit
 
-Audit date: 2026-07-26
-Code baseline: `a7ee37455fff2cd67c545035c3daeda1408073f7` plus the Gate 5 working tree
+Audit date: 2026-07-28
+Code baseline: `1a603697df8578d86545fa70614706475b85bc33` plus the Gate 9 working tree
 Scope: every fixed Bilibili HTTP endpoint under `DownKyi.Core/BiliApi`, plus the authenticated read-only subset used by account workflows
 
 This is a runtime contract inventory, not an assertion that undocumented Bilibili APIs are stable. Live authentication is optional, explicit, read-only, and operator supplied. No credential, request header, raw response, query identifier, or account value is persisted.
@@ -9,7 +9,7 @@ This is a runtime contract inventory, not an assertion that undocumented Bilibil
 ## Evidence And Status
 
 - **LIVE**: anonymous controlled request on 2026-07-22. Only HTTP status, API code/message, top-level keys, content type and byte count were inspected.
-- **AUTH-LIVE**: authenticated read-only request on 2026-07-26. The hard gate required `/nav` code 0 and `data.isLogin=true`; only the allowlisted sanitized contract fields in [`bilibili-authenticated-api-audit.json`](bilibili-authenticated-api-audit.json) were persisted.
+- **AUTH-LIVE**: authenticated read-only request most recently repeated on 2026-07-28. The hard gate required `/nav` code 0 and `data.isLogin=true`; only the allowlisted sanitized contract fields in [`bilibili-authenticated-api-audit.json`](bilibili-authenticated-api-audit.json) were persisted.
 - **YT**: current [yt-dlp Bilibili extractor](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/bilibili.py).
 - **NEMO**: maintained bilibili-api endpoint maps for [users](https://github.com/Nemo2011/bilibili-api/blob/main/bilibili_api/data/api/user.json), [favorites](https://github.com/Nemo2011/bilibili-api/blob/main/bilibili_api/data/api/favorite-list.json), [videos](https://github.com/Nemo2011/bilibili-api/blob/main/bilibili_api/data/api/video.json), [bangumi](https://github.com/Nemo2011/bilibili-api/blob/main/bilibili_api/data/api/bangumi.json), and [login](https://github.com/Nemo2011/bilibili-api/blob/main/bilibili_api/data/api/login.json).
 - **DOC**: maintained community protocol documentation, including [protobuf danmaku](https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/danmaku/danmaku_proto.md) and [history/watch-later](https://github.com/SocialSisterYi/bilibili-API-collect/tree/master/docs/historytoview).
@@ -107,13 +107,14 @@ Dynamic media dependencies are not fixed API endpoints: subtitle JSON addresses 
 
 ## Authenticated Read-Only Snapshot
 
-The 2026-07-26 operator run reloaded `BILIBILI_TEST_COOKIE` from `~/.codex/.env` inside an isolated PowerShell process. The value was never printed, persisted, hashed, copied into a fixture, or passed through command-line arguments.
+The latest 2026-07-28 operator run completed at `2026-07-28T11:54:34Z` against commit `11ee968104cfc18ccf8cd842384fd0e86a26f6fb`. It reloaded `BILIBILI_TEST_COOKIE` from `~/.codex/.env` inside an isolated PowerShell process. The value was never printed, persisted, hashed, copied into a fixture, or passed through command-line arguments.
 
 - Navigation hard gate: HTTP 200, Bilibili code 0, `data.isLogin=true`.
 - Contract probes: 14 passed, 0 failed, 0 blocked, 0 indeterminate.
 - Covered workflows: current-account envelope, history, watch later, created and collected favorites, favorite resources and IDs, followers, followings, private follows, block list, following groups and group content.
 - Persisted evidence: only API name/path, HTTP status, Bilibili code, login requirement, structure/field/drift booleans, outcome and sanitized error type.
 - Raw response bodies, request headers, query values and account values were discarded in-process.
+- Secret scan: Gitleaks inspected 939 tracked and non-ignored untracked candidate files and reported zero findings after the sanitized artifact and documentation were updated.
 
 The machine-readable artifact is [`bilibili-authenticated-api-audit.json`](bilibili-authenticated-api-audit.json). It is a sanitized evidence snapshot, not a test fixture and not an authorization token.
 

@@ -1,9 +1,10 @@
 using System.Diagnostics;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Composition;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Desktop.Composition;
 using DownKyi.Infrastructure.Downloads;
+using DownKyi.Infrastructure.Logging;
 using DownKyi.ViewModels;
 using DownKyi.Views;
 using Microsoft.Extensions.DependencyInjection;

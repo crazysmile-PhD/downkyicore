@@ -2,9 +2,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Bilibili;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.BiliApi.Login.Models;
-using DownKyi.Core.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Account;

@@ -1,0 +1,247 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vmp="clr-namespace:DownKyi.Presentation"
+             xmlns:behavior="clr-namespace:DownKyi.CustomAction"
+             xmlns:vm="clr-namespace:DownKyi.ViewModels"
+             x:Class="DownKyi.Views.VideoDetailSelectionView"
+             x:DataType="vm:ViewVideoDetailViewModel"
+             mc:Ignorable="d">
+    <UserControl.Resources>
+        <ControlTheme TargetType="TextBlock" x:Key="DataGridCellTextBlockTheme">
+            <Setter Property="Margin" Value="{DynamicResource DataGridTextColumnCellTextBlockMargin}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource ColorTextDark}" />
+        </ControlTheme>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,5,*">
+        <ScrollViewer Grid.Row="0"
+                      MaxHeight="220"
+                      VerticalScrollBarVisibility="Auto">
+            <ListBox
+                x:Name="NameVideoSections"
+                ItemContainerTheme="{StaticResource TagItemStyle}"
+                ItemsSource="{Binding VideoSections, Mode=TwoWay}"
+                Theme="{StaticResource TagStyle}"
+                SelectionMode="Single">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <Interaction.Behaviors>
+                    <DataTriggerBehavior Binding="{Binding VideoSections.Count}" Value="0">
+                        <ChangePropertyAction PropertyName="Height" Value="0" />
+                    </DataTriggerBehavior>
+                    <DataTriggerBehavior Binding="{Binding VideoSections.Count}" Value="1">
+                        <ChangePropertyAction PropertyName="Height" Value="0" />
+                    </DataTriggerBehavior>
+                    <DataTriggerBehavior Binding="{Binding VideoSections.Count}"
+                                         ComparisonCondition="GreaterThan"
+                                         Value="1">
+                        <ChangePropertyAction PropertyName="Height" Value="Nan" />
+                    </DataTriggerBehavior>
+                </Interaction.Behaviors>
+            </ListBox>
+        </ScrollViewer>
+
+        <GridSplitter Grid.Row="1"
+                      ShowsPreview="True"
+                      ResizeDirection="Rows">
+            <Interaction.Behaviors>
+                <behavior:ResetGridSplitterBehavior ResetVersion="{Binding UiState.GridResetVersion}" />
+            </Interaction.Behaviors>
+        </GridSplitter>
+
+        <DataGrid
+            x:Name="NameVideoPages"
+            Grid.Row="2"
+            VerticalAlignment="Stretch"
+            BorderThickness="1"
+            BorderBrush="Gray"
+            CanUserResizeColumns="True"
+            IsReadOnly="True"
+            ItemsSource="{ReflectionBinding ElementName=NameVideoSections, Path=SelectedItem.VideoPages, Mode=TwoWay}"
+            SelectionMode="Extended"
+            SelectedItem="{Binding UiState.SelectedVideoPage, Mode=TwoWay}">
+            <DataGrid.Styles>
+                <Style Selector="DataGridRow /template/ Rectangle#BackgroundRectangle">
+                    <Setter Property="IsVisible" Value="False" />
+                    <Setter Property="Fill" Value="{DynamicResource BrushDataGridHighlight}" />
+                </Style>
+
+                <Style Selector="DataGridRow:pointerover /template/ Rectangle#BackgroundRectangle">
+                    <Setter Property="IsVisible" Value="True" />
+                    <Setter Property="Opacity" Value="0.3" />
+                </Style>
+
+                <Style Selector="DataGridRow:selected /template/ Rectangle#BackgroundRectangle">
+                    <Setter Property="IsVisible" Value="True" />
+                    <Setter Property="Opacity" Value="1" />
+                </Style>
+            </DataGrid.Styles>
+            <DataGrid.ColumnHeaderTheme>
+                <ControlTheme TargetType="{x:Type DataGridColumnHeader}">
+                    <Setter Property="HorizontalContentAlignment" Value="Center" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                    <Setter Property="Height" Value="30" />
+                    <Setter Property="Padding" Value="4" />
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="Template">
+                        <ControlTemplate TargetType="{x:Type DataGridColumnHeader}">
+                            <Border
+                                x:Name="HeaderBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Grid
+                                        Margin="{TemplateBinding Padding}"
+                                        HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                        VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                        ColumnDefinitions="*,Auto">
+                                        <ContentPresenter
+                                            x:Name="HeaderContent"
+                                            Content="{TemplateBinding Content}"
+                                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                                            RecognizesAccessKey="True" />
+
+                                        <Path Grid.Column="1"
+                                              Name="SortIcon"
+                                              Width="8"
+                                              Margin="4,0,0,0"
+                                              HorizontalAlignment="Left"
+                                              VerticalAlignment="Center"
+                                              Data="F1 M -5.215,6.099L 5.215,6.099L 0,0L -5.215,6.099 Z "
+                                              Fill="{TemplateBinding Foreground}"
+                                              IsVisible="False"
+                                              Stretch="Uniform" />
+                                    </Grid>
+
+                                    <Canvas Grid.Column="1">
+                                        <Thumb x:Name="PART_HeaderGripper">
+                                            <Thumb.Theme>
+                                                <ControlTheme TargetType="{x:Type Thumb}">
+                                                    <Setter Property="Canvas.Right" Value="-9" />
+                                                    <Setter Property="Width" Value="18" />
+                                                    <Setter Property="Height"
+                                                            Value="{Binding Bounds.Size.Height, RelativeSource={RelativeSource TemplatedParent}}" />
+                                                    <Setter Property="Padding" Value="0" />
+                                                    <Setter Property="Background" Value="White" />
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="{x:Type Thumb}">
+                                                                <Border Padding="{TemplateBinding Padding}"
+                                                                        Background="Transparent">
+                                                                    <Rectangle
+                                                                        Width="1"
+                                                                        HorizontalAlignment="Center"
+                                                                        Fill="{TemplateBinding Background}" />
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </ControlTheme>
+                                            </Thumb.Theme>
+                                        </Thumb>
+                                    </Canvas>
+                                </Grid>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter>
+
+                    <Style Selector="^:sortascending /template/ Path#SortIcon">
+                        <Setter Property="IsVisible" Value="True" />
+                    </Style>
+
+                    <Style Selector="^:sortdescending /template/ Path#SortIcon">
+                        <Setter Property="IsVisible" Value="True" />
+                        <Setter Property="RenderTransform">
+                            <Setter.Value>
+                                <ScaleTransform ScaleX="1" ScaleY="-1" />
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ControlTheme>
+            </DataGrid.ColumnHeaderTheme>
+            <Interaction.Behaviors>
+                <behavior:VideoPageSelectionBehavior IsSelectAll="{Binding UiState.IsSelectAll, Mode=TwoWay}" />
+                <behavior:ScrollIntoViewBehavior />
+            </Interaction.Behaviors>
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Width="38">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate DataType="vmp:VideoPage">
+                            <CheckBox
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn
+                    Width="50"
+                    Header="{DynamicResource Order}"
+                    Binding="{ReflectionBinding Order}" />
+                <DataGridTextColumn
+                    Width="*"
+                    Binding="{ReflectionBinding Name}"
+                    Header="{DynamicResource Name}" />
+                <DataGridTextColumn
+                    Width="100"
+                    Binding="{ReflectionBinding Duration}"
+                    Header="{DynamicResource Duration}" />
+                <DataGridTemplateColumn
+                    Width="120"
+                    Header="{DynamicResource AudioQuality}">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate DataType="vmp:VideoPage">
+                            <Grid>
+                                <ComboBox
+                                    ItemsSource="{Binding AudioQualityFormatList,Mode=TwoWay}"
+                                    SelectedValue="{Binding AudioQualityFormat,Mode=TwoWay}" />
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn
+                    Width="120"
+                    Header="{DynamicResource VideoQuality}">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate DataType="vmp:VideoPage">
+                            <Grid>
+                                <ComboBox
+                                    DisplayMemberBinding="{Binding QualityFormat}"
+                                    SelectedValueBinding="{Binding Quality}"
+                                    ItemsSource="{Binding VideoQualityList,Mode=OneWay}"
+                                    SelectedItem="{Binding VideoQuality,Mode=TwoWay}">
+                                    <Interaction.Behaviors>
+                                        <EventTriggerBehavior EventName="SelectionChanged">
+                                            <InvokeCommandAction
+                                                Command="{Binding VideoQualitySelectedCommand}" />
+                                        </EventTriggerBehavior>
+                                    </Interaction.Behaviors>
+                                </ComboBox>
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn
+                    Width="120"
+                    Header="{DynamicResource VideoCodec}">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate DataType="vmp:VideoPage">
+                            <Grid>
+                                <ComboBox
+                                    ItemsSource="{Binding VideoQuality.VideoCodecList,Mode=TwoWay}"
+                                    SelectedValue="{Binding VideoQuality.SelectedVideoCodec,Mode=TwoWay}" />
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+
+        </DataGrid>
+    </Grid>
+</UserControl>

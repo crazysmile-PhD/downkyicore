@@ -29,5 +29,7 @@
 - Desktop service interfaces 對 `DownKyi.ViewModels` 的引用。
 - production code 中的 `ImmutableObservableCollection<T>`。
 - executable project 中除最小 Desktop bootstrap 之外的程式、資源與套件 ownership。
+- Core 中的 logging implementation。
+- `src/DownKyi.Infrastructure/Logging` 之外的 production NLog consumer，以及任何 global `LogManager` usage。
 
 下載清單必須由 `DownloadListState` 私有持有可變 backing collections，並只公開 `ReadOnlyObservableCollection<T>`。

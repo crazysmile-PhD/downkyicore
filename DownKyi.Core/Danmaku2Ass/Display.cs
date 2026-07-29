@@ -72,7 +72,7 @@ public abstract class Display
     /// <returns></returns>
     protected int SetFontSize()
     {
-        return Utils.IntCeiling(Config.BaseFontSize * Danmaku.SizeRatio);
+        return DanmakuAssFormatting.IntCeiling(Config.BaseFontSize * Danmaku.SizeRatio);
     }
 
     /// <summary>
@@ -92,7 +92,7 @@ public abstract class Display
     {
         var lines = Danmaku.Content.Split('\n');
 
-        return lines.Select(Utils.DisplayLength).Prepend(0).Max();
+        return lines.Select(DanmakuAssFormatting.DisplayLength).Prepend(0).Max();
     }
 
     /// <summary>
@@ -102,7 +102,7 @@ public abstract class Display
     protected int SetWidth()
     {
         float charCount = MaxLength; // / 2;
-        return Utils.IntCeiling(FontSize * charCount);
+        return DanmakuAssFormatting.IntCeiling(FontSize * charCount);
     }
 
     /// <summary>
@@ -307,7 +307,7 @@ public class ScrollDisplay : Display
             baseDuration = 1;
         }
 
-        return Utils.IntCeiling(Config.ScreenWidth / baseDuration);
+        return DanmakuAssFormatting.IntCeiling(Config.ScreenWidth / baseDuration);
     }
 
     /// <summary>

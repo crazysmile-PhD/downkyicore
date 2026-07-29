@@ -7,7 +7,7 @@ using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
-using DownKyi.Core.FFMpeg;
+using DownKyi.Core.FFmpeg;
 using DownKyi.Utils;
 using Microsoft.Extensions.Logging;
 

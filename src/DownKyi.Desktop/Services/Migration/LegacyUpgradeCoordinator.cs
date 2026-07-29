@@ -7,10 +7,10 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Application.Time;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Login;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Storage;
 using DownKyi.Core.Storage.Database;
 using DownKyi.Domain.Downloads;
@@ -148,7 +148,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         IProgress<LegacyUpgradeProgress> progress,
         CancellationToken cancellationToken)
     {
-        var loginPath = StorageManager.GetLogin();
+        var loginPath = ApplicationStorage.GetLogin();
         if (!File.Exists(loginPath))
         {
             return;
@@ -206,7 +206,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
 
     private static string? FindLegacyDatabase()
     {
-        var downloadPath = StorageManager.GetDownload();
+        var downloadPath = ApplicationStorage.GetDownload();
         var possiblePaths = new[]
         {
             downloadPath,

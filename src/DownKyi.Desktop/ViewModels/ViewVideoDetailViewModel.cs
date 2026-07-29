@@ -7,8 +7,8 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
+using DownKyi.Application.Diagnostics;
 using DownKyi.Commands;
-using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
 using DownKyi.Images;
 using DownKyi.Presentation;
@@ -287,7 +287,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         cancellationToken.ThrowIfCancellationRequested();
         foreach (var result in results)
         {
-            Services.Utils.VideoPageInfo(result.PlayUrl, result.Page, settings);
+            VideoPagePlaybackMapper.ApplyPlayUrl(result.PlayUrl, result.Page, settings);
         }
     }
 

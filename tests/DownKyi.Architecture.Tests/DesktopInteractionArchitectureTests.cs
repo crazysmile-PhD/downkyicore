@@ -27,6 +27,7 @@ public sealed class DesktopInteractionArchitectureTests
     public void ShellAndSearchUseTypedDesktopInteractions()
     {
         var shellSource = ReadSource("src", "DownKyi.Desktop", "ViewModels", "MainWindowViewModel.cs");
+        var indexSource = ReadSource("src", "DownKyi.Desktop", "ViewModels", "ViewIndexViewModel.cs");
         var searchSource = ReadSource("src", "DownKyi.Desktop", "Services", "SearchService.cs");
 
         Assert.Contains("IUserNotificationService", shellSource, StringComparison.Ordinal);
@@ -40,6 +41,9 @@ public sealed class DesktopInteractionArchitectureTests
         Assert.Contains("AppNavigationRequest", searchSource, StringComparison.Ordinal);
         Assert.DoesNotContain("IEventAggregator", searchSource, StringComparison.Ordinal);
         Assert.DoesNotContain("NavigationEvent", searchSource, StringComparison.Ordinal);
+        Assert.Contains("SearchService searchService", indexSource, StringComparison.Ordinal);
+        Assert.Contains("_searchService = searchService", indexSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("new SearchService(", indexSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -98,6 +102,7 @@ public sealed class DesktopInteractionArchitectureTests
             {
                 ReadSource("src", "DownKyi.Desktop", "Services", "Download", "IAddToDownloadSession.cs"),
                 ReadSource("src", "DownKyi.Desktop", "Services", "Download", "AddToDownloadService.cs"),
+                ReadSource("src", "DownKyi.Desktop", "Services", "Download", "DownloadDuplicatePolicy.cs"),
                 ReadSource("src", "DownKyi.Desktop", "Services", "Media", "ContentDownloadCoordinator.cs"),
                 ReadSource("src", "DownKyi.Desktop", "Services", "Video", "VideoDetailDownloadCoordinator.cs")
             });

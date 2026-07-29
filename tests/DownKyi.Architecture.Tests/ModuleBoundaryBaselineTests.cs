@@ -6,6 +6,17 @@ public sealed class ModuleBoundaryBaselineTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(2);
+    private static readonly Regex NamespaceDeclarationRegex = new(
+        @"^[ \t]*namespace[ \t]+([A-Za-z_][\w\.]*)[ \t]*[;{]",
+        RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.NonBacktracking,
+        RegexTimeout);
+    private static readonly Regex TypeDeclarationRegex = new(
+        @"^[ \t]*(?:(?:public|internal|protected|private|file)[ \t]+)?" +
+        @"(?:(?:sealed|abstract|static|partial)[ \t]+)*" +
+        @"(?:class|record(?:[ \t]+(?:class|struct))?|struct|interface|enum)[ \t]+" +
+        @"([A-Za-z_][\w]*)",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+        RegexTimeout);
 
     private static readonly Dictionary<string, HashSet<string>> KnownDuplicateSimpleNames =
         new(StringComparer.Ordinal)
@@ -14,11 +25,6 @@ public sealed class ModuleBoundaryBaselineTests
             [
                 "DownKyi.Core.BiliApi.Bangumi.BangumiType",
                 "DownKyi.Core.BiliApi.Users.Models.BangumiType"
-            ],
-            ["Constant"] =
-            [
-                "DownKyi.Core.BiliApi.BiliUtils.Constant",
-                "DownKyi.Core.Storage.Constant"
             ],
             ["FavoritesMedia"] =
             [
@@ -32,68 +38,18 @@ public sealed class ModuleBoundaryBaselineTests
                 "DownKyi.Core.BiliApi.VideoStream.Models.Subtitle",
                 "DownKyi.Core.Danmaku2Ass.Subtitle"
             ],
-            ["Utils"] =
-            [
-                "DownKyi.Core.Danmaku2Ass.Utils",
-                "DownKyi.Services.Utils"
-            ],
-            ["VideoInputResolver"] =
-            [
-                "DownKyi.Application.Media.VideoInputResolver",
-                "DownKyi.Services.Video.VideoInputResolver"
-            ],
             ["VideoPage"] =
             [
                 "DownKyi.Core.BiliApi.Video.Models.VideoPage",
                 "DownKyi.Presentation.VideoPage"
-            ],
-            ["ViewSeasonsSeries"] =
-            [
-                "DownKyi.Views.UserSpace.ViewSeasonsSeries",
-                "DownKyi.Views.ViewSeasonsSeries"
-            ],
-            ["ViewSeasonsSeriesViewModel"] =
-            [
-                "DownKyi.ViewModels.UserSpace.ViewSeasonsSeriesViewModel",
-                "DownKyi.ViewModels.ViewSeasonsSeriesViewModel"
             ]
         };
 
-    private static readonly HashSet<string> KnownGenericTypeNames = new(StringComparer.Ordinal)
-    {
-        "DownKyi.Core/BiliApi/BiliUtils/Constant.cs -> Constant",
-        "DownKyi.Core/Danmaku2Ass/Utils.cs -> Utils",
-        "DownKyi.Core/Storage/Constant.cs -> Constant",
-        "DownKyi.Core/Storage/StorageManager.cs -> StorageManager",
-        "src/DownKyi.Desktop/Services/Utils.cs -> Utils"
-    };
+    private static readonly HashSet<string> KnownGenericTypeNames = new(StringComparer.Ordinal);
 
-    private static readonly HashSet<string> KnownFileTypeMismatches = new(StringComparer.Ordinal)
-    {
-        "DownKyi.Core/BiliApi/Users/Models/SpaceSeasonsSeries.cs",
-        "DownKyi.Core/BiliApi/Users/Models/SpaceSeriesMeta.cs",
-        "DownKyi.Core/Logging/ApplicationLogJsonModels.cs",
-        "DownKyi.Core/Models/NfoModels.cs",
-        "src/DownKyi.Desktop/Commands/AsyncDelegateCommand.cs"
-    };
+    private static readonly HashSet<string> KnownFileTypeMismatches = new(StringComparer.Ordinal);
 
-    private static readonly Dictionary<string, int> KnownOversizedFiles = new(StringComparer.Ordinal)
-    {
-        ["DownKyi.Core/Aria2cNet/Client/AriaClient.cs"] = 1137,
-        ["DownKyi.Core/BiliApi/BiliUtils/ParseEntrance.cs"] = 586,
-        ["DownKyi.Core/Logging/ApplicationLogProvider.cs"] = 715,
-        ["DownKyi.Core/Settings/SettingsManager.Network.cs"] = 671,
-        ["src/DownKyi.Desktop/CustomControl/CustomPagerViewModel.cs"] = 506,
-        ["src/DownKyi.Desktop/Services/Download/AddToDownloadService.cs"] = 667,
-        ["src/DownKyi.Desktop/ViewModels/Settings/ViewNetworkViewModel.cs"] = 649,
-        ["src/DownKyi.Desktop/ViewModels/Settings/ViewVideoViewModel.cs"] = 1020,
-        ["src/DownKyi.Desktop/ViewModels/ViewMyBangumiFollowViewModel.cs"] = 531,
-        ["src/DownKyi.Desktop/ViewModels/ViewMySpaceViewModel.cs"] = 669,
-        ["src/DownKyi.Desktop/ViewModels/ViewUserSpaceViewModel.cs"] = 569,
-        ["src/DownKyi.Desktop/Views/Settings/ViewNetwork.axaml"] = 608,
-        ["src/DownKyi.Desktop/Views/ViewVideoDetail.axaml"] = 565,
-        ["src/DownKyi.Infrastructure/Downloads/SqliteDownloadTaskStore.cs"] = 928
-    };
+    private static readonly Dictionary<string, int> KnownOversizedFiles = new(StringComparer.Ordinal);
 
     [Fact]
     public void CoreHasNoUiOrQrRenderingDependencies()
@@ -124,6 +80,39 @@ public sealed class ModuleBoundaryBaselineTests
             .ToArray();
 
         Assert.Empty(actual);
+    }
+
+    [Fact]
+    public void CanonicalResourceAndMediaRuntimeNamesRemainStable()
+    {
+        var desktopRoot = Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop");
+        var desktopDirectories = Directory
+            .EnumerateDirectories(desktopRoot)
+            .Select(Path.GetFileName)
+            .ToArray();
+        Assert.Contains("Languages", desktopDirectories);
+        Assert.DoesNotContain("Languanges", desktopDirectories);
+
+        var appSource = File.ReadAllText(Path.Combine(desktopRoot, "App.axaml"));
+        Assert.Contains("/Languages/Default.axaml", appSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("/Languanges/", appSource, StringComparison.Ordinal);
+
+        var coreDirectories = Directory
+            .EnumerateDirectories(Path.Combine(RepositoryRoot, "DownKyi.Core"))
+            .Select(Path.GetFileName)
+            .ToArray();
+        Assert.Contains("FFmpeg", coreDirectories);
+        Assert.DoesNotContain("FFMpeg", coreDirectories);
+
+        var ffmpegSources = Directory
+            .EnumerateFiles(
+                Path.Combine(RepositoryRoot, "DownKyi.Core", "FFmpeg"),
+                "*.cs",
+                SearchOption.AllDirectories)
+            .Select(File.ReadAllText)
+            .ToArray();
+        Assert.All(ffmpegSources, source =>
+            Assert.DoesNotContain("DownKyi.Core.FFMpeg", source, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -223,6 +212,18 @@ public sealed class ModuleBoundaryBaselineTests
     }
 
     [Fact]
+    public void TypeDeclarationScanUsesLineScopedNonBacktrackingMatching()
+    {
+        var adversarialLine =
+            $"{new string(' ', 100_000)}{string.Concat(Enumerable.Repeat("partial ", 20_000))}not-a-type";
+        var source = $"{adversarialLine}{Environment.NewLine}public sealed class ExpectedType";
+
+        var declarations = ReadDeclaredTypeNames(source);
+
+        Assert.Equal(["ExpectedType"], declarations);
+    }
+
+    [Fact]
     public void OversizedProductionFilesCannotGrowBeyondTheKnownBaseline()
     {
         const int lineThreshold = 500;
@@ -257,9 +258,52 @@ public sealed class ModuleBoundaryBaselineTests
         Assert.Equal(
             [
                 "src/DownKyi.Desktop/Services/Migration/LegacyDownloadTaskMapper.cs",
-                "src/DownKyi.Infrastructure/Downloads/SqliteDownloadTaskStore.cs"
+                "src/DownKyi.Infrastructure/Downloads/DownloadTaskRecordMapper.cs"
             ],
             actual.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void SqliteDownloadStoreCoordinatesDedicatedRecordAndCommandOwners()
+    {
+        var downloadRoot = Path.Combine(RepositoryRoot, "src", "DownKyi.Infrastructure", "Downloads");
+        var storeSource = File.ReadAllText(Path.Combine(downloadRoot, "SqliteDownloadTaskStore.cs"));
+        var mapperSource = File.ReadAllText(Path.Combine(downloadRoot, "DownloadTaskRecordMapper.cs"));
+        var readerSource = File.ReadAllText(Path.Combine(downloadRoot, "DownloadTaskSqlReader.cs"));
+        var writerSource = File.ReadAllText(Path.Combine(downloadRoot, "DownloadTaskSqlWriter.cs"));
+
+        Assert.Contains("DownloadTaskRecordMapper.Read", storeSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskSqlReader.ReadManyAsync", storeSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskSqlWriter", storeSource, StringComparison.Ordinal);
+        Assert.Contains("WriteStateRowAsync", storeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadTask.Restore", storeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("INSERT INTO downloading", storeSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTask.Restore", mapperSource, StringComparison.Ordinal);
+        Assert.Contains("INSERT INTO download_quarantine", readerSource, StringComparison.Ordinal);
+        Assert.Contains("INSERT INTO downloading", writerSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SettingsNetworkAndAriaOwnersRemainSeparated()
+    {
+        var settingsRoot = Path.Combine(RepositoryRoot, "DownKyi.Core", "Settings");
+        var networkSource = File.ReadAllText(Path.Combine(
+            settingsRoot,
+            "SettingsManager.Network.cs"));
+        var ariaSource = File.ReadAllText(Path.Combine(
+            settingsRoot,
+            "SettingsManager.Aria.cs"));
+
+        Assert.Contains("public partial class SettingsManager", networkSource, StringComparison.Ordinal);
+        Assert.Contains("public partial class SettingsManager", ariaSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetAriaToken", networkSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetAriaSplit", networkSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AriaConfigLogLevel", networkSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("_ariaHttpProxy", networkSource, StringComparison.Ordinal);
+        Assert.Contains("GetAriaToken", ariaSource, StringComparison.Ordinal);
+        Assert.Contains("GetAriaSplit", ariaSource, StringComparison.Ordinal);
+        Assert.Contains("GetAriaFileAllocation", ariaSource, StringComparison.Ordinal);
+        Assert.Contains("GetAriaHttpProxy", ariaSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -352,11 +396,7 @@ public sealed class ModuleBoundaryBaselineTests
             .SelectMany(path =>
             {
                 var source = File.ReadAllText(path);
-                var namespaceMatch = Regex.Match(
-                    source,
-                    @"(?m)^\s*namespace\s+([A-Za-z_][\w\.]*)\s*[;{]",
-                    RegexOptions.CultureInvariant,
-                    RegexTimeout);
+                var namespaceMatch = NamespaceDeclarationRegex.Match(source);
                 if (!namespaceMatch.Success)
                 {
                     return [];
@@ -372,19 +412,19 @@ public sealed class ModuleBoundaryBaselineTests
 
     private static string[] ReadDeclaredTypeNames(string source)
     {
-        const string declarationPattern =
-            @"(?m)^\s*(?:public|internal|protected|private|file)?\s*" +
-            @"(?:sealed\s+|abstract\s+|static\s+|partial\s+)*" +
-            @"(?:class|record(?:\s+class|\s+struct)?|struct|interface|enum)\s+" +
-            @"([A-Za-z_][\w]*)";
-        return Regex.Matches(
-                source,
-                declarationPattern,
-                RegexOptions.CultureInvariant,
-                RegexTimeout)
-            .Select(match => match.Groups[1].Value)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+        var names = new List<string>();
+        var knownNames = new HashSet<string>(StringComparer.Ordinal);
+        using var reader = new StringReader(source);
+        while (reader.ReadLine() is { } line)
+        {
+            var match = TypeDeclarationRegex.Match(line);
+            if (match.Success && knownNames.Add(match.Groups[1].Value))
+            {
+                names.Add(match.Groups[1].Value);
+            }
+        }
+
+        return names.ToArray();
     }
 
     private static IEnumerable<string> EnumerateProductionFiles(string pattern)

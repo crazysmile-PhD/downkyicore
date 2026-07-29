@@ -274,7 +274,27 @@ $collectionSource = (
     $customCollectionFiles |
         ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }
 ) -join "`n"
-$logProviderPath = Join-Path $repositoryRoot "DownKyi.Core/Logging/ApplicationLogProvider.cs"
+$logProviderPath = Join-Path $repositoryRoot "src/DownKyi.Infrastructure/Logging/ApplicationLogProvider.cs"
+$coreLoggingRoot = Join-Path $repositoryRoot "DownKyi.Core/Logging"
+$coreLoggingFiles = @(
+    if (Test-Path -LiteralPath $coreLoggingRoot -PathType Container) {
+        Get-ChildItem -LiteralPath $coreLoggingRoot -Recurse -File -Filter "*.cs" |
+            ForEach-Object { Convert-ToRelativePath $_.FullName }
+    }
+)
+$nlogConsumersOutsideInfrastructure = @(
+    Get-ProductionFiles -Patterns "*.cs" |
+        Where-Object {
+            $relativePath = Convert-ToRelativePath $_.FullName
+            $source = Get-Content -LiteralPath $_.FullName -Raw
+            $source.Contains("NLog", [StringComparison]::Ordinal) -and
+                -not $relativePath.StartsWith(
+                    "src/DownKyi.Infrastructure/Logging/",
+                    [StringComparison]::Ordinal)
+        } |
+        ForEach-Object { Convert-ToRelativePath $_.FullName } |
+        Sort-Object
+)
 
 $requiredKnowledgePaths = @(
     "AGENTS.md",
@@ -303,7 +323,7 @@ catch {
 }
 
 $result = [ordered]@{
-    schemaVersion = 2
+    schemaVersion = 3
     generatedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
     commitSha = $commitSha
     projects = $projects
@@ -333,6 +353,10 @@ $result = [ordered]@{
                 $collectionSource,
                 'throw\s+new\s+NotImplementedException\s*\(').Count
             applicationLogProviderLines = (Get-Content -LiteralPath $logProviderPath).Count
+        }
+        loggingBoundary = [ordered]@{
+            coreImplementationFiles = $coreLoggingFiles
+            nlogConsumersOutsideInfrastructure = $nlogConsumersOutsideInfrastructure
         }
         knowledgeEnvironment = $knowledgeStatus
     }

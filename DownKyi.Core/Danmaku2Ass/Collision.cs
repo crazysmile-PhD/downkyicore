@@ -53,6 +53,6 @@ public class Collision
 
     public void Update(float leave, int lineIndex, float offset)
     {
-        leaves[lineIndex] = Utils.IntCeiling(leave + offset);
+        leaves[lineIndex] = DanmakuAssFormatting.IntCeiling(leave + offset);
     }
 }

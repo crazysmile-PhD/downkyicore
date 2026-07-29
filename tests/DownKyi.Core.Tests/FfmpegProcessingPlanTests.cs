@@ -1,4 +1,4 @@
-using DownKyi.Core.FFMpeg;
+using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 
 namespace DownKyi.Core.Tests;

@@ -46,13 +46,75 @@ public sealed class LoggingMigrationArchitectureTests
     }
 
     [Fact]
+    public void LoggingContractsAndImplementationStayInTheirDeclaredProjects()
+    {
+        Assert.True(File.Exists(Path.Combine(
+            RepositoryRoot,
+            "src",
+            "DownKyi.Application",
+            "Diagnostics",
+            "IApplicationLogService.cs")));
+        Assert.True(File.Exists(Path.Combine(
+            RepositoryRoot,
+            "src",
+            "DownKyi.Infrastructure",
+            "Logging",
+            "ApplicationLogProvider.cs")));
+        Assert.True(File.Exists(Path.Combine(
+            RepositoryRoot,
+            "src",
+            "DownKyi.Infrastructure",
+            "Logging",
+            "NLogAsyncRollingFileSink.cs")));
+
+        var coreLoggingRoot = Path.Combine(RepositoryRoot, "DownKyi.Core", "Logging");
+        var coreImplementations = Directory.Exists(coreLoggingRoot)
+            ? Directory.EnumerateFiles(coreLoggingRoot, "*.cs", SearchOption.AllDirectories).ToArray()
+            : [];
+
+        Assert.Empty(coreImplementations);
+    }
+
+    [Fact]
+    public void NLogRemainsAnInfrastructurePrivateSink()
+    {
+        var allowedRoot = Path.GetFullPath(Path.Combine(
+            RepositoryRoot,
+            "src",
+            "DownKyi.Infrastructure",
+            "Logging")) + Path.DirectorySeparatorChar;
+        var violations = ProductionRoots
+            .Select(root => Path.Combine(RepositoryRoot, root))
+            .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+            .Where(path => !ContainsBuildOutputSegment(path))
+            .Where(path => File.ReadAllText(path).Contains("NLog", StringComparison.Ordinal))
+            .Where(path => !Path.GetFullPath(path).StartsWith(
+                allowedRoot,
+                StringComparison.OrdinalIgnoreCase))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var sinkSource = File.ReadAllText(Path.Combine(
+            allowedRoot,
+            "NLogAsyncRollingFileSink.cs"));
+        var packageManifest = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "Directory.Packages.props"));
+
+        Assert.Empty(violations);
+        Assert.Contains("new LogFactory", sinkSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LogManager.", sinkSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("NLog.Extensions.Logging", packageManifest, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AsyncCommandsRequireInjectedDiagnostics()
     {
         var commandSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "Commands",
-            "AsyncDelegateCommand.cs"));
+            "DownKyiAsyncDelegateCommand.cs"));
 
         Assert.Contains("ILogger logger", commandSource, StringComparison.Ordinal);
         Assert.Contains("_logger.LogErrorMessage", commandSource, StringComparison.Ordinal);

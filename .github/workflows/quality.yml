@@ -68,13 +68,13 @@ jobs:
           --no-restore
           --no-build
       - name: Test
+        shell: pwsh
         run: >
-          dotnet test ${{ env.SOLUTION_FILE }}
-          -c Release
-          --no-restore
-          --no-build
-          --logger "trx;LogFileName=test-results-${{ matrix.os }}.trx"
-          --results-directory TestResults
+          ./script/test-solution.ps1
+          -Configuration Release
+          -NoRestore
+          -NoBuild
+          -ResultsDirectory ./TestResults
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7

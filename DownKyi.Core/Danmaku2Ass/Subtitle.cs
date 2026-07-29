@@ -56,7 +56,7 @@ public class Subtitle
 
     protected string SetColor()
     {
-        return Utils.Int2bgr(Danmaku.Color);
+        return DanmakuAssFormatting.Int2bgr(Danmaku.Color);
     }
 
     protected Dictionary<string, int> SetPosition()
@@ -76,12 +76,12 @@ public class Subtitle
 
     protected string SetStartMarkup()
     {
-        return Utils.Second2hms(Start);
+        return DanmakuAssFormatting.Second2hms(Start);
     }
 
     protected string SetEndMarkup()
     {
-        return Utils.Second2hms(End);
+        return DanmakuAssFormatting.Second2hms(End);
     }
 
     protected string SetColorMarkup()
@@ -98,7 +98,7 @@ public class Subtitle
     protected string SetBorderMarkup()
     {
         // 暗色加个亮色边框，方便阅读
-        if (Utils.IsDark(Danmaku.Color))
+        if (DanmakuAssFormatting.IsDark(Danmaku.Color))
         {
             return "\\3c&H000000";
         }
@@ -124,7 +124,7 @@ public class Subtitle
     protected string SetContentMarkup()
     {
         var markup = StyleMarkup + ColorMarkup + BorderMarkup + FontSizeMarkup;
-        var content = Utils.CorrectTypos(Danmaku.Content);
+        var content = DanmakuAssFormatting.CorrectTypos(Danmaku.Content);
         return $"{{{markup}}}{content}";
     }
 

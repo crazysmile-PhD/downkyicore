@@ -5,6 +5,12 @@ namespace DownKyi.Architecture.Tests;
 public sealed class MediaAndHttpRuntimeArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly string[] VideoDetailBindingViewNames =
+    [
+        "VideoDetailSummaryView.axaml",
+        "VideoDetailSelectionView.axaml",
+        "VideoDetailActionsView.axaml"
+    ];
 
     [Fact]
     public void VideoMetadataDoesNotCaptureAnOperationTokenInLazyState()
@@ -19,26 +25,81 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "src", "DownKyi.Desktop",
             "Presentation",
             "VideoPage.cs"));
-        var addSource = File.ReadAllText(Path.Combine(
+        var metadataSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "Services",
             "Download",
-            "AddToDownloadService.cs"));
+            "DownloadMovieMetadataBuilder.cs"));
 
         Assert.DoesNotContain("LazyTags", videoInfoSource, StringComparison.Ordinal);
         Assert.DoesNotContain("_cancellationToken", videoInfoSource, StringComparison.Ordinal);
         Assert.Contains("LoadTagsAsync = currentToken =>", videoInfoSource, StringComparison.Ordinal);
         Assert.Contains("Func<CancellationToken, Task<IReadOnlyList<string>>> LoadTagsAsync", pageSource,
             StringComparison.Ordinal);
-        Assert.Contains("BuildMovieMetadataAsync", addSource, StringComparison.Ordinal);
-        Assert.Contains("page.LoadTagsAsync(cancellationToken)", addSource, StringComparison.Ordinal);
+        Assert.Contains("Task<MovieMetadata> BuildAsync(", metadataSource, StringComparison.Ordinal);
+        Assert.Contains("page.LoadTagsAsync(cancellationToken)", metadataSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AddToDownloadSessionDelegatesDuplicateDraftAndMetadataOwnership()
+    {
+        var downloadDirectory = Path.Combine(
+            RepositoryRoot,
+            "src", "DownKyi.Desktop",
+            "Services",
+            "Download");
+        var sessionPath = Path.Combine(downloadDirectory, "AddToDownloadService.cs");
+        var sessionSource = File.ReadAllText(sessionPath);
+        var duplicateSource = File.ReadAllText(Path.Combine(
+            downloadDirectory,
+            "DownloadDuplicatePolicy.cs"));
+        var draftSource = File.ReadAllText(Path.Combine(
+            downloadDirectory,
+            "DownloadTaskDraftFactory.cs"));
+        var metadataSource = File.ReadAllText(Path.Combine(
+            downloadDirectory,
+            "DownloadMovieMetadataBuilder.cs"));
+
+        Assert.True(
+            File.ReadLines(sessionPath).Count() <= 350,
+            "Add-to-download session exceeded its orchestration budget.");
+        Assert.Contains("DownloadDuplicatePolicy", sessionSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskDraftFactory.Create", sessionSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadMovieMetadataBuilder", sessionSource, StringComparison.Ordinal);
+        Assert.Contains("_admission", sessionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadListState", sessionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadTaskProjectionStore", sessionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IUserNotificationService", sessionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("FileNameBuilder", sessionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("VideoZone.Instance", sessionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("new DownloadBase", sessionSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("page.LoadTagsAsync", sessionSource, StringComparison.Ordinal);
+
+        Assert.Contains("DownloadListState", duplicateSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadTaskProjectionStore", duplicateSource, StringComparison.Ordinal);
+        Assert.Contains("IUserNotificationService", duplicateSource, StringComparison.Ordinal);
+        Assert.Contains("IAppDialogService", duplicateSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", duplicateSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AdmitAsync", duplicateSource, StringComparison.Ordinal);
+
+        Assert.Contains("ApplicationSettings settings", draftSource, StringComparison.Ordinal);
+        Assert.Contains("FileNameBuilder", draftSource, StringComparison.Ordinal);
+        Assert.Contains("new DownloadBase", draftSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", draftSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IAppDialogService", draftSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadListState", draftSource, StringComparison.Ordinal);
+
+        Assert.Contains("page.LoadTagsAsync(cancellationToken)", metadataSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", metadataSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadListState", metadataSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IAppDialogService", metadataSource, StringComparison.Ordinal);
     }
 
     [Fact]
     public void FfmpegRuntimeDoesNotRestoreSynchronousProcessWaits()
     {
-        var runtimeDirectory = Path.Combine(RepositoryRoot, "DownKyi.Core", "FFMpeg");
+        var runtimeDirectory = Path.Combine(RepositoryRoot, "DownKyi.Core", "FFmpeg");
         var forbidden = new[]
         {
             "WaitForExit(",
@@ -59,7 +120,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     [Fact]
     public void FfmpegRuntimeUsesInjectedTypedLogging()
     {
-        var runtimeDirectory = Path.Combine(RepositoryRoot, "DownKyi.Core", "FFMpeg");
+        var runtimeDirectory = Path.Combine(RepositoryRoot, "DownKyi.Core", "FFmpeg");
         var runtimeFiles = Directory
             .EnumerateFiles(runtimeDirectory, "*.cs", SearchOption.TopDirectoryOnly)
             .ToArray();
@@ -249,7 +310,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "Views",
-            "ViewVideoDetail.axaml"));
+            "VideoDetailSelectionView.axaml"));
 
         Assert.DoesNotContain("Avalonia.Controls", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("DataGrid", viewModelSource, StringComparison.Ordinal);
@@ -279,11 +340,13 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "Services",
             "Video",
             "VideoDetailDownloadCoordinator.cs"));
-        var viewSource = File.ReadAllText(Path.Combine(
-            RepositoryRoot,
-            "src", "DownKyi.Desktop",
-            "Views",
-            "ViewVideoDetail.axaml"));
+        var viewSource = string.Join(
+            Environment.NewLine,
+            VideoDetailBindingViewNames.Select(name => File.ReadAllText(Path.Combine(
+                RepositoryRoot,
+                "src", "DownKyi.Desktop",
+                "Views",
+                name))));
 
         Assert.True(File.ReadLines(viewModelPath).Count() <= 425, "Video-detail ViewModel exceeded its size budget.");
         Assert.Contains("IVideoDetailWorkflowCoordinator", viewModelSource, StringComparison.Ordinal);
@@ -423,7 +486,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             RepositoryRoot,
             "src", "DownKyi.Desktop",
             "ViewModels",
-            "ViewSeasonsSeriesViewModel.cs"));
+            "ViewSeasonsSeriesDetailViewModel.cs"));
         var coordinatorSource = File.ReadAllText(Path.Combine(
             RepositoryRoot,
             "src", "DownKyi.Desktop",
@@ -640,6 +703,44 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
     }
 
     [Fact]
+    public void MySpaceBindingStateRemainsSeparateFromItsWorkflowOwner()
+    {
+        var viewModelSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "src", "DownKyi.Desktop",
+            "ViewModels",
+            "ViewMySpaceViewModel.cs"));
+        var stateSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "src", "DownKyi.Desktop",
+            "ViewModels",
+            "ViewMySpaceViewModel.State.cs"));
+
+        Assert.All(
+            new[] { viewModelSource, stateSource },
+            source => Assert.True(source.Count(character => character == '\n') < 500));
+        Assert.Contains("IUserSpacePageCoordinator", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("ISettingsStore", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("ExecuteBackSpace", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("UpdateSpaceInfoAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("OnNavigatedTo", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("_arrowBack", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "private ObservableCollection<SpaceItem> _statusList",
+            viewModelSource,
+            StringComparison.Ordinal);
+        Assert.Contains("_arrowBack", stateSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "private ObservableCollection<SpaceItem> _statusList",
+            stateSource,
+            StringComparison.Ordinal);
+        Assert.Contains("ObservableCollection<SpaceItem>", stateSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IUserSpacePageCoordinator", stateSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", stateSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("CancellationTokenSource", stateSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LegacyUpgradeDialogDelegatesMigrationAndOwnsCancellation()
     {
         var viewModelSource = File.ReadAllText(Path.Combine(
@@ -661,7 +762,7 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
         Assert.DoesNotContain("Task.Run", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("NrbfDecoder", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("SqliteDatabase", viewModelSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("StorageManager", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ApplicationStorage", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Dispatcher.UIThread", viewModelSource, StringComparison.Ordinal);
 
         Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);

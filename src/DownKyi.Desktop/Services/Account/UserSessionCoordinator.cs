@@ -65,7 +65,7 @@ internal sealed class UserSessionCoordinator : IUserSessionCoordinator
             return settings with { User = mapped };
         });
         cancellationToken.ThrowIfCancellationRequested();
-        return new UserSessionSnapshot(userInfo, File.Exists(StorageManager.GetLogin()));
+        return new UserSessionSnapshot(userInfo, File.Exists(ApplicationStorage.GetLogin()));
     }
 
     internal static UserApplicationSettings MapSettings(UserInfoForNavigation? userInfo)

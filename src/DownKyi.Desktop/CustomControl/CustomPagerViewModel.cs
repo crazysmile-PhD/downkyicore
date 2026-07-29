@@ -1,63 +1,34 @@
 using System;
 using System.ComponentModel;
-using Avalonia.Controls;
-using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace DownKyi.CustomControl;
 
-internal class CustomPagerViewModel : INotifyPropertyChanged
+internal sealed partial class CustomPagerViewModel : ObservableObject
 {
+    private int _count;
+    private int _current;
+    private bool? _visibility;
+
     public CustomPagerViewModel(int current, int count)
     {
-        Current = current;
-        Count = count;
-
-        SetView();
+        _count = Math.Max(0, count);
+        _current = _count == 0
+            ? 1
+            : Math.Clamp(current, 1, _count);
+        _visibility = _count > 1;
+        ApplyLayout();
     }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    // Current修改的回调
     public event EventHandler<CancelEventArgs>? CurrentChanging;
 
     public int ProposedCurrent { get; private set; }
 
-    private bool RequestCurrentChange(int current)
-    {
-        if (CurrentChanging == null)
-        {
-            return false;
-        }
-
-        ProposedCurrent = current;
-        var eventArgs = new CancelEventArgs();
-        CurrentChanging.Invoke(this, eventArgs);
-        return !eventArgs.Cancel;
-    }
-
-    // Count修改的回调
-    public event EventHandler? CountChanged;
-
-    protected virtual void OnCountChanged(int count)
-    {
-        CountChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    #region 绑定属性
-
-    private bool? _visibility;
-
     public bool? Visibility
     {
         get => _visibility;
-        set
-        {
-            _visibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Visibility)));
-        }
+        set => SetProperty(ref _visibility, value);
     }
-
-    private int _count;
 
     public int Count
     {
@@ -67,439 +38,63 @@ internal class CustomPagerViewModel : INotifyPropertyChanged
             if (value < Current || value < 0)
             {
                 Visibility = false;
-                //throw new Exception("数值不在允许的范围内。");
+                return;
             }
-            else
-            {
-                _count = value;
 
-                Visibility = _count > 1;
-
-                OnCountChanged(_count);
-
-                SetView();
-
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Count)));
-            }
+            _count = value;
+            Visibility = _count > 1;
+            ApplyLayout();
+            OnPropertyChanged();
         }
     }
-
-
-
-
-    private int _current;
 
     public int Current
     {
-        get
+        get => _current;
+        set
         {
-            if (_current < 1)
+            if ((_count > 0 && (value > _count || value < 1))
+                || !RequestCurrentChange(value))
             {
-                _current = 1;
+                return;
             }
 
-            return _current;
-        }
-        set
-        {
-            if (Count > 0 && (value > Count || value < 1))
-            {
-                //throw new Exception("数值不在允许的范围内。");
-            }
-            else
-            {
-                var isSuccess = RequestCurrentChange(value);
-                if (isSuccess)
-                {
-                    _current = value;
-
-                    SetView();
-
-                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Current)));
-                }
-            }
+            _current = value;
+            ApplyLayout();
+            OnPropertyChanged();
         }
     }
 
-    private int _first;
-
-    public int First
+    private bool RequestCurrentChange(int current)
     {
-        get => _first;
-        set
+        ProposedCurrent = current;
+        if (CurrentChanging == null)
         {
-            _first = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(First)));
+            return true;
         }
+
+        var eventArgs = new CancelEventArgs();
+        CurrentChanging.Invoke(this, eventArgs);
+        return !eventArgs.Cancel;
     }
 
-    private int _previousSecond;
-
-    public int PreviousSecond
+    private void ApplyLayout()
     {
-        get => _previousSecond;
-        set
-        {
-            _previousSecond = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviousSecond)));
-        }
-    }
-
-    private int _previousFirst;
-
-    public int PreviousFirst
-    {
-        get => _previousFirst;
-        set
-        {
-            _previousFirst = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviousFirst)));
-        }
-    }
-
-    private int _nextFirst;
-
-    public int NextFirst
-    {
-        get => _nextFirst;
-        set
-        {
-            _nextFirst = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextFirst)));
-        }
-    }
-
-    private int _nextSecond;
-
-    public int NextSecond
-    {
-        get => _nextSecond;
-        set
-        {
-            _nextSecond = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextSecond)));
-        }
-    }
-
-    // 控制Current左边的控件
-    private bool _previousVisibility;
-
-    public bool PreviousVisibility
-    {
-        get => _previousVisibility;
-        set
-        {
-            _previousVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviousVisibility)));
-        }
-    }
-
-    private bool _firstVisibility;
-
-    public bool FirstVisibility
-    {
-        get => _firstVisibility;
-        set
-        {
-            _firstVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FirstVisibility)));
-        }
-    }
-
-    private bool _leftJumpVisibility;
-
-    public bool LeftJumpVisibility
-    {
-        get => _leftJumpVisibility;
-        set
-        {
-            _leftJumpVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LeftJumpVisibility)));
-        }
-    }
-
-    private bool _previousSecondVisibility;
-
-    public bool PreviousSecondVisibility
-    {
-        get => _previousSecondVisibility;
-        set
-        {
-            _previousSecondVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviousSecondVisibility)));
-        }
-    }
-
-    private bool _previousFirstVisibility;
-
-    public bool PreviousFirstVisibility
-    {
-        get => _previousFirstVisibility;
-        set
-        {
-            _previousFirstVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviousFirstVisibility)));
-        }
-    }
-
-    // 控制Current右边的控件
-    private bool _nextFirstVisibility;
-
-    public bool NextFirstVisibility
-    {
-        get => _nextFirstVisibility;
-        set
-        {
-            _nextFirstVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextFirstVisibility)));
-        }
-    }
-
-    private bool _nextSecondVisibility;
-
-    public bool NextSecondVisibility
-    {
-        get => _nextSecondVisibility;
-        set
-        {
-            _nextSecondVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextSecondVisibility)));
-        }
-    }
-
-    private bool _rightJumpVisibility;
-
-    public bool RightJumpVisibility
-    {
-        get => _rightJumpVisibility;
-        set
-        {
-            _rightJumpVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RightJumpVisibility)));
-        }
-    }
-
-    private bool _lastVisibility;
-
-    public bool LastVisibility
-    {
-        get => _lastVisibility;
-        set
-        {
-            _lastVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LastVisibility)));
-        }
-    }
-
-    private bool _nextVisibility;
-
-    public bool NextVisibility
-    {
-        get => _nextVisibility;
-        set
-        {
-            _nextVisibility = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextVisibility)));
-        }
-    }
-
-    #endregion
-
-
-    private RelayCommand? _previousCommand;
-
-    public RelayCommand PreviousCommand => _previousCommand ??= new RelayCommand(PreviousExecuted);
-
-    private void PreviousExecuted()
-    {
-        Current -= 1;
-
-        SetView();
-    }
-
-    private RelayCommand? _firstCommand;
-
-    public RelayCommand FirstCommand => _firstCommand ??= new RelayCommand(FirstExecuted);
-
-    private void FirstExecuted()
-    {
-        Current = 1;
-
-        SetView();
-    }
-
-    private RelayCommand? _previousSecondCommand;
-
-    public RelayCommand PreviousSecondCommand => _previousSecondCommand ??= new RelayCommand(PreviousSecondExecuted);
-
-    private void PreviousSecondExecuted()
-    {
-        Current -= 2;
-
-        SetView();
-    }
-
-    private RelayCommand? _previousFirstCommand;
-
-    public RelayCommand PreviousFirstCommand => _previousFirstCommand ??= new RelayCommand(PreviousFirstExecuted);
-
-    private void PreviousFirstExecuted()
-    {
-        Current -= 1;
-
-        SetView();
-    }
-
-    private RelayCommand? _nextFirstCommand;
-
-    public RelayCommand NextFirstCommand => _nextFirstCommand ??= new RelayCommand(NextFirstExecuted);
-
-    private void NextFirstExecuted()
-    {
-        Current += 1;
-
-        SetView();
-    }
-
-    private RelayCommand? _nextSecondCommand;
-
-    public RelayCommand NextSecondCommand => _nextSecondCommand ??= new RelayCommand(NextSecondExecuted);
-
-    private void NextSecondExecuted()
-    {
-        Current += 2;
-
-        SetView();
-    }
-
-    private RelayCommand? _lastCommand;
-
-    public RelayCommand LastCommand => _lastCommand ??= new RelayCommand(LastExecuted);
-
-    private void LastExecuted()
-    {
-        Current = Count;
-
-        SetView();
-    }
-
-    private RelayCommand? _nextCommand;
-
-    public RelayCommand NextCommand => _nextCommand ??= new RelayCommand(NextExecuted);
-
-    private void NextExecuted()
-    {
-        Current += 1;
-
-        SetView();
-    }
-
-    private RelayCommand<object>? _jumpCommand;
-
-    public RelayCommand<object> JumpCommand => _jumpCommand ??= RequiredParameterCommand.Create<object>(JumpExecuted);
-
-    private void JumpExecuted(object obj)
-    {
-        if (obj is string s && int.TryParse(s, out var i))
-        {
-            Current = (i >= _count) ? _count : i;
-            SetView();
-        }
-    }
-
-    /// <summary>
-    /// 控制显示，暴力实现，以后重构
-    /// </summary>
-    private void SetView()
-    {
-        First = 1;
-        PreviousSecond = Current - 2;
-        PreviousFirst = Current - 1;
-        NextFirst = Current + 1;
-        NextSecond = Current + 2;
-
-        // 控制Current左边的控件
-        if (Current == 1)
-        {
-            PreviousVisibility = false;
-            FirstVisibility = false;
-            LeftJumpVisibility = false;
-            PreviousSecondVisibility = false;
-            PreviousFirstVisibility = false;
-        }
-        else if (Current == 2)
-        {
-            PreviousVisibility = true;
-            FirstVisibility = false;
-            LeftJumpVisibility = false;
-            PreviousSecondVisibility = false;
-            PreviousFirstVisibility = true;
-        }
-        else if (Current == 3)
-        {
-            PreviousVisibility = true;
-            FirstVisibility = false;
-            LeftJumpVisibility = false;
-            PreviousSecondVisibility = true;
-            PreviousFirstVisibility = true;
-        }
-        else if (Current == 4)
-        {
-            PreviousVisibility = true;
-            FirstVisibility = true;
-            LeftJumpVisibility = false;
-            PreviousSecondVisibility = true;
-            PreviousFirstVisibility = true;
-        }
-        else
-        {
-            PreviousVisibility = true;
-            FirstVisibility = true;
-            LeftJumpVisibility = true;
-            PreviousSecondVisibility = true;
-            PreviousFirstVisibility = true;
-        }
-
-        // 控制Current右边的控件
-        if (Current == Count)
-        {
-            NextFirstVisibility = false;
-            NextSecondVisibility = false;
-            RightJumpVisibility = false;
-            LastVisibility = false;
-            NextVisibility = false;
-        }
-        else if (Current == Count - 1)
-        {
-            NextFirstVisibility = true;
-            NextSecondVisibility = false;
-            RightJumpVisibility = false;
-            LastVisibility = false;
-            NextVisibility = true;
-        }
-        else if (Current == Count - 2)
-        {
-            NextFirstVisibility = true;
-            NextSecondVisibility = true;
-            RightJumpVisibility = false;
-            LastVisibility = false;
-            NextVisibility = true;
-        }
-        else if (Current == Count - 3)
-        {
-            NextFirstVisibility = true;
-            NextSecondVisibility = true;
-            RightJumpVisibility = false;
-            LastVisibility = true;
-            NextVisibility = true;
-        }
-        else
-        {
-            NextFirstVisibility = true;
-            NextSecondVisibility = true;
-            RightJumpVisibility = true;
-            LastVisibility = true;
-            NextVisibility = true;
-        }
+        var layout = PagerLayout.Create(_current, _count);
+        First = layout.First;
+        PreviousSecond = layout.PreviousSecond;
+        PreviousFirst = layout.PreviousFirst;
+        NextFirst = layout.NextFirst;
+        NextSecond = layout.NextSecond;
+        PreviousVisibility = layout.PreviousVisibility;
+        FirstVisibility = layout.FirstVisibility;
+        LeftJumpVisibility = layout.LeftJumpVisibility;
+        PreviousSecondVisibility = layout.PreviousSecondVisibility;
+        PreviousFirstVisibility = layout.PreviousFirstVisibility;
+        NextFirstVisibility = layout.NextFirstVisibility;
+        NextSecondVisibility = layout.NextSecondVisibility;
+        RightJumpVisibility = layout.RightJumpVisibility;
+        LastVisibility = layout.LastVisibility;
+        NextVisibility = layout.NextVisibility;
     }
 }

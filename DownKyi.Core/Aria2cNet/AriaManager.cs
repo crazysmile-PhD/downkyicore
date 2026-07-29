@@ -1,6 +1,6 @@
+using DownKyi.Application.Diagnostics;
 using DownKyi.Core.Aria2cNet.Client;
 using DownKyi.Core.Aria2cNet.Client.Entity;
-using DownKyi.Core.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Core.Aria2cNet;

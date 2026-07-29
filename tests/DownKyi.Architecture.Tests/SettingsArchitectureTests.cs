@@ -38,7 +38,7 @@ public sealed class SettingsArchitectureTests
     [InlineData("src", "DownKyi.Desktop", "Presentation", "ToViewMedia.cs")]
     [InlineData("src", "DownKyi.Desktop", "ViewModels", "ViewPublicFavoritesViewModel.cs")]
     [InlineData("src", "DownKyi.Desktop", "ViewModels", "ViewMySpaceViewModel.cs")]
-    [InlineData("DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs")]
+    [InlineData("DownKyi.Core", "FFmpeg", "FfmpegProcessor.cs")]
     [InlineData("DownKyi.Core", "BiliApi", "Login", "LoginHelper.cs")]
     [InlineData("src", "DownKyi.Desktop", "Services", "UserSpace", "UserSpacePageCoordinator.cs")]
     [InlineData("src", "DownKyi.Desktop", "ViewModels", "ViewUserSpaceViewModel.cs")]
@@ -86,6 +86,12 @@ public sealed class SettingsArchitectureTests
             "ViewModels",
             "Settings",
             "ViewNetworkViewModel.State.cs");
+        var ariaCommandsSource = ReadSource(
+            "src", "DownKyi.Desktop",
+            "ViewModels",
+            "Settings",
+            "ViewNetworkViewModel.AriaCommands.cs");
+        var allViewModelSources = string.Concat(viewModelSource, stateSource, ariaCommandsSource);
         var coordinatorSource = ReadSource(
             "src", "DownKyi.Desktop",
             "Services",
@@ -94,13 +100,19 @@ public sealed class SettingsArchitectureTests
         var composition = ReadSource("src", "DownKyi.Desktop", "Composition", "DesktopComposition.cs");
 
         Assert.Contains("INetworkSettingsCoordinator", viewModelSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("ISettingsStore", viewModelSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("IApplicationLifecycle", viewModelSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("AlertService", viewModelSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("Enumerable.Range", viewModelSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("DictionaryResource", viewModelSource, StringComparison.Ordinal);
-        Assert.True(viewModelSource.Count(character => character == '\n') < 700);
+        Assert.DoesNotContain("ISettingsStore", allViewModelSources, StringComparison.Ordinal);
+        Assert.DoesNotContain("IApplicationLifecycle", allViewModelSources, StringComparison.Ordinal);
+        Assert.DoesNotContain("AlertService", allViewModelSources, StringComparison.Ordinal);
+        Assert.DoesNotContain("Enumerable.Range", allViewModelSources, StringComparison.Ordinal);
+        Assert.DoesNotContain("DictionaryResource", allViewModelSources, StringComparison.Ordinal);
+        Assert.All(
+            new[] { viewModelSource, stateSource, ariaCommandsSource },
+            source => Assert.True(source.Count(character => character == '\n') < 500));
         Assert.Contains("#region 页面属性申明", stateSource, StringComparison.Ordinal);
+        Assert.Contains("ExecuteAriaHostCommand", ariaCommandsSource, StringComparison.Ordinal);
+        Assert.Contains("ExecuteAriaFileAllocationsCommand", ariaCommandsSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExecuteAriaHostCommand", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("AriaConfigLogLevel", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("ISettingsStore", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("ApplyWithRestartPromptAsync", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("INetworkSettingsCoordinator, NetworkSettingsCoordinator", composition,
@@ -108,9 +120,46 @@ public sealed class SettingsArchitectureTests
     }
 
     [Fact]
+    public void VideoSettingsViewModelResponsibilitiesRemainSeparated()
+    {
+        var viewModelSource = ReadSource(
+            "src", "DownKyi.Desktop",
+            "ViewModels",
+            "Settings",
+            "ViewVideoViewModel.cs");
+        var stateSource = ReadSource(
+            "src", "DownKyi.Desktop",
+            "ViewModels",
+            "Settings",
+            "ViewVideoViewModel.State.cs");
+        var contentNamingSource = ReadSource(
+            "src", "DownKyi.Desktop",
+            "ViewModels",
+            "Settings",
+            "ViewVideoViewModel.ContentNamingCommands.cs");
+
+        Assert.All(
+            new[] { viewModelSource, stateSource, contentNamingSource },
+            source => Assert.True(source.Count(character => character == '\n') < 500));
+        Assert.Contains("ISettingsStore settingsStore", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("OnNavigatedTo", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("VideoQualityCommand", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("FfmpegHardwareAccelerationCommand", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("_downloadAllCommand", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("_selectedVideoCodec", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("_selectedVideoCodec", stateSource, StringComparison.Ordinal);
+        Assert.Contains("SelectedFileName", stateSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", stateSource, StringComparison.Ordinal);
+        Assert.Contains("ChangeSaveVideoDirectoryCommand", contentNamingSource, StringComparison.Ordinal);
+        Assert.Contains("DownloadAllCommand", contentNamingSource, StringComparison.Ordinal);
+        Assert.Contains("OrderFormatCommand", contentNamingSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", contentNamingSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FfmpegProcessorIsOneInjectedCompositionOwner()
     {
-        var processorSource = ReadSource("DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs");
+        var processorSource = ReadSource("DownKyi.Core", "FFmpeg", "FfmpegProcessor.cs");
         var compositionSource = ReadSource("src", "DownKyi.Desktop", "Composition", "DesktopComposition.cs");
 
         Assert.DoesNotContain("FfmpegProcessor.Instance", processorSource, StringComparison.Ordinal);
@@ -169,8 +218,23 @@ public sealed class SettingsArchitectureTests
     [Fact]
     public void LongRunningOperationsUseExplicitImmutableSettingsSnapshots()
     {
-        var utilitySource = ReadSource("src", "DownKyi.Desktop", "Services", "Utils.cs");
+        var utilitySource = ReadSource(
+            "src", "DownKyi.Desktop",
+            "Services", "Video",
+            "VideoPagePlaybackMapper.cs");
         var addSource = ReadSource("src", "DownKyi.Desktop", "Services", "Download", "AddToDownloadService.cs");
+        var duplicateSource = ReadSource(
+            "src", "DownKyi.Desktop",
+            "Services", "Download",
+            "DownloadDuplicatePolicy.cs");
+        var draftSource = ReadSource(
+            "src", "DownKyi.Desktop",
+            "Services", "Download",
+            "DownloadTaskDraftFactory.cs");
+        var metadataSource = ReadSource(
+            "src", "DownKyi.Desktop",
+            "Services", "Download",
+            "DownloadMovieMetadataBuilder.cs");
         var contextFactorySource = ReadSource(
             "src", "DownKyi.Desktop",
             "Services",
@@ -178,12 +242,16 @@ public sealed class SettingsArchitectureTests
             "DownloadExecutionContextFactory.cs");
         var artifactSource = ReadSource("src", "DownKyi.Desktop", "Services", "Download", "DownloadArtifactWriter.cs");
         var diagnosticSource = ReadSource("src", "DownKyi.Desktop", "Services", "Download", "DownloadDiagnosticLogger.cs");
-        var ffmpegSource = ReadSource("DownKyi.Core", "FFMpeg", "FfmpegProcessor.cs");
+        var ffmpegSource = ReadSource("DownKyi.Core", "FFmpeg", "FfmpegProcessor.cs");
 
         Assert.Contains("ApplicationSettings settings", utilitySource, StringComparison.Ordinal);
         Assert.DoesNotContain("ISettingsStore", utilitySource, StringComparison.Ordinal);
         Assert.DoesNotContain("settingsStore.Current", utilitySource, StringComparison.Ordinal);
         Assert.DoesNotContain("VideoPageInfo(playUrl, page, _settingsStore)", addSource, StringComparison.Ordinal);
+        Assert.Contains("ApplicationSettings settings", draftSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", duplicateSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", draftSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ISettingsStore", metadataSource, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(contextFactorySource, "_settingsStore.Current"));
         Assert.DoesNotContain("ISettingsStore", artifactSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ISettingsStore", diagnosticSource, StringComparison.Ordinal);

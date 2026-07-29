@@ -1,4 +1,4 @@
-using DownKyi.Core.FFMpeg;
+using DownKyi.Core.FFmpeg;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Core.Tests;
