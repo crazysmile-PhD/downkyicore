@@ -1,0 +1,12 @@
+<Project>
+
+  <Import Project="$(MSBuildThisFileDirectory)..\Directory.Build.props" />
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'DownKyi.TestInfrastructure'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)TestInfrastructure\DownKyi.TestInfrastructure.csproj" />
+    <Compile
+      Include="$(MSBuildThisFileDirectory)TestInfrastructure\TestDataIsolationRegistration.cs"
+      Link="TestInfrastructure\TestDataIsolationRegistration.cs" />
+  </ItemGroup>
+
+</Project>

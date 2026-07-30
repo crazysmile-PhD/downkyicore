@@ -21,10 +21,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\TestInfrastructure\TestDataIsolation.cs" Link="TestInfrastructure\TestDataIsolation.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Update="BiliApi\JsonSamples\space-publication-search.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

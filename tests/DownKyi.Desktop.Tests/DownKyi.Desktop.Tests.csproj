@@ -9,8 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia.Headless" />
-    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Avalonia.Headless.XUnit" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
@@ -19,10 +18,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DownKyi.Desktop\DownKyi.Desktop.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Include="..\TestInfrastructure\TestDataIsolation.cs" Link="TestInfrastructure\TestDataIsolation.cs" />
   </ItemGroup>
 
   <ItemGroup>

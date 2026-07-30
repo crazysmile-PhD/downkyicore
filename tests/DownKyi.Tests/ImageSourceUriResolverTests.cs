@@ -20,7 +20,9 @@ public sealed class ImageSourceUriResolverTests
         using var httpClient = new HttpClient(handler, false);
         using var loader = new BaseWebImageLoader(httpClient, false);
 
-        var bitmap = await loader.ProvideImageAsync("//i0.hdslb.com/bfs/archive/cover.jpg");
+        var bitmap = await loader
+            .ProvideImageAsync("//i0.hdslb.com/bfs/archive/cover.jpg")
+            .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
         Assert.Null(bitmap);
         Assert.Equal("https://i0.hdslb.com/bfs/archive/cover.jpg", handler.RequestUri?.AbsoluteUri);

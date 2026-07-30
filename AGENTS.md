@@ -199,7 +199,15 @@ dotnet build .\DownKyi.sln `
   -p:TreatWarningsAsErrors=true `
   -p:CodeAnalysisTreatWarningsAsErrors=true
 
-dotnet test .\DownKyi.sln -c Release --no-restore --no-build
+pwsh .\script\test-solution.ps1 -Configuration Release -NoRestore -NoBuild
+pwsh .\script\audit-lifecycle-ownership.ps1 `
+  -OutputDirectory .\artifacts\assembly-lifecycle\ownership
+pwsh .\script\test-assembly-lifecycle.ps1 `
+  -Configuration Release `
+  -Iterations 5 `
+  -NoBuild `
+  -ValidateForensics `
+  -ResultsDirectory .\artifacts\assembly-lifecycle\verification
 dotnet format .\DownKyi.sln --no-restore --verify-no-changes
 git diff --check
 dotnet package list --project .\DownKyi.sln --vulnerable --include-transitive
@@ -214,9 +222,20 @@ dotnet package list --project .\DownKyi.sln --deprecated
 - `DownloadRuntimeArchitectureTests`
 - `ModuleBoundaryBaselineTests`
 - `AgentEnvironmentArchitectureTests`
+- `AssemblyLifecycleArchitectureTests`
+- `UiSmokeTests.ProductionDesktopHostStopsAndDisposesEveryOwnedRuntime`
+- `SqliteDownloadTaskStoreTests.DisposeReleasesTheOwnedConnectionPool`
 - SQLite migration/resume、download shutdown recovery、DURL identity/seekability tests
 
 每次修正行為都應新增能在舊實作上失敗的測試；不要只以 build 成功代表 runtime 正常。
+
+PR 會對每個 test assembly 執行 3 次 assembly lifecycle gate，`main`
+執行 50 次，release rehearsal 執行 100 次。涉及 thread、Dispatcher、
+Timer、Host、全域事件或測試 fixture ownership 時，必須先閱讀
+`docs/testing/assembly-lifecycle-stability.md` 並更新
+`docs/testing/assembly-lifecycle-owners.json`。上述 5 次命令是正式本機
+Verification 的最低門檻；單次 `Local` profile 只用於開發腳本，不構成
+Gate 10 或發布證據。
 
 ## Package 與發版
 

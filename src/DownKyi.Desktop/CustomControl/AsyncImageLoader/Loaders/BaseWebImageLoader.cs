@@ -50,9 +50,9 @@ internal class BaseWebImageLoader : IAsyncImageLoader
     /// <returns>Bitmap</returns>
     protected virtual async Task<Bitmap?> LoadAsync(string url)
     {
-        var internalOrCachedBitmap = LoadFromLocal(url)
-                                     ?? LoadFromInternal(url)
-                                     ?? LoadFromGlobalCache(url);
+        var internalOrCachedBitmap = ImageSourceUriResolver.ResolveExternal(url) == null
+            ? LoadFromLocal(url) ?? LoadFromInternal(url) ?? LoadFromGlobalCache(url)
+            : LoadFromGlobalCache(url);
         if (internalOrCachedBitmap != null) return internalOrCachedBitmap;
 
         try

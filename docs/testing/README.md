@@ -13,6 +13,8 @@
 重要文件：
 
 - `module-boundary-ratchets.md`
+- `assembly-lifecycle-stability.md`
+- `assembly-lifecycle-owners.json`
 - `../maintenance.md`
 - `../operations/verification-and-rollback.md`
 

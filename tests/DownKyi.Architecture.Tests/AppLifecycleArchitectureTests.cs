@@ -11,13 +11,18 @@ public sealed class AppLifecycleArchitectureTests
         var desktopSource = ReadSource("src", "DownKyi.Desktop", "DesktopApplication.cs");
 
         Assert.Contains("[STAThread]", programSource, StringComparison.Ordinal);
-        Assert.Contains("public static void Main", programSource, StringComparison.Ordinal);
-        Assert.Contains("DesktopApplication.Run(args)", programSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("public static Task Main", programSource, StringComparison.Ordinal);
-        Assert.Contains("public static void Run", desktopSource, StringComparison.Ordinal);
+        Assert.Contains("public static Task Main", programSource, StringComparison.Ordinal);
+        Assert.Contains("DesktopApplication.RunAsync(args)", programSource, StringComparison.Ordinal);
+        Assert.Contains("public static async Task RunAsync", desktopSource, StringComparison.Ordinal);
         Assert.Contains("RunHelperIfRequested(args)", desktopSource,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("public static async Task Run", desktopSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunHelperIfRequestedAsync", desktopSource, StringComparison.Ordinal);
+
+        var desktopLifetimeStart = desktopSource.IndexOf(
+            "StartWithClassicDesktopLifetime",
+            StringComparison.Ordinal);
+        Assert.True(desktopLifetimeStart >= 0);
+        Assert.DoesNotContain("await ", desktopSource[..desktopLifetimeStart], StringComparison.Ordinal);
     }
 
     [Fact]

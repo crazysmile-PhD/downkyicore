@@ -226,6 +226,19 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Null(second.NextCursor);
     }
 
+    [Fact]
+    public async Task DisposeReleasesTheOwnedConnectionPool()
+    {
+        var databasePath = Path.Combine(_directory, "download.db");
+        var store = CreateStore();
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        store.Dispose();
+        File.Delete(databasePath);
+
+        Assert.False(File.Exists(databasePath));
+    }
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();

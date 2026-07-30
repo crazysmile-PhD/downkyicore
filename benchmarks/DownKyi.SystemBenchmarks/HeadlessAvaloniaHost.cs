@@ -36,8 +36,13 @@ internal sealed class HeadlessAvaloniaHost : IAsyncDisposable
     {
         await _shutdown.CancelAsync().ConfigureAwait(false);
         Dispatcher.UIThread.Post(static () => { }, DispatcherPriority.Send);
-        await Task.Run(_thread.Join).ConfigureAwait(false);
+        var joined = await Task.Run(
+            () => _thread.Join(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
         _shutdown.Dispose();
+        if (!joined)
+        {
+            throw new TimeoutException("The benchmark UI thread did not stop within five seconds.");
+        }
     }
 
     private void RunDispatcher()

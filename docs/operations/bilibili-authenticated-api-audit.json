@@ -1,10 +1,10 @@
 {
   "SchemaVersion": 1,
-  "CapturedAtUtc": "2026-07-28T11:54:34.7067651+00:00",
+  "CapturedAtUtc": "2026-07-29T06:54:07.3957098+00:00",
   "Runtime": "7.6.4",
   "OperatingSystem": "Microsoft Windows 10.0.26200",
   "Architecture": "X64",
-  "Commit": "11ee968104cfc18ccf8cd842384fd0e86a26f6fb",
+  "Commit": "8aa4382024aa0af15b472956bbb3ee51de73622a",
   "EnvironmentVariableLoaded": true,
   "NavigationGatePassed": true,
   "Results": [

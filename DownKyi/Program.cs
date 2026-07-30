@@ -6,8 +6,8 @@ namespace DownKyi;
 sealed class Program
 {
     [STAThread]
-    public static void Main(string[] args)
+    public static Task Main(string[] args)
     {
-        DesktopApplication.Run(args);
+        return DesktopApplication.RunAsync(args);
     }
 }

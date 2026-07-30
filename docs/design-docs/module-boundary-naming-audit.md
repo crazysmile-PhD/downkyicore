@@ -2,14 +2,14 @@
 
 Status: maintained verified audit
 Last verified: 2026-07-29
-Verification base: `bb082a775f7e306bbee577b3c998c58d600915ef` plus the Gate 9 aria-client working tree
-Verification branch: `refactor/aria-client-provenance`
+Verification base: integration merge `fb8c9220cea18a79e42b521005f0bcb983c1241e`
+Verification branch: `release/v1.1.0-integration`
 
 ## 結論
 
 附件報告指出的七類問題大多成立，但原始證據已被後續重構取代。以目前工作樹重新量測後，Desktop 已成為實際 UI owner、Core 已 headless、下載佇列、HTTP 與 logging 邊界也已收斂；剩餘主要缺口是 media execution context 仍讀取一個 UI projection，以及 aria2、FFmpeg 與 filesystem 的最終 Infrastructure ownership。
 
-目前仍不得宣告整體重構完成或發布 v1.1.0：Gate 9 logging 與 naming 已分別透過 PR #94、#95 整合；large-owner 工作仍在分支逐項收斂，最終 stacked branch 也尚未進入 `main`。版本唯一來源仍是 `1.0.32`。
+Gate 1-9 已在 stacked release-hardening branch 完成，並由 `fb8c922` 无冲突整合到从最新 `main` 建立的 v1.1.0 integration branch。尚不得建立 tag：integration PR、最终同 SHA 跨平台 package rehearsal、artifact/checksum 检查与 main 合并仍是发布阻塞项。
 
 ## 可重現基線
 
@@ -37,7 +37,7 @@ pwsh ./script/audit-module-boundaries.ps1 `
 
 | Priority | Finding | Current evidence | Verdict |
 |---|---|---|---|
-| P0 | 發布與計畫狀態不一致 | stacked release-hardening branch not in `main`; `version.txt=1.0.32` | confirmed release blocker |
+| P0 | 發布與計畫狀態不一致 | integration branch contains latest main and full stack; package rehearsal/main merge/tag pending | release blocker narrowed to Gate 10 |
 | resolved | Desktop ownership | 317 files; executable is one 14-line bootstrap | completed by Gate 8 |
 | P1 | Domain aggregate 不是 runtime authority | durable commands and queue identity now use Domain tasks; execution context still exposes one UI projection | durable authority resolved, projection leak remains |
 | P1 | Channel 仍輪詢 UI collection | direct `DownloadTaskId` admission; no dispatcher polling or collection-membership scheduling | resolved by Gate 5 |

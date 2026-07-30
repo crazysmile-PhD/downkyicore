@@ -10,8 +10,27 @@
         <TieredPGO>true</TieredPGO>
         <TC_QuickJitForLoops>true</TC_QuickJitForLoops>
         <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+        <DownKyiAssetRuntimeIdentifier Condition="'$(DownKyiAssetRuntimeIdentifier)' == '' And '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</DownKyiAssetRuntimeIdentifier>
+        <DownKyiAssetRuntimeIdentifier Condition="'$(DownKyiAssetRuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X64'">win-x64</DownKyiAssetRuntimeIdentifier>
+        <DownKyiAssetRuntimeIdentifier Condition="'$(DownKyiAssetRuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X86'">win-x86</DownKyiAssetRuntimeIdentifier>
+        <DownKyiAssetRuntimeIdentifier Condition="'$(DownKyiAssetRuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='Arm64'">linux-arm64</DownKyiAssetRuntimeIdentifier>
+        <DownKyiAssetRuntimeIdentifier Condition="'$(DownKyiAssetRuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X64'">linux-x64</DownKyiAssetRuntimeIdentifier>
+        <DownKyiAssetRuntimeIdentifier Condition="'$(DownKyiAssetRuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X64'">osx-x64</DownKyiAssetRuntimeIdentifier>
+        <DownKyiAssetRuntimeIdentifier Condition="'$(DownKyiAssetRuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='Arm64'">osx-arm64</DownKyiAssetRuntimeIdentifier>
     </PropertyGroup>
     <ItemGroup>
         <ProjectReference Include="..\src\DownKyi.Desktop\DownKyi.Desktop.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <None Include="..\DownKyi.Core\Binary\$(DownKyiAssetRuntimeIdentifier)\aria2\*"
+              Link="aria2\%(Filename)%(Extension)"
+              Visible="false"
+              CopyToOutputDirectory="PreserveNewest"
+              CopyToPublishDirectory="PreserveNewest" />
+        <None Include="..\DownKyi.Core\Binary\$(DownKyiAssetRuntimeIdentifier)\ffmpeg\*"
+              Link="ffmpeg\%(Filename)%(Extension)"
+              Visible="false"
+              CopyToOutputDirectory="PreserveNewest"
+              CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
 </Project>

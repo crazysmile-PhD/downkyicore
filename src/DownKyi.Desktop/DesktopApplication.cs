@@ -5,7 +5,7 @@ namespace DownKyi.Desktop;
 
 public static class DesktopApplication
 {
-    public static void Run(string[] args)
+    public static async Task RunAsync(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
         if (ProcessRestartLauncher.RunHelperIfRequested(args))
@@ -13,7 +13,18 @@ public static class DesktopApplication
             return;
         }
 
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        var appBuilder = BuildAvaloniaApp();
+        try
+        {
+            appBuilder.StartWithClassicDesktopLifetime(args);
+        }
+        finally
+        {
+            if (appBuilder.Instance is IAsyncDisposable application)
+            {
+                await application.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     public static AppBuilder BuildAvaloniaApp()

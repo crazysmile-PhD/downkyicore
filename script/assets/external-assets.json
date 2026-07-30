@@ -30,24 +30,24 @@
     }
   },
   "ffmpeg": {
-    "version": "btbn-autobuild-2026-07-08-13-30_ytdlp-autobuild-2026-07-12-15-07_martin-riedl-2026-07",
+    "version": "btbn-autobuild-2026-07-28-13-32_ytdlp-autobuild-2026-07-28-16-25_martin-riedl-2026-07",
     "repository": "Windows x64/Linux: https://github.com/BtbN/FFmpeg-Builds; Windows x86: https://github.com/yt-dlp/FFmpeg-Builds; macOS: https://ffmpeg.martin-riedl.de",
     "assets": {
       "win-x86": {
-        "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-07-12-15-07/ffmpeg-N-125551-ga09be9b91e-win32-gpl.zip",
-        "sha256": "a794b4229a64f2cef817c20c0f2a3bf6c2cf20e5ec527f6b6893e6e7a6ec5e26"
+        "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-07-28-16-25/ffmpeg-N-125840-gf6fa0d3fda-win32-gpl.zip",
+        "sha256": "153acefd3818c3c0ca3ea2c2833ba66b7915054c1e76a2917db7b8c458f76ed2"
       },
       "win-x64": {
-        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-08-13-30/ffmpeg-N-125505-gc57660fb18-win64-gpl.zip",
-        "sha256": "21e3aa721313ee09ae2e05fe4335935047d111c97a9ab78c093f36c74bfdd206"
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-28-13-32/ffmpeg-N-125829-gfe953596e9-win64-gpl.zip",
+        "sha256": "ea25042ce4092cb598f01171bb1affeaf3232903f8255b6b77cb88ee189ca45f"
       },
       "linux-x64": {
-        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-08-13-30/ffmpeg-N-125505-gc57660fb18-linux64-gpl.tar.xz",
-        "sha256": "d540a9b176456af5fae75a1aa4c388152e1b418fb4fa129fef83d98305f04f3c"
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-28-13-32/ffmpeg-N-125829-gfe953596e9-linux64-gpl.tar.xz",
+        "sha256": "9ed999035ac57b56b53e171df1105bcde9462e4db2f14c729cb33f4205c105c6"
       },
       "linux-arm64": {
-        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-08-13-30/ffmpeg-N-125505-gc57660fb18-linuxarm64-gpl.tar.xz",
-        "sha256": "e7f52bcc7a42fef23a104b75b87462ba3588aa168f937115471b5200eed7ccb2"
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-28-13-32/ffmpeg-N-125829-gfe953596e9-linuxarm64-gpl.tar.xz",
+        "sha256": "4f3652b7188fd16d1bd98b2f439ef173be704bb3481972b7d8dfd13e474847c1"
       },
         "osx-x64": {
           "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1767299902_N-122320-g38e89fe502/ffmpeg.zip",

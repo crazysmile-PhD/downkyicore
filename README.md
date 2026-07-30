@@ -9,7 +9,7 @@
 
 </div>
 
-DownKyi Core 是基于哔哩下载姬 Windows 版与 Avalonia 的跨平台 B 站视频下载工具。当前项目已迁移到 .NET 10，并针对启动速度、下载续传、任务清理、日志诊断、SQLite 存储和 CI 发布流程做了维护。
+DownKyi Core 是基于哔哩下载姬 Windows 版与 Avalonia 的跨平台 B 站视频下载工具。v1.1.1 使用 .NET 10、Avalonia 12、Microsoft Generic Host、Microsoft DI 与 CommunityToolkit MVVM，并重构了导航、下载状态、SQLite、HTTP、日志、aria2、FFmpeg 和应用生命周期。
 
 ## 下载
 
@@ -76,8 +76,10 @@ flowchart TD
     J --> K
     K --> L["选择画质、音质、编码"]
     L --> M["AddToDownloadService 建立下载任务"]
-    M --> N["DownloadTaskProjectionStore 写入 IDownloadTaskStore"]
-    N --> O["DownloadOrchestrator 背景执行任务"]
+    M --> N["DownloadTaskAdmissionService 建立 Domain task"]
+    N --> O["IDownloadTaskApplicationService 写入 SQLite"]
+    O --> P["DownloadTaskQueueGateway 直接排入 task id"]
+    P --> Q["DownloadOrchestrator 背景执行任务"]
 ```
 
 ```mermaid
@@ -152,27 +154,27 @@ git diff --check
 
 项目结构：
 
-- `DownKyi`: Avalonia UI、ViewModel、下载调度、日志导出和平台集成。
-- `DownKyi.Core`: B 站 API、存储、设置、FFmpeg/aria2 包装、字幕和弹幕处理。
-- `src/DownKyi.Domain`: immutable 下载领域状态与 typed result。
-- `src/DownKyi.Application`: use case、下载存储、桌面与生命週期 contracts。
-- `src/DownKyi.Infrastructure`: SQLite store、时钟与 write-behind adapters。
-- `src/DownKyi.Desktop`: Microsoft Host composition 入口。
+- `DownKyi`: 只保留最小程序启动入口。
+- `src/DownKyi.Desktop`: Avalonia App、Views、ViewModels、UI projections、平台服务、Host composition 与下载 runtime。
+- `src/DownKyi.Application`: 下载 commands/queries、coordinators、desktop/lifecycle/logging contracts。
+- `src/DownKyi.Domain`: `DownloadTask` aggregate、合法状态转换、value objects 与 typed results。
+- `src/DownKyi.Infrastructure`: SQLite task store、Bilibili HTTP/buvid、clock、logging sink/retention/export。
+- `DownKyi.Core`: headless Bilibili API、设置、aria2/FFmpeg/filesystem compatibility、字幕与弹幕处理。
 - `tests/DownKyi.Core.Tests`: Core 层网络与工具逻辑测试。
 - `tests/DownKyi.Tests`: UI 外围可抽取逻辑、下载流程与文件完整性测试。
 - `script`: release workflow 使用的 aria2、FFmpeg、PupNet 和平台打包脚本。
 - `docs/maintenance.md`: 依赖更新、外部 binary checksum、release tag 和回归 checklist。
 - `docs/ai-knowledge-graph.md`: 给 AI/维护者使用的代码结构、模块职责和调用关系索引。
 
-注意：这些 `src` projects 已建立正确的目标依赖方向，但尚未承接全部实际责任。Views、ViewModels、desktop adapters 与下载 runtime 仍主要位于 `DownKyi`，Bilibili HTTP、aria2、FFmpeg 和 logging compatibility implementations 仍主要位于 `DownKyi.Core`。不要仅凭 project 名称假设迁移已经完成。
+注意：Desktop/UI、Bilibili HTTP、SQLite 与 logging ownership 已实际迁移，不是空壳专案。aria2、FFmpeg、filesystem compatibility 仍主要位于 `DownKyi.Core`；剩余边界与风险以 `ARCHITECTURE.md` 和 `docs/refactoring-live-plan.md` 为准。
 
 主要数据流：
 
 1. `SearchService` 识别输入入口。
 2. 对应 `*InfoService` 读取 B 站详情、分 P、番剧或课程信息。
 3. `VideoStream` 解析音视频、字幕和弹幕资源。
-4. `AddToDownloadService` 建立任务并经 `DownloadTaskProjectionStore` 写入 SQLite store。
-5. `DownloadOrchestrator` 以有界 worker 调用 `DownloadPipeline` 和选定的 transfer backend。
+4. `AddToDownloadService` 经 admission service 建立 Domain task，由 Application service 写入 SQLite。
+5. task id 直接进入 queue gateway；`DownloadOrchestrator` 以有界 worker 调用 typed stages 和选定的 transfer backend。
 6. FFmpeg 对一般兼容媒体可使用 stream copy；多段 DURL 会重编码并验证 seek，GPU 失败时回退 CPU。
 
 发布由 GitHub Actions 触发 tag 完成：

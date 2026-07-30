@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $testsRoot = Join-Path $repositoryRoot "tests"
 $testProjects = @(
-    Get-ChildItem -LiteralPath $testsRoot -Filter "*.csproj" -File -Recurse |
+    Get-ChildItem -LiteralPath $testsRoot -Filter "*.Tests.csproj" -File -Recurse |
         Sort-Object FullName
 )
 

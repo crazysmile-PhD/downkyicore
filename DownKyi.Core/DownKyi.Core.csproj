@@ -5,12 +5,6 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X64'">win-x64</RuntimeIdentifier>
-        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X86'">win-x86</RuntimeIdentifier>
-        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='Arm64'">linux-arm64</RuntimeIdentifier>
-        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X64'">linux-x64</RuntimeIdentifier>
-        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X64'">osx-x64</RuntimeIdentifier>
-        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='Arm64'">osx-arm64</RuntimeIdentifier>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Google.Protobuf"/>
@@ -29,12 +23,4 @@
         <Protobuf Include="BiliApi/protobuf/bilibili/community/service/dm/v1/dm.proto" GrpcServices="None"/>
     </ItemGroup>
 
-    <ItemGroup>
-        <None Update="Binary/$(RuntimeIdentifier)/aria2/*" Link="aria2/%(Filename)%(Extension)" Visible="false">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
-        <None Update="Binary/$(RuntimeIdentifier)/ffmpeg/*" Link="ffmpeg/%(Filename)%(Extension)" Visible="false">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
-    </ItemGroup>
 </Project>

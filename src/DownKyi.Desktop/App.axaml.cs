@@ -25,9 +25,10 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi;
 
-internal partial class App : Avalonia.Application, IDisposable
+internal partial class App : Avalonia.Application, IAsyncDisposable
 {
-    private bool _disposed;
+    private readonly object _disposeSync = new();
+    private Task? _disposeTask;
 
 #if !DEBUG
     private SingleInstanceGuard? _singleInstanceGuard;
@@ -38,6 +39,7 @@ internal partial class App : Avalonia.Application, IDisposable
     private ApplicationLogProvider? _logProvider;
     private ILoggerFactory? _loggerFactory;
     private ILogger<App>? _logger;
+    private bool _unhandledExceptionLoggingAttached;
 
     public override void Initialize()
     {
@@ -68,7 +70,6 @@ internal partial class App : Avalonia.Application, IDisposable
 
         var host = _host ?? throw new InvalidOperationException("The application Host is not initialized.");
         desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
-        desktop.Exit += OnExit;
 
         _applicationLifecycle = host.Services.GetRequiredService<AvaloniaApplicationLifecycle>();
         _applicationLifecycle.AttachHost(host);
@@ -92,37 +93,70 @@ internal partial class App : Avalonia.Application, IDisposable
         }
     }
 
-    public void Dispose()
+    public ValueTask DisposeAsync()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
+        lock (_disposeSync)
+        {
+            return new ValueTask(_disposeTask ??= DisposeCoreAsync());
+        }
     }
 
-    protected virtual void Dispose(bool disposing)
+    private async Task DisposeCoreAsync()
     {
-        if (_disposed)
+        try
         {
-            return;
+            if (_applicationLifecycle != null)
+            {
+                await _applicationLifecycle
+                    .RequestShutdownAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
         }
-
-        _disposed = true;
-        if (!disposing)
+        finally
         {
-            return;
-        }
+            try
+            {
+                if (_host is IAsyncDisposable asyncHost)
+                {
+                    await asyncHost.DisposeAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    _host?.Dispose();
+                }
+            }
+            finally
+            {
+                _host = null;
+                _applicationLifecycle = null;
+                DetachUnhandledExceptionLogging();
+                try
+                {
+                    _loggerFactory?.Dispose();
+                }
+                finally
+                {
+                    _loggerFactory = null;
+                    try
+                    {
+                        if (_logProvider != null)
+                        {
+                            await _logProvider.DisposeAsync().ConfigureAwait(false);
+                        }
+                    }
+                    finally
+                    {
+                        _logProvider = null;
+                        _logger = null;
 
-        _host?.Dispose();
-        _host = null;
-        _applicationLifecycle = null;
-        _loggerFactory?.Dispose();
-        _loggerFactory = null;
-        _logProvider?.Dispose();
-        _logProvider = null;
-        _logger = null;
 #if !DEBUG
-        _singleInstanceGuard?.Dispose();
-        _singleInstanceGuard = null;
+                        _singleInstanceGuard?.Dispose();
+                        _singleInstanceGuard = null;
 #endif
+                    }
+                }
+            }
+        }
     }
 
     private void CreateHost()
@@ -144,18 +178,39 @@ internal partial class App : Avalonia.Application, IDisposable
 
     private void AttachUnhandledExceptionLogging()
     {
-        Dispatcher.UIThread.UnhandledException += (_, e) =>
+        if (_unhandledExceptionLoggingAttached)
         {
-            _logger?.LogCriticalMessage("Unhandled UI exception.", e.Exception);
-        };
+            return;
+        }
 
-        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        Dispatcher.UIThread.UnhandledException += OnUiUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+        _unhandledExceptionLoggingAttached = true;
+    }
+
+    private void DetachUnhandledExceptionLogging()
+    {
+        if (!_unhandledExceptionLoggingAttached)
         {
-            if (e.ExceptionObject is Exception exception)
-            {
-                _logger?.LogCriticalMessage("Unhandled application exception.", exception);
-            }
-        };
+            return;
+        }
+
+        Dispatcher.UIThread.UnhandledException -= OnUiUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException -= OnDomainUnhandledException;
+        _unhandledExceptionLoggingAttached = false;
+    }
+
+    private void OnUiUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        _logger?.LogCriticalMessage("Unhandled UI exception.", e.Exception);
+    }
+
+    private void OnDomainUnhandledException(object? sender, UnhandledExceptionEventArgs e)
+    {
+        if (e.ExceptionObject is Exception exception)
+        {
+            _logger?.LogCriticalMessage("Unhandled application exception.", exception);
+        }
     }
 
     private void StartHost()
@@ -164,11 +219,6 @@ internal partial class App : Avalonia.Application, IDisposable
         {
             ObserveBackgroundTask(_applicationLifecycle.StartHostAsync(), "Application Host startup failed.");
         }
-    }
-
-    private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
-    {
-        Dispose();
     }
 
     private void ObserveBackgroundTask(Task task, string failureMessage)

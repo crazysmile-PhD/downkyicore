@@ -21,7 +21,9 @@ function Verify-Asset($path, $expectedSha256) {
     }
 }
 
-Create-Dir ".\downloads"
+$downloadDir = Join-Path $PSScriptRoot "downloads"
+$binaryRoot = Join-Path $PSScriptRoot "..\DownKyi.Core\Binary"
+Create-Dir $downloadDir
 
 $rid = "win-$arch"
 $asset = Get-Asset "aria2" $rid
@@ -29,15 +31,27 @@ if ($null -eq $asset) {
     throw "Unsupported aria2 architecture: $arch"
 }
 
-$archive = ".\downloads\aria2-$arch.zip"
+$archive = Join-Path $downloadDir "aria2-$arch.zip"
+if (Test-Path -LiteralPath $archive) {
+    Remove-Item -LiteralPath $archive -Force
+}
 Start-BitsTransfer -Source $asset.url -Destination $archive
 Verify-Asset $archive $asset.sha256
 
-$destDir = "..\DownKyi.Core\Binary\$rid\aria2\"
+$destDir = Join-Path $binaryRoot "$rid\aria2"
+$extractDir = Join-Path $downloadDir "aria2-$arch-extract"
 
-Expand-Archive -Path $archive -DestinationPath ".\aria2" -Force
+if (Test-Path -LiteralPath $extractDir) {
+    Remove-Item -LiteralPath $extractDir -Recurse -Force
+}
+Expand-Archive -Path $archive -DestinationPath $extractDir -Force
 Create-Dir $destDir
 
-Copy-Item ".\aria2\aria2c.exe" "$destDir\aria2c.exe" -Force
+$aria2 = Get-ChildItem -LiteralPath $extractDir -Recurse -File -Filter "aria2c.exe" |
+    Select-Object -First 1
+if ($null -eq $aria2) {
+    throw "aria2c.exe not found in $archive"
+}
+Copy-Item -LiteralPath $aria2.FullName -Destination (Join-Path $destDir "aria2c.exe") -Force
 
-Remove-Item ".\aria2" -Recurse -Force
+Remove-Item -LiteralPath $extractDir -Recurse -Force

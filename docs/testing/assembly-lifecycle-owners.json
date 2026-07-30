@@ -1,0 +1,283 @@
+{
+  "schemaVersion": 1,
+  "owners": [
+    {
+      "id": "test-data-isolation-fixture",
+      "paths": [
+        "tests/TestInfrastructure/**"
+      ],
+      "owner": "xUnit assembly fixture",
+      "start": "TestDataIsolationFixture constructor creates a process-scoped data root.",
+      "stop": "xUnit calls IAsyncDisposable.DisposeAsync after the assembly test run.",
+      "teardown": "Delete the isolated root with bounded retries and emit the lifecycle marker. No ProcessExit handler is registered.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "desktop-test-dispatcher",
+      "paths": [
+        "tests/DownKyi.Desktop.Tests/**"
+      ],
+      "owner": "Avalonia.Headless.XUnit per-assembly test session",
+      "start": "AvaloniaTestApplication starts the official headless test session.",
+      "stop": "Avalonia xUnit isolation disposes the per-assembly session.",
+      "teardown": "The package cancels its dispatcher token, completes its work queue and awaits the dispatcher task.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "task_run",
+        "dispatcher",
+        "timer",
+        "host_lifecycle",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "test-suite-process",
+      "paths": [
+        "tests/**"
+      ],
+      "owner": "xUnit test process",
+      "start": "The xUnit executable owns test fixtures and test-created background work.",
+      "stop": "Tests and fixtures must dispose every created Host, timer, task and external process before returning.",
+      "teardown": "Assembly fixture cleanup completes before the process is allowed to exit.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "external_process",
+        "task_run",
+        "dispatcher",
+        "timer",
+        "host_lifecycle",
+        "sync_wait",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "system-benchmark-dispatcher",
+      "paths": [
+        "benchmarks/DownKyi.SystemBenchmarks/HeadlessAvaloniaHost.cs"
+      ],
+      "owner": "HeadlessAvaloniaHost",
+      "start": "The benchmark fixture starts one named dispatcher thread.",
+      "stop": "DisposeAsync cancels the token and posts a wake-up.",
+      "teardown": "DisposeAsync performs a bounded join and fails explicitly if the thread does not exit.",
+      "allowedMechanisms": [
+        "new_thread",
+        "task_run",
+        "dispatcher",
+        "bounded_join"
+      ]
+    },
+    {
+      "id": "benchmark-process",
+      "paths": [
+        "benchmarks/**"
+      ],
+      "owner": "BenchmarkDotNet process and benchmark fixture",
+      "start": "BenchmarkDotNet creates an isolated benchmark process.",
+      "stop": "Global cleanup and disposable fixtures stop runtime work.",
+      "teardown": "No process-wide event handler may substitute for fixture cleanup.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "external_process",
+        "task_run",
+        "dispatcher",
+        "timer",
+        "host_lifecycle",
+        "sync_wait",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "desktop-application-lifecycle",
+      "paths": [
+        "src/DownKyi.Desktop/App.axaml.cs",
+        "src/DownKyi.Desktop/DesktopApplication.cs",
+        "src/DownKyi.Desktop/Composition/**",
+        "src/DownKyi.Desktop/Platform/AvaloniaApplicationLifecycle.cs",
+        "src/DownKyi.Desktop/Views/MainWindow.axaml.cs"
+      ],
+      "owner": "AvaloniaApplicationLifecycle and Generic Host",
+      "start": "DesktopApplication creates one Host and the Avalonia controlled lifetime starts it.",
+      "stop": "MainWindow or controlled lifetime requests one idempotent asynchronous shutdown.",
+      "teardown": "Cancel application work, stop the Host with a deadline, detach process-wide exception handlers, flush settings/logs and dispose every Host/log/single-instance owner even when an earlier disposal step fails.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "task_run",
+        "dispatcher",
+        "timer",
+        "global_event",
+        "host_lifecycle",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "desktop-download-runtime",
+      "paths": [
+        "src/DownKyi.Desktop/Services/Download/**",
+        "src/DownKyi.Desktop/Services/StorageMaintenanceHostedService.cs"
+      ],
+      "owner": "DownloadBootstrapHostedService and DownloadOrchestrator",
+      "start": "Generic Host starts the bootstrap service, runtime, transfer backend and bounded workers.",
+      "stop": "Host shutdown cancels each owner and waits for workers/backends.",
+      "teardown": "Cancel, wake channel waiters, await worker completion, recover durable task state and stop external processes.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "task_run",
+        "dispatcher",
+        "timer",
+        "host_lifecycle",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "desktop-module",
+      "paths": [
+        "src/DownKyi.Desktop/**"
+      ],
+      "owner": "DownKyi.Desktop composition root",
+      "start": "The Generic Host or Avalonia view lifetime creates desktop services.",
+      "stop": "DI disposal, navigation disposal or application shutdown releases them.",
+      "teardown": "Long-running work must accept cancellation and be awaited by its owner.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "external_process",
+        "task_run",
+        "dispatcher",
+        "timer",
+        "global_event",
+        "host_lifecycle",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "infrastructure-logging-runtime",
+      "paths": [
+        "src/DownKyi.Infrastructure/Logging/**"
+      ],
+      "owner": "ApplicationLogProvider and Generic Host",
+      "start": "DI creates the logging provider and retention worker.",
+      "stop": "Host disposal flushes and disposes the provider and worker.",
+      "teardown": "Cancel retention work, await it, flush the sink and release files.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "task_run",
+        "timer",
+        "host_lifecycle",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "infrastructure-module",
+      "paths": [
+        "src/DownKyi.Infrastructure/**"
+      ],
+      "owner": "DownKyi.Infrastructure DI scope",
+      "start": "The Generic Host or explicit test scope creates infrastructure services.",
+      "stop": "The owning scope disposes them.",
+      "teardown": "Dispose HTTP, SQLite, logging and write-behind resources through their injected owner.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "task_run",
+        "timer",
+        "host_lifecycle",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "aria2-process-runtime",
+      "paths": [
+        "DownKyi.Core/Aria2cNet/**"
+      ],
+      "owner": "AriaServer and Aria2 transfer backend",
+      "start": "The transfer backend starts the external aria2 process on demand.",
+      "stop": "Backend shutdown sends RPC shutdown and disposes the process.",
+      "teardown": "Cancellation and bounded process termination prevent orphaned aria2 children.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "external_process",
+        "task_run",
+        "timer",
+        "host_lifecycle",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "core-module",
+      "paths": [
+        "DownKyi.Core/**"
+      ],
+      "owner": "DownKyi.Core injected service or caller scope",
+      "start": "The caller creates compatibility services and media helpers.",
+      "stop": "The caller cancels and disposes owned resources.",
+      "teardown": "External process, stream and file owners must expose deterministic cleanup.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "external_process",
+        "task_run",
+        "timer",
+        "host_lifecycle",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "application-module",
+      "paths": [
+        "src/DownKyi.Application/**"
+      ],
+      "owner": "DownKyi.Application use-case scope",
+      "start": "The caller invokes an application use case.",
+      "stop": "Cancellation belongs to the current operation or application lifetime.",
+      "teardown": "Application contracts do not own process-wide resources.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "task_run",
+        "timer",
+        "host_lifecycle",
+        "synchronous_cleanup"
+      ]
+    },
+    {
+      "id": "domain-module",
+      "paths": [
+        "src/DownKyi.Domain/**"
+      ],
+      "owner": "Pure Domain model",
+      "start": "Callers create immutable domain values.",
+      "stop": "No runtime lifecycle is owned here.",
+      "teardown": "Domain code must not create threads, timers, Hosts or global handlers.",
+      "allowedMechanisms": [
+        "static_initialization"
+      ]
+    },
+    {
+      "id": "executable-bootstrap",
+      "paths": [
+        "DownKyi/**"
+      ],
+      "owner": "DownKyi process entry point",
+      "start": "Program delegates once to DesktopApplication.",
+      "stop": "Desktop application lifetime completes before Main returns.",
+      "teardown": "No second Host, thread or global lifecycle owner is permitted.",
+      "allowedMechanisms": [
+        "host_lifecycle"
+      ]
+    },
+    {
+      "id": "lifecycle-probe",
+      "paths": [
+        "tools/DownKyi.AssemblyLifecycleProbe/**"
+      ],
+      "owner": "Assembly lifecycle gate child process",
+      "start": "The probe creates one collectible AssemblyLoadContext or, only for the forensics self-test, one bounded residual child.",
+      "stop": "The probe unloads the context; the lifecycle gate identifies and stops the synthetic residual tree.",
+      "teardown": "A retained context fails the load phase. Residual-child self-test cleanup matches PID and creation time, kills the synthetic tree and performs a bounded wait.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "external_process",
+        "bounded_sleep"
+      ]
+    }
+  ]
+}

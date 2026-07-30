@@ -4,9 +4,11 @@ set -euo pipefail
 os=$1
 arch=$2
 
-ffmpeg_save_path="../DownKyi.Core/Binary"
-download_dir="./downloads"
-manifest="./assets/external-assets.json"
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repo_root=$(cd -- "$script_dir/.." && pwd)
+ffmpeg_save_path="$repo_root/DownKyi.Core/Binary"
+download_dir="$script_dir/downloads"
+manifest="$script_dir/assets/external-assets.json"
 
 create_dir() {
   if [ ! -d "$1" ]; then
@@ -124,9 +126,9 @@ download_ffmpeg_macos() {
   ffprobe_url=$(asset_value "$rid" "ffprobeUrl")
   ffprobe_sha256=$(asset_value "$rid" "ffprobeSha256")
   local ffprobe_archive="$download_dir/ffprobe-mac-$arch.zip"
-  curl -kL "$url" -o "$archive"
+  curl --fail --location --show-error "$url" -o "$archive"
   verify_asset "$archive" "$expected_sha256"
-  curl -kL "$ffprobe_url" -o "$ffprobe_archive"
+  curl --fail --location --show-error "$ffprobe_url" -o "$ffprobe_archive"
   verify_asset "$ffprobe_archive" "$ffprobe_sha256"
   extract_ffmpeg "$archive" "$ffmpeg_save_path/$rid/ffmpeg" "$ffprobe_archive"
 }
@@ -141,7 +143,7 @@ download_ffmpeg_linux() {
   if [[ "$url" == *.tar.xz ]]; then
     archive="$download_dir/ffmpeg-linux-$arch.tar.xz"
   fi
-  curl -kL "$url" -o "$archive"
+  curl --fail --location --show-error "$url" -o "$archive"
   verify_asset "$archive" "$expected_sha256"
   extract_ffmpeg "$archive" "$ffmpeg_save_path/$rid/ffmpeg"
 }

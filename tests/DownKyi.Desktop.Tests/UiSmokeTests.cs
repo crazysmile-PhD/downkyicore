@@ -1,6 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Headless;
+using Avalonia.Headless.XUnit;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -29,6 +29,7 @@ using DownKyi.Views;
 using DownKyi.Views.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -36,10 +37,16 @@ namespace DownKyi.Desktop.Tests;
 
 public sealed class UiSmokeTests
 {
-    [Fact]
+    [AvaloniaFact]
+    public void AvaloniaFactRunsOnOwnedDispatcher()
+    {
+        Assert.True(Avalonia.Threading.Dispatcher.UIThread.CheckAccess());
+    }
+
+    [AvaloniaFact]
     public async Task PublicationSearchPageAndSnapshotSurviveTypedBackNavigation()
     {
-        await HeadlessUiTestHost.RunAsync(() =>
+        await AvaloniaTestDispatcher.RunAsync(() =>
         {
             EnsureProductThemeResources();
             ViewPublicationViewModel? publication = null;
@@ -77,10 +84,10 @@ public sealed class UiSmokeTests
         }).ConfigureAwait(true);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public async Task FavoritesSearchPageAndSnapshotSurviveTypedBackNavigation()
     {
-        await HeadlessUiTestHost.RunAsync(async () =>
+        await AvaloniaTestDispatcher.RunAsync(async () =>
         {
             EnsureProductThemeResources();
             var directory = Path.Combine(Path.GetTempPath(), $"downkyi-favorites-state-{Guid.NewGuid():N}");
@@ -131,10 +138,10 @@ public sealed class UiSmokeTests
         }).ConfigureAwait(true);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public Task PublicFavoritesBackArrowRemainsVisibleInLightAndDarkThemes()
     {
-        return HeadlessUiTestHost.RunAsync(() =>
+        return AvaloniaTestDispatcher.RunAsync(() =>
         {
             var application = EnsureProductThemeResources();
             var originalTheme = application.RequestedThemeVariant;
@@ -168,10 +175,10 @@ public sealed class UiSmokeTests
         });
     }
 
-    [Fact]
+    [AvaloniaFact]
     public Task TypedRouterShrinksThreeLevelHistoryAndRestoresOriginalInstances()
     {
-        return HeadlessUiTestHost.RunAsync(() =>
+        return AvaloniaTestDispatcher.RunAsync(() =>
         {
             var created = new List<NavigationProbe>();
             using var navigation = new AvaloniaNavigationService(
@@ -211,10 +218,10 @@ public sealed class UiSmokeTests
         });
     }
 
-    [Fact]
+    [AvaloniaFact]
     public Task UserSpaceFavoritesBackPathRestoresOriginalUserSpaceInstance()
     {
-        return HeadlessUiTestHost.RunAsync(() =>
+        return AvaloniaTestDispatcher.RunAsync(() =>
         {
             var created = new List<NavigationProbe>();
             using var navigation = new AvaloniaNavigationService(
@@ -251,10 +258,10 @@ public sealed class UiSmokeTests
         });
     }
 
-    [Fact]
+    [AvaloniaFact]
     public Task TypedRouterReplacesAndDisposesNestedRegionContent()
     {
-        return HeadlessUiTestHost.RunAsync(() =>
+        return AvaloniaTestDispatcher.RunAsync(() =>
         {
             var created = new List<NavigationProbe>();
             using var navigation = new AvaloniaNavigationService(
@@ -280,10 +287,10 @@ public sealed class UiSmokeTests
         });
     }
 
-    [Fact]
+    [AvaloniaFact]
     public async Task RealHostResolvesShellAndKeyViewsWithoutPrismRuntime()
     {
-        await HeadlessUiTestHost.RunAsync(async () =>
+        await AvaloniaTestDispatcher.RunAsync(async () =>
         {
             AssertPrismRuntimeIsNotLoaded();
             AssertVideoPageSelectionBehavior();
@@ -373,13 +380,13 @@ public sealed class UiSmokeTests
                     Directory.Delete(testDirectory, recursive: true);
                 }
             }
-        });
+        }).ConfigureAwait(true);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public async Task MainWindowStillClosesWhenShutdownRequestFaults()
     {
-        await HeadlessUiTestHost.RunAsync(async () =>
+        await AvaloniaTestDispatcher.RunAsync(async () =>
         {
             var testDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-close-smoke-{Guid.NewGuid():N}");
             var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
@@ -421,7 +428,7 @@ public sealed class UiSmokeTests
                     Directory.Delete(testDirectory, recursive: true);
                 }
             }
-        });
+        }).ConfigureAwait(true);
     }
 
     [Fact]
@@ -444,6 +451,78 @@ public sealed class UiSmokeTests
         await host.StopAsync(TestContext.Current.CancellationToken);
 
         Assert.True(cancellation.ShutdownToken.IsCancellationRequested);
+    }
+
+    [AvaloniaFact]
+    public async Task ProductionDesktopHostStopsAndDisposesEveryOwnedRuntime()
+    {
+        await AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            var testDirectory = Path.Combine(
+                Path.GetTempPath(),
+                $"downkyi-host-lifecycle-{Guid.NewGuid():N}");
+            var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
+            var logProvider = new ApplicationLogProvider(
+                new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
+            var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logProvider));
+            var runtime = new LifecycleProbeDownloadRuntime();
+            IHost? host = null;
+
+            try
+            {
+                host = DownKyiHost.Create(services =>
+                {
+                    services.AddDownKyiDesktop(loggerFactory, logProvider);
+                    services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
+                    services.Replace(ServiceDescriptor.Singleton(
+                        new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
+                    services.Replace(ServiceDescriptor.Singleton<IDownloadRuntimeFactory>(
+                        new LifecycleProbeDownloadRuntimeFactory(runtime)));
+                });
+                var lifecycle = host.Services.GetRequiredService<AvaloniaApplicationLifecycle>();
+                lifecycle.AttachHost(host);
+
+                await lifecycle
+                    .StartHostAsync()
+                    .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+                await lifecycle
+                    .RequestShutdownAsync(TestContext.Current.CancellationToken)
+                    .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+
+                Assert.Equal(1, runtime.StartCount);
+                Assert.Equal(1, runtime.StopCount);
+                Assert.True(host.Services
+                    .GetRequiredService<ApplicationCancellation>()
+                    .ShutdownToken
+                    .IsCancellationRequested);
+
+                await DisposeHostAsync(host).ConfigureAwait(true);
+                host = null;
+
+                Assert.Equal(1, runtime.DisposeCount);
+            }
+            finally
+            {
+                if (host != null)
+                {
+                    await host
+                        .StopAsync(CancellationToken.None)
+                        .WaitAsync(TimeSpan.FromSeconds(10))
+                        .ConfigureAwait(true);
+                    await DisposeHostAsync(host).ConfigureAwait(true);
+                }
+
+                loggerFactory.Dispose();
+                await logProvider.DisposeAsync().ConfigureAwait(true);
+                await settingsStore.DisposeAsync().ConfigureAwait(true);
+                if (Directory.Exists(testDirectory))
+                {
+                    Directory.Delete(testDirectory, recursive: true);
+                }
+            }
+        }).ConfigureAwait(true);
     }
 
     [Fact]
@@ -511,6 +590,17 @@ public sealed class UiSmokeTests
             Source = new Uri("avares://DownKyi.Desktop/Themes/ThemeDefault.axaml")
         });
         return application;
+    }
+
+    private static async ValueTask DisposeHostAsync(IHost host)
+    {
+        if (host is IAsyncDisposable asyncHost)
+        {
+            await asyncHost.DisposeAsync().ConfigureAwait(true);
+            return;
+        }
+
+        host.Dispose();
     }
 
     private static string[] GetUserDataPaths()
@@ -582,6 +672,56 @@ public sealed class UiSmokeTests
         public void Dispose()
         {
             IsDisposed = true;
+        }
+    }
+
+    private sealed class LifecycleProbeDownloadRuntimeFactory(
+        LifecycleProbeDownloadRuntime runtime) : IDownloadRuntimeFactory
+    {
+        public IDownloadRuntime Create()
+        {
+            return runtime;
+        }
+    }
+
+    private sealed class LifecycleProbeDownloadRuntime : IDownloadRuntime
+    {
+        public int StartCount { get; private set; }
+
+        public int StopCount { get; private set; }
+
+        public int DisposeCount { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StartCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StopCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task EnqueueAsync(
+            DownKyi.Domain.Downloads.DownloadTaskId taskId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> CancelAsync(DownKyi.Domain.Downloads.DownloadTaskId taskId)
+        {
+            return Task.FromResult(false);
+        }
+
+        public void Dispose()
+        {
+            DisposeCount++;
         }
     }
 

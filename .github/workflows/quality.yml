@@ -83,6 +83,51 @@ jobs:
           path: TestResults/*.trx
           if-no-files-found: ignore
 
+  assembly-lifecycle:
+    name: Assembly lifecycle stability
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install lifecycle diagnostics
+        run: dotnet tool install dotnet-stack --tool-path ./.tools --version 9.0.661903
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
+      - name: Build lifecycle probe and test assemblies
+        run: >
+          dotnet build ${{ env.SOLUTION_FILE }}
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
+      - name: Run assembly lifecycle stability gate
+        shell: pwsh
+        run: |
+          $profile = if ("${{ github.event_name }}" -eq "pull_request") { "PR" } else { "Main" }
+          ./script/test-assembly-lifecycle.ps1 `
+            -Configuration Release `
+            -Profile $profile `
+            -NoBuild `
+            -ValidateForensics `
+            -ResultsDirectory ./artifacts/assembly-lifecycle/ci
+      - name: Upload lifecycle reports and evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: assembly-lifecycle-${{ github.event_name }}-${{ github.run_attempt }}
+          path: artifacts/assembly-lifecycle/ci
+          if-no-files-found: error
+
   package-audit:
     name: Package audit
     runs-on: ubuntu-latest

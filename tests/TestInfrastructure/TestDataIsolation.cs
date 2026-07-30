@@ -1,38 +1,77 @@
-using System.Runtime.CompilerServices;
+using System.Globalization;
+using System.Reflection;
 
 namespace DownKyi.TestInfrastructure;
 
-internal static class TestDataIsolation
+public sealed class TestDataIsolationFixture : IAsyncDisposable
 {
-    public static string Root { get; } = Path.Combine(
-        Path.GetTempPath(),
-        "downkyi-tests",
-        typeof(TestDataIsolation).Assembly.GetName().Name ?? "unknown",
-        Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    private const int DeleteAttempts = 4;
+    private const string LifecycleMarkerEnvironmentVariable = "DOWNKYI_LIFECYCLE_MARKER";
+    private readonly string _root;
+    private readonly string? _lifecycleMarker;
 
-    [ModuleInitializer]
-    internal static void Initialize()
+    public TestDataIsolationFixture()
     {
-        Environment.SetEnvironmentVariable("DOWNKYI_DATA_DIR", Root);
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => TryDeleteRoot();
+        var assemblyName = Assembly.GetEntryAssembly()?.GetName().Name ?? "unknown";
+        _root = Path.Combine(
+            Path.GetTempPath(),
+            "downkyi-tests",
+            assemblyName,
+            Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+        Environment.SetEnvironmentVariable("DOWNKYI_DATA_DIR", _root);
+        _lifecycleMarker = Environment.GetEnvironmentVariable(LifecycleMarkerEnvironmentVariable);
+        WriteLifecycleMarker("started");
     }
 
-    private static void TryDeleteRoot()
+    public async ValueTask DisposeAsync()
     {
-        try
+        WriteLifecycleMarker("disposing");
+        for (var attempt = 1; attempt < DeleteAttempts; attempt++)
         {
-            if (Directory.Exists(Root))
+            try
             {
-                Directory.Delete(Root, recursive: true);
+                DeleteRoot();
+                WriteLifecycleMarker("disposed");
+                return;
+            }
+            catch (IOException)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50 * attempt)).ConfigureAwait(false);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50 * attempt)).ConfigureAwait(false);
             }
         }
-        catch (IOException)
+
+        DeleteRoot();
+        WriteLifecycleMarker("disposed");
+    }
+
+    private void DeleteRoot()
+    {
+        if (Directory.Exists(_root))
         {
-            // Process exit is best effort; resource-specific tests detect retained handles.
+            Directory.Delete(_root, recursive: true);
         }
-        catch (UnauthorizedAccessException)
+    }
+
+    private void WriteLifecycleMarker(string state)
+    {
+        if (string.IsNullOrWhiteSpace(_lifecycleMarker))
         {
-            // Process exit is best effort; resource-specific tests detect retained handles.
+            return;
         }
+
+        var markerDirectory = Path.GetDirectoryName(_lifecycleMarker);
+        if (!string.IsNullOrWhiteSpace(markerDirectory))
+        {
+            Directory.CreateDirectory(markerDirectory);
+        }
+
+        var line = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{state}|{Environment.ProcessId}|{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
+        File.AppendAllText(_lifecycleMarker, line + Environment.NewLine);
     }
 }

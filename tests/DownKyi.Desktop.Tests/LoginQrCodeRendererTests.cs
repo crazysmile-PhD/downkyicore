@@ -1,13 +1,14 @@
+using Avalonia.Headless.XUnit;
 using DownKyi.Services.Account;
 
 namespace DownKyi.Desktop.Tests;
 
 public sealed class LoginQrCodeRendererTests
 {
-    [Fact]
+    [AvaloniaFact]
     public async Task RendererCreatesAUsableBitmapForAnAbsoluteLoginUri()
     {
-        await HeadlessUiTestHost.RunAsync(() =>
+        await AvaloniaTestDispatcher.RunAsync(() =>
         {
             using var bitmap = new LoginQrCodeRenderer().Render(
                 new Uri("https://passport.bilibili.com/login?test=contract"));
@@ -18,10 +19,10 @@ public sealed class LoginQrCodeRendererTests
         }).ConfigureAwait(true);
     }
 
-    [Fact]
+    [AvaloniaFact]
     public async Task RendererRejectsRelativeUris()
     {
-        await HeadlessUiTestHost.RunAsync(() =>
+        await AvaloniaTestDispatcher.RunAsync(() =>
         {
             var renderer = new LoginQrCodeRenderer();
 

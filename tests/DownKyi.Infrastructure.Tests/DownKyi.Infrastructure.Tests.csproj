@@ -18,7 +18,6 @@
     <ProjectReference Include="..\..\src\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\TestInfrastructure\LoopbackHttpServer.cs" Link="TestInfrastructure\LoopbackHttpServer.cs" />
     <None Include="Fixtures\*.db" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>

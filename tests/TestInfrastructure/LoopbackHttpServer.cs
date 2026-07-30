@@ -4,7 +4,7 @@ using System.Text;
 
 namespace DownKyi.TestInfrastructure;
 
-internal sealed record LoopbackResponse(
+public sealed record LoopbackResponse(
     HttpStatusCode StatusCode,
     string Body = "",
     TimeSpan DelayBeforeResponse = default,
@@ -12,7 +12,7 @@ internal sealed record LoopbackResponse(
     int? BytesToSend = null,
     IReadOnlyDictionary<string, string>? Headers = null);
 
-internal sealed class LoopbackHttpServer : IAsyncDisposable
+public sealed class LoopbackHttpServer : IAsyncDisposable
 {
     private readonly TaskCompletionSource _firstRequestReceived =
         new(TaskCreationOptions.RunContinuationsAsynchronously);

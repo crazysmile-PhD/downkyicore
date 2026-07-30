@@ -15,14 +15,173 @@ Avoid mixing package updates with large refactors unless the refactor is require
 
 ## CI Policy
 
+Assembly/process lifecycle is a separate quality dimension from test
+assertions. Run `script/audit-lifecycle-ownership.ps1` after changing any
+thread, Dispatcher, timer, Host, global event, fixture or external-process
+owner. Run `script/test-assembly-lifecycle.ps1` before release; its PR, main and
+rehearsal profiles execute 3, 50 and 100 iterations per test assembly. The
+contract, diagnostics and report schema are documented in
+`docs/testing/assembly-lifecycle-stability.md`.
+
+Formal local verification runs the ownership audit followed by five iterations
+per test assembly with `-ValidateForensics`. The release workflow uses the
+`Rehearsal` profile and writes the full 100-iteration report below
+`artifacts/assembly-lifecycle/release`; neither step may be replaced by a
+successful one-off rerun.
+
+Lifecycle report schema 2 uses the child OS `Process.ExitTime` for post-fixture
+exit, captures marker-aware execution at the unchanged slow threshold, records
+diagnostic collection wall time, and fails a slow phase whose evidence is
+missing. Schema 1 exit values include collector overhead and are historical
+only; do not compare them directly with schema 2.
+
+The slow classification threshold remains five seconds. Evidence collection
+is armed 1,000 ms before that boundary so hosted-runner scheduling cannot
+observe a borderline process only after it has exited. Reports expose both the capture
+lead and whether a phase was sampled before the classification boundary;
+`capture-failed` and `process-exited-before-capture` remain fail-closed for
+phases whose final duration reaches the threshold.
+The `-ValidateForensics` held-child self-test must also set
+`forensicsSelfTestCaptureLeadValidated=true`, proving this arm point executed
+rather than merely existing in source.
+
+Formal Windows PR, Main, Rehearsal and Flaky lifecycle profiles require
+`-ValidateForensics`. Their schema 2 report must show a detailed
+`markerReaderSelfTest` with `executed`, `passed`, `contentionObserved`,
+`contentionCount > 0`, `recoveredAfterLockRelease` and
+`markerParsedAfterRecovery` all true, plus `errorType == null`. Its contract
+mutation checks must also pass. Missing, null, unknown or non-contending proofs
+fail closed; the top-level
+`markerReaderSelfTestPassed` value is only a summary.
+The marker self-test phase, summary and final formal contract must consume the
+single `markerReaderSelfTestComplete` result; do not re-expand the predicate.
+General lifecycle failures belong in phase `failureType` / `errorType`, while
+`slowEvidenceErrorType` is only for slow-evidence collection.
+
+Only Windows sharing/lock error codes count as marker contention.
+`UnauthorizedAccessException` and other I/O errors remain separately visible
+as `markerReadErrorCount` and `markerReadErrorType`.
+
+Residual-child failures are independently fail-closed. Every failed phase must
+preserve a sanitized `residualChildren` identity list plus a
+`residual-children.json` manifest; live managed children also receive thread,
+tree and managed-stack evidence. `-ValidateForensics` must prove this path by
+creating a controlled residual child, observing its identity, writing evidence,
+classifying the phase as `ResidualChildProcess` and cleaning the synthetic tree
+by PID plus creation time. It must also prove path, URL, cookie and secret
+redaction. `residualChildSelfTestPassed` is only the summary;
+the detailed `residualChildSelfTest` fields are the contract.
+
+PR #116 merged the final lifecycle proof consistency fix into `main` at
+`6a61247`. Strict PR CI `30450175286` and CodeQL `30450175415` passed. Its
+Main profile report contains 2,102 phase results across seven assemblies and
+50 iterations, with zero failures, zero missing slow evidence and zero marker
+read errors. Teardown max is 7 ms and OS process-exit max is 187 ms; all 14
+slow execution phases retained evidence. This report validates the corrected
+lifecycle owner and gate, but the final versioned release commit must still
+pass its own Main profile and the 100-iteration Rehearsal profile.
+
+The first v1.1.1 Rehearsal run `30455540672` correctly blocked packaging after
+`DownKyi.Tests` assembly-info iteration 78 observed one residual child. The
+historical report retained only `residualChildCount=1`, so that runner's exact
+child identity cannot be recovered after the hosted VM was destroyed. The
+phase did not execute tests, Host, Dispatcher or application services; its
+stdout was valid xUnit metadata, stderr was empty and exit code was zero.
+Five hundred local repetitions of the same
+`dotnet DownKyi.Tests.dll -assemblyInfo` command observed no residual child,
+excluding a deterministic
+application owner but not the low-probability runner race. The corrected gate
+therefore preserves identity and evidence on every future observation and
+dynamically self-tests the full residual-child failure path. A new Main profile
+and complete Rehearsal remain mandatory; the failed run is not replaced by a
+blind rerun.
+
+After PR #118 merged at `ad5ac64`, Main run `30461640781` proved that the
+original 100 ms capture lead was still insufficient under hosted-runner load.
+`DownKyi.Tests` execution iteration 24 exited successfully at 5007.386 ms but
+the monitor never entered the capture branch while the process was alive.
+The report failed closed with `SlowEvidenceMissing`; residual-child and
+marker-reader self-tests passed and no real residual process was observed.
+The five-second classification threshold remains unchanged. The capture arm is
+now one second early, and architecture tests prevent reducing it back to the
+demonstrably insufficient 100 ms window. The held-child self-test uses a
+1.25-second synthetic threshold so it dynamically proves capture starts after
+0.25 seconds and before classification, without relying on a zero-clamped arm.
+
 Pull requests are guarded by `.github/workflows/quality.yml`:
 
 - format check with `dotnet format --verify-no-changes --verbosity diagnostic`
 - Windows, Linux, and macOS Release builds
 - compiler and all `AnalysisMode=All` CA diagnostics treated as errors
 - unit tests with uploaded TRX reports
+- assembly load/info/discovery/execution/teardown/exit stability on Windows
 - transitive vulnerable package audit
 - deprecated package report
+
+Release tags are additionally checked by
+`script/validate-release-version.ps1`. `version.txt` must contain one stable
+`major.minor.patch` value, and a tag workflow may proceed only when
+`GITHUB_REF` equals `refs/tags/v<version>`. The v1.1.0 tag is immutable and its
+withdrawn draft must not be republished; the corrective release is v1.1.1.
+
+Gate 10 v1.1.0 integration candidate `355ef7cb` passed the local strict
+`AnalysisMode=All` Release build with zero warnings/errors, all 714 tests,
+format verification, module-boundary audit, vulnerable/deprecated dependency
+audits and `git diff --check`. Its explicitly authorized authenticated
+read-only Bilibili audit was repeated at committed candidate `8aa4382`; the
+`/nav` login gate and all 14 allowlisted contracts passed with zero drift. The
+resulting machine-readable artifact contains only sanitized contract metadata;
+Gitleaks 8.30.1 inspected all 986 tracked and non-ignored untracked candidate
+files and reported zero findings. Final PR quality, CodeQL and the
+cross-platform package rehearsal remain release requirements and are recorded
+in `docs/refactoring-live-plan.md`.
+
+PR #112 first-head quality run `30426137294`, protobuf run `30426137279`
+and CodeQL run `30426137276` passed. Manual release rehearsal `30426554087`
+then correctly blocked publication: BtbN had removed the pinned 2026-07-08
+autobuild, and `DownKyi.Core` derived the SDK `RuntimeIdentifier` from the
+runner host, causing cross-RID restore races on Windows x86 and macOS x64.
+The repaired candidate pins the existing 2026-07-28 FFmpeg release assets and
+their upstream SHA-256 digests, makes all four asset scripts independent of the
+caller's working directory, and makes the Bash aria2 script consume the shared
+manifest. `DownKyiAssetRuntimeIdentifier` now selects package content without
+  setting the SDK `RuntimeIdentifier`; package jobs explicitly restore their
+  target RID. Local strict build has zero warnings/errors, all 718 tests pass,
+and an actual Windows x86 self-contained publish passes the common package
+validator with non-empty DownKyi, aria2, FFmpeg and ffprobe files. The complete
+remote rehearsal `30428876552` proved that the expired-asset and SDK RID fixes
+worked, but exposed a narrower cross-target content issue on macOS x64,
+Windows x86 and Linux arm64: MSBuild did not automatically propagate the
+target asset RID through project references. The executable is now the only
+owner of target or local-host fallback selection and directly includes the
+matching external assets in output and publish; the custom property never
+crosses a project-reference boundary, and Core is a runtime-neutral library.
+A fresh Windows x86 self-contained publish passes the common package
+validator, and its aria2, FFmpeg and ffprobe hashes exactly match the x86
+source assets. Passing a custom RID through project-reference metadata was
+explicitly rejected because it creates multiple project instances that race on
+the same `obj/bin` paths during a solution build. The final ownership model
+passes the strict Release build with zero warnings/errors, all 719 tests,
+format, module-boundary, dependency, secret and diff gates.
+
+PR #112 quality run `30430722500`, protobuf run `30430722468` and CodeQL run
+`30430722421` pass on `1968c9d`. Windows, Linux and macOS each retain seven
+distinct TRX files with 718 executed/passed tests and no failures; the only
+non-executed result is the FFmpeg-runtime seek integration that passes locally.
+Code and test annotations are zero. The single Analyze C# warning is GitHub's
+platform notice that a PR with more than 300 changed files cannot expose its
+complete diff to CodeQL, not an analyzer finding.
+
+Manual rehearsal `30431043860` passes all three release gates and all nine
+package jobs; manual dispatch correctly skips GitHub Release publication.
+Every downloaded package SHA-256 sidecar matches, all nine publish manifests
+agree on version/RID and contain 54 valid required-file entries, and manifests
+for repeated package formats of the same RID are identical. Direct content
+inspection covers both Windows zips, both debs, the rpm, both AppImages and
+both DMGs. Every package contains DownKyi, aria2, FFmpeg, ffprobe and Fluent
+runtime content, with no Config, Logs, Cache, Storage, Cookie, SQLite/database
+or user-data path. Remote Windows binary hashes also match the checked-in
+runtime catalog.
 
 The repository always uses the supported `AnalysisMode=All` value. The pre-fix baseline is 1,654 unique diagnostics across 71 CA rules; see `docs/analyzer-baseline.md` and `docs/analyzer-baseline.csv`. `CodeAnalysisTreatWarningsAsErrors=true` is the repository default. Every cleaned rule is also pinned to `error` in `.editorconfig`, preventing a future SDK severity change from reopening the baseline. The before/after inventory and retained exceptions are recorded in `docs/analyzer-cleanup-report.md`.
 
@@ -182,13 +341,30 @@ Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
 - `script/ffmpeg.ps1` and `script/ffmpeg.sh` manage FFmpeg and ffprobe assets.
 - Windows and Linux packages prefer FFmpeg builds with hardware encoders. Windows x86 uses the pinned yt-dlp FFmpeg build because the former compact archive omitted ffprobe.
 - macOS packages prefer builds that expose VideoToolbox when available.
+- Every script resolves the manifest, download directory and binary output
+  relative to its own file, so it must work when invoked from the repository
+  root or from `script/`.
+- `script/assets/external-assets.json` is the only URL/checksum owner. Use an
+  immutable release tag, never a mutable `latest` asset. The scripts accept an
+  archive only after TLS validation, a successful HTTP status and its SHA-256
+  matching the manifest.
+- `DownKyi.Core` stores the checked-in external asset catalog but does not
+  select or copy runtime-specific content. The executable is the sole package
+  content owner: it uses the explicit publish target first, otherwise the host
+  for local development, then directly includes the selected catalog files.
+  `DownKyiAssetRuntimeIdentifier` must never cross a project-reference
+  boundary or assign the .NET SDK `RuntimeIdentifier`; cross-target restore
+  and publish remain the SDK RID owners.
 - Packaged local aria2 RPC listens only on loopback. It receives `--stop-with-process` on every OS and also joins a kill-on-close Windows Job Object, so an abrupt App termination cannot leave a local child running. Custom remote aria2 endpoints are not started or terminated by this owner.
 
 When updating an external binary:
 
-1. Update the source URL and version in the matching script.
-2. Update the expected checksum in the script.
-3. Verify the script locally for at least one target platform.
+1. Update the immutable source URL, version and checksum in
+   `script/assets/external-assets.json`.
+2. Confirm the release URL still returns the intended non-empty archive and
+   compare the manifest checksum with the publisher's release digest.
+3. Invoke the script from the repository root and verify at least one target
+   platform locally.
 4. Confirm `ffmpeg -hide_banner -encoders` lists the expected hardware encoder on a capable machine.
 5. Keep fallback behavior intact; missing GPU support must not block normal downloads.
 
