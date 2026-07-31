@@ -10,6 +10,7 @@ namespace DownKyi.Services.Download;
 
 internal sealed class DownloadListState
 {
+    private readonly object _sync = new();
     private readonly RangeObservableCollection<DownloadingItem> _downloading = new();
     private readonly RangeObservableCollection<DownloadedItem> _downloaded = new();
 
@@ -26,61 +27,104 @@ internal sealed class DownloadListState
     public void AddDownloading(DownloadingItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        _downloading.Add(item);
+        lock (_sync)
+        {
+            _downloading.Add(item);
+        }
     }
 
     public void AddDownloadingRange(IEnumerable<DownloadingItem> items)
     {
         ArgumentNullException.ThrowIfNull(items);
-        _downloading.AddRange(items);
+        lock (_sync)
+        {
+            _downloading.AddRange(items);
+        }
     }
 
     public bool RemoveDownloading(DownloadingItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return _downloading.Remove(item);
+        lock (_sync)
+        {
+            return _downloading.Remove(item);
+        }
     }
 
     public void AddDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        _downloaded.Add(item);
+        lock (_sync)
+        {
+            _downloaded.Add(item);
+        }
     }
 
     public void AddDownloadedRange(IEnumerable<DownloadedItem> items)
     {
         ArgumentNullException.ThrowIfNull(items);
-        _downloaded.AddRange(items);
+        lock (_sync)
+        {
+            _downloaded.AddRange(items);
+        }
     }
 
     public bool RemoveDownloaded(DownloadedItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return _downloaded.Remove(item);
+        lock (_sync)
+        {
+            return _downloaded.Remove(item);
+        }
     }
 
     public void ClearDownloaded()
     {
-        _downloaded.Clear();
+        lock (_sync)
+        {
+            _downloaded.Clear();
+        }
     }
 
     public void ReplaceDownloaded(IEnumerable<DownloadedItem> items)
     {
         ArgumentNullException.ThrowIfNull(items);
-        ReplaceDownloadedCore(items.ToList());
+        lock (_sync)
+        {
+            ReplaceDownloadedCore(items.ToList());
+        }
     }
 
     public void SortDownloaded(DownloadFinishedSort finishedSort)
     {
-        var items = Downloaded.ToList();
-        items.Sort(finishedSort switch
+        lock (_sync)
         {
-            DownloadFinishedSort.DownloadAsc => CompareFinishedAscending,
-            DownloadFinishedSort.DownloadDesc => CompareFinishedDescending,
-            DownloadFinishedSort.Number => CompareTitleAndOrder,
-            _ => static (_, _) => 0
-        });
-        ReplaceDownloadedCore(items);
+            var items = _downloaded.ToList();
+            items.Sort(finishedSort switch
+            {
+                DownloadFinishedSort.DownloadAsc => CompareFinishedAscending,
+                DownloadFinishedSort.DownloadDesc => CompareFinishedDescending,
+                DownloadFinishedSort.Number => CompareTitleAndOrder,
+                _ => static (_, _) => 0
+            });
+            ReplaceDownloadedCore(items);
+        }
+    }
+
+    public IReadOnlyList<DownloadingItem> GetDownloadingSnapshot()
+    {
+        lock (_sync)
+        {
+            return _downloading.ToArray();
+        }
+    }
+
+    public IReadOnlyList<DownloadedItem> GetDownloadedSnapshot()
+    {
+        lock (_sync)
+        {
+            return _downloaded.ToArray();
+        }
     }
 
     private static int CompareFinishedAscending(DownloadedItem left, DownloadedItem right)

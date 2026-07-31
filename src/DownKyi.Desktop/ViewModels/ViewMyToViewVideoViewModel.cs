@@ -26,7 +26,6 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     private readonly ILogger<ViewMyToViewVideoViewModel> _logger;
     private readonly IPersonalMediaCoordinator _personalMediaCoordinator;
     private CancellationTokenSource? _loadCancellation;
-    private CancellationTokenSource? _downloadCancellation;
 
     #region 页面属性申明
 
@@ -248,7 +247,7 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     /// <param name="isOnlySelected"></param>
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var cancellationToken = CancellationToken.None;
         var items = Medias
             .Select(media => new ContentDownloadItem(media.Bvid, DownloadInfoKind.Video, media.IsSelected))
             .ToArray();
@@ -379,7 +378,6 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     private void CancelOperations()
     {
         CancelAndDispose(ref _loadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)

@@ -31,7 +31,6 @@ internal partial class ViewMyBangumiFollowViewModel : ViewModelBase
     private readonly ILogger<ViewMyBangumiFollowViewModel> _logger;
     private readonly IUserSpacePageCoordinator _userSpaceCoordinator;
     private CancellationTokenSource? _loadCancellation;
-    private CancellationTokenSource? _downloadCancellation;
 
     private long _mid = -1;
 
@@ -251,7 +250,7 @@ internal partial class ViewMyBangumiFollowViewModel : ViewModelBase
     /// <param name="isOnlySelected"></param>
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var cancellationToken = CancellationToken.None;
         var items = Medias
             .Select(media => new ContentDownloadItem(
                 $"{ParseEntrance.BangumiMediaUrl}md{media.MediaId}",
@@ -409,7 +408,6 @@ internal partial class ViewMyBangumiFollowViewModel : ViewModelBase
     private void CancelOperations()
     {
         CancelAndDispose(ref _loadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)

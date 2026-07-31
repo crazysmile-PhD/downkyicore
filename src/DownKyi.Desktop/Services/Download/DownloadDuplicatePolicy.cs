@@ -39,7 +39,7 @@ internal sealed class DownloadDuplicatePolicy
         ArgumentNullException.ThrowIfNull(videoQuality);
         cancellationToken.ThrowIfCancellationRequested();
 
-        foreach (var item in _downloadLists.Downloading)
+        foreach (var item in _downloadLists.GetDownloadingSnapshot())
         {
             if (!IsSameVideo(item, page, videoQuality))
             {
@@ -51,7 +51,7 @@ internal sealed class DownloadDuplicatePolicy
             return true;
         }
 
-        foreach (var item in _downloadLists.Downloaded)
+        foreach (var item in _downloadLists.GetDownloadedSnapshot())
         {
             if (!IsSameVideo(item, page, videoQuality))
             {

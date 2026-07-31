@@ -85,6 +85,52 @@ public sealed class UiSmokeTests
     }
 
     [AvaloniaFact]
+    public async Task PublicationBatchDownloadContinuesAfterNavigationAway()
+    {
+        await AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            EnsureProductThemeResources();
+            ViewPublicationViewModel? publication = null;
+            using var navigation = new AvaloniaNavigationService(
+                route => route switch
+                {
+                    AppRoute.Publication => publication!,
+                    AppRoute.VideoDetail => new NavigationProbe(route),
+                    _ => throw new InvalidOperationException($"Unexpected route {route}.")
+                },
+                static action => action());
+            var downloadCoordinator = new BlockingContentDownloadCoordinator();
+            publication = new ViewPublicationViewModel(
+                new DesktopInteractionContextStub(navigation),
+                downloadCoordinator,
+                new PublicationPageCoordinatorStub(navigation),
+                NullLogger<ViewPublicationViewModel>.Instance);
+
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.Publication,
+                AppRoute.Index,
+                PublicationNavigationPayload.All(42)));
+            Assert.Single(publication.Medias);
+
+            publication.AddAllToDownloadCommand.Execute(null);
+            var cancellationToken = await downloadCoordinator.Started
+                .WaitAsync(TimeSpan.FromSeconds(5))
+                .ConfigureAwait(true);
+
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.VideoDetail,
+                AppRoute.Publication,
+                "video"));
+
+            Assert.False(cancellationToken.CanBeCanceled);
+            Assert.False(cancellationToken.IsCancellationRequested);
+
+            downloadCoordinator.Complete(1);
+            await Task.Yield();
+        }).ConfigureAwait(true);
+    }
+
+    [AvaloniaFact]
     public async Task FavoritesSearchPageAndSnapshotSurviveTypedBackNavigation()
     {
         await AvaloniaTestDispatcher.RunAsync(async () =>
@@ -827,6 +873,30 @@ public sealed class UiSmokeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult<int?>(0);
+        }
+    }
+
+    private sealed class BlockingContentDownloadCoordinator : IContentDownloadCoordinator
+    {
+        private readonly TaskCompletionSource<CancellationToken> _started =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<int?> _completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<CancellationToken> Started => _started.Task;
+
+        public Task<int?> AddAsync(
+            IReadOnlyList<ContentDownloadItem> items,
+            bool onlySelected,
+            CancellationToken cancellationToken)
+        {
+            _started.TrySetResult(cancellationToken);
+            return _completion.Task;
+        }
+
+        public void Complete(int addedCount)
+        {
+            _completion.TrySetResult(addedCount);
         }
     }
 
