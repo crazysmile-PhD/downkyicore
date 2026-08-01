@@ -51,7 +51,15 @@ public static partial class ParseEntrance
         }
 
         var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        return segments.Length == 1
+        return IsSupportedUserSpacePath(segments)
             && long.TryParse(segments[0], NumberStyles.None, CultureInfo.InvariantCulture, out mid);
+    }
+
+    private static bool IsSupportedUserSpacePath(string[] segments)
+    {
+        return segments.Length == 1
+            || (segments.Length == 3
+                && string.Equals(segments[1], "upload", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(segments[2], "video", StringComparison.OrdinalIgnoreCase));
     }
 }

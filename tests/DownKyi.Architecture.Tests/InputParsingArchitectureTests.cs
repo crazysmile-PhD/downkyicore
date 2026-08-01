@@ -84,7 +84,7 @@ public sealed class InputParsingArchitectureTests
     }
 
     [Fact]
-    public void UserSpaceParsingRequiresAnExactHostAndNumericPath()
+    public void UserSpaceParsingRequiresAnExactHostAndSupportedPath()
     {
         var source = Read("ParseEntrance.UserSpace.cs");
 
@@ -93,7 +93,9 @@ public sealed class InputParsingArchitectureTests
             "string.Equals(uri.Host, \"space.bilibili.com\", StringComparison.OrdinalIgnoreCase)",
             source,
             StringComparison.Ordinal);
-        Assert.Contains("segments.Length == 1", source, StringComparison.Ordinal);
+        Assert.Contains("IsSupportedUserSpacePath(segments)", source, StringComparison.Ordinal);
+        Assert.Contains("string.Equals(segments[1], \"upload\"", source, StringComparison.Ordinal);
+        Assert.Contains("string.Equals(segments[2], \"video\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain(".Contains(\"space.bilibili.com\"", source, StringComparison.Ordinal);
     }
 

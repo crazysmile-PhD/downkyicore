@@ -139,6 +139,15 @@ public sealed class ParseEntranceContractTests
     }
 
     [Theory]
+    [InlineData("https://space.bilibili.com/3707029862484836/upload/video", 3707029862484836)]
+    [InlineData("https://space.bilibili.com/928123/UPLOAD/VIDEO/?spm_id_from=333.337.0.0", 928123)]
+    public void UserUploadVideoUrlsResolveToUserSpace(string input, long expected)
+    {
+        Assert.True(ParseEntrance.IsUserUrl(input));
+        Assert.Equal(expected, ParseEntrance.GetUserId(input));
+    }
+
+    [Theory]
     [InlineData("https://space.bilibili.com.evil/928123")]
     [InlineData("https://evil.example/space.bilibili.com/928123")]
     [InlineData("https://space.bilibili.com/user928123")]

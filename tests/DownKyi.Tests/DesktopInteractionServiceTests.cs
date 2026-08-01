@@ -74,6 +74,23 @@ public sealed class DesktopInteractionServiceTests
     }
 
     [Fact]
+    public void UserUploadVideoUrlNavigatesToUserSpaceHome()
+    {
+        using var settings = new TestSettingsStore();
+        var navigation = new RecordingNavigationService();
+        var search = new SearchService(settings.Store, navigation);
+
+        Assert.True(search.BiliInput(
+            "https://space.bilibili.com/3707029862484836/upload/video",
+            AppRoute.Index));
+
+        var request = Assert.Single(navigation.Requests);
+        Assert.Equal(AppRoute.UserSpace, request.Route);
+        Assert.Equal(AppRoute.Index, request.Parent);
+        Assert.Equal(3707029862484836L, request.Parameter);
+    }
+
+    [Fact]
     public void UnsupportedSearchInputDoesNotNavigate()
     {
         using var settings = new TestSettingsStore();

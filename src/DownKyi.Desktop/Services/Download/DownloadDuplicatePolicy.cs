@@ -60,10 +60,11 @@ internal sealed class DownloadDuplicatePolicy
 
             return strategy switch
             {
+                RepeatDownloadStrategy.JumpOver => true,
+                RepeatDownloadStrategy.ReDownload => false,
+                RepeatDownloadStrategy.Ask when !CompletedMediaOutput.Exists(item.DownloadBase) => false,
                 RepeatDownloadStrategy.Ask => await ResolveAskAsync(item, cancellationToken)
                     .ConfigureAwait(true),
-                RepeatDownloadStrategy.ReDownload => false,
-                RepeatDownloadStrategy.JumpOver => true,
                 _ => true
             };
         }
