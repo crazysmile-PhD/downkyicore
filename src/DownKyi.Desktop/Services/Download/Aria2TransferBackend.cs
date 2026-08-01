@@ -380,14 +380,9 @@ internal sealed class Aria2TransferBackend : ITransferBackend
             _logger.LogErrorMessage("Aria server shutdown failed.", e);
         }
 
-        if (!await _ariaServer.CloseServerAsync(
-                _ariaClient,
-                TimeSpan.FromSeconds(3)).ConfigureAwait(true))
-        {
-            await _ariaServer.ForceCloseServerAsync(
-                _ariaClient,
-                TimeSpan.FromSeconds(2)).ConfigureAwait(true);
-        }
+        await _ariaServer.CloseServerAsync(
+            _ariaClient,
+            TimeSpan.FromSeconds(3)).ConfigureAwait(true);
     }
 
     private DownloadProgress? CreateProgress(string activeGid, AriaProgressEventArgs eventArgs)

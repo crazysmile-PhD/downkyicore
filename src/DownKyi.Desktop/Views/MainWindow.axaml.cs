@@ -75,6 +75,7 @@ internal partial class MainWindow : Window
 
         _closeInProgress = true;
         SaveWindowSettings();
+        Hide();
         ObserveCloseCompletion(CompleteCloseAsync());
     }
 

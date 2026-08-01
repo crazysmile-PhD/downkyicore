@@ -363,6 +363,11 @@ public sealed class DownloadRuntimeArchitectureTests
             "src", "DownKyi.Desktop",
             "Platform",
             "AvaloniaApplicationLifecycle.cs"));
+        var transferBackendSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "src", "DownKyi.Desktop",
+            "Services", "Download",
+            "Aria2TransferBackend.cs"));
 
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
         Assert.Contains("sealed class AriaServer", serverSource, StringComparison.Ordinal);
@@ -371,6 +376,7 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.Contains("AddSingleton<AriaServer>()", compositionSource, StringComparison.Ordinal);
         Assert.Contains("GetService<AriaServer>()", lifecycleSource, StringComparison.Ordinal);
         Assert.DoesNotContain("AriaServer.KillTrackedServer", lifecycleSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ForceCloseServerAsync(", transferBackendSource, StringComparison.Ordinal);
     }
 
     [Fact]
