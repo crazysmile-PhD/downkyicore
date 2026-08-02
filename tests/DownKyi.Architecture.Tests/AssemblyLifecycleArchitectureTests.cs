@@ -251,6 +251,7 @@ public sealed class AssemblyLifecycleArchitectureTests
         const string legacyExitSubscription = "Exit += OnExit";
 
         Assert.Contains("finally", desktopApplication, StringComparison.Ordinal);
+        Assert.Contains("WindowsOleApartment.Enter()", desktopApplication, StringComparison.Ordinal);
         Assert.Contains("await application.DisposeAsync()", desktopApplication, StringComparison.Ordinal);
         Assert.Contains("IAsyncDisposable", app, StringComparison.Ordinal);
         Assert.Contains("RequestShutdownAsync(CancellationToken.None)", app, StringComparison.Ordinal);

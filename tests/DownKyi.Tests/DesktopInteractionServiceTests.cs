@@ -90,6 +90,36 @@ public sealed class DesktopInteractionServiceTests
         Assert.Equal(3707029862484836L, request.Parameter);
     }
 
+    [Theory]
+    [InlineData("https://space.bilibili.com/301479902")]
+    [InlineData(" https://space.bilibili.com/301479902\r\n")]
+    [InlineData("【UP主个人空间】 https://space.bilibili.com/301479902 ")]
+    [InlineData("https://space.bilibili.com/301479902\r\n" + AppConstant.ClipboardId)]
+    public void CopiedUserSpaceUrlNavigatesToUserSpaceHome(string input)
+    {
+        using var settings = new TestSettingsStore();
+        var navigation = new RecordingNavigationService();
+        var search = new SearchService(settings.Store, navigation);
+
+        Assert.True(search.BiliInput(input, AppRoute.Index));
+
+        var request = Assert.Single(navigation.Requests);
+        Assert.Equal(AppRoute.UserSpace, request.Route);
+        Assert.Equal(AppRoute.Index, request.Parent);
+        Assert.Equal(301479902L, request.Parameter);
+    }
+
+    [Fact]
+    public void ClipboardComInitializationFailureIsRecoverable()
+    {
+        var exception = System.Runtime.InteropServices.Marshal.GetExceptionForHR(
+            unchecked((int)0x800401F0));
+
+        Assert.NotNull(exception);
+        Assert.True(App.IsClipboardComInitializationFailure(exception));
+        Assert.False(App.IsClipboardComInitializationFailure(new InvalidOperationException()));
+    }
+
     [Fact]
     public void UnsupportedSearchInputDoesNotNavigate()
     {

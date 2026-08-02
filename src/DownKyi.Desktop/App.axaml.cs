@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -202,7 +203,20 @@ internal partial class App : Avalonia.Application, IAsyncDisposable
 
     private void OnUiUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
     {
+        if (IsClipboardComInitializationFailure(e.Exception))
+        {
+            _logger?.LogWarningMessage("A clipboard operation failed because COM was not initialized.", e.Exception);
+            e.Handled = true;
+            return;
+        }
+
         _logger?.LogCriticalMessage("Unhandled UI exception.", e.Exception);
+    }
+
+    internal static bool IsClipboardComInitializationFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception is COMException { HResult: unchecked((int)0x800401F0) };
     }
 
     private void OnDomainUnhandledException(object? sender, UnhandledExceptionEventArgs e)

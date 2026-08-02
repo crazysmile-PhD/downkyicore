@@ -39,7 +39,7 @@ internal class SearchService
         ArgumentNullException.ThrowIfNull(input);
 
         // 移除剪贴板id
-        var justId = input.Replace(AppConstant.ClipboardId, "", StringComparison.Ordinal);
+        var justId = NormalizeInput(input);
 
         // 视频
         if (ParseEntrance.IsAvId(justId))
@@ -130,6 +130,23 @@ internal class SearchService
         }
 
         return true;
+    }
+
+    internal static string NormalizeInput(string input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var normalized = input
+            .Replace(AppConstant.ClipboardId, string.Empty, StringComparison.Ordinal)
+            .Trim();
+        if (!normalized.StartsWith('【'))
+        {
+            return normalized;
+        }
+
+        var titleEnd = normalized.IndexOf('】', StringComparison.Ordinal);
+        return titleEnd < 0
+            ? normalized
+            : normalized[(titleEnd + 1)..].Trim();
     }
 
     /// <summary>
