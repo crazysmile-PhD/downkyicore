@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
@@ -230,7 +229,6 @@ internal class ViewIndexViewModel : ViewModelBase
         }
 
         _logger.LogDebugMessage("Processing search input.");
-        InputText = Regex.Replace(InputText, @"[【]*[^【]*[^】]*[】 ]", "");
         var isSupport = _searchService.BiliInput(InputText, AppRoute.Index);
         if (!isSupport)
         {

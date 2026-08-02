@@ -233,8 +233,9 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
                     progress.Report(new LegacyUpgradeProgress("尝试备用连接方式"));
                 }
 
-                ValidateLegacyDatabase(database);
-                return ReadLegacyRecords(database, progress, cancellationToken);
+                return HasLegacyDownloadSchema(database)
+                    ? ReadLegacyRecords(database, progress, cancellationToken)
+                    : new Dictionary<string, DownloadedWithData>(StringComparer.Ordinal);
             }
             catch (Exception e) when (e is SqliteException or IOException or UnauthorizedAccessException
                 or InvalidOperationException or ArgumentException)
@@ -248,7 +249,7 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         return null;
     }
 
-    private static void ValidateLegacyDatabase(SqliteDatabase database)
+    internal static bool HasLegacyDownloadSchema(SqliteDatabase database)
     {
         var tableCount = 0;
         database.ExecuteQuery(
@@ -260,6 +261,11 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
                     tableCount++;
                 }
             });
+        if (tableCount == 0)
+        {
+            return false;
+        }
+
         if (tableCount < 2)
         {
             throw new SqliteException("数据库表不存在或结构不完整", 1);
@@ -283,6 +289,8 @@ internal sealed class LegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
         {
             throw new SqliteException("缺少必要的数据库表", 1);
         }
+
+        return true;
     }
 
     private Dictionary<string, DownloadedWithData> ReadLegacyRecords(

@@ -34,7 +34,6 @@ internal class ViewSeasonsSeriesDetailViewModel : ViewModelBase
     private readonly ISeasonsSeriesCoordinator _coordinator;
     private readonly ILogger<ViewSeasonsSeriesDetailViewModel> _logger;
     private CancellationTokenSource? _loadCancellation;
-    private CancellationTokenSource? _downloadCancellation;
     private long _mid = -1;
     private long _id = -1;
     private SeasonsSeriesKind _kind;
@@ -210,7 +209,7 @@ internal class ViewSeasonsSeriesDetailViewModel : ViewModelBase
 
     private async Task AddToDownloadAsync(bool onlySelected)
     {
-        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var cancellationToken = CancellationToken.None;
         var items = Medias
             .Select(media => new SeasonsSeriesDownloadItem(media.Bvid, media.IsSelected))
             .ToArray();
@@ -392,7 +391,6 @@ internal class ViewSeasonsSeriesDetailViewModel : ViewModelBase
     private void CancelOperations()
     {
         CancelAndDispose(ref _loadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)

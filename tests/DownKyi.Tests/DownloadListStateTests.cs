@@ -59,6 +59,54 @@ public sealed class DownloadListStateTests
             ((ICollection<DownloadedItem>)state.Downloaded).Add(item));
     }
 
+    [Fact]
+    public void DownloadedSnapshotRemainsStableWhenSourceChanges()
+    {
+        var state = new DownloadListState();
+        var first = CreateDownloadedItem("A", order: 1, finishedTimestamp: 10);
+        var second = CreateDownloadedItem("B", order: 2, finishedTimestamp: 20);
+        state.AddDownloaded(first);
+
+        var snapshot = state.GetDownloadedSnapshot();
+        state.AddDownloaded(second);
+        state.RemoveDownloaded(first);
+
+        Assert.Equal([first], snapshot);
+        Assert.Equal([second], state.Downloaded);
+    }
+
+    [Fact]
+    public async Task DownloadedSnapshotsCanBeEnumeratedWhileCollectionChanges()
+    {
+        var state = new DownloadListState();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var items = Enumerable.Range(0, 20)
+            .Select(index => CreateDownloadedItem($"Item {index}", index, index))
+            .ToArray();
+
+        var writer = Task.Run(() =>
+        {
+            for (var index = 0; index < 2_000; index++)
+            {
+                var item = items[index % items.Length];
+                state.AddDownloaded(item);
+                state.RemoveDownloaded(item);
+            }
+        }, cancellationToken);
+        var reader = Task.Run(() =>
+        {
+            for (var index = 0; index < 2_000; index++)
+            {
+                foreach (var item in state.GetDownloadedSnapshot())
+                {
+                    Assert.NotNull(item);
+                }
+            }
+        }, cancellationToken);
+
+        await Task.WhenAll(writer, reader);
+    }
+
     private static DownloadedItem CreateDownloadedItem(
         string title,
         int order,

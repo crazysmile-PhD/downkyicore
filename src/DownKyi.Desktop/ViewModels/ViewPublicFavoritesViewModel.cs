@@ -30,7 +30,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     private readonly ILogger<ViewPublicFavoritesViewModel> _logger;
     private readonly ISettingsStore _settingsStore;
     private CancellationTokenSource? _loadCancellation;
-    private CancellationTokenSource? _downloadCancellation;
 
     #region 页面属性申明
 
@@ -263,7 +262,7 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
 
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var cancellationToken = CancellationToken.None;
         var items = FavoritesSelectionPolicy.CreateDownloadItems(FavoritesMedias);
         try
         {
@@ -385,7 +384,6 @@ internal class ViewPublicFavoritesViewModel : ViewModelBase
     private void CancelOperations()
     {
         CancelAndDispose(ref _loadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)

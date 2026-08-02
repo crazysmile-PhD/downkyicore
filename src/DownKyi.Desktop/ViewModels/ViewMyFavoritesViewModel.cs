@@ -29,7 +29,6 @@ internal partial class ViewMyFavoritesViewModel : ViewModelBase
     private readonly ILogger<ViewMyFavoritesViewModel> _logger;
     private CancellationTokenSource? _folderLoadCancellation;
     private CancellationTokenSource? _mediaLoadCancellation;
-    private CancellationTokenSource? _downloadCancellation;
 
     private long _mid = -1;
 
@@ -355,7 +354,7 @@ internal partial class ViewMyFavoritesViewModel : ViewModelBase
     /// <param name="isOnlySelected"></param>
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var cancellationToken = CancellationToken.None;
         var items = FavoritesSelectionPolicy.CreateDownloadItems(Medias);
         try
         {
@@ -407,7 +406,6 @@ internal partial class ViewMyFavoritesViewModel : ViewModelBase
     {
         CancelAndDispose(ref _folderLoadCancellation);
         CancelAndDispose(ref _mediaLoadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)

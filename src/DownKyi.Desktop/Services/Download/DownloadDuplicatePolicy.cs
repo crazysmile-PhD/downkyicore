@@ -39,7 +39,7 @@ internal sealed class DownloadDuplicatePolicy
         ArgumentNullException.ThrowIfNull(videoQuality);
         cancellationToken.ThrowIfCancellationRequested();
 
-        foreach (var item in _downloadLists.Downloading)
+        foreach (var item in _downloadLists.GetDownloadingSnapshot())
         {
             if (!IsSameVideo(item, page, videoQuality))
             {
@@ -51,7 +51,7 @@ internal sealed class DownloadDuplicatePolicy
             return true;
         }
 
-        foreach (var item in _downloadLists.Downloaded)
+        foreach (var item in _downloadLists.GetDownloadedSnapshot())
         {
             if (!IsSameVideo(item, page, videoQuality))
             {
@@ -60,10 +60,11 @@ internal sealed class DownloadDuplicatePolicy
 
             return strategy switch
             {
+                RepeatDownloadStrategy.JumpOver => true,
+                RepeatDownloadStrategy.ReDownload => false,
+                RepeatDownloadStrategy.Ask when !CompletedMediaOutput.Exists(item.DownloadBase) => false,
                 RepeatDownloadStrategy.Ask => await ResolveAskAsync(item, cancellationToken)
                     .ConfigureAwait(true),
-                RepeatDownloadStrategy.ReDownload => false,
-                RepeatDownloadStrategy.JumpOver => true,
                 _ => true
             };
         }

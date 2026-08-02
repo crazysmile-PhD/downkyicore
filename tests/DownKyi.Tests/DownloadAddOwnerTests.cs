@@ -35,7 +35,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
     }
 
     [Fact]
-    public async Task CompletedDuplicateJumpOverPreservesHistory()
+    public async Task CompletedDuplicateJumpOverPreservesHistoryWhenOutputWasMoved()
     {
         using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
 
@@ -71,7 +71,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
     [Fact]
     public async Task RejectedDuplicateConfirmationPreservesCompletedRecord()
     {
-        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Canceled);
+        using var context = DuplicatePolicyContext.WithCompleted(_directory, AppDialogOutcome.Canceled);
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
@@ -88,7 +88,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
     [Fact]
     public async Task AcceptedDuplicateConfirmationDeletesPersistedRecordBeforeAllowingTask()
     {
-        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
+        using var context = DuplicatePolicyContext.WithCompleted(_directory, AppDialogOutcome.Accepted);
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
@@ -101,6 +101,23 @@ public sealed class DownloadAddOwnerTests : IDisposable
         Assert.Equal(1, context.Store.UpdateCount);
         Assert.Equal(DownloadPhase.Deleted, context.Store.Current?.Phase);
         Assert.Equal(1, context.Dialogs.ShowCount);
+    }
+
+    [Fact]
+    public async Task MissingCompletedOutputAllowsDownloadWithoutPromptWhenStrategyAsks()
+    {
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
+
+        var shouldSkip = await context.Policy.ShouldSkipAsync(
+            CreatePage(),
+            CreateVideoQuality(),
+            DownKyi.Core.Settings.RepeatDownloadStrategy.Ask,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(shouldSkip);
+        Assert.Single(context.ListState.Downloaded);
+        Assert.Equal(0, context.Store.UpdateCount);
+        Assert.Equal(0, context.Dialogs.ShowCount);
     }
 
     [Fact]
@@ -326,8 +343,23 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
         public static DuplicatePolicyContext WithCompleted(AppDialogOutcome outcome)
         {
+            return WithCompleted(outputDirectory: null, outcome);
+        }
+
+        public static DuplicatePolicyContext WithCompleted(
+            string? outputDirectory,
+            AppDialogOutcome outcome)
+        {
+            var downloadingItem = CreateDownloadingItem();
+            if (!string.IsNullOrWhiteSpace(outputDirectory))
+            {
+                Directory.CreateDirectory(outputDirectory);
+                downloadingItem.DownloadBase.FilePath = Path.Combine(outputDirectory, "completed-output");
+                File.WriteAllText(downloadingItem.DownloadBase.FilePath + ".mp4", "media");
+            }
+
             var queued = DownloadTaskProjectionMapper.CreateNewTask(
-                CreateDownloadingItem(),
+                downloadingItem,
                 DateTimeOffset.UnixEpoch);
             Assert.True(queued.Start(DateTimeOffset.UnixEpoch.AddSeconds(1))
                 .TryGetValue(out var started));

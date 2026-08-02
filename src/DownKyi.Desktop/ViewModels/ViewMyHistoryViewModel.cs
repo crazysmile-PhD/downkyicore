@@ -29,7 +29,6 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     // 每页视频数量，暂时在此写死，以后在设置中增加选项
     private const int VideoNumberInPage = 30;
     private CancellationTokenSource? _loadCancellation;
-    private CancellationTokenSource? _downloadCancellation;
     private bool _isLoadingPage;
     private bool _hasMoreHistory = true;
     private int _loadVersion;
@@ -280,7 +279,7 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     /// <param name="isOnlySelected"></param>
     private async Task AddToDownloadAsync(bool isOnlySelected)
     {
-        var cancellationToken = ReplaceCancellationSource(ref _downloadCancellation);
+        var cancellationToken = CancellationToken.None;
         var items = Medias
             .Where(media => media.Business is "archive" or "pgc")
             .Select(media => new ContentDownloadItem(
@@ -456,7 +455,6 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     {
         Interlocked.Increment(ref _loadVersion);
         CancelAndDispose(ref _loadCancellation);
-        CancelAndDispose(ref _downloadCancellation);
     }
 
     protected override void Dispose(bool disposing)

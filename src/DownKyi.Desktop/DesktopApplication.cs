@@ -16,7 +16,10 @@ public static class DesktopApplication
         var appBuilder = BuildAvaloniaApp();
         try
         {
-            appBuilder.StartWithClassicDesktopLifetime(args);
+            using (WindowsOleApartment.Enter())
+            {
+                appBuilder.StartWithClassicDesktopLifetime(args);
+            }
         }
         finally
         {

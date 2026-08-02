@@ -85,6 +85,52 @@ public sealed class UiSmokeTests
     }
 
     [AvaloniaFact]
+    public async Task PublicationBatchDownloadContinuesAfterNavigationAway()
+    {
+        await AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            EnsureProductThemeResources();
+            ViewPublicationViewModel? publication = null;
+            using var navigation = new AvaloniaNavigationService(
+                route => route switch
+                {
+                    AppRoute.Publication => publication!,
+                    AppRoute.VideoDetail => new NavigationProbe(route),
+                    _ => throw new InvalidOperationException($"Unexpected route {route}.")
+                },
+                static action => action());
+            var downloadCoordinator = new BlockingContentDownloadCoordinator();
+            publication = new ViewPublicationViewModel(
+                new DesktopInteractionContextStub(navigation),
+                downloadCoordinator,
+                new PublicationPageCoordinatorStub(navigation),
+                NullLogger<ViewPublicationViewModel>.Instance);
+
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.Publication,
+                AppRoute.Index,
+                PublicationNavigationPayload.All(42)));
+            Assert.Single(publication.Medias);
+
+            publication.AddAllToDownloadCommand.Execute(null);
+            var cancellationToken = await downloadCoordinator.Started
+                .WaitAsync(TimeSpan.FromSeconds(5))
+                .ConfigureAwait(true);
+
+            navigation.Navigate(new AppNavigationRequest(
+                AppRoute.VideoDetail,
+                AppRoute.Publication,
+                "video"));
+
+            Assert.False(cancellationToken.CanBeCanceled);
+            Assert.False(cancellationToken.IsCancellationRequested);
+
+            downloadCoordinator.Complete(1);
+            await Task.Yield();
+        }).ConfigureAwait(true);
+    }
+
+    [AvaloniaFact]
     public async Task FavoritesSearchPageAndSnapshotSurviveTypedBackNavigation()
     {
         await AvaloniaTestDispatcher.RunAsync(async () =>
@@ -431,6 +477,57 @@ public sealed class UiSmokeTests
         }).ConfigureAwait(true);
     }
 
+    [AvaloniaFact]
+    public async Task MainWindowHidesWhileShutdownCleanupIsStillRunning()
+    {
+        await AvaloniaTestDispatcher.RunAsync(async () =>
+        {
+            var testDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-close-hide-{Guid.NewGuid():N}");
+            var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
+            var logProvider = new ApplicationLogProvider(
+                new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
+            var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logProvider));
+            var lifecycle = new BlockingApplicationLifecycle();
+
+            try
+            {
+                using var host = DownKyiHost.Create(services =>
+                {
+                    services.AddDownKyiDesktop(loggerFactory, logProvider);
+                    services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
+                    services.Replace(ServiceDescriptor.Singleton<IApplicationLifecycle>(lifecycle));
+                    services.Replace(ServiceDescriptor.Singleton(
+                        new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
+                });
+                var window = host.Services.GetRequiredService<MainWindow>();
+                var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                window.Closed += (_, _) => closed.TrySetResult();
+
+                window.Show();
+                window.Close();
+
+                Assert.False(window.IsVisible);
+                Assert.False(closed.Task.IsCompleted);
+                Assert.Equal(1, lifecycle.ShutdownRequestCount);
+
+                lifecycle.CompleteShutdown();
+                await closed.Task
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+            }
+            finally
+            {
+                loggerFactory.Dispose();
+                await logProvider.DisposeAsync().ConfigureAwait(true);
+                await settingsStore.DisposeAsync().ConfigureAwait(true);
+                if (Directory.Exists(testDirectory))
+                {
+                    Directory.Delete(testDirectory, recursive: true);
+                }
+            }
+        }).ConfigureAwait(true);
+    }
+
     [Fact]
     public void CreatingHostDoesNotRedirectExistingUserDataPaths()
     {
@@ -645,6 +742,38 @@ public sealed class UiSmokeTests
         }
     }
 
+    private sealed class BlockingApplicationLifecycle : IApplicationLifecycle
+    {
+        private readonly TaskCompletionSource _shutdown = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int ShutdownRequestCount { get; private set; }
+
+        public Task RequestShutdownAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShutdownRequestCount++;
+            return _shutdown.Task;
+        }
+
+        public Task ExitAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> RestartAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(false);
+        }
+
+        public void CompleteShutdown()
+        {
+            _shutdown.TrySetResult();
+        }
+    }
+
     private sealed class NavigationProbe(AppRoute route) : IAppNavigationAware, IDisposable
     {
         public AppRoute Route { get; } = route;
@@ -827,6 +956,30 @@ public sealed class UiSmokeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult<int?>(0);
+        }
+    }
+
+    private sealed class BlockingContentDownloadCoordinator : IContentDownloadCoordinator
+    {
+        private readonly TaskCompletionSource<CancellationToken> _started =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<int?> _completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<CancellationToken> Started => _started.Task;
+
+        public Task<int?> AddAsync(
+            IReadOnlyList<ContentDownloadItem> items,
+            bool onlySelected,
+            CancellationToken cancellationToken)
+        {
+            _started.TrySetResult(cancellationToken);
+            return _completion.Task;
+        }
+
+        public void Complete(int addedCount)
+        {
+            _completion.TrySetResult(addedCount);
         }
     }
 
