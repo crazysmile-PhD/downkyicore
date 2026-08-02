@@ -245,11 +245,14 @@ public sealed class AssemblyLifecycleArchitectureTests
     [Fact]
     public void DesktopMainLoopAwaitsApplicationAndHostTeardown()
     {
+        var program = Read("DownKyi/Program.cs");
         var desktopApplication = Read("src/DownKyi.Desktop/DesktopApplication.cs");
         var app = Read("src/DownKyi.Desktop/App.axaml.cs");
         const string desktopPrefix = "desktop.";
         const string legacyExitSubscription = "Exit += OnExit";
 
+        Assert.Contains("public static void Main", program, StringComparison.Ordinal);
+        Assert.Contains("RunAsync(args).GetAwaiter().GetResult()", program, StringComparison.Ordinal);
         Assert.Contains("finally", desktopApplication, StringComparison.Ordinal);
         Assert.Contains("WindowsOleApartment.Enter()", desktopApplication, StringComparison.Ordinal);
         Assert.Contains("await application.DisposeAsync()", desktopApplication, StringComparison.Ordinal);
