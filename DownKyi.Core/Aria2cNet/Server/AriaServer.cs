@@ -12,6 +12,7 @@ namespace DownKyi.Core.Aria2cNet.Server
     {
         private readonly ILogger<AriaServer> _logger;
         private readonly AriaProcessSupervisor _processSupervisor;
+        private AriaRpcSecretFile? _startupSecret;
 
         public AriaServer(ILoggerFactory loggerFactory)
         {
@@ -49,77 +50,108 @@ namespace DownKyi.Core.Aria2cNet.Server
             var logFile = Path.Combine(ariaDir, "aira.log");
             // 自动保存会话文件的时间间隔
             var saveSessionInterval = 120;
+            var startupSecret = AriaRpcSecretFile.Create(
+                ariaDir,
+                config.Token,
+                _logger);
+            Interlocked.Exchange(ref _startupSecret, startupSecret)?.Dispose();
 
             // The packaged runtime is process-local; custom remote aria2 endpoints are not started here.
-            await Task.Run(() =>
+            try
             {
-                // 创建目录和文件
-                if (!Directory.Exists(ariaDir))
+                await Task.Run(() =>
                 {
-                    Directory.CreateDirectory(ariaDir);
-                }
-
-                if (!File.Exists(sessionFile))
-                {
-                    using var stream = File.Create(sessionFile);
-                }
-
-                if (!File.Exists(logFile))
-                {
-                    using var stream = File.Create(logFile);
-                }
-                else
-                {
-                    // 日志文件存在，如果大于1M，则截断
-                    try
+                    // 创建目录和文件
+                    if (!Directory.Exists(ariaDir))
                     {
-                        using var stream = File.Open(logFile, FileMode.Open);
-                        if (stream.Length >= 1 * 1024 * 1024L)
+                        Directory.CreateDirectory(ariaDir);
+                    }
+
+                    if (!File.Exists(sessionFile))
+                    {
+                        using var stream = File.Create(sessionFile);
+                    }
+
+                    if (!File.Exists(logFile))
+                    {
+                        using var stream = File.Create(logFile);
+                    }
+                    else
+                    {
+                        // 日志文件存在，如果大于1M，则截断
+                        try
                         {
-                            stream.SetLength(0);
+                            using var stream = File.Open(logFile, FileMode.Open);
+                            if (stream.Length >= 1 * 1024 * 1024L)
+                            {
+                                stream.SetLength(0);
+                            }
+                        }
+                        catch (IOException e)
+                        {
+                            _logger.LogErrorMessage("aria2 log rotation failed.", e);
+                        }
+                        catch (UnauthorizedAccessException e)
+                        {
+                            _logger.LogErrorMessage("aria2 log rotation was denied.", e);
+                        }
+                        catch (InvalidOperationException e)
+                        {
+                            _logger.LogErrorMessage("aria2 log rotation encountered an invalid stream state.", e);
                         }
                     }
-                    catch (IOException e)
-                    {
-                        _logger.LogErrorMessage("aria2 log rotation failed.", e);
-                    }
-                    catch (UnauthorizedAccessException e)
-                    {
-                        _logger.LogErrorMessage("aria2 log rotation was denied.", e);
-                    }
-                    catch (InvalidOperationException e)
-                    {
-                        _logger.LogErrorMessage("aria2 log rotation encountered an invalid stream state.", e);
-                    }
-                }
 
-                var executeName = "aria2c";
+                    var executeName = "aria2c";
 
-                if (OperatingSystem.IsWindows())
-                {
-                    executeName += ".exe";
-                }
-                ExecuteProcess($"aria2/{executeName}",
-                    BuildArguments(
-                        config,
-                        sessionFile,
-                        logFile,
-                        saveSessionInterval,
-                        Environment.ProcessId),
-                    null, (s, e) =>
+                    if (OperatingSystem.IsWindows())
                     {
-                        if (string.IsNullOrWhiteSpace(e.Data))
+                        executeName += ".exe";
+                    }
+
+                    var executablePath = Path.Combine(
+                        AppContext.BaseDirectory,
+                        "aria2",
+                        executeName);
+                    AriaBinaryIntegrityVerifier.Verify(executablePath);
+
+                    ExecuteProcess(executablePath,
+                        BuildArguments(
+                            config,
+                            startupSecret.Path,
+                            sessionFile,
+                            logFile,
+                            saveSessionInterval,
+                            Environment.ProcessId),
+                        null, (s, e) =>
                         {
-                            return;
-                        }
+                            if (string.IsNullOrWhiteSpace(e.Data))
+                            {
+                                return;
+                            }
 
-                        _logger.LogDebugMessage(e.Data);
+                            _logger.LogDebugMessage(e.Data);
 
-                        action.Invoke(e.Data);
-                    });
-            }).ConfigureAwait(false);
+                            action.Invoke(e.Data);
+                        });
+                }).ConfigureAwait(false);
+            }
+            catch
+            {
+                KillTrackedServer("aria2 process startup failed.");
+                throw;
+            }
 
             return true;
+        }
+
+        public void ReleaseStartupSecrets()
+        {
+            Interlocked.Exchange(ref _startupSecret, null)?.Dispose();
+        }
+
+        public bool IsTrackedServerRunning()
+        {
+            return _processSupervisor.HasRunningProcess;
         }
 
         /// <summary>
@@ -136,36 +168,37 @@ namespace DownKyi.Core.Aria2cNet.Server
                 var completed = await Task.WhenAny(shutdown, Task.Delay(waitTimeout)).ConfigureAwait(false);
                 if (completed != shutdown)
                 {
-                    KillTrackedServer("aria2 shutdown rpc timed out.");
-                    return false;
+                    return KillTrackedServer("aria2 shutdown rpc timed out.");
                 }
 
                 var result = await shutdown.ConfigureAwait(false);
                 if (result?.Result != "OK")
                 {
-                    KillTrackedServer("aria2 shutdown rpc failed.");
-                    return false;
+                    return KillTrackedServer("aria2 shutdown rpc failed.");
                 }
 
-                return await WaitForExitOrKillAsync(waitTimeout).ConfigureAwait(false);
+                var exited = await WaitForExitOrKillAsync(waitTimeout).ConfigureAwait(false);
+                if (exited)
+                {
+                    ReleaseStartupSecrets();
+                }
+
+                return exited;
             }
             catch (HttpRequestException e)
             {
                 _logger.LogErrorMessage("aria2 shutdown request failed.", e);
-                KillTrackedServer("aria2 shutdown failed.");
-                return false;
+                return KillTrackedServer("aria2 shutdown failed.");
             }
             catch (InvalidOperationException e)
             {
                 _logger.LogErrorMessage("aria2 shutdown encountered an invalid process state.", e);
-                KillTrackedServer("aria2 shutdown failed.");
-                return false;
+                return KillTrackedServer("aria2 shutdown failed.");
             }
             catch (Newtonsoft.Json.JsonException e)
             {
                 _logger.LogErrorMessage("aria2 shutdown returned an invalid response.", e);
-                KillTrackedServer("aria2 shutdown response was invalid.");
-                return false;
+                return KillTrackedServer("aria2 shutdown response was invalid.");
             }
         }
 
@@ -188,42 +221,49 @@ namespace DownKyi.Core.Aria2cNet.Server
                 var completed = await Task.WhenAny(shutdown, Task.Delay(waitTimeout)).ConfigureAwait(false);
                 if (completed != shutdown)
                 {
-                    KillTrackedServer("aria2 force shutdown rpc timed out.");
-                    return false;
+                    return KillTrackedServer("aria2 force shutdown rpc timed out.");
                 }
 
                 var result = await shutdown.ConfigureAwait(false);
                 if (result?.Result != "OK")
                 {
-                    KillTrackedServer("aria2 force shutdown rpc failed.");
-                    return false;
+                    return KillTrackedServer("aria2 force shutdown rpc failed.");
                 }
 
-                return await WaitForExitOrKillAsync(waitTimeout).ConfigureAwait(false);
+                var exited = await WaitForExitOrKillAsync(waitTimeout).ConfigureAwait(false);
+                if (exited)
+                {
+                    ReleaseStartupSecrets();
+                }
+
+                return exited;
             }
             catch (HttpRequestException e)
             {
                 _logger.LogErrorMessage("aria2 force-shutdown request failed.", e);
-                KillTrackedServer("aria2 force shutdown failed.");
-                return false;
+                return KillTrackedServer("aria2 force shutdown failed.");
             }
             catch (InvalidOperationException e)
             {
                 _logger.LogErrorMessage("aria2 force shutdown encountered an invalid process state.", e);
-                KillTrackedServer("aria2 force shutdown failed.");
-                return false;
+                return KillTrackedServer("aria2 force shutdown failed.");
             }
             catch (Newtonsoft.Json.JsonException e)
             {
                 _logger.LogErrorMessage("aria2 force shutdown returned an invalid response.", e);
-                KillTrackedServer("aria2 force shutdown response was invalid.");
-                return false;
+                return KillTrackedServer("aria2 force shutdown response was invalid.");
             }
         }
 
         public bool KillTrackedServer(string reason)
         {
-            return _processSupervisor.Kill(reason);
+            var exited = _processSupervisor.Kill(reason);
+            if (exited)
+            {
+                ReleaseStartupSecrets();
+            }
+
+            return exited;
         }
 
         internal void SetTrackedServerForTests(Process? process)
@@ -234,6 +274,11 @@ namespace DownKyi.Core.Aria2cNet.Server
         internal bool HasTrackedServerForTests()
         {
             return _processSupervisor.HasTrackedProcess;
+        }
+
+        internal void SetStartupSecretForTests(AriaRpcSecretFile? secretFile)
+        {
+            Interlocked.Exchange(ref _startupSecret, secretFile)?.Dispose();
         }
 
         internal static string GetLogLevelArgument(AriaConfigLogLevel logLevel)
@@ -262,51 +307,61 @@ namespace DownKyi.Core.Aria2cNet.Server
             };
         }
 
-        internal static string BuildArguments(
+        internal static IReadOnlyList<string> BuildArguments(
             AriaConfig config,
+            string secretConfigFile,
             string sessionFile,
             string logFile,
             int saveSessionInterval,
             int parentProcessId)
         {
             ArgumentNullException.ThrowIfNull(config);
+            ArgumentException.ThrowIfNullOrWhiteSpace(secretConfigFile);
             ArgumentException.ThrowIfNullOrWhiteSpace(sessionFile);
             ArgumentException.ThrowIfNullOrWhiteSpace(logFile);
             ArgumentOutOfRangeException.ThrowIfNegative(saveSessionInterval);
             ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(parentProcessId, 0);
 
-            var headers = config.Headers.Aggregate(
-                string.Empty,
-                (current, header) => current + $"--header=\"{header}\" ");
-            return $"--enable-rpc --rpc-listen-all=false --rpc-allow-origin-all=false " +
-                   $"--check-certificate=false " +
-                   $"--stop-with-process={parentProcessId} " +
-                   $"--rpc-listen-port={config.ListenPort} " +
-                   $"--rpc-secret={config.Token} " +
-                   $"--input-file=\"{sessionFile}\" --save-session=\"{sessionFile}\" " +
-                   $"--save-session-interval={saveSessionInterval} " +
-                   $"--log=\"{logFile}\" --log-level={GetLogLevelArgument(config.LogLevel)} " +
-                   $"--max-concurrent-downloads={config.MaxConcurrentDownloads} " +
-                   $"--max-connection-per-server={config.MaxConnectionPerServer} " +
-                   $"--split={config.Split} " +
-                   $"--min-split-size={config.MinSplitSize}M " +
-                   $"--max-overall-download-limit={config.MaxOverallDownloadLimit} " +
-                   $"--max-download-limit={config.MaxDownloadLimit} " +
-                   $"--continue={(config.ContinueDownload ? "true" : "false")} " +
-                   $"--allow-overwrite=true " +
-                   $"--auto-file-renaming=false " +
-                   $"--file-allocation={GetFileAllocationArgument(config.FileAllocation)} " +
-                   headers;
+            return
+            [
+                $"--conf-path={secretConfigFile}",
+                "--enable-rpc",
+                "--rpc-listen-all=false",
+                "--rpc-allow-origin-all=false",
+                $"--stop-with-process={parentProcessId}",
+                $"--rpc-listen-port={config.ListenPort}",
+                $"--input-file={sessionFile}",
+                $"--save-session={sessionFile}",
+                $"--save-session-interval={saveSessionInterval}",
+                $"--log={logFile}",
+                $"--log-level={GetLogLevelArgument(config.LogLevel)}",
+                $"--max-concurrent-downloads={config.MaxConcurrentDownloads}",
+                $"--max-connection-per-server={config.MaxConnectionPerServer}",
+                $"--split={config.Split}",
+                $"--min-split-size={config.MinSplitSize}M",
+                $"--max-overall-download-limit={config.MaxOverallDownloadLimit}",
+                $"--max-download-limit={config.MaxDownloadLimit}",
+                $"--continue={(config.ContinueDownload ? "true" : "false")}",
+                "--allow-overwrite=true",
+                "--auto-file-renaming=false",
+                $"--file-allocation={GetFileAllocationArgument(config.FileAllocation)}"
+            ];
         }
 
-        private void ExecuteProcess(string exe, string arg, string? workingDirectory,
+        private void ExecuteProcess(
+            string exe,
+            IReadOnlyList<string> arguments,
+            string? workingDirectory,
             DataReceivedEventHandler output)
         {
             var p = new Process();
             _processSupervisor.Track(p);
 
             p.StartInfo.FileName = exe;
-            p.StartInfo.Arguments = arg;
+            foreach (var argument in arguments)
+            {
+                p.StartInfo.ArgumentList.Add(argument);
+            }
 
             // 工作目录
             if (workingDirectory != null)

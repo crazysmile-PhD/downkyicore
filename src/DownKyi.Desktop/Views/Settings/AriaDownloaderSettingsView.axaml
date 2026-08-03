@@ -4,30 +4,6 @@
              x:Class="DownKyi.Views.Settings.AriaDownloaderSettingsView"
              x:DataType="vms:ViewNetworkViewModel">
     <StackPanel x:Name="NameAria" IsVisible="{Binding Aria2C}">
-        <StackPanel
-            Margin="0,20,0,0"
-            Orientation="Horizontal"
-            ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}">
-            <TextBlock
-                Width="100"
-                VerticalAlignment="Center"
-                FontSize="12"
-                Foreground="{DynamicResource BrushTextDark}"
-                Text="{DynamicResource AriaServerPort}" />
-            <TextBox
-                Name="NameAriaListenPort"
-                Width="100"
-                VerticalContentAlignment="Center"
-                Text="{Binding AriaListenPort}">
-                <TextBox.KeyBindings>
-                    <KeyBinding
-                        Command="{Binding AriaListenPortCommand}"
-                        CommandParameter="{Binding #NameAriaListenPort.Text}"
-                        Gesture="Enter" />
-                </TextBox.KeyBindings>
-            </TextBox>
-        </StackPanel>
-
         <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
             <TextBlock
                 Width="100"
@@ -193,32 +169,34 @@
         </HeaderedContentControl>
 
         <CheckBox
-            Name="NameIsAriaHttpProxy"
+            Name="NameIsAriaHttpsDownloadProxy"
             Margin="0,20,0,0"
             HorizontalAlignment="Left"
             VerticalAlignment="Top"
             Command="{Binding IsAriaHttpProxyCommand}"
-            Content="{DynamicResource IsHttpProxy}"
+            Content="{DynamicResource IsAriaHttpsDownloadProxy}"
             FontSize="12"
             Foreground="{DynamicResource BrushTextDark}"
-            IsChecked="{Binding IsAriaHttpProxy, Mode=TwoWay}" />
+            IsChecked="{Binding IsAriaHttpProxy, Mode=TwoWay}"
+            ToolTip.Tip="{DynamicResource AriaHttpsDownloadProxyTip}" />
 
         <StackPanel
-            Name="NameAriaHttpProxyPanel"
+            Name="NameAriaHttpsDownloadProxyPanel"
             Margin="0,20,0,0"
             Orientation="Horizontal"
             ToolTip.Tip="{DynamicResource PressEnterToApplySettingTip}"
-            IsVisible="{Binding ElementName=NameIsAriaHttpProxy,Path=IsChecked}">
+            IsVisible="{Binding ElementName=NameIsAriaHttpsDownloadProxy,Path=IsChecked}">
             <StackPanel Orientation="Horizontal">
                 <TextBlock
                     VerticalAlignment="Center"
                     FontSize="12"
                     Foreground="{DynamicResource BrushTextDark}"
-                    Text="{DynamicResource HttpProxy}" />
+                    Text="{DynamicResource AriaHttpsDownloadProxyHost}" />
                 <TextBox
                     Name="NameAriaHttpProxy"
                     Width="200"
                     VerticalContentAlignment="Center"
+                    PlaceholderText="127.0.0.1 / localhost / ::1"
                     Text="{Binding AriaHttpProxy}">
                     <TextBox.KeyBindings>
                         <KeyBinding

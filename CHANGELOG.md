@@ -2,6 +2,17 @@
 
 ## [1.1.1] - 2026-07-29
 
+### Security
+
+- 恢复 aria2 HTTPS 凭证与主机名称验证，移除旧 `UseSsl` 下载降级能力；
+  旧设置字段仅用于一次性相容读取并在下一次保存时移除。
+- 内建 aria2 使用随机 loopback port、高强度 RPC secret 与受限临时设置
+  档，Cookie 和 secret 不再进入程序命令列。
+- Cookie 改为符合 HTTPS Bilibili host 范围的任务级 header，携带凭证
+  时禁止重新导向；远端自订 aria2 RPC 强制 HTTPS 且不跟随重新导向。
+- 新增六 RID 真实 aria2 TLS 合约闸门，以及来源 tag、commit、SHA-256
+  与尚缺可重现建置/SBOM/provenance 的明确审计记录。
+
 ### Reliability
 
 - 修复 Windows 测试宿主偶发残留前台执行绪的问题：测试资料清理由同步 `ProcessExit` handler 改为可等待的 assembly fixture，Avalonia 测试改用 assembly-scoped headless session，正式 Host、Dispatcher、SQLite 与应用关闭路径均有确定性 teardown。

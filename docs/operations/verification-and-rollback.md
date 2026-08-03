@@ -28,7 +28,8 @@ dotnet build ./DownKyi.sln `
   -p:AnalysisMode=All `
   -p:EnforceCodeStyleInBuild=true `
   -p:TreatWarningsAsErrors=true `
-  -p:CodeAnalysisTreatWarningsAsErrors=true
+  -p:CodeAnalysisTreatWarningsAsErrors=true `
+  -p:UseSharedCompilation=false
 
 pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 pwsh ./script/audit-lifecycle-ownership.ps1 `
@@ -40,9 +41,14 @@ pwsh ./script/test-assembly-lifecycle.ps1 `
   -ValidateForensics `
   -ResultsDirectory ./artifacts/assembly-lifecycle/verification
 dotnet format ./DownKyi.sln --no-restore --verify-no-changes
+pwsh ./script/audit-module-boundaries.ps1 `
+  -OutputPath ./artifacts/architecture/module-boundary-audit.json
+$workflowFiles = Get-ChildItem ./.github/workflows -Filter *.yml | `
+  Select-Object -ExpandProperty FullName
+go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -- $workflowFiles
 git diff --check
 dotnet package list --project ./DownKyi.sln --vulnerable --include-transitive
-dotnet package list --project ./DownKyi.sln --deprecated
+dotnet package list --project ./DownKyi.sln --deprecated --include-transitive
 pwsh ./script/scan-secrets.ps1
 ```
 

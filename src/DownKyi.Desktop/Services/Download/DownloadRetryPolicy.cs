@@ -71,6 +71,7 @@ internal sealed class DownloadRetryPolicy
                 : Stop(),
             DownloadTransferFailureKind.None or
                 DownloadTransferFailureKind.Disk or
+                DownloadTransferFailureKind.Tls or
                 DownloadTransferFailureKind.Permanent => Stop(),
             _ => Stop()
         };

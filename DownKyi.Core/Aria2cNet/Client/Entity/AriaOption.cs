@@ -5,9 +5,6 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     [JsonObject]
     public class AriaOption
     {
-        [JsonProperty("all-proxy")]
-        public string AllProxy { get; set; } = string.Empty;
-
         [JsonProperty("allow-overwrite")]
         public string AllowOverwrite { get; set; } = string.Empty;
 

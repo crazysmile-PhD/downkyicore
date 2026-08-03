@@ -49,6 +49,7 @@ internal enum DownloadTransferFailureKind
     ResumeRejected,
     InvalidMedia,
     Disk,
+    Tls,
     Permanent
 }
 

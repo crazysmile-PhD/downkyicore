@@ -279,6 +279,13 @@ internal sealed class BuiltinTransferBackend : ITransferBackend
         Exception? exception,
         bool reportedCanceled)
     {
+        if (TlsFailureClassifier.TryClassify(exception, out var tlsErrorCode))
+        {
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Tls,
+                tlsErrorCode);
+        }
+
         if (FindException<HttpRequestException>(exception) is { } httpException)
         {
             return httpException.StatusCode switch

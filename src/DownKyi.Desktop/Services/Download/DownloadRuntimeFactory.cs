@@ -80,15 +80,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _settingsStore,
                 _diagnosticLogger,
                 _loggerFactory.CreateLogger<BuiltinTransferBackend>()),
-            DownloaderSetting.Aria => new Aria2TransferBackend(
-                network,
-                new AriaClient(listenPort: network.AriaListenPort),
-                _ariaClientRegistry,
-                _diagnosticLogger,
-                _ariaServer,
-                _loggerFactory,
-                _loggerFactory.CreateLogger<Aria2TransferBackend>(),
-                ownsAriaServer: true),
+            DownloaderSetting.Aria => CreateLocalAriaBackend(network),
             DownloaderSetting.CustomAria => new Aria2TransferBackend(
                 network,
                 new AriaClient(network.AriaHost, network.AriaListenPort, network.AriaToken),
@@ -97,7 +89,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 _ariaServer,
                 _loggerFactory,
                 _loggerFactory.CreateLogger<Aria2TransferBackend>(),
-                ownsAriaServer: false),
+                ownsAriaServer: false,
+                localEndpoint: null),
             _ => null
         };
 
@@ -168,5 +161,21 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
             _tasks,
             network.MaxCurrentDownloads,
             _loggerFactory.CreateLogger<DownloadOrchestrator>());
+    }
+
+    private Aria2TransferBackend CreateLocalAriaBackend(
+        NetworkApplicationSettings network)
+    {
+        var endpoint = LocalAriaRpcEndpoint.Create();
+        return new Aria2TransferBackend(
+            network,
+            new AriaClient("http://localhost", endpoint.Port, endpoint.Secret),
+            _ariaClientRegistry,
+            _diagnosticLogger,
+            _ariaServer,
+            _loggerFactory,
+            _loggerFactory.CreateLogger<Aria2TransferBackend>(),
+            ownsAriaServer: true,
+            endpoint);
     }
 }

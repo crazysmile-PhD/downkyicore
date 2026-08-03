@@ -74,7 +74,8 @@ public sealed partial class AriaClient
     /// The response is a struct and contains following keys.
     /// </summary>
     /// <returns></returns>
-    public async Task<AriaVersion> GetAriaVersionAsync()
+    public async Task<AriaVersion> GetAriaVersionAsync(
+        CancellationToken cancellationToken = default)
     {
         List<object> ariaParams = new List<object>
         {
@@ -87,7 +88,8 @@ public sealed partial class AriaClient
             Method = "aria2.getVersion",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaVersion>(ariaSend).ConfigureAwait(false);
+        return await GetRpcResponseAsync<AriaVersion>(ariaSend, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

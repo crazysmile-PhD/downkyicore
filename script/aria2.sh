@@ -54,15 +54,19 @@ download_aria2() {
   local rid=$1
   local download_url
   local expected_sha256
+  local expected_binary_sha256
   local save="$save_path/$rid/aria2"
   download_url=$(asset_value "$rid" "url")
   expected_sha256=$(asset_value "$rid" "sha256")
+  expected_binary_sha256=$(asset_value "$rid" "binarySha256")
 
   local archive="$download_dir/aria2-$rid.zip"
   curl --fail --location --show-error "$download_url" -o "$archive"
   verify_asset "$archive" "$expected_sha256"
   create_dir "$save"
   unzip -o -d "$save" "$archive"
+  verify_asset "$save/aria2c" "$expected_binary_sha256"
+  printf '%s' "$expected_binary_sha256" >"$save/aria2c.sha256"
   chmod +x "$save/aria2c"
 }
 

@@ -8,14 +8,6 @@ internal partial class ViewNetworkViewModel
 {
     #region 页面属性申明
 
-    private bool _useSsl;
-
-    public bool UseSsl
-    {
-        get => _useSsl;
-        set => SetProperty(ref _useSsl, value);
-    }
-
     private string _userAgent = string.Empty;
 
     public string UserAgent

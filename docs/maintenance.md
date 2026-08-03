@@ -348,6 +348,15 @@ Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
   immutable release tag, never a mutable `latest` asset. The scripts accept an
   archive only after TLS validation, a successful HTTP status and its SHA-256
   matching the manifest.
+- aria2 manifest entries record the official base commit, exact independent
+  DownKyi source commit, canonical patch digest, immutable build commit,
+  required feature marker, archive digest and extracted binary digest. The
+  installer writes the verified binary digest beside `aria2c`; runtime verifies
+  that sidecar before process creation and then verifies the feature over RPC.
+  These controls identify source and artifact content but do not by themselves
+  prove reproducible builds, an SBOM or signed provenance. Current evidence and
+  residual risk are maintained in `docs/operations/aria2-security.md` and
+  `docs/operations/aria2-security-baseline.json`.
 - `DownKyi.Core` stores the checked-in external asset catalog but does not
   select or copy runtime-specific content. The executable is the sole package
   content owner: it uses the explicit publish target first, otherwise the host
@@ -355,18 +364,32 @@ Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
   `DownKyiAssetRuntimeIdentifier` must never cross a project-reference
   boundary or assign the .NET SDK `RuntimeIdentifier`; cross-target restore
   and publish remain the SDK RID owners.
-- Packaged local aria2 RPC listens only on loopback. It receives `--stop-with-process` on every OS and also joins a kill-on-close Windows Job Object, so an abrupt App termination cannot leave a local child running. Custom remote aria2 endpoints are not started or terminated by this owner.
+- Packaged local aria2 RPC listens only on a fresh ephemeral loopback port and
+  uses a fresh 256-bit secret. The secret is supplied through a temporary
+  restricted config and never appears in process arguments. It receives
+  `--stop-with-process` on every OS and also joins a kill-on-close Windows Job
+  Object, so an abrupt App termination cannot leave a local child running.
+  Custom remote aria2 endpoints are not started or terminated by this owner;
+  non-loopback RPC requires HTTPS and does not follow redirects.
+- aria2 task headers are per-transfer. Cookie can be attached only to an exact
+  HTTPS `bilibili.com` host or subdomain. The actual patched transfer engine
+  rejects scheme downgrade and credential-bearing cross-origin redirects before
+  another request is emitted. There is no process-global Cookie header and no
+  production certificate-validation or HTTPS-downgrade switch.
 
 When updating an external binary:
 
-1. Update the immutable source URL, version and checksum in
-   `script/assets/external-assets.json`.
-2. Confirm the release URL still returns the intended non-empty archive and
-   compare the manifest checksum with the publisher's release digest.
-3. Invoke the script from the repository root and verify at least one target
-   platform locally.
-4. Confirm `ffmpeg -hide_banner -encoders` lists the expected hardware encoder on a capable machine.
-5. Keep fallback behavior intact; missing GPU support must not block normal downloads.
+1. Update the independent source commit and mechanically regenerate the
+   normal-context canonical patch from the fixed official base.
+2. Verify the patch digest, `git apply --check`, actual apply, applied-source
+   `git diff --check` and exact source tree equality in the static build repo.
+3. Build all six RIDs from the immutable commit and record archive and binary
+   SHA-256 values in `script/assets/external-assets.json`.
+4. Invoke the installer from the repository root and verify its binary sidecar,
+   then run the `aria2-tls-security` matrix for all six RIDs and inspect every
+   sanitized report.
+5. Confirm `ffmpeg -hide_banner -encoders` lists the expected hardware encoder on a capable machine.
+6. Keep fallback behavior intact; missing GPU support must not block normal downloads.
 
 ## Release Tag Validation
 

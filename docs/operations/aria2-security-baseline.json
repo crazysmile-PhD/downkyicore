@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "lastUpdatedDate": "2026-08-03",
+  "aria2": {
+    "version": "1.37.0-downkyi.2",
+    "repository": "https://github.com/crazysmile-PhD/downkyi-aria2",
+    "sourceBranch": "downkyi-secure-redirect-v2",
+    "upstreamTag": "release-1.37.0",
+    "upstreamCommit": "02f2d0d8472b3c38c29b4dba8c75ebd5fdd2899a",
+    "sourceCommit": "9938788f7e62af0530a1b28ece752e1de1fd0d46",
+    "canonicalPatchSha256": "1234523d1dadedf2342142b656e64b4c67cbca6545afebc584d50f39a229d094",
+    "requiredFeature": "downkyi-secure-redirect-v2",
+    "buildRepository": "https://github.com/crazysmile-PhD/downkyi-aria2-static-build",
+    "buildTag": "1.37.0-downkyi.2",
+    "buildCommit": "94299bd9bde28a83bcb31346ec1d5f8131d2ec0d",
+    "reproducibleBuild": false,
+    "sbomAvailable": false,
+    "signedProvenanceAvailable": false
+  },
+  "assets": [
+    {
+      "rid": "win-x86",
+      "tlsBackend": "WinTLS",
+      "trustSource": "windows-system-root-store; elevated runner uses LocalMachine Root, non-elevated runner uses CurrentUser Root; temporary certificate removed by the test",
+      "archiveSha256": "40ed5587bc08e556826ab0ddd4bcf800599ba14dcde8ec75b7e911d8e5d5e610",
+      "binarySha256": "2a76612d032879e520fa3e4d1adacb900605e850934c8f6d5d7eeaf27377e7c0",
+      "verification": "release-asset-verified; windows-runtime-local-pass; runtime-ci-pass-run-30799263926"
+    },
+    {
+      "rid": "win-x64",
+      "tlsBackend": "WinTLS",
+      "trustSource": "windows-system-root-store; elevated runner uses LocalMachine Root, non-elevated runner uses CurrentUser Root; temporary certificate removed by the test",
+      "archiveSha256": "ddb13cb8b905299521b66bb3c26fb700830b8ca72c01f7614d9e68efd6f450cb",
+      "binarySha256": "b8fccf898d70531f2335bcbf45ad4210c736a63f3efb0442cb4c75790d7c76b0",
+      "verification": "release-asset-verified; windows-runtime-local-pass; runtime-ci-pass-run-30799263926"
+    },
+    {
+      "rid": "linux-x64",
+      "tlsBackend": "OpenSSL",
+      "trustSource": "linux-system-ca-store; temporary certificate installed and removed; aria2 uses production default trust discovery without --ca-certificate",
+      "archiveSha256": "6e297b49d8ad24df6d01b48eeb9d669697c105fedf922e3b7d8d8c8577c5bf7c",
+      "binarySha256": "0e0e3d8a27ab57abb529c49595cd19d49df31a830f09ce65f10d1ef3a4323f41",
+      "verification": "release-asset-verified; production-system-trust-runtime-ci-pass-run-30799263926"
+    },
+    {
+      "rid": "linux-arm64",
+      "tlsBackend": "OpenSSL",
+      "trustSource": "linux-system-ca-store; temporary certificate installed and removed; aria2 uses production default trust discovery without --ca-certificate",
+      "archiveSha256": "75b348219fed7ee0ab909c0daaecae5b9ea021306dda85ef819e6a24190768e6",
+      "binarySha256": "e65850ad7403ba90f051966ed98ef1f88938a95d47f53a344ce07d182311f30c",
+      "verification": "release-asset-verified; production-system-trust-runtime-ci-pass-run-30799263926"
+    },
+    {
+      "rid": "osx-x64",
+      "tlsBackend": "AppleTLS",
+      "trustSource": "macos-system-keychain; temporary trust installed and removed with bounded sudo commands",
+      "archiveSha256": "5579a5dd1d27b02c8a74bf0737ccee7884446f310f0c577972969c757da60c78",
+      "binarySha256": "306abc9c903c4bda1044d8cbc13dfbbc612e66e5ea6b1cbfb6693295e4135b55",
+      "verification": "release-asset-verified; runtime-ci-pass-run-30799263926"
+    },
+    {
+      "rid": "osx-arm64",
+      "tlsBackend": "AppleTLS",
+      "trustSource": "macos-system-keychain; temporary trust installed and removed with bounded sudo commands",
+      "archiveSha256": "e6a8ebeb17465d592040d9d0430bf6ecbce58409d5424489cce2a9f8b0f8a3d0",
+      "binarySha256": "eb1c4f684c36d8b84cb579ad5079e94044bd2979289355d4a8d18803dbc05b47",
+      "verification": "release-asset-verified; runtime-ci-pass-run-30799263926"
+    }
+  ],
+  "residualRisks": [
+    "Six-platform runtime TLS behavior still requires the exact DownKyi CI head to pass.",
+    "Cross-platform reproducible-build equivalence has not been established.",
+    "No upstream SBOM or signed build provenance is available."
+  ]
+}

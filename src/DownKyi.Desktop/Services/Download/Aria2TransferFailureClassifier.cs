@@ -8,6 +8,45 @@ internal static class Aria2TransferFailureClassifier
         string? errorCode,
         string? errorMessage)
     {
+        if (string.Equals(errorCode, "33", StringComparison.Ordinal))
+        {
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Permanent,
+                "download.transfer.insecure-redirect");
+        }
+
+        if (string.Equals(errorCode, "34", StringComparison.Ordinal))
+        {
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Permanent,
+                "download.transfer.credentialed-redirect");
+        }
+
+        if (TlsFailureClassifier.TryClassify(errorMessage, out var tlsErrorCode))
+        {
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Tls,
+                tlsErrorCode);
+        }
+
+        if (errorMessage?.Contains(
+                "HTTPS redirect downgrade rejected by DownKyi policy",
+                StringComparison.Ordinal) == true)
+        {
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Permanent,
+                "download.transfer.insecure-redirect");
+        }
+
+        if (errorMessage?.Contains(
+                "Cross-origin redirect with sensitive headers rejected by DownKyi policy",
+                StringComparison.Ordinal) == true)
+        {
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Permanent,
+                "download.transfer.credentialed-redirect");
+        }
+
         if (ContainsHttpStatus(errorMessage, "403") ||
             ContainsHttpStatus(errorMessage, "404"))
         {

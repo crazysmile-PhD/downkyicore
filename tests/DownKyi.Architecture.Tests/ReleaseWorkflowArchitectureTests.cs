@@ -123,11 +123,30 @@ public sealed class ReleaseWorkflowArchitectureTests
             "external-assets.json");
         using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
 
+        var aria2 = manifest.RootElement.GetProperty("aria2");
+        var sourceCommit = Assert.IsType<string>(
+            aria2.GetProperty("sourceCommit").GetString());
+        var sourceTag = Assert.IsType<string>(
+            aria2.GetProperty("sourceTag").GetString());
+        var version = Assert.IsType<string>(
+            aria2.GetProperty("version").GetString());
+        Assert.Matches(
+            "^[0-9a-f]{40}$",
+            sourceCommit);
+        Assert.Equal(version, sourceTag);
+
         foreach (var tool in manifest.RootElement.EnumerateObject())
         {
             foreach (var asset in tool.Value.GetProperty("assets").EnumerateObject())
             {
                 AssertPinnedAsset(asset.Value, "url", "sha256");
+
+                if (string.Equals(tool.Name, "aria2", StringComparison.Ordinal))
+                {
+                    var binaryChecksum = asset.Value.GetProperty("binarySha256").GetString();
+                    Assert.NotNull(binaryChecksum);
+                    Assert.Matches("^[a-f0-9]{64}$", binaryChecksum);
+                }
 
                 if (asset.Value.TryGetProperty("ffprobeUrl", out _))
                 {

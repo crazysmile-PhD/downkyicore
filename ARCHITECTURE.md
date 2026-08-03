@@ -207,6 +207,36 @@ DownloadMediaStage
 
 `AriaClient` 是專案內維護的 JSON-RPC compatibility adapter，不是生成檔。核心 partial 只擁有 immutable endpoint/token、序列化、response decoding 與單次 HTTP transport；下載控制、狀態/URI、選項、生命週期與 `system.*` methods 各自由責任 partial 擁有。所有 `aria2.*` method 的 token 位置與 RPC method name 由全公開方法合約測試固定。來源證據、owner 表和變更流程位於 `docs/design-docs/aria2-rpc-client-ownership.md`。
 
+## aria2 安全邊界
+
+```mermaid
+flowchart LR
+    Factory["DownloadRuntimeFactory"] --> Endpoint["random loopback port + secret"]
+    Endpoint --> Client["immutable AriaClient"]
+    Endpoint --> Config["temporary restricted config"]
+    Config --> Child["tracked packaged aria2 child"]
+    Client --> Child
+    Request["single-address transfer request"] --> Headers["host-scoped task headers"]
+    Headers --> Client
+    Child --> TLS["platform TLS trust + hostname validation"]
+```
+
+Packaged aria2 is process-local: each runtime creates an ephemeral loopback port
+and high-entropy secret, passes the secret through a temporary restricted config,
+and accepts RPC readiness only while the supervised child is alive. Process
+arguments cannot contain Cookie, RPC secret or caller-provided combined argument
+text. Custom remote aria2 remains externally owned; HTTP is allowed only for a
+loopback endpoint and every non-loopback endpoint requires HTTPS without RPC
+redirects.
+
+Transfer credentials are task-level rather than process-global. Cookie is
+eligible only for an exact HTTPS `bilibili.com` host or subdomain and disables
+redirects for that task; other hosts cannot receive it. aria2 uses normal
+platform certificate/hostname validation, and TLS failure is a typed terminal
+address failure rather than a reason to downgrade. The six-RID real-binary gate,
+legacy `UseSsl` migration and third-party binary evidence are documented in
+`docs/operations/aria2-security.md`.
+
 ## 邊界規則
 
 ### Domain

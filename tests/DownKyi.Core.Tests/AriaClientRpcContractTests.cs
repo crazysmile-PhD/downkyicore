@@ -28,7 +28,7 @@ public sealed class AriaClientRpcContractTests
             string? capturedPayload = null;
             var captureSignal = new InvalidOperationException("RPC payload captured.");
             var client = new AriaClient(
-                "http://aria-contract.example",
+                "https://aria-contract.example",
                 35076,
                 "contract-token",
                 (_, payload) =>

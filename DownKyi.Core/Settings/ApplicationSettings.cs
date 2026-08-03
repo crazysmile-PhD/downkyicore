@@ -53,7 +53,6 @@ public sealed record BasicApplicationSettings(
 
 public sealed record NetworkApplicationSettings(
     AllowStatus IsLiftingOfRegion,
-    AllowStatus UseSsl,
     string UserAgent,
     Downloader Downloader,
     AllowStatus HighSpeedDownloadMode,
@@ -174,10 +173,47 @@ internal static class ApplicationSettingsValidator
             customProxy = string.Empty;
         }
 
+        var isAriaHttpsProxy = AllowValue(
+            settings.Network.IsAriaHttpProxy,
+            AllowStatus.No,
+            "Network.IsAriaHttpProxy",
+            corrections);
+        var ariaHttpsProxyPort = Range(
+            settings.Network.AriaHttpProxyListenPort,
+            0,
+            65535,
+            0,
+            "Network.AriaHttpProxyListenPort",
+            corrections);
+        var ariaHttpsProxyHost = settings.Network.AriaHttpProxy ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(ariaHttpsProxyHost))
+        {
+            if (AriaHttpsProxyPolicy.TryNormalizeLocalHost(
+                    ariaHttpsProxyHost,
+                    out var normalizedProxyHost))
+            {
+                ariaHttpsProxyHost = normalizedProxyHost;
+            }
+            else
+            {
+                corrections.Add("Network.AriaHttpProxy");
+                ariaHttpsProxyHost = string.Empty;
+            }
+        }
+
+        if (isAriaHttpsProxy == AllowStatus.Yes
+            && !AriaHttpsProxyPolicy.TryCreateConnectProxyUri(
+                ariaHttpsProxyHost,
+                ariaHttpsProxyPort,
+                out _))
+        {
+            corrections.Add("Network.IsAriaHttpProxy");
+            isAriaHttpsProxy = AllowStatus.No;
+        }
+
         var network = settings.Network with
         {
             IsLiftingOfRegion = AllowValue(settings.Network.IsLiftingOfRegion, AllowStatus.Yes, "Network.IsLiftingOfRegion", corrections),
-            UseSsl = AllowValue(settings.Network.UseSsl, AllowStatus.Yes, "Network.UseSsl", corrections),
             UserAgent = TextValue(settings.Network.UserAgent, DefaultUserAgent, "Network.UserAgent", corrections),
             Downloader = EnumValue(settings.Network.Downloader, Downloader.Aria, "Network.Downloader", corrections),
             HighSpeedDownloadMode = AllowValue(settings.Network.HighSpeedDownloadMode, AllowStatus.No, "Network.HighSpeedDownloadMode", corrections),
@@ -188,8 +224,10 @@ internal static class ApplicationSettingsValidator
             IsHttpProxy = AllowValue(settings.Network.IsHttpProxy, AllowStatus.No, "Network.IsHttpProxy", corrections),
             HttpProxy = settings.Network.HttpProxy ?? string.Empty,
             HttpProxyListenPort = Range(settings.Network.HttpProxyListenPort, 0, 65535, 0, "Network.HttpProxyListenPort", corrections),
-            AriaToken = settings.Network.AriaToken ?? "downkyi",
-            AriaHost = IsHttpUri(settings.Network.AriaHost) ? settings.Network.AriaHost : Corrected("Network.AriaHost", "http://localhost", corrections),
+            AriaToken = settings.Network.AriaToken ?? string.Empty,
+            AriaHost = IsSecureAriaRpcUri(settings.Network.AriaHost)
+                ? settings.Network.AriaHost
+                : Corrected("Network.AriaHost", "http://localhost", corrections),
             AriaListenPort = Range(settings.Network.AriaListenPort, 1, 65535, 35076, "Network.AriaListenPort", corrections),
             AriaLogLevel = EnumValue(settings.Network.AriaLogLevel, AriaConfigLogLevel.WARN, "Network.AriaLogLevel", corrections),
             AriaSplit = Range(settings.Network.AriaSplit, 1, 16, 5, "Network.AriaSplit", corrections),
@@ -198,9 +236,9 @@ internal static class ApplicationSettingsValidator
             AriaMaxOverallDownloadLimit = NonNegative(settings.Network.AriaMaxOverallDownloadLimit, "Network.AriaMaxOverallDownloadLimit", corrections),
             AriaMaxDownloadLimit = NonNegative(settings.Network.AriaMaxDownloadLimit, "Network.AriaMaxDownloadLimit", corrections),
             AriaFileAllocation = EnumValue(settings.Network.AriaFileAllocation, AriaConfigFileAllocation.NONE, "Network.AriaFileAllocation", corrections),
-            IsAriaHttpProxy = AllowValue(settings.Network.IsAriaHttpProxy, AllowStatus.No, "Network.IsAriaHttpProxy", corrections),
-            AriaHttpProxy = settings.Network.AriaHttpProxy ?? string.Empty,
-            AriaHttpProxyListenPort = Range(settings.Network.AriaHttpProxyListenPort, 0, 65535, 0, "Network.AriaHttpProxyListenPort", corrections)
+            IsAriaHttpProxy = isAriaHttpsProxy,
+            AriaHttpProxy = ariaHttpsProxyHost,
+            AriaHttpProxyListenPort = ariaHttpsProxyPort
         };
         var video = settings.Video with
         {
@@ -369,6 +407,27 @@ internal static class ApplicationSettingsValidator
     {
         return Uri.TryCreate(value, UriKind.Absolute, out var uri)
                && uri.Scheme is "http" or "https";
+    }
+
+    private static bool IsSecureAriaRpcUri(string? value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return false;
+        }
+
+        if (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+               && uri.IsLoopback;
     }
 
     private static T Corrected<T>(

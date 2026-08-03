@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
+using System.Security.Authentication;
 using DownKyi.Services.Download;
 using Downloader.Exceptions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -192,6 +194,25 @@ public sealed class DownloadRetryPolicyTests
     }
 
     [Fact]
+    public async Task CoordinatorDoesNotRetryTlsFailureOrTryBackupAddresses()
+    {
+        using var backend = new RecordingBackend(
+            DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Tls,
+                "download.transfer.tls.untrusted"));
+        var coordinator = CreateCoordinator(backend, maximumAttempts: 5);
+
+        var result = await coordinator.TransferAsync(
+            CreateRequest("https://primary.invalid/media", "https://backup.invalid/media"),
+            static _ => Task.FromResult<IReadOnlyList<string>>([]),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
+        Assert.Equal(DownloadTransferFailureKind.Tls, result.FailureKind);
+        Assert.Single(backend.Requests);
+    }
+
+    [Fact]
     public async Task CoordinatorRetriesCleanedResumeRejectionOnceBeforeMoving()
     {
         using var backend = new RecordingBackend(
@@ -342,6 +363,42 @@ public sealed class DownloadRetryPolicyTests
         Assert.Equal(DownloadTransferFailureKind.Disk, result.FailureKind);
     }
 
+    [Fact]
+    public void BuiltinBackendClassifiesCertificateAuthenticationFailures()
+    {
+        var exception = new HttpRequestException(
+            "The SSL connection could not be established.",
+            new AuthenticationException(
+                "The remote certificate is invalid because the certificate chain is untrusted."));
+
+        var result = BuiltinTransferBackend.ClassifyFailure(
+            exception,
+            reportedCanceled: false);
+
+        Assert.Equal(DownloadTransferFailureKind.Tls, result.FailureKind);
+        Assert.Equal("download.transfer.tls.untrusted", result.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData("SSL/TLS handshake failure: unknown CA", "download.transfer.tls.untrusted")]
+    [InlineData("certificate has expired", "download.transfer.tls.expired")]
+    [InlineData("certificate is not yet valid", "download.transfer.tls.not-yet-valid")]
+    [InlineData("certificate hostname does not match", "download.transfer.tls.hostname")]
+    [InlineData("certificate chain building failed", "download.transfer.tls.chain")]
+    [InlineData("SSL/TLS handshake failure", "download.transfer.tls.handshake")]
+    [InlineData("SSL/TLS handshake failure (80090325)", "download.transfer.tls.untrusted")]
+    [InlineData("SSL/TLS handshake failure (80090322)", "download.transfer.tls.hostname")]
+    public void AriaBackendClassifiesTlsFailuresWithoutExposingRawMessages(
+        string errorMessage,
+        string expectedCode)
+    {
+        var result = Aria2TransferFailureClassifier.Classify("1", errorMessage);
+
+        Assert.Equal(DownloadTransferFailureKind.Tls, result.FailureKind);
+        Assert.Equal(expectedCode, result.ErrorCode);
+        Assert.DoesNotContain(errorMessage, result.ErrorCode, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("22", "HTTP response status was 403", (int)DownloadTransferFailureKind.ExpiredAddress)]
     [InlineData("22", "HTTP response status was 429", (int)DownloadTransferFailureKind.RateLimited)]
@@ -364,6 +421,22 @@ public sealed class DownloadRetryPolicyTests
         Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
         Assert.Equal((DownloadTransferFailureKind)expectedValue, result.FailureKind);
         Assert.Equal($"download.transfer.aria2-{errorCode}", result.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData("33", "No URI available.", "download.transfer.insecure-redirect")]
+    [InlineData("34", "No URI available.", "download.transfer.credentialed-redirect")]
+    public void AriaBackendPreservesSecureRedirectRejectionCodes(
+        string errorCode,
+        string errorMessage,
+        string expectedDiagnostic)
+    {
+        var result = Aria2TransferFailureClassifier.Classify(errorCode, errorMessage);
+
+        Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
+        Assert.Equal(DownloadTransferFailureKind.Permanent, result.FailureKind);
+        Assert.Equal(expectedDiagnostic, result.ErrorCode);
+        Assert.DoesNotContain(errorMessage, result.ErrorCode, StringComparison.Ordinal);
     }
 
     [Fact]

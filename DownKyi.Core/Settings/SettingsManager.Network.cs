@@ -7,9 +7,6 @@ namespace DownKyi.Core.Settings
         // 是否开启解除地区限制
         private const AllowStatus IsLiftingOfRegion = AllowStatus.Yes;
 
-        // 启用https
-        private const AllowStatus UseSsl = AllowStatus.Yes;
-
         // UserAgent
         private const string UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -57,35 +54,6 @@ namespace DownKyi.Core.Settings
                 _appSettings.Network.IsLiftingOfRegion,
                 isLiftingOfRegion,
                 v => _appSettings.Network.IsLiftingOfRegion = v);
-        }
-
-        /// <summary>
-        /// 获取是否启用https
-        /// </summary>
-        /// <returns></returns>
-        public AllowStatus GetUseSsl()
-        {
-            if (_appSettings.Network.UseSsl == AllowStatus.None)
-            {
-                // 第一次获取，先设置默认值
-                SetUseSsl(UseSsl);
-                return UseSsl;
-            }
-
-            return _appSettings.Network.UseSsl;
-        }
-
-        /// <summary>
-        /// 设置是否启用https
-        /// </summary>
-        /// <param name="useSsl"></param>
-        /// <returns></returns>
-        public bool SetUseSsl(AllowStatus useSsl)
-        {
-            return SetProperty(
-                _appSettings.Network.UseSsl,
-                useSsl,
-                v => _appSettings.Network.UseSsl = v);
         }
 
         /// <summary>

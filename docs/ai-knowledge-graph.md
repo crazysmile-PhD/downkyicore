@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-07-29
+Last reviewed: 2026-08-01
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -23,6 +23,11 @@ The target projects exist and the Desktop boundary is operational, but Infrastru
 - `DownKyi.Domain.DownloadTask` is the durable runtime state authority. `DownloadTaskApplicationService` loads by `DownloadTaskId`, invokes legal transitions, persists optimistic versions, and only then publishes committed snapshots. Normal runtime no longer reconstructs Domain state from mutable UI projections.
 - New tasks, resumed tasks, and persisted startup tasks directly enqueue `DownloadTaskId` through `DownloadTaskQueueGateway`; `DownloadOrchestrator` no longer scans a UI collection and each active task has its own linked cancellation owner.
 - Workers and pipeline entry points use `DownloadTaskId`. `DownloadPipeline` is a typed stage sequencer; localized activity rendering and completion-list mutation have separate Desktop owners. `DownloadListState` privately owns mutable collections and exposes stable `ReadOnlyObservableCollection<T>` projections. `DownloadExecutionContext` still exposes a transient `DownloadingItem` for playback/UI context. Bilibili HTTP uses injected Application ports with an async Infrastructure implementation; the old static/synchronous compatibility layer is gone.
+- Packaged aria2 uses an ephemeral loopback endpoint, per-runtime secret,
+  supervised process ownership and platform TLS validation. RPC credentials are
+  not process arguments; Cookie is a host-scoped per-task option. Custom remote
+  RPC requires HTTPS. The legacy settings `UseSsl` field is a one-way migration
+  marker and has no runtime authority.
 - These facts are tracked debt, not stable contracts. The ordered migration and release blockers live in `docs/refactoring-live-plan.md`.
 - `ModuleBoundaryBaselineTests` allows every listed debt item to disappear, but rejects new owners, consumers, duplicate names, UI dependencies, synchronous HTTP debt, or oversized-file growth.
 
@@ -130,6 +135,8 @@ flowchart TD
     Projection["ui.download-projection\nDownloadTaskProjectionStore + mapper"]
     Storage["core.storage\nApplicationStorage"]
     Aria["external.aria2\naria2c process"]
+    AriaSecurity["service.aria2-control-security\nRPC + task-header policy"]
+    AriaTlsTests["test.aria2-tls-security\nreal binary TLS matrix"]
     FFmpeg["external.ffmpeg\nffmpeg process"]
     Logs["infrastructure.logging\nredaction + NLog sink + diagnostic export"]
     Tests["test.suites\ntests/*"]
@@ -138,6 +145,7 @@ flowchart TD
     Benchmarks["test.performance-baseline\nBenchmarkCases + runner"]
     SystemBenchmarks["test.system-performance\nisolated system scenarios"]
     CI["workflow.strict-pr-ci\n.github/workflows/quality.yml"]
+    AriaTlsCI["workflow.aria2-tls-security\nsix RID real-binary gate"]
     Release["workflow.release-packaging\n.github/workflows/build.yml"]
     Nightly["workflow.system-baselines\nnightly cross-platform reports"]
     AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
@@ -246,13 +254,16 @@ flowchart TD
     DownloadBootstrap -->|starts and stops| DownloadService
     DownloadService -->|commands by DownloadTaskId| DownloadCommands
     DownloadService -->|reads transient playback projection| Projection
-    DownloadService -->|executes optional| Aria
+    DownloadService -->|uses| AriaSecurity
+    AriaSecurity -->|executes optional| Aria
     DownloadService -->|executes| FFmpeg
     DownloadService -->|writes| Logs
     BiliHttp -->|throws typed visible failures| BiliApi
     Tests -->|guards| BiliHttp
     Tests -->|guards| DownloadAdd
     Tests -->|guards| DownloadService
+    AriaTlsTests -->|guards trust and control behavior| AriaSecurity
+    AriaTlsTests -->|executes pinned binary| Aria
     ArchitectureTests -->|guards dependency direction| Domain
     ArchitectureTests -->|guards dependency direction| ApplicationLayer
     ArchitectureTests -->|guards dependency direction| Infrastructure
@@ -263,6 +274,8 @@ flowchart TD
     CI -->|guards| Tests
     CI -->|guards| ArchitectureTests
     CI -->|guards| UiSmoke
+    CI -->|runs| AriaTlsCI
+    AriaTlsCI -->|runs| AriaTlsTests
     Release -->|gates and packages| App
     Release -->|runs| Tests
     AnalyzerInventory -->|documents diagnostics| CI
@@ -2259,6 +2272,7 @@ paths:
   - DownKyi.Core/Aria2cNet/Client/AriaClient.Lifecycle.cs
   - DownKyi.Core/Aria2cNet/Client/AriaClient.System.cs
   - DownKyi.Core/Aria2cNet/Server/AriaProcessSupervisor.cs
+  - DownKyi.Core/Aria2cNet/Server/AriaBinaryIntegrityVerifier.cs
   - DownKyi.Core/Aria2cNet/Server/WindowsProcessJob.cs
   - src/DownKyi.Desktop/Services/Download/AriaRuntimeClientRegistry.cs
   - tests/DownKyi.Core.Tests/AriaClientIsolationTests.cs
@@ -2267,6 +2281,9 @@ paths:
   - docs/design-docs/aria2-rpc-client-ownership.md
   - script/aria2.ps1
   - script/aria2.sh
+  - script/assets/external-assets.json
+  - docs/operations/aria2-security.md
+  - docs/operations/aria2-security-baseline.json
 responsibility: Provides optional aria2 RPC download backend and release-packaged aria2 binaries.
 inbound:
   - service.download-runtime
@@ -2280,6 +2297,22 @@ contracts:
   - Manager, server, and process-supervisor diagnostics use typed loggers from the shared application factory; `Aria2cNet` cannot call static `LogManager`.
   - RPC requests use iterative asynchronous retry and cannot occupy a worker thread with synchronous `HttpClient.Send` or recursive retry.
   - Each runtime owns an immutable RPC endpoint and secret; `AriaClient` has no mutable static host, port, or token configuration.
+  - A packaged runtime generates a fresh ephemeral loopback port and 256-bit
+    secret. The secret is supplied through a restricted temporary config and
+    cannot appear in process arguments or logs.
+  - HTTP RPC is loopback-only. Non-loopback custom RPC requires HTTPS, URI user
+    information is rejected and the RPC transport does not follow redirects.
+  - aria2 certificate and hostname validation cannot be disabled by settings,
+    UI or process arguments.
+  - Cookie and other request headers are per task, never process-global. Cookie
+    is eligible only for an exact HTTPS `bilibili.com` host/subdomain. Actual
+    transfer redirects are enforced by the versioned DownKyi aria2 capability:
+    no HTTPS scheme downgrade and no sensitive cross-origin redirect.
+  - The packaged executable must match its manifest-derived SHA-256 sidecar
+    before process creation. Packaged and custom RPC endpoints must expose
+    `downkyi-secure-redirect-v2`; missing evidence fails closed. Error code 33
+    identifies HTTPS downgrade rejection and 34 identifies sensitive-header
+    cross-origin rejection even if aria2 later replaces the status message.
   - Local and custom clients can execute concurrently without endpoint or authentication-token cross-contamination.
   - `AriaClient` is hand-maintained DownKyi protocol code, not generated output. Core transport, download control, status/URI, options, lifecycle and `system.*` methods have separate partial owners below 500 lines.
   - Every public RPC method is covered by a deterministic wire-contract inventory. `aria2.*` calls keep the token first; `system.*` calls do not receive an implicit token; `ChangeUriAsync` maps to `aria2.changeUri`.
@@ -2289,10 +2322,77 @@ contracts:
 hazards:
   - Orphaned aria2 processes prevent clean app exit and lock output files.
   - Temporary `.aria2` files must be removed when user deletes a task.
+  - Selecting an ephemeral port and starting the child are separate OS
+    operations; the high-entropy secret and supervised-child liveness check
+    bound the remaining port-allocation race.
+  - The source/base commits, canonical patch, zlib and OpenSSL sources are
+    locked. Binary reproducibility, SBOM and signed provenance remain unproven.
 tests:
   - test.fake-http-download
   - test.process-cleanup
   - test.release-packaging
+  - test.aria2-tls-security
+```
+
+### service.aria2-control-security
+
+```yaml
+id: service.aria2-control-security
+type: service
+paths:
+  - DownKyi.Core/Aria2cNet/Client/AriaClient.cs
+  - DownKyi.Core/Aria2cNet/Server/AriaRpcSecretFile.cs
+  - DownKyi.Core/Aria2cNet/Server/AriaServer.cs
+  - src/DownKyi.Desktop/Services/Download/LocalAriaRpcEndpoint.cs
+  - src/DownKyi.Desktop/Services/Download/AriaTaskHeaderPolicy.cs
+  - src/DownKyi.Desktop/Services/Download/TlsFailureClassifier.cs
+  - src/DownKyi.Desktop/Services/Download/Aria2TransferBackend.cs
+responsibility: Owns packaged aria2 RPC endpoint creation, startup-secret transfer, process identity checks, task-level credential scope and typed TLS failure behavior.
+inbound:
+  - service.download-runtime
+  - core.settings
+outbound:
+  - external.aria2
+contracts:
+  - No certificate bypass, HTTPS downgrade, fixed packaged secret/port or command-line credential is permitted.
+  - Process startup uses a structured argument list and rejects control-character header injection.
+  - Legacy `UseSsl` can be consumed for one-way settings migration only; it cannot be read by runtime code and is omitted on write.
+  - TLS errors remain distinguishable from timeout, HTTP status, disk and cancellation failures.
+hazards:
+  - Relaxing host matching or enabling credentialed redirects can disclose login state to a different origin.
+  - Failure cleanup must delete the startup secret and stop only the tracked child.
+tests:
+  - test.aria2-tls-security
+  - test.architecture-boundaries
+```
+
+### test.aria2-tls-security
+
+```yaml
+id: test.aria2-tls-security
+type: test
+paths:
+  - tests/DownKyi.Tests/Aria2TlsIntegrationTests.cs
+  - tests/DownKyi.Tests/Aria2TlsRedirectIntegrationTests.cs
+  - tests/DownKyi.Tests/Aria2TlsTestRuntime.cs
+  - tests/TestInfrastructure/LoopbackTlsFileServer.cs
+  - tests/TestInfrastructure/TestCertificateAuthority.cs
+  - tests/DownKyi.Architecture.Tests/TlsSecurityArchitectureTests.cs
+responsibility: Runs the actual pinned aria2 binary against deterministic trust, certificate, redirect, resume and RPC cases without using a real external service.
+inbound:
+  - workflow.aria2-tls-security
+outbound:
+  - external.aria2
+contracts:
+  - Sanitized reports contain environment/backend/case evidence but no path, URL, header, Cookie, token or account identity.
+  - Expected certificate rejection is a passing security assertion; transport downgrade is never used to make a case pass.
+  - Redirect security is proved at the actual aria2 `Location` boundary. The
+    HTTPS-to-HTTP target and sensitive cross-origin target must observe zero
+    requests/connections for GET, HEAD-vs-GET, Range and later-attempt cases.
+hazards:
+  - Platform trust-store setup must be removed in `finally` and cannot modify a developer's permanent application data.
+tests:
+  - self
 ```
 
 ### ui.async-image-loader
@@ -2350,10 +2450,39 @@ contracts:
   - Test projects run in stable path order so one constrained runner cannot make independent xUnit hosts starve one another during discovery or shutdown.
   - Every test project writes a distinct assembly-named TRX; no solution-level logger filename may overwrite earlier project evidence.
   - Windows PR and main jobs must run the Assembly Lifecycle Stability Gate and upload its reports even when a phase fails.
+  - Every PR runs the six-RID real-binary aria2 TLS security matrix; a unit-test-only pass cannot replace it.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
   - Broad NoWarn, global suppressions, nullable disable, or analyzer exclusions hide new defects.
   - Restoring one parallel solution-level `dotnet test` command can reintroduce Windows foreground-thread timeouts and TRX overwrite.
+tests:
+  - github.actions
+```
+
+### workflow.aria2-tls-security
+
+```yaml
+id: workflow.aria2-tls-security
+type: workflow
+paths:
+  - .github/workflows/quality.yml
+  - script/aria2.ps1
+  - script/aria2.sh
+  - script/assets/external-assets.json
+  - docs/operations/aria2-security-baseline.json
+responsibility: Downloads SHA-pinned aria2 assets and proves TLS/control behavior on Windows x86/x64, Linux x64/arm64 and macOS x64/arm64.
+inbound:
+  - workflow.strict-pr-ci
+outbound:
+  - test.aria2-tls-security
+contracts:
+  - Asset acquisition must use normal TLS, verify archive SHA-256 before
+    extraction and binary SHA-256 after extraction, then write the runtime
+    checksum sidecar. The manifest is the only URL/checksum owner.
+  - All six RID jobs are required for an aria2 security or binary change.
+  - Reports are uploaded even on test failure and must remain sanitized.
+hazards:
+  - A pinned digest proves artifact identity, not source reproducibility or publisher integrity.
 tests:
   - github.actions
 ```

@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Domain.Downloads;
+using DownKyi.Domain.Results;
 using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.Utils;
@@ -84,6 +85,19 @@ internal sealed class DownloadActivityPresenter
             DictionaryResource.GetString(
                 isNetworkProblem ? "NetworkProblem" : "DownloadFailed"),
             true);
+    }
+
+    public static DownloadFailure CreateFailure(OperationError? error)
+    {
+        if (error == null || !TlsFailureClassifier.IsTlsErrorCode(error.Code))
+        {
+            return CreateRetryableFailure();
+        }
+
+        return new DownloadFailure(
+            error.Code,
+            DictionaryResource.GetString(TlsFailureClassifier.GetResourceKey(error.Code)),
+            false);
     }
 
     public static string CreateDirectoryError(string path)

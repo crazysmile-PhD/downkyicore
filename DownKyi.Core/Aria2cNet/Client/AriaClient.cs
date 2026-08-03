@@ -10,19 +10,24 @@ namespace DownKyi.Core.Aria2cNet.Client;
 public sealed partial class AriaClient
 {
     private const string JSONRPC = "2.0";
-    private const string LOCAL_HOST = "http://localhost";
-    private const string TOKEN = "downkyi";
-    private const int LISTEN_PORT = 35076;
-    private static readonly HttpClient HttpClient = new();
-    private readonly Func<Uri, string, Task<string?>> _requestAsync;
+    private static readonly HttpClient HttpClient = new(new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false
+    });
+    private readonly Func<Uri, string, CancellationToken, Task<string?>> _requestAsync;
     private readonly Uri _rpcUri;
     private readonly string _token;
 
     public AriaClient(
-        string host = LOCAL_HOST,
-        int listenPort = LISTEN_PORT,
-        string token = TOKEN)
-        : this(host, listenPort, token, static (url, parameters) => RequestAsync(url, parameters))
+        string host,
+        int listenPort,
+        string token)
+        : this(
+            host,
+            listenPort,
+            token,
+            static (url, parameters, cancellationToken) =>
+                RequestAsync(url, parameters, cancellationToken))
     {
     }
 
@@ -31,6 +36,20 @@ public sealed partial class AriaClient
         int listenPort,
         string token,
         Func<Uri, string, Task<string?>> requestAsync)
+        : this(
+            host,
+            listenPort,
+            token,
+            (url, parameters, _) => requestAsync(url, parameters))
+    {
+        ArgumentNullException.ThrowIfNull(requestAsync);
+    }
+
+    internal AriaClient(
+        string host,
+        int listenPort,
+        string token,
+        Func<Uri, string, CancellationToken, Task<string?>> requestAsync)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentOutOfRangeException.ThrowIfLessThan(listenPort, 1);
@@ -42,6 +61,21 @@ public sealed partial class AriaClient
             throw new ArgumentException("The aria2 RPC host must be an absolute HTTP or HTTPS URI.", nameof(host));
         }
 
+        if (string.Equals(hostUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            && !hostUri.IsLoopback)
+        {
+            throw new ArgumentException(
+                "Remote aria2 RPC endpoints must use HTTPS.",
+                nameof(host));
+        }
+
+        if (!string.IsNullOrEmpty(hostUri.UserInfo))
+        {
+            throw new ArgumentException(
+                "The aria2 RPC host must not contain user information.",
+                nameof(host));
+        }
+
         _rpcUri = new UriBuilder(hostUri)
         {
             Port = listenPort,
@@ -49,7 +83,22 @@ public sealed partial class AriaClient
             Query = string.Empty,
             Fragment = string.Empty
         }.Uri;
-        _token = token ?? string.Empty;
+        ArgumentNullException.ThrowIfNull(token);
+        if (token.Length > 0 && string.IsNullOrWhiteSpace(token))
+        {
+            throw new ArgumentException(
+                "The aria2 RPC secret must be empty or contain a non-whitespace value.",
+                nameof(token));
+        }
+
+        if (token.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                "The aria2 RPC secret contains a control character.",
+                nameof(token));
+        }
+
+        _token = token;
         _requestAsync = requestAsync ?? throw new ArgumentNullException(nameof(requestAsync));
     }
 
@@ -59,15 +108,29 @@ public sealed partial class AriaClient
     /// <typeparam name="T"></typeparam>
     /// <param name="ariaSend"></param>
     /// <returns></returns>
-    private async Task<T> GetRpcResponseAsync<T>(AriaSendData ariaSend)
+    private async Task<T> GetRpcResponseAsync<T>(
+        AriaSendData ariaSend,
+        CancellationToken cancellationToken = default)
         where T : class
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_token.Length == 0
+            && ariaSend.Params.Count > 0
+            && ariaSend.Params[0] is string firstParameter
+            && string.Equals(firstParameter, "token:", StringComparison.Ordinal))
+        {
+            ariaSend.Params = ariaSend.Params.Skip(1).ToArray();
+        }
+
         // 去掉null
         var jsonSetting = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
         // 转换为json字符串
         string sendJson = JsonConvert.SerializeObject(ariaSend, Formatting.Indented, jsonSetting);
         // 向服务器请求数据
-        var result = await _requestAsync(_rpcUri, sendJson).ConfigureAwait(false);
+        var result = await _requestAsync(
+            _rpcUri,
+            sendJson,
+            cancellationToken).ConfigureAwait(false);
         if (result == null)
         {
             throw new HttpRequestException("aria2 RPC retry attempts were exhausted.");
@@ -91,7 +154,10 @@ public sealed partial class AriaClient
     /// <param name="parameters"></param>
     /// <param name="retry"></param>
     /// <returns></returns>
-    private static async Task<string?> RequestAsync(Uri url, string parameters)
+    private static async Task<string?> RequestAsync(
+        Uri url,
+        string parameters,
+        CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
@@ -99,9 +165,12 @@ public sealed partial class AriaClient
         };
         using var response = await HttpClient.SendAsync(
             request,
-            HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        return await response.Content
+            .ReadAsStringAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
 }

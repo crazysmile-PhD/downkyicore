@@ -206,7 +206,12 @@
     <system:String x:Key="RepeatFileAutoAddNumberSuffix">重复文件自动添加数字序号后缀</system:String>
     <system:String x:Key="AutoDownloadAll">解析后自动下载已解析视频</system:String>
     <system:String x:Key="Network">网络</system:String>
-    <system:String x:Key="UseSSL">启用https（若下载器提示SSL错误，则关闭此项）</system:String>
+    <system:String x:Key="DownloadTlsUntrusted">下载失败：服务器证书不受信任</system:String>
+    <system:String x:Key="DownloadTlsExpired">下载失败：服务器证书已过期</system:String>
+    <system:String x:Key="DownloadTlsNotYetValid">下载失败：服务器证书尚未生效</system:String>
+    <system:String x:Key="DownloadTlsHostnameMismatch">下载失败：服务器证书与主机名不匹配</system:String>
+    <system:String x:Key="DownloadTlsInvalidChain">下载失败：服务器证书链无效</system:String>
+    <system:String x:Key="DownloadTlsHandshakeFailed">下载失败：TLS 安全连接验证失败</system:String>
     <system:String x:Key="UserAgent">UserAgent：</system:String>
     <system:String x:Key="NetworkProxySetting">网络代理设置</system:String>
     <system:String x:Key="NetworkProxyNone">无</system:String>
@@ -231,6 +236,9 @@
     <system:String x:Key="AriaMaxDownloadLimit">单任务下载速度限制[0: 无限制]</system:String>
     <system:String x:Key="AriaFileAllocation">Aria文件预分配：</system:String>
     <system:String x:Key="IsHttpProxy">使用Http代理</system:String>
+    <system:String x:Key="IsAriaHttpsDownloadProxy">使用本机 HTTPS 下载代理（HTTP CONNECT）</system:String>
+    <system:String x:Key="AriaHttpsDownloadProxyHost">本机代理地址：</system:String>
+    <system:String x:Key="AriaHttpsDownloadProxyTip">仅允许 127.0.0.1、localhost 或 ::1。代理本身使用 HTTP CONNECT；aria2 仍会验证 HTTPS 证书与主机名。</system:String>
     <system:String x:Key="HttpProxy">代理地址：</system:String>
     <system:String x:Key="HttpProxyPort">端口：</system:String>
     <system:String x:Key="MaxCurrentDownloads">同时下载数：</system:String>

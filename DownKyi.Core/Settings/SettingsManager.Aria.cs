@@ -5,7 +5,7 @@ namespace DownKyi.Core.Settings
     public partial class SettingsManager
     {
         // Aria服务器token
-        private const string AriaToken = "downkyi";
+        private const string AriaToken = "";
 
         // Aria服务器host
         private const string AriaHost = "http://localhost";

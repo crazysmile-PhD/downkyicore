@@ -39,8 +39,13 @@ does not change its public API.
 ## Stable Contract
 
 - The endpoint is an immutable absolute HTTP/HTTPS URI ending in `/jsonrpc`.
+- Plain HTTP is loopback-only. Non-loopback RPC requires HTTPS, URI user
+  information is rejected and the transport does not follow redirects.
 - Each `AriaClient` instance owns its endpoint and secret. No mutable static
   host, port or token state is allowed.
+- A secret is mandatory. The packaged runtime generates a fresh 256-bit value
+  and passes it to aria2 through a temporary restricted config rather than a
+  process argument.
 - `aria2.*` calls place `token:<secret>` first in `params`.
 - `system.*` calls do not automatically add the aria2 token.
 - Request `jsonrpc` remains `2.0`, request IDs remain non-empty and each public

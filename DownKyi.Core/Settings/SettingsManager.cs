@@ -69,7 +69,7 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         }
 
         var migration = SettingsSchemaMigrator.Migrate(_appSettings);
-        if (migration.Migrated && loadResult.PersistInitialDefaults)
+        if ((_appSettings.Network.ConsumeLegacyHttpsSwitch() || migration.Migrated) && loadResult.PersistInitialDefaults)
         {
             MarkDirty();
         }

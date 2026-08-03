@@ -1,6 +1,7 @@
 # Execution Plans
 
-目前唯一即時任務書是 `../refactoring-live-plan.md`。它只保存尚未完成、被阻塞或等待整合的工作。
+目前即時狀態位於 `../refactoring-live-plan.md`。v1.1.1 的安全修補順序、
+範圍、驗證與回滾位於 `v1.1.1-security-patch.md`。
 
 每個 work item 必須包含：
 

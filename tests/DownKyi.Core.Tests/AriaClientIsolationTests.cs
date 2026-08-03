@@ -31,7 +31,7 @@ public sealed class AriaClientIsolationTests
         List<(Uri Endpoint, string Payload)> requests)
     {
         return new AriaClient(
-            $"http://{host}",
+            $"https://{host}",
             port,
             token,
             (endpoint, payload) =>

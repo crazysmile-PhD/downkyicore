@@ -47,10 +47,7 @@ internal partial class ViewNetworkViewModel : ViewModelBase
 
         _isOnNavigatedTo = true;
 
-        // 启用https
         var network = _coordinator.Current;
-        var useSsl = network.UseSsl;
-        UseSsl = useSsl == AllowStatus.Yes;
 
         // UserAgent
         UserAgent = network.UserAgent;
@@ -123,14 +120,14 @@ internal partial class ViewNetworkViewModel : ViewModelBase
         // Aria下载单文件速度限制
         AriaMaxDownloadLimit = network.AriaMaxDownloadLimit;
 
-        // 是否开启Aria http代理
+        // Whether to use a local HTTP CONNECT proxy for aria2 HTTPS downloads.
         var isAriaHttpProxy = network.IsAriaHttpProxy;
         IsAriaHttpProxy = isAriaHttpProxy == AllowStatus.Yes;
 
-        // Aria的http代理的地址
+        // Local aria2 HTTPS-download proxy host.
         AriaHttpProxy = network.AriaHttpProxy;
 
-        // Aria的http代理的端口
+        // Local aria2 HTTPS-download proxy port.
         AriaHttpProxyPort = network.AriaHttpProxyListenPort;
 
         // Aria文件预分配
@@ -141,23 +138,6 @@ internal partial class ViewNetworkViewModel : ViewModelBase
     }
 
     #region 命令申明
-
-    // 是否启用https事件
-    private RelayCommand? _useSslCommand;
-
-    public RelayCommand UseSslCommand => _useSslCommand ??= new RelayCommand(ExecuteUseSslCommand);
-
-    /// <summary>
-    /// 是否启用https事件
-    /// </summary>
-    private void ExecuteUseSslCommand()
-    {
-        var useSsl = UseSsl ? AllowStatus.Yes : AllowStatus.No;
-
-        ApplyNetwork(
-            settings => settings with { UseSsl = useSsl },
-            settings => settings.UseSsl == useSsl);
-    }
 
     // 设置UserAgent事件
     private RelayCommand? _userAgentCommand;

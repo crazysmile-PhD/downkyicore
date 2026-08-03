@@ -7,6 +7,7 @@ namespace DownKyi.Core.Aria2cNet.Server;
 
 internal sealed class AriaProcessSupervisor
 {
+    private const int KillWaitMilliseconds = 5000;
     private readonly Lock _sync = new();
     private readonly ILogger<AriaProcessSupervisor> _logger;
     private Process? _process;
@@ -24,6 +25,17 @@ internal sealed class AriaProcessSupervisor
             lock (_sync)
             {
                 return _process != null;
+            }
+        }
+    }
+
+    public bool HasRunningProcess
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _process is { HasExited: false };
             }
         }
     }
@@ -85,8 +97,7 @@ internal sealed class AriaProcessSupervisor
         }
         catch (TimeoutException)
         {
-            Kill("aria2c did not exit before timeout.");
-            return false;
+            return Kill("aria2c did not exit before timeout.");
         }
     }
 
@@ -94,13 +105,9 @@ internal sealed class AriaProcessSupervisor
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
         Process? process;
-        WindowsProcessJob? processJob;
         lock (_sync)
         {
             process = _process;
-            _process = null;
-            processJob = _windowsProcessJob;
-            _windowsProcessJob = null;
         }
 
         if (process == null)
@@ -116,6 +123,15 @@ internal sealed class AriaProcessSupervisor
                 process.Kill(entireProcessTree: true);
             }
 
+            if (!process.WaitForExit(KillWaitMilliseconds))
+            {
+                _logger.LogErrorMessage(
+                    "aria2 process did not exit after it was terminated.",
+                    new TimeoutException("aria2 process termination timed out."));
+                return false;
+            }
+
+            Release(process);
             return true;
         }
         catch (InvalidOperationException e)
@@ -127,10 +143,6 @@ internal sealed class AriaProcessSupervisor
         {
             _logger.LogErrorMessage("aria2 process cleanup failed at the operating-system boundary.", e);
             return false;
-        }
-        finally
-        {
-            processJob?.Dispose();
         }
     }
 

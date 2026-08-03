@@ -83,6 +83,93 @@ jobs:
           path: TestResults/*.trx
           if-no-files-found: ignore
 
+  aria2-tls-security:
+    name: aria2 TLS security (${{ matrix.rid }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x86
+            runner: windows-latest
+            asset-argument: x86
+            binary: DownKyi.Core/Binary/win-x86/aria2/aria2c.exe
+          - rid: win-x64
+            runner: windows-latest
+            asset-argument: x64
+            binary: DownKyi.Core/Binary/win-x64/aria2/aria2c.exe
+          - rid: linux-x64
+            runner: ubuntu-24.04
+            asset-argument: linux-x64
+            binary: DownKyi.Core/Binary/linux-x64/aria2/aria2c
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
+            asset-argument: linux-arm64
+            binary: DownKyi.Core/Binary/linux-arm64/aria2/aria2c
+          - rid: osx-x64
+            runner: macos-15-intel
+            asset-argument: osx-x64
+            binary: DownKyi.Core/Binary/osx-x64/aria2/aria2c
+          - rid: osx-arm64
+            runner: macos-15
+            asset-argument: osx-arm64
+            binary: DownKyi.Core/Binary/osx-arm64/aria2/aria2c
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Fetch and verify Windows aria2 asset
+        if: startsWith(matrix.rid, 'win-')
+        shell: pwsh
+        run: ./script/aria2.ps1 '${{ matrix.asset-argument }}'
+      - name: Fetch and verify Unix aria2 asset
+        if: ${{ !startsWith(matrix.rid, 'win-') }}
+        shell: bash
+        run: bash ./script/aria2.sh '${{ matrix.asset-argument }}'
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
+      - name: Install ARM64 protobuf compiler
+        if: matrix.rid == 'linux-arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes protobuf-compiler
+      - name: Build TLS integration tests with all warnings as errors
+        env:
+          PROTOBUF_PROTOC: ${{ matrix.rid == 'linux-arm64' && '/usr/bin/protoc' || '' }}
+        run: >
+          dotnet build ./tests/DownKyi.Tests/DownKyi.Tests.csproj
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
+      - name: Verify packaged aria2 TLS behavior
+        env:
+          DOWNKYI_ARIA2_BINARY: ${{ github.workspace }}/${{ matrix.binary }}
+          DOWNKYI_ARIA2_RID: ${{ matrix.rid }}
+          DOWNKYI_ARIA2_TLS_REPORT: ${{ github.workspace }}/artifacts/aria2-tls/${{ matrix.rid }}.json
+        run: >
+          dotnet test ./tests/DownKyi.Tests/DownKyi.Tests.csproj
+          -c Release
+          --no-restore
+          --no-build
+          --filter Category=Aria2TlsIntegration
+      - name: Upload sanitized aria2 TLS report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: aria2-tls-${{ matrix.rid }}
+          path: artifacts/aria2-tls/${{ matrix.rid }}.json
+          if-no-files-found: warn
+
   assembly-lifecycle:
     name: Assembly lifecycle stability
     runs-on: windows-latest

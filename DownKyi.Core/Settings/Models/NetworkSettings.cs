@@ -1,4 +1,5 @@
 using DownKyi.Core.Aria2cNet.Server;
+using Newtonsoft.Json;
 
 namespace DownKyi.Core.Settings.Models;
 
@@ -9,7 +10,22 @@ public class NetworkSettings
 {
     public AllowStatus IsLiftingOfRegion { get; set; } = AllowStatus.None;
 
-    public AllowStatus UseSsl { get; set; } = AllowStatus.None;
+    [JsonProperty("UseSsl")]
+    private AllowStatus LegacyUseSsl
+    {
+        set => HasLegacyUseSsl = true;
+    }
+
+    [JsonIgnore]
+    internal bool HasLegacyUseSsl { get; private set; }
+
+    internal bool ConsumeLegacyHttpsSwitch()
+    {
+        var wasPresent = HasLegacyUseSsl;
+        HasLegacyUseSsl = false;
+        return wasPresent;
+    }
+
     public string UserAgent { get; set; } = string.Empty;
 
     public Downloader Downloader { get; set; } = Downloader.NotSet;

@@ -87,7 +87,9 @@ public sealed class EnumValueContractTests
     private sealed class TestAriaManager : AriaManager
     {
         public TestAriaManager()
-            : base(new AriaClient(), NullLogger<AriaManager>.Instance)
+            : base(
+                new AriaClient("http://localhost", 35076, "test-token"),
+                NullLogger<AriaManager>.Instance)
         {
         }
 

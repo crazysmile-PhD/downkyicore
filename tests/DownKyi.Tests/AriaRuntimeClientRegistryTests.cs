@@ -9,8 +9,8 @@ public sealed class AriaRuntimeClientRegistryTests
     public void RegistryOwnsOneRuntimeClientAndReleasesItDeterministically()
     {
         var registry = new AriaRuntimeClientRegistry();
-        var first = new AriaClient();
-        var second = new AriaClient();
+        var first = new AriaClient("http://localhost", 35076, "first-test-token");
+        var second = new AriaClient("http://localhost", 35077, "second-test-token");
 
         using (registry.Activate(first))
         {

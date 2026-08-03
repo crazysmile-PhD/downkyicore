@@ -197,13 +197,13 @@ internal partial class ViewNetworkViewModel
             settings => settings.AriaMaxDownloadLimit == AriaMaxDownloadLimit);
     }
 
-    // 是否开启Aria http代理事件
+    // Toggle the local HTTP CONNECT proxy used by aria2 HTTPS downloads.
     private RelayCommand? _isAriaHttpProxyCommand;
 
     public RelayCommand IsAriaHttpProxyCommand => _isAriaHttpProxyCommand ??= new RelayCommand(ExecuteIsAriaHttpProxyCommand);
 
     /// <summary>
-    /// 是否开启Aria http代理事件
+    /// Toggles the local HTTP CONNECT proxy used by aria2 HTTPS downloads.
     /// </summary>
     private void ExecuteIsAriaHttpProxyCommand()
     {
@@ -214,13 +214,13 @@ internal partial class ViewNetworkViewModel
             settings => settings.IsAriaHttpProxy == isAriaHttpProxy);
     }
 
-    // Aria的http代理的地址事件
+    // Apply the local aria2 HTTPS-download proxy host.
     private RelayCommand<string>? _ariaHttpProxyCommand;
 
     public RelayCommand<string> AriaHttpProxyCommand => _ariaHttpProxyCommand ??= RequiredParameterCommand.Create<string>(ExecuteAriaHttpProxyCommand);
 
     /// <summary>
-    /// Aria的http代理的地址事件
+    /// Applies the local aria2 HTTPS-download proxy host.
     /// </summary>
     /// <param name="parameter"></param>
     private void ExecuteAriaHttpProxyCommand(string parameter)
@@ -230,13 +230,13 @@ internal partial class ViewNetworkViewModel
             settings => settings.AriaHttpProxy == parameter);
     }
 
-    // Aria的http代理的端口事件
+    // Apply the local aria2 HTTPS-download proxy port.
     private RelayCommand<string>? _ariaHttpProxyPortCommand;
 
     public RelayCommand<string> AriaHttpProxyPortCommand => _ariaHttpProxyPortCommand ??= RequiredParameterCommand.Create<string>(ExecuteAriaHttpProxyPortCommand);
 
     /// <summary>
-    /// Aria的http代理的端口事件
+    /// Applies the local aria2 HTTPS-download proxy port.
     /// </summary>
     /// <param name="parameter"></param>
     private void ExecuteAriaHttpProxyPortCommand(string parameter)

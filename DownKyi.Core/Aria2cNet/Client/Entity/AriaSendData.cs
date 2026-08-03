@@ -27,8 +27,8 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
     [JsonObject]
     public class AriaSendOption
     {
-        [JsonProperty("all-proxy")]
-        public string HttpProxy { get; set; } = string.Empty;
+        [JsonProperty("https-proxy")]
+        public string HttpsProxy { get; set; } = string.Empty;
 
         [JsonProperty("out")]
         public string Out { get; set; } = string.Empty;
@@ -53,6 +53,9 @@ namespace DownKyi.Core.Aria2cNet.Client.Entity
 
         [JsonProperty("user-agent")]
         public string UserAgent { get; set; } = string.Empty;
+
+        [JsonProperty("header")]
+        public IReadOnlyList<string> Headers { get; set; } = Array.Empty<string>();
 
         [JsonProperty("split")]
         public string Split { get; set; } = string.Empty;

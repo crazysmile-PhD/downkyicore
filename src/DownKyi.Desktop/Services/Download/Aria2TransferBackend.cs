@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -27,10 +26,11 @@ internal sealed class Aria2TransferBackend : ITransferBackend
     private readonly AriaClient _ariaClient;
     private readonly AriaRuntimeClientRegistry _clientRegistry;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
-    private readonly AriaServer _ariaServer;
+    private readonly AriaDownloadAddressResolver _addressResolver;
+    private readonly Aria2RuntimeLifecycle _runtimeLifecycle;
+    private readonly Uri? _httpsProxyAddress;
     private readonly ILoggerFactory _loggerFactory;
     private readonly NetworkApplicationSettings _networkSettings;
-    private readonly bool _ownsAriaServer;
     private readonly ILogger<Aria2TransferBackend> _logger;
     private IDisposable? _runtimeRegistration;
 
@@ -42,19 +42,28 @@ internal sealed class Aria2TransferBackend : ITransferBackend
         AriaServer ariaServer,
         ILoggerFactory loggerFactory,
         ILogger<Aria2TransferBackend> logger,
-        bool ownsAriaServer)
+        bool ownsAriaServer,
+        LocalAriaRpcEndpoint? localEndpoint)
     {
         _networkSettings = networkSettings ?? throw new ArgumentNullException(nameof(networkSettings));
         _ariaClient = ariaClient ?? throw new ArgumentNullException(nameof(ariaClient));
         _clientRegistry = clientRegistry ?? throw new ArgumentNullException(nameof(clientRegistry));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
-        _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
+        _httpsProxyAddress = ResolveHttpsProxyAddress(networkSettings);
+        _addressResolver = AriaDownloadAddressResolver.Create(_httpsProxyAddress);
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _ownsAriaServer = ownsAriaServer;
+        _runtimeLifecycle = new Aria2RuntimeLifecycle(
+            networkSettings,
+            ariaClient,
+            diagnosticLogger,
+            ariaServer,
+            loggerFactory.CreateLogger<Aria2RuntimeLifecycle>(),
+            ownsAriaServer,
+            localEndpoint);
     }
 
-    public string Name => _ownsAriaServer ? "aria2-local" : "aria2-custom";
+    public string Name => _runtimeLifecycle.Name;
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -62,18 +71,11 @@ internal sealed class Aria2TransferBackend : ITransferBackend
         _runtimeRegistration ??= _clientRegistry.Activate(_ariaClient);
         try
         {
-            if (_ownsAriaServer)
-            {
-                await StartAriaServerAsync(cancellationToken).ConfigureAwait(true);
-            }
+            await _runtimeLifecycle.StartAsync(cancellationToken).ConfigureAwait(true);
         }
         catch
         {
-            if (_ownsAriaServer)
-            {
-                _ariaServer.KillTrackedServer("aria2 runtime startup failed.");
-            }
-
+            _runtimeLifecycle.AbortStartup();
             ReleaseRuntimeRegistration();
             throw;
         }
@@ -83,10 +85,7 @@ internal sealed class Aria2TransferBackend : ITransferBackend
     {
         try
         {
-            if (_ownsAriaServer)
-            {
-                await CloseAriaServerAsync(cancellationToken).ConfigureAwait(true);
-            }
+            await _runtimeLifecycle.StopAsync(cancellationToken).ConfigureAwait(true);
         }
         finally
         {
@@ -107,8 +106,28 @@ internal sealed class Aria2TransferBackend : ITransferBackend
         string? activeGid;
         try
         {
-            activeGid = await EnsureAriaTaskAsync(
+            var preparation = await EnsureAriaTaskAsync(
                 request).ConfigureAwait(true);
+            if (preparation.ErrorCode != null)
+            {
+                _logger.LogWarningMessage(
+                    $"aria2 download address was rejected; code={preparation.ErrorCode}");
+                return DownloadTransferResult.Failed(
+                    DownloadTransferFailureKind.Permanent,
+                    preparation.ErrorCode);
+            }
+
+            activeGid = preparation.Gid
+                ?? throw new InvalidOperationException("The prepared aria2 task identifier is missing.");
+        }
+        catch (HttpRequestException exception) when (
+            TlsFailureClassifier.TryClassify(exception, out var tlsErrorCode))
+        {
+            _logger.LogWarningMessage(
+                $"aria2 address validation failed TLS policy; code={tlsErrorCode}");
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Tls,
+                tlsErrorCode);
         }
         catch (Exception exception) when (exception is HttpRequestException
             or IOException
@@ -220,8 +239,23 @@ internal sealed class Aria2TransferBackend : ITransferBackend
         }
     }
 
-    private async Task<string> EnsureAriaTaskAsync(DownloadTransferRequest request)
+    private async Task<AriaTaskPreparation> EnsureAriaTaskAsync(
+        DownloadTransferRequest request)
     {
+        var resolution = await _addressResolver.ResolveAsync(
+            request.Urls[0],
+            _networkSettings.UserAgent,
+            LoginHelper.GetLoginInfoCookiesString(),
+            request.CancellationToken).ConfigureAwait(true);
+        if (resolution.ErrorCode != null)
+        {
+            return AriaTaskPreparation.Rejected(resolution.ErrorCode);
+        }
+
+        var resolvedAddress = resolution.Address
+            ?? throw new InvalidOperationException("The accepted aria2 address is missing.");
+        var taskHeaders = resolution.Headers
+            ?? throw new InvalidOperationException("The accepted aria2 task headers are missing.");
         var gid = string.IsNullOrWhiteSpace(request.BackendIdentity)
             ? null
             : request.BackendIdentity;
@@ -259,7 +293,8 @@ internal sealed class Aria2TransferBackend : ITransferBackend
                 Continue = "true",
                 AllowOverwrite = "true",
                 AutoFileRenaming = "false",
-                UserAgent = _networkSettings.UserAgent,
+                UserAgent = taskHeaders.UserAgent,
+                Headers = taskHeaders.Headers,
                 Split = _networkSettings.AriaSplit.ToString(CultureInfo.InvariantCulture),
                 MaxConnectionPerServer = _networkSettings.AriaMaxConnectionPerServer
                     .ToString(CultureInfo.InvariantCulture),
@@ -269,12 +304,14 @@ internal sealed class Aria2TransferBackend : ITransferBackend
                 AlwaysResume = "false",
                 MaxResumeFailureTries = "0"
             };
-            if (_networkSettings.IsAriaHttpProxy == AllowStatus.Yes)
+            if (_httpsProxyAddress != null)
             {
-                option.HttpProxy = $"http://{_networkSettings.AriaHttpProxy}:{_networkSettings.AriaHttpProxyListenPort}";
+                option.HttpsProxy = _httpsProxyAddress.AbsoluteUri;
             }
 
-            var added = await _ariaClient.AddUriAsync(request.Urls.ToList(), option).ConfigureAwait(true);
+            var added = await _ariaClient.AddUriAsync(
+                [resolvedAddress.AbsoluteUri],
+                option).ConfigureAwait(true);
             if (added is not { Result: { } addedGid } ||
                 string.IsNullOrWhiteSpace(addedGid))
             {
@@ -287,16 +324,52 @@ internal sealed class Aria2TransferBackend : ITransferBackend
         }
         else if (string.Equals(existingStatus, "paused", StringComparison.Ordinal))
         {
-            var unpaused = await _ariaClient.UnpauseAsync(gid).ConfigureAwait(true);
-            if (unpaused is not { Result: { } unpausedGid } ||
-                string.IsNullOrWhiteSpace(unpausedGid))
-            {
-                throw new InvalidOperationException(
-                    "aria2 rejected the unpause request.");
-            }
+            await RefreshOptionsAndUnpauseAsync(
+                _ariaClient,
+                gid,
+                taskHeaders,
+                request.CancellationToken).ConfigureAwait(true);
         }
 
-        return gid;
+        return AriaTaskPreparation.Ready(gid);
+    }
+
+    internal static async Task RefreshOptionsAndUnpauseAsync(
+        AriaClient ariaClient,
+        string gid,
+        AriaTaskHeaders taskHeaders,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(ariaClient);
+        ArgumentException.ThrowIfNullOrWhiteSpace(gid);
+        ArgumentNullException.ThrowIfNull(taskHeaders);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var options = new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["header"] = taskHeaders.Headers.ToArray(),
+            ["user-agent"] = taskHeaders.UserAgent
+        };
+        var changed = await ariaClient
+            .ChangeOptionAsync(gid, options)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(true);
+        if (changed is not { Result: "OK" })
+        {
+            throw new InvalidOperationException(
+                "aria2 rejected the task credential refresh.");
+        }
+
+        var unpaused = await ariaClient
+            .UnpauseAsync(gid)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(true);
+        if (unpaused is not { Result: { } unpausedGid }
+            || string.IsNullOrWhiteSpace(unpausedGid))
+        {
+            throw new InvalidOperationException(
+                "aria2 rejected the unpause request.");
+        }
     }
 
     private static bool IsNotFound(AriaError? error)
@@ -306,88 +379,29 @@ internal sealed class Aria2TransferBackend : ITransferBackend
             StringComparison.OrdinalIgnoreCase) == true;
     }
 
+    private static Uri? ResolveHttpsProxyAddress(NetworkApplicationSettings settings)
+    {
+        if (settings.IsAriaHttpProxy != AllowStatus.Yes)
+        {
+            return null;
+        }
+
+        if (!AriaHttpsProxyPolicy.TryCreateConnectProxyUri(
+                settings.AriaHttpProxy,
+                settings.AriaHttpProxyListenPort,
+                out var proxyAddress))
+        {
+            throw new InvalidOperationException(
+                "The aria2 HTTPS download proxy must be a local HTTP CONNECT endpoint.");
+        }
+
+        return proxyAddress;
+    }
+
     internal static bool ShouldClearBackendIdentity(string? errorCode)
     {
         return !string.IsNullOrWhiteSpace(errorCode) &&
                !errorCode.StartsWith("rpc-", StringComparison.Ordinal);
-    }
-
-    private async Task StartAriaServerAsync(CancellationToken cancellationToken)
-    {
-        var config = new AriaConfig
-        {
-            ListenPort = _networkSettings.AriaListenPort,
-            Token = "downkyi",
-            LogLevel = _networkSettings.AriaLogLevel,
-            MaxConcurrentDownloads = _networkSettings.MaxCurrentDownloads,
-            MaxConnectionPerServer = _networkSettings.AriaMaxConnectionPerServer,
-            Split = _networkSettings.AriaSplit,
-            MinSplitSize = _networkSettings.AriaMinSplitSize,
-            MaxOverallDownloadLimit = _networkSettings.AriaMaxOverallDownloadLimit * 1024L,
-            MaxDownloadLimit = _networkSettings.AriaMaxDownloadLimit * 1024L,
-            ContinueDownload = true,
-            FileAllocation = _networkSettings.AriaFileAllocation,
-            Headers =
-            [
-                $"Cookie: {LoginHelper.GetLoginInfoCookiesString()}",
-                "Origin: https://www.bilibili.com",
-                "Referer: https://www.bilibili.com",
-                $"User-Agent: {_networkSettings.UserAgent}"
-            ]
-        };
-        _diagnosticLogger.LogAriaServerConfig(Name, config, _networkSettings);
-
-        var errors = new ConcurrentQueue<string>();
-        await _ariaServer.StartServerAsync(config, output =>
-        {
-            if (!string.IsNullOrWhiteSpace(output))
-            {
-                errors.Enqueue(output);
-            }
-        }).ConfigureAwait(true);
-
-        var message = string.Join(Environment.NewLine, errors);
-        if (message.Contains("ERROR", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("The local aria2 process reported a startup error.");
-        }
-
-        for (var attempt = 0; attempt < 10; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (await _ariaClient.GetGlobalOptionAsync().ConfigureAwait(true) != null)
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(true);
-        }
-
-        throw new TimeoutException("The local aria2 process did not accept RPC requests in time.");
-    }
-
-    private async Task CloseAriaServerAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await _ariaClient.PauseAllAsync()
-                .WaitAsync(TimeSpan.FromSeconds(2), cancellationToken)
-                .ConfigureAwait(true);
-        }
-        catch (Exception e) when (e is TimeoutException or HttpRequestException or IOException
-            or InvalidOperationException or Newtonsoft.Json.JsonException)
-        {
-            _logger.LogErrorMessage("Aria server shutdown failed.", e);
-        }
-
-        if (!await _ariaServer.CloseServerAsync(
-                _ariaClient,
-                TimeSpan.FromSeconds(3)).ConfigureAwait(true))
-        {
-            await _ariaServer.ForceCloseServerAsync(
-                _ariaClient,
-                TimeSpan.FromSeconds(2)).ConfigureAwait(true);
-        }
     }
 
     private DownloadProgress? CreateProgress(string activeGid, AriaProgressEventArgs eventArgs)
@@ -417,16 +431,26 @@ internal sealed class Aria2TransferBackend : ITransferBackend
 
     public void Dispose()
     {
-        if (_ownsAriaServer)
+        try
         {
-            _ariaServer.KillTrackedServer("aria2 runtime disposed before graceful shutdown completed.");
+            _runtimeLifecycle.Dispose();
+            ReleaseRuntimeRegistration();
         }
-
-        ReleaseRuntimeRegistration();
+        finally
+        {
+            _addressResolver.Dispose();
+        }
     }
 
     private void ReleaseRuntimeRegistration()
     {
         Interlocked.Exchange(ref _runtimeRegistration, null)?.Dispose();
     }
+}
+
+internal sealed record AriaTaskPreparation(string? Gid, string? ErrorCode)
+{
+    public static AriaTaskPreparation Ready(string gid) => new(gid, ErrorCode: null);
+
+    public static AriaTaskPreparation Rejected(string errorCode) => new(Gid: null, errorCode);
 }

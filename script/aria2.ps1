@@ -53,5 +53,13 @@ if ($null -eq $aria2) {
     throw "aria2c.exe not found in $archive"
 }
 Copy-Item -LiteralPath $aria2.FullName -Destination (Join-Path $destDir "aria2c.exe") -Force
+$installedBinary = Join-Path $destDir "aria2c.exe"
+$installedChecksum = Join-Path $destDir "aria2c.exe.sha256"
+Verify-Asset $installedBinary $asset.binarySha256
+Set-Content `
+    -LiteralPath $installedChecksum `
+    -Value $asset.binarySha256 `
+    -Encoding ascii `
+    -NoNewline
 
 Remove-Item -LiteralPath $extractDir -Recurse -Force

@@ -57,8 +57,7 @@ internal sealed class DownloadPipeline : IDownloadTaskExecutor
                 $"{stageResult.Error?.Code ?? "unknown"}.");
             await _stateWriter.FailAsync(
                 taskId,
-                DownloadActivityPresenter.CreateRetryableFailure(
-                    stageResult.Error?.Code),
+                DownloadActivityPresenter.CreateFailure(stageResult.Error),
                 cancellationToken).ConfigureAwait(true);
         }
         catch (OperationCanceledException exception)

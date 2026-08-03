@@ -1,6 +1,8 @@
 # Operations
 
 - `verification-and-rollback.md`：本機與 CI 驗證、產物、失敗判讀及回滾。
+- `aria2-security.md`：aria2 TLS、RPC secret、task header、舊設定遷移與六 RID 驗證政策。
+- `aria2-security-baseline.json`：aria2 binary 來源、TLS backend、信任來源與待驗證狀態。
 - `v1.1.1-release-notes.md`：目前修正版的使用者可見變更與相容性說明。
 - `v1.1.0-release-notes.md`：已撤回 draft 的歷史說明。
 - `bilibili-api-audit.md`：Bilibili 端點、envelope、認證需求、證據、替代方案與回歸測試。

@@ -19,6 +19,4 @@ public class AriaConfig
     public long MaxDownloadLimit { get; set; } // 下载单文件速度限制，取值：1-*
     public bool ContinueDownload { get; set; } // 断点续传
     public AriaConfigFileAllocation FileAllocation { get; set; } // 文件预分配, none prealloc
-
-    public IReadOnlyList<string> Headers { get; set; } = Array.Empty<string>();
 }

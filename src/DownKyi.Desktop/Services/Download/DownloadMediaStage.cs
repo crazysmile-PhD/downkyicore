@@ -252,9 +252,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
                 cancellationToken).ConfigureAwait(true);
         }
 
-        NormalizeTransferSchemes(
-            urls,
-            context.Settings.Network.UseSsl == AllowStatus.Yes);
+        RequireSecureTransferSchemes(urls);
         var targetFile = Path.Combine(path, fileName);
         var transferRequest = DownloadTransferRequestFactory.Create(
                 context.TaskId,
@@ -381,9 +379,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         }
 
         var addresses = CreateAddresses(media);
-        NormalizeTransferSchemes(
-            addresses,
-            context.Settings.Network.UseSsl == AllowStatus.Yes);
+        RequireSecureTransferSchemes(addresses);
         return addresses;
     }
 
@@ -419,18 +415,14 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         return result.IsUsable;
     }
 
-    private static void NormalizeTransferSchemes(List<string> urls, bool useSsl)
+    private static void RequireSecureTransferSchemes(List<string> urls)
     {
         for (var index = 0; index < urls.Count; index++)
         {
             var url = urls[index];
-            if (useSsl && url.StartsWith("http://", StringComparison.Ordinal))
+            if (url.StartsWith("http://", StringComparison.Ordinal))
             {
                 urls[index] = "https://" + url["http://".Length..];
-            }
-            else if (!useSsl && url.StartsWith("https://", StringComparison.Ordinal))
-            {
-                urls[index] = "http://" + url["https://".Length..];
             }
         }
     }

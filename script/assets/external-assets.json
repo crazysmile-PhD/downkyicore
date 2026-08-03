@@ -1,31 +1,39 @@
 {
   "aria2": {
-    "version": "1.37.0",
-    "repository": "https://github.com/yaobiao131/downkyi-aria2-static-build",
+    "version": "1.37.0-downkyi.2",
+    "repository": "https://github.com/crazysmile-PhD/downkyi-aria2-static-build",
+    "sourceTag": "1.37.0-downkyi.2",
+    "sourceCommit": "94299bd9bde28a83bcb31346ec1d5f8131d2ec0d",
     "assets": {
       "win-x86": {
-        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-i686-w64-mingw32_static.zip",
-        "sha256": "97f1e0dd107abb6c1b1d702d736d9c7bcb7770ee5656e8e56bc220d983548d59"
+        "url": "https://github.com/crazysmile-PhD/downkyi-aria2-static-build/releases/download/1.37.0-downkyi.2/aria2-i686-w64-mingw32_static.zip",
+        "sha256": "40ed5587bc08e556826ab0ddd4bcf800599ba14dcde8ec75b7e911d8e5d5e610",
+        "binarySha256": "2a76612d032879e520fa3e4d1adacb900605e850934c8f6d5d7eeaf27377e7c0"
       },
       "win-x64": {
-        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-x86_64-w64-mingw32_static.zip",
-        "sha256": "615cb5d8deeed115e3e6041ea46078dbd9695d5113fa7fd2bc22a3feb522fcb8"
+        "url": "https://github.com/crazysmile-PhD/downkyi-aria2-static-build/releases/download/1.37.0-downkyi.2/aria2-x86_64-w64-mingw32_static.zip",
+        "sha256": "ddb13cb8b905299521b66bb3c26fb700830b8ca72c01f7614d9e68efd6f450cb",
+        "binarySha256": "b8fccf898d70531f2335bcbf45ad4210c736a63f3efb0442cb4c75790d7c76b0"
       },
       "linux-x64": {
-        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-x86_64-linux-musl_static.zip",
-        "sha256": "37d9679f42b7d45b203b6497957c33693d07de3fb01f8009e55d83810f6a5faf"
+        "url": "https://github.com/crazysmile-PhD/downkyi-aria2-static-build/releases/download/1.37.0-downkyi.2/aria2-x86_64-linux-musl_static.zip",
+        "sha256": "6e297b49d8ad24df6d01b48eeb9d669697c105fedf922e3b7d8d8c8577c5bf7c",
+        "binarySha256": "0e0e3d8a27ab57abb529c49595cd19d49df31a830f09ce65f10d1ef3a4323f41"
       },
       "linux-arm64": {
-        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-aarch64-linux-musl_static.zip",
-        "sha256": "aa0fd7aefb43125c9ea558ada538d1171f2b56866b2acb8d01b2915060f60d37"
+        "url": "https://github.com/crazysmile-PhD/downkyi-aria2-static-build/releases/download/1.37.0-downkyi.2/aria2-aarch64-linux-musl_static.zip",
+        "sha256": "75b348219fed7ee0ab909c0daaecae5b9ea021306dda85ef819e6a24190768e6",
+        "binarySha256": "e65850ad7403ba90f051966ed98ef1f88938a95d47f53a344ce07d182311f30c"
       },
       "osx-x64": {
-        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-x86_64-apple-darwin_static.zip",
-        "sha256": "95bd7654ae68c9049893c64e83f22a472d1ad9ff8b6aebe1b047106fa5c6bfc2"
+        "url": "https://github.com/crazysmile-PhD/downkyi-aria2-static-build/releases/download/1.37.0-downkyi.2/aria2-x86_64-apple-darwin_static.zip",
+        "sha256": "5579a5dd1d27b02c8a74bf0737ccee7884446f310f0c577972969c757da60c78",
+        "binarySha256": "306abc9c903c4bda1044d8cbc13dfbbc612e66e5ea6b1cbfb6693295e4135b55"
       },
       "osx-arm64": {
-        "url": "https://github.com/yaobiao131/downkyi-aria2-static-build/releases/download/1.37.0/aria2-aarch64-apple-darwin_static.zip",
-        "sha256": "5431ba2e1b81318e07646d53373d2da8348f3fdea3331cef98f02764c105bfe1"
+        "url": "https://github.com/crazysmile-PhD/downkyi-aria2-static-build/releases/download/1.37.0-downkyi.2/aria2-aarch64-apple-darwin_static.zip",
+        "sha256": "e6a8ebeb17465d592040d9d0430bf6ecbce58409d5424489cce2a9f8b0f8a3d0",
+        "binarySha256": "eb1c4f684c36d8b84cb579ad5079e94044bd2979289355d4a8d18803dbc05b47"
       }
     }
   },

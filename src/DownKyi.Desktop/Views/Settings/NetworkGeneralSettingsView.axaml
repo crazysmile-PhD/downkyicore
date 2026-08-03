@@ -12,17 +12,6 @@
                 Text="{DynamicResource Network}" />
         </StackPanel>
 
-        <CheckBox
-            Name="NameUseSsl"
-            Margin="0,20,0,0"
-            HorizontalAlignment="Left"
-            VerticalAlignment="Top"
-            Command="{Binding UseSslCommand}"
-            Content="{DynamicResource UseSSL}"
-            FontSize="12"
-            Foreground="{DynamicResource BrushTextDark}"
-            IsChecked="{Binding UseSsl, Mode=TwoWay}" />
-
         <HeaderedContentControl
             Margin="0,20,0,0"
             Padding="10,5"

@@ -63,6 +63,7 @@
             <TextBox
                 Name="NameAriaToken"
                 Width="100"
+                PasswordChar="*"
                 VerticalContentAlignment="Center"
                 Text="{Binding AriaToken}">
                 <TextBox.KeyBindings>
