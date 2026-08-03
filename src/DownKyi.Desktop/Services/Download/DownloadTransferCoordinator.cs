@@ -127,21 +127,11 @@ internal sealed class DownloadTransferCoordinator
                     break;
                 case DownloadRetryAction.Stop:
                 default:
-                    return MarkExhaustedNetworkFailure(lastResult);
+                    return lastResult;
             }
         }
 
-        return MarkExhaustedNetworkFailure(lastResult);
-    }
-
-    private static DownloadTransferResult MarkExhaustedNetworkFailure(
-        DownloadTransferResult result)
-    {
-        return result.FailureKind == DownloadTransferFailureKind.TransientNetwork
-            ? DownloadTransferResult.Failed(
-                DownloadTransferFailureKind.TransientNetwork,
-                "download.transfer.network")
-            : result;
+        return lastResult;
     }
 
     private static string[] NormalizeAddresses(IEnumerable<string> addresses)
