@@ -45,7 +45,6 @@
         <DataTemplate DataType="vm:ViewMyBangumiFollowViewModel"><views:ViewMyBangumiFollow /></DataTemplate>
         <DataTemplate DataType="vm:ViewMyToViewVideoViewModel"><views:ViewMyToViewVideo /></DataTemplate>
         <DataTemplate DataType="vm:ViewMyHistoryViewModel"><views:ViewMyHistory /></DataTemplate>
-        <DataTemplate DataType="vm:ViewMyDynamicViewModel"><views:ViewMyDynamic /></DataTemplate>
         <DataTemplate DataType="downloadVm:ViewDownloadingViewModel"><downloadViews:ViewDownloading /></DataTemplate>
         <DataTemplate DataType="downloadVm:ViewDownloadFinishedViewModel"><downloadViews:ViewDownloadFinished /></DataTemplate>
         <DataTemplate DataType="friendsVm:ViewFollowingViewModel"><friendsViews:ViewFollowing /></DataTemplate>

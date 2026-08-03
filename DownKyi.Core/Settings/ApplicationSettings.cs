@@ -6,8 +6,6 @@ namespace DownKyi.Core.Settings;
 
 public static class ApplicationSettingsDefaults
 {
-    public const decimal MinimumHistoryAutoRefreshIntervalSeconds = 10m;
-    public const decimal DefaultHistoryAutoRefreshIntervalSeconds = 30m;
     public const int HighSpeedBuiltInSplit = 16;
     public const int HighSpeedAriaSplit = 16;
     public const int HighSpeedAriaMaxConnectionPerServer = 16;
@@ -36,7 +34,6 @@ public sealed record ApplicationSettings(
     VideoApplicationSettings Video,
     DanmakuApplicationSettings Danmaku,
     AboutApplicationSettings About,
-    HistoryApplicationSettings History,
     UserApplicationSettings User,
     WindowApplicationSettings Window);
 
@@ -118,10 +115,6 @@ public sealed record AboutApplicationSettings(
     AllowStatus IsReceiveBetaVersion,
     AllowStatus AutoUpdateWhenLaunch,
     string SkipVersionOnLaunch);
-
-public sealed record HistoryApplicationSettings(
-    bool IsAutoRefreshEnabled,
-    decimal AutoRefreshIntervalSeconds);
 
 public sealed record UserApplicationSettings(
     long Mid,
@@ -277,26 +270,6 @@ internal static class ApplicationSettingsValidator
                 ? settings.About.SkipVersionOnLaunch
                 : string.Empty
         };
-        var historyInterval = settings.History.AutoRefreshIntervalSeconds <= 0
-            ? Corrected(
-                "History.AutoRefreshIntervalSeconds",
-                ApplicationSettingsDefaults.DefaultHistoryAutoRefreshIntervalSeconds,
-                corrections)
-            : Math.Max(
-                ApplicationSettingsDefaults.MinimumHistoryAutoRefreshIntervalSeconds,
-                Math.Round(
-                    settings.History.AutoRefreshIntervalSeconds,
-                    2,
-                    MidpointRounding.AwayFromZero));
-        if (historyInterval != settings.History.AutoRefreshIntervalSeconds
-            && settings.History.AutoRefreshIntervalSeconds > 0)
-        {
-            corrections.Add("History.AutoRefreshIntervalSeconds");
-        }
-        var history = settings.History with
-        {
-            AutoRefreshIntervalSeconds = historyInterval
-        };
         var user = settings.User with
         {
             Mid = settings.User.Mid < -1 ? Corrected("User.Mid", -1L, corrections) : settings.User.Mid,
@@ -324,7 +297,6 @@ internal static class ApplicationSettingsValidator
                 Video = video,
                 Danmaku = danmaku,
                 About = about,
-                History = history,
                 User = user,
                 Window = window
             },

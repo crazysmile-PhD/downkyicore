@@ -74,7 +74,6 @@ Dynamic media dependencies are not fixed API endpoints: subtitle JSON addresses 
 | `api.bilibili.com/x/v3/fav/resource/ids` | `FavoritesResource.GetFavoritesMediaId`; resource identities | GET, `data[]` | `current`; AUTH-LIVE, NEMO and YT agree | Keep. Required payload semantics apply. |
 | `api.bilibili.com/x/web-interface/history/cursor` | `HistoryApi.GetHistory`; watch history | GET, `data.cursor/list`, Cookie required | `current`; AUTH-LIVE returned HTTP 200/code 0 with both required fields; anonymous LIVE returned `-101`; NEMO and DOC agree | Keep. Cancellation and typed API errors are preserved. |
 | `api.bilibili.com/x/v2/history/toview` | `ToView.GetToView`; watch later | GET, `data.count/list`, Cookie required | `current`; AUTH-LIVE returned HTTP 200/code 0 with both required fields; DOC and maintained UI implementations still use it | Keep `/x/v2/history/toview`. The `/web` alternative has no demonstrated contract advantage. |
-| `api.bilibili.com/x/polymer/web-dynamic/v1/feed/all` | `DynamicFeedApi.GetDynamicFeedAsync`; authenticated dynamic feed | GET, `data.items/offset/has_more`, Cookie required | `current`; maintained web UI uses this endpoint and typed fixtures cover archive/draw cards and cursor fields | Keep with cancellation, typed payload validation, duplicate filtering, and cursor pagination. |
 
 ## User Space, Collections And Relations
 

@@ -43,8 +43,7 @@ public enum AppRoute
     Archive = 28,
     UserSpaceChannel = 29,
     UserSpaceSeasonsSeries = 30,
-    UserSpaceFavorites = 31,
-    MyDynamic = 32
+    UserSpaceFavorites = 31
 }
 
 public sealed record AppNavigationRequest(

@@ -202,7 +202,6 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
         settings.Video ??= new VideoSettings();
         settings.Danmaku ??= new DanmakuSettings();
         settings.About ??= new AboutSettings();
-        settings.History ??= new HistorySettings();
         settings.UserInfo ??= new UserInfoSettings();
         settings.WindowSettings ??= new WindowSettings();
     }
