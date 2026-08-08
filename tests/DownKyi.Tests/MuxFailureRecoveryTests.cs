@@ -1,5 +1,6 @@
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Time;
+using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Downloads;
@@ -59,6 +60,32 @@ public sealed class MuxFailureRecoveryTests
         Assert.Contains(test.AudioKey, task.Transfer.CompletedFileKeys);
         Assert.Contains(test.VideoKey, task.Transfer.CompletedFileKeys);
         Assert.Equal("resume-identity", task.Transfer.BackendIdentity);
+    }
+
+    [Fact]
+    public async Task DurlFailureRevokesOnlyDiagnosedCorruptSegment()
+    {
+        var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        DurlTestSource[] sources = await test.AddDurlSourcesAsync().ConfigureAwait(true);
+        var corrupt = sources[1];
+        var stage = test.CreateStage(FfmpegOperationResult.Failure(
+            "segment decode failed",
+            [corrupt.FilePath]));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.mux.invalid-source", result.Error?.Code);
+        Assert.True(File.Exists(sources[0].FilePath));
+        Assert.False(File.Exists(corrupt.FilePath));
+        Assert.True(File.Exists(sources[2].FilePath));
+        var task = await test.GetTaskAsync().ConfigureAwait(true);
+        Assert.Contains(sources[0].TransferKey, task.Transfer.CompletedFileKeys);
+        Assert.DoesNotContain(corrupt.TransferKey, task.Transfer.CompletedFileKeys);
+        Assert.Contains(sources[2].TransferKey, task.Transfer.CompletedFileKeys);
     }
 
     private sealed class MuxTestContext : IAsyncDisposable
@@ -210,6 +237,45 @@ public sealed class MuxFailureRecoveryTests
                 NullLogger<MuxStage>.Instance);
         }
 
+        public async Task<DurlTestSource[]> AddDurlSourcesAsync()
+        {
+            var sources = Enumerable.Range(1, 3)
+                .Select(order => new DurlTestSource(
+                    order,
+                    $"durl-{order}-key",
+                    Path.Combine(_directory, $"durl-{order}.flv")))
+                .ToArray();
+            foreach (var source in sources)
+            {
+                await File.WriteAllBytesAsync(
+                    source.FilePath,
+                    [1, 2, 3],
+                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+                await _stateWriter.RecordTransferFileAsync(
+                    Execution.TaskId,
+                    source.TransferKey,
+                    Path.GetFileName(source.FilePath),
+                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+                await _stateWriter.CompleteTransferFileAsync(
+                    Execution.TaskId,
+                    source.TransferKey,
+                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+            }
+
+            Execution.MediaKind = DownloadMediaKind.Durl;
+            Execution.DurlDownloads = sources
+                .Select(source => new DurlDownloadResult(
+                    new PlayUrlDurl
+                    {
+                        Order = source.Order,
+                        Length = 5_000
+                    },
+                    source.FilePath,
+                    source.TransferKey))
+                .ToArray();
+            return sources;
+        }
+
         public async Task<DownloadTask> GetTaskAsync()
         {
             return await _tasks.FindAsync(
@@ -247,6 +313,8 @@ public sealed class MuxFailureRecoveryTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(result);
     }
+
+    private sealed record DurlTestSource(int Order, string TransferKey, string FilePath);
 
     private sealed class SingleTaskStore : IDownloadTaskStore
     {

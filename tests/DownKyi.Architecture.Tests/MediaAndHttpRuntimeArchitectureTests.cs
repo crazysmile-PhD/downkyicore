@@ -130,11 +130,16 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             .ToArray();
         var processorSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegProcessor.cs"));
         var concatSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegConcatRuntime.cs"));
+        var diagnosticSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegInputDiagnostic.cs"));
         var detectorSource = File.ReadAllText(Path.Combine(runtimeDirectory, "FfmpegHardwareEncoderDetector.cs"));
 
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
         Assert.Contains("ILoggerFactory loggerFactory", processorSource, StringComparison.Ordinal);
         Assert.Contains("ILogger<FfmpegConcatRuntime> logger", concatSource, StringComparison.Ordinal);
+        Assert.Contains("_operationGate", processorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("new AsyncConcurrencyGate", concatSource, StringComparison.Ordinal);
+        Assert.Contains("IsConfirmedDecodeCorruption", diagnosticSource, StringComparison.Ordinal);
+        Assert.Contains("concurrencyGate.EnterAsync", diagnosticSource, StringComparison.Ordinal);
         Assert.Contains("ILogger<FfmpegHardwareEncoderDetector> logger", detectorSource, StringComparison.Ordinal);
         Assert.DoesNotContain("static class FfmpegHardwareEncoderDetector", detectorSource, StringComparison.Ordinal);
     }

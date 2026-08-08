@@ -255,8 +255,8 @@ public sealed class SettingsArchitectureTests
         Assert.Equal(1, CountOccurrences(contextFactorySource, "_settingsStore.Current"));
         Assert.DoesNotContain("ISettingsStore", artifactSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ISettingsStore", diagnosticSource, StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(ffmpegSource, "_settingsStore.Current.Video.FfmpegMaxParallelJobs"));
-        Assert.Equal(2, CountOccurrences(ffmpegSource, "_settingsStore.Current"));
+        Assert.Equal(1, CountOccurrences(ffmpegSource, "_settingsStore.Current.Video.FfmpegMaxParallelJobs"));
+        Assert.Equal(1, CountOccurrences(ffmpegSource, "_settingsStore.Current"));
     }
 
     [Fact]

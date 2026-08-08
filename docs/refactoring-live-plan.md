@@ -92,10 +92,16 @@ Detailed contract: `docs/exec-plans/v1.1.1-runtime-hardening.md`.
 2. [ ] On source-media validation or mux failure, revoke only invalid completed transfer keys,
        clear their partial/resume state and backend identity, and preserve source files for
        infrastructure-only failures.
-       Local strict build is 0 warnings/errors; seven test projects are 847 passed, 0 failed and
+       A non-zero diagnostic exit requires positive decode-corruption evidence; started
+       permission/runtime failures preserve the cache. Multi-segment DURL failures diagnose each
+       segment and revoke only confirmed corrupt paths. All diagnostics share the existing
+       `FfmpegMaxParallelJobs` gate.
+       Local strict build is 0 warnings/errors; seven test projects are 851 passed, 0 failed and
        1 existing packaged-aria2 skip; Architecture is 228 passed; lifecycle is 7 assemblies,
-       213 phase results and 0 failures. Format, module boundaries, workflow lint, package audits,
-       Gitleaks, `git diff --check` and PR #127 exact-head CI are green. Keep open until integration.
+       213 phase results and 0 failures; ownership is 487 matches and 0 violations. Format, module
+       boundaries, workflow lint, package audits, Gitleaks and `git diff --check` are green. The
+       review-fix exact head must pass the complete PR matrix before its threads are resolved. Keep
+       open until integration.
 
 ### P1 Recovery And Media Correctness
 

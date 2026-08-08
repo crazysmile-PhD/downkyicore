@@ -24,7 +24,7 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         var runtime = new FfmpegConcatRuntime(
             runner,
             validator,
-            () => 1,
+            new AsyncConcurrencyGate(() => 1),
             NullLogger<FfmpegConcatRuntime>.Instance);
         var output = Path.Combine(_testDirectory, "result.mp4");
 
@@ -57,7 +57,7 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         var runtime = new FfmpegConcatRuntime(
             runner,
             validator,
-            () => 1,
+            new AsyncConcurrencyGate(() => 1),
             NullLogger<FfmpegConcatRuntime>.Instance);
         var output = Path.Combine(_testDirectory, "result.mp4");
 
@@ -83,7 +83,7 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         var runtime = new FfmpegConcatRuntime(
             runner,
             new StubMediaValidator(isValid: true),
-            () => 1,
+            new AsyncConcurrencyGate(() => 1),
             NullLogger<FfmpegConcatRuntime>.Instance);
         var output = Path.Combine(_testDirectory, "owned-by-another-task.mp4");
         byte[] existingContent = [9, 8, 7];
@@ -111,7 +111,7 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         var runtime = new FfmpegConcatRuntime(
             runner,
             new StubMediaValidator(isValid: false),
-            () => 1,
+            new AsyncConcurrencyGate(() => 1),
             NullLogger<FfmpegConcatRuntime>.Instance);
         var output = Path.Combine(_testDirectory, "existing.mp4");
         byte[] existingContent = [6, 5, 4];
@@ -128,6 +128,39 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         Assert.False(result.Succeeded);
         Assert.Equal(existingContent, await File.ReadAllBytesAsync(output, TestContext.Current.CancellationToken));
         Assert.True(File.Exists(segment));
+    }
+
+    [Fact]
+    public async Task ConcatFailureIdentifiesOnlyCorruptMiddleSegment()
+    {
+        var first = CreateSegment("diagnostic-first.flv");
+        var corrupt = CreateSegment("diagnostic-corrupt.flv");
+        var third = CreateSegment("diagnostic-third.flv");
+        var runner = new CorruptSegmentRunner(corrupt);
+        var runtime = new FfmpegConcatRuntime(
+            runner,
+            new StubMediaValidator(isValid: false),
+            new AsyncConcurrencyGate(() => 1),
+            NullLogger<FfmpegConcatRuntime>.Instance);
+
+        var result = await runtime.ConcatAsync(
+            [
+                new FfmpegConcatSegment(1, first, TimeSpan.FromSeconds(5)),
+                new FfmpegConcatSegment(2, corrupt, TimeSpan.FromSeconds(5)),
+                new FfmpegConcatSegment(3, third, TimeSpan.FromSeconds(5))
+            ],
+            Path.Combine(_testDirectory, "diagnostic-output.mp4"),
+            hardwareEncoder: null,
+            allowStreamCopy: false,
+            overwriteDestination: false,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(corrupt, Assert.Single(result.InvalidInputPaths));
+        Assert.Equal([first, corrupt, third], runner.ValidatedInputs);
+        Assert.True(File.Exists(first));
+        Assert.True(File.Exists(corrupt));
+        Assert.True(File.Exists(third));
     }
 
     public void Dispose()
@@ -156,6 +189,11 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             Commands.Add(command);
+            if (command.Operation == "validate-input")
+            {
+                return new FfmpegProcessResult(true, 0, string.Empty, string.Empty, false);
+            }
+
             var inputIndex = command.Arguments.ToList().IndexOf("-i");
             ConcatListLines = await File.ReadAllLinesAsync(
                 command.Arguments[inputIndex + 1],
@@ -163,6 +201,41 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             await File.WriteAllBytesAsync(command.Arguments[^1], [1, 2, 3], cancellationToken)
                 .ConfigureAwait(false);
             return new FfmpegProcessResult(true, 0, string.Empty, string.Empty, false);
+        }
+    }
+
+    private sealed class CorruptSegmentRunner(string corruptSegment) : IFfmpegProcessRunner
+    {
+        public List<string> ValidatedInputs { get; } = [];
+
+        public Task<FfmpegProcessResult> RunAsync(
+            FfmpegCommand command,
+            TimeSpan timeout,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (command.Operation.StartsWith("concat-", StringComparison.Ordinal))
+            {
+                return Task.FromResult(new FfmpegProcessResult(
+                    false,
+                    1,
+                    string.Empty,
+                    "concat failed",
+                    false));
+            }
+
+            Assert.Equal("validate-input", command.Operation);
+            var inputIndex = command.Arguments.ToList().IndexOf("-i");
+            var input = command.Arguments[inputIndex + 1];
+            ValidatedInputs.Add(input);
+            return Task.FromResult(string.Equals(input, corruptSegment, StringComparison.Ordinal)
+                ? new FfmpegProcessResult(
+                    false,
+                    1,
+                    string.Empty,
+                    "Error while decoding stream #0:0: Invalid data found when processing input",
+                    false)
+                : new FfmpegProcessResult(true, 0, string.Empty, string.Empty, false));
         }
     }
 

@@ -45,12 +45,12 @@ internal sealed class FfmpegConcatRuntime
     public FfmpegConcatRuntime(
         IFfmpegProcessRunner processRunner,
         IFfmpegMediaValidator mediaValidator,
-        Func<int> maxConcurrencyProvider,
+        AsyncConcurrencyGate concurrencyGate,
         ILogger<FfmpegConcatRuntime> logger)
     {
         _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
         _mediaValidator = mediaValidator ?? throw new ArgumentNullException(nameof(mediaValidator));
-        _concurrencyGate = new AsyncConcurrencyGate(maxConcurrencyProvider);
+        _concurrencyGate = concurrencyGate ?? throw new ArgumentNullException(nameof(concurrencyGate));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -94,55 +94,67 @@ internal sealed class FfmpegConcatRuntime
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            using var slot = await _concurrencyGate.EnterAsync(cancellationToken).ConfigureAwait(false);
-            foreach (var strategy in FfmpegProcessingPlan.BuildConcatPlan(hardwareEncoder, allowStreamCopy))
+            using (await _concurrencyGate.EnterAsync(cancellationToken).ConfigureAwait(false))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var temporaryOutput = Path.Combine(
-                    outputDirectory,
-                    $".{Path.GetFileNameWithoutExtension(outputFile)}-{Guid.NewGuid():N}.partial.mp4");
-                try
+                foreach (var strategy in FfmpegProcessingPlan.BuildConcatPlan(hardwareEncoder, allowStreamCopy))
                 {
-                    progress?.Invoke($"FFmpeg {strategy}");
-                    var command = FfmpegCommandFactory.BuildConcat(
-                        listFile,
-                        temporaryOutput,
-                        strategy,
-                        hardwareEncoder);
-                    var processResult = await _processRunner
-                        .RunAsync(command, ConcatTimeout, cancellationToken)
-                        .ConfigureAwait(false);
-                    LogProcessResult(command, processResult);
-                    if (!processResult.Succeeded)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var temporaryOutput = Path.Combine(
+                        outputDirectory,
+                        $".{Path.GetFileNameWithoutExtension(outputFile)}-{Guid.NewGuid():N}.partial.mp4");
+                    try
                     {
-                        continue;
-                    }
+                        progress?.Invoke($"FFmpeg {strategy}");
+                        var command = FfmpegCommandFactory.BuildConcat(
+                            listFile,
+                            temporaryOutput,
+                            strategy,
+                            hardwareEncoder);
+                        var processResult = await _processRunner
+                            .RunAsync(command, ConcatTimeout, cancellationToken)
+                            .ConfigureAwait(false);
+                        LogProcessResult(command, processResult);
+                        if (!processResult.Succeeded)
+                        {
+                            continue;
+                        }
 
-                    var validation = await _mediaValidator
-                        .ValidateAsync(temporaryOutput, expectedDuration, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (!validation.IsValid)
+                        var validation = await _mediaValidator
+                            .ValidateAsync(temporaryOutput, expectedDuration, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (!validation.IsValid)
+                        {
+                            _logger.LogInformationMessage($"FFmpeg output rejected. reason={validation.FailureReason}");
+                            continue;
+                        }
+
+                        File.Move(temporaryOutput, outputFile, overwrite: overwriteDestination);
+                        DeleteSourceSegments(orderedSegments);
+                        return new FfmpegOperationResult(
+                            true,
+                            outputFile,
+                            null,
+                            validation.Duration,
+                            []);
+                    }
+                    finally
                     {
-                        _logger.LogInformationMessage($"FFmpeg output rejected. reason={validation.FailureReason}");
-                        continue;
+                        DeleteFile(temporaryOutput);
                     }
-
-                    File.Move(temporaryOutput, outputFile, overwrite: overwriteDestination);
-                    DeleteSourceSegments(orderedSegments);
-                    return new FfmpegOperationResult(
-                        true,
-                        outputFile,
-                        null,
-                        validation.Duration,
-                        []);
-                }
-                finally
-                {
-                    DeleteFile(temporaryOutput);
                 }
             }
 
-            return FfmpegOperationResult.Failure("All FFmpeg concat strategies failed validation.");
+            var invalidInputs = await FfmpegInputDiagnostic.FindInvalidInputsAsync(
+                _processRunner,
+                _concurrencyGate,
+                orderedSegments.Select(segment => segment.FilePath),
+                ConcatTimeout,
+                cancellationToken).ConfigureAwait(false);
+            return FfmpegOperationResult.Failure(
+                invalidInputs.Count > 0
+                    ? "One or more concat segments could not be decoded."
+                    : "All FFmpeg concat strategies failed validation.",
+                invalidInputs);
         }
         catch (IOException e)
         {

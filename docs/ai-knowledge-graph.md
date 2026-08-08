@@ -2264,13 +2264,14 @@ contracts:
   - `FfmpegProcessor.Instance` is forbidden because separate or implicit owners can exceed the configured CPU/GPU concurrency.
   - Multi-segment completion is accepted only after ffprobe verifies a video stream, positive expected duration, and decodable middle/tail seeks.
   - Download-owned merge and concat callers must deny destination overwrite. FFmpeg validation/finalization failure cleans only the operation's temporary output; it cannot delete a pre-existing destination. Explicit toolbox transforms retain their separate overwrite behavior.
-  - A failed ordinary merge runs fail-on-error decode diagnostics against each requested source. A source is reported invalid only when FFmpeg started and returned a decode failure; startup failure and timeout remain infrastructure failures with an empty invalid-input set.
+  - A failed ordinary merge or multi-segment concat runs fail-on-error decode diagnostics against each requested source. A source is reported invalid only when stderr contains positive decode-corruption evidence; a started process with permission/runtime failure, startup failure, or timeout remains an infrastructure failure with an empty invalid-input set.
+  - Multi-segment DURL diagnosis reports exact corrupt segment paths so the existing transfer-key invalidation owner preserves valid sibling segments.
   - Command generation is separate from the async process runner; every process has cancellation, a timeout, captured stderr, and process-tree cleanup.
   - Hardware encoder discovery is cached and runs through the same bounded async process runner.
   - `FfmpegProcessor`, concat validation, and hardware encoder detection use typed loggers from the shared application `ILoggerFactory`; static `LogManager` access is forbidden in this boundary.
   - The hardware encoder cache is owned by the injected detector instance, which in production belongs to the singleton `FfmpegProcessor` composition owner.
   - Release packages must include cross-platform ffmpeg and ffprobe binaries with checksums.
-  - FFmpeg concurrency state belongs to the singleton runtime instance; every operation, including frame extraction, must enter and release the same bounded slot gate.
+  - FFmpeg concurrency state belongs to the singleton runtime instance; every operation, including frame extraction and post-failure input diagnostics, must enter and release the same bounded slot gate.
 hazards:
   - GPU encoder flags differ across OS/GPU/driver.
   - Full transcode can spike CPU and memory during batch downloads.

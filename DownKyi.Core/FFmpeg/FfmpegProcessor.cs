@@ -58,7 +58,7 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         _concatRuntime = new FfmpegConcatRuntime(
             _processRunner,
             new FfmpegMediaValidator(_processRunner),
-            () => _settingsStore.Current.Video.FfmpegMaxParallelJobs,
+            _operationGate,
             loggerFactory.CreateLogger<FfmpegConcatRuntime>());
     }
 
@@ -156,41 +156,17 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
                 []);
         }
 
-        var invalidInputs = await FindInvalidInputsAsync(
+        var invalidInputs = await FfmpegInputDiagnostic.FindInvalidInputsAsync(
+            _processRunner,
+            _operationGate,
             requestedInputs,
+            OperationTimeout,
             cancellationToken).ConfigureAwait(false);
         return FfmpegOperationResult.Failure(
             invalidInputs.Count > 0
                 ? "One or more media inputs could not be decoded."
                 : "FFmpeg output could not be finalized.",
             invalidInputs);
-    }
-
-    private async Task<IReadOnlyList<string>> FindInvalidInputsAsync(
-        IEnumerable<string> inputPaths,
-        CancellationToken cancellationToken)
-    {
-        var invalidInputs = new List<string>();
-        foreach (var inputPath in inputPaths)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!File.Exists(inputPath) || new FileInfo(inputPath).Length == 0)
-            {
-                invalidInputs.Add(inputPath);
-                continue;
-            }
-
-            var result = await _processRunner.RunAsync(
-                FfmpegCommandFactory.BuildValidateInput(inputPath),
-                OperationTimeout,
-                cancellationToken).ConfigureAwait(false);
-            if (!result.Succeeded && result.ProcessStarted && !result.TimedOut)
-            {
-                invalidInputs.Add(inputPath);
-            }
-        }
-
-        return invalidInputs;
     }
 
     public Task<bool> DelogoAsync(
