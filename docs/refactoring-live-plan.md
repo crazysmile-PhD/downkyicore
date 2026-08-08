@@ -2,7 +2,7 @@
 
 Status: active
 Last updated: 2026-08-08
-Current work item: P0 Item 2 mux source-cache recovery above PR #125
+Current work item: P0 Item 2 mux source-cache recovery in PR #127 above PR #125
 Current branch: `fix/mux-source-cache-recovery`
 Current base: PR #125 head `260c8e79cd9375d2a33bb7dc774351d40c1be2a8`
 
@@ -21,8 +21,8 @@ tests and required gates are green on the exact commit.
       exact-head matrix is green.
 - [ ] PR #125 (`260c8e7`) contains only P0 output-path ownership above #124. Its complete
       exact-head matrix is green.
-- [ ] P0 Item 2 is implemented locally above PR #125. It reuses the existing completed-key
-      invalidation and transfer-artifact cleanup owners; publication and exact-head CI remain.
+- [ ] PR #127 (`2cd98f2`) implements P0 Item 2 above PR #125. It reuses the existing
+      completed-key invalidation and transfer-artifact cleanup owners; exact-head CI remains.
 - [ ] Merge in dependency order, retarget each next PR to `main`, rerun exact-head checks after
       every retarget, and remove the corresponding completed item only after integration.
 
