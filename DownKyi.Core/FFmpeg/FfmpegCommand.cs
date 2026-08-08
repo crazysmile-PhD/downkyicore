@@ -27,7 +27,8 @@ internal sealed record FfmpegProcessResult(
     int ExitCode,
     string StandardOutput,
     string StandardError,
-    bool TimedOut)
+    bool TimedOut,
+    bool ProcessStarted = true)
 {
     public static FfmpegProcessResult Timeout(string standardOutput, string standardError)
     {

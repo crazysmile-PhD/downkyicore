@@ -135,7 +135,11 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         return MutateAsync(taskId, (task, now) => task.UpdateTransferState(
-            CopyTransfer(task.Transfer, completedFileKeys: task.Transfer.CompletedFileKeys.Remove(key)),
+            CopyTransfer(
+                task.Transfer,
+                backendIdentity: null,
+                replaceBackendIdentity: true,
+                completedFileKeys: task.Transfer.CompletedFileKeys.Remove(key)),
             now), cancellationToken);
     }
 

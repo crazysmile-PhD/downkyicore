@@ -9,11 +9,28 @@ public sealed record FfmpegOperationResult(
     bool Succeeded,
     string? OutputPath,
     string? FailureReason,
-    TimeSpan Duration)
+    TimeSpan Duration,
+    IReadOnlyList<string> InvalidInputPaths)
 {
-    public static FfmpegOperationResult Failure(string reason)
+    public FfmpegOperationResult(
+        bool succeeded,
+        string? outputPath,
+        string? failureReason,
+        TimeSpan duration)
+        : this(succeeded, outputPath, failureReason, duration, [])
     {
-        return new FfmpegOperationResult(false, null, reason, TimeSpan.Zero);
+    }
+
+    public static FfmpegOperationResult Failure(
+        string reason,
+        IReadOnlyList<string>? invalidInputPaths = null)
+    {
+        return new FfmpegOperationResult(
+            false,
+            null,
+            reason,
+            TimeSpan.Zero,
+            invalidInputPaths ?? []);
     }
 }
 
@@ -56,7 +73,12 @@ internal sealed class FfmpegConcatRuntime
         var orderedSegments = segments.OrderBy(segment => segment.Order).ToArray();
         if (orderedSegments.Any(segment => !File.Exists(segment.FilePath)))
         {
-            return FfmpegOperationResult.Failure("One or more input segments are missing.");
+            return FfmpegOperationResult.Failure(
+                "One or more input segments are missing.",
+                orderedSegments
+                    .Where(segment => !File.Exists(segment.FilePath))
+                    .Select(segment => segment.FilePath)
+                    .ToArray());
         }
 
         var expectedDuration = TimeSpan.FromTicks(orderedSegments.Sum(segment => segment.ExpectedDuration.Ticks));
@@ -107,7 +129,12 @@ internal sealed class FfmpegConcatRuntime
 
                     File.Move(temporaryOutput, outputFile, overwrite: overwriteDestination);
                     DeleteSourceSegments(orderedSegments);
-                    return new FfmpegOperationResult(true, outputFile, null, validation.Duration);
+                    return new FfmpegOperationResult(
+                        true,
+                        outputFile,
+                        null,
+                        validation.Duration,
+                        []);
                 }
                 finally
                 {

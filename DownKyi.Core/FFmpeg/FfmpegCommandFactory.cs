@@ -190,6 +190,24 @@ internal static class FfmpegCommandFactory
             "seek-decode");
     }
 
+    public static FfmpegCommand BuildValidateInput(string mediaFile)
+    {
+        return new FfmpegCommand(
+            FfmpegExecutableLocator.Ffmpeg,
+            [
+                "-hide_banner",
+                "-nostdin",
+                "-v", "error",
+                "-xerror",
+                "-i", mediaFile,
+                "-map", "0:a?",
+                "-map", "0:v?",
+                "-f", "null",
+                "-"
+            ],
+            "validate-input");
+    }
+
     private static List<string> CreateBaseArguments()
     {
         return ["-hide_banner", "-nostdin", "-y"];

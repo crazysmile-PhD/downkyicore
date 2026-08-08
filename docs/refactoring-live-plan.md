@@ -2,9 +2,9 @@
 
 Status: active
 Last updated: 2026-08-08
-Current work item: unblock and integrate PR #120 -> #126 -> #124 -> #125
-Current branch: `fix/download-output-path-ownership`
-Current base: frozen PR #120 head `a2119be346757a48c46b0beadacad6a4426bc031`
+Current work item: P0 Item 2 mux source-cache recovery above PR #125
+Current branch: `fix/mux-source-cache-recovery`
+Current base: PR #125 head `260c8e79cd9375d2a33bb7dc774351d40c1be2a8`
 
 This file contains only unfinished, blocked or integration-pending work. Detailed
 contracts live in `docs/exec-plans/`; stable completed facts belong in architecture,
@@ -19,8 +19,10 @@ tests and required gates are green on the exact commit.
       child-process handshake. Its complete exact-head matrix is green.
 - [ ] PR #124 (`369a171`) contains only dialog/startup behavior above #126. Its complete
       exact-head matrix is green.
-- [ ] PR #125 (`662765a`) contains only P0 output-path ownership above #124. Its complete
+- [ ] PR #125 (`260c8e7`) contains only P0 output-path ownership above #124. Its complete
       exact-head matrix is green.
+- [ ] P0 Item 2 is implemented locally above PR #125. It reuses the existing completed-key
+      invalidation and transfer-artifact cleanup owners; publication and exact-head CI remain.
 - [ ] Merge in dependency order, retarget each next PR to `main`, rerun exact-head checks after
       every retarget, and remove the corresponding completed item only after integration.
 
@@ -90,6 +92,10 @@ Detailed contract: `docs/exec-plans/v1.1.1-runtime-hardening.md`.
 2. [ ] On source-media validation or mux failure, revoke only invalid completed transfer keys,
        clear their partial/resume state and backend identity, and preserve source files for
        infrastructure-only failures.
+       Local strict build is 0 warnings/errors; seven test projects are 847 passed, 0 failed and
+       1 existing packaged-aria2 skip; Architecture is 228 passed; lifecycle is 7 assemblies,
+       213 phase results and 0 failures. Format, module boundaries, workflow lint, package audits,
+       Gitleaks and `git diff --check` are green. Keep open until exact-head CI and integration.
 
 ### P1 Recovery And Media Correctness
 

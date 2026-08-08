@@ -2018,6 +2018,8 @@ contracts:
   - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO generation; its typed result distinguishes created output, source-not-available, HTTP/parse/conversion/write/permission failure, invalid or zero-byte output, and cancellation. `DownloadTaskStateWriter` is a typed Application-command adapter and never accepts a UI task model.
   - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `MuxStage`, `DownloadArtifactsStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages, so requested artifact failure cannot produce completed history.
   - Download mux and DURL concat finalize through same-directory temporary files with `overwriteDestination: false`. A pre-existing destination fails the stage without deleting the foreign file or the valid source streams.
+  - `DownloadMediaStage` carries each persisted transfer key beside its audio, video or DURL file into `MuxStage`. Mux failure may revoke only paths listed by the typed FFmpeg invalid-input result; it reuses `DownloadTransferFileCleanup` and `DownloadTaskApplicationService.InvalidateCompletedFileAsync` instead of owning a parallel reset path.
+  - Completed-key invalidation clears the task's backend identity in the same durable Application mutation. Confirmed invalid input removes its file and `.aria2` / `.download` sidecars; infrastructure-only mux failure preserves source files, completed keys and resume identity for retry.
   - `DownloadExecutionContext` captures one immutable settings snapshot and accepts the current operation token at each active check; it cannot retain a short-lived command token.
   - `DownloadActivityPresenter` is the only stage-adjacent localized resource owner. `DownloadCompletionProjector` owns UI-thread completion-list mutation; both belong to Desktop.
   - `DownloadPipeline` cannot regain subtitle API, danmaku converter, NFO XML, direct projection-update, localized resource, FFmpeg, or SQLite implementation details.
@@ -2028,6 +2030,7 @@ hazards:
   - aria2 reports a machine-readable failure code but does not expose HTTP `Retry-After`; those 429 responses use the policy's bounded fallback delay instead of a server-provided value.
   - `DownloadingItem` still crosses into the media execution context; later extraction must replace it with a typed execution input without weakening Domain authority.
   - Letting an expected shutdown `OperationCanceledException` escape before state recovery leaves rows stored as active and prevents clean resume after restart.
+  - Treating every FFmpeg failure as source corruption destroys valid cached media when the executable, destination or permissions are the actual fault. Only typed invalid-input evidence authorizes source revocation.
   - Resume behavior depends on preserving partial files while delete behavior must remove them.
   - aria2 process cleanup is platform-sensitive.
   - Reusing Id+codec or runtime GetHashCode values across DURL segments overwrites temporary files and can produce non-seekable MP4 output.
@@ -2257,9 +2260,11 @@ contracts:
   - Hardware encode failure must fall back to CPU for success rate.
   - Windows x86 uses a pinned full FFmpeg build containing both ffmpeg and ffprobe; a compact ffmpeg-only archive is not a valid release asset.
   - Host composition creates one `FfmpegProcessor`; downloads and toolbox operations share one concurrency gate.
+  - `IFfmpegMediaMuxer` is the narrow download-stage contract implemented by that same processor; it is a testable boundary, not a second FFmpeg runtime owner.
   - `FfmpegProcessor.Instance` is forbidden because separate or implicit owners can exceed the configured CPU/GPU concurrency.
   - Multi-segment completion is accepted only after ffprobe verifies a video stream, positive expected duration, and decodable middle/tail seeks.
   - Download-owned merge and concat callers must deny destination overwrite. FFmpeg validation/finalization failure cleans only the operation's temporary output; it cannot delete a pre-existing destination. Explicit toolbox transforms retain their separate overwrite behavior.
+  - A failed ordinary merge runs fail-on-error decode diagnostics against each requested source. A source is reported invalid only when FFmpeg started and returned a decode failure; startup failure and timeout remain infrastructure failures with an empty invalid-input set.
   - Command generation is separate from the async process runner; every process has cancellation, a timeout, captured stderr, and process-tree cleanup.
   - Hardware encoder discovery is cached and runs through the same bounded async process runner.
   - `FfmpegProcessor`, concat validation, and hardware encoder detection use typed loggers from the shared application `ILoggerFactory`; static `LogManager` access is forbidden in this boundary.

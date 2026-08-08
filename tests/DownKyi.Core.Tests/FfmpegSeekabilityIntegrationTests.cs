@@ -1,4 +1,5 @@
 using DownKyi.Core.FFmpeg;
+using DownKyi.Core.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Core.Tests;
@@ -59,6 +60,51 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         Assert.True(result.Succeeded, result.FailureReason);
         Assert.True(File.Exists(output));
         Assert.InRange(result.Duration.TotalSeconds, 3.8, 4.2);
+    }
+
+    [Fact]
+    [Trait("Category", "FfmpegIntegration")]
+    public async Task FailedRealMuxIdentifiesOnlyUndecodableSource()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var processRunner = new FfmpegProcessRunner();
+        if (!await IsToolAvailableAsync(
+                processRunner,
+                FfmpegExecutableLocator.Ffmpeg,
+                cancellationToken).ConfigureAwait(true))
+        {
+            Assert.Skip("ffmpeg is required for the mux source-diagnostic integration test.");
+        }
+
+        var invalidAudio = Path.Combine(_testDirectory, "invalid-audio.m4s");
+        await File.WriteAllBytesAsync(
+            invalidAudio,
+            [1, 2, 3],
+            cancellationToken).ConfigureAwait(true);
+        var validVideo = Path.Combine(_testDirectory, "valid-video.mp4");
+        await CreateSegmentAsync(
+            processRunner,
+            validVideo,
+            "green",
+            cancellationToken).ConfigureAwait(true);
+        using var settings = new SettingsStore(Path.Combine(_testDirectory, "settings.json"));
+        var processor = new FfmpegProcessor(
+            settings,
+            NullLoggerFactory.Instance,
+            processRunner);
+
+        var result = await processor.MergeMediaAsync(
+            settings.Current.Video,
+            invalidAudio,
+            validVideo,
+            Path.Combine(_testDirectory, "invalid-output.mp4"),
+            overwriteDestination: false,
+            cancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(invalidAudio, Assert.Single(result.InvalidInputPaths));
+        Assert.True(File.Exists(invalidAudio));
+        Assert.True(File.Exists(validVideo));
     }
 
     public void Dispose()

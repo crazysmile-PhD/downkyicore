@@ -80,6 +80,39 @@ public sealed class DownloadTaskApplicationServiceTests
     }
 
     [Fact]
+    public async Task InvalidatingCompletedFileAlsoClearsBackendIdentity()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+        var task = CreateTask();
+        await service.AddAsync(task, TestContext.Current.CancellationToken);
+        await service.StartAsync(task.Id, TestContext.Current.CancellationToken);
+        await service.RecordTransferFileAsync(
+            task.Id,
+            "video-1",
+            "segment.m4s",
+            TestContext.Current.CancellationToken);
+        await service.CompleteTransferFileAsync(
+            task.Id,
+            "video-1",
+            TestContext.Current.CancellationToken);
+        await service.SetBackendIdentityAsync(
+            task.Id,
+            "stale-aria-gid",
+            TestContext.Current.CancellationToken);
+
+        var result = await service.InvalidateCompletedFileAsync(
+            task.Id,
+            "video-1",
+            TestContext.Current.CancellationToken);
+
+        var updated = result.RequireValue();
+        Assert.Empty(updated.Transfer.CompletedFileKeys);
+        Assert.Null(updated.Transfer.BackendIdentity);
+        Assert.Equal("segment.m4s", updated.Plan.TransferFiles["video-1"]);
+    }
+
+    [Fact]
     public async Task InvalidCommandDoesNotPersistOrPublishAReplacementSnapshot()
     {
         var store = new RecordingStore();

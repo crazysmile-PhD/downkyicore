@@ -565,6 +565,15 @@ public sealed class DownloadRuntimeArchitectureTests
                 muxSource,
                 "overwriteDestination: false",
                 System.Text.RegularExpressions.RegexOptions.CultureInvariant));
+        Assert.Contains("InvalidInputPaths", muxSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "DownloadTransferFileCleanup.DeleteInvalidArtifacts",
+            muxSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "_stateWriter.InvalidateCompletedFileAsync",
+            muxSource,
+            StringComparison.Ordinal);
 
         var previousIndex = -1;
         foreach (var stageName in stageNames)

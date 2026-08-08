@@ -5,23 +5,27 @@ using System.Threading.Tasks;
 using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Results;
+using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
 internal sealed class MuxStage : IDownloadPipelineStage
 {
     private readonly DownloadActivityPresenter _presenter;
-    private readonly FfmpegProcessor _ffmpegProcessor;
+    private readonly IFfmpegMediaMuxer _ffmpegProcessor;
     private readonly DownloadTaskStateWriter _stateWriter;
+    private readonly ILogger<MuxStage> _logger;
 
     public MuxStage(
         DownloadActivityPresenter presenter,
-        FfmpegProcessor ffmpegProcessor,
-        DownloadTaskStateWriter stateWriter)
+        IFfmpegMediaMuxer ffmpegProcessor,
+        DownloadTaskStateWriter stateWriter,
+        ILogger<MuxStage> logger)
     {
         _presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public string Name => nameof(MuxStage);
@@ -59,24 +63,28 @@ internal sealed class MuxStage : IDownloadPipelineStage
         await _presenter.ShowMuxingAsync(context, cancellationToken).ConfigureAwait(true);
         var downloading = context.Downloading;
         var finalFile = GetDashOutputPath(context);
-        var succeeded = await _ffmpegProcessor.MergeVideoAsync(
+        var result = await _ffmpegProcessor.MergeMediaAsync(
             context.Settings.Video,
             context.AudioFile,
             context.VideoFile,
             finalFile,
             overwriteDestination: false,
             cancellationToken).ConfigureAwait(true);
+        var invalidSource = !result.Succeeded && await InvalidateSourcesAsync(
+            context,
+            result.InvalidInputPaths,
+            cancellationToken).ConfigureAwait(true);
         downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
-            succeeded ? finalFile : null,
+            result.Succeeded ? finalFile : null,
             _stateWriter,
             cancellationToken).ConfigureAwait(true);
-        context.OutputMedia = succeeded ? finalFile : null;
-        context.MediaSucceeded = succeeded;
-        return succeeded
+        context.OutputMedia = result.Succeeded ? finalFile : null;
+        context.MediaSucceeded = result.Succeeded;
+        return result.Succeeded
             ? DownloadStageResult.Success(Name)
             : DownloadStageResult.Failure(
-                "download.mux.dash",
+                invalidSource ? "download.mux.invalid-source" : "download.mux.dash",
                 "Audio and video streams could not be finalized.");
     }
 
@@ -95,24 +103,28 @@ internal sealed class MuxStage : IDownloadPipelineStage
         {
             await _presenter.ShowMuxingAsync(context, cancellationToken).ConfigureAwait(true);
             var finalFile = $"{context.Downloading.DownloadBase.FilePath}.mp4";
-            var succeeded = await _ffmpegProcessor.MergeVideoAsync(
+            var mergeResult = await _ffmpegProcessor.MergeMediaAsync(
                 context.Settings.Video,
                 audio: null,
                 video: context.DurlDownloads[0].FilePath,
                 destination: finalFile,
                 overwriteDestination: false,
                 cancellationToken).ConfigureAwait(true);
+            var invalidSingleSource = !mergeResult.Succeeded && await InvalidateSourcesAsync(
+                context,
+                mergeResult.InvalidInputPaths,
+                cancellationToken).ConfigureAwait(true);
             context.Downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
                 context.TaskId,
-                succeeded ? finalFile : null,
+                mergeResult.Succeeded ? finalFile : null,
                 _stateWriter,
                 cancellationToken).ConfigureAwait(true);
-            context.OutputMedia = succeeded ? finalFile : null;
-            context.MediaSucceeded = succeeded;
-            return succeeded
+            context.OutputMedia = mergeResult.Succeeded ? finalFile : null;
+            context.MediaSucceeded = mergeResult.Succeeded;
+            return mergeResult.Succeeded
                 ? DownloadStageResult.Success(Name)
                 : DownloadStageResult.Failure(
-                    "download.mux.durl",
+                    invalidSingleSource ? "download.mux.invalid-source" : "download.mux.durl",
                     "The media segment could not be finalized.");
         }
 
@@ -131,6 +143,10 @@ internal sealed class MuxStage : IDownloadPipelineStage
             outputPath,
             overwriteDestination: false,
             cancellationToken: cancellationToken).ConfigureAwait(true);
+        var invalidSource = !result.Succeeded && await InvalidateSourcesAsync(
+            context,
+            result.InvalidInputPaths,
+            cancellationToken).ConfigureAwait(true);
         context.Downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
             result.Succeeded ? result.OutputPath : null,
@@ -141,8 +157,52 @@ internal sealed class MuxStage : IDownloadPipelineStage
         return result.Succeeded
             ? DownloadStageResult.Success(Name)
             : DownloadStageResult.Failure(
-                "download.mux.concat",
+                invalidSource ? "download.mux.invalid-source" : "download.mux.concat",
                 "Segmented media could not be concatenated.");
+    }
+
+    private async Task<bool> InvalidateSourcesAsync(
+        DownloadExecutionContext context,
+        IReadOnlyList<string> invalidInputPaths,
+        CancellationToken cancellationToken)
+    {
+        if (invalidInputPaths.Count == 0)
+        {
+            return false;
+        }
+
+        var pathComparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var invalidPaths = invalidInputPaths
+            .Select(Path.GetFullPath)
+            .ToHashSet(pathComparer);
+        var sources = new[]
+            {
+                new DownloadTransferReference(context.AudioTransferKey, context.AudioFile),
+                new DownloadTransferReference(context.VideoTransferKey, context.VideoFile)
+            }
+            .Concat(context.DurlDownloads.Select(download =>
+                new DownloadTransferReference(download.TransferKey, download.FilePath)));
+        var invalidated = false;
+        foreach (var source in sources)
+        {
+            if (string.IsNullOrWhiteSpace(source.Key) ||
+                string.IsNullOrWhiteSpace(source.FilePath) ||
+                !invalidPaths.Contains(Path.GetFullPath(source.FilePath)))
+            {
+                continue;
+            }
+
+            DownloadTransferFileCleanup.DeleteInvalidArtifacts(source.FilePath, _logger);
+            await _stateWriter.InvalidateCompletedFileAsync(
+                context.TaskId,
+                source.Key,
+                cancellationToken).ConfigureAwait(true);
+            invalidated = true;
+        }
+
+        return invalidated;
     }
 
     internal static string GetDashOutputPath(DownloadExecutionContext context)
@@ -161,4 +221,6 @@ internal sealed class MuxStage : IDownloadPipelineStage
             ? $"{context.Downloading.DownloadBase.FilePath}.flac"
             : $"{context.Downloading.DownloadBase.FilePath}.aac";
     }
+
+    private sealed record DownloadTransferReference(string? Key, string? FilePath);
 }

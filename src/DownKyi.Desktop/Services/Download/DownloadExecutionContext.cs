@@ -36,7 +36,11 @@ internal sealed class DownloadExecutionContext
 
     public string? AudioFile { get; set; }
 
+    public string? AudioTransferKey { get; set; }
+
     public string? VideoFile { get; set; }
+
+    public string? VideoTransferKey { get; set; }
 
     public IReadOnlyList<DurlDownloadResult> DurlDownloads { get; set; } = [];
 
@@ -82,4 +86,7 @@ internal enum DownloadMediaKind
     Durl
 }
 
-internal sealed record DurlDownloadResult(PlayUrlDurl Durl, string FilePath);
+internal sealed record DurlDownloadResult(
+    PlayUrlDurl Durl,
+    string FilePath,
+    string TransferKey);
