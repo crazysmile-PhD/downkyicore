@@ -98,33 +98,6 @@ Detailed contract: `docs/exec-plans/v1.1.1-runtime-hardening.md`.
         NFO write failures must not be hidden when metadata output is required.
 12. [ ] Reject non-positive, duplicate or structurally invalid DURL order identities before transfer.
 
-## Dialog And Startup Backlog
-
-Detailed contract: `docs/exec-plans/v1.1.1-dialog-and-startup.md`.
-
-### P1 Issue #123 Custom Chrome
-
-- [x] Set shared `DialogWindow` to borderless custom chrome and disable unsupported resize,
-      minimize and maximize actions.
-- [x] Mark all six custom title regions as `WindowDecorationProperties.ElementRole="TitleBar"`
-      so borderless dialogs remain draggable.
-- [x] Fix `ViewParsingSelector` and `ViewAlertDialog` to use two valid columns and place close
-      buttons in column 1.
-- [x] Add headless tests for window decorations, XAML construction, title-bar role and valid
-      close-button bounds for all six dialogs.
-
-### P1 Startup Modal Ordering
-
-- [x] Sequence legacy-data migration before update checking in one observed async startup flow.
-- [x] Prove the update dialog cannot open while the migration dialog is active.
-- [x] Do not add a global dialog semaphore for a local startup-ordering defect.
-
-### Pending Product Decision
-
-- [ ] Align migration-dialog copy and close behavior. Current code allows cancellation while the
-      text implies closing is forbidden. Do not change this policy inside Issue #123 without an
-      explicit product contract.
-
 ## Naming And Responsibility Clarity
 
 - [ ] Audit and, where behavior is unchanged, rename update/migration entry points to express

@@ -1169,13 +1169,20 @@ contracts:
   - Non-dialog ViewModels cannot reference EventAggregator, RegionManager, legacy dialog services, navigation/message events, or the string-route helper.
   - The Avalonia dialog adapter marshals calls to the UI thread; download/add services await only `IAppDialogService` and cannot dispatch framework work themselves.
   - `DialogWindow` is the single borderless, non-resizable custom-chrome host. Each of its six dialog contents marks exactly one custom title region with the Avalonia `TitleBar` role so the window remains draggable without restoring system chrome.
+  - Startup awaits the legacy-data migration dialog before checking for updates; startup-only modals cannot overlap, and the shared dialog service does not impose a global serialization policy on unrelated workflows.
+  - Active legacy migration rejects ordinary window close and exposes one inline confirmation flow. Continue leaves the coordinator running; confirmed cancel closes with a canceled outcome; host cancellation bypasses the user-close guard and still runs ViewModel teardown.
+  - Legacy download records are persisted in batches. Cancellation stops remaining work and retains the legacy source for retry, but already persisted batches may remain; UI copy and diagnostics must not promise transactional rollback.
 hazards:
   - Bypassing typed routes/dialog results with raw view construction would reintroduce untestable UI ownership and history drift.
+  - Treating every close as user cancellation can block host shutdown; only the dialog host owns the forced-close bypass.
 tests:
   - test.desktop-interactions
   - test.typed-navigation
   - test.architecture-boundaries
   - test.ui-smoke
+  - `DialogWindowChromeTests`
+  - `StartupDialogOrderingTests`
+  - `LegacyUpgradeViewModelTests`
 ```
 
 ### service.typed-navigation
