@@ -59,6 +59,13 @@ Every phase result also has general `failureType` and `errorType` fields.
 `slowEvidenceErrorType` is reserved for failures inside slow-evidence capture
 and must not carry unrelated self-test or lifecycle contract failures.
 
+Process tests that require a child to acquire a file, pipe, socket or other
+resource must wait for a deterministic handshake emitted after acquisition.
+Fixed sleeps and short ready-file polling deadlines are not readiness proofs:
+runner load can delay child startup without indicating a product teardown
+failure. The xUnit operation token remains the outer bound for a missing or
+failed handshake.
+
 ### Measurement Definitions
 
 - `load`, `assembly-info`, `discovery` and `execution` duration starts
