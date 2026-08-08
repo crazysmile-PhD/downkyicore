@@ -24,7 +24,8 @@ tests and required gates are green on the exact commit.
 - [ ] PR #127 implements P0 Item 2 above PR #125. It reuses the existing completed-key
       invalidation and transfer-artifact cleanup owners; its complete exact-head matrix is green.
 - [ ] PR #128 implements P1 Item 3 above PR #127. It preserves same-source resume but resets the
-      backend and deletes partial state before contacting a different source; exact-head CI pending.
+      backend and deletes partial state before contacting a different source. The current-head
+      GitHub checks are the authoritative CI status; keep open until stack integration.
 - [ ] Merge in dependency order, retarget each next PR to `main`, rerun exact-head checks after
       every retarget, and remove the corresponding completed item only after integration.
 
@@ -114,7 +115,7 @@ Detailed contract: `docs/exec-plans/v1.1.1-runtime-hardening.md`.
        failures. The real Downloader fixture first observes a nonzero Range on the primary source,
        then proves the backup receives no nonzero Range. Format, module boundaries, workflow lint,
        package audits, Gitleaks and `git diff --check` pass. Draft PR #128 is stacked on PR #127;
-       keep open for exact-head PR CI and dependency-stack integration.
+       keep open for current-head PR checks and dependency-stack integration.
 4. [ ] Treat `OperationCanceledException` as normal only when the owning token is canceled;
        unexpected cancellation must produce a retryable failed task, never a stuck Downloading task.
 5. [ ] Move post-transfer integrity into the retry loop so invalid aria2/builtin output can use
