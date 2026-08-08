@@ -2,7 +2,7 @@
 
 Status: active
 Last updated: 2026-08-08
-Current work item: v1.1.1 runtime hardening P0 item 1, exact-head integration
+Current work item: unblock and integrate PR #120 -> #126 -> #124 -> #125
 Current branch: `fix/download-output-path-ownership`
 Current base: frozen PR #120 head `a2119be346757a48c46b0beadacad6a4426bc031`
 
@@ -10,6 +10,19 @@ This file contains only unfinished, blocked or integration-pending work. Detaile
 contracts live in `docs/exec-plans/`; stable completed facts belong in architecture,
 maintenance and release documentation. A finding is not complete until its behavior,
 tests and required gates are green on the exact commit.
+
+## Integration Queue
+
+- [ ] PR #120 remains frozen at `a2119be346757a48c46b0beadacad6a4426bc031`; external
+      contribution checks require maintainer approval.
+- [ ] PR #126 (`539d4aa`) replaces the flaky Windows ready-file deadline with a deterministic
+      child-process handshake. Its complete exact-head matrix is green.
+- [ ] PR #124 (`369a171`) contains only dialog/startup behavior above #126. Its complete
+      exact-head matrix is green.
+- [ ] PR #125 (`662765a`) contains only P0 output-path ownership above #124. Its complete
+      exact-head matrix is green.
+- [ ] Merge in dependency order, retarget each next PR to `main`, rerun exact-head checks after
+      every retarget, and remove the corresponding completed item only after integration.
 
 ## Mandatory Pre-Implementation Audit
 
@@ -72,8 +85,8 @@ Detailed contract: `docs/exec-plans/v1.1.1-runtime-hardening.md`.
 1. [ ] Atomically reserve normalized output base paths at task admission across queued,
        downloading and paused tasks; use case-insensitive comparison on Windows and reject
        unowned overwrite at final move.
-       Local implementation and all formal Verification gates are green; keep this item open until
-       the semantic commit is pushed and its exact-head cross-platform CI is green.
+       Local formal Verification and PR #125 exact-head cross-platform CI are green; keep this item
+       open until the dependency stack is integrated into `main`.
 2. [ ] On source-media validation or mux failure, revoke only invalid completed transfer keys,
        clear their partial/resume state and backend identity, and preserve source files for
        infrastructure-only failures.
