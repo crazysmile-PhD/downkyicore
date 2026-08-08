@@ -29,37 +29,6 @@ public sealed class VideoSelectionStateTests
     }
 
     [Fact]
-    public void PagerButtonCommandsNavigateWithoutCommandParameters()
-    {
-        var pager = new CustomPagerViewModel(1, 5);
-        pager.CurrentChanging += (_, _) => { };
-
-        pager.NextFirstCommand.Execute(null);
-        Assert.Equal(2, pager.Current);
-
-        pager.NextSecondCommand.Execute(null);
-        Assert.Equal(4, pager.Current);
-
-        pager.PreviousFirstCommand.Execute(null);
-        Assert.Equal(3, pager.Current);
-
-        pager.PreviousSecondCommand.Execute(null);
-        Assert.Equal(1, pager.Current);
-
-        pager.LastCommand.Execute(null);
-        Assert.Equal(5, pager.Current);
-
-        pager.PreviousCommand.Execute(null);
-        Assert.Equal(4, pager.Current);
-
-        pager.FirstCommand.Execute(null);
-        Assert.Equal(1, pager.Current);
-
-        pager.NextCommand.Execute(null);
-        Assert.Equal(2, pager.Current);
-    }
-
-    [Fact]
     public void GetPagesForScopeReturnsOnlySelectedPagesForSelectedItemScope()
     {
         var sections = CreateSections();

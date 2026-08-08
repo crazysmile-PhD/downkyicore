@@ -53,8 +53,7 @@ internal sealed class DownloadDuplicatePolicy
 
         foreach (var item in _downloadLists.Downloaded)
         {
-            if (!IsSameVideo(item, page, videoQuality)
-                || !CompletedMediaOutput.Exists(item.DownloadBase))
+            if (!IsSameVideo(item, page, videoQuality))
             {
                 continue;
             }

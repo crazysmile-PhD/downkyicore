@@ -60,19 +60,6 @@ public static class DanmakuProtobuf
         {
             throw;
         }
-        catch (InvalidProtocolBufferException)
-        {
-            return null;
-        }
-        catch (HttpRequestException)
-        {
-            return null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-
         return danmakuList;
     }
 

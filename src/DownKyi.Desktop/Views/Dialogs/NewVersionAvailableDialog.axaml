@@ -17,7 +17,9 @@
             BorderThickness="1">
         
         <Grid RowDefinitions="auto,*,auto" Margin="16">
-            <Grid Grid.Row="0" Margin="0 0 0 16">
+            <Grid Grid.Row="0"
+                  Margin="0 0 0 16"
+                  WindowDecorationProperties.ElementRole="TitleBar">
                 <StackPanel Orientation="Horizontal" 
                             VerticalAlignment="Center"
                             Spacing="8">

@@ -596,6 +596,7 @@ contracts:
   - SystemClock returns UTC time; deterministic tests replace IClock at the composition boundary.
   - SQLite uses one short pooled connection per operation, WAL, parameterized queries, optimistic versions, and transactional state moves.
   - `SqliteDownloadTaskStore` owns initialization, transactions, and public query coordination; record restoration, quarantine reads, and SQL write commands stay in their dedicated owners.
+  - Initialization removes only `downloading` rows whose `download_base` parent is absent; this cleanup runs for current and migrated schemas, is transactional and never mutates history rows.
   - Existing databases are backed up before schema migration; failed migrations roll back and never advance `user_version`.
   - One malformed row is quarantined with record ID, field, and sanitized reason; raw JSON and personal paths are not copied into diagnostics.
   - The progress writer has a one-slot bounded wake channel, a bounded task set, contiguous coalescing, and a final shutdown flush.
@@ -629,6 +630,7 @@ contracts:
   - Clipboard detection must be debounced and cancellation-aware.
   - Clipboard polling comes from the injected desktop monitor; the ViewModel cannot construct a listener from a global MainWindow.
   - Automatic update checks carry the window lifetime token; closing the window cancels network work and expected shutdown cancellation is not reported as an error.
+  - Startup dialogs have one observed task: legacy-data migration completes or cancels before the automatic update check can issue a request or open a second modal window.
   - Update failures use the injected typed logger and never include a repository response body or request URL.
   - Shell notifications, dialogs, active-view lookup, startup routing, and clipboard URL routing use framework-neutral Desktop contracts; MainWindowViewModel cannot reference Prism events, regions, dialog types, or route tags.
 hazards:
@@ -1166,6 +1168,7 @@ contracts:
   - `IDesktopInteractionContext` groups notification, navigation, and dialog contracts for `ViewModelBase` without exposing framework types or a service locator.
   - Non-dialog ViewModels cannot reference EventAggregator, RegionManager, legacy dialog services, navigation/message events, or the string-route helper.
   - The Avalonia dialog adapter marshals calls to the UI thread; download/add services await only `IAppDialogService` and cannot dispatch framework work themselves.
+  - `DialogWindow` is the single borderless, non-resizable custom-chrome host. Each of its six dialog contents marks exactly one custom title region with the Avalonia `TitleBar` role so the window remains draggable without restoring system chrome.
 hazards:
   - Bypassing typed routes/dialog results with raw view construction would reintroduce untestable UI ownership and history drift.
 tests:
@@ -2001,8 +2004,8 @@ contracts:
   - `DownloadTaskFileService` is an injected instance so cancellation, sidecar cleanup, retry, and permission failures use the same logger without a static owner.
   - Shutdown cancellation while enqueue or workers wait cannot skip fixed-worker drain or resumable-state recovery; active `Downloading` or `Pausing` Domain rows return to `Queued` and are persisted before exit completes.
   - Recovery persistence after cancellation explicitly ignores the canceled operation token; ordinary transfer and progress writes continue to propagate their caller token.
-  - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO generation; `DownloadTaskStateWriter` is a typed Application-command adapter and never accepts a UI task model.
-  - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `DownloadArtifactsStage`, `MuxStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages.
+  - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO generation; its typed result distinguishes created output, source-not-available, HTTP/parse/conversion/write/permission failure, invalid or zero-byte output, and cancellation. `DownloadTaskStateWriter` is a typed Application-command adapter and never accepts a UI task model.
+  - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `MuxStage`, `DownloadArtifactsStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages, so requested artifact failure cannot produce completed history.
   - `DownloadExecutionContext` captures one immutable settings snapshot and accepts the current operation token at each active check; it cannot retain a short-lived command token.
   - `DownloadActivityPresenter` is the only stage-adjacent localized resource owner. `DownloadCompletionProjector` owns UI-thread completion-list mutation; both belong to Desktop.
   - `DownloadPipeline` cannot regain subtitle API, danmaku converter, NFO XML, direct projection-update, localized resource, FFmpeg, or SQLite implementation details.

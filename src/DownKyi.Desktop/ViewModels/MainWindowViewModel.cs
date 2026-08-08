@@ -34,6 +34,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
     private string? _oldMessage;
     private CancellationTokenSource? _messageCancellation;
     private CancellationTokenSource? _clipboardDebounceCancellation;
+    private Task? _startupDialogsTask;
 
     private object? _mainContent;
 
@@ -156,8 +157,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
             {
                 return;
             }
-            Upgrade();
-            _ = CheckForUpdatesAsync();
+            StartStartupDialogs();
             _clipboardMonitor.Changed -= ClipboardMonitorOnChanged;
             _clipboardMonitor.Changed += ClipboardMonitorOnChanged;
             _navigationService.Navigate(new AppNavigationRequest(
@@ -262,9 +262,32 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     #endregion
 
-    private void Upgrade()
+    private void StartStartupDialogs()
     {
-        _ = ShowUpgradeDialogAsync();
+        if (_startupDialogsTask != null)
+        {
+            return;
+        }
+
+        _startupDialogsTask = RunStartupDialogsAsync();
+        ObserveStartupDialogs(_startupDialogsTask);
+    }
+
+    internal async Task RunStartupDialogsAsync()
+    {
+        await ShowUpgradeDialogAsync().ConfigureAwait(true);
+        await CheckForUpdatesAsync().ConfigureAwait(true);
+    }
+
+    private void ObserveStartupDialogs(Task startupDialogsTask)
+    {
+        _ = startupDialogsTask.ContinueWith(
+            completed => _logger.LogErrorMessage(
+                "Startup dialog flow failed.",
+                completed.Exception!.GetBaseException()),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously | TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
     }
 
     private async Task ShowUpgradeDialogAsync()

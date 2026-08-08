@@ -37,7 +37,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
     [Fact]
     public async Task CompletedDuplicateJumpOverPreservesHistory()
     {
-        using var context = DuplicatePolicyContext.WithCompleted(_directory, AppDialogOutcome.Accepted);
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
@@ -54,7 +54,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
     [Fact]
     public async Task CompletedDuplicateReDownloadAllowsNewTaskWithoutDeletingHistory()
     {
-        using var context = DuplicatePolicyContext.WithCompleted(_directory, AppDialogOutcome.Canceled);
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Canceled);
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
@@ -71,7 +71,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
     [Fact]
     public async Task RejectedDuplicateConfirmationPreservesCompletedRecord()
     {
-        using var context = DuplicatePolicyContext.WithCompleted(_directory, AppDialogOutcome.Canceled);
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Canceled);
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
@@ -88,7 +88,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
     [Fact]
     public async Task AcceptedDuplicateConfirmationDeletesPersistedRecordBeforeAllowingTask()
     {
-        using var context = DuplicatePolicyContext.WithCompleted(_directory, AppDialogOutcome.Accepted);
+        using var context = DuplicatePolicyContext.WithCompleted(AppDialogOutcome.Accepted);
 
         var shouldSkip = await context.Policy.ShouldSkipAsync(
             CreatePage(),
@@ -324,17 +324,10 @@ public sealed class DownloadAddOwnerTests : IDisposable
 
         public StubDialogService Dialogs { get; }
 
-        public static DuplicatePolicyContext WithCompleted(
-            string directory,
-            AppDialogOutcome outcome)
+        public static DuplicatePolicyContext WithCompleted(AppDialogOutcome outcome)
         {
-            Directory.CreateDirectory(directory);
-            var downloadingItem = CreateDownloadingItem();
-            var outputBasePath = Path.Combine(directory, "completed-output");
-            downloadingItem.DownloadBase.FilePath = outputBasePath;
-            File.WriteAllText(outputBasePath + ".mp4", "media");
             var queued = DownloadTaskProjectionMapper.CreateNewTask(
-                downloadingItem,
+                CreateDownloadingItem(),
                 DateTimeOffset.UnixEpoch);
             Assert.True(queued.Start(DateTimeOffset.UnixEpoch.AddSeconds(1))
                 .TryGetValue(out var started));

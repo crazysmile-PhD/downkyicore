@@ -8,7 +8,7 @@ public static class DesktopApplication
     public static async Task RunAsync(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
-        if (ProcessRestartLauncher.RunHelperIfRequested(args))
+        if (await ProcessRestartLauncher.RunHelperIfRequestedAsync(args).ConfigureAwait(false))
         {
             return;
         }

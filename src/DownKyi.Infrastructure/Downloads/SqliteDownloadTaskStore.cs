@@ -3,23 +3,39 @@ using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Infrastructure.Downloads;
 
 public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
 {
     private const int MaximumHistoryPageSize = 500;
+    private static readonly Action<ILogger, int, Exception?> LogOrphanCleanup = LoggerMessage.Define<int>(
+        LogLevel.Information,
+        new EventId(1001, "DownloadStoreOrphanCleanup"),
+        "Removed {Count} orphaned downloading records.");
     private readonly SqliteDownloadTaskStoreOptions _options;
     private readonly IClock _clock;
+    private readonly ILogger<SqliteDownloadTaskStore> _logger;
     private readonly string _connectionString;
     private readonly SemaphoreSlim _initializationGate = new(1, 1);
     private volatile bool _initialized;
     private bool _disposed;
 
     public SqliteDownloadTaskStore(SqliteDownloadTaskStoreOptions options, IClock clock)
+        : this(options, clock, NullLogger<SqliteDownloadTaskStore>.Instance)
+    {
+    }
+
+    public SqliteDownloadTaskStore(
+        SqliteDownloadTaskStoreOptions options,
+        IClock clock,
+        ILogger<SqliteDownloadTaskStore> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(logger);
         if (options.BusyTimeout <= TimeSpan.Zero || options.BusyTimeout > TimeSpan.FromMinutes(1))
         {
             throw new ArgumentOutOfRangeException(nameof(options));
@@ -27,6 +43,7 @@ public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
 
         _options = options;
         _clock = clock;
+        _logger = logger;
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = options.DatabasePath,
@@ -399,11 +416,44 @@ public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
                 databaseExisted,
                 _clock,
                 cancellationToken).ConfigureAwait(false);
+            await RemoveOrphanedDownloadingRecordsAsync(connection, cancellationToken).ConfigureAwait(false);
             _initialized = true;
         }
         finally
         {
             _initializationGate.Release();
+        }
+    }
+
+    private async Task RemoveOrphanedDownloadingRecordsAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        using var transaction = (SqliteTransaction)await connection
+            .BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                DELETE FROM downloading
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM download_base
+                    WHERE download_base.id = downloading.id)
+                """;
+            var removed = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            if (removed > 0)
+            {
+                LogOrphanCleanup(_logger, removed, null);
+            }
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
         }
     }
 

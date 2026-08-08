@@ -431,7 +431,8 @@ public sealed partial class SettingsManager : IDisposable, IAsyncDisposable
                     .ConfigureAwait(false);
                 if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
                 {
-                    throw new JsonSerializationException("The temporary settings payload must contain one JSON object.");
+                    throw new JsonSerializationException(
+                        "The temporary settings payload must contain one JSON object.");
                 }
             }
         }

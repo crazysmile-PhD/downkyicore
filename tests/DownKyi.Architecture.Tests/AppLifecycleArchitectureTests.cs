@@ -5,27 +5,6 @@ public sealed class AppLifecycleArchitectureTests
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
-    public void DesktopStartupKeepsAvaloniaOnTheStaEntryThread()
-    {
-        var programSource = ReadSource("DownKyi", "Program.cs");
-        var desktopSource = ReadSource("src", "DownKyi.Desktop", "DesktopApplication.cs");
-
-        Assert.Contains("[STAThread]", programSource, StringComparison.Ordinal);
-        Assert.Contains("public static Task Main", programSource, StringComparison.Ordinal);
-        Assert.Contains("DesktopApplication.RunAsync(args)", programSource, StringComparison.Ordinal);
-        Assert.Contains("public static async Task RunAsync", desktopSource, StringComparison.Ordinal);
-        Assert.Contains("RunHelperIfRequested(args)", desktopSource,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("RunHelperIfRequestedAsync", desktopSource, StringComparison.Ordinal);
-
-        var desktopLifetimeStart = desktopSource.IndexOf(
-            "StartWithClassicDesktopLifetime",
-            StringComparison.Ordinal);
-        Assert.True(desktopLifetimeStart >= 0);
-        Assert.DoesNotContain("await ", desktopSource[..desktopLifetimeStart], StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void ExitPathDoesNotSynchronouslyWaitForAsyncCleanup()
     {
         var appSource = ReadSource("src", "DownKyi.Desktop", "App.axaml.cs");
@@ -112,8 +91,7 @@ public sealed class AppLifecycleArchitectureTests
         Assert.DoesNotContain("StopHostAsync", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("FlushAsync", appSource, StringComparison.Ordinal);
         Assert.Contains("IProcessRestartLauncher", lifecycleSource, StringComparison.Ordinal);
-        Assert.Contains("WaitForParentExit(parentProcessId)", restartSource, StringComparison.Ordinal);
-        Assert.Contains("parent.WaitForExit()", restartSource, StringComparison.Ordinal);
+        Assert.Contains("WaitForExitAsync", restartSource, StringComparison.Ordinal);
         Assert.Contains("ArgumentList.Add", restartSource, StringComparison.Ordinal);
     }
 

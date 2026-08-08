@@ -2,6 +2,9 @@
 
 目前即時狀態位於 `../refactoring-live-plan.md`。v1.1.1 的安全修補順序、
 範圍、驗證與回滾位於 `v1.1.1-security-patch.md`。
+目前 PR #120 的範圍收斂契約位於 `v1.1.1-pr-120-scope-cleanup.md`。
+下載 runtime P0/P1/P2 清單位於 `v1.1.1-runtime-hardening.md`。
+對話框 Issue #123 與啟動模態排序位於 `v1.1.1-dialog-and-startup.md`。
 
 每個 work item 必須包含：
 

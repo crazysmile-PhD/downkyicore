@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
 using Microsoft.Extensions.Logging;
 
@@ -43,7 +45,9 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         }
     }
 
-    public static bool RunHelperIfRequested(IReadOnlyList<string> arguments)
+    public static async Task<bool> RunHelperIfRequestedAsync(
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         if (!TryParseParentProcessId(arguments, out var parentProcessId))
@@ -51,8 +55,9 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
             return false;
         }
 
-        WaitForParentExit(parentProcessId);
+        await WaitForParentExitAsync(parentProcessId, cancellationToken).ConfigureAwait(false);
 
+        cancellationToken.ThrowIfCancellationRequested();
         using var process = Process.Start(CreateStartInfo(null));
         if (process == null)
         {
@@ -62,12 +67,14 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         return true;
     }
 
-    private static void WaitForParentExit(int parentProcessId)
+    private static async Task WaitForParentExitAsync(
+        int parentProcessId,
+        CancellationToken cancellationToken)
     {
         try
         {
             using var parent = Process.GetProcessById(parentProcessId);
-            parent.WaitForExit();
+            await parent.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException)
         {

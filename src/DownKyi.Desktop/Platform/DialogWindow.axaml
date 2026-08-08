@@ -9,6 +9,9 @@
         TransparencyLevelHint="AcrylicBlur"
         BorderThickness="1"
         CanResize="False"
+        CanMinimize="False"
+        CanMaximize="False"
         ShowInTaskbar="False"
         ExtendClientAreaToDecorationsHint="True"
+        WindowDecorations="None"
         WindowStartupLocation="CenterOwner" />

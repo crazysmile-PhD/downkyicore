@@ -531,8 +531,8 @@ public sealed class DownloadRuntimeArchitectureTests
         [
             "ResolvePlaybackStage",
             "DownloadMediaStage",
-            "DownloadArtifactsStage",
             "MuxStage",
+            "DownloadArtifactsStage",
             "ValidateStage",
             "FinalizeStage"
         ];

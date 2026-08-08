@@ -5,12 +5,10 @@ using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Time;
-using DownKyi.Models;
 using DownKyi.Presentation;
 using DownKyi.Services;
 using DownKyi.Services.Download;
 using DownKyi.Services.Video;
-using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging;
 using CoreVideoPage = DownKyi.Core.BiliApi.Video.Models.VideoPage;
 using VideoPage = DownKyi.Presentation.VideoPage;
@@ -207,45 +205,6 @@ public sealed class VideoTagLoadingTests : IDisposable
         Assert.Null(Assert.Single(context.ListState.Downloading).Metadata);
     }
 
-    [Fact]
-    public async Task MissingCompletedMediaDoesNotBlockJumpOverRedownload()
-    {
-        using var context = CreateContext(generateMetadata: false);
-        context.SetRepeatDownloadStrategy(DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver);
-        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        context.Prepare(page);
-        context.ListState.AddDownloaded(CreateDownloadedItem(page, Path.Combine(_directory, "missing-output")));
-
-        var added = await context.Service
-            .AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken)
-            .ConfigureAwait(true);
-
-        Assert.Equal(1, added);
-        Assert.Single(context.ListState.Downloading);
-    }
-
-    [Fact]
-    public async Task ExistingCompletedMediaStillHonorsJumpOverStrategy()
-    {
-        using var context = CreateContext(generateMetadata: false);
-        context.SetRepeatDownloadStrategy(DownKyi.Core.Settings.RepeatDownloadStrategy.JumpOver);
-        var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
-        context.Prepare(page);
-        var outputBasePath = Path.Combine(_directory, "existing-output");
-        await File.WriteAllTextAsync(
-            outputBasePath + ".mp4",
-            "media",
-            TestContext.Current.CancellationToken).ConfigureAwait(true);
-        context.ListState.AddDownloaded(CreateDownloadedItem(page, outputBasePath));
-
-        var added = await context.Service
-            .AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken)
-            .ConfigureAwait(true);
-
-        Assert.Equal(0, added);
-        Assert.Empty(context.ListState.Downloading);
-    }
-
     private DownloadTestContext CreateContext(bool generateMetadata)
     {
         Directory.CreateDirectory(_directory);
@@ -276,29 +235,6 @@ public sealed class VideoTagLoadingTests : IDisposable
                 SelectedVideoCodec = "AVC"
             },
             LoadTagsAsync = loadTagsAsync
-        };
-    }
-
-    private static DownloadedItem CreateDownloadedItem(VideoPage page, string outputBasePath)
-    {
-        var downloadBase = new DownloadBase
-        {
-            Bvid = page.Bvid,
-            Cid = page.Cid,
-            FilePath = outputBasePath,
-            VideoCodecName = page.VideoQuality!.SelectedVideoCodec,
-            Resolution = new DownKyi.Core.BiliApi.BiliUtils.Quality
-            {
-                Id = page.VideoQuality.Quality,
-                Name = page.VideoQuality.QualityFormat
-            }
-        };
-        downloadBase.NeedDownloadContent["downloadAudio"] = true;
-        downloadBase.NeedDownloadContent["downloadVideo"] = true;
-        return new DownloadedItem
-        {
-            DownloadBase = downloadBase,
-            Downloaded = new Downloaded { DownloadBase = downloadBase }
         };
     }
 
@@ -369,14 +305,6 @@ public sealed class VideoTagLoadingTests : IDisposable
         public RecordingDownloadTaskQueue Queue { get; }
 
         public RecordingLogger<DownloadMovieMetadataBuilder> Logger { get; }
-
-        public void SetRepeatDownloadStrategy(DownKyi.Core.Settings.RepeatDownloadStrategy strategy)
-        {
-            _settings.Update(settings => settings with
-            {
-                Basic = settings.Basic with { RepeatDownloadStrategy = strategy }
-            });
-        }
 
         public void Prepare(VideoPage page)
         {

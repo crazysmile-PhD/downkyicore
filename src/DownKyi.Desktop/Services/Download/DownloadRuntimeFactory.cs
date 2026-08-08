@@ -136,11 +136,11 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 transferCoordinator,
                 playbackResolver,
                 _loggerFactory.CreateLogger<DownloadMediaStage>()),
-            new DownloadArtifactsStage(artifactWriter),
             new MuxStage(
                 presenter,
                 _ffmpegProcessor,
                 _stateWriter),
+            new DownloadArtifactsStage(artifactWriter),
             new ValidateStage(),
             new FinalizeStage(
                 _projectionStore,
