@@ -203,7 +203,7 @@ DownloadMediaStage
   -> ITransferBackend (exactly one URL, one backend attempt)
 ```
 
-`DownloadTransferResult` 區分 transient network、rate limit、expired address、resume rejected、invalid media、disk 與 permanent failure。403 可觸發一次播放地址重解；429 在 backend 能提供 `Retry-After` 時遵守最多 30 秒的 bounded delay；resume rejected 只允許清理該 transfer 的檔案與 sidecar 後重試一次；cancellation 不會轉成失敗或 retry。Built-in Downloader 與 aria2 的內部 retry 必須停用，每個 aria RPC client call 只能送出一次實體請求，避免和 coordinator 的 budget 相乘。網路失敗保留 partial/resume sidecar，只有確定無效的 media 或被拒絕的續傳狀態才清理。aria2 RPC 層失敗必須保留最新 GID；只有 terminal task failure 或明確的 task-not-found 才能清除。
+`DownloadTransferResult` 區分 transient network、rate limit、expired address、resume rejected、invalid media、disk 與 permanent failure。403 可觸發一次播放地址重解；429 在 backend 能提供 `Retry-After` 時遵守最多 30 秒的 bounded delay；resume rejected 只允許清理該 transfer 的檔案與 sidecar 後重試一次；cancellation 不會轉成失敗或 retry。Built-in Downloader 與 aria2 的內部 retry 必須停用，每個 aria RPC client call 只能送出一次實體請求，避免和 coordinator 的 budget 相乘。網路失敗只在重試完全相同的 URL 時保留 partial、resume sidecar 與 GID；切換 backup 或 refreshed URL 前，coordinator 必須先要求 backend 停止舊 transfer，再清除 identity、目標檔與 sidecar，任何 teardown/cleanup 失敗都 fail closed。aria2 RPC 層失敗必須保留最新 GID；只有 terminal task failure、明確的 task-not-found 或安全的來源切換 teardown 才能清除。
 
 Mux 失敗不等於來源損壞。`FfmpegProcessor` 只在 FFmpeg 可正常啟動且 fail-on-error decode 明確拒絕來源時回報 invalid input；`MuxStage` 才可沿用既有 completed-key invalidation 與 sidecar cleanup。FFmpeg 缺失、逾時、權限或目的檔衝突必須保留來源、completed key 與 resume identity。
 

@@ -30,6 +30,10 @@ internal interface ITransferBackend : IDisposable
 
     Task StopAsync(CancellationToken cancellationToken);
 
+    Task<DownloadTransferResult> ResetAsync(
+        string? backendIdentity,
+        CancellationToken cancellationToken);
+
     Task<DownloadTransferResult> TransferAsync(DownloadTransferRequest request);
 }
 

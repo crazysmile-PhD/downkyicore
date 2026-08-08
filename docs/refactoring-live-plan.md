@@ -2,9 +2,9 @@
 
 Status: active
 Last updated: 2026-08-08
-Current work item: P0 Item 2 mux source-cache recovery in PR #127 above PR #125
-Current branch: `fix/mux-source-cache-recovery`
-Current base: PR #125 head `260c8e79cd9375d2a33bb7dc774351d40c1be2a8`
+Current work item: P1 Item 3 clean restart when a transfer source changes
+Current branch: `fix/source-change-clean-restart`
+Current base: PR #127 head `b6e89ff658a3eb3c944bf5d73315d9d1a25a9c33`
 
 This file contains only unfinished, blocked or integration-pending work. Detailed
 contracts live in `docs/exec-plans/`; stable completed facts belong in architecture,
@@ -101,6 +101,17 @@ Detailed contract: `docs/exec-plans/v1.1.1-runtime-hardening.md`.
 
 3. [ ] Prevent unverified cross-origin CDN resume; changing source requires compatible
        validators or a clean restart.
+       Active implementation reuses `DownloadTransferCoordinator` as the only retry/source-switch
+       owner and `DownloadTransferFileCleanup` as the only partial-state deletion owner. A retry of
+       the identical URL may retain resumable state; selecting a different URL or refreshed address
+       must remove the target, `.aria2`, `.download` and stale backend identity before the next
+       backend call. Cleanup failure is fail-closed and cannot continue against the new source.
+       Local strict build is 0 warnings/errors; seven test projects are 855 passed, 0 failed and
+       1 existing packaged-aria2 skip; Architecture is 228 passed; lifecycle ownership is 494
+       matches and 0 violations; assembly lifecycle is 7 assemblies, 213 phase results and 0
+       failures. The real Downloader fixture first observes a nonzero Range on the primary source,
+       then proves the backup receives no nonzero Range. Format, module boundaries, workflow lint,
+       package audits, Gitleaks and `git diff --check` pass. Keep open for exact-head PR CI.
 4. [ ] Treat `OperationCanceledException` as normal only when the owning token is canceled;
        unexpected cancellation must produce a retryable failed task, never a stuck Downloading task.
 5. [ ] Move post-transfer integrity into the retry loop so invalid aria2/builtin output can use

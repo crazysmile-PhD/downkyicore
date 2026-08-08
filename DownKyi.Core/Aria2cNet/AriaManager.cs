@@ -166,7 +166,9 @@ public class AriaManager
                 _logger.LogErrorMessage(
                     $"aria2 reported a download failure; errorCode={result.ErrorCode}.");
 
-                var ariaRemove = await _ariaClient.RemoveDownloadResultAsync(gid).ConfigureAwait(false);
+                var ariaRemove = await _ariaClient
+                    .RemoveDownloadResultAsync(gid, cancellationToken)
+                    .ConfigureAwait(false);
                 if (ariaRemove?.Result != null)
                 {
                     _logger.LogDebugMessage("aria2 removed the failed download result.");

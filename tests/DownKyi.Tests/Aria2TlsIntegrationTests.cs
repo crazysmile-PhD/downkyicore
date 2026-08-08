@@ -430,7 +430,9 @@ public sealed partial class Aria2TlsIntegrationTests
             headers: null,
             cancellationToken).ConfigureAwait(false);
         await WaitForActiveStatusAsync(runtime, gid, cancellationToken).ConfigureAwait(false);
-        var removed = await runtime.Client.ForceRemoveAsync(gid).ConfigureAwait(false);
+        var removed = await runtime.Client
+            .ForceRemoveAsync(gid, cancellationToken)
+            .ConfigureAwait(false);
         Assert.Equal(gid, removed.Result);
         var status = await runtime.WaitForTerminalStatusAsync(
             gid,
@@ -541,7 +543,9 @@ public sealed partial class Aria2TlsIntegrationTests
             cancellationToken).ConfigureAwait(false);
         Assert.Equal("error", interruptedStatus.Status);
         Assert.Equal(1, server.ConnectionCount);
-        await runtime.Client.RemoveDownloadResultAsync(gid).ConfigureAwait(false);
+        await runtime.Client
+            .RemoveDownloadResultAsync(gid, cancellationToken)
+            .ConfigureAwait(false);
 
         var retryGid = await runtime.AddDownloadAsync(
             server.Url,
