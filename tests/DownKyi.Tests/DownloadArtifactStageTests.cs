@@ -58,6 +58,34 @@ public sealed class DownloadArtifactStageTests
     }
 
     [Fact]
+    public async Task PageAndMainCoversPersistUnderDistinctStableKeys()
+    {
+        var client = new TestBilibiliApiClient
+        {
+            DownloadFileAsyncHandler = (_, destination, token) =>
+                File.WriteAllTextAsync(destination, "image", token)
+        };
+        using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
+            .ConfigureAwait(true);
+        context.Downloading.DownloadBase.PageCoverUrl = "https://example.test/page.jpg";
+        context.Downloading.DownloadBase.CoverUrl = "https://example.test/main.png";
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess);
+        var task = await context.GetTaskAsync().ConfigureAwait(true);
+        Assert.Equal(
+            context.Execution.PageCoverFile,
+            task.Plan.TransferFiles[DownloadArtifactWriter.PageCoverTransferKey]);
+        Assert.Equal(
+            context.Execution.CoverFile,
+            task.Plan.TransferFiles[DownloadArtifactWriter.MainCoverTransferKey]);
+        Assert.NotEqual(context.Execution.PageCoverFile, context.Execution.CoverFile);
+    }
+
+    [Fact]
     public async Task MissingSubtitleResourceIsAnExplicitSuccessfulSkip()
     {
         var client = new TestBilibiliApiClient
@@ -249,6 +277,14 @@ public sealed class DownloadArtifactStageTests
         public DownloadExecutionContext Execution { get; }
 
         public DownloadArtifactsStage Stage { get; }
+
+        public async Task<DownloadTask> GetTaskAsync()
+        {
+            return await _tasks.FindAsync(
+                       Execution.TaskId,
+                       TestContext.Current.CancellationToken).ConfigureAwait(true)
+                   ?? throw new InvalidOperationException("Test task disappeared.");
+        }
 
         public static async Task<ArtifactTestContext> CreateAsync(
             TestBilibiliApiClient client,

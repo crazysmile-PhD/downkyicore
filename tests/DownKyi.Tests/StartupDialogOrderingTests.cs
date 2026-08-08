@@ -58,6 +58,49 @@ public sealed class StartupDialogOrderingTests
         Assert.Equal(1, handler.RequestCount);
     }
 
+    [Fact]
+    public async Task LifetimeCancellationStopsBeforeTheUpdateStepAfterDisposal()
+    {
+        using var settings = new TestSettingsStore();
+        settings.Store.Update(current => current with
+        {
+            About = current.About with
+            {
+                AutoUpdateWhenLaunch = AllowStatus.Yes,
+                IsReceiveBetaVersion = AllowStatus.No,
+                SkipVersionOnLaunch = string.Empty
+            }
+        });
+        var navigation = new NavigationStub();
+        var dialogs = new OrderedDialogService();
+        using var handler = new ReleaseHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri("https://api.github.test/")
+        };
+        using var clipboard = new ClipboardMonitorStub();
+        using var viewModel = new MainWindowViewModel(
+            navigation,
+            new NotificationStub(),
+            dialogs,
+            settings.Store,
+            clipboard,
+            new SearchService(settings.Store, navigation),
+            new VersionCheckerService(httpClient, "owner", "repo"),
+            NullLogger<MainWindowViewModel>.Instance);
+
+        var startup = viewModel.RunStartupDialogsAsync();
+        await dialogs.LegacyDialogStarted.Task
+            .WaitAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        viewModel.Dispose();
+        await startup.ConfigureAwait(true);
+
+        Assert.Equal([AppDialog.LegacyUpgrade], dialogs.Requests);
+        Assert.Equal(0, handler.RequestCount);
+    }
+
     private sealed class OrderedDialogService : IAppDialogService
     {
         private readonly TaskCompletionSource<AppDialogResult> _legacyCompletion =

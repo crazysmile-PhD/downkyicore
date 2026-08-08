@@ -25,6 +25,9 @@ namespace DownKyi.Services.Download;
 
 internal sealed class DownloadArtifactWriter
 {
+    internal const string MainCoverTransferKey = "cover";
+    internal const string PageCoverTransferKey = "page-cover";
+
     private readonly IWbiKeyProvider _wbiKeyProvider;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly ILogger _logger;
@@ -46,9 +49,11 @@ internal sealed class DownloadArtifactWriter
         DownloadingItem downloading,
         string? coverUrl,
         string fileName,
+        string transferKey,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(downloading);
+        ArgumentException.ThrowIfNullOrWhiteSpace(transferKey);
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
         downloading.DownloadContent = DictionaryResource.GetString("DownloadingCover");
         downloading.DownloadingFileSize = string.Empty;
@@ -81,7 +86,7 @@ internal sealed class DownloadArtifactWriter
 
             await _stateWriter.RecordTransferFileAsync(
                 taskId,
-                "cover",
+                transferKey,
                 fileName,
                 cancellationToken).ConfigureAwait(false);
             return OperationResult.Success(DownloadArtifactWriteResult.Created(fileName));

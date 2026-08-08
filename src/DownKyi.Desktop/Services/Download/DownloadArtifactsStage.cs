@@ -72,6 +72,7 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 downloading,
                 downloading.DownloadBase.PageCoverUrl,
                 pageCoverFileName,
+                DownloadArtifactWriter.PageCoverTransferKey,
                 cancellationToken).ConfigureAwait(true);
             if (!pageCoverResult.TryGetValue(out var pageCover))
             {
@@ -86,6 +87,7 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
                 downloading,
                 downloading.DownloadBase.CoverUrl,
                 coverFileName,
+                DownloadArtifactWriter.MainCoverTransferKey,
                 cancellationToken).ConfigureAwait(true);
             if (!coverResult.TryGetValue(out var cover))
             {

@@ -631,6 +631,7 @@ contracts:
   - Clipboard polling comes from the injected desktop monitor; the ViewModel cannot construct a listener from a global MainWindow.
   - Automatic update checks carry the window lifetime token; closing the window cancels network work and expected shutdown cancellation is not reported as an error.
   - Startup dialogs have one observed task: legacy-data migration completes or cancels before the automatic update check can issue a request or open a second modal window.
+  - The lifetime token is captured once while its source is valid. Cancellation after the legacy dialog stops the sequence before update checking; startup work cannot read the token source after `Dispose`.
   - Update failures use the injected typed logger and never include a repository response body or request URL.
   - Shell notifications, dialogs, active-view lookup, startup routing, and clipboard URL routing use framework-neutral Desktop contracts; MainWindowViewModel cannot reference Prism events, regions, dialog types, or route tags.
 hazards:
@@ -1323,6 +1324,7 @@ contracts:
   - Canceling publication directory selection returns before media parsing.
   - Publication keyword search uses the WBI endpoint's exact `page.count` and applies one batch projection.
   - Returning from a child route preserves the same query, page, and media instances; only an interrupted page request is resumed.
+  - My-space asynchronous package selection uses the shared `DownKyiAsyncDelegateCommand` so launcher exceptions and expected cancellation follow the repository command policy.
 hazards:
   - Per-item dispatcher calls stutter on large publication pages and can project stale rows after navigation.
   - Worker-thread mutation of profile properties and `StatusList` is unsafe for Avalonia bindings.
@@ -2005,6 +2007,7 @@ contracts:
   - Shutdown cancellation while enqueue or workers wait cannot skip fixed-worker drain or resumable-state recovery; active `Downloading` or `Pausing` Domain rows return to `Queued` and are persisted before exit completes.
   - Recovery persistence after cancellation explicitly ignores the canceled operation token; ordinary transfer and progress writes continue to propagate their caller token.
   - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO generation; its typed result distinguishes created output, source-not-available, HTTP/parse/conversion/write/permission failure, invalid or zero-byte output, and cancellation. `DownloadTaskStateWriter` is a typed Application-command adapter and never accepts a UI task model.
+  - Danmaku enumeration stops on a successfully parsed empty segment; HTTP, IO and malformed protobuf responses remain failures. Main cover retains transfer key `cover`, while page cover uses `page-cover`, so neither durable path overwrites the other.
   - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `MuxStage`, `DownloadArtifactsStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages, so requested artifact failure cannot produce completed history.
   - `DownloadExecutionContext` captures one immutable settings snapshot and accepts the current operation token at each active check; it cannot retain a short-lived command token.
   - `DownloadActivityPresenter` is the only stage-adjacent localized resource owner. `DownloadCompletionProjector` owns UI-thread completion-list mutation; both belong to Desktop.

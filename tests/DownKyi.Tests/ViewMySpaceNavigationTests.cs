@@ -1,4 +1,5 @@
 using DownKyi.Application.Desktop;
+using DownKyi.Commands;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Services.UserSpace;
 using DownKyi.ViewModels;
@@ -24,7 +25,7 @@ public sealed class ViewMySpaceNavigationTests : IDisposable
         using var viewModel = CreateViewModel(navigation, launcher);
         viewModel.SelectedPackage = selectedPackage;
 
-        await viewModel.PackageListCommand.ExecuteAsync(null);
+        await ExecuteAsync(viewModel.PackageListCommand).ConfigureAwait(true);
 
         var request = Assert.Single(navigation.Requests);
         Assert.Equal(expectedRoute, request.Route);
@@ -41,14 +42,14 @@ public sealed class ViewMySpaceNavigationTests : IDisposable
         using var viewModel = CreateViewModel(navigation, launcher);
 
         viewModel.SelectedPackage = 4;
-        await viewModel.PackageListCommand.ExecuteAsync(null);
+        await ExecuteAsync(viewModel.PackageListCommand).ConfigureAwait(true);
 
         Assert.Equal(new Uri("https://t.bilibili.com/"), Assert.Single(launcher.OpenedUris));
         Assert.Empty(navigation.Requests);
         Assert.Equal(-1, viewModel.SelectedPackage);
 
         viewModel.SelectedPackage = 4;
-        await viewModel.PackageListCommand.ExecuteAsync(null);
+        await ExecuteAsync(viewModel.PackageListCommand).ConfigureAwait(true);
 
         Assert.Equal(2, launcher.OpenedUris.Count);
         Assert.Empty(navigation.Requests);
@@ -63,16 +64,56 @@ public sealed class ViewMySpaceNavigationTests : IDisposable
         using var viewModel = CreateViewModel(navigation, launcher);
         viewModel.SelectedPackage = 99;
 
-        await viewModel.PackageListCommand.ExecuteAsync(null);
+        await ExecuteAsync(viewModel.PackageListCommand).ConfigureAwait(true);
 
         Assert.Empty(navigation.Requests);
         Assert.Empty(launcher.OpenedUris);
         Assert.Equal(-1, viewModel.SelectedPackage);
     }
 
+    [Fact]
+    public void PackageSelectionUsesTheFaultObservingProjectCommand()
+    {
+        using var viewModel = CreateViewModel(
+            new RecordingNavigationService(),
+            new RecordingPlatformLauncher());
+
+        Assert.IsType<DownKyiAsyncDelegateCommand>(viewModel.PackageListCommand);
+    }
+
     public void Dispose()
     {
         _settings.Dispose();
+    }
+
+    private static async Task ExecuteAsync(DownKyiAsyncDelegateCommand command)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observedBusyState = false;
+        command.CanExecuteChanged += OnCanExecuteChanged;
+        try
+        {
+            command.Execute(null);
+            await completion.Task
+                .WaitAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+        }
+        finally
+        {
+            command.CanExecuteChanged -= OnCanExecuteChanged;
+        }
+
+        void OnCanExecuteChanged(object? sender, EventArgs args)
+        {
+            if (!command.CanExecute(null))
+            {
+                observedBusyState = true;
+            }
+            else if (observedBusyState)
+            {
+                completion.TrySetResult();
+            }
+        }
     }
 
     private ViewMySpaceViewModel CreateViewModel(

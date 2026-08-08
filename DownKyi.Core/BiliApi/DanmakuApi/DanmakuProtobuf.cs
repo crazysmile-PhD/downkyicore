@@ -15,7 +15,7 @@ public static class DanmakuProtobuf
     /// <param name="cid">视频CID</param>
     /// <param name="segmentIndex">分包，每6分钟一包</param>
     /// <returns></returns>
-    private static async Task<List<BiliDanmaku>?> GetDanmakuProtoAsync(
+    private static async Task<List<BiliDanmaku>> GetDanmakuProtoAsync(
         IBilibiliApiClient client,
         long avid,
         long cid,
@@ -89,7 +89,7 @@ public static class DanmakuProtobuf
                 cid,
                 segmentIndex,
                 cancellationToken).ConfigureAwait(false);
-            if (danmakus == null)
+            if (danmakus.Count == 0)
             {
                 break;
             }

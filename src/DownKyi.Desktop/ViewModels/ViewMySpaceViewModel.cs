@@ -160,10 +160,12 @@ internal partial class ViewMySpaceViewModel : ViewModelBase
     }
 
     // 页面选择事件
-    private AsyncRelayCommand? _packageListCommand;
+    private DownKyiAsyncDelegateCommand? _packageListCommand;
 
-    public AsyncRelayCommand PackageListCommand =>
-        _packageListCommand ??= new AsyncRelayCommand(ExecutePackageListCommandAsync);
+    public DownKyiAsyncDelegateCommand PackageListCommand =>
+        _packageListCommand ??= new DownKyiAsyncDelegateCommand(
+            ExecutePackageListCommandAsync,
+            _logger);
 
     /// <summary>
     /// 页面选择事件

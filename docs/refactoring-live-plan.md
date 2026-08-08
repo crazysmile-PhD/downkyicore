@@ -54,6 +54,17 @@ Detailed contract: `docs/exec-plans/v1.1.1-pr-120-scope-cleanup.md`.
       danmaku execution failures must stop `FinalizeStage`; no-resource outcomes remain distinct
       from HTTP, malformed protobuf/JSON, conversion, permission, write and zero-byte failures.
 
+### PR #120 Exact-Head Review Follow-Up
+
+- [x] Terminate danmaku enumeration on an explicit successful empty segment without hiding
+      transport, IO or protobuf failures; synchronize the production API audit.
+- [x] Restore MySpace package selection to the existing fault-observing
+      `DownKyiAsyncDelegateCommand`.
+- [x] Stop startup sequencing after lifetime cancellation without reading a disposed token source.
+- [x] Persist page and main covers under distinct stable transfer keys.
+- [ ] Run complete formal Verification, push without force and resolve all five review threads only
+      after the replacement exact head is green.
+
 ### PR #120 Exit Conditions
 
 - [ ] `main...HEAD` contains only approved work and no rejected keyword/path residue.
