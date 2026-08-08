@@ -42,6 +42,7 @@ internal sealed class FfmpegConcatRuntime
         string outputFile,
         FfmpegHardwareEncoderProfile? hardwareEncoder,
         bool allowStreamCopy,
+        bool overwriteDestination,
         Action<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -104,7 +105,7 @@ internal sealed class FfmpegConcatRuntime
                         continue;
                     }
 
-                    File.Move(temporaryOutput, outputFile, overwrite: true);
+                    File.Move(temporaryOutput, outputFile, overwrite: overwriteDestination);
                     DeleteSourceSegments(orderedSegments);
                     return new FfmpegOperationResult(true, outputFile, null, validation.Duration);
                 }
@@ -114,19 +115,16 @@ internal sealed class FfmpegConcatRuntime
                 }
             }
 
-            DeleteFile(outputFile);
             return FfmpegOperationResult.Failure("All FFmpeg concat strategies failed validation.");
         }
         catch (IOException e)
         {
             _logger.LogErrorMessage("FFmpeg concat output could not be finalized.", e);
-            DeleteFile(outputFile);
             return FfmpegOperationResult.Failure("FFmpeg output could not be finalized.");
         }
         catch (UnauthorizedAccessException e)
         {
             _logger.LogErrorMessage("FFmpeg concat output finalization was denied.", e);
-            DeleteFile(outputFile);
             return FfmpegOperationResult.Failure("FFmpeg output could not be finalized.");
         }
         finally

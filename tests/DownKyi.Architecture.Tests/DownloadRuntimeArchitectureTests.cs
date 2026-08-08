@@ -526,6 +526,7 @@ public sealed class DownloadRuntimeArchitectureTests
         var pipelineSource = File.ReadAllText(Path.Combine(directory, "DownloadPipeline.cs"));
         var factorySource = File.ReadAllText(Path.Combine(directory, "DownloadRuntimeFactory.cs"));
         var mediaSource = File.ReadAllText(Path.Combine(directory, "DownloadMediaStage.cs"));
+        var muxSource = File.ReadAllText(Path.Combine(directory, "MuxStage.cs"));
         var transferKeySource = File.ReadAllText(Path.Combine(directory, "DownloadTransferKey.cs"));
         string[] stageNames =
         [
@@ -558,6 +559,12 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.Contains("DownloadTransferKey.Create", mediaSource, StringComparison.Ordinal);
         Assert.DoesNotContain("GetHashCode", mediaSource, StringComparison.Ordinal);
         Assert.DoesNotContain("GetHashCode", transferKeySource, StringComparison.Ordinal);
+        Assert.Equal(
+            3,
+            System.Text.RegularExpressions.Regex.Count(
+                muxSource,
+                "overwriteDestination: false",
+                System.Text.RegularExpressions.RegexOptions.CultureInvariant));
 
         var previousIndex = -1;
         foreach (var stageName in stageNames)

@@ -2,9 +2,9 @@
 
 Status: active
 Last updated: 2026-08-08
-Current work item: v1.1.1 item 2, PR #120 scope cleanup and runtime correctness
-Current branch: `pr-120-review-fixes`
-Current base: `origin/main` after merged PR #122
+Current work item: v1.1.1 runtime hardening P0 item 1, exact-head integration
+Current branch: `fix/download-output-path-ownership`
+Current base: frozen PR #120 head `a2119be346757a48c46b0beadacad6a4426bc031`
 
 This file contains only unfinished, blocked or integration-pending work. Detailed
 contracts live in `docs/exec-plans/`; stable completed facts belong in architecture,
@@ -56,11 +56,12 @@ Detailed contract: `docs/exec-plans/v1.1.1-pr-120-scope-cleanup.md`.
 
 ### PR #120 Exit Conditions
 
-- [ ] `main...HEAD` contains only approved work and no rejected keyword/path residue.
+- [x] `main...HEAD` contains only approved work and no rejected keyword/path residue.
 - [x] Strict Release build, all seven test projects, format, architecture, lifecycle, package,
       workflow and secret gates pass.
-- [ ] Update PR body to the exact final diff and push without rebase or force-push.
-- [ ] PR #120 remains open and unmerged until its exact-head CI and review are green.
+- [x] Update PR body to the exact final diff and push without rebase or force-push.
+- [ ] PR #120 remains frozen at `a2119be346757a48c46b0beadacad6a4426bc031`; its external
+      contribution checks still require maintainer approval before exact-head CI can complete.
 
 ## Ordered Runtime Hardening Backlog
 
@@ -71,6 +72,8 @@ Detailed contract: `docs/exec-plans/v1.1.1-runtime-hardening.md`.
 1. [ ] Atomically reserve normalized output base paths at task admission across queued,
        downloading and paused tasks; use case-insensitive comparison on Windows and reject
        unowned overwrite at final move.
+       Local implementation and all formal Verification gates are green; keep this item open until
+       the semantic commit is pushed and its exact-head cross-platform CI is green.
 2. [ ] On source-media validation or mux failure, revoke only invalid completed transfer keys,
        clear their partial/resume state and backend identity, and preserve source files for
        infrastructure-only failures.

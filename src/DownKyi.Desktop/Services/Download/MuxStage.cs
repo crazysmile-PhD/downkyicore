@@ -64,6 +64,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
             context.AudioFile,
             context.VideoFile,
             finalFile,
+            overwriteDestination: false,
             cancellationToken).ConfigureAwait(true);
         downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
@@ -99,6 +100,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
                 audio: null,
                 video: context.DurlDownloads[0].FilePath,
                 destination: finalFile,
+                overwriteDestination: false,
                 cancellationToken).ConfigureAwait(true);
             context.Downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
                 context.TaskId,
@@ -127,6 +129,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
             context.Settings.Video,
             segments,
             outputPath,
+            overwriteDestination: false,
             cancellationToken: cancellationToken).ConfigureAwait(true);
         context.Downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,

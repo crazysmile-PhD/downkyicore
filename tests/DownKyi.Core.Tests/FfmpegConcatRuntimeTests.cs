@@ -36,6 +36,7 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             output,
             hardwareEncoder: null,
             allowStreamCopy: false,
+            overwriteDestination: true,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
@@ -65,12 +66,68 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             output,
             hardwareEncoder: null,
             allowStreamCopy: false,
+            overwriteDestination: true,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
         Assert.False(File.Exists(output));
         Assert.True(File.Exists(segment));
         Assert.Empty(Directory.EnumerateFiles(_testDirectory, "*.partial.mp4"));
+    }
+
+    [Fact]
+    public async Task ConcatDoesNotOverwriteExistingDestinationWhenOwnershipIsDenied()
+    {
+        var segment = CreateSegment("segment.flv");
+        var runner = new RecordingConcatRunner();
+        var runtime = new FfmpegConcatRuntime(
+            runner,
+            new StubMediaValidator(isValid: true),
+            () => 1,
+            NullLogger<FfmpegConcatRuntime>.Instance);
+        var output = Path.Combine(_testDirectory, "owned-by-another-task.mp4");
+        byte[] existingContent = [9, 8, 7];
+        await File.WriteAllBytesAsync(output, existingContent, TestContext.Current.CancellationToken);
+
+        var result = await runtime.ConcatAsync(
+            [new FfmpegConcatSegment(1, segment, TimeSpan.FromSeconds(5))],
+            output,
+            hardwareEncoder: null,
+            allowStreamCopy: false,
+            overwriteDestination: false,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(existingContent, await File.ReadAllBytesAsync(output, TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(segment));
+        Assert.Empty(Directory.EnumerateFiles(_testDirectory, "*.partial.mp4"));
+    }
+
+    [Fact]
+    public async Task ConcatValidationFailurePreservesExistingDestination()
+    {
+        var segment = CreateSegment("invalid.flv");
+        var runner = new RecordingConcatRunner();
+        var runtime = new FfmpegConcatRuntime(
+            runner,
+            new StubMediaValidator(isValid: false),
+            () => 1,
+            NullLogger<FfmpegConcatRuntime>.Instance);
+        var output = Path.Combine(_testDirectory, "existing.mp4");
+        byte[] existingContent = [6, 5, 4];
+        await File.WriteAllBytesAsync(output, existingContent, TestContext.Current.CancellationToken);
+
+        var result = await runtime.ConcatAsync(
+            [new FfmpegConcatSegment(1, segment, TimeSpan.FromSeconds(5))],
+            output,
+            hardwareEncoder: null,
+            allowStreamCopy: false,
+            overwriteDestination: false,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(existingContent, await File.ReadAllBytesAsync(output, TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(segment));
     }
 
     public void Dispose()

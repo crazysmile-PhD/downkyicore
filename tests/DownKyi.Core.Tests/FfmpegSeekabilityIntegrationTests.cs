@@ -53,6 +53,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
             output,
             hardwareEncoder: null,
             allowStreamCopy: false,
+            overwriteDestination: true,
             cancellationToken: cancellationToken).ConfigureAwait(true);
 
         Assert.True(result.Succeeded, result.FailureReason);

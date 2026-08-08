@@ -1939,6 +1939,7 @@ paths:
   - src/DownKyi.Desktop/Services/Download/DownloadRuntimeFactory.cs
   - src/DownKyi.Desktop/Services/Download/DownloadOrchestrator.cs
   - src/DownKyi.Desktop/Services/Download/DownloadTaskAdmissionService.cs
+  - src/DownKyi.Desktop/Services/Download/DownloadOutputPathResolver.cs
   - src/DownKyi.Desktop/Services/Download/DownloadTaskQueueGateway.cs
   - src/DownKyi.Desktop/Services/Download/IDownloadTaskExecutor.cs
   - src/DownKyi.Desktop/Services/Download/DownloadPipeline.cs
@@ -1987,6 +1988,9 @@ outbound:
 contracts:
   - A bounded Channel and fixed workers own queue consumption; global shutdown and per-task cancellation cannot create unbounded transfer tasks.
   - New, resumed, and persisted startup tasks enqueue `DownloadTaskId` directly; no runtime owner scans an observable UI collection for work.
+  - `DownloadTaskAdmissionService` is the singleton admission owner. Under one asynchronous gate it queries authoritative unfinished Domain tasks, resolves active and on-disk output collisions, persists the selected base path, then publishes the UI projection and queue ID.
+  - Queued, Downloading, Pausing, Paused, and retryable Failed tasks reserve normalized output base paths. Completed, Canceled, and Deleted tasks release the active reservation; existing output files still prevent reuse.
+  - Output-path comparison is ordinal and case-insensitive on Windows and ordinal on other platforms. Draft and admission collision handling share `DownloadOutputPathResolver`; no mutable path registry or UI collection is an ownership source.
   - `DownloadTransferCoordinator` is the only media-transfer retry budget owner. It supplies exactly one URL to a backend call, rotates backup addresses, and permits one playback-address refresh.
   - `DownloadRetryPolicy` maps transient network/5xx to bounded exponential backoff, 429 to bounded server delay when available, expired address/403 to backup or one refresh, rejected resume state to one cleanup plus same-address retry, invalid media to the next backup, disk/permanent failure to immediate stop, and cancellation to propagation.
   - Built-in and aria2 backends return typed results and cannot own a second retry budget. Downloader uses `MaxTryAgainOnFailure=0`; aria2 uses `max-tries=1`, `retry-wait=0`, `always-resume=false` and `max-resume-failure-tries=0`.
@@ -2013,6 +2017,7 @@ contracts:
   - Recovery persistence after cancellation explicitly ignores the canceled operation token; ordinary transfer and progress writes continue to propagate their caller token.
   - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO generation; its typed result distinguishes created output, source-not-available, HTTP/parse/conversion/write/permission failure, invalid or zero-byte output, and cancellation. `DownloadTaskStateWriter` is a typed Application-command adapter and never accepts a UI task model.
   - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `MuxStage`, `DownloadArtifactsStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages, so requested artifact failure cannot produce completed history.
+  - Download mux and DURL concat finalize through same-directory temporary files with `overwriteDestination: false`. A pre-existing destination fails the stage without deleting the foreign file or the valid source streams.
   - `DownloadExecutionContext` captures one immutable settings snapshot and accepts the current operation token at each active check; it cannot retain a short-lived command token.
   - `DownloadActivityPresenter` is the only stage-adjacent localized resource owner. `DownloadCompletionProjector` owns UI-thread completion-list mutation; both belong to Desktop.
   - `DownloadPipeline` cannot regain subtitle API, danmaku converter, NFO XML, direct projection-update, localized resource, FFmpeg, or SQLite implementation details.
@@ -2254,6 +2259,7 @@ contracts:
   - Host composition creates one `FfmpegProcessor`; downloads and toolbox operations share one concurrency gate.
   - `FfmpegProcessor.Instance` is forbidden because separate or implicit owners can exceed the configured CPU/GPU concurrency.
   - Multi-segment completion is accepted only after ffprobe verifies a video stream, positive expected duration, and decodable middle/tail seeks.
+  - Download-owned merge and concat callers must deny destination overwrite. FFmpeg validation/finalization failure cleans only the operation's temporary output; it cannot delete a pre-existing destination. Explicit toolbox transforms retain their separate overwrite behavior.
   - Command generation is separate from the async process runner; every process has cancellation, a timeout, captured stderr, and process-tree cleanup.
   - Hardware encoder discovery is cached and runs through the same bounded async process runner.
   - `FfmpegProcessor`, concat validation, and hardware encoder detection use typed loggers from the shared application `ILoggerFactory`; static `LogManager` access is forbidden in this boundary.
