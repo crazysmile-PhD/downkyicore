@@ -138,7 +138,6 @@ public sealed class AriaServerProcessTests
             Path.GetTempPath(),
             $"downkyi-aria-secret-exit-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
-        var readyPath = Path.Combine(directory, "child-ready");
         var server = new AriaServer(NullLoggerFactory.Instance);
         Process? process = null;
         try
@@ -149,16 +148,12 @@ public sealed class AriaServerProcessTests
                 NullLogger.Instance);
             var secretPath = secretFile.Path;
             server.SetStartupSecretForTests(secretFile);
-            process = StartSecretHoldingProcess(secretPath, readyPath);
+            process = StartSecretHoldingProcess(secretPath);
             server.SetTrackedServerForTests(process);
-            using var readyTimeout = CancellationTokenSource.CreateLinkedTokenSource(
-                TestContext.Current.CancellationToken);
-            readyTimeout.CancelAfter(TimeSpan.FromSeconds(5));
-            while (!File.Exists(readyPath))
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(20), readyTimeout.Token)
-                    .ConfigureAwait(true);
-            }
+            var readySignal = await process.StandardOutput
+                .ReadLineAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.Equal("ready", readySignal);
 
             Assert.True(server.KillTrackedServer("test startup cleanup"));
 
@@ -198,15 +193,14 @@ public sealed class AriaServerProcessTests
                ?? throw new InvalidOperationException("Could not start the process used by the cleanup test.");
     }
 
-    private static Process StartSecretHoldingProcess(
-        string secretPath,
-        string readyPath)
+    private static Process StartSecretHoldingProcess(string secretPath)
     {
         var startInfo = new ProcessStartInfo
         {
             FileName = "powershell.exe",
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            RedirectStandardOutput = true
         };
         startInfo.ArgumentList.Add("-NoLogo");
         startInfo.ArgumentList.Add("-NoProfile");
@@ -216,10 +210,9 @@ public sealed class AriaServerProcessTests
             "$stream = [System.IO.File]::Open($env:DOWNKYI_SECRET_PATH, " +
             "[System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, " +
             "[System.IO.FileShare]::Read); " +
-            "[System.IO.File]::WriteAllText($env:DOWNKYI_READY_PATH, 'ready'); " +
+            "[Console]::Out.WriteLine('ready'); " +
             "Start-Sleep -Seconds 30");
         startInfo.Environment["DOWNKYI_SECRET_PATH"] = secretPath;
-        startInfo.Environment["DOWNKYI_READY_PATH"] = readyPath;
 
         return Process.Start(startInfo)
                ?? throw new InvalidOperationException(
