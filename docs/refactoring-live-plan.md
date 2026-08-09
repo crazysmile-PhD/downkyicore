@@ -133,6 +133,9 @@ Detailed contract: `docs/exec-plans/v1.1.1-dialog-and-startup.md`.
       buttons in column 1.
 - [x] Add headless tests for window decorations, XAML construction, title-bar role and valid
       close-button bounds for all six dialogs.
+- [x] Mark every caption close button with the `User` decoration role so it remains interactive
+      inside the draggable title region; expose the existing cancellation command on the legacy
+      migration dialog.
 
 ### P1 Startup Modal Ordering
 
@@ -140,11 +143,10 @@ Detailed contract: `docs/exec-plans/v1.1.1-dialog-and-startup.md`.
 - [x] Prove the update dialog cannot open while the migration dialog is active.
 - [x] Do not add a global dialog semaphore for a local startup-ordering defect.
 
-### Pending Product Decision
+### Migration Close Contract
 
-- [ ] Align migration-dialog copy and close behavior. Current code allows cancellation while the
-      text implies closing is forbidden. Do not change this policy inside Issue #123 without an
-      explicit product contract.
+- [x] Keep the existing safe-cancellation behavior, expose one visible close action, and state
+      that closing the migration dialog cancels the current migration attempt.
 
 ## Naming And Responsibility Clarity
 
