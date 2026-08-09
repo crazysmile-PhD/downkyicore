@@ -22,7 +22,7 @@ public static class DanmakuProtobuf
         await using (input.ConfigureAwait(false))
         {
             var view = DmWebViewReply.Parser.ParseFrom(input);
-            if (view.DmSge == null || view.DmSge.Total < 0 || view.DmSge.Total > int.MaxValue)
+            if (view.DmSge == null || view.DmSge.Total < 0 || view.DmSge.Total >= int.MaxValue)
             {
                 throw new InvalidDataException(
                     "The danmaku metadata response does not contain a valid segment bound.");

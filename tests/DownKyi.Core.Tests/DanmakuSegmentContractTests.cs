@@ -112,6 +112,30 @@ public sealed class DanmakuSegmentContractTests
                 TestContext.Current.CancellationToken)).ConfigureAwait(true);
     }
 
+    [Theory]
+    [InlineData(-1L)]
+    [InlineData((long)int.MaxValue)]
+    [InlineData(long.MaxValue)]
+    public async Task UnsafeSegmentBoundsFailBeforeRequestingAnySegment(long total)
+    {
+        var requests = new List<string>();
+        var client = CreateClient(
+            new DmWebViewReply
+            {
+                DmSge = new DmSegConfig { PageSize = 360_000, Total = total }
+            }.ToByteArray(),
+            requests);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            client.GetAllDanmakuProtoAsync(
+                avid: 11,
+                cid: 22,
+                TestContext.Current.CancellationToken)).ConfigureAwait(true);
+
+        Assert.Single(requests);
+        Assert.Contains("/x/v2/dm/web/view", requests[0], StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task MalformedSegmentMetadataFailsInsteadOfGuessingTermination()
     {
