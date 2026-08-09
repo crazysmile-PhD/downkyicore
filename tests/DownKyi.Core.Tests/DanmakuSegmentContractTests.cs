@@ -8,10 +8,14 @@ namespace DownKyi.Core.Tests;
 public sealed class DanmakuSegmentContractTests
 {
     [Fact]
-    public async Task EmptySuccessfulSegmentTerminatesEnumerationWithoutRequestingAnotherPage()
+    public async Task AdvertisedSegmentCountIncludesEmptyInteriorSegments()
     {
         var payloads = new Queue<byte[]>(
         [
+            new DmWebViewReply
+            {
+                DmSge = new DmSegConfig { PageSize = 360_000, Total = 3 }
+            }.ToByteArray(),
             new DmSegMobileReply
             {
                 Elems =
@@ -28,7 +32,23 @@ public sealed class DanmakuSegmentContractTests
                     }
                 }
             }.ToByteArray(),
-            new DmSegMobileReply().ToByteArray()
+            new DmSegMobileReply().ToByteArray(),
+            new DmSegMobileReply
+            {
+                Elems =
+                {
+                    new DanmakuElem
+                    {
+                        Id = 2,
+                        Progress = 800_000,
+                        Mode = 1,
+                        Fontsize = 25,
+                        Color = 0xFFFFFF,
+                        MidHash = "anonymous",
+                        Content = "after quiet bucket"
+                    }
+                }
+            }.ToByteArray()
         ]);
         var requests = new List<string>();
         var client = new StubBilibiliApiClient(
@@ -51,9 +71,70 @@ public sealed class DanmakuSegmentContractTests
             cid: 22,
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
-        Assert.Equal("hello", Assert.Single(result).Content);
-        Assert.Equal(2, requests.Count);
-        Assert.Contains("segment_index=1", requests[0], StringComparison.Ordinal);
-        Assert.Contains("segment_index=2", requests[1], StringComparison.Ordinal);
+        Assert.Equal(["hello", "after quiet bucket"], result.Select(item => item.Content));
+        Assert.Equal(4, requests.Count);
+        Assert.Contains("/x/v2/dm/web/view", requests[0], StringComparison.Ordinal);
+        Assert.Contains("segment_index=1", requests[1], StringComparison.Ordinal);
+        Assert.Contains("segment_index=2", requests[2], StringComparison.Ordinal);
+        Assert.Contains("segment_index=3", requests[3], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ZeroAdvertisedSegmentsDoesNotGuessAnExtraRequest()
+    {
+        var requests = new List<string>();
+        var client = CreateClient(
+            new DmWebViewReply
+            {
+                DmSge = new DmSegConfig { PageSize = 360_000, Total = 0 }
+            }.ToByteArray(),
+            requests);
+
+        var result = await client.GetAllDanmakuProtoAsync(
+            avid: 11,
+            cid: 22,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Empty(result);
+        Assert.Single(requests);
+        Assert.Contains("/x/v2/dm/web/view", requests[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MissingSegmentMetadataFailsInsteadOfGuessingTermination()
+    {
+        var client = CreateClient(new DmWebViewReply().ToByteArray(), []);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            client.GetAllDanmakuProtoAsync(
+                avid: 11,
+                cid: 22,
+                TestContext.Current.CancellationToken)).ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task MalformedSegmentMetadataFailsInsteadOfGuessingTermination()
+    {
+        var client = CreateClient([0x0A, 0x05, 0x01], []);
+
+        await Assert.ThrowsAsync<InvalidProtocolBufferException>(() =>
+            client.GetAllDanmakuProtoAsync(
+                avid: 11,
+                cid: 22,
+                TestContext.Current.CancellationToken)).ConfigureAwait(true);
+    }
+
+    private static StubBilibiliApiClient CreateClient(
+        byte[] payload,
+        List<string> requests)
+    {
+        return new StubBilibiliApiClient(
+            static (_, _) => Task.FromException<string>(new NotSupportedException()),
+            (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                requests.Add(request.RequestAddress);
+                return Task.FromResult<Stream>(new MemoryStream(payload));
+            });
     }
 }

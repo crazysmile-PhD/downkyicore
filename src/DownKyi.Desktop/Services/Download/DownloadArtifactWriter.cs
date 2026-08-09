@@ -200,6 +200,13 @@ internal sealed class DownloadArtifactWriter
                 "download.artifact.danmaku.parse",
                 "The requested danmaku response was invalid.");
         }
+        catch (InvalidDataException e)
+        {
+            _logger.LogErrorMessage("Danmaku response contract validation failed.", e);
+            return ArtifactFailure(
+                "download.artifact.danmaku.parse",
+                "The requested danmaku response was invalid.");
+        }
         catch (IOException e)
         {
             _logger.LogErrorMessage("Danmaku conversion or write failed.", e);
