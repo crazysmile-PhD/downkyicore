@@ -4,16 +4,19 @@ namespace DownKyi.Tests;
 
 internal sealed class TestDesktopInteractionContext : IDesktopInteractionContext
 {
-    public TestDesktopInteractionContext(IAppNavigationService? navigation = null)
+    public TestDesktopInteractionContext(
+        IAppNavigationService? navigation = null,
+        IAppDialogService? dialogs = null)
     {
         Navigation = navigation ?? new TestNavigationService();
+        Dialogs = dialogs ?? new TestDialogService();
     }
 
     public IUserNotificationService Notifications { get; } = new TestNotificationService();
 
     public IAppNavigationService Navigation { get; }
 
-    public IAppDialogService Dialogs { get; } = new TestDialogService();
+    public IAppDialogService Dialogs { get; }
 
     private sealed class TestNotificationService : IUserNotificationService
     {
