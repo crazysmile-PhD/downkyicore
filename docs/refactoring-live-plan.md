@@ -56,20 +56,23 @@ Detailed contract: `docs/exec-plans/v1.1.1-pr-120-scope-cleanup.md`.
 
 ### PR #120 Exact-Head Review Follow-Up
 
-- [x] Terminate danmaku enumeration on an explicit successful empty segment without hiding
-      transport, IO or protobuf failures; synchronize the production API audit.
+- [x] Bound danmaku enumeration with `DmWebViewReply.dm_sge.total`; empty interior segments
+      remain valid while missing metadata, transport, IO and protobuf failures stay visible.
+- [x] Preserve media inputs and sidecars through artifacts, mux and validation; clean only after
+      durable completion commits through the existing file owner.
 - [x] Restore MySpace package selection to the existing fault-observing
       `DownKyiAsyncDelegateCommand`.
 - [x] Stop startup sequencing after lifetime cancellation without reading a disposed token source.
 - [x] Persist page and main covers under distinct stable transfer keys.
-- [ ] Run complete formal Verification, push without force and resolve all five review threads only
-      after the replacement exact head is green.
+- [ ] Push without force and monitor the replacement exact-head CI. Do not comment, resolve
+      review threads or merge PR #120 in this task.
 
 ### PR #120 Exit Conditions
 
 - [ ] `main...HEAD` contains only approved work and no rejected keyword/path residue.
-- [x] Strict Release build, all seven test projects, format, architecture, lifecycle, package,
-      workflow and secret gates pass.
+- [x] Local strict Release build, all seven test projects, invariant, format, architecture,
+      lifecycle, package, workflow and secret gates pass.
+- [ ] The pushed replacement exact head passes all required GitHub checks.
 - [ ] Update PR body to the exact final diff and push without rebase or force-push.
 - [ ] PR #120 remains open and unmerged until its exact-head CI and review are green.
 

@@ -194,6 +194,8 @@ FinalizeStage
 
 每個 stage 接受 `DownloadExecutionContext` 與 `CancellationToken`，回傳 typed result。UI 文字由 Desktop presenter 依 domain/application phase 投影，不可由 pipeline 直接讀取資源字典。
 
+下載來源、續傳 sidecar 與 completed transfer key 在所有必要 stage 通過前都屬於可重試狀態。FFmpeg 只能發布已驗證輸出，不得刪除輸入；只有 `FinalizeStage` 成功提交 Domain `Completed` 後，才能透過既有 `DownloadTaskFileService` 清理該任務的精確來源與 sidecar。Artifact、mux、validation、取消或 SQLite completion 失敗都必須保留這些 retry checkpoint。
+
 下載重試只有一個預算 owner：
 
 ```text

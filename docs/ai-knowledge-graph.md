@@ -2010,8 +2010,9 @@ contracts:
   - Shutdown cancellation while enqueue or workers wait cannot skip fixed-worker drain or resumable-state recovery; active `Downloading` or `Pausing` Domain rows return to `Queued` and are persisted before exit completes.
   - Recovery persistence after cancellation explicitly ignores the canceled operation token; ordinary transfer and progress writes continue to propagate their caller token.
   - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO generation; its typed result distinguishes created output, source-not-available, HTTP/parse/conversion/write/permission failure, invalid or zero-byte output, and cancellation. `DownloadTaskStateWriter` is a typed Application-command adapter and never accepts a UI task model.
-  - Danmaku enumeration stops on a successfully parsed empty segment; HTTP, IO and malformed protobuf responses remain failures. Main cover retains transfer key `cover`, while page cover uses `page-cover`, so neither durable path overwrites the other.
-  - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `MuxStage`, `DownloadArtifactsStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages, so requested artifact failure cannot produce completed history.
+  - Danmaku enumeration first reads `DmWebViewReply.dm_sge.total`, then requests exactly segments `1..total`; an empty interior segment is valid and cannot act as EOF. Missing/invalid metadata, HTTP, IO and malformed protobuf responses remain failures. Main cover retains transfer key `cover`, while page cover uses `page-cover`, so neither durable path overwrites the other.
+  - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `DownloadArtifactsStage`, `MuxStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages, so requested artifact failure cannot produce completed history.
+  - Downloaded media inputs, `.aria2`/`.download` sidecars and retry checkpoints remain owned through artifacts, mux and validation. FFmpeg preserves its inputs; only `FinalizeStage`, after durable `Completed` commit, asks the existing `DownloadTaskFileService` to remove the exact transfer inputs and sidecars.
   - `DownloadExecutionContext` captures one immutable settings snapshot and accepts the current operation token at each active check; it cannot retain a short-lived command token.
   - `DownloadActivityPresenter` is the only stage-adjacent localized resource owner. `DownloadCompletionProjector` owns UI-thread completion-list mutation; both belong to Desktop.
   - `DownloadPipeline` cannot regain subtitle API, danmaku converter, NFO XML, direct projection-update, localized resource, FFmpeg, or SQLite implementation details.
@@ -2031,6 +2032,8 @@ tests:
   - test.download-pipeline-stages
   - test.download-retry-policy
   - test.download-file-integrity
+  - test.download-pipeline-commit-boundary
+  - test.danmaku-segment-contract
   - test.fake-http-download
   - test.download-lifecycle
   - test.storage-resume

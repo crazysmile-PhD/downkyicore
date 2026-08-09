@@ -29,11 +29,22 @@
     {
       "id": "output-cleanup-ownership",
       "historicalRoots": ["PR #85", "PR #120"],
-      "guards": "Task rows, resume state, generated files and sidecars are changed through their existing owners; cancellation preserves recoverable state.",
+      "guards": "Task rows, transfer inputs, resume state, generated files and sidecars are changed through their existing owners; retry checkpoints survive every pre-commit failure and transfer inputs are cleaned only after durable completion.",
       "testClasses": [
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.SqliteDownloadTaskStoreTests" },
+        { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.FfmpegCommitBoundaryTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadTaskFileServiceTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadPipelineCommitBoundaryTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadTaskProjectionStoreResumeTests" }
+      ]
+    },
+    {
+      "id": "protocol-sequence-termination",
+      "historicalRoots": ["PR #120"],
+      "guards": "Finite external sequences use their advertised bound or terminal signal; missing metadata, valid empty elements and transport or parse failures remain distinct outcomes.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.DanmakuSegmentContractTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadArtifactStageTests" }
       ]
     },
     {
