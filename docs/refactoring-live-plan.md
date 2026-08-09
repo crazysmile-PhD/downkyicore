@@ -1,10 +1,10 @@
 # DownKyi Live Plan
 
 Status: active
-Last updated: 2026-08-08
+Last updated: 2026-08-09
 Current work item: P0 Item 2 mux source-cache recovery in PR #127 above PR #125
 Current branch: `fix/mux-source-cache-recovery`
-Current base: PR #125 head `260c8e79cd9375d2a33bb7dc774351d40c1be2a8`
+Current base: PR #125 head `73360b5a2f978643673475d043bef874a1f721bf`
 
 This file contains only unfinished, blocked or integration-pending work. Detailed
 contracts live in `docs/exec-plans/`; stable completed facts belong in architecture,
@@ -22,7 +22,8 @@ tests and required gates are green on the exact commit.
 - [ ] PR #125 (`260c8e7`) contains only P0 output-path ownership above #124. Its complete
       exact-head matrix is green.
 - [ ] PR #127 implements P0 Item 2 above PR #125. It reuses the existing completed-key
-      invalidation and transfer-artifact cleanup owners; its complete exact-head matrix is green.
+      invalidation and transfer-artifact cleanup owners. The root-cause follow-up is locally green;
+      its new exact head still requires the complete remote matrix.
 - [ ] Merge in dependency order, retarget each next PR to `main`, rerun exact-head checks after
       every retarget, and remove the corresponding completed item only after integration.
 
@@ -96,9 +97,9 @@ Detailed contract: `docs/exec-plans/v1.1.1-runtime-hardening.md`.
        permission/runtime failures preserve the cache. Multi-segment DURL failures diagnose each
        segment and revoke only confirmed corrupt paths. All diagnostics share the existing
        `FfmpegMaxParallelJobs` gate.
-       Local strict build is 0 warnings/errors; seven test projects are 851 passed, 0 failed and
+       Local strict build is 0 warnings/errors; seven test projects are 863 passed, 0 failed and
        1 existing packaged-aria2 skip; Architecture is 228 passed; lifecycle is 7 assemblies,
-       213 phase results and 0 failures; ownership is 487 matches and 0 violations. Format, module
+       213 phase results and 0 failures; ownership is 492 matches and 0 violations. Format, module
        boundaries, workflow lint, package audits, Gitleaks and `git diff --check` are green. The
        review-fix exact head must pass the complete PR matrix before its threads are resolved. Keep
        open until integration.
