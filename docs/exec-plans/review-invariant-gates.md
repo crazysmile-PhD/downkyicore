@@ -1,6 +1,6 @@
 # Review Invariant Gates
 
-Status: local Verification complete; exact-head GitHub CI pending
+Status: complete
 
 ## Goal
 
@@ -49,7 +49,7 @@ Out of scope:
 - [x] SemVer prerelease/build/skip and manual-update dialog defects have deterministic regressions.
 - [x] Agent, testing, verification and knowledge documentation are synchronized.
 - [x] Complete every local command in Verification.
-- [ ] Push semantic commits and require exact-head GitHub CI on Windows, Linux and macOS.
+- [x] Push semantic commits and require exact-head GitHub CI on Windows, Linux and macOS.
 
 Local evidence on 2026-08-09:
 
@@ -61,6 +61,8 @@ Local evidence on 2026-08-09:
 - Assembly lifecycle: 7 assemblies, 213 phase results, 0 failures.
 - Format, Gitleaks 8.30.1, Actionlint, version contract, package vulnerability,
   package deprecation and `git diff --check`: passed.
+- GitHub PR #129: Windows/Linux/macOS build and test, six-RID aria2 security,
+  assembly lifecycle, format, package audit, protobuf and CodeQL passed.
 
 The Roslyn audit exposed two pre-existing presentation-bound service contracts:
 `DownloadManagerCoordinator.cs` and `LegacyUpgradeCoordinator.cs`. They are an
