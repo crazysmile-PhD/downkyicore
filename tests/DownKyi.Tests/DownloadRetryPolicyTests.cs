@@ -428,13 +428,66 @@ public sealed class DownloadRetryPolicyTests
 
         try
         {
-            DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+            var result = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                 media,
                 NullLogger.Instance);
 
+            Assert.True(result.Succeeded);
+            Assert.Equal(3, result.AttemptedCount);
             Assert.False(File.Exists(media));
             Assert.False(File.Exists($"{media}.aria2"));
             Assert.False(File.Exists($"{media}.download"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CoordinatorStopsRetryWhenInvalidArtifactCleanupFails()
+    {
+        using var backend = new RecordingBackend(
+            DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.InvalidMedia,
+                "invalid-media"),
+            DownloadTransferResult.Succeeded());
+        var coordinator = CreateCoordinator(backend, maximumAttempts: 5);
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-cleanup-failure-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var target = Path.Combine(directory, "blocked-target");
+        Directory.CreateDirectory(target);
+        await File.WriteAllTextAsync(
+            $"{target}.aria2",
+            "resume",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            $"{target}.download",
+            "resume",
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            var request = CreateRequest("https://primary.invalid/media") with
+            {
+                Directory = directory,
+                FileName = Path.GetFileName(target)
+            };
+
+            var result = await coordinator.TransferAsync(
+                request,
+                static _ => Task.FromResult<IReadOnlyList<string>>([]),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
+            Assert.Equal(DownloadTransferFailureKind.Disk, result.FailureKind);
+            Assert.Equal("download.transfer.cleanup-failed", result.ErrorCode);
+            Assert.Single(backend.Requests);
+            Assert.True(Directory.Exists(target));
+            Assert.True(File.Exists($"{target}.aria2"));
+            Assert.True(File.Exists($"{target}.download"));
         }
         finally
         {

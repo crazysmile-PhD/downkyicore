@@ -144,12 +144,34 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        return InvalidateCompletedFilesAsync(taskId, [key], cancellationToken);
+    }
+
+    public Task<OperationResult<DownloadTask>> InvalidateCompletedFilesAsync(
+        DownloadTaskId taskId,
+        IReadOnlyCollection<string> keys,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        if (keys.Count == 0)
+        {
+            throw new ArgumentException("At least one completed file key is required.", nameof(keys));
+        }
+
+        var distinctKeys = keys
+            .Select(key =>
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(key);
+                return key;
+            })
+            .ToHashSet(StringComparer.Ordinal);
         return MutateAsync(taskId, (task, now) => task.UpdateTransferState(
             CopyTransfer(
                 task.Transfer,
                 backendIdentity: null,
                 replaceBackendIdentity: true,
-                completedFileKeys: task.Transfer.CompletedFileKeys.Remove(key)),
+                completedFileKeys: task.Transfer.CompletedFileKeys
+                    .Where(key => !distinctKeys.Contains(key))),
             now), cancellationToken);
     }
 

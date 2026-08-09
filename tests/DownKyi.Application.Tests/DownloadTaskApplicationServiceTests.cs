@@ -113,6 +113,51 @@ public sealed class DownloadTaskApplicationServiceTests
     }
 
     [Fact]
+    public async Task InvalidatingCompletedFilesUsesOneDurableMutation()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+        var task = CreateTask();
+        await service.AddAsync(task, TestContext.Current.CancellationToken);
+        await service.StartAsync(task.Id, TestContext.Current.CancellationToken);
+        foreach (var (key, fileName) in new[]
+                 {
+                     ("audio-1", "audio.m4s"),
+                     ("video-1", "video.m4s"),
+                     ("keep-1", "keep.m4s")
+                 })
+        {
+            await service.RecordTransferFileAsync(
+                task.Id,
+                key,
+                fileName,
+                TestContext.Current.CancellationToken);
+            await service.CompleteTransferFileAsync(
+                task.Id,
+                key,
+                TestContext.Current.CancellationToken);
+        }
+
+        await service.SetBackendIdentityAsync(
+            task.Id,
+            "stale-aria-gid",
+            TestContext.Current.CancellationToken);
+        var updatesBeforeInvalidation = store.ExpectedVersions.Count;
+
+        var result = await service.InvalidateCompletedFilesAsync(
+            task.Id,
+            ["audio-1", "video-1"],
+            TestContext.Current.CancellationToken);
+
+        var updated = result.RequireValue();
+        Assert.Equal(updatesBeforeInvalidation + 1, store.ExpectedVersions.Count);
+        Assert.Equal("keep-1", Assert.Single(updated.Transfer.CompletedFileKeys));
+        Assert.Null(updated.Transfer.BackendIdentity);
+        Assert.Equal("audio.m4s", updated.Plan.TransferFiles["audio-1"]);
+        Assert.Equal("video.m4s", updated.Plan.TransferFiles["video-1"]);
+    }
+
+    [Fact]
     public async Task InvalidCommandDoesNotPersistOrPublishAReplacementSnapshot()
     {
         var store = new RecordingStore();

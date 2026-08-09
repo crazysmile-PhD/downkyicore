@@ -98,6 +98,8 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.DestinationConflict, result.FailureKind);
+        Assert.Empty(result.InputFailures);
         Assert.Equal(existingContent, await File.ReadAllBytesAsync(output, TestContext.Current.CancellationToken));
         Assert.True(File.Exists(segment));
         Assert.Empty(Directory.EnumerateFiles(_testDirectory, "*.partial.mp4"));
@@ -156,11 +158,45 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.InvalidInput, result.FailureKind);
         Assert.Equal(corrupt, Assert.Single(result.InvalidInputPaths));
+        Assert.Equal(
+            FfmpegInputFailureKind.DecodeCorruption,
+            Assert.Single(result.InputFailures, failure => failure.Path == corrupt).Kind);
         Assert.Equal([first, corrupt, third], runner.ValidatedInputs);
         Assert.True(File.Exists(first));
         Assert.True(File.Exists(corrupt));
         Assert.True(File.Exists(third));
+    }
+
+    [Fact]
+    public async Task ConcatDirectoryInputIsNotMisclassifiedAsMissingMedia()
+    {
+        var directoryInput = Path.Combine(_testDirectory, "directory-segment.flv");
+        Directory.CreateDirectory(directoryInput);
+        var runner = new RecordingConcatRunner();
+        var runtime = new FfmpegConcatRuntime(
+            runner,
+            new StubMediaValidator(isValid: true),
+            new AsyncConcurrencyGate(() => 1),
+            NullLogger<FfmpegConcatRuntime>.Instance);
+
+        var result = await runtime.ConcatAsync(
+            [new FfmpegConcatSegment(1, directoryInput, TimeSpan.FromSeconds(5))],
+            Path.Combine(_testDirectory, "directory-segment-output.mp4"),
+            hardwareEncoder: null,
+            allowStreamCopy: false,
+            overwriteDestination: false,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.InputAccess, result.FailureKind);
+        Assert.Empty(result.InvalidInputPaths);
+        Assert.Equal(
+            FfmpegInputFailureKind.UnsupportedFileType,
+            Assert.Single(result.InputFailures).Kind);
+        Assert.Empty(runner.Commands);
+        Assert.True(Directory.Exists(directoryInput));
     }
 
     public void Dispose()

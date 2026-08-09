@@ -239,7 +239,14 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
 
             if (snapshot.Transfer.CompletedFileKeys.Contains(key, StringComparer.Ordinal))
             {
-                DownloadTransferFileCleanup.DeleteInvalidArtifacts(cachedFile, _logger);
+                var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                    cachedFile,
+                    _logger);
+                if (!cleanup.Succeeded)
+                {
+                    return CleanupFailure();
+                }
+
                 await _stateWriter.InvalidateCompletedFileAsync(
                     context.TaskId,
                     key,
@@ -278,7 +285,14 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         {
             if (!IsDownloadedMediaFileUsable(targetFile, media.ExpectedSize))
             {
-                DownloadTransferFileCleanup.DeleteInvalidArtifacts(targetFile, _logger);
+                var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                    targetFile,
+                    _logger);
+                if (!cleanup.Succeeded)
+                {
+                    return CleanupFailure();
+                }
+
                 await _stateWriter.SetBackendIdentityAsync(
                     context.TaskId,
                     null,
@@ -303,6 +317,13 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         return OperationResult.Failure<DownloadedMediaTransfer>(OperationError.Unexpected(
             result.ErrorCode,
             "Media transfer did not produce a valid file."));
+    }
+
+    private static OperationResult<DownloadedMediaTransfer> CleanupFailure()
+    {
+        return OperationResult.Failure<DownloadedMediaTransfer>(OperationError.Unexpected(
+            "download.transfer.cleanup",
+            "Invalid transfer artifacts could not be removed safely."));
     }
 
     private static PlayUrlDashVideo? SelectAudio(DownloadExecutionContext context)

@@ -78,9 +78,15 @@ internal sealed class DownloadTransferCoordinator
             if (lastResult.FailureKind is DownloadTransferFailureKind.InvalidMedia
                 or DownloadTransferFailureKind.ResumeRejected)
             {
-                DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                     Path.Combine(request.Directory, request.FileName),
                     _logger);
+                if (!cleanup.Succeeded)
+                {
+                    return DownloadTransferResult.Failed(
+                        DownloadTransferFailureKind.Disk,
+                        "download.transfer.cleanup-failed");
+                }
             }
 
             var decision = _retryPolicy.Decide(

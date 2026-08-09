@@ -37,7 +37,11 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.InvalidInput, result.FailureKind);
         Assert.Equal(audio, Assert.Single(result.InvalidInputPaths));
+        Assert.Equal(
+            FfmpegInputFailureKind.DecodeCorruption,
+            Assert.Single(result.InputFailures, failure => failure.Path == audio).Kind);
         Assert.Equal(2, runner.InputValidationCount);
         Assert.True(File.Exists(audio));
         Assert.True(File.Exists(video));
@@ -62,6 +66,7 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.ProcessUnavailable, result.FailureKind);
         Assert.Empty(result.InvalidInputPaths);
         Assert.True(File.Exists(audio));
         Assert.True(File.Exists(video));
@@ -86,9 +91,81 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.ProcessFailure, result.FailureKind);
         Assert.Empty(result.InvalidInputPaths);
+        Assert.All(
+            result.InputFailures,
+            failure => Assert.Equal(FfmpegInputFailureKind.DiagnosticFailure, failure.Kind));
         Assert.True(File.Exists(audio));
         Assert.True(File.Exists(video));
+    }
+
+    [Fact]
+    public async Task InputDirectoryIsReportedAsAccessFailureWithoutInvalidation()
+    {
+        var audio = Path.Combine(_directory, "directory-input.m4s");
+        Directory.CreateDirectory(audio);
+        var video = CreateInput("directory-input-video.m4s");
+        var runner = new SuccessfulMergeRunner();
+        var processor = new FfmpegProcessor(
+            _settings,
+            NullLoggerFactory.Instance,
+            runner);
+
+        var result = await processor.MergeMediaAsync(
+            _settings.Current.Video,
+            audio,
+            video,
+            Path.Combine(_directory, "directory-input-output.mp4"),
+            overwriteDestination: false,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.InputAccess, result.FailureKind);
+        Assert.Empty(result.InvalidInputPaths);
+        Assert.Equal(
+            FfmpegInputFailureKind.UnsupportedFileType,
+            Assert.Single(result.InputFailures).Kind);
+        Assert.Equal(0, runner.CallCount);
+        Assert.True(Directory.Exists(audio));
+        Assert.True(File.Exists(video));
+    }
+
+    [Fact]
+    public async Task DestinationConflictDoesNotTriggerInputDiagnosticsOrDeleteSources()
+    {
+        var audio = CreateInput("destination-audio.m4s");
+        var video = CreateInput("destination-video.m4s");
+        var destination = Path.Combine(_directory, "destination.mp4");
+        byte[] originalDestination = [9, 8, 7];
+        await File.WriteAllBytesAsync(
+            destination,
+            originalDestination,
+            TestContext.Current.CancellationToken);
+        var runner = new SuccessfulMergeRunner();
+        var processor = new FfmpegProcessor(
+            _settings,
+            NullLoggerFactory.Instance,
+            runner);
+
+        var result = await processor.MergeMediaAsync(
+            _settings.Current.Video,
+            audio,
+            video,
+            destination,
+            overwriteDestination: false,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.DestinationConflict, result.FailureKind);
+        Assert.Empty(result.InputFailures);
+        Assert.Empty(result.InvalidInputPaths);
+        Assert.Equal(1, runner.CallCount);
+        Assert.True(File.Exists(audio));
+        Assert.True(File.Exists(video));
+        Assert.Equal(
+            originalDestination,
+            await File.ReadAllBytesAsync(destination, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -264,6 +341,26 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
                     return;
                 }
             }
+        }
+    }
+
+    private sealed class SuccessfulMergeRunner : IFfmpegProcessRunner
+    {
+        public int CallCount { get; private set; }
+
+        public async Task<FfmpegProcessResult> RunAsync(
+            FfmpegCommand command,
+            TimeSpan timeout,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            Assert.Equal("merge-media", command.Operation);
+            await File.WriteAllBytesAsync(
+                command.Arguments[^1],
+                [1, 2, 3],
+                cancellationToken).ConfigureAwait(false);
+            return new FfmpegProcessResult(true, 0, string.Empty, string.Empty, false);
         }
     }
 

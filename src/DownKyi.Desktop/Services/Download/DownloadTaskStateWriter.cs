@@ -76,6 +76,12 @@ internal sealed class DownloadTaskStateWriter
         CancellationToken cancellationToken = default) =>
         RequireAsync(_tasks.InvalidateCompletedFileAsync(taskId, key, cancellationToken));
 
+    public Task<DownloadTask> InvalidateCompletedFilesAsync(
+        DownloadTaskId taskId,
+        IReadOnlyCollection<string> keys,
+        CancellationToken cancellationToken = default) =>
+        RequireAsync(_tasks.InvalidateCompletedFilesAsync(taskId, keys, cancellationToken));
+
     public Task<DownloadTask> CompleteTransferFileAsync(
         DownloadTaskId taskId,
         string key,

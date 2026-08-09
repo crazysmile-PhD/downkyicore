@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -70,10 +71,12 @@ internal sealed class MuxStage : IDownloadPipelineStage
             finalFile,
             overwriteDestination: false,
             cancellationToken).ConfigureAwait(true);
-        var invalidSource = !result.Succeeded && await InvalidateSourcesAsync(
-            context,
-            result.InvalidInputPaths,
-            cancellationToken).ConfigureAwait(true);
+        var invalidation = result.Succeeded
+            ? SourceInvalidationOutcome.None
+            : await InvalidateSourcesAsync(
+                context,
+                result,
+                cancellationToken).ConfigureAwait(true);
         downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
             result.Succeeded ? finalFile : null,
@@ -84,7 +87,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
         return result.Succeeded
             ? DownloadStageResult.Success(Name)
             : DownloadStageResult.Failure(
-                invalidSource ? "download.mux.invalid-source" : "download.mux.dash",
+                GetFailureCode("download.mux.dash", invalidation),
                 "Audio and video streams could not be finalized.");
     }
 
@@ -110,10 +113,12 @@ internal sealed class MuxStage : IDownloadPipelineStage
                 destination: finalFile,
                 overwriteDestination: false,
                 cancellationToken).ConfigureAwait(true);
-            var invalidSingleSource = !mergeResult.Succeeded && await InvalidateSourcesAsync(
-                context,
-                mergeResult.InvalidInputPaths,
-                cancellationToken).ConfigureAwait(true);
+            var singleInvalidation = mergeResult.Succeeded
+                ? SourceInvalidationOutcome.None
+                : await InvalidateSourcesAsync(
+                    context,
+                    mergeResult,
+                    cancellationToken).ConfigureAwait(true);
             context.Downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
                 context.TaskId,
                 mergeResult.Succeeded ? finalFile : null,
@@ -124,7 +129,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
             return mergeResult.Succeeded
                 ? DownloadStageResult.Success(Name)
                 : DownloadStageResult.Failure(
-                    invalidSingleSource ? "download.mux.invalid-source" : "download.mux.durl",
+                    GetFailureCode("download.mux.durl", singleInvalidation),
                     "The media segment could not be finalized.");
         }
 
@@ -143,10 +148,12 @@ internal sealed class MuxStage : IDownloadPipelineStage
             outputPath,
             overwriteDestination: false,
             cancellationToken: cancellationToken).ConfigureAwait(true);
-        var invalidSource = !result.Succeeded && await InvalidateSourcesAsync(
-            context,
-            result.InvalidInputPaths,
-            cancellationToken).ConfigureAwait(true);
+        var invalidation = result.Succeeded
+            ? SourceInvalidationOutcome.None
+            : await InvalidateSourcesAsync(
+                context,
+                result,
+                cancellationToken).ConfigureAwait(true);
         context.Downloading.FileSize = await DownloadOutputRecorder.RecordFileSizeAsync(
             context.TaskId,
             result.Succeeded ? result.OutputPath : null,
@@ -157,52 +164,86 @@ internal sealed class MuxStage : IDownloadPipelineStage
         return result.Succeeded
             ? DownloadStageResult.Success(Name)
             : DownloadStageResult.Failure(
-                invalidSource ? "download.mux.invalid-source" : "download.mux.concat",
+                GetFailureCode("download.mux.concat", invalidation),
                 "Segmented media could not be concatenated.");
     }
 
-    private async Task<bool> InvalidateSourcesAsync(
+    private async Task<SourceInvalidationOutcome> InvalidateSourcesAsync(
         DownloadExecutionContext context,
-        IReadOnlyList<string> invalidInputPaths,
+        FfmpegOperationResult operationResult,
         CancellationToken cancellationToken)
     {
-        if (invalidInputPaths.Count == 0)
+        if (operationResult.FailureKind != FfmpegOperationFailureKind.InvalidInput ||
+            operationResult.InvalidInputPaths.Count == 0)
         {
-            return false;
+            return SourceInvalidationOutcome.None;
         }
 
         var pathComparer = OperatingSystem.IsWindows()
             ? StringComparer.OrdinalIgnoreCase
             : StringComparer.Ordinal;
-        var invalidPaths = invalidInputPaths
+        var invalidPaths = operationResult.InvalidInputPaths
             .Select(Path.GetFullPath)
             .ToHashSet(pathComparer);
         var sources = new[]
             {
-                new DownloadTransferReference(context.AudioTransferKey, context.AudioFile),
-                new DownloadTransferReference(context.VideoTransferKey, context.VideoFile)
+                (Key: context.AudioTransferKey, FilePath: context.AudioFile),
+                (Key: context.VideoTransferKey, FilePath: context.VideoFile)
             }
             .Concat(context.DurlDownloads.Select(download =>
-                new DownloadTransferReference(download.TransferKey, download.FilePath)));
-        var invalidated = false;
-        foreach (var source in sources)
+                (Key: (string?)download.TransferKey, FilePath: (string?)download.FilePath)));
+        var invalidSources = sources
+            .Where(source => !string.IsNullOrWhiteSpace(source.Key) &&
+                             !string.IsNullOrWhiteSpace(source.FilePath) &&
+                             invalidPaths.Contains(Path.GetFullPath(source.FilePath)))
+            .Select(source => new DownloadTransferReference(source.Key!, source.FilePath!))
+            .Distinct()
+            .ToArray();
+        if (invalidSources.Length == 0)
         {
-            if (string.IsNullOrWhiteSpace(source.Key) ||
-                string.IsNullOrWhiteSpace(source.FilePath) ||
-                !invalidPaths.Contains(Path.GetFullPath(source.FilePath)))
-            {
-                continue;
-            }
-
-            DownloadTransferFileCleanup.DeleteInvalidArtifacts(source.FilePath, _logger);
-            await _stateWriter.InvalidateCompletedFileAsync(
-                context.TaskId,
-                source.Key,
-                cancellationToken).ConfigureAwait(true);
-            invalidated = true;
+            return SourceInvalidationOutcome.None;
         }
 
-        return invalidated;
+        var cleanedKeys = new List<string>(invalidSources.Length);
+        var cleanupFailed = false;
+        foreach (var source in invalidSources)
+        {
+            var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                source.FilePath,
+                _logger);
+            if (cleanup.Succeeded)
+            {
+                cleanedKeys.Add(source.Key);
+            }
+            else
+            {
+                cleanupFailed = true;
+            }
+        }
+
+        if (cleanedKeys.Count > 0)
+        {
+            await _stateWriter.InvalidateCompletedFilesAsync(
+                context.TaskId,
+                cleanedKeys,
+                cancellationToken).ConfigureAwait(true);
+        }
+
+        return cleanupFailed
+            ? SourceInvalidationOutcome.CleanupFailed
+            : SourceInvalidationOutcome.Invalidated;
+    }
+
+    private static string GetFailureCode(
+        string defaultCode,
+        SourceInvalidationOutcome invalidation)
+    {
+        return invalidation switch
+        {
+            SourceInvalidationOutcome.Invalidated => "download.mux.invalid-source",
+            SourceInvalidationOutcome.CleanupFailed => "download.mux.invalid-source-cleanup",
+            _ => defaultCode
+        };
     }
 
     internal static string GetDashOutputPath(DownloadExecutionContext context)
@@ -222,5 +263,12 @@ internal sealed class MuxStage : IDownloadPipelineStage
             : $"{context.Downloading.DownloadBase.FilePath}.aac";
     }
 
-    private sealed record DownloadTransferReference(string? Key, string? FilePath);
+    private sealed record DownloadTransferReference(string Key, string FilePath);
+
+    private enum SourceInvalidationOutcome
+    {
+        None,
+        Invalidated,
+        CleanupFailed
+    }
 }
