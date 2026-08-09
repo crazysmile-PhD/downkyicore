@@ -128,6 +128,45 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         }, cancellationToken);
     }
 
+    public Task<OperationResult<DownloadTask>> ClaimTransferFileAsync(
+        DownloadTaskId taskId,
+        string key,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        return MutateAsync(taskId, (task, now) =>
+        {
+            var files = task.Plan.TransferFiles;
+            if (files.Values.Contains(filePath, StringComparer.Ordinal))
+            {
+                return task.UpdatePlan(task.Plan, task.Transfer, now);
+            }
+
+            var claimKey = key;
+            if (files.ContainsKey(claimKey))
+            {
+                for (var suffix = 1; suffix <= files.Count + 1; suffix++)
+                {
+                    var candidate = $"{key}-owner-{suffix:D4}";
+                    if (!files.ContainsKey(candidate))
+                    {
+                        claimKey = candidate;
+                        break;
+                    }
+                }
+            }
+
+            var claimedFiles = files.Add(claimKey, filePath);
+            var plan = new DownloadPlan(
+                task.Plan.RequestedAssets,
+                claimedFiles,
+                task.Plan.StreamType);
+            return task.UpdatePlan(plan, task.Transfer, now);
+        }, cancellationToken);
+    }
+
     public Task<OperationResult<DownloadTask>> InvalidateCompletedFileAsync(
         DownloadTaskId taskId,
         string key,

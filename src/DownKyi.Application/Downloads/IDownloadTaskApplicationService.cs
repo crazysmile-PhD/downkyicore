@@ -62,6 +62,12 @@ public interface IDownloadTaskApplicationService
         string filePath,
         CancellationToken cancellationToken);
 
+    Task<OperationResult<DownloadTask>> ClaimTransferFileAsync(
+        DownloadTaskId taskId,
+        string key,
+        string filePath,
+        CancellationToken cancellationToken);
+
     Task<OperationResult<DownloadTask>> InvalidateCompletedFileAsync(
         DownloadTaskId taskId,
         string key,

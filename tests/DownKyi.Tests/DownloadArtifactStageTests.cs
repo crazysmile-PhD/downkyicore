@@ -203,6 +203,52 @@ public sealed class DownloadArtifactStageTests
     }
 
     [Fact]
+    public async Task SubtitlePathChangesPreserveEveryDurableOwnerAcrossRetries()
+    {
+        var metadataRequest = 0;
+        var client = new TestBilibiliApiClient
+        {
+            GetStringAsyncHandler = (request, _) =>
+            {
+                if (request.RequestAddress.Contains("/x/player/wbi/v2", StringComparison.Ordinal))
+                {
+                    var language = metadataRequest++ == 0 ? "Chinese" : "Traditional-Chinese";
+                    var metadata = """
+                        {"code":0,"data":{"aid":1,"bvid":"BV1test","cid":2,"subtitle":{"subtitles":[{"lan":"zh","lan_doc":"SUBTITLE_LANGUAGE","subtitle_url":"//example.test/subtitle.json","type":0}]}}}
+                        """.Replace("SUBTITLE_LANGUAGE", language, StringComparison.Ordinal);
+                    return Task.FromResult(metadata);
+                }
+
+                return Task.FromResult(
+                    """
+                    {"body":[{"from":0,"to":1,"location":2,"content":"hello"}]}
+                    """);
+            }
+        };
+        using var context = await ArtifactTestContext.CreateAsync(client, subtitle: true)
+            .ConfigureAwait(true);
+
+        var first = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        var second = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(first.IsSuccess, first.Error?.Message);
+        Assert.True(second.IsSuccess, second.Error?.Message);
+        var task = await context.GetTaskAsync().ConfigureAwait(true);
+        AssertPhysicalArtifactsAreDurablyOwned(context, task);
+        Assert.Contains(
+            $"{context.Downloading.DownloadBase.FilePath}_Chinese.srt",
+            task.Plan.TransferFiles.Values);
+        Assert.Contains(
+            $"{context.Downloading.DownloadBase.FilePath}_Traditional-Chinese.srt",
+            task.Plan.TransferFiles.Values);
+        Assert.Equal(3, context.GetPhysicalArtifactFiles().Length);
+    }
+
+    [Fact]
     public async Task MissingSubtitleResourceIsAnExplicitSuccessfulSkip()
     {
         var client = new TestBilibiliApiClient

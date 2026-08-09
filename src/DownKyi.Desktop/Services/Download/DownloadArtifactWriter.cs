@@ -69,7 +69,7 @@ internal sealed partial class DownloadArtifactWriter
                 return OperationResult.Success(DownloadArtifactWriteResult.NotAvailable());
             }
 
-            await _stateWriter.RecordTransferFileAsync(
+            await _stateWriter.ClaimTransferFileAsync(
                 taskId,
                 transferKey,
                 fileName,
@@ -157,7 +157,7 @@ internal sealed partial class DownloadArtifactWriter
                            ?? throw new InvalidOperationException("DownloadBase is required to download danmaku.");
         try
         {
-            await _stateWriter.RecordTransferFileAsync(
+            await _stateWriter.ClaimTransferFileAsync(
                 taskId,
                 "danmaku",
                 assFile,
@@ -293,7 +293,7 @@ internal sealed partial class DownloadArtifactWriter
             var srtFile = $"{downloading.DownloadBase.FilePath}_{subRip.LanDoc}.srt";
             try
             {
-                await _stateWriter.RecordTransferFileAsync(
+                await _stateWriter.ClaimTransferFileAsync(
                     taskId,
                     GetSubtitleTrackTransferKey(index),
                     srtFile,
@@ -328,7 +328,7 @@ internal sealed partial class DownloadArtifactWriter
         var defaultSubtitleFile = $"{downloading.DownloadBase.FilePath}.srt";
         try
         {
-            await _stateWriter.RecordTransferFileAsync(
+            await _stateWriter.ClaimTransferFileAsync(
                 taskId,
                 DefaultSubtitleTransferKey,
                 defaultSubtitleFile,
@@ -374,7 +374,7 @@ internal sealed partial class DownloadArtifactWriter
         var nfoFile = $"{downloading.DownloadBase.FilePath}.nfo";
         try
         {
-            await _stateWriter.RecordTransferFileAsync(
+            await _stateWriter.ClaimTransferFileAsync(
                 new DownloadTaskId(downloading.DownloadBase.Id),
                 "nfo",
                 nfoFile,

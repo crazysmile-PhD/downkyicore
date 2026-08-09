@@ -80,6 +80,42 @@ public sealed class DownloadTaskApplicationServiceTests
     }
 
     [Fact]
+    public async Task ArtifactClaimsPreservePriorPathsAndBackendIdentity()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+        var task = CreateTask();
+        await service.AddAsync(task, TestContext.Current.CancellationToken);
+        await service.StartAsync(task.Id, TestContext.Current.CancellationToken);
+        await service.SetBackendIdentityAsync(
+            task.Id,
+            "aria-gid",
+            TestContext.Current.CancellationToken);
+
+        await service.ClaimTransferFileAsync(
+            task.Id,
+            "subtitle-0001",
+            "episode_Chinese.srt",
+            TestContext.Current.CancellationToken);
+        await service.ClaimTransferFileAsync(
+            task.Id,
+            "subtitle-0001",
+            "episode_Traditional-Chinese.srt",
+            TestContext.Current.CancellationToken);
+        await service.ClaimTransferFileAsync(
+            task.Id,
+            "subtitle-0001",
+            "episode_Traditional-Chinese.srt",
+            TestContext.Current.CancellationToken);
+
+        var stored = Assert.IsType<DownloadTask>(store.Current);
+        Assert.Equal("aria-gid", stored.Transfer.BackendIdentity);
+        Assert.Equal(2, stored.Plan.TransferFiles.Count);
+        Assert.Equal("episode_Chinese.srt", stored.Plan.TransferFiles["subtitle-0001"]);
+        Assert.Contains("episode_Traditional-Chinese.srt", stored.Plan.TransferFiles.Values);
+    }
+
+    [Fact]
     public async Task InvalidCommandDoesNotPersistOrPublishAReplacementSnapshot()
     {
         var store = new RecordingStore();
