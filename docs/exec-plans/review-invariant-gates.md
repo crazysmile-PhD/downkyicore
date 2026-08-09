@@ -48,6 +48,7 @@ Out of scope:
 - [x] Roslyn-backed source rules include adversarial modifier, receiver, filename, root-path and nullable-static-field fixtures.
 - [x] SemVer prerelease/build/skip and manual-update dialog defects have deterministic regressions.
 - [x] Agent, testing, verification and knowledge documentation are synchronized.
+- [x] Root-cause remediation, failure/transition matrices and repeated-review escalation are durable Agent/testing rules.
 - [x] Complete every local command in Verification.
 - [x] Push semantic commits and require exact-head GitHub CI on Windows, Linux and macOS.
 

@@ -2481,6 +2481,7 @@ contracts:
   - Windows PR and main jobs must run the Assembly Lifecycle Stability Gate and upload its reports even when a phase fails.
   - Every PR runs the six-RID real-binary aria2 TLS security matrix; a unit-test-only pass cannot replace it.
   - General reviewer/Codex findings become one permanent invariant per root cause. Deterministic failure injection, contracts and architecture self-tests run in PR CI; repeated race, stress, process and systematic evidence stay in Main/rehearsal unless an existing security policy requires PR coverage.
+  - A review finding is symptom evidence, not a patch instruction. Remediation identifies the violated invariant, traces the full failure path and sibling callers, and fixes the earliest shared semantic/transition boundary. A repeated failure family in the same PR blocks further local patches and requires a systemic typed-result/state/ownership/transaction review.
   - The review corpus must resolve to real classes across all seven test projects. Missing classes/projects, duplicate IDs, incomplete Main/rehearsal evidence or an unexecuted declared test fail closed.
   - Static C# architecture rules use Roslyn where syntax or semantics matter and carry adversarial fixtures for modifiers, filenames, receiver names, root-level files and nullable static fields.
 hazards:
