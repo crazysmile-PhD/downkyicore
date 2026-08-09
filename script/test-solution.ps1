@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "test-project-runner.ps1")
 $testsRoot = Join-Path $repositoryRoot "tests"
 $testProjects = @(
     Get-ChildItem -LiteralPath $testsRoot -Filter "*.Tests.csproj" -File -Recurse |
@@ -28,32 +29,16 @@ if (-not [string]::IsNullOrWhiteSpace($ResultsDirectory)) {
 }
 
 foreach ($testProject in $testProjects) {
-    $arguments = @(
-        "test",
-        $testProject.FullName,
-        "-c",
-        $Configuration
-    )
-    if ($NoRestore) {
-        $arguments += "--no-restore"
-    }
-
-    if ($NoBuild) {
-        $arguments += "--no-build"
-    }
-
-    if ($resolvedResultsDirectory) {
-        $arguments += @(
-            "--logger",
-            "trx;LogFileName=$($testProject.BaseName).trx",
-            "--results-directory",
-            $resolvedResultsDirectory
-        )
-    }
-
     Write-Host "Testing $($testProject.FullName)"
-    & dotnet @arguments
-    if ($LASTEXITCODE -ne 0) {
+    $result = Invoke-DownKyiTestProject `
+        -RepositoryRoot $repositoryRoot `
+        -ProjectPath $testProject.FullName `
+        -Configuration $Configuration `
+        -NoRestore:$NoRestore `
+        -NoBuild:$NoBuild `
+        -ResultsDirectory $resolvedResultsDirectory `
+        -TrxName "$($testProject.BaseName).trx"
+    if ($result.ExitCode -ne 0) {
         throw "Test project failed: $($testProject.FullName)"
     }
 }

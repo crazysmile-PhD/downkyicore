@@ -39,6 +39,8 @@ public sealed class AgentEnvironmentArchitectureTests
             "version.txt",
             "Directory.Packages.props",
             "script/test-solution.ps1",
+            "script/test-project-runner.ps1",
+            "docs/testing/test-runner-policy.json",
             "docs/maintenance.md",
             "docs/operations/verification-and-rollback.md");
 
@@ -68,8 +70,20 @@ public sealed class AgentEnvironmentArchitectureTests
         var testScript = Read("script/test-solution.ps1");
         Assert.Contains("Get-ChildItem", testScript, StringComparison.Ordinal);
         Assert.Contains("Sort-Object FullName", testScript, StringComparison.Ordinal);
-        Assert.Contains("LogFileName=$($testProject.BaseName).trx", testScript, StringComparison.Ordinal);
+        Assert.Contains("Invoke-DownKyiTestProject", testScript, StringComparison.Ordinal);
         Assert.Contains("throw \"Test project failed:", testScript, StringComparison.Ordinal);
+
+        var runnerScript = Read("script/test-project-runner.ps1");
+        Assert.Contains("test-runner-policy.json", runnerScript, StringComparison.Ordinal);
+        Assert.Contains("xunit-in-process", runnerScript, StringComparison.Ordinal);
+        Assert.Contains("-class", runnerScript, StringComparison.Ordinal);
+
+        var runnerPolicy = Read("docs/testing/test-runner-policy.json");
+        Assert.Contains("DownKyi.Desktop.Tests.csproj", runnerPolicy, StringComparison.Ordinal);
+        Assert.Contains("xunit/xunit#3576", runnerPolicy, StringComparison.Ordinal);
+
+        var lifecycleScript = Read("script/test-assembly-lifecycle.ps1");
+        Assert.Contains("-assemblyInfo", lifecycleScript, StringComparison.Ordinal);
     }
 
     [Fact]

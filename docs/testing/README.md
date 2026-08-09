@@ -17,6 +17,7 @@
 - `assembly-lifecycle-owners.json`
 - `review-invariant-policy.md`
 - `review-invariant-corpus.json`
+- `test-runner-policy.json`
 - `../maintenance.md`
 - `../operations/verification-and-rollback.md`
 

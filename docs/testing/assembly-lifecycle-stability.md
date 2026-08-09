@@ -30,6 +30,15 @@ The permanent correction is:
 - `SqliteDownloadTaskStore.Dispose` clears only its owned connection pool;
 - the system benchmark dispatcher uses a bounded join.
 
+The regular solution and review-invariant gates additionally execute
+`DownKyi.Desktop.Tests` through the xUnit in-process executable declared in
+`test-runner-policy.json`. This avoids the VSTest adapter's hidden
+`-assemblyInfo` parse race tracked by `xunit/xunit#3576`; xUnit 4 prereleases
+cannot be used yet because `Avalonia.Headless.XUnit` 12.1.0 targets the xUnit 3
+discovery API. This is test-host routing only. The lifecycle gate below still
+executes and validates `-assemblyInfo`, discovery, execution, teardown and
+process exit as separate fail-closed phases.
+
 ## Dynamic Phases
 
 `script/test-assembly-lifecycle.ps1` discovers every `*.Tests.csproj` and runs

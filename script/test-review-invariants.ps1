@@ -12,6 +12,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "test-project-runner.ps1")
 $manifestPath = Join-Path $repositoryRoot "docs/testing/review-invariant-corpus.json"
 $resultRoot = [IO.Path]::GetFullPath((Join-Path $repositoryRoot $ResultsDirectory))
 
@@ -96,31 +97,23 @@ foreach ($projectGroup in $projectGroups) {
     }
 
     $classNames = @($projectGroup.Group.class | Sort-Object -Unique)
-    $filter = ($classNames | ForEach-Object { "FullyQualifiedName~$_" }) -join "|"
     $safeName = [IO.Path]::GetFileNameWithoutExtension($projectPath)
     $trxName = "$safeName.trx"
-    $arguments = @(
-        "test",
-        $projectPath,
-        "-c", $Configuration,
-        "--filter", $filter,
-        "--logger", "trx;LogFileName=$trxName",
-        "--results-directory", $resultRoot
-    )
-    if ($NoRestore) {
-        $arguments += "--no-restore"
-    }
-    if ($NoBuild) {
-        $arguments += "--no-build"
-    }
-
     Write-Host "Running review invariants in $($projectGroup.Name)"
-    & dotnet @arguments
-    if ($LASTEXITCODE -ne 0) {
+    $result = Invoke-DownKyiTestProject `
+        -RepositoryRoot $repositoryRoot `
+        -ProjectPath $projectPath `
+        -Configuration $Configuration `
+        -NoRestore:$NoRestore `
+        -NoBuild:$NoBuild `
+        -ResultsDirectory $resultRoot `
+        -TrxName $trxName `
+        -ClassNames $classNames
+    if ($result.ExitCode -ne 0) {
         throw "Review invariant tests failed for $($projectGroup.Name)."
     }
 
-    $trxPath = Join-Path $resultRoot $trxName
+    $trxPath = $result.TrxPath
     if (-not (Test-Path -LiteralPath $trxPath -PathType Leaf)) {
         throw "Review invariant test report is missing: $trxPath"
     }
@@ -153,21 +146,6 @@ foreach ($proof in $adversarialProofs) {
 
     $safeName = [IO.Path]::GetFileNameWithoutExtension($projectPath)
     $trxName = "$safeName.adversarial.trx"
-    $arguments = @(
-        "test",
-        $projectPath,
-        "-c", $Configuration,
-        "--filter", $proof.filter,
-        "--logger", "trx;LogFileName=$trxName",
-        "--results-directory", $resultRoot
-    )
-    if ($NoRestore) {
-        $arguments += "--no-restore"
-    }
-    if ($NoBuild) {
-        $arguments += "--no-build"
-    }
-
     $previousValue = [Environment]::GetEnvironmentVariable(
         $proof.environmentVariable,
         [EnvironmentVariableTarget]::Process)
@@ -177,8 +155,16 @@ foreach ($proof in $adversarialProofs) {
             $proof.environmentValue,
             [EnvironmentVariableTarget]::Process)
         Write-Host "Running adversarial proof: $($proof.kind) in $($proof.project)"
-        & dotnet @arguments
-        $mutationExitCode = $LASTEXITCODE
+        $result = Invoke-DownKyiTestProject `
+            -RepositoryRoot $repositoryRoot `
+            -ProjectPath $projectPath `
+            -Configuration $Configuration `
+            -NoRestore:$NoRestore `
+            -NoBuild:$NoBuild `
+            -ResultsDirectory $resultRoot `
+            -TrxName $trxName `
+            -Filter $proof.filter
+        $mutationExitCode = $result.ExitCode
     }
     finally {
         [Environment]::SetEnvironmentVariable(
@@ -187,7 +173,7 @@ foreach ($proof in $adversarialProofs) {
             [EnvironmentVariableTarget]::Process)
     }
 
-    $trxPath = Join-Path $resultRoot $trxName
+    $trxPath = $result.TrxPath
     if (-not (Test-Path -LiteralPath $trxPath -PathType Leaf)) {
         throw "Adversarial proof report is missing: $trxPath"
     }
