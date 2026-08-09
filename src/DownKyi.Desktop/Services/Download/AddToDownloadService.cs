@@ -259,7 +259,10 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
                 }
 
                 await _admission
-                    .AdmitAsync(downloadingItem, cancellationToken)
+                    .AdmitAsync(
+                        downloadingItem,
+                        settings.Basic.RepeatFileAutoAddNumberSuffix,
+                        cancellationToken)
                     .ConfigureAwait(true);
                 addedCount++;
             }

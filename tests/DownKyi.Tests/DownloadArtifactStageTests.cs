@@ -384,6 +384,11 @@ public sealed class DownloadArtifactStageTests
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<DownloadTask>>(_task == null ? [] : [_task]);
 
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,

@@ -2,63 +2,47 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using DownKyi.Application.Downloads;
 
 namespace DownKyi.Services.Download;
 
 internal static class DownloadOutputPathResolver
 {
-    public static string ResolveExistingFileCollision(
+    public static async Task<string> ResolveAdmissionCollisionAsync(
         string basePath,
+        bool autoAddNumberSuffix,
+        Func<string, CancellationToken, Task<bool>> isReservedAsync,
+        CancellationToken cancellationToken,
         StringComparer? comparer = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
+        ArgumentNullException.ThrowIfNull(isReservedAsync);
         comparer ??= PlatformComparer;
-        var occupiedPaths = GetExistingBasePaths(basePath);
-        return occupiedPaths.Contains(Normalize(basePath), comparer)
-            ? FindAvailableSuffix(basePath, occupiedPaths, comparer)
-            : basePath;
-    }
-
-    public static string ResolveActiveCollision(
-        string basePath,
-        IEnumerable<string> activeBasePaths,
-        StringComparer? comparer = null)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
-        ArgumentNullException.ThrowIfNull(activeBasePaths);
-        comparer ??= PlatformComparer;
-        var normalizedBasePath = Normalize(basePath);
-        var occupiedPaths = activeBasePaths
-            .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Select(Normalize)
-            .ToHashSet(comparer);
-        occupiedPaths.UnionWith(GetExistingBasePaths(basePath));
-        if (!occupiedPaths.Contains(normalizedBasePath))
+        var occupiedPaths = GetExistingBasePaths(basePath).ToHashSet(comparer);
+        for (var suffix = 0; ; suffix++)
         {
-            return basePath;
-        }
-
-        return FindAvailableSuffix(basePath, occupiedPaths, comparer);
-    }
-
-    internal static StringComparer PlatformComparer =>
-        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-
-    private static string FindAvailableSuffix(
-        string basePath,
-        IEnumerable<string> occupiedPaths,
-        StringComparer comparer)
-    {
-        var occupied = occupiedPaths.ToHashSet(comparer);
-        for (var suffix = 1; ; suffix++)
-        {
-            var candidate = $"{basePath}({suffix})";
-            if (!occupied.Contains(Normalize(candidate)))
+            cancellationToken.ThrowIfCancellationRequested();
+            var candidate = suffix == 0 ? basePath : $"{basePath}({suffix})";
+            var normalizedCandidate = Normalize(candidate);
+            if (!occupiedPaths.Contains(normalizedCandidate) &&
+                !await isReservedAsync(normalizedCandidate, cancellationToken).ConfigureAwait(false))
             {
-                return candidate;
+                return normalizedCandidate;
+            }
+
+            if (!autoAddNumberSuffix)
+            {
+                throw new IOException("The selected output path is already in use.");
             }
         }
     }
+
+    internal static StringComparer PlatformComparer =>
+        DownloadOutputPathKey.UsesCaseInsensitiveComparison
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
 
     private static string[] GetExistingBasePaths(string basePath)
     {
@@ -78,6 +62,6 @@ internal static class DownloadOutputPathResolver
 
     private static string Normalize(string path)
     {
-        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        return DownloadOutputPathKey.Create(path, ignoreCase: false);
     }
 }

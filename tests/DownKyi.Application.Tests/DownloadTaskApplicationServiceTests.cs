@@ -204,6 +204,11 @@ public sealed class DownloadTaskApplicationServiceTests
         public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<DownloadTask>>(Current == null ? [] : [Current]);
 
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,

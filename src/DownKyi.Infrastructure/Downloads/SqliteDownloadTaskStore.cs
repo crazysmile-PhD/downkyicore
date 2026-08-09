@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Infrastructure.Downloads;
 
-public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
+public sealed partial class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
 {
     private const int MaximumHistoryPageSize = 500;
     private static readonly Action<ILogger, int, Exception?> LogOrphanCleanup = LoggerMessage.Define<int>(
@@ -56,42 +56,6 @@ public sealed class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
     public Task InitializeAsync(CancellationToken cancellationToken)
     {
         return EnsureInitializedAsync(cancellationToken);
-    }
-
-    public async Task<OperationResult> AddAsync(DownloadTask task, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(task);
-        if (task.Phase == DownloadPhase.Deleted)
-        {
-            throw new ArgumentException("A deleted task cannot be inserted.", nameof(task));
-        }
-
-        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
-        using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        using var transaction = (SqliteTransaction)await connection
-            .BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            await DownloadTaskSqlWriter
-                .InsertBaseAsync(connection, transaction, task, cancellationToken)
-                .ConfigureAwait(false);
-            await DownloadTaskSqlWriter
-                .WriteStateRowAsync(connection, transaction, task, cancellationToken)
-                .ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return OperationResult.Success();
-        }
-        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
-        {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            return Conflict(task.Id, "already exists");
-        }
-        catch
-        {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
     }
 
     public async Task<OperationResult> UpdateAsync(
