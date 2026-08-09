@@ -29,6 +29,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     private readonly IUserNotificationService _notificationService;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly FfmpegProcessor _ffmpegProcessor;
+    private readonly DownloadTaskFileService _fileService;
     private readonly ISettingsStore _settingsStore;
     private readonly IWbiKeyProvider _wbiKeyProvider;
     private readonly IUiDispatcher _uiDispatcher;
@@ -46,6 +47,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         IWbiKeyProvider wbiKeyProvider,
         DownloadDiagnosticLogger diagnosticLogger,
         FfmpegProcessor ffmpegProcessor,
+        DownloadTaskFileService fileService,
         AriaRuntimeClientRegistry ariaClientRegistry,
         AriaServer ariaServer,
         ILoggerFactory loggerFactory,
@@ -62,6 +64,7 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _diagnosticLogger = diagnosticLogger ?? throw new ArgumentNullException(nameof(diagnosticLogger));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
+        _fileService = fileService ?? throw new ArgumentNullException(nameof(fileService));
         _ariaClientRegistry = ariaClientRegistry
             ?? throw new ArgumentNullException(nameof(ariaClientRegistry));
         _ariaServer = ariaServer ?? throw new ArgumentNullException(nameof(ariaServer));
@@ -136,17 +139,19 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 transferCoordinator,
                 playbackResolver,
                 _loggerFactory.CreateLogger<DownloadMediaStage>()),
+            new DownloadArtifactsStage(artifactWriter),
             new MuxStage(
                 presenter,
                 _ffmpegProcessor,
                 _stateWriter),
-            new DownloadArtifactsStage(artifactWriter),
             new ValidateStage(),
             new FinalizeStage(
                 _projectionStore,
                 _stateWriter,
                 completionProjector,
-                TimeProvider.System)
+                _fileService,
+                TimeProvider.System,
+                _loggerFactory.CreateLogger<FinalizeStage>())
         ];
         var pipeline = new DownloadPipeline(
                 contextFactory,

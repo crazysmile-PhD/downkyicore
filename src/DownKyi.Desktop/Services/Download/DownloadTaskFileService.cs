@@ -90,6 +90,23 @@ internal sealed class DownloadTaskFileService
         return Task.Run(() => DeleteFilesCoreAsync(files, cancellationToken), cancellationToken);
     }
 
+    internal Task<DownloadFileDeletionResult> DeleteTransferFilesAsync(
+        IEnumerable<string> transferFiles,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(transferFiles);
+        var files = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var transferFile in transferFiles)
+        {
+            if (!string.IsNullOrWhiteSpace(transferFile))
+            {
+                AddWithTempFiles(files, Path.GetFullPath(transferFile));
+            }
+        }
+
+        return DeleteFilesAsync(files, cancellationToken);
+    }
+
     private async Task<DownloadFileDeletionResult> DeleteFilesCoreAsync(
         IEnumerable<string> files,
         CancellationToken cancellationToken)

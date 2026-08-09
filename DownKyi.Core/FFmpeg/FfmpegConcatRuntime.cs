@@ -105,7 +105,6 @@ internal sealed class FfmpegConcatRuntime
                     }
 
                     File.Move(temporaryOutput, outputFile, overwrite: true);
-                    DeleteSourceSegments(orderedSegments);
                     return new FfmpegOperationResult(true, outputFile, null, validation.Duration);
                 }
                 finally
@@ -148,16 +147,6 @@ internal sealed class FfmpegConcatRuntime
             : result.StandardError.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "unknown";
         _logger.LogInformationMessage(
             $"FFmpeg operation completed. operation={command.Operation}; exitCode={result.ExitCode}; timedOut={result.TimedOut}; error={error}");
-    }
-
-    private void DeleteSourceSegments(IEnumerable<FfmpegConcatSegment> segments)
-    {
-        foreach (var segment in segments)
-        {
-            DeleteFile(segment.FilePath);
-            DeleteFile($"{segment.FilePath}.aria2");
-            DeleteFile($"{segment.FilePath}.download");
-        }
     }
 
     private void DeleteFile(string file)

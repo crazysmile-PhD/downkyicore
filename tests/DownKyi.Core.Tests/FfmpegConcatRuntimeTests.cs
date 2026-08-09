@@ -15,7 +15,7 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ConcatSortsDurlSegmentsAndAtomicallyFinalizesValidatedOutput()
+    public async Task ConcatFinalizesValidatedOutputWithoutDeletingRetryInputs()
     {
         var first = CreateSegment("first.flv");
         var second = CreateSegment("second.flv");
@@ -40,8 +40,8 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
 
         Assert.True(result.Succeeded);
         Assert.True(File.Exists(output));
-        Assert.False(File.Exists(first));
-        Assert.False(File.Exists(second));
+        Assert.True(File.Exists(first));
+        Assert.True(File.Exists(second));
         Assert.DoesNotContain("copy", runner.Commands[0].Arguments);
         Assert.True(runner.ConcatListLines[0].Contains("first.flv", StringComparison.Ordinal));
         Assert.True(runner.ConcatListLines[1].Contains("second.flv", StringComparison.Ordinal));

@@ -9,18 +9,26 @@ public sealed class FfmpegProcessor
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromHours(2);
     private readonly AsyncConcurrencyGate _operationGate;
     private readonly FfmpegConcatRuntime _concatRuntime;
-    private readonly FfmpegProcessRunner _processRunner;
+    private readonly IFfmpegProcessRunner _processRunner;
     private readonly ISettingsStore _settingsStore;
     private readonly ILogger<FfmpegProcessor> _logger;
     private readonly FfmpegHardwareEncoderDetector _hardwareEncoderDetector;
 
     public FfmpegProcessor(ISettingsStore settingsStore, ILoggerFactory loggerFactory)
+        : this(settingsStore, loggerFactory, new FfmpegProcessRunner())
+    {
+    }
+
+    internal FfmpegProcessor(
+        ISettingsStore settingsStore,
+        ILoggerFactory loggerFactory,
+        IFfmpegProcessRunner processRunner)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(loggerFactory);
         _settingsStore = settingsStore;
         _logger = loggerFactory.CreateLogger<FfmpegProcessor>();
-        _processRunner = new FfmpegProcessRunner();
+        _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
         _hardwareEncoderDetector = new FfmpegHardwareEncoderDetector(
             loggerFactory.CreateLogger<FfmpegHardwareEncoderDetector>());
         _operationGate = new AsyncConcurrencyGate(
@@ -78,12 +86,6 @@ public sealed class FfmpegProcessor
             destination,
             action: null,
             cancellationToken).ConfigureAwait(false);
-        if (succeeded)
-        {
-            DeleteInput(audio);
-            DeleteInput(video);
-        }
-
         return succeeded;
     }
 
@@ -223,14 +225,6 @@ public sealed class FfmpegProcessor
         {
             _logger.LogErrorMessage(
                 $"FFmpeg operation failed. operation={operation}; exit={result.ExitCode}; timedOut={result.TimedOut}");
-        }
-    }
-
-    private void DeleteInput(string? file)
-    {
-        if (!string.IsNullOrWhiteSpace(file))
-        {
-            DeleteFile(file);
         }
     }
 

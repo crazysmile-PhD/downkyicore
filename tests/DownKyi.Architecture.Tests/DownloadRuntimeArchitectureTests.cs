@@ -531,8 +531,8 @@ public sealed class DownloadRuntimeArchitectureTests
         [
             "ResolvePlaybackStage",
             "DownloadMediaStage",
-            "MuxStage",
             "DownloadArtifactsStage",
+            "MuxStage",
             "ValidateStage",
             "FinalizeStage"
         ];
@@ -577,6 +577,29 @@ public sealed class DownloadRuntimeArchitectureTests
             Assert.True(currentIndex > previousIndex, $"{stageName} is out of order.");
             previousIndex = currentIndex;
         }
+    }
+
+    [Fact]
+    public void TransferInputCleanupOccursOnlyAfterDurableCompletion()
+    {
+        var downloadDirectory = Path.Combine(
+            RepositoryRoot,
+            "src", "DownKyi.Desktop", "Services", "Download");
+        var processorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core", "FFmpeg", "FfmpegProcessor.cs"));
+        var concatSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core", "FFmpeg", "FfmpegConcatRuntime.cs"));
+        var finalizeSource = File.ReadAllText(Path.Combine(
+            downloadDirectory,
+            "FinalizeStage.cs"));
+
+        Assert.DoesNotContain("DeleteInput", processorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DeleteSourceSegments", concatSource, StringComparison.Ordinal);
+        Assert.True(
+            finalizeSource.IndexOf("_stateWriter.CompleteAsync", StringComparison.Ordinal) <
+            finalizeSource.IndexOf("DeleteTransferFilesAsync", StringComparison.Ordinal));
     }
 
     private static string FindRepositoryRoot()
