@@ -167,7 +167,10 @@ public sealed class AgentEnvironmentArchitectureTests
 
         var ratchets = Read("tests/DownKyi.Architecture.Tests/ModuleBoundaryBaselineTests.cs");
         Assert.Contains("CoreHasNoUiOrQrRenderingDependencies", ratchets, StringComparison.Ordinal);
-        Assert.Contains("ServiceContractsCannotAddPresentationDependencies", ratchets, StringComparison.Ordinal);
+        Assert.Contains(
+            "PresentationBoundServiceContractsCannotGrowBeyondTheKnownBaseline",
+            ratchets,
+            StringComparison.Ordinal);
         Assert.Contains("OversizedProductionFilesCannotGrowBeyondTheKnownBaseline", ratchets, StringComparison.Ordinal);
     }
 

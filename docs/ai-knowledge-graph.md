@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-08-01
+Last reviewed: 2026-08-09
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -145,6 +145,7 @@ flowchart TD
     Benchmarks["test.performance-baseline\nBenchmarkCases + runner"]
     SystemBenchmarks["test.system-performance\nisolated system scenarios"]
     CI["workflow.strict-pr-ci\n.github/workflows/quality.yml"]
+    ReviewInvariants["test.review-invariant-corpus\nroot-cause failure corpus + adversarial gate tests"]
     AriaTlsCI["workflow.aria2-tls-security\nsix RID real-binary gate"]
     Release["workflow.release-packaging\n.github/workflows/build.yml"]
     Nightly["workflow.system-baselines\nnightly cross-platform reports"]
@@ -179,6 +180,9 @@ flowchart TD
     SystemBenchmarks -->|measures| FFmpeg
     Nightly -->|runs| SystemBenchmarks
     CI -->|runs PR and main profiles| LifecycleGate
+    CI -->|runs deterministic corpus| ReviewInvariants
+    ReviewInvariants -->|guards| Tests
+    ReviewInvariants -->|guards gate behavior| ArchitectureTests
     Release -->|runs rehearsal profile| LifecycleGate
     LifecycleOwners -->|governs| LifecycleGate
     LifecycleGate -->|guards| Tests
@@ -2457,7 +2461,9 @@ paths:
   - .github/workflows/quality.yml
   - .github/workflows/build.yml
   - script/test-solution.ps1
-responsibility: Blocks PRs that break formatting, restore, Release build, warnings-as-errors, unit tests, or vulnerable package policy.
+  - script/test-review-invariants.ps1
+  - docs/testing/review-invariant-corpus.json
+responsibility: Blocks PRs that break formatting, restore, Release build, warnings-as-errors, unit tests, root-cause review invariants, or vulnerable package policy.
 inbound:
   - github.pull_request
 outbound:
@@ -2474,11 +2480,15 @@ contracts:
   - Every test project writes a distinct assembly-named TRX; no solution-level logger filename may overwrite earlier project evidence.
   - Windows PR and main jobs must run the Assembly Lifecycle Stability Gate and upload its reports even when a phase fails.
   - Every PR runs the six-RID real-binary aria2 TLS security matrix; a unit-test-only pass cannot replace it.
+  - General reviewer/Codex findings become one permanent invariant per root cause. Deterministic failure injection, contracts and architecture self-tests run in PR CI; repeated race, stress, process and systematic evidence stay in Main/rehearsal unless an existing security policy requires PR coverage.
+  - The review corpus must resolve to real classes across all seven test projects. Missing classes/projects, duplicate IDs, incomplete Main/rehearsal evidence or an unexecuted declared test fail closed.
+  - Static C# architecture rules use Roslyn where syntax or semantics matter and carry adversarial fixtures for modifiers, filenames, receiver names, root-level files and nullable static fields.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
   - Broad NoWarn, global suppressions, nullable disable, or analyzer exclusions hide new defects.
   - Restoring one parallel solution-level `dotnet test` command can reintroduce Windows foreground-thread timeouts and TRX overwrite.
 tests:
+  - test.review-invariant-corpus
   - github.actions
 ```
 
@@ -3313,6 +3323,21 @@ test.assembly-lifecycle-architecture:
     - formal Verification cannot omit the ownership audit, five-iteration local gate or Rehearsal report
     - Desktop main-loop teardown awaits async App and Host disposal
     - every declared lifecycle owner documents start, stop, teardown, paths and allowed mechanisms
+
+test.review-invariant-corpus:
+  paths:
+    - docs/testing/review-invariant-policy.md
+    - docs/testing/review-invariant-corpus.json
+    - script/test-review-invariants.ps1
+    - tests/DownKyi.Architecture.Tests/ReviewInvariantCorpusTests.cs
+    - tests/DownKyi.Architecture.Tests/ModuleBoundaryBaselineTests.cs
+  guards:
+    - historical review comments with one root cause map to one invariant instead of duplicate test cases
+    - deterministic PR coverage resolves to existing test classes in all seven test projects and executes at least one test per declared project
+    - durable output ownership remains a transactional SQLite unique claim behind DownloadTaskAdmissionService; no mutable path registry, full unfinished-task scan or silent suffixing can replace it
+    - Main/rehearsal evidence retains lifecycle stress and real-binary transfer security profiles
+    - corpus schema, workflow integration and Roslyn source policies have adversarial fail-closed fixtures
+    - the two existing presentation-bound service contracts remain an exact non-growth baseline until a dedicated boundary change removes them
 
 test.infrastructure-clock:
   paths:

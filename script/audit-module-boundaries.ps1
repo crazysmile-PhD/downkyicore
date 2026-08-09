@@ -29,6 +29,9 @@ function Get-ProductionFiles {
     )
 
     return @(
+        foreach ($pattern in $Patterns) {
+            Get-ChildItem -LiteralPath $repositoryRoot -File -Filter $pattern
+        }
         foreach ($root in $roots) {
             foreach ($pattern in $Patterns) {
                 Get-ChildItem -LiteralPath $root -Recurse -File -Filter $pattern |
@@ -86,8 +89,7 @@ function Get-SourceRootMetrics {
 
 function Get-TypeDeclarations {
     $namespacePattern = '(?m)^\s*namespace\s+([A-Za-z_][\w\.]*)\s*[;{]'
-    $typePattern = '(?m)^\s*(?:public|internal|protected|private|file)?\s*' +
-        '(?:sealed\s+|abstract\s+|static\s+|partial\s+)*' +
+    $typePattern = '(?m)^\s*(?:(?:public|internal|protected|private|file|new|unsafe|readonly|ref|sealed|abstract|static|partial)\s+)*' +
         '(?:class|record(?:\s+class|\s+struct)?|struct|interface|enum)\s+' +
         '([A-Za-z_][\w]*)'
     $declarations = @()
@@ -152,9 +154,11 @@ $coreUiDependencies = @(
 
 $servicesRoot = Join-Path $repositoryRoot "src/DownKyi.Desktop/Services"
 $presentationBoundContracts = @(
-    Get-ChildItem -LiteralPath $servicesRoot -Recurse -File -Filter "I*.cs" |
+    Get-ChildItem -LiteralPath $servicesRoot -Recurse -File -Filter "*.cs" |
         Where-Object {
-            (Get-Content -LiteralPath $_.FullName -Raw).Contains("DownKyi.ViewModels")
+            $source = Get-Content -LiteralPath $_.FullName -Raw
+            $source.Contains("DownKyi.ViewModels") -and
+                $source -match '\binterface\s+[A-Za-z_]'
         } |
         ForEach-Object { Convert-ToRelativePath $_.FullName } |
         Sort-Object
@@ -185,8 +189,7 @@ $genericTypeNames = @(
         Sort-Object path, name
 )
 
-$typePattern = '(?m)^\s*(?:public|internal|protected|private|file)?\s*' +
-    '(?:sealed\s+|abstract\s+|static\s+|partial\s+)*' +
+$typePattern = '(?m)^\s*(?:(?:public|internal|protected|private|file|new|unsafe|readonly|ref|sealed|abstract|static|partial)\s+)*' +
     '(?:class|record(?:\s+class|\s+struct)?|struct|interface|enum)\s+' +
     '([A-Za-z_][\w]*)'
 $fileTypeMismatches = @(

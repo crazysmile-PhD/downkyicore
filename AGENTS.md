@@ -10,6 +10,7 @@
 4. 涉及 Bilibili API、WBI、JSON envelope 或登入契約時，先閱讀並同步更新 `docs/operations/bilibili-api-audit.md`。
 5. 涉及建置、依賴、外部 binary、分析器或發版時，再閱讀 `docs/maintenance.md` 與 `docs/operations/verification-and-rollback.md`。
 6. 新增、刪除、移動或重新導向模組責任的 PR，必須同步更新知識圖譜、架構文件與即時計畫。
+7. 修正 reviewer 或 Codex 找到的一般性缺陷前，先閱讀 `docs/testing/review-invariant-policy.md` 與 `docs/testing/review-invariant-corpus.json`。相同根因合併成一條永久 invariant；deterministic failure/contract 放 PR CI，重型 race/stress/systematic 證據留在 Main/rehearsal；architecture/static gate 本身必須有 adversarial fixture，禁止只修 production code 後依賴對話記憶。
 
 ## 專案概況
 
@@ -199,6 +200,10 @@ dotnet build .\DownKyi.sln `
   -p:TreatWarningsAsErrors=true `
   -p:CodeAnalysisTreatWarningsAsErrors=true
 
+pwsh .\script\test-review-invariants.ps1 `
+  -Configuration Release `
+  -NoRestore `
+  -NoBuild
 pwsh .\script\test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 pwsh .\script\audit-lifecycle-ownership.ps1 `
   -OutputDirectory .\artifacts\assembly-lifecycle\ownership
@@ -228,6 +233,9 @@ dotnet package list --project .\DownKyi.sln --deprecated
 - SQLite migration/resume、download shutdown recovery、DURL identity/seekability tests
 
 每次修正行為都應新增能在舊實作上失敗的測試；不要只以 build 成功代表 runtime 正常。
+review finding 若具有一般性根因，還必須更新或重用
+`docs/testing/review-invariant-corpus.json` 中的一條 invariant，不得把每個
+comment 機械式複製成近似測試。
 
 PR 會對每個 test assembly 執行 3 次 assembly lifecycle gate，`main`
 執行 50 次，release rehearsal 執行 100 次。涉及 thread、Dispatcher、

@@ -67,6 +67,14 @@ jobs:
           -c Release
           --no-restore
           --no-build
+      - name: Run review invariant failure corpus
+        shell: pwsh
+        run: >
+          ./script/test-review-invariants.ps1
+          -Configuration Release
+          -NoRestore
+          -NoBuild
+          -ResultsDirectory ./TestResults/review-invariants
       - name: Test
         shell: pwsh
         run: >

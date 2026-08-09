@@ -5,6 +5,7 @@
 目前 PR #120 的範圍收斂契約位於 `v1.1.1-pr-120-scope-cleanup.md`。
 下載 runtime P0/P1/P2 清單位於 `v1.1.1-runtime-hardening.md`。
 對話框 Issue #123 與啟動模態排序位於 `v1.1.1-dialog-and-startup.md`。
+review finding 去重、永久 invariant 與 CI 分層位於 `review-invariant-gates.md`。
 
 每個 work item 必須包含：
 

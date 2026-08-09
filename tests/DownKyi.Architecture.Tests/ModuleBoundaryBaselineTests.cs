@@ -1,22 +1,8 @@
-using System.Text.RegularExpressions;
-
 namespace DownKyi.Architecture.Tests;
 
 public sealed class ModuleBoundaryBaselineTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
-    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(2);
-    private static readonly Regex NamespaceDeclarationRegex = new(
-        @"^[ \t]*namespace[ \t]+([A-Za-z_][\w\.]*)[ \t]*[;{]",
-        RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.NonBacktracking,
-        RegexTimeout);
-    private static readonly Regex TypeDeclarationRegex = new(
-        @"^[ \t]*(?:(?:public|internal|protected|private|file)[ \t]+)?" +
-        @"(?:(?:sealed|abstract|static|partial)[ \t]+)*" +
-        @"(?:class|record(?:[ \t]+(?:class|struct))?|struct|interface|enum)[ \t]+" +
-        @"([A-Za-z_][\w]*)",
-        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
-        RegexTimeout);
 
     private static readonly Dictionary<string, HashSet<string>> KnownDuplicateSimpleNames =
         new(StringComparer.Ordinal)
@@ -50,6 +36,12 @@ public sealed class ModuleBoundaryBaselineTests
     private static readonly HashSet<string> KnownFileTypeMismatches = new(StringComparer.Ordinal);
 
     private static readonly Dictionary<string, int> KnownOversizedFiles = new(StringComparer.Ordinal);
+
+    private static readonly HashSet<string> KnownPresentationBoundContracts = new(StringComparer.Ordinal)
+    {
+        "src/DownKyi.Desktop/Services/Download/DownloadManagerCoordinator.cs",
+        "src/DownKyi.Desktop/Services/Migration/LegacyUpgradeCoordinator.cs"
+    };
 
     [Fact]
     public void CoreHasNoUiOrQrRenderingDependencies()
@@ -116,17 +108,19 @@ public sealed class ModuleBoundaryBaselineTests
     }
 
     [Fact]
-    public void ServiceContractsCannotAddPresentationDependencies()
+    public void PresentationBoundServiceContractsCannotGrowBeyondTheKnownBaseline()
     {
         var servicesRoot = Path.Combine(RepositoryRoot, "src", "DownKyi.Desktop", "Services");
         var actual = Directory
-            .EnumerateFiles(servicesRoot, "I*.cs", SearchOption.AllDirectories)
+            .EnumerateFiles(servicesRoot, "*.cs", SearchOption.AllDirectories)
             .Where(path => !IsBuildOutput(path))
-            .Where(path => File.ReadAllText(path).Contains("DownKyi.ViewModels", StringComparison.Ordinal))
+            .Where(path => CSharpSourceInspector.DeclaresInterfaceWithNamespaceDependency(
+                File.ReadAllText(path),
+                "DownKyi.ViewModels"))
             .Select(Relative)
             .ToArray();
 
-        Assert.Empty(actual);
+        AssertSubset(actual, KnownPresentationBoundContracts, "presentation-bound service contract");
     }
 
     [Fact]
@@ -212,15 +206,107 @@ public sealed class ModuleBoundaryBaselineTests
     }
 
     [Fact]
-    public void TypeDeclarationScanUsesLineScopedNonBacktrackingMatching()
+    public void RoslynDeclarationScanCannotBeBypassedByModifiersOrMalformedInput()
     {
-        var adversarialLine =
-            $"{new string(' ', 100_000)}{string.Concat(Enumerable.Repeat("partial ", 20_000))}not-a-type";
-        var source = $"{adversarialLine}{Environment.NewLine}public sealed class ExpectedType";
+        var source = $$"""
+            namespace Adversarial;
+
+            {{new string('/', 100_000)}}
+            public readonly record struct StableValue;
+            public ref struct StackBuffer { }
+            file record HiddenOwner;
+            internal interface Contract { }
+            """;
 
         var declarations = ReadDeclaredTypeNames(source);
 
-        Assert.Equal(["ExpectedType"], declarations);
+        Assert.Equal(
+            ["StableValue", "StackBuffer", "HiddenOwner", "Contract"],
+            declarations);
+    }
+
+    [Fact]
+    public void ServiceContractScanCannotBeBypassedByFileName()
+    {
+        const string source = """
+            using DownKyi.ViewModels;
+            namespace DownKyi.Services;
+            internal interface DownloadContract
+            {
+                ViewModelBase Create();
+            }
+            """;
+
+        Assert.True(CSharpSourceInspector.DeclaresInterfaceWithNamespaceDependency(
+            source,
+            "DownKyi.ViewModels"));
+    }
+
+    [Fact]
+    public void SynchronousHttpScanCannotBeBypassedByReceiverName()
+    {
+        const string source = """
+            using System.IO;
+            using System.Net.Http;
+            using System.Threading;
+            internal sealed class Probe
+            {
+                private static string Read(HttpClient transport, StreamReader payload, WaitHandle signal)
+                {
+                    using var response = transport.Send(new HttpRequestMessage());
+                    signal.WaitOne();
+                    return payload.ReadToEnd();
+                }
+            }
+            """;
+
+        Assert.Equal(
+            ["HttpClient.Send", "StreamReader.ReadToEnd", "WaitHandle.WaitOne"],
+            CSharpSourceInspector.FindSynchronousRuntimeOperations(source));
+    }
+
+    [Fact]
+    public void StaticHttpClientScanCannotBeBypassedByNullableTypeOrFieldName()
+    {
+        const string source = """
+            internal sealed class BilibiliHttpClient;
+            internal sealed class Probe
+            {
+                private static BilibiliHttpClient? transportRuntime;
+            }
+            """;
+
+        Assert.Equal(
+            ["static BilibiliHttpClient field"],
+            CSharpSourceInspector.FindSynchronousRuntimeOperations(source));
+    }
+
+    [Fact]
+    public void ProductionInventoryIncludesRootLevelSourcesButExcludesTestTrees()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"downkyi-architecture-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "src"));
+            Directory.CreateDirectory(Path.Combine(root, "tests"));
+            File.WriteAllText(Path.Combine(root, "RootOwner.cs"), "internal class RootOwner { }");
+            File.WriteAllText(Path.Combine(root, "src", "SourceOwner.cs"), "internal class SourceOwner { }");
+            File.WriteAllText(Path.Combine(root, "tests", "TestOnly.cs"), "internal class TestOnly { }");
+
+            var actual = EnumerateProductionFiles(root, "*.cs")
+                .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/'))
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+
+            Assert.Equal(["RootOwner.cs", "src/SourceOwner.cs"], actual);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
     }
 
     [Fact]
@@ -332,21 +418,11 @@ public sealed class ModuleBoundaryBaselineTests
             Path.Combine(RepositoryRoot, "DownKyi.Core", "BiliApi"),
             Path.Combine(RepositoryRoot, "src", "DownKyi.Infrastructure", "Bilibili")
         };
-        var markers = new[]
-        {
-            "static BilibiliHttpClient? _client",
-            "_httpClient.Send(",
-            "reader.ReadToEnd()",
-            "WaitHandle.WaitOne"
-        };
         var actual = apiRoots
             .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
-            .Where(path =>
-            {
-                var source = File.ReadAllText(path);
-                return markers.Any(marker => source.Contains(marker, StringComparison.Ordinal));
-            })
-            .Select(Relative)
+            .SelectMany(path => CSharpSourceInspector
+                .FindSynchronousRuntimeOperations(File.ReadAllText(path))
+                .Select(operation => $"{Relative(path)} -> {operation}"))
             .ToArray();
 
         Assert.Empty(actual);
@@ -395,16 +471,9 @@ public sealed class ModuleBoundaryBaselineTests
         return EnumerateProductionFiles("*.cs")
             .SelectMany(path =>
             {
-                var source = File.ReadAllText(path);
-                var namespaceMatch = NamespaceDeclarationRegex.Match(source);
-                if (!namespaceMatch.Success)
-                {
-                    return [];
-                }
-
-                var namespaceName = namespaceMatch.Groups[1].Value;
-                return ReadDeclaredTypeNames(source)
-                    .Select(name => new TypeDeclaration(name, $"{namespaceName}.{name}", Relative(path)))
+                return CSharpSourceInspector
+                    .ReadTypeDeclarations(File.ReadAllText(path))
+                    .Select(item => new TypeDeclaration(item.Name, item.FullName, Relative(path)))
                     .ToArray();
             })
             .ToArray();
@@ -412,31 +481,31 @@ public sealed class ModuleBoundaryBaselineTests
 
     private static string[] ReadDeclaredTypeNames(string source)
     {
-        var names = new List<string>();
-        var knownNames = new HashSet<string>(StringComparer.Ordinal);
-        using var reader = new StringReader(source);
-        while (reader.ReadLine() is { } line)
-        {
-            var match = TypeDeclarationRegex.Match(line);
-            if (match.Success && knownNames.Add(match.Groups[1].Value))
-            {
-                names.Add(match.Groups[1].Value);
-            }
-        }
-
-        return names.ToArray();
+        return CSharpSourceInspector
+            .ReadTypeDeclarations(source)
+            .Select(item => item.Name)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static IEnumerable<string> EnumerateProductionFiles(string pattern)
     {
-        return new[]
+        return EnumerateProductionFiles(RepositoryRoot, pattern);
+    }
+
+    private static IEnumerable<string> EnumerateProductionFiles(string repositoryRoot, string pattern)
+    {
+        var rootFiles = Directory.EnumerateFiles(repositoryRoot, pattern, SearchOption.TopDirectoryOnly);
+        var sourceFiles = new[]
             {
-                Path.Combine(RepositoryRoot, "DownKyi"),
-                Path.Combine(RepositoryRoot, "DownKyi.Core"),
-                Path.Combine(RepositoryRoot, "src")
+                Path.Combine(repositoryRoot, "DownKyi"),
+                Path.Combine(repositoryRoot, "DownKyi.Core"),
+                Path.Combine(repositoryRoot, "src")
             }
+            .Where(Directory.Exists)
             .SelectMany(root => Directory.EnumerateFiles(root, pattern, SearchOption.AllDirectories))
-            .Where(path => !IsBuildOutput(path));
+            .Where(path => !IsBuildOutput(repositoryRoot, path));
+        return rootFiles.Concat(sourceFiles).Distinct(StringComparer.OrdinalIgnoreCase);
     }
 
     private static void AssertSubset(
@@ -456,7 +525,12 @@ public sealed class ModuleBoundaryBaselineTests
 
     private static bool IsBuildOutput(string path)
     {
-        var relative = Path.GetRelativePath(RepositoryRoot, path);
+        return IsBuildOutput(RepositoryRoot, path);
+    }
+
+    private static bool IsBuildOutput(string repositoryRoot, string path)
+    {
+        var relative = Path.GetRelativePath(repositoryRoot, path);
         var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return segments.Contains("bin", StringComparer.OrdinalIgnoreCase) ||
                segments.Contains("obj", StringComparer.OrdinalIgnoreCase);

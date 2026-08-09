@@ -161,6 +161,8 @@ dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental `
   -p:EnableNETAnalyzers=true -p:AnalysisMode=All `
   -p:EnforceCodeStyleInBuild=true -p:TreatWarningsAsErrors=true `
   -p:CodeAnalysisTreatWarningsAsErrors=true -p:UseSharedCompilation=false
+pwsh ./script/test-review-invariants.ps1 `
+  -Configuration Release -NoRestore -NoBuild
 pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 pwsh ./script/audit-lifecycle-ownership.ps1 `
   -OutputDirectory ./artifacts/assembly-lifecycle/ownership
