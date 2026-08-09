@@ -262,6 +262,11 @@ public sealed class DownloadBootstrapHostedServiceTests
             return Task.FromResult(unfinished ?? (IReadOnlyList<DownloadTask>)Array.Empty<DownloadTask>());
         }
 
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,

@@ -138,9 +138,7 @@ internal static class DownloadTaskDraftFactory
         }
 
         var filePath = Path.Combine(directory, fileName.RelativePath());
-        return settings.Basic.RepeatFileAutoAddNumberSuffix
-            ? DownloadOutputPathResolver.ResolveExistingFileCollision(filePath)
-            : filePath;
+        return filePath;
     }
 
     private static string GetCodecLabel(string codec)

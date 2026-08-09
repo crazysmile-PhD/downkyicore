@@ -398,6 +398,11 @@ public sealed class VideoTagLoadingTests : IDisposable
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<DownloadTask>>(
                 Array.Empty<DownloadTask>());
 
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
         public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<OperationResult> UpdateAsync(

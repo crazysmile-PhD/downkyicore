@@ -368,6 +368,21 @@ public sealed class DownloadOrchestratorTests
             }
         }
 
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            lock (_sync)
+            {
+                return Task.FromResult(_tasks.Values.Any(task =>
+                    task.Phase != DownloadPhase.Completed &&
+                    task.Output.BasePath.Equals(basePath, comparison)));
+            }
+        }
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
