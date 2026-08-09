@@ -2466,8 +2466,11 @@ contracts:
   - Windows PR and main jobs must run the Assembly Lifecycle Stability Gate and upload its reports even when a phase fails.
   - Every PR runs the six-RID real-binary aria2 TLS security matrix; a unit-test-only pass cannot replace it.
   - A review finding is symptom evidence, not a patch instruction. Remediation identifies the violated invariant, traces the complete failure path and sibling callers, and fixes the earliest shared semantic or transition boundary.
+  - Review regressions follow `finding -> root cause -> invariant -> sibling-path search -> generator/state space -> adversarial proof -> production fix`; a single example is only a counterexample when the failure family has a generatable state space.
   - A repeated failure family in the same PR blocks further local patches and requires a typed-result, state-machine, commit-boundary, ownership or transaction review.
   - Investigation may widen analysis, but only sibling paths sharing the same root cause and required to close the same failure family may widen the current PR diff; unrelated findings move to backlog or a separate PR.
+  - Every operation-created file is either durably owned by its task (directly or through an established sidecar base path) or absent when the operation ends; extension scans and process-local registries cannot replace durable ownership.
+  - Important invariant gates include an adversarial or mutation fixture proving that an intentionally broken owner, transition or contract is rejected; source-string presence alone is not fail-closed evidence.
   - The review corpus references only contracts present on its target branch and fails unless every declared class actually executes on Windows, Linux and macOS.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
@@ -3318,8 +3321,12 @@ test.review-invariant-corpus:
     - tests/DownKyi.Architecture.Tests/ReviewInvariantCorpusTests.cs
   guards:
     - review findings trigger violated-invariant, full failure-path, sibling-path and earliest-boundary analysis before production edits
+    - generatable failure families use property, deterministic state-space or transition proofs; named regression cases remain counterexamples rather than the primary defense
     - repeated failure families in one PR stop local patches and escalate to shared typed-result, state, ownership or transaction remediation
     - scope containment keeps unrelated invariants and incidental product defects out of the active PR
+    - operation-created files are durably owned or absent at every operation exit, including failure and cancellation
+    - adversarial mutation fixtures prove important invariant oracles reject intentionally broken ownership or transition states
+    - proof kinds are stable corpus requirements while executable filters are migratable locators; mutation profiles must produce real failed-test TRX evidence so an always-passing replacement fails the Gate
     - deterministic PR coverage resolves to existing classes across all seven test projects and proves each class executed
     - Main/rehearsal retains lifecycle stress and real-binary transfer evidence
 

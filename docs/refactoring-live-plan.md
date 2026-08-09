@@ -64,8 +64,12 @@ Detailed contract: `docs/exec-plans/v1.1.1-pr-120-scope-cleanup.md`.
       `DownKyiAsyncDelegateCommand`.
 - [x] Stop startup sequencing after lifetime cancellation without reading a disposed token source.
 - [x] Persist page and main covers under distinct stable transfer keys.
-- [ ] Push without force and monitor the replacement exact-head CI. Do not comment, resolve
-      review threads or merge PR #120 in this task.
+- [x] Claim every artifact output through durable task state before its first write; prove the
+      shared durable-owned-or-absent invariant with deterministic generated states and an
+      adversarial mutation that must produce failed-test TRX evidence.
+- [ ] Push without force and monitor the replacement exact-head CI. After the new head is green,
+      leave a brief evidence report on each completed review thread and resolve it; do not merge
+      PR #120 in this task.
 
 ### PR #120 Exit Conditions
 

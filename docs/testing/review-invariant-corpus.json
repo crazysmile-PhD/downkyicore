@@ -34,8 +34,23 @@
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.SqliteDownloadTaskStoreTests" },
         { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.FfmpegCommitBoundaryTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadTaskFileServiceTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadArtifactStageTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadPipelineCommitBoundaryTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadTaskProjectionStoreResumeTests" }
+      ],
+      "proofRequirements": [
+        "deterministic-generative",
+        "adversarial-mutation"
+      ],
+      "adversarialProofs": [
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj",
+          "filter": "FullyQualifiedName~DownKyi.Tests.DownloadArtifactStageTests.FileProducingArtifactStateSpaceOwnsEveryCreatedOutput",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_ARTIFACT_OWNER",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        }
       ]
     },
     {

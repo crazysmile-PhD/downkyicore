@@ -15,10 +15,12 @@
 ## Review Remediation Gate
 
 - Result model、failure taxonomy、sentinel、cleanup、commit boundary、ownership 或 transaction boundary若是根因，必須修正 shared abstraction/owner；禁止只在 reviewer 指出的 caller 疊加 `if`、catch 或另一個模糊 sentinel。
-- Regression 由 invariant 或外部 protocol contract 推導。Retry、cleanup、classification、lifecycle、persistence 與 state-machine finding 必須建立或更新 failure/transition matrix，不得一個 comment 配一個近似 test。
+- Regression review 的第一步是把 finding 歸入 invariant/failure family，不是新增單一 case test。能描述狀態空間時，主要防線必須使用 property、deterministic generative 或 state-transition 驗證；單一 regression case 只能保留為代表樣本或 counterexample，不得取代狀態空間證據。
+- Review remediation 固定依序執行：`finding -> root cause -> invariant -> sibling-path search -> generator/state space -> adversarial proof -> production fix`。Retry、cleanup、classification、lifecycle、persistence 與 state-machine finding 必須建立或更新 failure/transition matrix，不得一個 comment 配一個近似 test。
 - 同一 PR 後續 review 若再次出現相同 failure family，視為前次未修到 root cause。立即停止 local patch，重新審查 typed result、shared abstraction、state machine、commit boundary、ownership 與 transaction，直到同族入口由一個共同 invariant 封閉。
 - 深入調查可以擴大分析範圍，但不能自動擴大目前 PR 的修改範圍。只有與目前 violated invariant 同一 root cause、且封閉同一 failure family 所必要的 sibling paths 才能進入目前 PR；不同 invariant、不同產品問題或順帶發現的缺陷只記錄 finding，移入 backlog 或 separate PR。
-- 相同根因只保留一條永久 invariant；deterministic failure/contract 放 PR CI，重型 race/stress/systematic 證據留在 Main/rehearsal；architecture/static gate 本身必須有 adversarial fixture。
+- 任何 operation 建立的檔案，在 operation 結束時必須已由 durable task state 明確擁有，或已不存在；禁止留下 physical file exists / durable owner missing 的狀態。建立檔案前先透過既有 ownership owner claim，或在返回前完成可觀測且成功的刪除，不得新增第二套 path registry。
+- 相同根因只保留一條永久 invariant；deterministic failure/contract 放 PR CI，重型 race/stress/systematic 證據留在 Main/rehearsal。重要 invariant 的 oracle/gate 必須有 adversarial 或 mutation fixture，證明故意移除 owner、略過 transition 或破壞契約時檢查確實失敗；僅檢查必要字串存在不算 fail-closed 證據。
 
 ## 專案概況
 

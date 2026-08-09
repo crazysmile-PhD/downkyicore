@@ -1,3 +1,4 @@
+using Bilibili.Community.Service.Dm.V1;
 using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Domain.Results;
@@ -5,6 +6,7 @@ using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
 using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
+using Google.Protobuf;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Tests;
@@ -47,7 +49,7 @@ public sealed class DownloadArtifactStageTests
         };
         using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
             .ConfigureAwait(true);
-        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.jpg";
+        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.bin";
 
         var result = await context.Stage.ExecuteAsync(
             context.Execution,
@@ -55,6 +57,121 @@ public sealed class DownloadArtifactStageTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal("download.artifact.cover.invalid", result.Error?.Code);
+        var task = await context.GetTaskAsync().ConfigureAwait(true);
+        AssertPhysicalArtifactsAreDurablyOwned(context, task);
+        Assert.Single(context.GetPhysicalArtifactFiles());
+    }
+
+    [Theory]
+    [InlineData(nameof(CoverFailureMode.HtmlError))]
+    [InlineData(nameof(CoverFailureMode.HttpBeforeWrite))]
+    [InlineData(nameof(CoverFailureMode.IoAfterWrite))]
+    [InlineData(nameof(CoverFailureMode.PermissionAfterWrite))]
+    [InlineData(nameof(CoverFailureMode.CancellationAfterWrite))]
+    public async Task CoverFailureStateSpaceEndsWithEveryPhysicalFileDurablyOwned(
+        string failureModeName)
+    {
+        var failureMode = Enum.Parse<CoverFailureMode>(failureModeName);
+        var client = CreateCoverFailureClient(failureMode);
+        using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
+            .ConfigureAwait(true);
+        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.bin";
+
+        if (failureMode == CoverFailureMode.CancellationAfterWrite)
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                context.Stage.ExecuteAsync(
+                    context.Execution,
+                    TestContext.Current.CancellationToken)).ConfigureAwait(true);
+        }
+        else
+        {
+            var result = await context.Stage.ExecuteAsync(
+                context.Execution,
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+            Assert.False(result.IsSuccess);
+        }
+
+        var task = await context.GetTaskAsync().ConfigureAwait(true);
+        AssertPhysicalArtifactsAreDurablyOwned(context, task);
+        if (failureMode == CoverFailureMode.HttpBeforeWrite)
+        {
+            Assert.Empty(context.GetPhysicalArtifactFiles());
+        }
+        else
+        {
+            Assert.Single(context.GetPhysicalArtifactFiles());
+        }
+    }
+
+    [Theory]
+    [InlineData(nameof(ArtifactKind.MainCover))]
+    [InlineData(nameof(ArtifactKind.PageCover))]
+    [InlineData(nameof(ArtifactKind.Subtitle))]
+    [InlineData(nameof(ArtifactKind.Danmaku))]
+    [InlineData(nameof(ArtifactKind.Nfo))]
+    public async Task FileProducingArtifactStateSpaceOwnsEveryCreatedOutput(string kindName)
+    {
+        var kind = Enum.Parse<ArtifactKind>(kindName);
+        var client = CreateSuccessfulArtifactClient(kind);
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: kind is ArtifactKind.MainCover or ArtifactKind.PageCover,
+            subtitle: kind == ArtifactKind.Subtitle,
+            danmaku: kind == ArtifactKind.Danmaku,
+            generateMetadata: kind == ArtifactKind.Nfo).ConfigureAwait(true);
+
+        if (kind == ArtifactKind.MainCover)
+        {
+            context.Downloading.DownloadBase.CoverUrl = "https://example.test/main.bin";
+        }
+        else if (kind == ArtifactKind.PageCover)
+        {
+            context.Downloading.DownloadBase.PageCoverUrl = "https://example.test/page.bin";
+        }
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        var task = await context.GetTaskAsync().ConfigureAwait(true);
+        AssertPhysicalArtifactsAreDurablyOwned(context, task);
+        Assert.NotEmpty(context.GetPhysicalArtifactFiles());
+        if (kind == ArtifactKind.Subtitle)
+        {
+            Assert.Contains(DownloadArtifactWriter.DefaultSubtitleTransferKey, task.Plan.TransferFiles.Keys);
+            Assert.Contains(DownloadArtifactWriter.GetSubtitleTrackTransferKey(0), task.Plan.TransferFiles.Keys);
+            Assert.Contains(DownloadArtifactWriter.GetSubtitleTrackTransferKey(1), task.Plan.TransferFiles.Keys);
+            Assert.Equal(3, context.GetPhysicalArtifactFiles().Length);
+        }
+    }
+
+    [Fact]
+    public async Task OwnershipOracleRejectsSyntheticMissingOwnerMutation()
+    {
+        var client = CreateSuccessfulArtifactClient(ArtifactKind.MainCover);
+        using var context = await ArtifactTestContext.CreateAsync(client, cover: true)
+            .ConfigureAwait(true);
+        context.Downloading.DownloadBase.CoverUrl = "https://example.test/main.bin";
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        Assert.True(result.IsSuccess);
+
+        var task = await context.GetTaskAsync().ConfigureAwait(true);
+        var physicalFiles = context.GetPhysicalArtifactFiles();
+        AssertPhysicalArtifactsAreDurablyOwned(context, task);
+        var removedOwner = Assert.Single(physicalFiles);
+        var mutatedOwners = task.Plan.TransferFiles.Values
+            .Where(path => !PathComparer.Equals(Path.GetFullPath(path), removedOwner))
+            .ToArray();
+
+        var detectedOrphans = FindUnownedArtifactFiles(physicalFiles, mutatedOwners);
+
+        Assert.True(
+            PathComparer.Equals(removedOwner, Assert.Single(detectedOrphans)),
+            "The ownership oracle did not report the intentionally orphaned file.");
     }
 
     [Fact]
@@ -235,6 +352,145 @@ public sealed class DownloadArtifactStageTests
         Assert.True(File.Exists(context.Execution.CoverFile));
     }
 
+    private static StringComparer PathComparer =>
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+
+    private static void AssertPhysicalArtifactsAreDurablyOwned(
+        ArtifactTestContext context,
+        DownloadTask task)
+    {
+        var physicalFiles = context.GetPhysicalArtifactFiles();
+        IEnumerable<string> durableOwners = task.Plan.TransferFiles.Values;
+        if (Environment.GetEnvironmentVariable("DOWNKYI_TEST_MUTATE_ARTIFACT_OWNER") == "1" &&
+            physicalFiles.FirstOrDefault() is { } ownerToRemove)
+        {
+            durableOwners = durableOwners.Where(path =>
+                !PathComparer.Equals(Path.GetFullPath(path), ownerToRemove));
+        }
+
+        Assert.Empty(FindUnownedArtifactFiles(
+            physicalFiles,
+            durableOwners));
+    }
+
+    private static string[] FindUnownedArtifactFiles(
+        IEnumerable<string> physicalFiles,
+        IEnumerable<string> durableOwners)
+    {
+        var owners = durableOwners
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath)
+            .ToHashSet(PathComparer);
+        return physicalFiles
+            .Select(Path.GetFullPath)
+            .Where(path => !IsDurablyOwned(path, owners))
+            .OrderBy(path => path, PathComparer)
+            .ToArray();
+    }
+
+    private static bool IsDurablyOwned(string path, HashSet<string> owners)
+    {
+        if (owners.Contains(path))
+        {
+            return true;
+        }
+
+        return (path.EndsWith(".aria2", StringComparison.OrdinalIgnoreCase) &&
+                owners.Contains(path[..^".aria2".Length])) ||
+               (path.EndsWith(".download", StringComparison.OrdinalIgnoreCase) &&
+                owners.Contains(path[..^".download".Length]));
+    }
+
+    private static TestBilibiliApiClient CreateCoverFailureClient(CoverFailureMode failureMode)
+    {
+        return new TestBilibiliApiClient
+        {
+            DownloadFileAsyncHandler = async (_, destination, token) =>
+            {
+                switch (failureMode)
+                {
+                    case CoverFailureMode.HtmlError:
+                        await File.WriteAllTextAsync(
+                            destination,
+                            "<!doctype html>error",
+                            token).ConfigureAwait(false);
+                        return;
+                    case CoverFailureMode.HttpBeforeWrite:
+                        throw new HttpRequestException("unavailable");
+                    case CoverFailureMode.IoAfterWrite:
+                        await File.WriteAllTextAsync(destination, "partial", token).ConfigureAwait(false);
+                        throw new IOException("write failed");
+                    case CoverFailureMode.PermissionAfterWrite:
+                        await File.WriteAllTextAsync(destination, "partial", token).ConfigureAwait(false);
+                        throw new UnauthorizedAccessException("denied");
+                    case CoverFailureMode.CancellationAfterWrite:
+                        await File.WriteAllTextAsync(destination, "partial", token).ConfigureAwait(false);
+                        throw new OperationCanceledException(token);
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(failureMode), failureMode, null);
+                }
+            }
+        };
+    }
+
+    private static TestBilibiliApiClient CreateSuccessfulArtifactClient(ArtifactKind kind)
+    {
+        if (kind == ArtifactKind.Subtitle)
+        {
+            var request = 0;
+            return new TestBilibiliApiClient
+            {
+                GetStringAsyncHandler = (_, _) => Task.FromResult(request++ == 0
+                    ? """
+                      {"code":0,"data":{"aid":1,"bvid":"BV1test","cid":2,"subtitle":{"subtitles":[{"lan":"zh","lan_doc":"Chinese","subtitle_url":"//example.test/subtitle-zh.json","type":0},{"lan":"en","lan_doc":"English","subtitle_url":"//example.test/subtitle-en.json","type":0}]}}}
+                      """
+                    : """
+                      {"body":[{"from":0,"to":1,"location":2,"content":"hello"}]}
+                      """)
+            };
+        }
+
+        if (kind == ArtifactKind.Danmaku)
+        {
+            var payloads = new Queue<byte[]>(
+            [
+                new DmWebViewReply
+                {
+                    DmSge = new DmSegConfig { PageSize = 360_000, Total = 1 }
+                }.ToByteArray(),
+                new DmSegMobileReply
+                {
+                    Elems =
+                    {
+                        new DanmakuElem
+                        {
+                            Id = 1,
+                            Progress = 1_000,
+                            Mode = 1,
+                            Fontsize = 25,
+                            Color = 0xFFFFFF,
+                            MidHash = "anonymous",
+                            Content = "hello"
+                        }
+                    }
+                }.ToByteArray()
+            ]);
+            return new TestBilibiliApiClient
+            {
+                OpenReadAsyncHandler = (_, _) =>
+                    Task.FromResult<Stream>(new MemoryStream(payloads.Dequeue()))
+            };
+        }
+
+        return new TestBilibiliApiClient
+        {
+            DownloadFileAsyncHandler = (_, destination, token) =>
+                File.WriteAllTextAsync(destination, "image", token)
+        };
+    }
+
     private sealed class CallbackStage(Action callback) : IDownloadPipelineStage
     {
         public string Name => "finalize";
@@ -248,6 +504,24 @@ public sealed class DownloadArtifactStageTests
             callback();
             return Task.FromResult(DownloadStageResult.Success(Name));
         }
+    }
+
+    private enum CoverFailureMode
+    {
+        HtmlError,
+        HttpBeforeWrite,
+        IoAfterWrite,
+        PermissionAfterWrite,
+        CancellationAfterWrite
+    }
+
+    private enum ArtifactKind
+    {
+        MainCover,
+        PageCover,
+        Subtitle,
+        Danmaku,
+        Nfo
     }
 
     private sealed class ArtifactTestContext : IDisposable
@@ -286,11 +560,20 @@ public sealed class DownloadArtifactStageTests
                    ?? throw new InvalidOperationException("Test task disappeared.");
         }
 
+        public string[] GetPhysicalArtifactFiles()
+        {
+            return Directory.EnumerateFiles(_directory, "output*", SearchOption.AllDirectories)
+                .Select(Path.GetFullPath)
+                .OrderBy(path => path, PathComparer)
+                .ToArray();
+        }
+
         public static async Task<ArtifactTestContext> CreateAsync(
             TestBilibiliApiClient client,
             bool cover = false,
             bool subtitle = false,
             bool danmaku = false,
+            bool generateMetadata = false,
             bool useMissingOutputDirectory = false)
         {
             var directory = Path.Combine(
@@ -300,6 +583,20 @@ public sealed class DownloadArtifactStageTests
             Directory.CreateDirectory(directory);
             var settings = new DownKyi.Core.Settings.SettingsStore(
                 Path.Combine(directory, "settings.json"));
+            if (generateMetadata)
+            {
+                settings.Update(current => current with
+                {
+                    Video = current.Video with
+                    {
+                        Content = current.Video.Content with
+                        {
+                            GenerateMovieMetadata = true
+                        }
+                    }
+                });
+            }
+
             var taskId = new DownloadTaskId(Guid.NewGuid().ToString("N"));
             var outputDirectory = useMissingOutputDirectory
                 ? Path.Combine(directory, "missing")
@@ -330,6 +627,14 @@ public sealed class DownloadArtifactStageTests
                     DownloadStatus = DownloadStatus.WaitForDownload
                 }
             };
+            if (generateMetadata)
+            {
+                downloading.Metadata = new MovieMetadata
+                {
+                    Title = "Owned metadata",
+                    Plot = "Deterministic ownership fixture"
+                };
+            }
             var store = new SingleTaskStore();
             var tasks = new DownloadTaskApplicationService(store, new SystemClock());
             var stateWriter = new DownloadTaskStateWriter(tasks);

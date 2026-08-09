@@ -23,11 +23,8 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
 
-internal sealed class DownloadArtifactWriter
+internal sealed partial class DownloadArtifactWriter
 {
-    internal const string MainCoverTransferKey = "cover";
-    internal const string PageCoverTransferKey = "page-cover";
-
     private readonly IWbiKeyProvider _wbiKeyProvider;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly ILogger _logger;
@@ -72,6 +69,11 @@ internal sealed class DownloadArtifactWriter
                 return OperationResult.Success(DownloadArtifactWriteResult.NotAvailable());
             }
 
+            await _stateWriter.RecordTransferFileAsync(
+                taskId,
+                transferKey,
+                fileName,
+                cancellationToken).ConfigureAwait(false);
             await _client.DownloadFileAsync(
                 new BilibiliHttpRequest(coverUrl),
                 fileName,
@@ -84,11 +86,6 @@ internal sealed class DownloadArtifactWriter
                     "The requested cover output is missing or invalid.");
             }
 
-            await _stateWriter.RecordTransferFileAsync(
-                taskId,
-                transferKey,
-                fileName,
-                cancellationToken).ConfigureAwait(false);
             return OperationResult.Success(DownloadArtifactWriteResult.Created(fileName));
         }
         catch (OperationCanceledException)
@@ -160,6 +157,11 @@ internal sealed class DownloadArtifactWriter
                            ?? throw new InvalidOperationException("DownloadBase is required to download danmaku.");
         try
         {
+            await _stateWriter.RecordTransferFileAsync(
+                taskId,
+                "danmaku",
+                assFile,
+                cancellationToken).ConfigureAwait(false);
             await converter.CreateAsync(
                 _client,
                 downloadBase.Avid,
@@ -175,11 +177,6 @@ internal sealed class DownloadArtifactWriter
                     "The requested danmaku output is missing or invalid.");
             }
 
-            await _stateWriter.RecordTransferFileAsync(
-                taskId,
-                "danmaku",
-                assFile,
-                cancellationToken).ConfigureAwait(false);
             return OperationResult.Success(DownloadArtifactWriteResult.Created(assFile));
         }
         catch (OperationCanceledException)
@@ -290,11 +287,17 @@ internal sealed class DownloadArtifactWriter
             return OperationResult.Success(DownloadArtifactWriteResult.NotAvailable());
         }
 
-        foreach (var subRip in subRipTexts)
+        for (var index = 0; index < subRipTexts.Count; index++)
         {
+            var subRip = subRipTexts[index];
             var srtFile = $"{downloading.DownloadBase.FilePath}_{subRip.LanDoc}.srt";
             try
             {
+                await _stateWriter.RecordTransferFileAsync(
+                    taskId,
+                    GetSubtitleTrackTransferKey(index),
+                    srtFile,
+                    cancellationToken).ConfigureAwait(false);
                 await File.WriteAllTextAsync(srtFile, subRip.SrtString, cancellationToken).ConfigureAwait(false);
                 var integrity = DownloadFileIntegrity.Check(srtFile);
                 if (!integrity.IsUsable)
@@ -303,12 +306,6 @@ internal sealed class DownloadArtifactWriter
                         "download.artifact.subtitle.invalid",
                         "A requested subtitle output is missing or invalid.");
                 }
-
-                await _stateWriter.RecordTransferFileAsync(
-                    taskId,
-                    "subtitle",
-                    srtFile,
-                    cancellationToken).ConfigureAwait(false);
 
                 srtFiles.Add(srtFile);
             }
@@ -331,6 +328,11 @@ internal sealed class DownloadArtifactWriter
         var defaultSubtitleFile = $"{downloading.DownloadBase.FilePath}.srt";
         try
         {
+            await _stateWriter.RecordTransferFileAsync(
+                taskId,
+                DefaultSubtitleTransferKey,
+                defaultSubtitleFile,
+                cancellationToken).ConfigureAwait(false);
             File.Copy(srtFiles[0], defaultSubtitleFile, true);
             if (!DownloadFileIntegrity.Check(defaultSubtitleFile).IsUsable)
             {
@@ -372,6 +374,11 @@ internal sealed class DownloadArtifactWriter
         var nfoFile = $"{downloading.DownloadBase.FilePath}.nfo";
         try
         {
+            await _stateWriter.RecordTransferFileAsync(
+                new DownloadTaskId(downloading.DownloadBase.Id),
+                "nfo",
+                nfoFile,
+                cancellationToken).ConfigureAwait(false);
             var writer = XmlWriter.Create(
                 nfoFile,
                 new XmlWriterSettings { Async = true, Indent = true });
@@ -392,11 +399,6 @@ internal sealed class DownloadArtifactWriter
                     "The requested metadata output is missing or invalid.");
             }
 
-            await _stateWriter.RecordTransferFileAsync(
-                new DownloadTaskId(downloading.DownloadBase.Id),
-                "nfo",
-                nfoFile,
-                cancellationToken).ConfigureAwait(false);
             return OperationResult.Success(DownloadArtifactWriteResult.Created(nfoFile));
         }
         catch (IOException e)
