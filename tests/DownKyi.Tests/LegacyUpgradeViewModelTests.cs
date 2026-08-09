@@ -21,6 +21,8 @@ public sealed class LegacyUpgradeViewModelTests
             new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
 
+        Assert.Equal("数据迁移中，关闭此窗口将取消迁移", viewModel.Message);
+
         viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
         await coordinator.Started.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
 

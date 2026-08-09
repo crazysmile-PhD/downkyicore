@@ -23,6 +23,7 @@
                 <Button
                     Grid.Column="1"
                     Command="{Binding CloseCommand}"
+                    WindowDecorationProperties.ElementRole="User"
                     Theme="{StaticResource CloseBtnStyle}"
                     ToolTip.Tip="{DynamicResource Close}">
                     <Path

@@ -33,7 +33,7 @@ public sealed class DialogWindowChromeTests
             new(new ViewAlreadyDownloadedDialog(), HasCloseButton: true, UsesTwoColumns: false),
             new(new ViewDownloadSetter(), HasCloseButton: true, UsesTwoColumns: false),
             new(new ViewParsingSelector(), HasCloseButton: true, UsesTwoColumns: true),
-            new(new ViewUpgradingDialog(), HasCloseButton: false, UsesTwoColumns: false),
+            new(new ViewUpgradingDialog(), HasCloseButton: true, UsesTwoColumns: true),
             new(new NewVersionAvailableDialog(), HasCloseButton: true, UsesTwoColumns: false)
         };
 
@@ -64,6 +64,9 @@ public sealed class DialogWindowChromeTests
                 }
 
                 var closeButton = Assert.Single(titleButtons);
+                Assert.Equal(
+                    WindowDecorationsElementRole.User,
+                    WindowDecorationProperties.GetElementRole(closeButton));
                 Assert.True(closeButton.Bounds.Width > 0);
                 Assert.True(closeButton.Bounds.Height > 0);
                 var origin = closeButton.TranslatePoint(default, titleBar);

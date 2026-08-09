@@ -60,7 +60,7 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
         _applicationLifecycle = applicationLifecycle
             ?? throw new ArgumentNullException(nameof(applicationLifecycle));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        Message = "数据迁移中，请不要关闭软件";
+        Message = "数据迁移中，关闭此窗口将取消迁移";
     }
 
     public override void OnDialogOpened(AppDialogRequest request)

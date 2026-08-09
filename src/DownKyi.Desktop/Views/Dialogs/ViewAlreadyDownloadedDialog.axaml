@@ -37,6 +37,7 @@
                 <Button
                     Grid.Column="3"
                     Command="{Binding CloseCommand}"
+                    WindowDecorationProperties.ElementRole="User"
                     ToolTip.Tip="{DynamicResource Close}"
                     Theme="{StaticResource CloseBtnStyle}">
                     <Path

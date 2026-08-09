@@ -35,6 +35,7 @@
                 <Button HorizontalAlignment="Right"
                         ToolTip.Tip="{DynamicResource Close}"
                         Theme="{StaticResource ImageBtnStyle}"
+                        WindowDecorationProperties.ElementRole="User"
                         Command="{Binding CloseCommand}">
                     <PathIcon    
                         Data="{Binding CloseIcon.Data}"

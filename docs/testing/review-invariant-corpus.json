@@ -112,6 +112,15 @@
       ]
     },
     {
+      "id": "dialog-chrome-interaction",
+      "historicalRoots": ["PR #120", "Issue #123"],
+      "guards": "Borderless dialogs retain one draggable title bar, expose a visible close path, and keep interactive caption controls outside the drag hit region.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj", "class": "DownKyi.Desktop.Tests.DialogWindowChromeTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.LegacyUpgradeViewModelTests" }
+      ]
+    },
+    {
       "id": "host-process-and-log-lifecycle",
       "historicalRoots": ["PR #94", "PR #113", "PR #120", "PR #122"],
       "guards": "Host, process and logging owners dispose, exit and persist deterministically; accepted work is not reported completed before durable flush.",

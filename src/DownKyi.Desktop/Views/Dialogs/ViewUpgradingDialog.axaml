@@ -14,7 +14,7 @@
                 Grid.Row="0"
                 Background="{DynamicResource BrushBackgroundGreyTranslucent3}"
                 WindowDecorationProperties.ElementRole="TitleBar"
-                ColumnDefinitions="*,50,*,50">
+                ColumnDefinitions="*,50">
 
                 <TextBlock
                     Grid.Column="0"
@@ -23,6 +23,19 @@
                     FontSize="12"
                     Foreground="{DynamicResource BrushCaptionForeground}"
                     Text="{Binding Title}" />
+                <Button
+                    Grid.Column="1"
+                    Command="{Binding CloseCommand}"
+                    WindowDecorationProperties.ElementRole="User"
+                    ToolTip.Tip="{DynamicResource Close}"
+                    Theme="{StaticResource CloseBtnStyle}">
+                    <Path
+                        Width="{Binding CloseIcon.Width}"
+                        Height="{Binding CloseIcon.Height}"
+                        Data="{Binding CloseIcon.Data}"
+                        Fill="{DynamicResource ColorSystemBtnTintDark}"
+                        Stretch="UniformToFill" />
+                </Button>
             </Grid>
             <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
                 <customControl:Loading Foreground="Gray" Width="50" Height="50" IsActive="True" />
