@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
 using DownKyi.Commands;
 using DownKyi.Core.Settings;
+using DownKyi.Core.Versioning;
 using DownKyi.Models;
 using Microsoft.Extensions.Logging;
 
@@ -94,7 +95,11 @@ namespace DownKyi.ViewModels.Dialogs
             EnableSkipVersionOnLaunch = GetRequiredParameter<bool>(request, "enableSkipVersion");
             MarkdownText = release.Body;
             TagName = release.TagName;
-            NewVersion = release.TagName.TrimStart('v');
+            NewVersion = SemanticVersionPolicy.TryNormalizeIdentity(
+                release.TagName,
+                out var normalizedVersion)
+                ? normalizedVersion
+                : string.Empty;
         }
     }
 }

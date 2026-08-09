@@ -12,6 +12,7 @@
         <PackageReference Include="Microsoft.Data.Sqlite.Core"/>
         <PackageReference Include="Microsoft.Extensions.Logging"/>
         <PackageReference Include="Newtonsoft.Json"/>
+        <PackageReference Include="NuGet.Versioning"/>
         <PackageReference Include="SQLite3MC.PCLRaw.bundle"/>
     </ItemGroup>
 
