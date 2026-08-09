@@ -67,6 +67,14 @@ jobs:
           -c Release
           --no-restore
           --no-build
+      - name: Run review invariant failure corpus
+        shell: pwsh
+        run: >
+          ./script/test-review-invariants.ps1
+          -Configuration Release
+          -NoRestore
+          -NoBuild
+          -ResultsDirectory ./TestResults/review-invariants
       - name: Test
         shell: pwsh
         run: >
@@ -80,7 +88,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.os }}
-          path: TestResults/*.trx
+          path: |
+            TestResults/*.trx
+            TestResults/review-invariants/*.trx
           if-no-files-found: ignore
 
   aria2-tls-security:

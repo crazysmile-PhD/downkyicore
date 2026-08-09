@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-08-01
+Last reviewed: 2026-08-09
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -145,6 +145,7 @@ flowchart TD
     Benchmarks["test.performance-baseline\nBenchmarkCases + runner"]
     SystemBenchmarks["test.system-performance\nisolated system scenarios"]
     CI["workflow.strict-pr-ci\n.github/workflows/quality.yml"]
+    ReviewInvariants["test.review-invariant-corpus\nroot-cause failure corpus"]
     AriaTlsCI["workflow.aria2-tls-security\nsix RID real-binary gate"]
     Release["workflow.release-packaging\n.github/workflows/build.yml"]
     Nightly["workflow.system-baselines\nnightly cross-platform reports"]
@@ -179,6 +180,8 @@ flowchart TD
     SystemBenchmarks -->|measures| FFmpeg
     Nightly -->|runs| SystemBenchmarks
     CI -->|runs PR and main profiles| LifecycleGate
+    CI -->|runs deterministic corpus| ReviewInvariants
+    ReviewInvariants -->|guards| Tests
     Release -->|runs rehearsal profile| LifecycleGate
     LifecycleOwners -->|governs| LifecycleGate
     LifecycleGate -->|guards| Tests
@@ -2440,7 +2443,9 @@ paths:
   - .github/workflows/quality.yml
   - .github/workflows/build.yml
   - script/test-solution.ps1
-responsibility: Blocks PRs that break formatting, restore, Release build, warnings-as-errors, unit tests, or vulnerable package policy.
+  - script/test-review-invariants.ps1
+  - docs/testing/review-invariant-corpus.json
+responsibility: Blocks PRs that break formatting, restore, Release build, warnings-as-errors, unit tests, root-cause review invariants, or vulnerable package policy.
 inbound:
   - github.pull_request
 outbound:
@@ -2457,11 +2462,16 @@ contracts:
   - Every test project writes a distinct assembly-named TRX; no solution-level logger filename may overwrite earlier project evidence.
   - Windows PR and main jobs must run the Assembly Lifecycle Stability Gate and upload its reports even when a phase fails.
   - Every PR runs the six-RID real-binary aria2 TLS security matrix; a unit-test-only pass cannot replace it.
+  - A review finding is symptom evidence, not a patch instruction. Remediation identifies the violated invariant, traces the complete failure path and sibling callers, and fixes the earliest shared semantic or transition boundary.
+  - A repeated failure family in the same PR blocks further local patches and requires a typed-result, state-machine, commit-boundary, ownership or transaction review.
+  - Investigation may widen analysis, but only sibling paths sharing the same root cause and required to close the same failure family may widen the current PR diff; unrelated findings move to backlog or a separate PR.
+  - The review corpus references only contracts present on its target branch and fails unless every declared class actually executes on Windows, Linux and macOS.
 hazards:
   - Turning every historical analyzer suggestion into PR failure makes unrelated PRs impossible.
   - Broad NoWarn, global suppressions, nullable disable, or analyzer exclusions hide new defects.
   - Restoring one parallel solution-level `dotnet test` command can reintroduce Windows foreground-thread timeouts and TRX overwrite.
 tests:
+  - test.review-invariant-corpus
   - github.actions
 ```
 
@@ -3296,6 +3306,19 @@ test.assembly-lifecycle-architecture:
     - formal Verification cannot omit the ownership audit, five-iteration local gate or Rehearsal report
     - Desktop main-loop teardown awaits async App and Host disposal
     - every declared lifecycle owner documents start, stop, teardown, paths and allowed mechanisms
+
+test.review-invariant-corpus:
+  paths:
+    - docs/testing/review-invariant-policy.md
+    - docs/testing/review-invariant-corpus.json
+    - script/test-review-invariants.ps1
+    - tests/DownKyi.Architecture.Tests/ReviewInvariantCorpusTests.cs
+  guards:
+    - review findings trigger violated-invariant, full failure-path, sibling-path and earliest-boundary analysis before production edits
+    - repeated failure families in one PR stop local patches and escalate to shared typed-result, state, ownership or transaction remediation
+    - scope containment keeps unrelated invariants and incidental product defects out of the active PR
+    - deterministic PR coverage resolves to existing classes across all seven test projects and proves each class executed
+    - Main/rehearsal retains lifecycle stress and real-binary transfer evidence
 
 test.infrastructure-clock:
   paths:

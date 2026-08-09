@@ -31,6 +31,10 @@ dotnet build ./DownKyi.sln `
   -p:CodeAnalysisTreatWarningsAsErrors=true `
   -p:UseSharedCompilation=false
 
+pwsh ./script/test-review-invariants.ps1 `
+  -Configuration Release `
+  -NoRestore `
+  -NoBuild
 pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 pwsh ./script/audit-lifecycle-ownership.ps1 `
   -OutputDirectory ./artifacts/assembly-lifecycle/ownership
@@ -53,6 +57,11 @@ pwsh ./script/scan-secrets.ps1
 ```
 
 `scan-secrets.ps1` 使用 Gitleaks 掃描目前 tracked 與尚未追蹤、但未被 `.gitignore` 排除的候選提交檔。固定驗證版本為 Gitleaks `8.30.1`；Windows x64 release zip 必須先依官方 `gitleaks_8.30.1_checksums.txt` 驗證 SHA-256，再解壓到 `.tools/gitleaks/bin/`。`.gitleaks.toml` 只允許公開 WBI 測試 fixture 與精確的 Avalonia brush resource 行，不得加入整個目錄或一般測試檔的寬鬆排除。
+
+`test-review-invariants.ps1` 是 root-cause failure corpus gate。它必須證明
+每個 manifest class 實際執行，不得只用總測試數推測 coverage。Corpus 只
+記錄 target branch 已存在的契約；未合併 PR 的設計不能提前寫成 stable
+invariant。
 
 Lifecycle ownership audit 與 5 次全 test-assembly gate 是同一套嚴格
 Verification 的必要步驟，不是選用診斷工具。每個 assembly 必須通過

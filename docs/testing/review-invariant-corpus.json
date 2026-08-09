@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "prInvariants": [
+    {
+      "id": "cancellation-semantics",
+      "historicalRoots": ["PR #85 F057", "PR #91", "PR #120"],
+      "guards": "Caller cancellation, pause, shutdown and timeout retain distinct outcomes and do not become retry or generic failure.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Domain.Tests/DownKyi.Domain.Tests.csproj", "class": "DownKyi.Domain.Tests.DownloadTaskStateMachineTests" },
+        { "project": "tests/DownKyi.Application.Tests/DownKyi.Application.Tests.csproj", "class": "DownKyi.Application.Tests.ApplicationCancellationTests" },
+        { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.BilibiliHttpTransportTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadRetryPolicyTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadShutdownCoordinatorTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.AsyncDelegateCommandTests" }
+      ]
+    },
+    {
+      "id": "runtime-ownership",
+      "historicalRoots": ["PR #85 F049", "PR #94", "PR #113", "PR #122"],
+      "guards": "Scopes, GIDs, processes, flush barriers and operation identities remain owned until asynchronous cleanup completes.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Application.Tests/DownKyi.Application.Tests.csproj", "class": "DownKyi.Application.Tests.DownloadTaskApplicationServiceTests" },
+        { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.ApplicationLogProviderTests" },
+        { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.AriaServerProcessTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadOrchestratorTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.AriaRuntimeClientRegistryTests" }
+      ]
+    },
+    {
+      "id": "output-cleanup-ownership",
+      "historicalRoots": ["PR #85", "PR #120"],
+      "guards": "Task rows, resume state, generated files and sidecars are changed through their existing owners; cancellation preserves recoverable state.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.SqliteDownloadTaskStoreTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadTaskFileServiceTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadTaskProjectionStoreResumeTests" }
+      ]
+    },
+    {
+      "id": "json-contract-presence",
+      "historicalRoots": ["PR #85 F060-F061", "PR #120"],
+      "guards": "Missing, null, empty, malformed and valid JSON remain distinct; optional envelopes cannot invent success payloads.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.JsonEnvelopePresenceTests" },
+        { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.PlayUrlEnvelopeContractTests" },
+        { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.BiliApiModelContractTests" }
+      ]
+    },
+    {
+      "id": "request-origin-and-credential-contracts",
+      "historicalRoots": ["PR #85 F065-F066", "PR #91", "PR #122"],
+      "guards": "Endpoint parameters, cookie handling, required headers and redirect/origin security remain explicit and credential-safe.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.PlayUrlEnvelopeContractTests" },
+        { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.AriaClientSecurityTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.AriaSecurityTests" }
+      ]
+    },
+    {
+      "id": "architecture-rule-self-defense",
+      "historicalRoots": ["PR #85 F052-F055", "PR #98", "PR #104"],
+      "guards": "Architecture, policy and corpus gates fail closed when required entries, workflows or evidence disappear.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests" },
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.ReviewInvariantCorpusTests" }
+      ]
+    },
+    {
+      "id": "cross-platform-backend-contract",
+      "historicalRoots": ["PR #122"],
+      "guards": "Selectable transfer backends apply the same retry and credential-safe transport outcomes across supported operating systems.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadRetryPolicyTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.AriaSecurityTests" }
+      ]
+    },
+    {
+      "id": "ui-async-state",
+      "historicalRoots": ["PR #85 F056-F059", "PR #120"],
+      "guards": "Newer UI operations reject stale data while selection and asynchronous command state remain coherent.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj", "class": "DownKyi.Desktop.Tests.UiSmokeTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.VideoDetailWorkflowCoordinatorTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.VideoSelectionStateTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.AsyncDelegateCommandTests" }
+      ]
+    },
+    {
+      "id": "host-process-and-log-lifecycle",
+      "historicalRoots": ["PR #94", "PR #113", "PR #120", "PR #122"],
+      "guards": "Host, process and logging owners dispose, exit and persist deterministically; accepted work is not reported completed before durable flush.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj", "class": "DownKyi.Desktop.Tests.UiSmokeTests" },
+        { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.ApplicationLogProviderTests" },
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests" }
+      ]
+    }
+  ],
+  "mainRehearsalEvidence": [
+    {
+      "id": "assembly-lifecycle-stress",
+      "historicalRoots": ["PR #113"],
+      "workflow": ".github/workflows/quality.yml",
+      "profiles": ["Main", "Rehearsal"],
+      "guards": "Repeated assembly load, discovery, execution, teardown and process exit with timeout forensics."
+    },
+    {
+      "id": "real-binary-transfer-security",
+      "historicalRoots": ["PR #122"],
+      "workflow": ".github/workflows/quality.yml",
+      "profiles": ["PR", "Main", "Rehearsal"],
+      "guards": "Six-RID aria2 TLS, redirect, Range and credential behavior against packaged binaries."
+    }
+  ]
+}

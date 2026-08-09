@@ -1,10 +1,12 @@
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using DownKyi.Core.Aria2cNet.Server;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Core.Tests;
 
-public sealed class AriaServerProcessTests
+public sealed partial class AriaServerProcessTests
 {
     [Fact]
     public void PackagedBinaryIntegrityAcceptsTheManifestDigest()
@@ -138,7 +140,6 @@ public sealed class AriaServerProcessTests
             Path.GetTempPath(),
             $"downkyi-aria-secret-exit-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
-        var readyPath = Path.Combine(directory, "child-ready");
         var server = new AriaServer(NullLoggerFactory.Instance);
         Process? process = null;
         try
@@ -149,16 +150,11 @@ public sealed class AriaServerProcessTests
                 NullLogger.Instance);
             var secretPath = secretFile.Path;
             server.SetStartupSecretForTests(secretFile);
-            process = StartSecretHoldingProcess(secretPath, readyPath);
+            process = StartLongRunningProcess();
+            DuplicateFileHandleIntoProcess(secretPath, process);
             server.SetTrackedServerForTests(process);
-            using var readyTimeout = CancellationTokenSource.CreateLinkedTokenSource(
-                TestContext.Current.CancellationToken);
-            readyTimeout.CancelAfter(TimeSpan.FromSeconds(5));
-            while (!File.Exists(readyPath))
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(20), readyTimeout.Token)
-                    .ConfigureAwait(true);
-            }
+
+            Assert.Throws<IOException>(() => File.Delete(secretPath));
 
             Assert.True(server.KillTrackedServer("test startup cleanup"));
 
@@ -198,32 +194,44 @@ public sealed class AriaServerProcessTests
                ?? throw new InvalidOperationException("Could not start the process used by the cleanup test.");
     }
 
-    private static Process StartSecretHoldingProcess(
-        string secretPath,
-        string readyPath)
+    private static void DuplicateFileHandleIntoProcess(
+        string path,
+        Process targetProcess)
     {
-        var startInfo = new ProcessStartInfo
+        using var sourceProcess = Process.GetCurrentProcess();
+        using var source = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read);
+        if (!NativeMethods.DuplicateHandle(
+                sourceProcess.Handle,
+                source.SafeFileHandle.DangerousGetHandle(),
+                targetProcess.Handle,
+                out _,
+                0,
+                inheritHandle: false,
+                NativeMethods.DuplicateSameAccess))
         {
-            FileName = "powershell.exe",
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        startInfo.ArgumentList.Add("-NoLogo");
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-NonInteractive");
-        startInfo.ArgumentList.Add("-Command");
-        startInfo.ArgumentList.Add(
-            "$stream = [System.IO.File]::Open($env:DOWNKYI_SECRET_PATH, " +
-            "[System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, " +
-            "[System.IO.FileShare]::Read); " +
-            "[System.IO.File]::WriteAllText($env:DOWNKYI_READY_PATH, 'ready'); " +
-            "Start-Sleep -Seconds 30");
-        startInfo.Environment["DOWNKYI_SECRET_PATH"] = secretPath;
-        startInfo.Environment["DOWNKYI_READY_PATH"] = readyPath;
+            throw new Win32Exception(Marshal.GetLastPInvokeError());
+        }
+    }
 
-        return Process.Start(startInfo)
-               ?? throw new InvalidOperationException(
-                   "Could not start the process used by the secret cleanup test.");
+    private static partial class NativeMethods
+    {
+        internal const uint DuplicateSameAccess = 0x00000002;
+
+        [LibraryImport("kernel32.dll", SetLastError = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static partial bool DuplicateHandle(
+            IntPtr sourceProcessHandle,
+            IntPtr sourceHandle,
+            IntPtr targetProcessHandle,
+            out IntPtr targetHandle,
+            uint desiredAccess,
+            [MarshalAs(UnmanagedType.Bool)] bool inheritHandle,
+            uint options);
     }
 
     private sealed class AriaBinaryFixture : IDisposable

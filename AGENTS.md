@@ -10,6 +10,15 @@
 4. 涉及 Bilibili API、WBI、JSON envelope 或登入契約時，先閱讀並同步更新 `docs/operations/bilibili-api-audit.md`。
 5. 涉及建置、依賴、外部 binary、分析器或發版時，再閱讀 `docs/maintenance.md` 與 `docs/operations/verification-and-rollback.md`。
 6. 新增、刪除、移動或重新導向模組責任的 PR，必須同步更新知識圖譜、架構文件與即時計畫。
+7. 收到 PR/GitHub/Codex/CI review finding 時，先閱讀 `docs/testing/review-invariant-policy.md` 與 `docs/testing/review-invariant-corpus.json`。Finding 只是症狀證據，不是 patch instruction；修改前必須找出 violated invariant、完整 failure path、同族 sibling paths，以及最早丟失語意或做錯 state transition 的 boundary。
+
+## Review Remediation Gate
+
+- Result model、failure taxonomy、sentinel、cleanup、commit boundary、ownership 或 transaction boundary若是根因，必須修正 shared abstraction/owner；禁止只在 reviewer 指出的 caller 疊加 `if`、catch 或另一個模糊 sentinel。
+- Regression 由 invariant 或外部 protocol contract 推導。Retry、cleanup、classification、lifecycle、persistence 與 state-machine finding 必須建立或更新 failure/transition matrix，不得一個 comment 配一個近似 test。
+- 同一 PR 後續 review 若再次出現相同 failure family，視為前次未修到 root cause。立即停止 local patch，重新審查 typed result、shared abstraction、state machine、commit boundary、ownership 與 transaction，直到同族入口由一個共同 invariant 封閉。
+- 深入調查可以擴大分析範圍，但不能自動擴大目前 PR 的修改範圍。只有與目前 violated invariant 同一 root cause、且封閉同一 failure family 所必要的 sibling paths 才能進入目前 PR；不同 invariant、不同產品問題或順帶發現的缺陷只記錄 finding，移入 backlog 或 separate PR。
+- 相同根因只保留一條永久 invariant；deterministic failure/contract 放 PR CI，重型 race/stress/systematic 證據留在 Main/rehearsal；architecture/static gate 本身必須有 adversarial fixture。
 
 ## 專案概況
 
@@ -200,6 +209,10 @@ dotnet build .\DownKyi.sln `
   -p:CodeAnalysisTreatWarningsAsErrors=true
 
 pwsh .\script\test-solution.ps1 -Configuration Release -NoRestore -NoBuild
+pwsh .\script\test-review-invariants.ps1 `
+  -Configuration Release `
+  -NoRestore `
+  -NoBuild
 pwsh .\script\audit-lifecycle-ownership.ps1 `
   -OutputDirectory .\artifacts\assembly-lifecycle\ownership
 pwsh .\script\test-assembly-lifecycle.ps1 `

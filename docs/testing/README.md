@@ -15,7 +15,21 @@
 - `module-boundary-ratchets.md`
 - `assembly-lifecycle-stability.md`
 - `assembly-lifecycle-owners.json`
+- `review-invariant-policy.md`
+- `review-invariant-corpus.json`
 - `../maintenance.md`
 - `../operations/verification-and-rollback.md`
 
 測試不得讀取使用者真實 settings、cookie、下載 DB 或 aria2 session。網路 contract tests 使用 fixture 或 loopback server。
+
+Reviewer/Codex finding 必須先依 `review-invariant-policy.md` 做 root-cause
+investigation，再按根因合併成永久 invariant。PR CI 執行 deterministic
+failure/contract coverage；重型 race、process、GC、real-binary 與系統性
+平台證據保留在 Main/rehearsal。
+
+```powershell
+pwsh ./script/test-review-invariants.ps1 `
+  -Configuration Release `
+  -NoRestore `
+  -NoBuild
+```
