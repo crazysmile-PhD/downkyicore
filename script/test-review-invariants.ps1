@@ -204,3 +204,6 @@ foreach ($proof in $adversarialProofs) {
 }
 
 Write-Host "Review invariant gate passed: $($invariants.Count) root-cause invariants, $($projectGroups.Count) test projects, $totalPassed tests, $($adversarialProofs.Count) adversarial proofs."
+
+# Expected mutation failures leave the native exit code nonzero on Unix hosts.
+exit 0
