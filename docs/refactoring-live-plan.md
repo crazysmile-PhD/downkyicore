@@ -22,8 +22,9 @@ tests and required gates are green on the exact commit.
 - [ ] PR #125 (`260c8e7`) contains only P0 output-path ownership above #124. Its complete
       exact-head matrix is green.
 - [ ] PR #127 implements P0 Item 2 above PR #125. It reuses the existing completed-key
-      invalidation and transfer-artifact cleanup owners. The root-cause follow-up is locally green;
-      its new exact head still requires the complete remote matrix.
+      invalidation and transfer-artifact cleanup owners. Root-cause implementation head
+      `a18d1aea89f64f5275af230ff3ee3e14f654b9b5` passed CodeQL, Windows/Linux/macOS strict
+      quality, six-RID aria2 security, format, package and assembly-lifecycle checks.
 - [ ] Merge in dependency order, retarget each next PR to `main`, rerun exact-head checks after
       every retarget, and remove the corresponding completed item only after integration.
 
@@ -101,8 +102,8 @@ Detailed contract: `docs/exec-plans/v1.1.1-runtime-hardening.md`.
        1 existing packaged-aria2 skip; Architecture is 228 passed; lifecycle is 7 assemblies,
        213 phase results and 0 failures; ownership is 492 matches and 0 violations. Format, module
        boundaries, workflow lint, package audits, Gitleaks and `git diff --check` are green. The
-       review-fix exact head must pass the complete PR matrix before its threads are resolved. Keep
-       open until integration.
+       root-cause implementation head `a18d1ae` passed the complete PR matrix. Review threads stay
+       open by current task instruction; keep the item open until dependency-order integration.
 
 ### P1 Recovery And Media Correctness
 
