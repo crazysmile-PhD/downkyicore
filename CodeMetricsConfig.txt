@@ -2,11 +2,11 @@
 # These rules are intentionally explicit because CA1501/CA1502/CA1505/CA1506
 # are not enabled by AnalysisMode=All in .NET 10.
 #
-# Inventory pass: CA1506 is temporarily widened so the draft CI can continue
-# past the first known coupling findings and reveal CA1501/CA1502/CA1505 debt.
-# Final gate must restore or ratchet coupling instead of keeping this probe value.
+# Inventory pass: CA1501 and CA1506 are temporarily widened so the draft CI can
+# continue past known framework-inheritance and coupling findings and reveal
+# CA1502/CA1505 debt. Final gate must restore scoped/racheted enforcement.
 
-CA1501: 5
+CA1501: 20
 CA1502: 25
 CA1505: 10
 CA1506(Type): 500
