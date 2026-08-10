@@ -1,0 +1,13 @@
+# .NET maintainability code-metric thresholds.
+# These rules are intentionally explicit because CA1501/CA1502/CA1505/CA1506
+# are not enabled by AnalysisMode=All in .NET 10.
+#
+# First-pass thresholds use the .NET defaults. The draft PR CI inventory is used
+# to identify existing debt before deciding which findings can be fixed now and
+# which need a ratcheted baseline. Do not raise thresholds only to make CI green.
+
+CA1501: 5
+CA1502: 25
+CA1505: 10
+CA1506(Type): 95
+CA1506(Method): 40
