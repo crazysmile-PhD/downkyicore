@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)CodeMetricsConfig.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <AssemblyAttribute Include="System.CLSCompliantAttribute">
       <_Parameter1>false</_Parameter1>
     </AssemblyAttribute>
