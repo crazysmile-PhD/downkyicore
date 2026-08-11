@@ -1,265 +1,103 @@
-# AGENTS.md - DownKyi AI Agent Guide
+# AGENTS.md - DownKyi Agent Entry
 
-本文件是 AI Agent 的儲存庫入口。內容必須描述目前可執行的架構，不得保留已移除架構的操作指引。
+This file is a small repository map and guardrail. Do not read every linked
+document by default. Start from the current task, inspect the affected code and
+tests, then open only the subsystem documentation needed to make and verify the
+change.
 
-## 強制閱讀順序
+## Work Continuity
 
-1. 在分析或修改 DownKyi 程式碼前，必須先閱讀 `docs/ai-knowledge-graph.md`，確認受影響節點、依賴、穩定契約、風險與測試。
-2. 閱讀 `ARCHITECTURE.md`，區分目前可執行拓樸與目標拓樸，不得把目標設計誤報為已完成。
-3. 執行重構前閱讀 `docs/refactoring-live-plan.md`，只處理目前分組，不得拆分或合併計畫指定的 PR 範圍。
-4. 涉及 Bilibili API、WBI、JSON envelope 或登入契約時，先閱讀並同步更新 `docs/operations/bilibili-api-audit.md`。
-5. 涉及建置、依賴、外部 binary、分析器或發版時，再閱讀 `docs/maintenance.md` 與 `docs/operations/verification-and-rollback.md`。
-6. 新增、刪除、移動或重新導向模組責任的 PR，必須同步更新知識圖譜、架構文件與即時計畫。
-7. 收到 PR/GitHub/Codex/CI review finding 時，先閱讀 `docs/testing/review-invariant-policy.md` 與 `docs/testing/review-invariant-corpus.json`。Finding 只是症狀證據，不是 patch instruction；修改前必須找出 violated invariant、完整 failure path、同族 sibling paths，以及最早丟失語意或做錯 state transition 的 boundary。
+- The owner-only Codex workboard is GitHub Issue
+  [#137](https://github.com/crazysmile-PhD/downkyicore/issues/137). It contains
+  only bookmarks and short interruption checkpoints for work the owner asked
+  Codex to do.
+- Load the selected bookmark and its linked PR or task document. Do not scan
+  community Issues or contributor PRs unless the owner explicitly assigns one.
+- When interrupted, update only the short checkpoint in #137. When work is
+  complete, remove its bookmark. Do not keep a completed-work list.
+- Product PRs must not edit `docs/refactoring-live-plan.md` to record Current
+  Item, Next Item, branch, SHA, CI state or progress. That file owns stable
+  release and verification policy only.
+
+## Progressive Disclosure Map
+
+- Current architecture and dependency direction: `ARCHITECTURE.md`.
+- Detailed node ownership and test anchors: `docs/ai-knowledge-graph.md`.
+- Release and formal local verification policy: `docs/refactoring-live-plan.md`
+  and `docs/operations/verification-and-rollback.md`.
+- Bilibili endpoints, WBI and JSON contracts:
+  `docs/operations/bilibili-api-audit.md`.
+- Review findings, invariant derivation and scope containment:
+  `docs/testing/review-invariant-policy.md` and
+  `docs/testing/review-invariant-corpus.json`.
+- Thread, process, Host, Dispatcher or test-fixture teardown:
+  `docs/testing/assembly-lifecycle-stability.md`.
+- External binaries, dependencies and release maintenance:
+  `docs/maintenance.md`.
+- Accepted target designs: `docs/design-docs/`; task-specific execution plans:
+  `docs/exec-plans/`; product behavior: `docs/product-specs/`.
+
+Open the relevant entry only when the task touches that domain. Stable current
+truth belongs in architecture documents; target designs and baseline snapshots
+must not be reported as already implemented.
+
+## Architecture Guardrails
+
+- `DownKyi` is the minimal executable. Avalonia composition and UI runtime live
+  in `src/DownKyi.Desktop`; use cases/contracts in `src/DownKyi.Application`;
+  durable adapters in `src/DownKyi.Infrastructure`; state rules in
+  `src/DownKyi.Domain`; Bilibili and compatible media runtime remain in
+  `DownKyi.Core` until deliberately migrated.
+- Use Microsoft DI, typed navigation/dialog contracts and CommunityToolkit
+  MVVM. Do not reintroduce Prism, DryIoc, EventAggregator, RegionManager,
+  ContainerLocator, service locators or a second router/container.
+- Inspect existing modules and tests before adding a class or service. Extend
+  the authoritative owner; do not create parallel state, validation, retry,
+  mapping, registry or persistence owners.
+- Preserve settings JSON, SQLite migrations, download history, unfinished
+  tasks, GID, transfer files, completed keys and resume compatibility unless
+  the task explicitly changes a tested contract.
+- Keep cancellation semantic. Do not use `.Result`, `.Wait()`, blocking sleeps,
+  silent catches, empty/null success sentinels, unobserved fire-and-forget work
+  or destructive cleanup before the workflow commit boundary.
+- Logs and evidence must exclude cookies, tokens, full sensitive URLs, account
+  identifiers and complete personal paths.
 
 ## Review Remediation Gate
 
-- Result model、failure taxonomy、sentinel、cleanup、commit boundary、ownership 或 transaction boundary若是根因，必須修正 shared abstraction/owner；禁止只在 reviewer 指出的 caller 疊加 `if`、catch 或另一個模糊 sentinel。
-- Regression 由 invariant 或外部 protocol contract 推導。Retry、cleanup、classification、lifecycle、persistence 與 state-machine finding 必須建立或更新 failure/transition matrix，不得一個 comment 配一個近似 test。
-- 同一 PR 後續 review 若再次出現相同 failure family，視為前次未修到 root cause。立即停止 local patch，重新審查 typed result、shared abstraction、state machine、commit boundary、ownership 與 transaction，直到同族入口由一個共同 invariant 封閉。
-- 深入調查可以擴大分析範圍，但不能自動擴大目前 PR 的修改範圍。只有與目前 violated invariant 同一 root cause、且封閉同一 failure family 所必要的 sibling paths 才能進入目前 PR；不同 invariant、不同產品問題或順帶發現的缺陷只記錄 finding，移入 backlog 或 separate PR。
-- 相同根因只保留一條永久 invariant；deterministic failure/contract 放 PR CI，重型 race/stress/systematic 證據留在 Main/rehearsal；architecture/static gate 本身必須有 adversarial fixture。
+- A review finding is symptom evidence, not a patch instruction. Identify the
+  violated invariant, trace the complete failure path, search sibling paths and
+  repair the earliest owner that lost semantics or made the wrong transition.
+- If result taxonomy, cleanup, commit boundary, ownership or transaction design
+  is the root cause, repair the shared abstraction. Do not layer caller-specific
+  `if`, catch or sentinel patches.
+- If the same failure family reappears in the same PR, **停止 local patch** and
+  re-evaluate the typed result, state machine, owner and transaction boundary.
+- Investigation may widen evidence, but **不能自動擴大目前 PR 的修改範圍**.
+  A different invariant goes to the owner-requested backlog 或 separate PR;
+  do not opportunistically add it to the active change.
+- Derive regression tests from the invariant or external protocol. Retry,
+  cleanup, lifecycle and persistence work needs a failure/transition matrix;
+  important static rules need adversarial evidence that the gate can fail.
 
-## Change Radius And Locality
+## Change Locality
 
-- Changed-file count 或分散的修改位置是 architecture investigation 的觸發訊號，不是 technical-debt 判決。先區分合理的 separation of concerns、可由權威 owner 推導的 derived data，以及必須人工同步的 duplicated authoritative knowledge。
-- 若多個位置描述同一個 identity、ownership、mapping、state transition 或 policy，先定位唯一 authoritative owner，再由該 owner 推導其他資料或建立 completeness invariant；不得新增平行 registry、mapping 或同步規則。
-- 調查可以擴大 evidence surface，但 PR scope 仍受 `docs/testing/review-invariant-policy.md` 的 scope-containment 規則約束。不同 invariant 的鄰近問題只記入 backlog 或獨立 exec plan。
-- Stable current ownership 放入 `docs/ai-knowledge-graph.md`；target design 放入 `docs/design-docs/`；baseline SHA、數量、估算與 migration steps 只放入 `docs/exec-plans/`，不得把 snapshot 寫成永久架構事實。
+- A large changed-file count is an investigation signal, not proof of debt.
+  Distinguish legitimate separation of concerns from duplicated authoritative
+  identity, mapping, policy or state.
+- When several places manually describe the same fact, identify one owner and
+  derive the rest. Do not add another registry or synchronization checklist.
+- Update `docs/ai-knowledge-graph.md` only when current ownership or dependency
+  direction changes. Keep temporary status and branch history out of it.
 
-## 專案概況
+## Verification
 
-DownKyi 是 .NET 10 與 Avalonia 12 的跨平台 Bilibili 下載器。主要技術如下：
+Use the smallest focused test while iterating. Before push, run the formal
+commands in `docs/refactoring-live-plan.md` sequentially in one worktree. At
+minimum, behavioral changes require strict Release build, all seven test
+projects, review invariants, format and `git diff --check`; lifecycle/process
+changes also require the documented ownership and repeated process gates.
 
-- Microsoft Generic Host 與 `Microsoft.Extensions.DependencyInjection`：生命週期和 composition root。
-- CommunityToolkit.Mvvm：binding 狀態與 `ObservableObject`。
-- typed navigation/dialog contracts：UI 導航、對話框與通知，不依賴全域容器。
-- SQLite3 Multiple Ciphers + `Microsoft.Data.Sqlite.Core`：下載任務、歷史與舊加密資料相容。
-- Downloader / aria2：內建與 RPC 傳輸後端。
-- FFmpeg/ffprobe：混流、轉碼、硬體編碼 fallback 與輸出驗證。
-- xUnit v3：Domain、Application、Infrastructure、Core、Desktop、App 與架構測試。
-
-Prism、DryIoc、EventAggregator、RegionManager、ContainerLocator、靜態 `LogManager`、Debugging Console wrapper 與 `SettingsManager` singleton 已移除。不得重新引入。
-
-重要現況：`DownKyi.Desktop` 已實際擁有 Avalonia App、Views、ViewModels、UI projections、desktop adapters、Host composition 與 desktop runtime；`DownKyi` 只保留最小 `Program.cs`。`DownKyi.Application` 擁有 logging contracts，`DownKyi.Infrastructure` 擁有 logging sink、retention 與 diagnostic export；`DownKyi.Core` 已無 Avalonia、QRCoder、XAML 或 logging 實作，但 aria2、FFmpeg 與 filesystem 相容實作仍主要位於 Core。修改前先執行 `script/audit-module-boundaries.ps1`，不可只依 project 名稱推斷實際 owner。
-
-## 儲存庫結構
-
-```text
-DownKyi.sln
-Directory.Build.props              全域 nullable、分析器與 warning policy
-Directory.Packages.props           Central Package Management
-version.txt                        版本唯一來源
-
-src/DownKyi.Domain/                immutable domain state 與 typed results
-src/DownKyi.Application/           use-case、desktop、lifetime、logging contracts
-src/DownKyi.Infrastructure/        SQLite、HTTP、logging、clock、write-behind adapters
-src/DownKyi.Desktop/               Avalonia App、composition、Views、ViewModels、Presentation、desktop runtime
-
-DownKyi.Core/                      Bilibili API、設定、aria2、FFmpeg 相容核心
-DownKyi/                           最小可執行入口，只委派至 DownKyi.Desktop
-
-tests/DownKyi.Domain.Tests/
-tests/DownKyi.Application.Tests/
-tests/DownKyi.Infrastructure.Tests/
-tests/DownKyi.Core.Tests/
-tests/DownKyi.Desktop.Tests/
-tests/DownKyi.Tests/
-tests/DownKyi.Architecture.Tests/
-
-benchmarks/DownKyi.BenchmarkCases/
-benchmarks/DownKyi.Benchmarks/
-docs/
-  design-docs/                      架構決策與深度審查
-  exec-plans/                       任務書入口與執行規則
-  product-specs/                    使用者行為與 release acceptance
-  testing/                          測試分層與 architecture ratchets
-  operations/                       驗證、診斷、發布與回滾
-```
-
-`DownKyi.Core` 仍含既有產品模型及 Bilibili API 相容面。不要僅為目錄整齊搬動它；跨層移動必須先有測試保護資料格式與外部協定。`DownKyi` 可執行專案只允許保留最小 process bootstrap。
-
-## 啟動與 Composition
-
-啟動鏈如下：
-
-```text
-Program
-  -> DesktopApplication.RunAsync()
-  -> Avalonia App
-  -> DownKyiHost.Create()
-  -> DesktopComposition.AddDownKyiDesktop()
-  -> Microsoft DI
-  -> MainWindow + MainWindowViewModel
-  -> AvaloniaApplicationLifecycle.StartHostAsync()
-```
-
-規則：
-
-- `App.axaml.cs` 只管理 Avalonia 啟動、Host 接線、全域例外觀察與結束釋放。
-- 所有服務與 ViewModel 註冊集中於 `src/DownKyi.Desktop/Composition/DesktopComposition.cs`。
-- 依賴一律透過建構子注入；禁止 service locator、靜態 App 服務屬性與第二個容器。
-- `MainWindow` 建構時載入完整 XAML，並由 Host 注入 ViewModel、設定與生命週期。
-- Host root XAML 禁止 `ViewModelLocator.AutoWireViewModel` 與 `RegionManager.RegionName`。
-
-## UI 邊界
-
-Application 層的 desktop contracts 位於 `src/DownKyi.Application/Desktop`。Avalonia adapters 位於 `src/DownKyi.Desktop/Platform`：
-
-- `IAppNavigationService` / `AvaloniaNavigationService`
-- `IAppDialogService` / `AvaloniaDialogService`
-- `IUserNotificationService` / `DesktopNotificationService`
-- `IApplicationLifecycle` / `AvaloniaApplicationLifecycle`
-- clipboard、file picker、platform launcher 與 UI dispatcher contracts
-
-導航使用 `AppRoute`、`AppNavigationRegion`、`AppNavigationRequest` 和 `AppNavigationContext`。不得傳遞 View 名稱字串、region 名稱字串或依賴導航 framework 的 journal。
-
-ViewModel 應只保留 binding state、command wiring、導航與 UI 投影。網路、解析、SQLite、下載建立、檔案 IO、FFmpeg 與 aria2 工作屬於 coordinator/service/runtime。
-
-可綁定但不屬於 ViewModel 的畫面資料位於 `src/DownKyi.Desktop/Presentation`。下載清單由 `DownloadListState` 私有持有可變 backing collections，對 ViewModel/View 只公開 `ReadOnlyObservableCollection<T>`；呼叫端不得直接修改投影集合。
-
-## 下載 Runtime
-
-目前下載鏈如下：
-
-```text
-DownloadBootstrapHostedService
-  -> IDownloadRuntimeFactory / DownloadRuntimeFactory
-  -> persisted Domain startup snapshots
-  -> DownloadTaskQueueGateway             pre-start admission + active runtime
-  -> DownloadOrchestrator                 bounded Channel<DownloadTaskId> + workers
-  -> DownloadPipeline                     task workflow and media stages
-     -> ITransferBackend                  Builtin or Aria2
-     -> DownloadArtifactWriter            cover, subtitle, danmaku, NFO
-     -> DownloadTaskStateWriter           typed command adapter
-  -> IDownloadTaskApplicationService      Domain load/transition/persist/event
-  -> IDownloadTaskStore / SqliteDownloadTaskStore
-  -> DownloadTaskProjectionStore          committed Domain -> UI projection
-```
-
-Durable 下載狀態只能由 `IDownloadTaskApplicationService` 依 `DownloadTaskId` 載入 aggregate、執行 transition、persist，成功後才發布 projection event。`DownloadTaskProjectionStore` 不得從既有 UI 狀態反向重建 runtime Domain；`DownloadTask.Restore` 只允許 SQLite materializer 與明確 legacy migration adapter。
-
-新增、續傳與啟動恢復會在 Domain 狀態成功提交後直接 enqueue `DownloadTaskId`；runtime 不得掃描 UI collection 取得工作。啟動前極早建立的任務由 gateway 暫存，runtime 掛載後沖入 bounded channel。仍待 Gate 6 處理的過渡債是 pipeline 內部 media stage 會讀取 projection 作為播放資訊與 UI context。
-
-穩定契約：
-
-- 未完成任務、GID、partial file map、已完成分段 key、pause/progress 與 optimistic version 必須跨重啟保存。
-- 關閉取消不能跳過 `Downloading/Pausing -> Queued` 的 Domain 恢復寫入。
-- 使用者暫停必須先進入 `Pausing`；只有 transfer worker 真正停止且 partial/resume files 已保留後才能確認為 `Paused`。
-- DURL 依 `Order` 排序且每段 key 包含 order；多段輸出必須經 ffprobe 驗證 seek/decode。
-- 刪除下載中任務必須清除實體暫存與 sidecar；取消與失敗不得把空檔或錯誤頁標記為成功。
-- 進度寫入走 bounded write-behind；UI 通知與 SQLite 寫入不得退回每個 byte/chunk 一次。
-- `DownloadPipeline` 不得重新持有字幕 API、彈幕轉換、NFO XML 或 SQLite 例外處理實作。
-
-## 設定、資料與隱私
-
-- 設定入口是注入的 `ISettingsStore`；讀取 `Current` immutable snapshot，修改使用 typed `Update`，持久化使用 cancellation-aware flush。
-- `SettingsStore` 必須保留既有 JSON property 名稱、schema migration、atomic replace 與 legacy DES 設定遷移。
-- 路徑由 `ApplicationStorage` 解析；測試必須用隔離目錄，禁止讀取真實 cookie、設定、下載 DB 或 aria2 session。
-- SQLite schema 變更必須有版本 migration、備份、rollback 與 reopen 測試。
-- 日誌使用注入的 `ILogger` 與 `ApplicationLogProvider`。不得記錄 cookie、token、完整敏感 URL、email、帳號 ID 或完整個人路徑。
-- 登入態 live audit 只能使用 `script/audit-bilibili-authenticated-api.ps1 -ConfirmAuthenticatedLive` 從 `~/.codex/.env` 讀取憑證；不得把值放入命令列、source、fixture、artifact、commit 或 PR。完成後必須執行 `script/scan-secrets.ps1`。
-- 低階 API 不得直接輸出到 terminal，也不得同時在多層重複記錄同一失敗。
-
-## MVVM 與非同步
-
-- ViewModel 繼承 `ViewModelBase` / `ObservableObject`，使用 `SetProperty` 或 source-generated observable properties。
-- 非同步 command 使用現有 `DownKyiAsyncDelegateCommand`，command 實例應快取或在建構子建立。
-- 除真正 UI event handler 外禁止 `async void`。
-- ViewModel 禁止 `Task.Run`。CPU 或阻塞相容 API 只可在明確 service/infrastructure 邊界隔離。
-- 不得使用 `.Result`、`.Wait()` 或 `.GetAwaiter().GetResult()`。
-- 所有長工作接受並傳遞 `CancellationToken`；`OperationCanceledException` 必須保留取消語意。
-- fire-and-forget 必須由 `RunFireAndForget` 或明確 observer 記錄 fault，不得丟棄 Task。
-- UI collection/property 更新經 `IUiDispatcher` 或既有 UI dispatch helper；背景 service 不得直接依賴 Avalonia control。
-
-## HTTP 與外部程序
-
-- Bilibili API 呼叫必須注入 async `IBilibiliApiClient`；buvid 由 `IBuvidProvider` single-flight 載入，cookie 由 `IBilibiliCookieProvider` 提供。禁止重新加入 static client、`Configure()`、同步 send/read 或 blocking backoff。
-- retry 必須迭代、有限、尊重 cancellation/backoff；耗盡後丟出明確例外，不得回傳空字串偽裝成功。
-- JSON 空字串、HTML 錯誤頁與 schema failure 必須可見。
-- WBI 簽名必須從 `IWbiKeyProvider` 取得目前有效金鑰；`WbiSign` 不得讀取 settings。只有 WBI request 的 `-403` 可強制刷新並重試一次。
-- `data`、`result` 等可選 envelope 欄位必須保留缺失狀態；端點明確選擇契約欄位，禁止用預設空 DTO 偽裝成功。
-- FFmpeg/ffprobe 與 aria2 由現有 processor/server/backend owner 啟動與釋放；禁止 shell command string 拼接。
-- 硬體編碼採成功率優先：能力偵測後使用 GPU，失敗再 fallback 到軟體編碼。
-- 外部 binary 版本、來源與 checksum 依 `docs/maintenance.md` 維護。
-
-## 分析器與風格
-
-根層 `Directory.Build.props` 預設啟用：
-
-```xml
-<EnableNETAnalyzers>true</EnableNETAnalyzers>
-<AnalysisMode>All</AnalysisMode>
-<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-<CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
-```
-
-禁止為通過建置而新增廣域 `NoWarn`、`#pragma warning disable`、`SuppressMessage`、`GlobalSuppressions.cs`、`severity = none/silent`、`#nullable disable` 或關閉分析器。協定要求的最小範圍例外必須有理由與測試。
-
-新 C# 使用 file-scoped namespace、nullable annotation、明確 cancellation 與最小必要註解。遵守 `.editorconfig`；不要在功能 PR 混入無關格式化。
-
-## 建置與測試
-
-提交前依序執行，禁止在同一工作樹平行跑 build/test：
-
-```powershell
-dotnet restore .\DownKyi.sln
-
-dotnet build .\DownKyi.sln `
-  -c Release `
-  --no-restore `
-  --no-incremental `
-  -p:EnableNETAnalyzers=true `
-  -p:AnalysisMode=All `
-  -p:EnforceCodeStyleInBuild=true `
-  -p:TreatWarningsAsErrors=true `
-  -p:CodeAnalysisTreatWarningsAsErrors=true
-
-pwsh .\script\test-solution.ps1 -Configuration Release -NoRestore -NoBuild
-pwsh .\script\test-review-invariants.ps1 `
-  -Configuration Release `
-  -NoRestore `
-  -NoBuild
-pwsh .\script\audit-lifecycle-ownership.ps1 `
-  -OutputDirectory .\artifacts\assembly-lifecycle\ownership
-pwsh .\script\test-assembly-lifecycle.ps1 `
-  -Configuration Release `
-  -Iterations 5 `
-  -NoBuild `
-  -ValidateForensics `
-  -ResultsDirectory .\artifacts\assembly-lifecycle\verification
-dotnet format .\DownKyi.sln --no-restore --verify-no-changes
-git diff --check
-dotnet package list --project .\DownKyi.sln --vulnerable --include-transitive
-dotnet package list --project .\DownKyi.sln --deprecated
-```
-
-關鍵永久防線：
-
-- `UiSmokeTests.RealHostResolvesShellAndKeyViewsWithoutPrismRuntime`
-- `RootViewArchitectureTests`
-- `LegacyPatternArchitectureTests`
-- `DownloadRuntimeArchitectureTests`
-- `ModuleBoundaryBaselineTests`
-- `AgentEnvironmentArchitectureTests`
-- `AssemblyLifecycleArchitectureTests`
-- `UiSmokeTests.ProductionDesktopHostStopsAndDisposesEveryOwnedRuntime`
-- `SqliteDownloadTaskStoreTests.DisposeReleasesTheOwnedConnectionPool`
-- SQLite migration/resume、download shutdown recovery、DURL identity/seekability tests
-
-每次修正行為都應新增能在舊實作上失敗的測試；不要只以 build 成功代表 runtime 正常。
-
-PR 會對每個 test assembly 執行 3 次 assembly lifecycle gate，`main`
-執行 50 次，release rehearsal 執行 100 次。涉及 thread、Dispatcher、
-Timer、Host、全域事件或測試 fixture ownership 時，必須先閱讀
-`docs/testing/assembly-lifecycle-stability.md` 並更新
-`docs/testing/assembly-lifecycle-owners.json`。上述 5 次命令是正式本機
-Verification 的最低門檻；單次 `Local` profile 只用於開發腳本，不構成
-Gate 10 或發布證據。
-
-## Package 與發版
-
-- 套件使用 Central Package Management；版本只放 `Directory.Packages.props`。
-- 應用版本只讀 `version.txt`，更新檢查與 GitHub tag 必須使用同一語意版本。
-- PR CI 擋確定錯誤；nightly 執行跨平台整合、效能與資源報告；release gate 驗證所有平台 package、binary checksum、資料 migration 與下載回歸。
-- 系統效能基準必須記錄 runtime、OS、architecture、dataset、backend 與 commit SHA，不得比較不同機器的臨時計時器數值。
+Do not weaken analyzers, architecture tests, lifecycle gates, secret scanning
+or platform checks to make a change green. A passing build alone does not prove
+runtime behavior.

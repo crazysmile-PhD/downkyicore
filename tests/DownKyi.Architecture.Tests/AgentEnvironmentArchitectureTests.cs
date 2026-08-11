@@ -94,6 +94,40 @@ public sealed class AgentEnvironmentArchitectureTests
     }
 
     [Fact]
+    public void AgentEntryUsesProgressiveDisclosureAndLivePlanContainsNoMutableWorkState()
+    {
+        var agentGuide = Read("AGENTS.md");
+        var livePlan = Read("docs/refactoring-live-plan.md");
+
+        Assert.Contains("Progressive Disclosure Map", agentGuide, StringComparison.Ordinal);
+        Assert.Contains("issues/137", agentGuide, StringComparison.Ordinal);
+        Assert.DoesNotContain("## 強制閱讀順序", agentGuide, StringComparison.Ordinal);
+
+        string[] forbiddenLiveState =
+        [
+            "Status: active",
+            "Last updated:",
+            "Current work item:",
+            "Current working branch:",
+            "Current base:",
+            "## Current Item",
+            "## Next Items"
+        ];
+
+        foreach (var value in forbiddenLiveState)
+        {
+            Assert.DoesNotContain(value, livePlan, StringComparison.OrdinalIgnoreCase);
+        }
+
+        Assert.DoesNotMatch(
+            new System.Text.RegularExpressions.Regex(
+                @"(?m)^\s*-\s+\[[ xX]\]|\b[0-9a-fA-F]{40}\b",
+                System.Text.RegularExpressions.RegexOptions.CultureInvariant),
+            livePlan);
+        Assert.Contains("issues/137", livePlan, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void KnowledgeGraphLiteralPathReferencesResolve()
     {
         var lines = File.ReadAllLines(Path.Combine(RepositoryRoot, "docs", "ai-knowledge-graph.md"));
