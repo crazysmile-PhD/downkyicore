@@ -10,52 +10,60 @@ internal static class DownloadTransferFileCleanup
     private const int DeleteAttempts = 3;
     private static readonly TimeSpan DeleteRetryDelay = TimeSpan.FromMilliseconds(100);
 
-    public static bool DeleteInvalidArtifacts(string? file, ILogger logger)
+    public static DownloadTransferFileCleanupResult DeleteInvalidArtifacts(
+        string? file,
+        ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(logger);
         if (string.IsNullOrWhiteSpace(file))
         {
-            return true;
+            return new DownloadTransferFileCleanupResult(0, 0);
         }
 
-        var allDeleted = true;
+        var attemptedCount = 0;
+        var failedCount = 0;
         foreach (var path in new[] { file, $"{file}.aria2", $"{file}.download" })
         {
+            attemptedCount++;
             try
             {
                 if (Directory.Exists(path))
                 {
+                    failedCount++;
                     logger.LogDebugMessage(
                         "Delete invalid transfer artifact failed; error=unexpected-directory.");
-                    allDeleted = false;
-                    continue;
+                    break;
                 }
 
-                if (File.Exists(path))
+                File.Delete(path);
+                if (File.Exists(path) || Directory.Exists(path))
                 {
-                    File.Delete(path);
+                    failedCount++;
+                    logger.LogDebugMessage(
+                        "Delete invalid transfer artifact failed; error=still-present.");
+                    break;
                 }
-
-                allDeleted &= !File.Exists(path) && !Directory.Exists(path);
             }
             catch (IOException)
             {
+                failedCount++;
                 logger.LogDebugMessage(
                     "Delete invalid transfer artifact failed; error=io.");
-                allDeleted = false;
+                break;
             }
             catch (UnauthorizedAccessException)
             {
+                failedCount++;
                 logger.LogDebugMessage(
                     "Delete invalid transfer artifact failed; error=access-denied.");
-                allDeleted = false;
+                break;
             }
         }
 
-        return allDeleted;
+        return new DownloadTransferFileCleanupResult(attemptedCount, failedCount);
     }
 
-    public static async Task<bool> DeleteInvalidArtifactsAsync(
+    public static async Task<DownloadTransferFileCleanupResult> DeleteInvalidArtifactsAsync(
         string? file,
         ILogger logger,
         TimeProvider timeProvider,
@@ -63,12 +71,14 @@ internal static class DownloadTransferFileCleanup
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(timeProvider);
+        var result = new DownloadTransferFileCleanupResult(0, 0);
         for (var attempt = 1; attempt <= DeleteAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (DeleteInvalidArtifacts(file, logger))
+            result = DeleteInvalidArtifacts(file, logger);
+            if (result.Succeeded)
             {
-                return true;
+                return result;
             }
 
             if (attempt < DeleteAttempts)
@@ -80,6 +90,13 @@ internal static class DownloadTransferFileCleanup
             }
         }
 
-        return false;
+        return result;
     }
+}
+
+internal sealed record DownloadTransferFileCleanupResult(
+    int AttemptedCount,
+    int FailedCount)
+{
+    public bool Succeeded => FailedCount == 0;
 }

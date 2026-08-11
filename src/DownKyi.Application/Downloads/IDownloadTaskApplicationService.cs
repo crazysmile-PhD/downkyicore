@@ -17,6 +17,11 @@ public interface IDownloadTaskApplicationService
 
     Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken);
 
+    Task<bool> IsOutputPathReservedAsync(
+        string basePath,
+        bool ignoreCase,
+        CancellationToken cancellationToken);
+
     Task<DownloadHistoryPage> GetHistoryPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,
@@ -65,6 +70,11 @@ public interface IDownloadTaskApplicationService
     Task<OperationResult<DownloadTask>> InvalidateCompletedFileAsync(
         DownloadTaskId taskId,
         string key,
+        CancellationToken cancellationToken);
+
+    Task<OperationResult<DownloadTask>> InvalidateCompletedFilesAsync(
+        DownloadTaskId taskId,
+        IReadOnlyCollection<string> keys,
         CancellationToken cancellationToken);
 
     Task<OperationResult<DownloadTask>> CompleteTransferFileAsync(

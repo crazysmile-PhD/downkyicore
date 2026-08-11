@@ -1,3 +1,4 @@
+using DownKyi.Application.Downloads;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Infrastructure.Downloads;
@@ -23,7 +24,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(true);
         using var version = connection.CreateCommand();
         version.CommandText = "PRAGMA user_version";
-        Assert.Equal(2L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(3L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -128,7 +129,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             await reopened.InitializeAsync(TestContext.Current.CancellationToken);
         }
 
-        Assert.Equal(2, await ReadSchemaVersionAsync());
+        Assert.Equal(3, await ReadSchemaVersionAsync());
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
     }
 
@@ -141,7 +142,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
         await store.InitializeAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, await ReadSchemaVersionAsync());
+        Assert.Equal(3, await ReadSchemaVersionAsync());
         Assert.Equal(1, await CountDownloadBaseRecordAsync("legacy-resume"));
         Assert.Equal(1, await CountDownloadingRecordAsync("legacy-resume"));
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
@@ -208,6 +209,49 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
         Assert.False(stale.IsSuccess);
         Assert.Equal("download.store.conflict", stale.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ConcurrentAddsAtomicallyClaimOneOutputPath()
+    {
+        var outputPath = Path.Combine(_directory, "shared-output");
+        var first = CreateQueuedTask("claim-first", outputPath);
+        var second = CreateQueuedTask("claim-second", outputPath);
+        using var firstStore = CreateStore();
+        using var secondStore = CreateStore();
+
+        var results = await Task.WhenAll(
+            firstStore.AddAsync(first, TestContext.Current.CancellationToken),
+            secondStore.AddAsync(second, TestContext.Current.CancellationToken));
+
+        Assert.Single(results, result => result.IsSuccess);
+        var rejected = Assert.Single(results, result => !result.IsSuccess);
+        Assert.Equal("download.store.output_path_reserved", rejected.Error?.Code);
+    }
+
+    [Fact]
+    public async Task CanceledOutputClaimIsReleasedOnlyWhenTaskIsDeleted()
+    {
+        var outputPath = Path.Combine(_directory, "cleanup-owned-output");
+        var task = CreateQueuedTask("cleanup-owner", outputPath);
+        using var store = CreateStore();
+        Assert.True((await store.AddAsync(task, TestContext.Current.CancellationToken)).IsSuccess);
+        var canceled = task.Cancel(_clock.UtcNow.AddSeconds(1)).RequireValue();
+        Assert.True((await store
+            .UpdateAsync(canceled, task.Version, TestContext.Current.CancellationToken)).IsSuccess);
+
+        Assert.True(await store.IsOutputPathReservedAsync(
+            outputPath,
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+            TestContext.Current.CancellationToken));
+
+        var deleted = canceled.Delete(_clock.UtcNow.AddSeconds(2)).RequireValue();
+        Assert.True((await store
+            .UpdateAsync(deleted, canceled.Version, TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.False(await store.IsOutputPathReservedAsync(
+            outputPath,
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+            TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -367,6 +411,16 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             _clock.UtcNow.AddSeconds(3)).RequireValue();
         task = task.Pause(_clock.UtcNow.AddSeconds(4)).RequireValue();
         return task.ConfirmPaused(_clock.UtcNow.AddSeconds(5)).RequireValue();
+    }
+
+    private DownloadTask CreateQueuedTask(string id, string outputPath)
+    {
+        return DownloadTask.Create(
+            new DownloadTaskId(id),
+            CreateMetadata(id),
+            CreatePlan(),
+            new DownloadOutput(outputPath, null),
+            _clock.UtcNow);
     }
 
     private DownloadTask CreateCompletedTask(string id, long finishedTimestamp)

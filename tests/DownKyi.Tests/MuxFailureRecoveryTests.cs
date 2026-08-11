@@ -1,5 +1,6 @@
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Time;
+using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Downloads;
@@ -19,9 +20,9 @@ public sealed class MuxFailureRecoveryTests
     {
         var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
         await using var testLifetime = test.ConfigureAwait(true);
-        var stage = test.CreateStage(FfmpegOperationResult.Failure(
+        var stage = test.CreateStage(ConfirmedInvalidInputs(
             "audio decode failed",
-            [test.AudioFile]));
+            test.AudioFile));
 
         var result = await stage.ExecuteAsync(
             test.Execution,
@@ -59,6 +60,99 @@ public sealed class MuxFailureRecoveryTests
         Assert.Contains(test.AudioKey, task.Transfer.CompletedFileKeys);
         Assert.Contains(test.VideoKey, task.Transfer.CompletedFileKeys);
         Assert.Equal("resume-identity", task.Transfer.BackendIdentity);
+    }
+
+    [Fact]
+    public async Task DurlFailureRevokesOnlyDiagnosedCorruptSegment()
+    {
+        var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        DurlTestSource[] sources = await test.AddDurlSourcesAsync().ConfigureAwait(true);
+        var corrupt = sources[1];
+        var stage = test.CreateStage(ConfirmedInvalidInputs(
+            "segment decode failed",
+            corrupt.FilePath));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.mux.invalid-source", result.Error?.Code);
+        Assert.True(File.Exists(sources[0].FilePath));
+        Assert.False(File.Exists(corrupt.FilePath));
+        Assert.True(File.Exists(sources[2].FilePath));
+        var task = await test.GetTaskAsync().ConfigureAwait(true);
+        Assert.Contains(sources[0].TransferKey, task.Transfer.CompletedFileKeys);
+        Assert.DoesNotContain(corrupt.TransferKey, task.Transfer.CompletedFileKeys);
+        Assert.Contains(sources[2].TransferKey, task.Transfer.CompletedFileKeys);
+    }
+
+    [Fact]
+    public async Task CleanupFailurePreservesDurableCacheAndRemainingSidecars()
+    {
+        var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        File.Delete(test.AudioFile);
+        Directory.CreateDirectory(test.AudioFile);
+        var stage = test.CreateStage(ConfirmedInvalidInputs(
+            "audio decode failed",
+            test.AudioFile));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.mux.invalid-source-cleanup", result.Error?.Code);
+        Assert.True(Directory.Exists(test.AudioFile));
+        Assert.True(File.Exists($"{test.AudioFile}.aria2"));
+        Assert.True(File.Exists($"{test.AudioFile}.download"));
+        Assert.True(File.Exists(test.VideoFile));
+        var task = await test.GetTaskAsync().ConfigureAwait(true);
+        Assert.Contains(test.AudioKey, task.Transfer.CompletedFileKeys);
+        Assert.Contains(test.VideoKey, task.Transfer.CompletedFileKeys);
+        Assert.Equal("resume-identity", task.Transfer.BackendIdentity);
+    }
+
+    [Fact]
+    public async Task MixedCleanupOutcomesInvalidateOnlySuccessfullyRemovedSources()
+    {
+        var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        var sources = await test.AddDurlSourcesAsync().ConfigureAwait(true);
+        File.Delete(sources[1].FilePath);
+        Directory.CreateDirectory(sources[1].FilePath);
+        var stage = test.CreateStage(ConfirmedInvalidInputs(
+            "multiple segment decode failures",
+            sources[0].FilePath,
+            sources[1].FilePath));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.mux.invalid-source-cleanup", result.Error?.Code);
+        Assert.False(File.Exists(sources[0].FilePath));
+        Assert.True(Directory.Exists(sources[1].FilePath));
+        Assert.True(File.Exists(sources[2].FilePath));
+        var task = await test.GetTaskAsync().ConfigureAwait(true);
+        Assert.DoesNotContain(sources[0].TransferKey, task.Transfer.CompletedFileKeys);
+        Assert.Contains(sources[1].TransferKey, task.Transfer.CompletedFileKeys);
+        Assert.Contains(sources[2].TransferKey, task.Transfer.CompletedFileKeys);
+    }
+
+    private static FfmpegOperationResult ConfirmedInvalidInputs(
+        string reason,
+        params string[] paths)
+    {
+        return FfmpegOperationResult.Failure(
+            reason,
+            FfmpegOperationFailureKind.InvalidInput,
+            paths.Select(path => new FfmpegInputFailure(
+                path,
+                FfmpegInputFailureKind.DecodeCorruption)).ToArray());
     }
 
     private sealed class MuxTestContext : IAsyncDisposable
@@ -210,6 +304,45 @@ public sealed class MuxFailureRecoveryTests
                 NullLogger<MuxStage>.Instance);
         }
 
+        public async Task<DurlTestSource[]> AddDurlSourcesAsync()
+        {
+            var sources = Enumerable.Range(1, 3)
+                .Select(order => new DurlTestSource(
+                    order,
+                    $"durl-{order}-key",
+                    Path.Combine(_directory, $"durl-{order}.flv")))
+                .ToArray();
+            foreach (var source in sources)
+            {
+                await File.WriteAllBytesAsync(
+                    source.FilePath,
+                    [1, 2, 3],
+                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+                await _stateWriter.RecordTransferFileAsync(
+                    Execution.TaskId,
+                    source.TransferKey,
+                    Path.GetFileName(source.FilePath),
+                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+                await _stateWriter.CompleteTransferFileAsync(
+                    Execution.TaskId,
+                    source.TransferKey,
+                    TestContext.Current.CancellationToken).ConfigureAwait(true);
+            }
+
+            Execution.MediaKind = DownloadMediaKind.Durl;
+            Execution.DurlDownloads = sources
+                .Select(source => new DurlDownloadResult(
+                    new PlayUrlDurl
+                    {
+                        Order = source.Order,
+                        Length = 5_000
+                    },
+                    source.FilePath,
+                    source.TransferKey))
+                .ToArray();
+            return sources;
+        }
+
         public async Task<DownloadTask> GetTaskAsync()
         {
             return await _tasks.FindAsync(
@@ -247,6 +380,8 @@ public sealed class MuxFailureRecoveryTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(result);
     }
+
+    private sealed record DurlTestSource(int Order, string TransferKey, string FilePath);
 
     private sealed class SingleTaskStore : IDownloadTaskStore
     {
@@ -298,6 +433,11 @@ public sealed class MuxFailureRecoveryTests
         public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<DownloadTask>>(_task == null ? [] : [_task]);
+
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) => Task.FromResult(false);
 
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,

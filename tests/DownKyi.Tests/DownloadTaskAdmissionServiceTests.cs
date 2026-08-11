@@ -1,6 +1,7 @@
 using DownKyi.Application.Downloads;
 using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Domain.Downloads;
+using DownKyi.Domain.Results;
 using DownKyi.Infrastructure.Downloads;
 using DownKyi.Infrastructure.Time;
 using DownKyi.Models;
@@ -32,8 +33,8 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         var second = CreateItem("second", basePath);
 
         await Task.WhenAll(
-            admission.AdmitAsync(first, TestContext.Current.CancellationToken),
-            admission.AdmitAsync(second, TestContext.Current.CancellationToken)).ConfigureAwait(true);
+            admission.AdmitAsync(first, true, TestContext.Current.CancellationToken),
+            admission.AdmitAsync(second, true, TestContext.Current.CancellationToken)).ConfigureAwait(true);
 
         var persisted = await tasks
             .GetUnfinishedAsync(TestContext.Current.CancellationToken)
@@ -61,7 +62,7 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             new RecordingDownloadTaskQueue());
         var basePath = Path.Combine(_directory, "retryable-output");
         var first = CreateItem("failed", basePath);
-        await admission.AdmitAsync(first, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(first, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
         var taskId = new DownloadTaskId(first.DownloadBase.Id);
         Assert.True((await tasks
             .StartAsync(taskId, TestContext.Current.CancellationToken)
@@ -74,13 +75,13 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             .ConfigureAwait(true)).IsSuccess);
 
         var second = CreateItem("second", basePath);
-        await admission.AdmitAsync(second, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(second, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.Equal($"{basePath}(1)", second.DownloadBase.FilePath);
     }
 
     [Fact]
-    public async Task CanceledTaskReleasesItsOutputReservation()
+    public async Task CanceledTaskRetainsItsOutputReservationUntilDeleted()
     {
         Directory.CreateDirectory(_directory);
         using var store = CreateStore();
@@ -94,15 +95,23 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             new RecordingDownloadTaskQueue());
         var basePath = Path.Combine(_directory, "canceled-output");
         var first = CreateItem("canceled", basePath);
-        await admission.AdmitAsync(first, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(first, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
         Assert.True((await tasks
             .CancelAsync(new DownloadTaskId(first.DownloadBase.Id), TestContext.Current.CancellationToken)
             .ConfigureAwait(true)).IsSuccess);
 
         var second = CreateItem("replacement", basePath);
-        await admission.AdmitAsync(second, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(second, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
 
-        Assert.Equal(basePath, second.DownloadBase.FilePath);
+        Assert.Equal($"{basePath}(1)", second.DownloadBase.FilePath);
+
+        Assert.True((await tasks
+            .DeleteAsync(new DownloadTaskId(first.DownloadBase.Id), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true)).IsSuccess);
+        var third = CreateItem("after-cleanup", basePath);
+        await admission.AdmitAsync(third, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.Equal(Path.GetFullPath(basePath), third.DownloadBase.FilePath);
     }
 
     [Fact]
@@ -125,24 +134,88 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             "foreign output",
             TestContext.Current.CancellationToken);
 
-        await admission.AdmitAsync(draft, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await admission.AdmitAsync(draft, true, TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.Equal($"{basePath}(1)", draft.DownloadBase.FilePath);
     }
 
     [Fact]
-    public void ActiveCollisionUsesCaseInsensitiveComparisonAndSkipsExistingSuffix()
+    public async Task DisabledAutoSuffixRejectsCollisionWithoutRenamingOrPersisting()
     {
         Directory.CreateDirectory(_directory);
-        var basePath = Path.Combine(_directory, "video");
-        File.WriteAllText($"{basePath}(1).mp4", "occupied");
+        using var store = CreateStore();
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        using var admission = new DownloadTaskAdmissionService(
+            new DownloadListState(),
+            tasks,
+            projections,
+            new RecordingDownloadTaskQueue());
+        var basePath = Path.Combine(_directory, "no-auto-suffix");
+        await File.WriteAllTextAsync(
+            $"{basePath}.mp4",
+            "occupied",
+            TestContext.Current.CancellationToken);
+        var item = CreateItem("rejected", basePath);
 
-        var resolved = DownloadOutputPathResolver.ResolveActiveCollision(
-            basePath,
-            [Path.Combine(_directory, "VIDEO")],
-            StringComparer.OrdinalIgnoreCase);
+        await Assert.ThrowsAsync<IOException>(() => admission.AdmitAsync(
+            item,
+            false,
+            TestContext.Current.CancellationToken));
 
-        Assert.Equal($"{basePath}(2)", resolved);
+        Assert.Equal(basePath, item.DownloadBase.FilePath);
+        Assert.Empty(await tasks.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void CaseInsensitivePathKeyTreatsMacStyleCaseVariantsAsOneOutput()
+    {
+        var first = Path.Combine(_directory, "Video");
+        var second = Path.Combine(_directory, "video");
+
+        Assert.Equal(
+            DownloadOutputPathKey.Create(first, ignoreCase: true),
+            DownloadOutputPathKey.Create(second, ignoreCase: true));
+        Assert.NotEqual(
+            DownloadOutputPathKey.Create(first, ignoreCase: false),
+            DownloadOutputPathKey.Create(second, ignoreCase: false));
+    }
+
+    [Fact]
+    public void PlatformComparisonIsCaseInsensitiveOnWindowsAndMacOS()
+    {
+        var expected = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+
+        Assert.Same(expected, DownloadOutputPathResolver.PlatformComparer);
+    }
+
+    [Fact]
+    public async Task RepeatedAdmissionsProbeCandidatesWithoutReloadingAllUnfinishedTasks()
+    {
+        Directory.CreateDirectory(_directory);
+        using var innerStore = CreateStore();
+        var store = new CountingDownloadTaskStore(innerStore);
+        var clock = new SystemClock();
+        using var tasks = new DownloadTaskApplicationService(store, clock);
+        using var projections = new DownloadTaskProjectionStore(tasks, clock);
+        using var admission = new DownloadTaskAdmissionService(
+            new DownloadListState(),
+            tasks,
+            projections,
+            new RecordingDownloadTaskQueue());
+
+        for (var index = 0; index < 20; index++)
+        {
+            var item = CreateItem($"task-{index}", Path.Combine(_directory, $"output-{index}"));
+            await admission.AdmitAsync(item, true, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+        }
+
+        Assert.Equal(0, store.GetUnfinishedCallCount);
+        Assert.Equal(20, store.ReservationProbeCount);
     }
 
     private SqliteDownloadTaskStore CreateStore()
@@ -171,6 +244,67 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             },
             PlayUrl = new PlayUrl()
         };
+    }
+
+    private sealed class CountingDownloadTaskStore(IDownloadTaskStore inner) : IDownloadTaskStore
+    {
+        public int GetUnfinishedCallCount { get; private set; }
+
+        public int ReservationProbeCount { get; private set; }
+
+        public Task InitializeAsync(CancellationToken cancellationToken) =>
+            inner.InitializeAsync(cancellationToken);
+
+        public Task<OperationResult> AddAsync(
+            DownloadTask task,
+            CancellationToken cancellationToken) => inner.AddAsync(task, cancellationToken);
+
+        public Task<OperationResult> UpdateAsync(
+            DownloadTask task,
+            long expectedVersion,
+            CancellationToken cancellationToken) =>
+            inner.UpdateAsync(task, expectedVersion, cancellationToken);
+
+        public Task<OperationResult> UpdateProgressAsync(
+            DownloadProgressWrite progressWrite,
+            CancellationToken cancellationToken) =>
+            inner.UpdateProgressAsync(progressWrite, cancellationToken);
+
+        public Task<DownloadTask?> FindAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken) => inner.FindAsync(taskId, cancellationToken);
+
+        public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(
+            CancellationToken cancellationToken)
+        {
+            GetUnfinishedCallCount++;
+            return inner.GetUnfinishedAsync(cancellationToken);
+        }
+
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken)
+        {
+            ReservationProbeCount++;
+            return inner.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
+        }
+
+        public Task<DownloadHistoryPage> GetHistoryPageAsync(
+            DownloadHistoryCursor? cursor,
+            int pageSize,
+            CancellationToken cancellationToken) =>
+            inner.GetHistoryPageAsync(cursor, pageSize, cancellationToken);
+
+        public Task<OperationResult> DeleteAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken) => inner.DeleteAsync(taskId, cancellationToken);
+
+        public Task<OperationResult> ClearHistoryAsync(CancellationToken cancellationToken) =>
+            inner.ClearHistoryAsync(cancellationToken);
+
+        public Task<IReadOnlyList<QuarantinedDownloadRecord>> GetQuarantinedRecordsAsync(
+            CancellationToken cancellationToken) => inner.GetQuarantinedRecordsAsync(cancellationToken);
     }
 
     public void Dispose()

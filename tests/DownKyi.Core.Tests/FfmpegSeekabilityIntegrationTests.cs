@@ -42,7 +42,7 @@ public sealed class FfmpegSeekabilityIntegrationTests : IDisposable
         var runtime = new FfmpegConcatRuntime(
             processRunner,
             new FfmpegMediaValidator(processRunner),
-            () => 1,
+            new AsyncConcurrencyGate(() => 1),
             NullLogger<FfmpegConcatRuntime>.Instance);
         var output = Path.Combine(_testDirectory, "seekable.mp4");
 

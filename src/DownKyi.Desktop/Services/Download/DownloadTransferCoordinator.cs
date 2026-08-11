@@ -79,9 +79,15 @@ internal sealed class DownloadTransferCoordinator
             if (lastResult.FailureKind is DownloadTransferFailureKind.InvalidMedia
                 or DownloadTransferFailureKind.ResumeRejected)
             {
-                DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                     Path.Combine(request.Directory, request.FileName),
                     _logger);
+                if (!cleanup.Succeeded)
+                {
+                    return DownloadTransferResult.Failed(
+                        DownloadTransferFailureKind.Disk,
+                        "download.transfer.cleanup-failed");
+                }
             }
 
             var decision = _retryPolicy.Decide(
@@ -182,18 +188,19 @@ internal sealed class DownloadTransferCoordinator
             return resetResult;
         }
 
-        await setBackendIdentityAsync(null, cancellationToken).ConfigureAwait(true);
-        if (!await DownloadTransferFileCleanup.DeleteInvalidArtifactsAsync(
-                Path.Combine(request.Directory, request.FileName),
-                _logger,
-                _timeProvider,
-                cancellationToken).ConfigureAwait(true))
+        var cleanup = await DownloadTransferFileCleanup.DeleteInvalidArtifactsAsync(
+            Path.Combine(request.Directory, request.FileName),
+            _logger,
+            _timeProvider,
+            cancellationToken).ConfigureAwait(true);
+        if (!cleanup.Succeeded)
         {
             return DownloadTransferResult.Failed(
                 DownloadTransferFailureKind.Disk,
                 "download.transfer.source-change-cleanup");
         }
 
+        await setBackendIdentityAsync(null, cancellationToken).ConfigureAwait(true);
         _logger.LogInformationMessage(
             $"Download transfer source changed; backend={_backend.Name}; partialState=cleared.");
         return null;

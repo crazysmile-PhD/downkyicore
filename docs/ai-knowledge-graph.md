@@ -1989,9 +1989,10 @@ outbound:
 contracts:
   - A bounded Channel and fixed workers own queue consumption; global shutdown and per-task cancellation cannot create unbounded transfer tasks.
   - New, resumed, and persisted startup tasks enqueue `DownloadTaskId` directly; no runtime owner scans an observable UI collection for work.
-  - `DownloadTaskAdmissionService` is the singleton admission owner. Under one asynchronous gate it queries authoritative unfinished Domain tasks, resolves active and on-disk output collisions, persists the selected base path, then publishes the UI projection and queue ID.
-  - Queued, Downloading, Pausing, Paused, and retryable Failed tasks reserve normalized output base paths. Completed, Canceled, and Deleted tasks release the active reservation; existing output files still prevent reuse.
-  - Output-path comparison is ordinal and case-insensitive on Windows and ordinal on other platforms. Draft and admission collision handling share `DownloadOutputPathResolver`; no mutable path registry or UI collection is an ownership source.
+  - `DownloadTaskAdmissionService` is the singleton admission coordinator. Under one asynchronous gate it probes indexed candidates, resolves on-disk collisions, persists the selected base path, then publishes the UI projection and queue ID; it never reloads all unfinished tasks for each admission.
+  - SQLite schema v3 stores the normalized active reservation key in `download_base`. Task insertion claims that key in the same transaction, and a partial unique index rejects check-then-insert races. The Domain/SQLite store remains the ownership truth; no mutable path registry, cache, or UI collection owns reservations.
+  - Queued, Downloading, Pausing, Paused, Failed, and Canceled tasks retain normalized output reservations. Canceled tasks release the claim only after generated-file cleanup succeeds and the task commits Deleted; Completed tasks release it during the completion transaction. Existing output files still prevent reuse.
+  - Output-path comparison is ordinal and case-insensitive on Windows and macOS, and ordinal on Linux. The macOS rule is deliberately fail-closed for the default case-insensitive filesystems. When automatic numeric suffixing is disabled, any active or on-disk collision rejects admission instead of silently renaming the output.
   - `DownloadTransferCoordinator` is the only media-transfer retry budget owner. It supplies exactly one URL to a backend call, rotates backup addresses, and permits one playback-address refresh.
   - Same normalized URL retries may preserve partial state and backend identity. Before selecting a different backup or refreshed URL, the coordinator must successfully reset the old backend transfer, clear its identity, and use `DownloadTransferFileCleanup` to remove the target plus `.aria2` / `.download`; reset or cleanup failure stops before the new source is contacted.
   - `DownloadRetryPolicy` maps transient network/5xx to bounded exponential backoff, 429 to bounded server delay when available, expired address/403 to backup or one refresh, rejected resume state to one cleanup plus same-address retry, invalid media to the next backup, disk/permanent failure to immediate stop, and cancellation to propagation.
@@ -2020,8 +2021,9 @@ contracts:
   - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO generation; its typed result distinguishes created output, source-not-available, HTTP/parse/conversion/write/permission failure, invalid or zero-byte output, and cancellation. `DownloadTaskStateWriter` is a typed Application-command adapter and never accepts a UI task model.
   - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `MuxStage`, `DownloadArtifactsStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages, so requested artifact failure cannot produce completed history.
   - Download mux and DURL concat finalize through same-directory temporary files with `overwriteDestination: false`. A pre-existing destination fails the stage without deleting the foreign file or the valid source streams.
-  - `DownloadMediaStage` carries each persisted transfer key beside its audio, video or DURL file into `MuxStage`. Mux failure may revoke only paths listed by the typed FFmpeg invalid-input result; it reuses `DownloadTransferFileCleanup` and `DownloadTaskApplicationService.InvalidateCompletedFileAsync` instead of owning a parallel reset path.
-  - Completed-key invalidation clears the task's backend identity in the same durable Application mutation. Confirmed invalid input removes its file and `.aria2` / `.download` sidecars; infrastructure-only mux failure preserves source files, completed keys and resume identity for retry.
+  - `DownloadMediaStage` carries each persisted transfer key beside its audio, video or DURL file into `MuxStage`. `FfmpegOperationResult` preserves destination, process, timeout, input-access and confirmed-corruption failure kinds; only positively invalidatable input paths may enter the existing `DownloadTransferFileCleanup` owner.
+  - Cleanup returns an explicit outcome and stops on the first filesystem failure. `MuxStage` batches only successfully cleaned keys through `DownloadTaskApplicationService.InvalidateCompletedFilesAsync`; a failed source keeps its completed key, while Coordinator and MediaStage also fail closed instead of retrying or mutating durable state after incomplete cleanup.
+  - Completed-key invalidation clears the task's backend identity in the same durable Application mutation. Confirmed invalid input removes its file and `.aria2` / `.download` sidecars; process/runtime, timeout, input-access, destination and cleanup-only failures preserve the corresponding source retry state.
   - `DownloadExecutionContext` captures one immutable settings snapshot and accepts the current operation token at each active check; it cannot retain a short-lived command token.
   - `DownloadActivityPresenter` is the only stage-adjacent localized resource owner. `DownloadCompletionProjector` owns UI-thread completion-list mutation; both belong to Desktop.
   - `DownloadPipeline` cannot regain subtitle API, danmaku converter, NFO XML, direct projection-update, localized resource, FFmpeg, or SQLite implementation details.
@@ -2032,7 +2034,7 @@ hazards:
   - aria2 reports a machine-readable failure code but does not expose HTTP `Retry-After`; those 429 responses use the policy's bounded fallback delay instead of a server-provided value.
   - `DownloadingItem` still crosses into the media execution context; later extraction must replace it with a typed execution input without weakening Domain authority.
   - Letting an expected shutdown `OperationCanceledException` escape before state recovery leaves rows stored as active and prevents clean resume after restart.
-  - Treating every FFmpeg failure as source corruption destroys valid cached media when the executable, destination or permissions are the actual fault. Only typed invalid-input evidence authorizes source revocation.
+  - Treating every FFmpeg failure or every `File.Exists == false` result as source corruption destroys valid cached media when the executable, filesystem object, destination or permissions are the actual fault. Only typed, positively invalidatable input evidence followed by successful cleanup authorizes durable source revocation.
   - Resume behavior depends on preserving partial files while delete behavior must remove them.
   - aria2 process cleanup is platform-sensitive.
   - Reusing Id+codec or runtime GetHashCode values across DURL segments overwrites temporary files and can produce non-seekable MP4 output.
@@ -2266,13 +2268,14 @@ contracts:
   - `FfmpegProcessor.Instance` is forbidden because separate or implicit owners can exceed the configured CPU/GPU concurrency.
   - Multi-segment completion is accepted only after ffprobe verifies a video stream, positive expected duration, and decodable middle/tail seeks.
   - Download-owned merge and concat callers must deny destination overwrite. FFmpeg validation/finalization failure cleans only the operation's temporary output; it cannot delete a pre-existing destination. Explicit toolbox transforms retain their separate overwrite behavior.
-  - A failed ordinary merge runs fail-on-error decode diagnostics against each requested source. A source is reported invalid only when FFmpeg started and returned a decode failure; startup failure and timeout remain infrastructure failures with an empty invalid-input set.
+  - A failed ordinary merge or multi-segment concat runs fail-on-error decode diagnostics against each requested source. A source is reported invalid only when stderr contains positive decode-corruption evidence; a started process with permission/runtime failure, startup failure, or timeout remains an infrastructure failure with an empty invalid-input set.
+  - Multi-segment DURL diagnosis reports exact corrupt segment paths so the existing transfer-key invalidation owner preserves valid sibling segments.
   - Command generation is separate from the async process runner; every process has cancellation, a timeout, captured stderr, and process-tree cleanup.
   - Hardware encoder discovery is cached and runs through the same bounded async process runner.
   - `FfmpegProcessor`, concat validation, and hardware encoder detection use typed loggers from the shared application `ILoggerFactory`; static `LogManager` access is forbidden in this boundary.
   - The hardware encoder cache is owned by the injected detector instance, which in production belongs to the singleton `FfmpegProcessor` composition owner.
   - Release packages must include cross-platform ffmpeg and ffprobe binaries with checksums.
-  - FFmpeg concurrency state belongs to the singleton runtime instance; every operation, including frame extraction, must enter and release the same bounded slot gate.
+  - FFmpeg concurrency state belongs to the singleton runtime instance; every operation, including frame extraction and post-failure input diagnostics, must enter and release the same bounded slot gate.
 hazards:
   - GPU encoder flags differ across OS/GPU/driver.
   - Full transcode can spike CPU and memory during batch downloads.

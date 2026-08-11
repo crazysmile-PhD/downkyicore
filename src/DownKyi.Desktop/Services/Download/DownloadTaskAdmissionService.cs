@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Downloads;
@@ -31,6 +30,7 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
 
     public async Task AdmitAsync(
         DownloadingItem item,
+        bool autoAddNumberSuffix,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(item);
@@ -38,15 +38,14 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
         await _admissionGate.WaitAsync(cancellationToken).ConfigureAwait(true);
         try
         {
-            var unfinishedTasks = await _tasks
-                .GetUnfinishedAsync(cancellationToken)
-                .ConfigureAwait(true);
-            var reservedPaths = unfinishedTasks
-                .Where(task => ReservesOutputPath(task.Phase))
-                .Select(task => task.Output.BasePath);
-            item.DownloadBase.FilePath = DownloadOutputPathResolver.ResolveActiveCollision(
+            item.DownloadBase.FilePath = await DownloadOutputPathResolver.ResolveAdmissionCollisionAsync(
                 item.DownloadBase.FilePath,
-                reservedPaths);
+                autoAddNumberSuffix,
+                (candidate, token) => _tasks.IsOutputPathReservedAsync(
+                    candidate,
+                    DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+                    token),
+                cancellationToken).ConfigureAwait(true);
 
             await _projections.AddDownloadingAsync(item, cancellationToken).ConfigureAwait(true);
 
@@ -61,13 +60,6 @@ internal sealed class DownloadTaskAdmissionService : IDisposable
             _admissionGate.Release();
         }
     }
-
-    private static bool ReservesOutputPath(DownloadPhase phase) =>
-        phase is DownloadPhase.Queued or
-            DownloadPhase.Downloading or
-            DownloadPhase.Pausing or
-            DownloadPhase.Paused or
-            DownloadPhase.Failed;
 
     public void Dispose()
     {

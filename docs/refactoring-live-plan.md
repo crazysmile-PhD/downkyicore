@@ -1,10 +1,10 @@
 # DownKyi Live Plan
 
 Status: active
-Last updated: 2026-08-08
+Last updated: 2026-08-11
 Current work item: P1 Item 3 clean restart when a transfer source changes in PR #128
 Current branch: `fix/source-change-clean-restart`
-Current base: PR #127 head `b6e89ff658a3eb3c944bf5d73315d9d1a25a9c33`
+Current base: PR #127 exact head `e34d84f5b1f59a9c2cad14da7550f24f0c58df7b`
 
 This file contains only unfinished, blocked or integration-pending work. Detailed
 contracts live in `docs/exec-plans/`; stable completed facts belong in architecture,
@@ -22,7 +22,9 @@ tests and required gates are green on the exact commit.
 - [ ] PR #125 (`260c8e7`) contains only P0 output-path ownership above #124. Its complete
       exact-head matrix is green.
 - [ ] PR #127 implements P0 Item 2 above PR #125. It reuses the existing completed-key
-      invalidation and transfer-artifact cleanup owners; its complete exact-head matrix is green.
+      invalidation and transfer-artifact cleanup owners. Exact head `e34d84f` passed CodeQL,
+      Windows/Linux/macOS strict quality, six-RID aria2 security, format, package and
+      assembly-lifecycle checks; all review threads are resolved.
 - [ ] PR #128 implements P1 Item 3 above PR #127. It preserves same-source resume but resets the
       backend and deletes partial state before contacting a different source. The current-head
       GitHub checks are the authoritative CI status; keep open until stack integration.
@@ -95,10 +97,16 @@ Detailed contract: `docs/exec-plans/v1.1.1-runtime-hardening.md`.
 2. [ ] On source-media validation or mux failure, revoke only invalid completed transfer keys,
        clear their partial/resume state and backend identity, and preserve source files for
        infrastructure-only failures.
-       Local strict build is 0 warnings/errors; seven test projects are 847 passed, 0 failed and
+       A non-zero diagnostic exit requires positive decode-corruption evidence; started
+       permission/runtime failures preserve the cache. Multi-segment DURL failures diagnose each
+       segment and revoke only confirmed corrupt paths. All diagnostics share the existing
+       `FfmpegMaxParallelJobs` gate.
+       Local strict build is 0 warnings/errors; seven test projects are 863 passed, 0 failed and
        1 existing packaged-aria2 skip; Architecture is 228 passed; lifecycle is 7 assemblies,
-       213 phase results and 0 failures. Format, module boundaries, workflow lint, package audits,
-       Gitleaks, `git diff --check` and PR #127 exact-head CI are green. Keep open until integration.
+       213 phase results and 0 failures; ownership is 492 matches and 0 violations. Format, module
+       boundaries, workflow lint, package audits, Gitleaks and `git diff --check` are green. The
+       root-cause implementation head `a18d1ae` passed the complete PR matrix. Review threads stay
+       open by current task instruction; keep the item open until dependency-order integration.
 
 ### P1 Recovery And Media Correctness
 

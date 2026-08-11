@@ -188,6 +188,12 @@ internal static class SqliteProgressScenario
         public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken) =>
             _inner.GetUnfinishedAsync(cancellationToken);
 
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) =>
+            _inner.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
+
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,
             int pageSize,
