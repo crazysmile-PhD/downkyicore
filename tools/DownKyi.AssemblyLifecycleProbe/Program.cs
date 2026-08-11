@@ -157,7 +157,7 @@ internal static class Program
                 System.Globalization.NumberStyles.None,
                 System.Globalization.CultureInfo.InvariantCulture,
                 out milliseconds) &&
-            milliseconds is >= 1_000 and <= 30_000;
+            milliseconds is >= 25 and <= 30_000;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

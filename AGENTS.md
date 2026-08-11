@@ -22,6 +22,13 @@
 - 任何 operation 建立的檔案，在 operation 結束時必須已由 durable task state 明確擁有，或已不存在；禁止留下 physical file exists / durable owner missing 的狀態。建立檔案前先透過既有 ownership owner claim，或在返回前完成可觀測且成功的刪除，不得新增第二套 path registry。
 - 相同根因只保留一條永久 invariant；deterministic failure/contract 放 PR CI，重型 race/stress/systematic 證據留在 Main/rehearsal。重要 invariant 的 oracle/gate 必須有 adversarial 或 mutation fixture，證明故意移除 owner、略過 transition 或破壞契約時檢查確實失敗；僅檢查必要字串存在不算 fail-closed 證據。
 
+## Change Radius And Locality
+
+- Changed-file count 或分散的修改位置是 architecture investigation 的觸發訊號，不是 technical-debt 判決。先區分合理的 separation of concerns、可由權威 owner 推導的 derived data，以及必須人工同步的 duplicated authoritative knowledge。
+- 若多個位置描述同一個 identity、ownership、mapping、state transition 或 policy，先定位唯一 authoritative owner，再由該 owner 推導其他資料或建立 completeness invariant；不得新增平行 registry、mapping 或同步規則。
+- 調查可以擴大 evidence surface，但 PR scope 仍受 `docs/testing/review-invariant-policy.md` 的 scope-containment 規則約束。不同 invariant 的鄰近問題只記入 backlog 或獨立 exec plan。
+- Stable current ownership 放入 `docs/ai-knowledge-graph.md`；target design 放入 `docs/design-docs/`；baseline SHA、數量、估算與 migration steps 只放入 `docs/exec-plans/`，不得把 snapshot 寫成永久架構事實。
+
 ## 專案概況
 
 DownKyi 是 .NET 10 與 Avalonia 12 的跨平台 Bilibili 下載器。主要技術如下：

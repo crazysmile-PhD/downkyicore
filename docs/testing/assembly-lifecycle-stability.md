@@ -59,11 +59,13 @@ each phase in an independent child process:
    deadline without residual children or runner-protocol pollution.
 
 Every phase records its exit code, duration, timeout state, stdout/stderr
-protocol state, residual child count, sanitized child identity and evidence
-paths. Residual identity includes PID, parent PID, process name, creation time,
-tree depth and a command line with repository, user-profile, temporary, URL and
-credential values redacted. The report aggregates P50, P95, P99 and maximum
-duration per assembly and phase.
+protocol state and child-process observations. A child observed immediately
+after the parent exits is `transient` when it drains inside the bounded
+500-millisecond quiescence window and `residual` only when the same process
+identity remains alive at the boundary. Identity includes PID, parent PID,
+process name, creation time, tree depth and a command line with repository,
+user-profile, temporary, URL and credential values redacted. The report
+aggregates P50, P95, P99 and maximum duration per assembly and phase.
 Every phase result also has general `failureType` and `errorType` fields.
 `slowEvidenceErrorType` is reserved for failures inside slow-evidence capture
 and must not carry unrelated self-test or lifecycle contract failures.
@@ -173,13 +175,18 @@ On Windows, a slow phase or slow post-teardown exit automatically captures:
 - a sanitized process tree containing PID, parent PID and process name;
 - `dotnet-stack report --process-id` output when the tool is available.
 
-Residual children use a separate evidence path. The first observation is always
-written to `residual-children.json`, even when a process exits before deeper
-collection begins. A still-live managed child receives the normal thread,
-process-tree and managed-stack capture; native descendants retain identity and
-thread/process evidence without waiting on an inapplicable managed collector.
-Any observed residual child remains a blocking `ResidualChildProcess`; evidence
-capture never converts it to success and no grace period weakens the contract.
+Confirmed residual children use a separate evidence path and are written to
+`residual-children.json`. A still-live managed child receives the normal
+thread, process-tree and managed-stack capture; native descendants retain
+identity and thread/process evidence without waiting on an inapplicable
+managed collector. Transient child identity stays in the phase result without
+triggering expensive process forensics after the process has drained.
+The gate samples by PID plus creation time for up to 500 milliseconds. A child
+that drains during that bounded observation remains visible as `transient` in
+the machine report but is not a teardown leak. A child still alive at the
+boundary is a blocking `ResidualChildProcess`; evidence capture never converts
+it to success. This is a two-sample liveness definition, not a process-name
+allowlist, rerun exception or relaxation of the phase/exit thresholds.
 
 CI installs the pinned Microsoft `dotnet-stack` tool and runs
 `-ValidateForensics`. That self-test deliberately holds a marker-aware
@@ -187,11 +194,13 @@ CI installs the pinned Microsoft `dotnet-stack` tool and runs
 used by test execution produces evidence and a non-empty managed stack.
 On Windows it also opens a valid marker with exclusive sharing and proves that
 the reader tolerates the temporary lock, then parses the marker after release.
-It additionally launches a deterministic residual `dotnet` child, requires the
-gate to preserve its identity and evidence manifest, requires
-`ResidualChildProcess` classification, and terminates the synthetic process tree
-by matching both PID and creation time. The same self-test proves that private
-paths, URLs, cookies and command-line secrets are redacted. Schema 2 exposes the detailed
+It additionally launches one short-lived and one persistent `dotnet` child.
+The short-lived child must be observed, drain within the same quiescence path
+used by real phases and leave the phase successful. The persistent child must
+preserve its identity and evidence manifest, receive `ResidualChildProcess`
+classification, and be terminated by matching both PID and creation time. The
+same self-test proves that private paths, URLs, cookies and command-line secrets
+are redacted. Schema 2 exposes the detailed
 `residualChildSelfTest` object and top-level `residualChildSelfTestPassed`
 summary. Missing execution, identity, evidence, failure classification or
 cleanup fails closed.

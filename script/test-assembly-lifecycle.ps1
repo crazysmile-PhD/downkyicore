@@ -48,6 +48,8 @@ $script:markerReadRetriesExhaustedCount = 0
 $script:markerReadErrorCount = 0
 $script:markerReadErrorType = $null
 $slowEvidenceCaptureLeadMilliseconds = 1000
+$residualChildQuiescenceMilliseconds = 500
+$residualChildPollMilliseconds = 25
 $forensicsSelfTestCaptureLeadValidated = $false
 $markerReaderSelfTestRequired = $IsWindows -and
     @("PR", "Main", "Rehearsal", "Flaky").Contains($Profile)
@@ -61,6 +63,9 @@ $residualChildSelfTest = [ordered]@{
     identityCaptured = $false
     evidenceManifestWritten = $false
     failureClassified = $false
+    transientChildObserved = $false
+    transientChildDrained = $false
+    transientPhasePassed = $false
     cleanupCompleted = $false
     redactionValidated = $false
     observedChildCount = 0
@@ -276,6 +281,82 @@ function Get-ProcessTree {
     }
 
     return $result
+}
+
+function Get-ProcessIdentityKey {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Process
+    )
+
+    return "{0}|{1}" -f $Process.processId, $Process.createdAtUtc
+}
+
+function Wait-ResidualProcessTree {
+    param(
+        [Parameter(Mandatory)]
+        [int]$RootProcessId,
+        [Parameter(Mandatory)]
+        [DateTimeOffset]$NotBeforeUtc,
+        [Parameter(Mandatory)]
+        [ValidateRange(1, 5000)]
+        [int]$QuiescenceMilliseconds,
+        [Parameter(Mandatory)]
+        [ValidateRange(1, 1000)]
+        [int]$PollMilliseconds
+    )
+
+    $observed = [System.Collections.Generic.Dictionary[string, object]]::new(
+        [StringComparer]::Ordinal)
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $sampleCount = 0
+    $children = @()
+    do {
+        $children = @(
+            Get-ProcessTree `
+                -RootProcessId $RootProcessId `
+                -NotBeforeUtc $NotBeforeUtc
+        )
+        $sampleCount++
+        foreach ($child in $children) {
+            $observed[(Get-ProcessIdentityKey -Process $child)] = $child
+        }
+
+        if ($children.Count -eq 0 -and $sampleCount -ge 2) {
+            break
+        }
+
+        if ($stopwatch.ElapsedMilliseconds -ge $QuiescenceMilliseconds) {
+            break
+        }
+
+        Start-Sleep -Milliseconds $PollMilliseconds
+    }
+    while ($true)
+    $stopwatch.Stop()
+
+    $residualKeys = [System.Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::Ordinal)
+    foreach ($child in $children) {
+        $null = $residualKeys.Add((Get-ProcessIdentityKey -Process $child))
+    }
+    $transientChildren = @(
+        foreach ($entry in $observed.GetEnumerator()) {
+            if (-not $residualKeys.Contains($entry.Key)) {
+                $entry.Value
+            }
+        }
+    )
+
+    return [pscustomobject]@{
+        observedChildren = @($observed.Values)
+        transientChildren = $transientChildren
+        residualChildren = $children
+        sampleCount = $sampleCount
+        elapsedMilliseconds = [Math]::Round(
+            $stopwatch.Elapsed.TotalMilliseconds,
+            3)
+    }
 }
 
 function Save-ManagedStack {
@@ -820,11 +901,14 @@ function Invoke-IsolatedProcess {
             $stderrPath,
             $stderr,
             [System.Text.UTF8Encoding]::new($false))
-        $residualChildren = @(
-            Get-ProcessTree `
+        $childProcessObservation = Wait-ResidualProcessTree `
                 -RootProcessId $processId `
-                -NotBeforeUtc $processStartedAt
-        )
+                -NotBeforeUtc $processStartedAt `
+                -QuiescenceMilliseconds $residualChildQuiescenceMilliseconds `
+                -PollMilliseconds $residualChildPollMilliseconds
+        $observedChildren = @($childProcessObservation.observedChildren)
+        $transientChildren = @($childProcessObservation.transientChildren)
+        $residualChildren = @($childProcessObservation.residualChildren)
         if ($residualChildren.Count -gt 0) {
             $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
             try {
@@ -861,7 +945,13 @@ function Invoke-IsolatedProcess {
                 Replace([System.IO.Path]::DirectorySeparatorChar, '/')
             stderrPath = [System.IO.Path]::GetRelativePath($runRoot, $stderrPath).
                 Replace([System.IO.Path]::DirectorySeparatorChar, '/')
+            observedChildren = $observedChildren
+            transientChildren = $transientChildren
             residualChildren = $residualChildren
+            childProcessObservationSampleCount =
+                $childProcessObservation.sampleCount
+            childProcessObservationDurationMs =
+                $childProcessObservation.elapsedMilliseconds
             residualChildEvidence = @($residualChildEvidence)
             residualChildEvidenceStatus = $residualChildEvidenceStatus
             residualChildEvidenceErrorType = $residualChildEvidenceErrorType
@@ -1001,8 +1091,16 @@ function New-ProcessPhaseResult {
         stdoutPolluted = -not $protocolValid -or $unexpectedText.Count -gt 0
         stderrPolluted = -not $stderrClean
         unexpectedOutput = $unexpectedText
+        observedChildCount = $ProcessResult.observedChildren.Count
+        observedChildren = @($ProcessResult.observedChildren)
+        transientChildCount = $ProcessResult.transientChildren.Count
+        transientChildren = @($ProcessResult.transientChildren)
         residualChildCount = $ProcessResult.residualChildren.Count
         residualChildren = @($ProcessResult.residualChildren)
+        childProcessObservationSampleCount =
+            $ProcessResult.childProcessObservationSampleCount
+        childProcessObservationDurationMs =
+            $ProcessResult.childProcessObservationDurationMs
         residualChildEvidence = @($ProcessResult.residualChildEvidence)
         residualChildEvidenceStatus = $ProcessResult.residualChildEvidenceStatus
         residualChildEvidenceErrorType = $ProcessResult.residualChildEvidenceErrorType
@@ -1188,8 +1286,16 @@ if ($ValidateForensics) {
         stdoutPolluted = $selfTestPhase.stdoutPolluted
         stderrPolluted = $selfTestPhase.stderrPolluted
         unexpectedOutput = $selfTestPhase.unexpectedOutput
+        observedChildCount = $selfTestPhase.observedChildCount
+        observedChildren = @($selfTestPhase.observedChildren)
+        transientChildCount = $selfTestPhase.transientChildCount
+        transientChildren = @($selfTestPhase.transientChildren)
         residualChildCount = $selfTestPhase.residualChildCount
         residualChildren = @($selfTestPhase.residualChildren)
+        childProcessObservationSampleCount =
+            $selfTestPhase.childProcessObservationSampleCount
+        childProcessObservationDurationMs =
+            $selfTestPhase.childProcessObservationDurationMs
         residualChildEvidence = @($selfTestPhase.residualChildEvidence)
         residualChildEvidenceStatus = $selfTestPhase.residualChildEvidenceStatus
         residualChildEvidenceErrorType = $selfTestPhase.residualChildEvidenceErrorType
@@ -1212,6 +1318,8 @@ if ($ValidateForensics) {
         $residualChildSelfTest.executed = $true
         $residualProbe = $null
         $residualProbePhase = $null
+        $transientProbe = $null
+        $transientProbePhase = $null
         $observedResidualChildren = @()
         try {
             $residualProbe = Invoke-IsolatedProcess `
@@ -1253,6 +1361,41 @@ if ($ValidateForensics) {
             $residualChildSelfTest.failureClassified =
                 -not $residualProbePhase.success -and
                 $residualProbePhase.failureType -eq "ResidualChildProcess"
+
+            $transientProbe = Invoke-IsolatedProcess `
+                -AssemblyName "Gate.TransientChild" `
+                -Iteration 1 `
+                -Phase "transient-child-probe" `
+                -FileName "dotnet" `
+                -Arguments @(
+                    $probeAssembly,
+                    "--spawn-residual-child-ms",
+                    "250"
+                )
+            $transientProbePhase = New-ProcessPhaseResult `
+                -ProcessResult $transientProbe
+            $transientPayload = $transientProbe.stdout |
+                ConvertFrom-Json -ErrorAction Stop
+            $expectedTransientProcessId = [int]$transientPayload.ChildProcessId
+            $matchingTransientObservation = @(
+                $transientProbe.observedChildren |
+                    Where-Object processId -eq $expectedTransientProcessId
+            )
+            $matchingTransientDrain = @(
+                $transientProbe.transientChildren |
+                    Where-Object processId -eq $expectedTransientProcessId
+            )
+            $matchingTransientResidual = @(
+                $transientProbe.residualChildren |
+                    Where-Object processId -eq $expectedTransientProcessId
+            )
+            $residualChildSelfTest.transientChildObserved =
+                $matchingTransientObservation.Count -eq 1
+            $residualChildSelfTest.transientChildDrained =
+                $matchingTransientDrain.Count -eq 1 -and
+                $matchingTransientResidual.Count -eq 0
+            $residualChildSelfTest.transientPhasePassed =
+                $transientProbePhase.success
             $redactionSample = (
                 "$repositoryRoot https://example.invalid/private " +
                 "SESSDATA=example-cookie-value " +
@@ -1328,6 +1471,9 @@ if ($ValidateForensics) {
             $residualChildSelfTest.identityCaptured -and
             $residualChildSelfTest.evidenceManifestWritten -and
             $residualChildSelfTest.failureClassified -and
+            $residualChildSelfTest.transientChildObserved -and
+            $residualChildSelfTest.transientChildDrained -and
+            $residualChildSelfTest.transientPhasePassed -and
             $residualChildSelfTest.cleanupCompleted -and
             $residualChildSelfTest.redactionValidated -and
             $null -eq $residualChildSelfTest.errorType
@@ -1363,8 +1509,14 @@ if ($ValidateForensics) {
             stdoutPolluted = $false
             stderrPolluted = $false
             unexpectedOutput = @()
+            observedChildCount = 0
+            observedChildren = @()
+            transientChildCount = 0
+            transientChildren = @()
             residualChildCount = 0
             residualChildren = @()
+            childProcessObservationSampleCount = 0
+            childProcessObservationDurationMs = 0.0
             residualChildEvidence = @(
                 if ($null -ne $residualProbe) {
                     $residualProbe.residualChildEvidence
@@ -1568,8 +1720,14 @@ if ($ValidateForensics) {
             stdoutPolluted = $false
             stderrPolluted = $false
             unexpectedOutput = @()
+            observedChildCount = 0
+            observedChildren = @()
+            transientChildCount = 0
+            transientChildren = @()
             residualChildCount = 0
             residualChildren = @()
+            childProcessObservationSampleCount = 0
+            childProcessObservationDurationMs = 0.0
             residualChildEvidence = @()
             residualChildEvidenceStatus = "not-triggered"
             residualChildEvidenceErrorType = $null
@@ -1698,8 +1856,14 @@ foreach ($testProject in $testProjects) {
             stdoutPolluted = $false
             stderrPolluted = $false
             unexpectedOutput = @()
+            observedChildCount = 0
+            observedChildren = @()
+            transientChildCount = 0
+            transientChildren = @()
             residualChildCount = 0
             residualChildren = @()
+            childProcessObservationSampleCount = 0
+            childProcessObservationDurationMs = 0.0
             residualChildEvidence = @()
             residualChildEvidenceStatus = "not-triggered"
             residualChildEvidenceErrorType = $null
@@ -1732,8 +1896,16 @@ foreach ($testProject in $testProjects) {
             stdoutPolluted = $false
             stderrPolluted = $false
             unexpectedOutput = @()
+            observedChildCount = $execution.observedChildren.Count
+            observedChildren = @($execution.observedChildren)
+            transientChildCount = $execution.transientChildren.Count
+            transientChildren = @($execution.transientChildren)
             residualChildCount = $execution.residualChildren.Count
             residualChildren = @($execution.residualChildren)
+            childProcessObservationSampleCount =
+                $execution.childProcessObservationSampleCount
+            childProcessObservationDurationMs =
+                $execution.childProcessObservationDurationMs
             residualChildEvidence = @($execution.residualChildEvidence)
             residualChildEvidenceStatus = $execution.residualChildEvidenceStatus
             residualChildEvidenceErrorType = $execution.residualChildEvidenceErrorType
@@ -1763,6 +1935,13 @@ $slowEvidenceMissingCount = $slowResults.Count - $slowEvidenceCapturedCount
 $residualChildResults = @(
     $phaseResults | Where-Object residualChildCount -gt 0
 )
+$transientChildResults = @(
+    $phaseResults | Where-Object transientChildCount -gt 0
+)
+$transientChildObservedCount = [int](
+    $transientChildResults |
+        Measure-Object -Property transientChildCount -Sum
+).Sum
 $residualChildObservedCount = [int](
     $residualChildResults |
         Measure-Object -Property residualChildCount -Sum
@@ -1802,6 +1981,9 @@ $report = [ordered]@{
     phaseTimeoutSeconds = $PhaseTimeoutSeconds
     slowPhaseThresholdSeconds = $SlowPhaseThresholdSeconds
     slowEvidenceCaptureLeadMilliseconds = $slowEvidenceCaptureLeadMilliseconds
+    residualChildQuiescenceMilliseconds =
+        $residualChildQuiescenceMilliseconds
+    residualChildPollMilliseconds = $residualChildPollMilliseconds
     forensicsSelfTestCaptureLeadValidated =
         $forensicsSelfTestCaptureLeadValidated
     exitThresholdSeconds = $ExitThresholdSeconds
@@ -1823,6 +2005,8 @@ $report = [ordered]@{
     slowEvidenceMissingCount = $slowEvidenceMissingCount
     residualChildPhaseCount = $residualChildResults.Count
     residualChildObservedCount = $residualChildObservedCount
+    transientChildPhaseCount = $transientChildResults.Count
+    transientChildObservedCount = $transientChildObservedCount
     residualChildEvidenceCapturedCount = $residualChildEvidenceCapturedCount
     residualChildEvidenceMissingCount = $residualChildEvidenceMissingCount
     diagnosticCaptureTotalMs = $diagnosticCaptureTotalMs
@@ -1873,6 +2057,10 @@ $markdown.Add(
     "$($residualChildResults.Count) phase(s); " +
     "$residualChildEvidenceCapturedCount evidence manifest(s), " +
     "$residualChildEvidenceMissingCount missing")
+$markdown.Add(
+    "- Transient children: $transientChildObservedCount drained within " +
+    "$residualChildQuiescenceMilliseconds ms across " +
+    "$($transientChildResults.Count) phase(s)")
 $markdown.Add("- Diagnostic capture wall time: $diagnosticCaptureTotalMs ms")
 $markdown.Add(
     "- Forensics pre-threshold capture self-test: " +
@@ -1898,6 +2086,9 @@ $markdown.Add(
     "identity=$($residualChildSelfTest.identityCaptured), " +
     "evidence=$($residualChildSelfTest.evidenceManifestWritten), " +
     "classified=$($residualChildSelfTest.failureClassified), " +
+    "transientObserved=$($residualChildSelfTest.transientChildObserved), " +
+    "transientDrained=$($residualChildSelfTest.transientChildDrained), " +
+    "transientPassed=$($residualChildSelfTest.transientPhasePassed), " +
     "cleanup=$($residualChildSelfTest.cleanupCompleted), " +
     "redaction=$($residualChildSelfTest.redactionValidated), " +
     "error=$($residualChildSelfTest.errorType)")

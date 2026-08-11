@@ -66,10 +66,12 @@ Residual-child failures are independently fail-closed. Every failed phase must
 preserve a sanitized `residualChildren` identity list plus a
 `residual-children.json` manifest; live managed children also receive thread,
 tree and managed-stack evidence. `-ValidateForensics` must prove this path by
-creating a controlled residual child, observing its identity, writing evidence,
-classifying the phase as `ResidualChildProcess` and cleaning the synthetic tree
-by PID plus creation time. It must also prove path, URL, cookie and secret
-redaction. `residualChildSelfTestPassed` is only the summary;
+observing both a short-lived child that drains inside the bounded quiescence
+window and a persistent child that remains blocking. The persistent path must
+write evidence, classify the phase as `ResidualChildProcess` and clean the
+synthetic tree by PID plus creation time. No process-name allowlist is permitted.
+The self-test must also prove path, URL, cookie and secret redaction.
+`residualChildSelfTestPassed` is only the summary;
 the detailed `residualChildSelfTest` fields are the contract.
 
 PR #116 merged the final lifecycle proof consistency fix into `main` at

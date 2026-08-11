@@ -1199,12 +1199,16 @@ inbound:
 outbound:
   - ui.main-window
 contracts:
+  - `AppRoute` is the sole routed-feature identity authority; visual order, integer IDs, titles and legacy `Tag` values cannot define a route.
+  - `AvaloniaNavigationService.GetViewModelType` owns route-to-ViewModel mapping, `DesktopComposition` owns production registrations, and `App.axaml` owns ViewModel-to-View templates. These are separate responsibilities whose completeness must be proven rather than merged into a global registry.
   - `Navigate` creates one forward entry and invokes navigation lifecycle callbacks without string route names or framework service location.
   - `GoBack` removes and disposes the current entry, restores the exact previous ViewModel instance, and never appends another entry.
   - Main-region history is bounded; nested regions replace and dispose content instead of accumulating back history.
   - A ViewModel calls its typed `ParentRoute` only after `TryNavigateBack()` reports that no previous entry exists.
   - Publication navigation carries MID, selected type, and zones in `PublicationNavigationPayload`; raw dictionaries and UI-model payloads are prohibited on this route.
 hazards:
+  - Several Shell ViewModels still translate numeric list positions or payload values into `AppRoute`, duplicating routed-feature identity across menu metadata and switches. The deferred migration is tracked in `docs/exec-plans/desktop-feature-locality.md`.
+  - The current route test proves route-to-ViewModel existence and uniqueness, while Host/XAML smoke resolves only representative routes. All-route DI and View-template completeness do not yet have a direct fail-closed Gate.
   - Calling parent navigation directly from a back command creates duplicate A/B instances and an ever-growing forward journal.
   - Sharing mutable icon state between page instances can make a restored page inherit another page's theme mutation.
 tests:
@@ -2546,7 +2550,8 @@ contracts:
   - Unexpected stdout/stderr, timeout, residual child process, missing teardown marker or failed process exit blocks the gate.
   - Slow and timed-out Windows processes preserve thread state, wait reason, process tree and a managed stack when `dotnet-stack` is available.
   - Residual children preserve PID, parent PID, process name, creation time, tree depth and a redacted command line in the phase result plus `residual-children.json`; live managed children also receive thread/tree/stack evidence.
-  - Residual evidence never changes failure into success and does not add a grace period. `ValidateForensics` creates a synthetic residual process tree and fails unless identity, manifest, `ResidualChildProcess` classification and PID-plus-creation-time cleanup all succeed.
+  - Child processes are classified by bounded liveness, not executable name: identity observed after parent exit is transient when it drains inside the 500 ms quiescence window and residual only when the same PID-plus-creation-time identity survives the boundary. Confirmed residual evidence never changes failure into success.
+  - `ValidateForensics` creates both transient and persistent synthetic children. It fails unless the transient identity is observed and drains without failing the phase, while the persistent identity produces a manifest, `ResidualChildProcess` classification and PID-plus-creation-time cleanup.
   - `ValidateForensics` proves both marker-aware managed-stack capture and exclusive marker-lock recovery; formal Windows profiles fail closed unless the detailed self-test reports execution, positive contention count, recovery, parsing, null error and success, and mutation checks reject inconsistent nominally-passed states.
   - Marker self-test phase status, report summary and formal gate consume one complete proof result rather than re-expanding equivalent predicates.
   - Every scanned lifecycle mechanism, including external process creation, maps to a declared owner with explicit start, stop and teardown behavior.

@@ -56,6 +56,10 @@ public sealed class AssemblyLifecycleArchitectureTests
             "residualChildEvidenceErrorType",
             "residualChildEvidenceCapturedCount",
             "residualChildEvidenceMissingCount",
+            "residualChildQuiescenceMilliseconds",
+            "transientChildCount",
+            "transientChildren",
+            "transientChildObservedCount",
             "failureType",
             "errorType",
             "workingTreeDirty",
@@ -119,6 +123,7 @@ public sealed class AssemblyLifecycleArchitectureTests
         [
             "Protect-ProcessDiagnosticText",
             "Save-ResidualChildEvidence",
+            "Wait-ResidualProcessTree",
             "residual-children.json",
             "failureType -eq \"ResidualChildProcess\"",
             "residualChildSelfTestPassed",
@@ -127,10 +132,15 @@ public sealed class AssemblyLifecycleArchitectureTests
             "identityCaptured",
             "evidenceManifestWritten",
             "failureClassified",
+            "transientChildObserved",
+            "transientChildDrained",
+            "transientPhasePassed",
             "cleanupCompleted",
             "redactionValidated",
             "$residualChildSelfTestContractPassed",
             "$residualChildSelfTestComplete",
+            "$residualChildQuiescenceMilliseconds = 500",
+            "$residualChildPollMilliseconds = 25",
             "\"--spawn-residual-child-ms\"",
             "$childProcess.Kill($true)",
             "$childProcess.WaitForExit(5000)"
@@ -144,6 +154,8 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.Contains("--spawn-residual-child-ms", probe, StringComparison.Ordinal);
         Assert.Contains("--child-hold-ms", probe, StringComparison.Ordinal);
         Assert.Contains("UseShellExecute = true", probe, StringComparison.Ordinal);
+        Assert.DoesNotContain("conhost", gate, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("processName -eq", gate, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             "residualChildCount -eq 0 -or",
             gate,

@@ -1,10 +1,13 @@
 # DownKyi Live Plan
 
 Status: active
-Last updated: 2026-08-08
+Last updated: 2026-08-11
 Current work item: v1.1.1 item 2, PR #120 scope cleanup and runtime correctness
 Current branch: `pr-120-review-fixes`
-Current base: `origin/main` after merged PR #122
+Current remote branch: `perf/watch-later-list-virtualization`
+Current remote head: `c9fb114c2039c2f7d970c75f60fbef07971de3d6`
+Current local candidate: `ee3382b755a254f75bafde78ec3c192db6ae0e79`
+Current base: `origin/main` at `6e1e1d79b9aa10c06f534a94a845b4707d9766ba`
 
 This file contains only unfinished, blocked or integration-pending work. Detailed
 contracts live in `docs/exec-plans/`; stable completed facts belong in architecture,
@@ -161,6 +164,20 @@ Detailed contract: `docs/exec-plans/v1.1.1-dialog-and-startup.md`.
 1. Bangumi `ep_id` propagation and playback response contract.
 2. Remaining P1, merge-blocking or core runtime review debt.
 3. Final release rehearsal, cross-platform packages and v1.1.1 publication.
+
+## Deferred After v1.1.1
+
+Desktop feature-locality work is accepted but must not enter the v1.1.1 product
+scope. Its design is `docs/design-docs/desktop-feature-locality.md`; baseline,
+unknowns, acceptance, rollback and the mandatory PR dependency are in
+`docs/exec-plans/desktop-feature-locality.md`.
+
+```text
+PR A: route / manifest completeness gate
+  -> PR B: simple Shell descriptor migration
+  -> PR C: stateful Shell migration
+  -> PR D: proven legacy cleanup + architecture ratchet
+```
 
 ## Release Blockers
 
