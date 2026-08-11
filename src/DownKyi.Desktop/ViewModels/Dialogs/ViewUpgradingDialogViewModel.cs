@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.ViewModels.Dialogs;
 
-internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDisposable
+internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IAsyncDisposable
 {
     public const string Tag = "DialogLoading";
     private readonly DownloadListState _downloadLists;
@@ -19,6 +19,8 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
     private readonly ILogger<ViewUpgradingDialogViewModel> _logger;
     private readonly ILegacyUpgradeCoordinator _upgradeCoordinator;
     private CancellationTokenSource? _upgradeCancellation;
+    private Task? _upgradeTask;
+    private Task? _stopTask;
 
     private double _percent;
 
@@ -65,15 +67,20 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
 
     public override void OnDialogOpened(AppDialogRequest request)
     {
-        CancelUpgrade();
+        if (_upgradeCancellation is not null)
+        {
+            throw new InvalidOperationException("Legacy data migration is already running.");
+        }
+
+        _stopTask = null;
         _upgradeCancellation = new CancellationTokenSource();
-        _ = UpgradeAsync(_upgradeCancellation.Token);
+        _upgradeTask = UpgradeAsync(_upgradeCancellation.Token);
     }
 
-    public override void OnDialogClosed()
+    public override async Task OnDialogClosedAsync()
     {
-        CancelUpgrade();
-        base.OnDialogClosed();
+        await StopUpgradeAsync().ConfigureAwait(true);
+        await base.OnDialogClosedAsync().ConfigureAwait(true);
     }
 
     private async Task UpgradeAsync(CancellationToken cancellationToken)
@@ -134,16 +141,45 @@ internal sealed class ViewUpgradingDialogViewModel : BaseDialogViewModel, IDispo
         }
     }
 
-    private void CancelUpgrade()
+    private Task StopUpgradeAsync()
     {
-        _upgradeCancellation?.Cancel();
-        _upgradeCancellation?.Dispose();
-        _upgradeCancellation = null;
+        return _stopTask ??= StopUpgradeCoreAsync();
     }
 
-    public void Dispose()
+    private async Task StopUpgradeCoreAsync()
     {
-        CancelUpgrade();
+        var cancellation = _upgradeCancellation;
+        var upgradeTask = _upgradeTask;
+        if (cancellation is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.WhenAll(
+                    cancellation.CancelAsync(),
+                    upgradeTask ?? Task.CompletedTask)
+                .ConfigureAwait(true);
+        }
+        finally
+        {
+            cancellation.Dispose();
+            if (ReferenceEquals(_upgradeCancellation, cancellation))
+            {
+                _upgradeCancellation = null;
+                _upgradeTask = null;
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_upgradeCancellation is not null)
+        {
+            await StopUpgradeAsync().ConfigureAwait(true);
+        }
+
         GC.SuppressFinalize(this);
     }
 }

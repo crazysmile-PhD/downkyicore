@@ -633,7 +633,7 @@ contracts:
   - Clipboard detection must be debounced and cancellation-aware.
   - Clipboard polling comes from the injected desktop monitor; the ViewModel cannot construct a listener from a global MainWindow.
   - Automatic update checks carry the window lifetime token; closing the window cancels network work and expected shutdown cancellation is not reported as an error.
-  - Startup dialogs have one observed task: legacy-data migration completes or cancels before the automatic update check can issue a request or open a second modal window.
+  - Startup dialogs have one observed task: the dialog service cancels and awaits legacy-data migration termination before it reports the modal closed, so the automatic update check cannot overlap migration or consume an unobserved migration fault.
   - The lifetime token is captured once while its source is valid. Cancellation after the legacy dialog stops the sequence before update checking; startup work cannot read the token source after `Dispose`.
   - Update failures use the injected typed logger and never include a repository response body or request URL.
   - Shell notifications, dialogs, active-view lookup, startup routing, and clipboard URL routing use framework-neutral Desktop contracts; MainWindowViewModel cannot reference Prism events, regions, dialog types, or route tags.
@@ -1173,7 +1173,7 @@ contracts:
   - Non-dialog ViewModels cannot reference EventAggregator, RegionManager, legacy dialog services, navigation/message events, or the string-route helper.
   - The Avalonia dialog adapter marshals calls to the UI thread; download/add services await only `IAppDialogService` and cannot dispatch framework work themselves.
   - `DialogWindow` is the single borderless, non-resizable custom-chrome host. Each of its six dialog contents marks exactly one custom title region with the Avalonia `TitleBar` role so the window remains draggable without restoring system chrome. Caption buttons inside that region use the `User` role so drag hit testing cannot consume their input.
-  - The legacy migration dialog exposes the existing close command as a visible cancellation path, and its copy explicitly states that closing cancels the current migration attempt.
+  - The legacy migration dialog exposes the existing close command as a visible cancellation path. Its async close lifecycle owns cancellation, task termination, fault observation, and disposal before `IAppDialogService.ShowAsync` returns.
 hazards:
   - Bypassing typed routes/dialog results with raw view construction would reintroduce untestable UI ownership and history drift.
 tests:
@@ -2961,7 +2961,8 @@ test.legacy-upgrade:
     - tests/DownKyi.Tests/LegacyUpgradeViewModelTests.cs
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
   guards:
-    - closing the upgrade dialog cancels an active migration
+    - closing the upgrade dialog cancels and awaits an active migration before startup advances
+    - late migration faults are observed by the dialog lifecycle instead of becoming fire-and-forget failures
     - successful migration replaces the existing downloaded projection and exposes restart state
     - migration, storage, worker, and dispatcher implementation cannot return to the dialog ViewModel
     - legacy database ownership is scoped and migration diagnostics do not use Console

@@ -393,10 +393,11 @@ public sealed class UiSmokeTests
                 new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
             var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logProvider));
             var lifecycle = new ThrowingApplicationLifecycle();
+            IHost? host = null;
 
             try
             {
-                using var host = DownKyiHost.Create(services =>
+                host = DownKyiHost.Create(services =>
                 {
                     services.AddDownKyiDesktop(loggerFactory, logProvider);
                     services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
@@ -419,6 +420,11 @@ public sealed class UiSmokeTests
             }
             finally
             {
+                if (host is not null)
+                {
+                    await DisposeHostAsync(host).ConfigureAwait(true);
+                }
+
                 loggerFactory.Dispose();
                 await logProvider.DisposeAsync().ConfigureAwait(true);
                 await settingsStore.DisposeAsync().ConfigureAwait(true);

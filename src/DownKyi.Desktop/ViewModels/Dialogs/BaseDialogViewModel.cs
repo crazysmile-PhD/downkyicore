@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DownKyi.Application.Desktop;
@@ -126,8 +127,9 @@ internal class BaseDialogViewModel : ObservableObject
         return true;
     }
 
-    public virtual void OnDialogClosed()
+    public virtual Task OnDialogClosedAsync()
     {
+        return Task.CompletedTask;
     }
 
     public virtual void OnDialogOpened(AppDialogRequest request)

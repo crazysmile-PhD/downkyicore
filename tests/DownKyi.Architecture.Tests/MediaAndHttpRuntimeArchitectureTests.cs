@@ -755,15 +755,31 @@ public sealed class MediaAndHttpRuntimeArchitectureTests
             "Services",
             "Migration",
             "LegacyUpgradeCoordinator.cs"));
+        var dialogServiceSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "src", "DownKyi.Desktop",
+            "Platform",
+            "AvaloniaDialogService.cs"));
 
         Assert.Contains("ILegacyUpgradeCoordinator", viewModelSource, StringComparison.Ordinal);
         Assert.Contains("CancellationTokenSource", viewModelSource, StringComparison.Ordinal);
-        Assert.Contains("CancelUpgrade();", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("_upgradeTask = UpgradeAsync", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("Task.WhenAll", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("cancellation.CancelAsync()", viewModelSource, StringComparison.Ordinal);
+        Assert.Contains("override async Task OnDialogClosedAsync()", viewModelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("_ = UpgradeAsync", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Run", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("NrbfDecoder", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("SqliteDatabase", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ApplicationStorage", viewModelSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Dispatcher.UIThread", viewModelSource, StringComparison.Ordinal);
+
+        Assert.Contains("await CompleteViewModelLifecycleAsync(viewModel)", dialogServiceSource,
+            StringComparison.Ordinal);
+        Assert.Contains("await viewModel.OnDialogClosedAsync()", dialogServiceSource,
+            StringComparison.Ordinal);
+        Assert.Contains("await asyncDisposable.DisposeAsync()", dialogServiceSource,
+            StringComparison.Ordinal);
 
         Assert.Contains("Task.Run", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("CancellationToken", coordinatorSource, StringComparison.Ordinal);

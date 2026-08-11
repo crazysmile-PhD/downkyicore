@@ -23,7 +23,10 @@
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.ApplicationLogProviderTests" },
         { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.AriaServerProcessTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadOrchestratorTests" },
-        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.AriaRuntimeClientRegistryTests" }
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.AriaRuntimeClientRegistryTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DialogViewModelLifecycleTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.LegacyUpgradeViewModelTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.StartupDialogOrderingTests" }
       ]
     },
     {
@@ -127,7 +130,9 @@
       "testClasses": [
         { "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj", "class": "DownKyi.Desktop.Tests.UiSmokeTests" },
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.ApplicationLogProviderTests" },
-        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests" }
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DialogViewModelLifecycleTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.LegacyUpgradeViewModelTests" }
       ]
     }
   ],

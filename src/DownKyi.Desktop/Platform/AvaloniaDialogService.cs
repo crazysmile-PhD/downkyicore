@@ -92,8 +92,24 @@ internal sealed class AvaloniaDialogService : IAppDialogService
         {
             window.Closing -= OnClosing;
             viewModel.CloseRequested -= OnCloseRequested;
-            viewModel.OnDialogClosed();
-            if (viewModel is IDisposable disposable)
+            await CompleteViewModelLifecycleAsync(viewModel).ConfigureAwait(true);
+        }
+    }
+
+    internal static async Task CompleteViewModelLifecycleAsync(BaseDialogViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        try
+        {
+            await viewModel.OnDialogClosedAsync().ConfigureAwait(true);
+        }
+        finally
+        {
+            if (viewModel is IAsyncDisposable asyncDisposable)
+            {
+                await asyncDisposable.DisposeAsync().ConfigureAwait(true);
+            }
+            else if (viewModel is IDisposable disposable)
             {
                 disposable.Dispose();
             }

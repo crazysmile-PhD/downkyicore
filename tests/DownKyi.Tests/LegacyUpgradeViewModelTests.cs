@@ -12,27 +12,39 @@ namespace DownKyi.Tests;
 public sealed class LegacyUpgradeViewModelTests
 {
     [Fact]
-    public async Task ClosingDialogCancelsActiveMigration()
+    public async Task ClosingDialogAwaitsActiveMigrationTermination()
     {
         var coordinator = new BlockingLegacyUpgradeCoordinator();
-        using var viewModel = new ViewUpgradingDialogViewModel(
+        var viewModel = new ViewUpgradingDialogViewModel(
             coordinator,
             new DownloadListState(),
             new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
+        await using var viewModelScope = viewModel.ConfigureAwait(true);
 
         Assert.Equal("数据迁移中，关闭此窗口将取消迁移", viewModel.Message);
 
         viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
         await coordinator.Started.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
 
-        viewModel.OnDialogClosed();
+        var closeTask = viewModel.OnDialogClosedAsync();
+        await coordinator.CancellationObserved.Task
+            .WaitAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        try
+        {
+            Assert.False(closeTask.IsCompleted);
+        }
+        finally
+        {
+            coordinator.AllowTermination.TrySetResult();
+        }
 
-        await coordinator.Canceled.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+        await closeTask.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
     }
 
     [Fact]
-    public void CompletedMigrationReplacesDownloadedProjection()
+    public async Task CompletedMigrationReplacesDownloadedProjection()
     {
         var item = new DownloadedItem
         {
@@ -40,24 +52,52 @@ public sealed class LegacyUpgradeViewModelTests
             Downloaded = new Downloaded { Id = "migrated" }
         };
         var state = new DownloadListState();
-        using var viewModel = new ViewUpgradingDialogViewModel(
+        var viewModel = new ViewUpgradingDialogViewModel(
             new CompletedLegacyUpgradeCoordinator(item),
             state,
             new StubApplicationLifecycle(),
             NullLogger<ViewUpgradingDialogViewModel>.Instance);
+        await using var viewModelScope = viewModel.ConfigureAwait(true);
 
         viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
 
         Assert.Same(item, Assert.Single(state.Downloaded));
         Assert.Equal(100, viewModel.Percent);
         Assert.True(viewModel.RestartVisible);
+
+        await viewModel.OnDialogClosedAsync().ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task ClosingDialogObservesUnexpectedMigrationFailure()
+    {
+        var coordinator = new FaultingLegacyUpgradeCoordinator();
+        var viewModel = new ViewUpgradingDialogViewModel(
+            coordinator,
+            new DownloadListState(),
+            new StubApplicationLifecycle(),
+            NullLogger<ViewUpgradingDialogViewModel>.Instance);
+        await using var viewModelScope = viewModel.ConfigureAwait(true);
+
+        viewModel.OnDialogOpened(new AppDialogRequest(AppDialog.LegacyUpgrade));
+        await coordinator.Started.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+        coordinator.Fail.TrySetResult();
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(
+            () => viewModel.OnDialogClosedAsync()).ConfigureAwait(true);
+
+        Assert.Equal("Unexpected migration failure.", exception.Message);
     }
 
     private sealed class BlockingLegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public TaskCompletionSource Canceled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CancellationObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowTermination { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public async Task<LegacyUpgradeResult> UpgradeAsync(
             IProgress<LegacyUpgradeProgress> progress,
@@ -70,11 +110,28 @@ public sealed class LegacyUpgradeViewModelTests
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                Canceled.TrySetResult();
+                CancellationObserved.TrySetResult();
+                await AllowTermination.Task.ConfigureAwait(false);
                 throw;
             }
 
             throw new InvalidOperationException("The blocking migration unexpectedly completed.");
+        }
+    }
+
+    private sealed class FaultingLegacyUpgradeCoordinator : ILegacyUpgradeCoordinator
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Fail { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<LegacyUpgradeResult> UpgradeAsync(
+            IProgress<LegacyUpgradeProgress> progress,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            await Fail.Task.ConfigureAwait(false);
+            throw new NotSupportedException("Unexpected migration failure.");
         }
     }
 
