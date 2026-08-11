@@ -6,7 +6,7 @@ Current work item: v1.1.1 item 2, PR #120 scope cleanup and runtime correctness
 Current branch: `pr-120-review-fixes`
 Current remote branch: `perf/watch-later-list-virtualization`
 Current remote head: `c9fb114c2039c2f7d970c75f60fbef07971de3d6`
-Current local candidate: `ee3382b755a254f75bafde78ec3c192db6ae0e79`
+Current local integration candidate: `a546a566543fa1a9f0ca4a0a9330101750ec9565`
 Current base: `origin/main` at `6e1e1d79b9aa10c06f534a94a845b4707d9766ba`
 
 This file contains only unfinished, blocked or integration-pending work. Detailed
