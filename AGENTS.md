@@ -18,6 +18,12 @@ change.
 - Product PRs must not edit `docs/refactoring-live-plan.md` to record Current
   Item, Next Item, branch, SHA, CI state or progress. That file owns stable
   release and verification policy only.
+- Scope containment does not require branch dependency containment. Keep
+  separately reviewable root causes as separate commits or evidence, but stop
+  extending an unmerged release stack after roughly two or three dependency
+  layers, or once it materially diverges from `main`. Rebuild one clean
+  current-main integration branch and validate its exact head; do not invent a
+  registry, label system or workflow framework to manage stack growth.
 
 ## Progressive Disclosure Map
 
