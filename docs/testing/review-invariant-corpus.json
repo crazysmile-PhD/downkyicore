@@ -94,6 +94,14 @@
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.ApplicationLogProviderTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests" }
       ]
+    },
+    {
+      "id": "durl-transfer-identity",
+      "historicalRoots": ["CI adversarial validation"],
+      "guards": "DURL transfer descriptors retain their lowest explicit order, stable identity, media extension, and download-directory semantics regardless of presentation order.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DurlDownloadIdentityTests" }
+      ]
     }
   ],
   "mainRehearsalEvidence": [

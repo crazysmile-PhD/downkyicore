@@ -17,6 +17,7 @@
 - `assembly-lifecycle-owners.json`
 - `review-invariant-policy.md`
 - `review-invariant-corpus.json`
+- `ci-adversarial-validation.md`
 - `../maintenance.md`
 - `../operations/verification-and-rollback.md`
 

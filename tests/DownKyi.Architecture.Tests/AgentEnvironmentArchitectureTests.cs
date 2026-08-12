@@ -3,6 +3,17 @@ namespace DownKyi.Architecture.Tests;
 public sealed class AgentEnvironmentArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly string FullSuiteWorkflowStep = string.Join("\n", new[]
+    {
+        "      - name: Test",
+        "        shell: pwsh",
+        "        run: >",
+        "          ./script/test-solution.ps1",
+        "          -Configuration Release",
+        "          -NoRestore",
+        "          -NoBuild",
+        "          -ResultsDirectory ./TestResults"
+    });
 
     [Fact]
     public void RepositoryStructureSeparatesSourceTestsDocumentationConfigurationAndScripts()
@@ -60,7 +71,8 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("Enforce architecture policy", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("./script/test-solution.ps1", qualityWorkflow, StringComparison.Ordinal);
+        var buildTestJob = ReadWorkflowJob(qualityWorkflow, "build-test");
+        Assert.Contains(FullSuiteWorkflowStep, buildTestJob, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--deprecated", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("LogFileName=test-results-${{ matrix.os }}.trx", qualityWorkflow, StringComparison.Ordinal);
@@ -217,6 +229,26 @@ public sealed class AgentEnvironmentArchitectureTests
     private static string Read(string relativePath)
     {
         return File.ReadAllText(Path.Combine(RepositoryRoot, PathFromRepository(relativePath)));
+    }
+
+    private static string ReadWorkflowJob(string workflow, string jobId)
+    {
+        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var jobStart = Array.FindIndex(lines, line => string.Equals(line, $"  {jobId}:", StringComparison.Ordinal));
+        Assert.True(jobStart >= 0, $"Workflow job '{jobId}' was not found.");
+
+        var jobEnd = lines.Length;
+        for (var index = jobStart + 1; index < lines.Length; index++)
+        {
+            if (lines[index].StartsWith("  ", StringComparison.Ordinal) &&
+                !lines[index].StartsWith("    ", StringComparison.Ordinal))
+            {
+                jobEnd = index;
+                break;
+            }
+        }
+
+        return string.Join("\n", lines.Skip(jobStart).Take(jobEnd - jobStart));
     }
 
     private static string PathFromRepository(string path)

@@ -1,5 +1,12 @@
 # Verification And Rollback
 
+## Prerequisites
+
+Use .NET 10 SDK and PowerShell 7 or newer (`pwsh`) for this procedure. Windows
+PowerShell 5.1 is not a supported substitute because repository scripts use
+.NET 10 APIs unavailable to it. Ensure a NuGet source is enabled before
+restore; the normal public source is `https://api.nuget.org/v3/index.json`.
+
 ## 快速狀態
 
 ```powershell

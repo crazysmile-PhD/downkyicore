@@ -119,7 +119,10 @@ flowchart TD
 
 ## 开发者入口
 
-需要 .NET 10 SDK。
+需要 .NET 10 SDK 與 PowerShell 7 或更新版本（`pwsh`）。Windows PowerShell
+5.1 不支援 repository script 使用的 .NET 10 path APIs；不要用
+`powershell.exe` 取代 `pwsh`。還原需要已啟用的 NuGet source（一般為
+`https://api.nuget.org/v3/index.json`）。
 
 开始修改前先阅读：
 
