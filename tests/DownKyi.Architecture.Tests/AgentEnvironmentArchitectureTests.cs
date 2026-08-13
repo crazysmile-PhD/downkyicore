@@ -91,7 +91,22 @@ public sealed class AgentEnvironmentArchitectureTests
     [Fact]
     public void FullSolutionRunnerDiscoversEveryRepositoryTestProject()
     {
-        var expectedProjects = Directory
+        Assert.Equal(
+            GetRepositoryTestProjects(),
+            ReadTestSolutionProjects("-ListProjects"));
+    }
+
+    [Fact]
+    public void FullSolutionRunnerExecutionProbeCoversEveryDiscoveredProject()
+    {
+        Assert.Equal(
+            GetRepositoryTestProjects(),
+            ReadTestSolutionProjects("-ProbeExecution"));
+    }
+
+    private static string[] GetRepositoryTestProjects()
+    {
+        return Directory
             .GetFiles(
                 Path.Combine(RepositoryRoot, "tests"),
                 "*.Tests.csproj",
@@ -99,7 +114,10 @@ public sealed class AgentEnvironmentArchitectureTests
             .Select(path => NormalizeRelativePath(Path.GetRelativePath(RepositoryRoot, path)))
             .Order(StringComparer.Ordinal)
             .ToArray();
+    }
 
+    private static string[] ReadTestSolutionProjects(string mode)
+    {
         using var process = Process.Start(new ProcessStartInfo
         {
             FileName = "pwsh",
@@ -110,7 +128,7 @@ public sealed class AgentEnvironmentArchitectureTests
                 "-NonInteractive",
                 "-File",
                 Path.Combine(RepositoryRoot, "script", "test-solution.ps1"),
-                "-ListProjects"
+                mode
             },
             WorkingDirectory = RepositoryRoot,
             RedirectStandardOutput = true,
@@ -129,16 +147,16 @@ public sealed class AgentEnvironmentArchitectureTests
 
         var standardOutput = process.StandardOutput.ReadToEnd();
         var standardError = process.StandardError.ReadToEnd();
-        Assert.True(exited, "Full-solution project discovery timed out.");
+        Assert.True(exited, $"Full-solution runner mode '{mode}' timed out.");
         Assert.True(
             process.ExitCode == 0,
-            $"Full-solution project discovery failed. stderr={standardError}");
+            $"Full-solution runner mode '{mode}' failed. stderr={standardError}");
 
         var actualProjects = standardOutput
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(NormalizeRelativePath)
             .ToArray();
-        Assert.Equal(expectedProjects, actualProjects);
+        return actualProjects;
     }
 
     [Fact]

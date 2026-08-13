@@ -93,6 +93,27 @@
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.ReleaseWorkflowArchitectureTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.ReviewInvariantCorpusTests" }
+      ],
+      "proofRequirements": [
+        "adversarial-mutation"
+      ],
+      "adversarialProofs": [
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "filter": "FullyQualifiedName~DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests.FullSolutionRunnerDiscoversEveryRepositoryTestProject",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_FULL_SUITE",
+          "environmentValue": "omit-discovery",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "filter": "FullyQualifiedName~DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests.FullSolutionRunnerExecutionProbeCoversEveryDiscoveredProject",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_FULL_SUITE",
+          "environmentValue": "omit-execution",
+          "expectedOutcome": "test-failure"
+        }
       ]
     },
     {
