@@ -46,6 +46,36 @@ internal static class GitHubWorkflowReachability
                !step.ContinueOnError;
     }
 
+    internal static bool HasUnconditionalExactRunStep(
+        string workflow,
+        string jobId,
+        string shell,
+        IReadOnlyList<string> requiredCommand)
+    {
+        Dictionary<string, WorkflowJob> jobs;
+        try
+        {
+            jobs = ParseJobs(workflow);
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+
+        if (!jobs.TryGetValue(jobId, out var job) ||
+            !string.IsNullOrWhiteSpace(job.Condition) ||
+            job.ContinueOnError)
+        {
+            return false;
+        }
+
+        return job.Steps.Any(step =>
+            !step.ContinueOnError &&
+            string.IsNullOrWhiteSpace(step.Condition) &&
+            string.Equals(step.Shell, shell, StringComparison.Ordinal) &&
+            HasExactCommand(step.Run, requiredCommand));
+    }
+
     internal static string WithJobCondition(
         string workflow,
         string jobId,
@@ -162,6 +192,7 @@ internal static class GitHubWorkflowReachability
                     jobId,
                     ReadNeeds(jobNode),
                     ReadScalar(jobNode, "if"),
+                    AllowsFailure(jobNode),
                     ReadSteps(jobNode)));
         }
 
@@ -197,7 +228,9 @@ internal static class GitHubWorkflowReachability
                     ReadScalar(step, "id"),
                     ReadScalar(step, "if"),
                     ReadScalar(step, "uses"),
-                    ReadBoolean(step, "continue-on-error"));
+                    ReadScalar(step, "shell"),
+                    ReadScalar(step, "run"),
+                    AllowsFailure(step));
             })
             .ToArray();
     }
@@ -262,9 +295,26 @@ internal static class GitHubWorkflowReachability
             : null;
     }
 
-    private static bool ReadBoolean(YamlMappingNode mapping, string key)
+    private static bool AllowsFailure(YamlMappingNode mapping)
     {
-        return bool.TryParse(ReadScalar(mapping, key), out var value) && value;
+        var value = ReadScalar(mapping, "continue-on-error");
+        return !string.IsNullOrWhiteSpace(value) &&
+               !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasExactCommand(
+        string? run,
+        IReadOnlyList<string> requiredCommand)
+    {
+        if (string.IsNullOrWhiteSpace(run))
+        {
+            return false;
+        }
+
+        var tokens = run.Split(
+            (char[]?)null,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return tokens.SequenceEqual(requiredCommand, StringComparer.Ordinal);
     }
 
     private static void SetScalar(YamlMappingNode mapping, string key, string value)
@@ -298,12 +348,15 @@ internal static class GitHubWorkflowReachability
         string Id,
         IReadOnlyList<string> Needs,
         string? Condition,
+        bool ContinueOnError,
         IReadOnlyList<WorkflowStep> Steps);
 
     private sealed record WorkflowStep(
         string? Id,
         string? Condition,
         string? Uses,
+        string? Shell,
+        string? Run,
         bool ContinueOnError);
 
     private sealed record WorkflowContext(

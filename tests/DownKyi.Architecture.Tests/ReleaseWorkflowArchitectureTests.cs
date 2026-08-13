@@ -22,6 +22,14 @@ public sealed class ReleaseWorkflowArchitectureTests
         "build-macos",
         "release"
     ];
+    private static readonly string[] ReleaseGateTestCommand =
+    [
+        "./script/test-solution.ps1",
+        "-Configuration",
+        "Release",
+        "-NoRestore",
+        "-NoBuild"
+    ];
 
     [Fact]
     public void ReleaseWorkflowKeepsStrictCrossPlatformGateAndManualPackageValidation()
@@ -34,7 +42,13 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("ubuntu-latest", workflow, StringComparison.Ordinal);
         Assert.Contains("macos-15", workflow, StringComparison.Ordinal);
         Assert.Contains("-p:AnalysisMode=All", workflow, StringComparison.Ordinal);
-        Assert.Contains("./script/test-solution.ps1", workflow, StringComparison.Ordinal);
+        Assert.True(
+            GitHubWorkflowReachability.HasUnconditionalExactRunStep(
+                workflow,
+                "release-gate",
+                "pwsh",
+                ReleaseGateTestCommand),
+            "Every release-gate matrix job must execute the complete solution test script unconditionally through pwsh.");
         Assert.Contains("./script/validate-release-version.ps1", workflow, StringComparison.Ordinal);
         Assert.Equal(4, CountOccurrences(workflow, "fail-fast: false"));
         Assert.Equal(3, CountOccurrences(workflow, "validate-publish-output.ps1"));
@@ -129,6 +143,27 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Equal(
             "external-assets-preflight",
             result.FirstUnsuccessful(TagReleaseCriticalJobs));
+    }
+
+    [Fact]
+    public void ReleaseGateExecutionGuardRejectsACommentOnlyCommandAndSuccessfulNoOp()
+    {
+        const string mutation = """
+            jobs:
+              release-gate:
+                steps:
+                  - name: Test
+                    shell: pwsh
+                    # ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
+                    run: Write-Host 'release suite intentionally skipped'
+            """;
+
+        Assert.False(
+            GitHubWorkflowReachability.HasUnconditionalExactRunStep(
+                mutation,
+                "release-gate",
+                "pwsh",
+                ReleaseGateTestCommand));
     }
 
     [Fact]
