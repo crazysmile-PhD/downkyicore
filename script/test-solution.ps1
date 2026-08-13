@@ -4,6 +4,7 @@ param(
     [string]$Configuration = "Release",
     [switch]$NoRestore,
     [switch]$NoBuild,
+    [switch]$ListProjects,
     [string]$ResultsDirectory
 )
 
@@ -18,6 +19,14 @@ $testProjects = @(
 
 if ($testProjects.Count -eq 0) {
     throw "No test projects were found under $testsRoot."
+}
+
+if ($ListProjects) {
+    foreach ($testProject in $testProjects) {
+        [System.IO.Path]::GetRelativePath($repositoryRoot, $testProject.FullName).Replace('\', '/')
+    }
+
+    return
 }
 
 $resolvedResultsDirectory = $null

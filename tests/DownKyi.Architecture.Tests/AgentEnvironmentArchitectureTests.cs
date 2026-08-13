@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace DownKyi.Architecture.Tests;
 
 public sealed class AgentEnvironmentArchitectureTests
@@ -84,6 +86,59 @@ public sealed class AgentEnvironmentArchitectureTests
 
         var lifecycleScript = Read("script/test-assembly-lifecycle.ps1");
         Assert.Contains("-assemblyInfo", lifecycleScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FullSolutionRunnerDiscoversEveryRepositoryTestProject()
+    {
+        var expectedProjects = Directory
+            .GetFiles(
+                Path.Combine(RepositoryRoot, "tests"),
+                "*.Tests.csproj",
+                SearchOption.AllDirectories)
+            .Select(path => NormalizeRelativePath(Path.GetRelativePath(RepositoryRoot, path)))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        using var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = "pwsh",
+            ArgumentList =
+            {
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                Path.Combine(RepositoryRoot, "script", "test-solution.ps1"),
+                "-ListProjects"
+            },
+            WorkingDirectory = RepositoryRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        });
+        Assert.NotNull(process);
+
+        var exited = process.WaitForExit(30_000);
+        if (!exited)
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+        }
+
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        Assert.True(exited, "Full-solution project discovery timed out.");
+        Assert.True(
+            process.ExitCode == 0,
+            $"Full-solution project discovery failed. stderr={standardError}");
+
+        var actualProjects = standardOutput
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeRelativePath)
+            .ToArray();
+        Assert.Equal(expectedProjects, actualProjects);
     }
 
     [Fact]
@@ -270,6 +325,11 @@ public sealed class AgentEnvironmentArchitectureTests
     private static string PathFromRepository(string path)
     {
         return path.Replace('/', Path.DirectorySeparatorChar);
+    }
+
+    private static string NormalizeRelativePath(string path)
+    {
+        return path.Replace('\\', '/');
     }
 
     private static bool IsLiteralRepositoryPath(string value)
