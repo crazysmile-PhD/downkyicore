@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Web;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Storage;
@@ -102,7 +101,7 @@ public static class LoginHelper
         {
             try
             {
-                File.Copy(tempFile, LocalLoginInfo, true);
+                File.Move(tempFile, LocalLoginInfo, overwrite: true);
             }
             catch (IOException)
             {
@@ -175,7 +174,7 @@ public static class LoginHelper
                     .Where(cookie => !string.IsNullOrWhiteSpace(cookie.Name))
                     .Select(cookie => new DownKyiCookie(
                         cookie.Name.Trim(),
-                        HttpUtility.UrlEncode(cookie.Value),
+                        cookie.Value,
                         cookie.Domain))
                     .ToList();
             }
@@ -234,6 +233,24 @@ public static class LoginHelper
         finally
         {
             CacheLock.ExitReadLock();
+        }
+    }
+
+    public static bool DeleteLoginInfoCookies()
+    {
+        try
+        {
+            File.Delete(LocalLoginInfo);
+            InvalidateCache();
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 

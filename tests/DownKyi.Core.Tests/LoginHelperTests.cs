@@ -1,10 +1,26 @@
 using DownKyi.Core.BiliApi.Login;
 using DownKyi.Core.Settings;
+using DownKyi.Core.Storage;
 
 namespace DownKyi.Core.Tests;
 
 public sealed class LoginHelperTests
 {
+    [Fact]
+    public void PersistedCookieValueSurvivesReloadWithoutAdditionalEncoding()
+    {
+        var cookies = new[]
+        {
+            new DownKyiCookie("SESSDATA", "fixture%2Fvalue", ".bilibili.com")
+        };
+
+        Assert.True(LoginHelper.SaveLoginInfoCookies(cookies));
+
+        var reloaded = Assert.Single(LoginHelper.GetLoginInfoCookies());
+        Assert.Equal("fixture%2Fvalue", reloaded.Value);
+        Assert.Equal("SESSDATA=fixture%2Fvalue", LoginHelper.GetLoginInfoCookiesString());
+    }
+
     [Fact]
     public async Task LogoutDeletesTheOwnedLoginFileAndClearsTheInjectedUser()
     {

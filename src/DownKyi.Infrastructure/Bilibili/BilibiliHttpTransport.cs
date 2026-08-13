@@ -4,6 +4,12 @@ using DownKyi.Application.Bilibili;
 
 namespace DownKyi.Infrastructure.Bilibili;
 
+internal sealed record BilibiliHttpTextResponse(
+    string Content,
+    IReadOnlyList<string> SetCookieHeaders,
+    HttpStatusCode StatusCode,
+    Uri? Location);
+
 internal sealed class BilibiliHttpTransport
 {
     private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromSeconds(30);
@@ -38,6 +44,22 @@ internal sealed class BilibiliHttpTransport
         int attempts,
         CancellationToken cancellationToken)
     {
+        var response = await GetResponseAsync(
+            requestFactory,
+            attempts,
+            requireContent: true,
+            allowRedirectStatus: false,
+            cancellationToken).ConfigureAwait(false);
+        return response.Content;
+    }
+
+    internal async Task<BilibiliHttpTextResponse> GetResponseAsync(
+        Func<HttpRequestMessage> requestFactory,
+        int attempts,
+        bool requireContent,
+        bool allowRedirectStatus,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(requestFactory);
         ArgumentOutOfRangeException.ThrowIfLessThan(attempts, 1);
 
@@ -55,10 +77,10 @@ internal sealed class BilibiliHttpTransport
                     continue;
                 }
 
-                ThrowForTerminalStatus(response);
+                ThrowForTerminalStatus(response, allowRedirectStatus);
                 var content = await response.Content.ReadAsStringAsync(cancellationToken)
                     .ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(content))
+                if (requireContent && string.IsNullOrWhiteSpace(content))
                 {
                     throw new BilibiliHttpRequestException(
                         "Bilibili returned an empty response.",
@@ -66,7 +88,16 @@ internal sealed class BilibiliHttpTransport
                         response.StatusCode);
                 }
 
-                return content;
+                var setCookieHeaders = response.Headers.TryGetValues(
+                    "Set-Cookie",
+                    out var values)
+                    ? values.ToArray()
+                    : [];
+                return new BilibiliHttpTextResponse(
+                    content,
+                    setCookieHeaders,
+                    response.StatusCode,
+                    response.Headers.Location);
             }
             catch (OperationCanceledException)
             {
@@ -237,9 +268,12 @@ internal sealed class BilibiliHttpTransport
         return null;
     }
 
-    private static void ThrowForTerminalStatus(HttpResponseMessage response)
+    private static void ThrowForTerminalStatus(
+        HttpResponseMessage response,
+        bool allowRedirectStatus = false)
     {
-        if (response.IsSuccessStatusCode)
+        if (response.IsSuccessStatusCode
+            || (allowRedirectStatus && (int)response.StatusCode is >= 300 and < 400))
         {
             return;
         }

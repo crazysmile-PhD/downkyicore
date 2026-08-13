@@ -152,6 +152,20 @@
       ]
     },
     {
+      "id": "bilibili-login-session",
+      "paths": [
+        "src/DownKyi.Infrastructure/Bilibili/BilibiliLoginSession.cs",
+        "src/DownKyi.Desktop/Services/Account/LoginCoordinator.cs"
+      ],
+      "owner": "LoginCoordinator and Generic Host",
+      "start": "LoginCoordinator creates one isolated HTTP login session when a QR code is requested.",
+      "stop": "A replacement QR request disposes the previous session, and Generic Host disposal disposes the singleton coordinator.",
+      "teardown": "Dispose the named-client instance exactly once; IHttpClientFactory owns the pooled handler lifetime and no login session owns a background thread or timer.",
+      "allowedMechanisms": [
+        "synchronous_cleanup"
+      ]
+    },
+    {
       "id": "infrastructure-logging-runtime",
       "paths": [
         "src/DownKyi.Infrastructure/Logging/**"

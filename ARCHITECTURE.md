@@ -58,7 +58,7 @@ Program
 
 `DesktopApplication`、`DownKyiHost` 與 `DesktopComposition` 共同形成 Desktop composition root；executable 只做單次委派。
 
-Bilibili endpoint adapters 仍位於 `DownKyi.Core/BiliApi` 以保留 DTO 與外部協定相容性，但所有 production 呼叫都接收注入的 `IBilibiliApiClient` 並使用 async API。Host 是 client、cookie provider、buvid provider 與網路設定的唯一組合點；static client、全域 `Configure()` 和同步 HTTP compatibility path 已刪除。
+Bilibili endpoint adapters 仍位於 `DownKyi.Core/BiliApi` 以保留 DTO 與外部協定相容性，但所有 production 呼叫都接收注入的 async port。普通 API 使用 `IBilibiliApiClient`；QR 登入使用隔離的 `IBilibiliLoginSession`，由同一 session 貫穿 generate、poll 和受信任 callback，保留 response cookies。Host 是 client、login session factory、cookie provider、buvid provider 與網路設定的唯一組合點；static client、全域 `Configure()` 和同步 HTTP compatibility path 已刪除。
 
 ## 目前導航與 UserSpace 資料流
 
@@ -275,6 +275,7 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 - SQLite 下載紀錄、未完成任務、partial files、aria2 GID 與續傳資料不可遺失。
 - 外部 Bilibili envelope、WBI、DURL 與 protobuf contract 必須由 fixture 測試保護。
 - 固定 Bilibili 端點必須登錄於 `docs/operations/bilibili-api-audit.md`；匿名或明確授權的登入態 live probe 只提供清理後時點證據，不可取代 deterministic contract tests，也不可保存 credential、raw response 或帳號值。
+- QR 登入 callback 只允許 HTTPS Bilibili host；`Set-Cookie` 與 callback 參數合併後必須原子寫入、從磁碟重載並通過 `/nav isLogin=true`，才可顯示成功或取代既有登入檔。
 - XAML resource URI、compiled binding 和 typed route 改名必須有 UI smoke coverage。
 - 任何跨層搬移都先建立 adapter 或 migration，再移除舊 owner。
 

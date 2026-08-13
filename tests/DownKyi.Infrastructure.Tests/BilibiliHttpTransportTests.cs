@@ -7,6 +7,29 @@ namespace DownKyi.Infrastructure.Tests;
 public sealed class BilibiliHttpTransportTests
 {
     [Fact]
+    public async Task TextResponsePreservesAllSetCookieHeaders()
+    {
+        using var factory = CreateFactory((_, _) =>
+            BilibiliTestResponses.CompletedJsonWithCookies(
+                """{"code":0}""",
+                "SESSDATA=fixture-session; Domain=.bilibili.com; Path=/; Secure",
+                "bili_jct=fixture-csrf; Domain=.bilibili.com; Path=/; Secure"));
+        var transport = CreateTransport(factory);
+
+        var response = await transport.GetResponseAsync(
+            CreateRequest,
+            1,
+            requireContent: true,
+            allowRedirectStatus: false,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("""{"code":0}""", response.Content);
+        Assert.Equal(2, response.SetCookieHeaders.Count);
+        Assert.Contains(response.SetCookieHeaders, value => value.StartsWith("SESSDATA=", StringComparison.Ordinal));
+        Assert.Contains(response.SetCookieHeaders, value => value.StartsWith("bili_jct=", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task AuthenticationFailureIsNotRetried()
     {
         var calls = 0;
