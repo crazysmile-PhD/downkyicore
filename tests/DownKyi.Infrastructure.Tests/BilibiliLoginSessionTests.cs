@@ -52,9 +52,52 @@ public sealed class BilibiliLoginSessionTests
         Assert.Contains(cookies, cookie => cookie.Name == "sid");
     }
 
+    [Fact]
+    public async Task CallbackStopsBeforeExternalHttpsLandingAndReturnsCapturedCookies()
+    {
+        var calls = 0;
+        using var factory = new TestHttpClientFactory((_, _) =>
+        {
+            calls++;
+            return BilibiliTestResponses.CompletedJson();
+        });
+        using var session = CreateSession(
+            factory,
+            [new BilibiliLoginCookie("SESSDATA", "fixture-session", ".bilibili.com")]);
+
+        var cookies = await session.FollowCallbackAsync(
+            new Uri("https://passport.biligame.com/x/passport-login/web/crossDomain?DedeUserID=fixture-user"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, calls);
+        Assert.Contains(cookies, cookie => cookie.Name == "SESSDATA");
+    }
+
+    [Fact]
+    public async Task CallbackRedirectStopsBeforeExternalHttpsLanding()
+    {
+        var calls = 0;
+        using var factory = new TestHttpClientFactory((_, _) =>
+        {
+            calls++;
+            return CompletedRedirect(
+                "https://passport.biligame.com/x/passport-login/web/crossDomain?DedeUserID=fixture-user",
+                "SESSDATA=fixture-session; Domain=.bilibili.com; Path=/; Secure");
+        });
+        using var session = CreateSession(factory);
+
+        var cookies = await session.FollowCallbackAsync(
+            new Uri("https://passport.bilibili.com/callback"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, calls);
+        Assert.Contains(cookies, cookie => cookie.Name == "SESSDATA");
+    }
+
     [Theory]
     [InlineData("http://passport.bilibili.com/callback")]
     [InlineData("https://bilibili.com.example.invalid/callback")]
+    [InlineData("https://passport.biligame.com/not-a-login-callback")]
     public async Task CallbackRejectsUntrustedAddressBeforeNetworkWork(string callbackAddress)
     {
         var calls = 0;
@@ -92,14 +135,17 @@ public sealed class BilibiliLoginSessionTests
         Assert.Equal(1, calls);
     }
 
-    private static BilibiliLoginSession CreateSession(TestHttpClientFactory factory)
+    private static BilibiliLoginSession CreateSession(
+        TestHttpClientFactory factory,
+        IReadOnlyList<BilibiliLoginCookie>? initialCookies = null)
     {
         return new BilibiliLoginSession(
             new BilibiliHttpTransport(
                 factory,
                 TimeProvider.System,
                 static (_, _) => Task.CompletedTask),
-            NullDisposable.Instance);
+            NullDisposable.Instance,
+            initialCookies);
     }
 
     private static Task<HttpResponseMessage> CompletedRedirect(

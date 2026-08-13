@@ -98,6 +98,11 @@ internal sealed class BilibiliLoginSession : IBilibiliLoginSession
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
+        if (IsTerminalLoginCallbackUri(callbackUri))
+        {
+            return GetCookies();
+        }
+
         var currentUri = RequireTrustedUri(callbackUri);
         for (var redirect = 0; redirect <= MaximumRedirects; redirect++)
         {
@@ -121,10 +126,15 @@ internal sealed class BilibiliLoginSession : IBilibiliLoginSession
                     response.StatusCode);
             }
 
-            currentUri = RequireTrustedUri(
-                response.Location.IsAbsoluteUri
-                    ? response.Location
-                    : new Uri(currentUri, response.Location));
+            var redirectUri = response.Location.IsAbsoluteUri
+                ? response.Location
+                : new Uri(currentUri, response.Location);
+            if (IsTerminalLoginCallbackUri(redirectUri))
+            {
+                return GetCookies();
+            }
+
+            currentUri = RequireTrustedUri(redirectUri);
         }
 
         throw new InvalidOperationException("The Bilibili login redirect chain did not terminate.");
@@ -135,7 +145,15 @@ internal sealed class BilibiliLoginSession : IBilibiliLoginSession
         ArgumentNullException.ThrowIfNull(uri);
         return uri.Scheme == Uri.UriSchemeHttps
                && (uri.Host.Equals("bilibili.com", StringComparison.OrdinalIgnoreCase)
-                   || uri.Host.EndsWith(".bilibili.com", StringComparison.OrdinalIgnoreCase));
+                    || uri.Host.EndsWith(".bilibili.com", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsTerminalLoginCallbackUri(Uri uri)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        return uri.Scheme == Uri.UriSchemeHttps
+               && uri.Host.Equals("passport.biligame.com", StringComparison.OrdinalIgnoreCase)
+               && uri.AbsolutePath.Equals("/x/passport-login/web/crossDomain", StringComparison.Ordinal);
     }
 
     public void Dispose()
