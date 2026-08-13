@@ -70,7 +70,8 @@ $adversarialProofs = @(
             throw "Review invariant '$($invariant.id)' requires an adversarial mutation proof but declares no executable profile."
         }
 
-        foreach ($proof in $proofs) {
+        for ($proofIndex = 0; $proofIndex -lt $proofs.Count; $proofIndex++) {
+            $proof = $proofs[$proofIndex]
             if ($proof.kind -ne "adversarial-mutation" -or
                 $proof.kind -notin $requirements -or
                 [string]::IsNullOrWhiteSpace($proof.project) -or
@@ -81,7 +82,16 @@ $adversarialProofs = @(
                 throw "Review invariant '$($invariant.id)' contains an incomplete adversarial proof."
             }
 
-            $proof
+            [pscustomobject]@{
+                invariantId = [string]$invariant.id
+                proofIndex = $proofIndex + 1
+                kind = [string]$proof.kind
+                project = [string]$proof.project
+                filter = [string]$proof.filter
+                environmentVariable = [string]$proof.environmentVariable
+                environmentValue = [string]$proof.environmentValue
+                expectedOutcome = [string]$proof.expectedOutcome
+            }
         }
     }
 )
@@ -138,6 +148,8 @@ foreach ($projectGroup in $projectGroups) {
     $totalPassed += $passed
 }
 
+$adversarialReportNames = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
 foreach ($proof in $adversarialProofs) {
     $projectPath = Join-Path $repositoryRoot $proof.project
     if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
@@ -145,7 +157,12 @@ foreach ($proof in $adversarialProofs) {
     }
 
     $safeName = [IO.Path]::GetFileNameWithoutExtension($projectPath)
-    $trxName = "$safeName.adversarial.trx"
+    $safeInvariant = $proof.invariantId -replace '[^A-Za-z0-9._-]', '-'
+    $trxName = "$safeName.$safeInvariant.$($proof.proofIndex).adversarial.trx"
+    if (-not $adversarialReportNames.Add($trxName)) {
+        throw "Adversarial proofs resolved to a duplicate report identity: $trxName"
+    }
+
     $previousValue = [Environment]::GetEnvironmentVariable(
         $proof.environmentVariable,
         [EnvironmentVariableTarget]::Process)
