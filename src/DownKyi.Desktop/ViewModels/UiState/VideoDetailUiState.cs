@@ -1,3 +1,4 @@
+using System;
 using CommunityToolkit.Mvvm.ComponentModel;
 using DownKyi.Images;
 using DownKyi.Presentation;
@@ -14,6 +15,8 @@ internal enum VideoDetailDisplayState
 
 internal sealed partial class VideoDetailUiState : ObservableObject
 {
+    public event Action? IsBusyChanged;
+
     [ObservableProperty]
     private string? _inputText;
 
@@ -46,4 +49,12 @@ internal sealed partial class VideoDetailUiState : ObservableObject
     public bool IsContentVisible => DisplayState == VideoDetailDisplayState.Content;
 
     public bool IsEmptyVisible => DisplayState == VideoDetailDisplayState.Empty;
+
+    partial void OnDisplayStateChanged(VideoDetailDisplayState oldValue, VideoDetailDisplayState newValue)
+    {
+        if ((oldValue == VideoDetailDisplayState.Busy) != (newValue == VideoDetailDisplayState.Busy))
+        {
+            IsBusyChanged?.Invoke();
+        }
+    }
 }
