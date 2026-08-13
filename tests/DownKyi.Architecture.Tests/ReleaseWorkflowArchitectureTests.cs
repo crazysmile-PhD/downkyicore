@@ -9,6 +9,19 @@ namespace DownKyi.Architecture.Tests;
 public sealed class ReleaseWorkflowArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly string[] TagReleaseCriticalJobs =
+    [
+        "ffmpeg-tooling",
+        "detect-production-manifest-change",
+        "external-assets-preflight",
+        "release-gate",
+        "assembly-lifecycle-release",
+        "changelog",
+        "build-windows",
+        "build-linux",
+        "build-macos",
+        "release"
+    ];
 
     [Fact]
     public void ReleaseWorkflowKeepsStrictCrossPlatformGateAndManualPackageValidation()
@@ -87,6 +100,35 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.True(HasRunnableManifestDetectionDependency(validWorkflow));
         Assert.All(invalidMutations, mutation =>
             Assert.False(HasRunnableManifestDetectionDependency(mutation)));
+    }
+
+    [Fact]
+    public void TagReleaseCriticalPathIsReachableFromTheCurrentWorkflow()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var result = GitHubWorkflowReachability.SimulateTagPush(workflow);
+
+        Assert.True(
+            result.AllSucceeded(TagReleaseCriticalJobs),
+            result.Describe(TagReleaseCriticalJobs));
+    }
+
+    [Fact]
+    public void TagReleaseDependencyGuardRejectsAPullRequestOnlyDownstreamTransition()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var mutation = GitHubWorkflowReachability.WithJobCondition(
+            workflow,
+            "external-assets-preflight",
+            "${{ github.event_name == 'pull_request' }}");
+        var result = GitHubWorkflowReachability.SimulateTagPush(mutation);
+
+        Assert.False(result.AllSucceeded(TagReleaseCriticalJobs));
+        Assert.Equal(
+            "external-assets-preflight",
+            result.FirstUnsuccessful(TagReleaseCriticalJobs));
     }
 
     [Fact]
@@ -422,125 +464,9 @@ public sealed class ReleaseWorkflowArchitectureTests
 
     private static bool HasRunnableManifestDetectionDependency(string workflow)
     {
-        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-        var job = GetYamlBlock(lines, "  detect-production-manifest-change:", 2);
-        if (job.Count == 0 || HasYamlKeyPrefix(job, 4, "if:"))
-        {
-            return false;
-        }
-
-        var stepsStart = job.FindIndex(line =>
-            GetIndent(line) == 4 && string.Equals(line.Trim(), "steps:", StringComparison.Ordinal));
-        if (stepsStart < 0)
-        {
-            return false;
-        }
-
-        var steps = GetYamlSequenceBlocks(job[(stepsStart + 1)..], 6);
-        var pullRequestDetector = steps.Any(step =>
-            HasExactIf(step, "github.event_name == 'pull_request'") &&
-            HasYamlKey(step, 8, "id: filter") &&
-            HasYamlValuePrefix(step, 8, "uses:", "dorny/paths-filter@") &&
-            !HasYamlKey(step, 8, "continue-on-error: true"));
-
-        return pullRequestDetector && steps.Count == 1;
-    }
-
-    private static List<string> GetYamlBlock(
-        string[] lines,
-        string header,
-        int headerIndent)
-    {
-        var start = -1;
-        for (var index = 0; index < lines.Length; index++)
-        {
-            if (string.Equals(lines[index], header, StringComparison.Ordinal))
-            {
-                start = index;
-                break;
-            }
-        }
-
-        if (start < 0)
-        {
-            return [];
-        }
-
-        var result = new List<string>();
-        for (var index = start + 1; index < lines.Length; index++)
-        {
-            var line = lines[index];
-            if (!string.IsNullOrWhiteSpace(line) &&
-                !line.TrimStart().StartsWith('#') &&
-                GetIndent(line) <= headerIndent)
-            {
-                break;
-            }
-
-            result.Add(line);
-        }
-
-        return result;
-    }
-
-    private static List<List<string>> GetYamlSequenceBlocks(
-        IReadOnlyList<string> lines,
-        int itemIndent)
-    {
-        var result = new List<List<string>>();
-        List<string>? current = null;
-        foreach (var line in lines)
-        {
-            if (!string.IsNullOrWhiteSpace(line) && GetIndent(line) < itemIndent)
-            {
-                break;
-            }
-
-            if (GetIndent(line) == itemIndent && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
-            {
-                current = [];
-                result.Add(current);
-            }
-
-            current?.Add(line);
-        }
-
-        return result;
-    }
-
-    private static bool HasExactIf(IReadOnlyList<string> block, string expression)
-    {
-        return block.Any(line =>
-            GetIndent(line) == 8 &&
-            string.Equals(line.Trim(), $"if: {expression}", StringComparison.Ordinal));
-    }
-
-    private static bool HasYamlKey(IReadOnlyList<string> block, int indent, string key)
-    {
-        return block.Any(line =>
-            GetIndent(line) == indent && string.Equals(line.Trim(), key, StringComparison.Ordinal));
-    }
-
-    private static bool HasYamlKeyPrefix(IReadOnlyList<string> block, int indent, string key)
-    {
-        return block.Any(line =>
-            GetIndent(line) == indent && line.Trim().StartsWith(key, StringComparison.Ordinal));
-    }
-
-    private static bool HasYamlValuePrefix(
-        IReadOnlyList<string> block,
-        int indent,
-        string key,
-        string valuePrefix)
-    {
-        return block.Any(line =>
-            GetIndent(line) == indent &&
-            line.Trim().StartsWith($"{key} {valuePrefix}", StringComparison.Ordinal));
-    }
-
-    private static int GetIndent(string line)
-    {
-        return line.Length - line.TrimStart().Length;
+        return GitHubWorkflowReachability.HasSinglePullRequestPathsFilter(
+            workflow,
+            "detect-production-manifest-change");
     }
 
     private static void AssertPinnedAsset(

@@ -91,6 +91,7 @@
       "guards": "Architecture, policy and corpus gates fail closed when required entries, workflows or evidence disappear.",
       "testClasses": [
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests" },
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.ReleaseWorkflowArchitectureTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.ReviewInvariantCorpusTests" }
       ]
     },
