@@ -15,13 +15,16 @@ internal static class DownloadOutputPathResolver
         bool autoAddNumberSuffix,
         Func<string, CancellationToken, Task<bool>> isReservedAsync,
         CancellationToken cancellationToken,
-        StringComparer? comparer = null)
+        StringComparer? comparer = null,
+        int initialSuffix = 0,
+        IReadOnlySet<string>? occupiedPaths = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
         ArgumentNullException.ThrowIfNull(isReservedAsync);
         comparer ??= PlatformComparer;
-        var occupiedPaths = GetExistingBasePaths(basePath).ToHashSet(comparer);
-        for (var suffix = 0; ; suffix++)
+        ArgumentOutOfRangeException.ThrowIfNegative(initialSuffix);
+        occupiedPaths ??= GetExistingBasePaths(basePath).ToHashSet(comparer);
+        for (var suffix = initialSuffix; ; suffix++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = suffix == 0 ? basePath : $"{basePath}({suffix})";
@@ -44,6 +47,56 @@ internal static class DownloadOutputPathResolver
             ? StringComparer.OrdinalIgnoreCase
             : StringComparer.Ordinal;
 
+    public static IReadOnlySet<string> CaptureExistingBasePaths(
+        IEnumerable<string> basePaths,
+        StringComparer? comparer = null)
+    {
+        ArgumentNullException.ThrowIfNull(basePaths);
+        comparer ??= PlatformComparer;
+
+        var directories =
+            new HashSet<string>(comparer);
+
+        foreach (var basePath in basePaths)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
+
+            var normalizedBasePath =
+                Normalize(basePath);
+
+            var directory =
+                Path.GetDirectoryName(normalizedBasePath);
+
+            if (!string.IsNullOrEmpty(directory))
+            {
+                directories.Add(directory);
+            }
+        }
+
+        var occupiedPaths =
+            new HashSet<string>(comparer);
+
+        foreach (var directory in directories)
+        {
+            if (!Directory.Exists(directory))
+            {
+                continue;
+            }
+
+            foreach (var file in
+                     Directory.EnumerateFiles(directory))
+            {
+                occupiedPaths.Add(
+                    Normalize(
+                        Path.Combine(
+                            directory,
+                            Path.GetFileNameWithoutExtension(file))));
+            }
+        }
+
+        return occupiedPaths;
+    }
+
     private static string[] GetExistingBasePaths(string basePath)
     {
         var normalizedBasePath = Normalize(basePath);
@@ -62,6 +115,6 @@ internal static class DownloadOutputPathResolver
 
     private static string Normalize(string path)
     {
-        return DownloadOutputPathKey.Create(path, ignoreCase: false);
+        return DownloadOutputPathKey.NormalizeLogicalPath(path);
     }
 }

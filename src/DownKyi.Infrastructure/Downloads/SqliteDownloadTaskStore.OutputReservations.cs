@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 
 namespace DownKyi.Infrastructure.Downloads;
 
-public sealed partial class SqliteDownloadTaskStore
+public sealed partial class SqliteDownloadTaskStore : IDownloadTaskAtomicBatchStore
 {
     public async Task<OperationResult> AddAsync(
         DownloadTask task,
@@ -40,6 +40,15 @@ public sealed partial class SqliteDownloadTaskStore
             await DownloadTaskSqlWriter
                 .WriteStateRowAsync(connection, transaction, task, cancellationToken)
                 .ConfigureAwait(false);
+            if (task.Phase != DownloadPhase.Completed &&
+                IsPhysicalOutputOccupied(task.Output.BasePath))
+            {
+                await transaction
+                    .RollbackAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                return OutputPathConflict();
+            }
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return OperationResult.Success();
         }
@@ -59,6 +68,149 @@ public sealed partial class SqliteDownloadTaskStore
         }
     }
 
+    public async Task<OperationResult> AddManyAtomicAsync(
+        IReadOnlyList<DownloadTask> tasks,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(tasks);
+
+        if (tasks.Count == 0)
+        {
+            return OperationResult.Success();
+        }
+
+        foreach (var task in tasks)
+        {
+            ArgumentNullException.ThrowIfNull(task);
+
+            if (task.Phase == DownloadPhase.Deleted)
+            {
+                throw new ArgumentException(
+                    "A deleted task cannot be inserted.",
+                    nameof(tasks));
+            }
+        }
+
+        await EnsureInitializedAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        using var connection =
+            await OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+        using var transaction =
+            BeginImmediateTransaction(connection);
+
+        var currentTaskId = tasks[0].Id;
+
+        try
+        {
+            foreach (var task in tasks)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                currentTaskId = task.Id;
+
+                await DownloadTaskSqlWriter
+                    .InsertBaseAsync(
+                        connection,
+                        transaction,
+                        task,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                await DownloadTaskSqlWriter
+                    .WriteStateRowAsync(
+                        connection,
+                        transaction,
+                        task,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (HasPhysicalOutputCollision(tasks))
+            {
+                await transaction
+                    .RollbackAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                return OutputPathConflict();
+            }
+            await transaction
+                .CommitAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return OperationResult.Success();
+        }
+        catch (SqliteException exception)
+            when (exception.SqliteErrorCode == 19)
+        {
+            await transaction
+                .RollbackAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+
+            return exception.Message.Contains(
+                    "output_reservation_key",
+                    StringComparison.OrdinalIgnoreCase)
+                ? OutputPathConflict()
+                : Conflict(
+                    currentTaskId,
+                    "already exists");
+        }
+        catch
+        {
+            await transaction
+                .RollbackAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+
+            throw;
+        }
+    }
+    public async Task<IReadOnlyList<string>> GetActiveOutputPathsAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnsureInitializedAsync(
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        using var connection =
+            await OpenConnectionAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+        using var command =
+            connection.CreateCommand();
+
+        command.CommandText = """
+            SELECT db.file_path
+            FROM download_base db
+            INNER JOIN downloading dl
+                ON dl.id = db.id
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM download_quarantine q
+                WHERE q.source_table = 'downloading'
+                  AND q.record_id = db.id)
+            ORDER BY db.id
+            """;
+
+        var paths =
+            new List<string>();
+
+        using var reader =
+            await command.ExecuteReaderAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+        while (await reader
+                   .ReadAsync(cancellationToken)
+                   .ConfigureAwait(false))
+        {
+            paths.Add(reader.GetString(0));
+        }
+
+        return paths;
+    }
     public async Task<bool> IsOutputPathReservedAsync(
         string basePath,
         bool ignoreCase,
@@ -119,6 +271,57 @@ public sealed partial class SqliteDownloadTaskStore
         return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture) != 0;
     }
 
+    private static bool IsPhysicalOutputOccupied(string basePath)
+    {
+        var normalizedBasePath =
+            DownloadOutputPathKey.NormalizeLogicalPath(basePath);
+
+        // Covers an extensionless physical output directly.
+        if (File.Exists(normalizedBasePath))
+        {
+            return true;
+        }
+
+        var directory =
+            Path.GetDirectoryName(normalizedBasePath);
+
+        if (string.IsNullOrEmpty(directory) ||
+            !Directory.Exists(directory))
+        {
+            return false;
+        }
+
+        var expectedName =
+            Path.GetFileName(normalizedBasePath);
+
+        // Windows output names cannot contain these wildcard characters.
+        // On platforms where they can, preserve the generic fallback.
+        if (expectedName.IndexOfAny(['*', '?']) >= 0 ||
+            (DownloadOutputPathKey.UsesCaseInsensitiveComparison &&
+             !OperatingSystem.IsWindows()))
+        {
+            var comparer =
+                DownloadOutputPathKey.UsesCaseInsensitiveComparison
+                    ? StringComparer.OrdinalIgnoreCase
+                    : StringComparer.Ordinal;
+
+            return Directory
+                .EnumerateFiles(directory)
+                .Any(file =>
+                    comparer.Equals(
+                        Path.GetFileNameWithoutExtension(file),
+                        expectedName));
+        }
+
+        // Ask the filesystem only for files with this basename rather
+        // than enumerating every file in the directory.
+        return Directory
+            .EnumerateFiles(
+                directory,
+                expectedName + ".*",
+                SearchOption.TopDirectoryOnly)
+            .Any();
+    }
     private static OperationResult OutputPathConflict()
     {
         return OperationResult.Failure(new OperationError(

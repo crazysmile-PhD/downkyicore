@@ -24,7 +24,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(true);
         using var version = connection.CreateCommand();
         version.CommandText = "PRAGMA user_version";
-        Assert.Equal(3L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(4L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             await reopened.InitializeAsync(TestContext.Current.CancellationToken);
         }
 
-        Assert.Equal(3, await ReadSchemaVersionAsync());
+        Assert.Equal(4, await ReadSchemaVersionAsync());
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
     }
 
@@ -142,7 +142,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
         await store.InitializeAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(3, await ReadSchemaVersionAsync());
+        Assert.Equal(4, await ReadSchemaVersionAsync());
         Assert.Equal(1, await CountDownloadBaseRecordAsync("legacy-resume"));
         Assert.Equal(1, await CountDownloadingRecordAsync("legacy-resume"));
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
@@ -168,6 +168,186 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
     }
 
+    [Fact]
+    public async Task VersionThreeReservationKeysAreRebuiltUsingFilesystemIdentity()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var cancellationToken =
+            TestContext.Current.CancellationToken;
+
+        var realDirectory =
+            Path.Combine(
+                _directory,
+                "migration-real");
+
+        var aliasDirectory =
+            Path.Combine(
+                _directory,
+                "migration-alias");
+
+        Directory.CreateDirectory(
+            realDirectory);
+
+        Directory.CreateDirectory(
+            aliasDirectory);
+
+        var realOutput =
+            Path.Combine(
+                realDirectory,
+                "shared-output");
+
+        var aliasOutput =
+            Path.Combine(
+                aliasDirectory,
+                "shared-output");
+
+        // First create two reservations while both directories are
+        // physically distinct. This gives us valid task rows without
+        // bypassing the current store API.
+        using (var store = CreateStore())
+        {
+            Assert.True(
+                (await store
+                    .AddAsync(
+                        CreateQueuedTask(
+                            "migration-real-task",
+                            realOutput),
+                        cancellationToken)
+                    .ConfigureAwait(true))
+                .IsSuccess);
+
+            Assert.True(
+                (await store
+                    .AddAsync(
+                        CreateQueuedTask(
+                            "migration-alias-task",
+                            aliasOutput),
+                        cancellationToken)
+                    .ConfigureAwait(true))
+                .IsSuccess);
+        }
+
+        // Turn the second directory into an alias of the first after the
+        // rows exist. This reproduces a v3 database that contains two
+        // lexical reservation keys for one physical destination.
+        Directory.Delete(
+            aliasDirectory);
+
+        await CreateDirectoryJunctionAsync(
+                aliasDirectory,
+                realDirectory,
+                cancellationToken)
+            .ConfigureAwait(true);
+
+        var legacyRealKey =
+            CreateLegacyVersionThreeReservationKey(
+                realOutput);
+
+        var legacyAliasKey =
+            CreateLegacyVersionThreeReservationKey(
+                aliasOutput);
+
+        Assert.NotEqual(
+            legacyRealKey,
+            legacyAliasKey);
+
+        using (var connection =
+               await OpenConnectionAsync(
+                       readOnly: false)
+                   .ConfigureAwait(true))
+        {
+            using var command =
+                connection.CreateCommand();
+
+            command.CommandText = """
+                PRAGMA user_version = 3;
+
+                UPDATE download_base
+                SET output_reservation_key = @real_key
+                WHERE id = 'migration-real-task';
+
+                UPDATE download_base
+                SET output_reservation_key = @alias_key
+                WHERE id = 'migration-alias-task';
+                """;
+
+            command.Parameters.AddWithValue(
+                "@real_key",
+                legacyRealKey);
+
+            command.Parameters.AddWithValue(
+                "@alias_key",
+                legacyAliasKey);
+
+            await command
+                .ExecuteNonQueryAsync(
+                    cancellationToken)
+                .ConfigureAwait(true);
+        }
+
+        // Opening the new store must run v4 migration and rebuild the
+        // active reservation identities.
+        using (var reopened = CreateStore())
+        {
+            await reopened
+                .InitializeAsync(
+                    cancellationToken)
+                .ConfigureAwait(true);
+
+            Assert.True(
+                await reopened
+                    .IsOutputPathReservedAsync(
+                        realOutput,
+                        DownloadOutputPathKey
+                            .UsesCaseInsensitiveComparison,
+                        cancellationToken)
+                    .ConfigureAwait(true));
+
+            Assert.True(
+                await reopened
+                    .IsOutputPathReservedAsync(
+                        aliasOutput,
+                        DownloadOutputPathKey
+                            .UsesCaseInsensitiveComparison,
+                        cancellationToken)
+                    .ConfigureAwait(true));
+        }
+
+        Assert.Equal(
+            4,
+            await ReadSchemaVersionAsync()
+                .ConfigureAwait(true));
+
+        var reservationKeys =
+            await ReadActiveReservationKeysAsync()
+                .ConfigureAwait(true);
+
+        var expectedPhysicalKey =
+            DownloadOutputPathKey.Create(
+                realOutput,
+                DownloadOutputPathKey
+                    .UsesCaseInsensitiveComparison);
+
+        // The two legacy rows now represent one physical reservation.
+        // Exactly one row owns the UNIQUE durable key; the duplicate
+        // historical row remains readable but does not create a second
+        // physical reservation identity.
+        Assert.Equal(
+            expectedPhysicalKey,
+            Assert.Single(
+                reservationKeys));
+
+        Assert.Single(
+            Directory.GetFiles(
+                Path.Combine(
+                    _directory,
+                    "Backup"),
+                "download.db.schema-v3-*.bak"));
+    }
     [Fact]
     public async Task PausedTaskPreservesResumeStateAcrossReopen()
     {
@@ -211,6 +391,58 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         Assert.Equal("download.store.conflict", stale.Error?.Code);
     }
 
+    [Fact]
+    public async Task AtomicBatchRejectsPhysicalOutputCollisionWithoutPartialInsert()
+    {
+        var cancellationToken =
+            TestContext.Current.CancellationToken;
+
+        var firstPath =
+            Path.Combine(_directory, "batch-first");
+
+        var occupiedPath =
+            Path.Combine(_directory, "batch-occupied");
+
+        Directory.CreateDirectory(_directory);
+
+        var foreignFile =
+            occupiedPath + ".mp4";
+
+        await File.WriteAllTextAsync(
+            foreignFile,
+            "FOREIGN FILE - MUST SURVIVE",
+            cancellationToken);
+
+        var first =
+            CreateQueuedTask(
+                "batch-first",
+                firstPath);
+
+        var second =
+            CreateQueuedTask(
+                "batch-second",
+                occupiedPath);
+
+        using var store =
+            CreateStore();
+
+        var result =
+            await store.AddManyAtomicAsync(
+                [first, second],
+                cancellationToken);
+
+        var unfinished =
+            await store.GetUnfinishedAsync(
+                cancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(
+            "download.store.output_path_reserved",
+            result.Error?.Code);
+
+        Assert.Empty(unfinished);
+        Assert.True(File.Exists(foreignFile));
+    }
     [Fact]
     public async Task ConcurrentAddsAtomicallyClaimOneOutputPath()
     {
@@ -402,9 +634,30 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();
+
+        var migrationAlias =
+            Path.Combine(
+                _directory,
+                "migration-alias");
+
+        if (Directory.Exists(migrationAlias))
+        {
+            var attributes =
+                File.GetAttributes(
+                    migrationAlias);
+
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                Directory.Delete(
+                    migrationAlias);
+            }
+        }
+
         if (Directory.Exists(_directory))
         {
-            Directory.Delete(_directory, recursive: true);
+            Directory.Delete(
+                _directory,
+                recursive: true);
         }
     }
 
@@ -482,6 +735,100 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             1);
     }
 
+    private static string CreateLegacyVersionThreeReservationKey(
+        string path)
+    {
+        var normalized =
+            Path.TrimEndingDirectorySeparator(
+                    Path.GetFullPath(path))
+                .Normalize(
+                    System.Text.NormalizationForm.FormC);
+
+        return DownloadOutputPathKey
+            .UsesCaseInsensitiveComparison
+                ? normalized.ToUpperInvariant()
+                : normalized;
+    }
+
+    private async Task<List<string>> ReadActiveReservationKeysAsync()
+    {
+        using var connection =
+            await OpenReadOnlyConnectionAsync()
+                .ConfigureAwait(false);
+
+        using var command =
+            connection.CreateCommand();
+
+        command.CommandText = """
+            SELECT db.output_reservation_key
+            FROM download_base db
+            INNER JOIN downloading dl
+                ON dl.id = db.id
+            WHERE db.output_reservation_key IS NOT NULL
+            ORDER BY db.id
+            """;
+
+        var results =
+            new List<string>();
+
+        using var reader =
+            await command
+                .ExecuteReaderAsync(
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(false);
+
+        while (await reader
+                   .ReadAsync(
+                       TestContext.Current.CancellationToken)
+                   .ConfigureAwait(false))
+        {
+            results.Add(
+                reader.GetString(0));
+        }
+
+        return results;
+    }
+
+    private static async Task CreateDirectoryJunctionAsync(
+        string junctionPath,
+        string targetPath,
+        CancellationToken cancellationToken)
+    {
+        var startInfo =
+            new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments =
+                    $"/d /c mklink /J \"{junctionPath}\" \"{targetPath}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+        using var process =
+            System.Diagnostics.Process.Start(
+                startInfo)
+            ?? throw new InvalidOperationException(
+                "Failed to start cmd.exe for junction creation.");
+
+        await process
+            .WaitForExitAsync(
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (process.ExitCode != 0)
+        {
+            var error =
+                await process.StandardError
+                    .ReadToEndAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+            throw new IOException(
+                $"Failed to create junction: {error}");
+        }
+    }
     private async Task<SqliteConnection> OpenReadOnlyConnectionAsync()
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder

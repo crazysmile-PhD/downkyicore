@@ -5,7 +5,7 @@ using DownKyi.Domain.Results;
 
 namespace DownKyi.Application.Downloads;
 
-public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationService, IDisposable
+public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationService, IDownloadTaskAtomicBatchApplicationService, IDisposable
 {
     private const int MaximumUpdateAttempts = 2;
     private readonly IDownloadTaskStore _store;
@@ -23,6 +23,51 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
 
     public event EventHandler<DownloadTaskChangedEventArgs>? TaskChanged;
 
+    public async Task<OperationResult> AddManyAtomicAsync(
+        IReadOnlyList<DownloadTask> tasks,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(tasks);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (tasks.Count == 0)
+        {
+            return OperationResult.Success();
+        }
+
+        foreach (var task in tasks)
+        {
+            ArgumentNullException.ThrowIfNull(task);
+        }
+
+        if (_store is not IDownloadTaskAtomicBatchStore batchStore)
+        {
+            throw new NotSupportedException(
+                "The configured download task store does not support atomic batch insertion.");
+        }
+
+        var result =
+            await batchStore
+                .AddManyAtomicAsync(
+                    tasks,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+        if (!result.IsSuccess)
+        {
+            return result;
+        }
+
+        // Publish only after the durable atomic commit succeeds.
+        foreach (var task in tasks)
+        {
+            Publish(
+                task,
+                DownloadTaskChangeKind.Added);
+        }
+
+        return OperationResult.Success();
+    }
     public async Task<OperationResult<DownloadTask>> AddAsync(
         DownloadTask task,
         CancellationToken cancellationToken)
@@ -54,6 +99,14 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         return _store.GetUnfinishedAsync(cancellationToken);
     }
 
+    public Task<IReadOnlyList<string>> GetActiveOutputPathsAsync(
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        return _store.GetActiveOutputPathsAsync(
+            cancellationToken);
+    }
     public Task<bool> IsOutputPathReservedAsync(
         string basePath,
         bool ignoreCase,

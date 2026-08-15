@@ -216,7 +216,8 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         }
 
         Assert.Equal(0, store.GetUnfinishedCallCount);
-        Assert.Equal(20, store.ReservationProbeCount);
+        Assert.Equal(1, store.ActiveOutputPathSnapshotCallCount);
+        Assert.Equal(0, store.ReservationProbeCount);
     }
 
     private SqliteDownloadTaskStore CreateStore()
@@ -253,6 +254,8 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
 
         public int ReservationProbeCount { get; private set; }
 
+        public int ActiveOutputPathSnapshotCallCount { get; private set; }
+
         public Task InitializeAsync(CancellationToken cancellationToken) =>
             inner.InitializeAsync(cancellationToken);
 
@@ -282,6 +285,14 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
             return inner.GetUnfinishedAsync(cancellationToken);
         }
 
+        public Task<IReadOnlyList<string>> GetActiveOutputPathsAsync(
+            CancellationToken cancellationToken)
+        {
+            ActiveOutputPathSnapshotCallCount++;
+
+            return inner.GetActiveOutputPathsAsync(
+                cancellationToken);
+        }
         public Task<bool> IsOutputPathReservedAsync(
             string basePath,
             bool ignoreCase,

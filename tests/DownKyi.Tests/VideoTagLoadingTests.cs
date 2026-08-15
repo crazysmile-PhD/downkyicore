@@ -113,6 +113,70 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
+    public async Task CancelingLaterPagePreservesEarlierPreparedTask()
+    {
+        using var context = CreateContext(generateMetadata: true);
+        using var operation =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                TestContext.Current.CancellationToken);
+
+        var first = CreatePage(
+            _ => Task.FromResult<IReadOnlyList<string>>(["first"]),
+            cid: 84);
+
+        var secondEntered =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var second = CreatePage(
+            async cancellationToken =>
+            {
+                secondEntered.TrySetResult();
+
+                await Task.Delay(
+                        Timeout.InfiniteTimeSpan,
+                        cancellationToken)
+                    .ConfigureAwait(true);
+
+                return Array.Empty<string>();
+            },
+            cid: 85);
+
+        context.Prepare(
+            first,
+            second);
+
+        var addTask =
+            context.Service.AddToDownload(
+                _directory,
+                cancellationToken: operation.Token);
+
+        await secondEntered.Task
+            .WaitAsync(
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        await operation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => addTask);
+
+        var persisted =
+            Assert.Single(
+                context.ListState.Downloading);
+
+        Assert.Equal(
+            84,
+            persisted.DownloadBase.Cid);
+
+        Assert.Equal(
+            1,
+            context.Store.AddCount);
+
+        Assert.Single(
+            context.Queue.Enqueued);
+    }
+    [Fact]
     public async Task CancellationAfterPersistenceDoesNotStrandQueuedTask()
     {
         using var context = CreateContext(generateMetadata: false);
@@ -214,13 +278,14 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     private static VideoPage CreatePage(
-        Func<CancellationToken, Task<IReadOnlyList<string>>> loadTagsAsync)
+        Func<CancellationToken, Task<IReadOnlyList<string>>> loadTagsAsync,
+        long cid = 84)
     {
         return new VideoPage
         {
             Avid = 42,
             Bvid = "BV1test",
-            Cid = 84,
+            Cid = cid,
             EpisodeId = -1,
             IsSelected = true,
             Name = "page",
@@ -308,7 +373,7 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         public RecordingLogger<DownloadMovieMetadataBuilder> Logger { get; }
 
-        public void Prepare(VideoPage page)
+        public void Prepare(params VideoPage[] pages)
         {
             Service.GetVideo(
                 new VideoInfoView
@@ -323,7 +388,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                         Id = 1,
                         IsSelected = true,
                         Title = "section",
-                        VideoPages = [page]
+                        VideoPages = pages
                     }
                 ]);
         }
