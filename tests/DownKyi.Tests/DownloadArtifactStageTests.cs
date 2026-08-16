@@ -90,18 +90,24 @@ public sealed class DownloadArtifactStageTests
                 context.Execution,
                 TestContext.Current.CancellationToken).ConfigureAwait(true);
             Assert.False(result.IsSuccess);
+            if (failureMode == CoverFailureMode.IoAfterWrite)
+            {
+                Assert.Equal("download.artifact.cover.io", result.Error?.Code);
+            }
         }
 
         var task = await context.GetTaskAsync().ConfigureAwait(true);
         AssertPhysicalArtifactsAreDurablyOwned(context, task);
-        if (failureMode == CoverFailureMode.HttpBeforeWrite)
-        {
-            Assert.Empty(context.GetPhysicalArtifactFiles());
-        }
-        else
+        if (failureMode == CoverFailureMode.HtmlError)
         {
             Assert.Single(context.GetPhysicalArtifactFiles());
         }
+        else
+        {
+            Assert.Empty(context.GetPhysicalArtifactFiles());
+        }
+
+        Assert.Empty(context.GetTemporaryOutputFiles());
     }
 
     [Theory]
@@ -138,6 +144,7 @@ public sealed class DownloadArtifactStageTests
         var task = await context.GetTaskAsync().ConfigureAwait(true);
         AssertPhysicalArtifactsAreDurablyOwned(context, task);
         Assert.NotEmpty(context.GetPhysicalArtifactFiles());
+        Assert.Empty(context.GetTemporaryOutputFiles());
         if (kind == ArtifactKind.Subtitle)
         {
             Assert.Contains(DownloadArtifactWriter.DefaultSubtitleTransferKey, task.Plan.TransferFiles.Keys);
@@ -236,7 +243,8 @@ public sealed class DownloadArtifactStageTests
             TestContext.Current.CancellationToken).ConfigureAwait(true);
 
         Assert.True(first.IsSuccess, first.Error?.Message);
-        Assert.True(second.IsSuccess, second.Error?.Message);
+        Assert.False(second.IsSuccess);
+        Assert.Equal("download.output.destination-collision", second.Error?.Code);
         var task = await context.GetTaskAsync().ConfigureAwait(true);
         AssertPhysicalArtifactsAreDurablyOwned(context, task);
         Assert.Contains(
@@ -396,6 +404,79 @@ public sealed class DownloadArtifactStageTests
         Assert.True(run.Result.IsSuccess);
         Assert.True(finalized);
         Assert.True(File.Exists(context.Execution.CoverFile));
+    }
+
+    [Theory]
+    [InlineData(nameof(ArtifactKind.MainCover))]
+    [InlineData(nameof(ArtifactKind.Subtitle))]
+    [InlineData(nameof(ArtifactKind.Danmaku))]
+    [InlineData(nameof(ArtifactKind.Nfo))]
+    public async Task LateDestinationCollisionPreservesForeignArtifactAndCleansTemporaryFile(
+        string kindName)
+    {
+        var kind = Enum.Parse<ArtifactKind>(kindName);
+        string? foreignPath = null;
+        var publisher = new AtomicOutputPublisher(path =>
+        {
+            foreignPath = path;
+            File.WriteAllText(path, "foreign artifact");
+        });
+        var client = CreateSuccessfulArtifactClient(kind);
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: kind == ArtifactKind.MainCover,
+            subtitle: kind == ArtifactKind.Subtitle,
+            danmaku: kind == ArtifactKind.Danmaku,
+            generateMetadata: kind == ArtifactKind.Nfo,
+            outputPublisher: publisher).ConfigureAwait(true);
+        if (kind == ArtifactKind.MainCover)
+        {
+            context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.jpg";
+        }
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.output.destination-collision", result.Error?.Code);
+        var path = Assert.IsType<string>(foreignPath);
+        Assert.Equal("foreign artifact", await File.ReadAllTextAsync(
+            path,
+            TestContext.Current.CancellationToken).ConfigureAwait(true));
+        Assert.Empty(context.GetTemporaryOutputFiles());
+    }
+
+    [Fact]
+    public async Task DefaultSubtitleLateDestinationCollisionPreservesForeignFileAndCleansTemporaryFile()
+    {
+        string? foreignPath = null;
+        var publisher = new AtomicOutputPublisher(path =>
+        {
+            if (!string.Equals(Path.GetFileName(path), "output.srt", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            foreignPath = path;
+            File.WriteAllText(path, "foreign subtitle");
+        });
+        using var context = await ArtifactTestContext.CreateAsync(
+            CreateSuccessfulArtifactClient(ArtifactKind.Subtitle),
+            subtitle: true,
+            outputPublisher: publisher).ConfigureAwait(true);
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.output.destination-collision", result.Error?.Code);
+        var path = Assert.IsType<string>(foreignPath);
+        Assert.Equal("foreign subtitle", await File.ReadAllTextAsync(
+            path,
+            TestContext.Current.CancellationToken).ConfigureAwait(true));
+        Assert.Empty(context.GetTemporaryOutputFiles());
     }
 
     private static StringComparer PathComparer =>
@@ -614,13 +695,21 @@ public sealed class DownloadArtifactStageTests
                 .ToArray();
         }
 
+        public string[] GetTemporaryOutputFiles()
+        {
+            return Directory.EnumerateFiles(_directory, "*.downkyi-tmp*", SearchOption.AllDirectories)
+                .Select(Path.GetFullPath)
+                .ToArray();
+        }
+
         public static async Task<ArtifactTestContext> CreateAsync(
             TestBilibiliApiClient client,
             bool cover = false,
             bool subtitle = false,
             bool danmaku = false,
             bool generateMetadata = false,
-            bool useMissingOutputDirectory = false)
+            bool useMissingOutputDirectory = false,
+            IAtomicOutputPublisher? outputPublisher = null)
         {
             var directory = Path.Combine(
                 Path.GetTempPath(),
@@ -697,7 +786,8 @@ public sealed class DownloadArtifactStageTests
                 new TestWbiKeyProvider(),
                 stateWriter,
                 NullLogger<DownloadArtifactWriter>.Instance,
-                client);
+                client,
+                outputPublisher);
             var execution = new DownloadExecutionContext(
                 taskId,
                 downloading,

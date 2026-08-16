@@ -106,6 +106,33 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ConcatLateDestinationConflictPreservesForeignOutputAndCleansPartial()
+    {
+        var segment = CreateSegment("late-segment.flv");
+        var output = Path.Combine(_testDirectory, "late-output.mp4");
+        byte[] foreignContent = [9, 8, 7];
+        var runner = new RecordingConcatRunner(() => File.WriteAllBytes(output, foreignContent));
+        var runtime = new FfmpegConcatRuntime(
+            runner,
+            new StubMediaValidator(isValid: true),
+            new AsyncConcurrencyGate(() => 1),
+            NullLogger<FfmpegConcatRuntime>.Instance);
+
+        var result = await runtime.ConcatAsync(
+            [new FfmpegConcatSegment(1, segment, TimeSpan.FromSeconds(5))],
+            output,
+            hardwareEncoder: null,
+            allowStreamCopy: false,
+            overwriteDestination: false,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.DestinationConflict, result.FailureKind);
+        Assert.Equal(foreignContent, await File.ReadAllBytesAsync(output, TestContext.Current.CancellationToken));
+        Assert.Empty(Directory.EnumerateFiles(_testDirectory, "*.partial.mp4"));
+    }
+
+    [Fact]
     public async Task ConcatValidationFailurePreservesExistingDestination()
     {
         var segment = CreateSegment("invalid.flv");
@@ -212,7 +239,7 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
         return path;
     }
 
-    private sealed class RecordingConcatRunner : IFfmpegProcessRunner
+    private sealed class RecordingConcatRunner(Action? afterOutputWritten = null) : IFfmpegProcessRunner
     {
         public List<FfmpegCommand> Commands { get; } = new();
 
@@ -236,6 +263,7 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
                 cancellationToken).ConfigureAwait(false);
             await File.WriteAllBytesAsync(command.Arguments[^1], [1, 2, 3], cancellationToken)
                 .ConfigureAwait(false);
+            afterOutputWritten?.Invoke();
             return new FfmpegProcessResult(true, 0, string.Empty, string.Empty, false);
         }
     }

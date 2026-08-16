@@ -16,6 +16,43 @@ namespace DownKyi.Tests;
 public sealed class MuxFailureRecoveryTests
 {
     [Fact]
+    public async Task DashDestinationCollisionIsReportedAsAnOutputCollision()
+    {
+        var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        var stage = test.CreateStage(FfmpegOperationResult.Failure(
+            "destination exists",
+            FfmpegOperationFailureKind.DestinationConflict));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.output.destination-collision", result.Error?.Code);
+        Assert.True(File.Exists(test.AudioFile));
+        Assert.True(File.Exists(test.VideoFile));
+    }
+
+    [Fact]
+    public async Task DurlDestinationCollisionIsReportedAsAnOutputCollision()
+    {
+        var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        await test.AddDurlSourcesAsync().ConfigureAwait(true);
+        var stage = test.CreateStage(FfmpegOperationResult.Failure(
+            "destination exists",
+            FfmpegOperationFailureKind.DestinationConflict));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.output.destination-collision", result.Error?.Code);
+    }
+
+    [Fact]
     public async Task InvalidAudioRevokesOnlyAudioCacheAndKeepsValidVideo()
     {
         var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
