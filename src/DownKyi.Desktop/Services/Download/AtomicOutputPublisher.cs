@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Downloads;
 
 namespace DownKyi.Services.Download;
 
@@ -17,14 +18,30 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
 {
     private const int MaximumTemporaryPathAttempts = 8;
     private readonly Action<string>? _beforePublish;
+    private readonly IOutputArtifactOwnershipProvider? _ownershipProvider;
 
     public AtomicOutputPublisher()
     {
     }
 
+    public AtomicOutputPublisher(IOutputArtifactOwnershipProvider ownershipProvider)
+    {
+        _ownershipProvider = ownershipProvider
+            ?? throw new ArgumentNullException(nameof(ownershipProvider));
+    }
+
     internal AtomicOutputPublisher(Action<string> beforePublish)
     {
         _beforePublish = beforePublish ?? throw new ArgumentNullException(nameof(beforePublish));
+    }
+
+    internal AtomicOutputPublisher(
+        Action<string> beforePublish,
+        IOutputArtifactOwnershipProvider ownershipProvider)
+    {
+        _beforePublish = beforePublish ?? throw new ArgumentNullException(nameof(beforePublish));
+        _ownershipProvider = ownershipProvider
+            ?? throw new ArgumentNullException(nameof(ownershipProvider));
     }
 
     public async Task<AtomicOutputPublishResult> PublishAsync(
@@ -39,6 +56,15 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
         {
             await writeTemporaryAsync(temporaryPath, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            OutputArtifactPublicationEvidence? publicationEvidence = null;
+            if (_ownershipProvider != null)
+            {
+                var captured = await _ownershipProvider
+                    .CapturePublicationEvidenceAsync(temporaryPath, cancellationToken)
+                    .ConfigureAwait(false);
+                publicationEvidence = captured.Succeeded ? captured.Evidence : null;
+            }
+
             _beforePublish?.Invoke(destinationPath);
             try
             {
@@ -49,7 +75,19 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
                 return AtomicOutputPublishResult.DestinationCollision(exception);
             }
 
-            return AtomicOutputPublishResult.Published();
+            if (publicationEvidence is not null
+                && !await VerifyPublishedIdentityAsync(
+                        destinationPath,
+                        publicationEvidence)
+                    .ConfigureAwait(false))
+            {
+                // The final name no longer resolves to the object whose hash
+                // was captured before the move. The file remains published,
+                // but it must stay untracked and therefore undeletable.
+                publicationEvidence = null;
+            }
+
+            return AtomicOutputPublishResult.Published(publicationEvidence);
         }
         finally
         {
@@ -87,6 +125,37 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
         throw new IOException("A unique temporary output file could not be created.");
     }
 
+    private async Task<bool> VerifyPublishedIdentityAsync(
+        string destinationPath,
+        OutputArtifactPublicationEvidence publicationEvidence)
+    {
+        if (_ownershipProvider is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            // Publication is irreversible at this point. Do not let a later
+            // cancellation change its success outcome; absent verification is
+            // represented by null evidence and an untracked output.
+            return await _ownershipProvider
+                .VerifyPublishedObjectIdentityAsync(
+                    destinationPath,
+                    publicationEvidence,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException
+                                         or UnauthorizedAccessException
+                                         or InvalidOperationException
+                                         or ArgumentException
+                                         or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
     private static void DeleteTemporaryFile(string path)
     {
         try
@@ -107,10 +176,13 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
 internal sealed record AtomicOutputPublishResult(
     bool Succeeded,
     bool IsDestinationCollision,
-    IOException? Error)
+    IOException? Error,
+    OutputArtifactPublicationEvidence? PublicationEvidence)
 {
-    public static AtomicOutputPublishResult Published() => new(true, false, null);
+    public static AtomicOutputPublishResult Published(
+        OutputArtifactPublicationEvidence? publicationEvidence = null) =>
+        new(true, false, null, publicationEvidence);
 
     public static AtomicOutputPublishResult DestinationCollision(IOException error) =>
-        new(false, true, error);
+        new(false, true, error, null);
 }

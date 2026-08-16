@@ -180,6 +180,77 @@ public sealed class MuxFailureRecoveryTests
         Assert.Contains(sources[2].TransferKey, task.Transfer.CompletedFileKeys);
     }
 
+    [Fact]
+    public async Task DashMuxRecordsTheEvidenceReturnedByTheFfmpegPublicationBoundary()
+    {
+        var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        var finalPath = MuxStage.GetDashOutputPath(test.Execution);
+        await File.WriteAllTextAsync(
+            finalPath,
+            "published dash media",
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        var evidence = CreatePublicationEvidence("dash-object");
+        var muxer = new StubMuxer(Success(finalPath, evidence));
+        var provenance = new RecordingOutputProvenanceService();
+        var ownershipProvider = new TestOwnershipProvider();
+        var stage = test.CreateStage(
+            muxer,
+            ownershipProvider,
+            new DownloadOutputArtifactProvenanceRecorder(
+                provenance,
+                NullLogger<DownloadOutputArtifactProvenanceRecorder>.Instance));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Same(ownershipProvider, muxer.MergeEvidenceProvider);
+        var record = Assert.Single(provenance.Records);
+        Assert.Equal(test.Execution.TaskId, record.TaskId);
+        Assert.Equal("media", record.ArtifactKey);
+        Assert.Equal("dash-media", record.ArtifactKind);
+        Assert.Equal(Path.GetFullPath(finalPath), record.CanonicalPath);
+        Assert.Same(evidence, record.Evidence);
+    }
+
+    [Fact]
+    public async Task DurlMuxRecordsTheEvidenceReturnedByTheFfmpegPublicationBoundary()
+    {
+        var test = await MuxTestContext.CreateAsync().ConfigureAwait(true);
+        await using var testLifetime = test.ConfigureAwait(true);
+        await test.AddDurlSourcesAsync().ConfigureAwait(true);
+        var finalPath = $"{test.Execution.Downloading.DownloadBase.FilePath}.mp4";
+        await File.WriteAllTextAsync(
+            finalPath,
+            "published durl media",
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+        var evidence = CreatePublicationEvidence("durl-object");
+        var muxer = new StubMuxer(Success(finalPath, evidence));
+        var provenance = new RecordingOutputProvenanceService();
+        var ownershipProvider = new TestOwnershipProvider();
+        var stage = test.CreateStage(
+            muxer,
+            ownershipProvider,
+            new DownloadOutputArtifactProvenanceRecorder(
+                provenance,
+                NullLogger<DownloadOutputArtifactProvenanceRecorder>.Instance));
+
+        var result = await stage.ExecuteAsync(
+            test.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Same(ownershipProvider, muxer.ConcatEvidenceProvider);
+        var record = Assert.Single(provenance.Records);
+        Assert.Equal(test.Execution.TaskId, record.TaskId);
+        Assert.Equal("media", record.ArtifactKey);
+        Assert.Equal("durl-media", record.ArtifactKind);
+        Assert.Equal(Path.GetFullPath(finalPath), record.CanonicalPath);
+        Assert.Same(evidence, record.Evidence);
+    }
+
     private static FfmpegOperationResult ConfirmedInvalidInputs(
         string reason,
         params string[] paths)
@@ -190,6 +261,29 @@ public sealed class MuxFailureRecoveryTests
             paths.Select(path => new FfmpegInputFailure(
                 path,
                 FfmpegInputFailureKind.DecodeCorruption)).ToArray());
+    }
+
+    private static FfmpegOperationResult Success(
+        string outputPath,
+        OutputArtifactPublicationEvidence evidence)
+    {
+        return new FfmpegOperationResult(
+            true,
+            outputPath,
+            null,
+            TimeSpan.Zero,
+            FfmpegOperationFailureKind.None,
+            [],
+            evidence);
+    }
+
+    private static OutputArtifactPublicationEvidence CreatePublicationEvidence(string identity)
+    {
+        return new OutputArtifactPublicationEvidence(
+            ByteLength: 20,
+            Sha256: new string('a', 64),
+            IdentityProvider: "test-provider",
+            FilesystemIdentity: identity);
     }
 
     private sealed class MuxTestContext : IAsyncDisposable
@@ -334,11 +428,21 @@ public sealed class MuxFailureRecoveryTests
 
         public MuxStage CreateStage(FfmpegOperationResult result)
         {
+            return CreateStage(new StubMuxer(result));
+        }
+
+        public MuxStage CreateStage(
+            IFfmpegMediaMuxer muxer,
+            IOutputArtifactOwnershipProvider? ownershipProvider = null,
+            DownloadOutputArtifactProvenanceRecorder? provenanceRecorder = null)
+        {
             return new MuxStage(
                 new DownloadActivityPresenter(_stateWriter),
-                new StubMuxer(result),
+                muxer,
                 _stateWriter,
-                NullLogger<MuxStage>.Instance);
+                NullLogger<MuxStage>.Instance,
+                ownershipProvider,
+                provenanceRecorder);
         }
 
         public async Task<DurlTestSource[]> AddDurlSourcesAsync()
@@ -399,6 +503,10 @@ public sealed class MuxFailureRecoveryTests
 
     private sealed class StubMuxer(FfmpegOperationResult result) : IFfmpegMediaMuxer
     {
+        public IOutputArtifactOwnershipProvider? ConcatEvidenceProvider { get; private set; }
+
+        public IOutputArtifactOwnershipProvider? MergeEvidenceProvider { get; private set; }
+
         public Task<FfmpegOperationResult> ConcatDurlVideosAsync(
             VideoApplicationSettings videoSettings,
             IReadOnlyList<FfmpegConcatSegment> segments,
@@ -408,6 +516,19 @@ public sealed class MuxFailureRecoveryTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(result);
 
+        public Task<FfmpegOperationResult> ConcatDurlVideosWithEvidenceAsync(
+            VideoApplicationSettings videoSettings,
+            IReadOnlyList<FfmpegConcatSegment> segments,
+            string outputVideo,
+            bool overwriteDestination,
+            IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null,
+            Action<string>? action = null,
+            CancellationToken cancellationToken = default)
+        {
+            ConcatEvidenceProvider = outputArtifactOwnershipProvider;
+            return Task.FromResult(result);
+        }
+
         public Task<FfmpegOperationResult> MergeMediaAsync(
             VideoApplicationSettings videoSettings,
             string? audio,
@@ -416,6 +537,76 @@ public sealed class MuxFailureRecoveryTests
             bool overwriteDestination,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(result);
+
+        public Task<FfmpegOperationResult> MergeMediaWithEvidenceAsync(
+            VideoApplicationSettings videoSettings,
+            string? audio,
+            string? video,
+            string destination,
+            bool overwriteDestination,
+            IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null,
+            CancellationToken cancellationToken = default)
+        {
+            MergeEvidenceProvider = outputArtifactOwnershipProvider;
+            return Task.FromResult(result);
+        }
+    }
+
+    private sealed class RecordingOutputProvenanceService
+        : IDownloadOutputArtifactProvenanceApplicationService
+    {
+        public List<RecordedProvenance> Records { get; } = [];
+
+        public Task<OperationResult> RecordPublishedAsync(
+            DownloadTaskId taskId,
+            string artifactKey,
+            string artifactKind,
+            string canonicalPath,
+            OutputArtifactPublicationEvidence publicationEvidence,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Records.Add(new RecordedProvenance(
+                taskId,
+                artifactKey,
+                artifactKind,
+                Path.GetFullPath(canonicalPath),
+                publicationEvidence));
+            return Task.FromResult(OperationResult.Success());
+        }
+
+        public Task<OperationResult<IReadOnlyList<DownloadOutputArtifactProvenance>>> GetPublishedAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(
+                OperationResult.Success<IReadOnlyList<DownloadOutputArtifactProvenance>>([]));
+        }
+    }
+
+    private sealed record RecordedProvenance(
+        DownloadTaskId TaskId,
+        string ArtifactKey,
+        string ArtifactKind,
+        string CanonicalPath,
+        OutputArtifactPublicationEvidence Evidence);
+
+    private sealed class TestOwnershipProvider : IOutputArtifactOwnershipProvider
+    {
+        public Task<OutputArtifactEvidenceCaptureResult> CapturePublicationEvidenceAsync(
+            string temporaryPath,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(OutputArtifactEvidenceCaptureResult.Unsupported());
+        }
+
+        public Task<OutputArtifactSafeDeleteResult> DeleteIfOwnedAsync(
+            string candidatePath,
+            DownloadOutputArtifactProvenance provenance,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(OutputArtifactSafeDeleteResult.Unsupported());
+        }
     }
 
     private sealed record DurlTestSource(int Order, string TransferKey, string FilePath);

@@ -6,6 +6,8 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Downloads;
+using DownKyi.Domain.Downloads;
 using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging;
 
@@ -19,14 +21,20 @@ internal sealed class DownloadTaskFileService
     private static readonly string[] TempExtensions = { "", ".aria2", ".download" };
     private readonly AriaRuntimeClientRegistry _ariaClientRegistry;
     private readonly ILogger<DownloadTaskFileService> _logger;
+    private readonly IDownloadOutputArtifactProvenanceApplicationService? _outputProvenance;
+    private readonly IOutputArtifactOwnershipProvider? _artifactOwnershipProvider;
 
     public DownloadTaskFileService(
         AriaRuntimeClientRegistry ariaClientRegistry,
-        ILogger<DownloadTaskFileService> logger)
+        ILogger<DownloadTaskFileService> logger,
+        IDownloadOutputArtifactProvenanceApplicationService? outputProvenance = null,
+        IOutputArtifactOwnershipProvider? artifactOwnershipProvider = null)
     {
         _ariaClientRegistry = ariaClientRegistry
             ?? throw new ArgumentNullException(nameof(ariaClientRegistry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _outputProvenance = outputProvenance;
+        _artifactOwnershipProvider = artifactOwnershipProvider;
     }
 
     public async Task CancelActiveDownloadAsync(DownloadingItem downloading)
@@ -74,12 +82,87 @@ internal sealed class DownloadTaskFileService
         }
     }
 
-    public Task<DownloadFileDeletionResult> DeleteGeneratedFilesAsync(
+    public async Task<DownloadOutputArtifactCleanupResult> DeleteGeneratedFilesAsync(
         DownloadingItem downloading,
         CancellationToken cancellationToken = default)
     {
-        var files = GetGeneratedFiles(downloading);
-        return DeleteFilesAsync(files, cancellationToken);
+        ArgumentNullException.ThrowIfNull(downloading);
+        cancellationToken.ThrowIfCancellationRequested();
+        var discovered = GetGeneratedFiles(downloading);
+        var taskId = new DownloadTaskId(downloading.DownloadBase.Id);
+        if (_outputProvenance == null || _artifactOwnershipProvider == null)
+        {
+            return CreateUnprovenDiscoveryResult(discovered);
+        }
+
+        var loaded = await _outputProvenance
+            .GetPublishedAsync(taskId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!loaded.TryGetValue(out var provenance))
+        {
+            _logger.LogWarningMessage(
+                "Final output provenance could not be loaded; automatic cleanup will preserve discovered files.");
+            return CreateFailedDiscoveryResult(discovered);
+        }
+
+        var entries = new List<DownloadOutputArtifactCleanupEntry>();
+        var provenPaths = OperatingSystem.IsWindows()
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.Ordinal);
+        foreach (var artifact in provenance)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            provenPaths.Add(artifact.CanonicalPath);
+            OutputArtifactSafeDeleteResult deletion;
+            try
+            {
+                deletion = await _artifactOwnershipProvider
+                    .DeleteIfOwnedAsync(
+                        artifact.CanonicalPath,
+                        artifact,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (IOException exception)
+            {
+                _logger.LogErrorMessage("Final output ownership deletion failed.", exception);
+                deletion = OutputArtifactSafeDeleteResult.Failed();
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                _logger.LogErrorMessage("Final output ownership deletion was denied.", exception);
+                deletion = OutputArtifactSafeDeleteResult.Failed();
+            }
+
+            var status = MapSafeDeleteStatus(deletion.Status);
+            entries.Add(new DownloadOutputArtifactCleanupEntry(
+                artifact.ArtifactKey,
+                artifact.CanonicalPath,
+                status));
+            if (status is not DownloadOutputArtifactCleanupStatus.Deleted and
+                not DownloadOutputArtifactCleanupStatus.Missing)
+            {
+                _logger.LogWarningMessage(
+                    $"Final output cleanup preserved an artifact. key={artifact.ArtifactKey}; outcome={status}.");
+            }
+        }
+
+        foreach (var candidate in discovered)
+        {
+            if (provenPaths.Contains(candidate) || !File.Exists(candidate))
+            {
+                continue;
+            }
+
+            entries.Add(new DownloadOutputArtifactCleanupEntry(
+                ArtifactKey: null,
+                candidate,
+                DownloadOutputArtifactCleanupStatus.PreservedUnproven));
+            _logger.LogWarningMessage(
+                "Final-output cleanup preserved a discovered file without provenance.");
+        }
+
+        return new DownloadOutputArtifactCleanupResult(entries);
     }
 
     internal Task<DownloadFileDeletionResult> DeleteFilesAsync(
@@ -273,6 +356,52 @@ internal sealed class DownloadTaskFileService
         }
 
         return false;
+    }
+
+    private static DownloadOutputArtifactCleanupResult CreateUnprovenDiscoveryResult(
+        IEnumerable<string> discovered)
+    {
+        return new DownloadOutputArtifactCleanupResult(
+            discovered
+                .Where(File.Exists)
+                .Select(path => new DownloadOutputArtifactCleanupEntry(
+                    ArtifactKey: null,
+                    path,
+                    DownloadOutputArtifactCleanupStatus.PreservedUnproven))
+                .ToArray());
+    }
+
+    private static DownloadOutputArtifactCleanupResult CreateFailedDiscoveryResult(
+        IEnumerable<string> discovered)
+    {
+        var entries = discovered
+            .Where(File.Exists)
+            .Select(path => new DownloadOutputArtifactCleanupEntry(
+                ArtifactKey: null,
+                path,
+                DownloadOutputArtifactCleanupStatus.PreservedUnproven))
+            .ToList();
+        entries.Add(new DownloadOutputArtifactCleanupEntry(
+            ArtifactKey: null,
+            Path: string.Empty,
+            DownloadOutputArtifactCleanupStatus.Failed));
+        return new DownloadOutputArtifactCleanupResult(entries);
+    }
+
+    private static DownloadOutputArtifactCleanupStatus MapSafeDeleteStatus(
+        OutputArtifactSafeDeleteStatus status)
+    {
+        return status switch
+        {
+            OutputArtifactSafeDeleteStatus.Deleted => DownloadOutputArtifactCleanupStatus.Deleted,
+            OutputArtifactSafeDeleteStatus.Missing => DownloadOutputArtifactCleanupStatus.Missing,
+            OutputArtifactSafeDeleteStatus.Replaced => DownloadOutputArtifactCleanupStatus.PreservedReplaced,
+            OutputArtifactSafeDeleteStatus.Modified => DownloadOutputArtifactCleanupStatus.PreservedModified,
+            OutputArtifactSafeDeleteStatus.Unsupported => DownloadOutputArtifactCleanupStatus.PreservedUnsupported,
+            OutputArtifactSafeDeleteStatus.Unproven => DownloadOutputArtifactCleanupStatus.PreservedUnproven,
+            OutputArtifactSafeDeleteStatus.Failed => DownloadOutputArtifactCleanupStatus.Failed,
+            _ => DownloadOutputArtifactCleanupStatus.Failed
+        };
     }
 }
 

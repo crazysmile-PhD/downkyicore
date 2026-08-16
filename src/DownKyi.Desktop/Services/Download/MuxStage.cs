@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Downloads;
 using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using DownKyi.Domain.Results;
@@ -16,17 +17,23 @@ internal sealed class MuxStage : IDownloadPipelineStage
     private readonly IFfmpegMediaMuxer _ffmpegProcessor;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly ILogger<MuxStage> _logger;
+    private readonly IOutputArtifactOwnershipProvider? _artifactOwnershipProvider;
+    private readonly DownloadOutputArtifactProvenanceRecorder? _provenanceRecorder;
 
     public MuxStage(
         DownloadActivityPresenter presenter,
         IFfmpegMediaMuxer ffmpegProcessor,
         DownloadTaskStateWriter stateWriter,
-        ILogger<MuxStage> logger)
+        ILogger<MuxStage> logger,
+        IOutputArtifactOwnershipProvider? artifactOwnershipProvider = null,
+        DownloadOutputArtifactProvenanceRecorder? provenanceRecorder = null)
     {
         _presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
         _ffmpegProcessor = ffmpegProcessor ?? throw new ArgumentNullException(nameof(ffmpegProcessor));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _artifactOwnershipProvider = artifactOwnershipProvider;
+        _provenanceRecorder = provenanceRecorder;
     }
 
     public string Name => nameof(MuxStage);
@@ -64,13 +71,22 @@ internal sealed class MuxStage : IDownloadPipelineStage
         await _presenter.ShowMuxingAsync(context, cancellationToken).ConfigureAwait(true);
         var downloading = context.Downloading;
         var finalFile = GetDashOutputPath(context);
-        var result = await _ffmpegProcessor.MergeMediaAsync(
+        var result = await _ffmpegProcessor.MergeMediaWithEvidenceAsync(
             context.Settings.Video,
             context.AudioFile,
             context.VideoFile,
             finalFile,
             overwriteDestination: false,
-            cancellationToken).ConfigureAwait(true);
+            outputArtifactOwnershipProvider: _artifactOwnershipProvider,
+            cancellationToken: cancellationToken).ConfigureAwait(true);
+        if (result.Succeeded)
+        {
+            await RecordPublishedMediaAsync(
+                context,
+                artifactKind: "dash-media",
+                finalFile,
+                result).ConfigureAwait(true);
+        }
         var invalidation = result.Succeeded
             ? SourceInvalidationOutcome.None
             : await InvalidateSourcesAsync(
@@ -106,13 +122,22 @@ internal sealed class MuxStage : IDownloadPipelineStage
         {
             await _presenter.ShowMuxingAsync(context, cancellationToken).ConfigureAwait(true);
             var finalFile = $"{context.Downloading.DownloadBase.FilePath}.mp4";
-            var mergeResult = await _ffmpegProcessor.MergeMediaAsync(
+            var mergeResult = await _ffmpegProcessor.MergeMediaWithEvidenceAsync(
                 context.Settings.Video,
                 audio: null,
                 video: context.DurlDownloads[0].FilePath,
                 destination: finalFile,
                 overwriteDestination: false,
-                cancellationToken).ConfigureAwait(true);
+                outputArtifactOwnershipProvider: _artifactOwnershipProvider,
+                cancellationToken: cancellationToken).ConfigureAwait(true);
+            if (mergeResult.Succeeded)
+            {
+                await RecordPublishedMediaAsync(
+                    context,
+                    artifactKind: "durl-media",
+                    finalFile,
+                    mergeResult).ConfigureAwait(true);
+            }
             var singleInvalidation = mergeResult.Succeeded
                 ? SourceInvalidationOutcome.None
                 : await InvalidateSourcesAsync(
@@ -142,12 +167,21 @@ internal sealed class MuxStage : IDownloadPipelineStage
                 download.FilePath,
                 TimeSpan.FromMilliseconds(download.Durl.Length)))
             .ToArray();
-        var result = await _ffmpegProcessor.ConcatDurlVideosAsync(
+        var result = await _ffmpegProcessor.ConcatDurlVideosWithEvidenceAsync(
             context.Settings.Video,
             segments,
             outputPath,
             overwriteDestination: false,
+            outputArtifactOwnershipProvider: _artifactOwnershipProvider,
             cancellationToken: cancellationToken).ConfigureAwait(true);
+        if (result.Succeeded)
+        {
+            await RecordPublishedMediaAsync(
+                context,
+                artifactKind: "durl-media",
+                outputPath,
+                result).ConfigureAwait(true);
+        }
         var invalidation = result.Succeeded
             ? SourceInvalidationOutcome.None
             : await InvalidateSourcesAsync(
@@ -232,6 +266,22 @@ internal sealed class MuxStage : IDownloadPipelineStage
         return cleanupFailed
             ? SourceInvalidationOutcome.CleanupFailed
             : SourceInvalidationOutcome.Invalidated;
+    }
+
+    private Task RecordPublishedMediaAsync(
+        DownloadExecutionContext context,
+        string artifactKind,
+        string finalFile,
+        FfmpegOperationResult result)
+    {
+        return _provenanceRecorder == null
+            ? Task.CompletedTask
+            : _provenanceRecorder.RecordAfterPublishAsync(
+                context.TaskId,
+                artifactKey: "media",
+                artifactKind,
+                finalFile,
+                result.PublicationEvidence);
     }
 
     private static string GetFailureCode(

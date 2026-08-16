@@ -26,6 +26,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
     private readonly DownloadTaskProjectionStore _projectionStore;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly IDownloadTaskApplicationService _tasks;
+    private readonly IDownloadOutputArtifactProvenanceApplicationService _outputProvenance;
+    private readonly IOutputArtifactOwnershipProvider _artifactOwnershipProvider;
     private readonly IUserNotificationService _notificationService;
     private readonly DownloadDiagnosticLogger _diagnosticLogger;
     private readonly FfmpegProcessor _ffmpegProcessor;
@@ -41,6 +43,8 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
         DownloadTaskProjectionStore projectionStore,
         DownloadTaskStateWriter stateWriter,
         IDownloadTaskApplicationService tasks,
+        IDownloadOutputArtifactProvenanceApplicationService outputProvenance,
+        IOutputArtifactOwnershipProvider artifactOwnershipProvider,
         IUserNotificationService notificationService,
         IUiDispatcher uiDispatcher,
         ISettingsStore settingsStore,
@@ -58,6 +62,10 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
             ?? throw new ArgumentNullException(nameof(projectionStore));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
+        _outputProvenance = outputProvenance
+            ?? throw new ArgumentNullException(nameof(outputProvenance));
+        _artifactOwnershipProvider = artifactOwnershipProvider
+            ?? throw new ArgumentNullException(nameof(artifactOwnershipProvider));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
@@ -106,7 +114,11 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
             _wbiKeyProvider,
             _stateWriter,
             _loggerFactory.CreateLogger<DownloadArtifactWriter>(),
-            _client);
+            _client,
+            new AtomicOutputPublisher(_artifactOwnershipProvider),
+            new DownloadOutputArtifactProvenanceRecorder(
+                _outputProvenance,
+                _loggerFactory.CreateLogger<DownloadOutputArtifactProvenanceRecorder>()));
         var shutdownRecovery = new DownloadTaskShutdownRecovery(
             _tasks,
             _stateWriter);
@@ -144,7 +156,11 @@ internal sealed class DownloadRuntimeFactory : IDownloadRuntimeFactory
                 presenter,
                 _ffmpegProcessor,
                 _stateWriter,
-                _loggerFactory.CreateLogger<MuxStage>()),
+                _loggerFactory.CreateLogger<MuxStage>(),
+                _artifactOwnershipProvider,
+                new DownloadOutputArtifactProvenanceRecorder(
+                    _outputProvenance,
+                    _loggerFactory.CreateLogger<DownloadOutputArtifactProvenanceRecorder>())),
             new ValidateStage(),
             new FinalizeStage(
                 _projectionStore,

@@ -50,7 +50,7 @@ public sealed class DownloadManagerCoordinatorTests
     }
 
     [Fact]
-    public async Task DeleteCanBeRetriedAfterAFormerFileCleanupLeftTaskCanceled()
+    public async Task DeleteOfCanceledTaskPreservesUnprovenTransferFileAndRemovesTask()
     {
         using var context = new CoordinatorContext();
         var item = context.CreateDownloadingItem("delete-retry", DownloadStatus.WaitForDownload);
@@ -64,7 +64,7 @@ public sealed class DownloadManagerCoordinatorTests
 
         await context.Coordinator.DeleteAsync(item, TestContext.Current.CancellationToken);
 
-        Assert.False(File.Exists(media));
+        Assert.True(File.Exists(media));
         Assert.DoesNotContain(item, context.State.Downloading);
         Assert.Equal(
             item.DownloadBase.Id,
@@ -75,7 +75,7 @@ public sealed class DownloadManagerCoordinatorTests
     }
 
     [Fact]
-    public async Task DeleteRemovesGeneratedFilesResumeSidecarsStoreRowAndProjection()
+    public async Task DeletePreservesFilenameDiscoveredTransferFilesAndResumeSidecars()
     {
         using var context = new CoordinatorContext();
         var item = context.CreateDownloadingItem("delete-complete", DownloadStatus.WaitForDownload);
@@ -87,12 +87,51 @@ public sealed class DownloadManagerCoordinatorTests
 
         await context.Coordinator.DeleteAsync(item, TestContext.Current.CancellationToken);
 
-        Assert.False(File.Exists(media));
-        Assert.False(File.Exists(sidecar));
+        Assert.True(File.Exists(media));
+        Assert.True(File.Exists(sidecar));
         Assert.DoesNotContain(item, context.State.Downloading);
         Assert.Null(await context.Store.FindAsync(
             new DownloadTaskId(item.DownloadBase.Id),
             TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task DeleteRemovesProvenOutputAndPreservesFilenameDiscoveredTransferArtifacts()
+    {
+        using var context = new CoordinatorContext(enableOutputProvenance: true);
+        var item = context.CreateDownloadingItem("delete-proven", DownloadStatus.WaitForDownload);
+        item.Downloading.DownloadFiles["video"] = "delete-proven.mp4";
+        context.State.AddDownloading(item);
+        await context.Storage.AddDownloadingAsync(item, TestContext.Current.CancellationToken);
+        var provenOutput = context.CreateFile("renamed-output.mp4", "owned final output");
+        var transfer = context.CreateFile("delete-proven.mp4", "transfer artifact");
+        var sidecar = context.CreateFile("delete-proven.mp4.aria2", "resume state");
+        var taskId = new DownloadTaskId(item.DownloadBase.Id);
+        var recorded = await context.OutputProvenance!.RecordPublishedAsync(
+            taskId,
+            "media",
+            "media",
+            provenOutput,
+            new OutputArtifactPublicationEvidence(
+                new FileInfo(provenOutput).Length,
+                new string('a', 64),
+                "test-ownership-provider",
+                "owned-final-output"),
+            TestContext.Current.CancellationToken);
+        Assert.True(recorded.IsSuccess);
+
+        await context.Coordinator.DeleteAsync(item, TestContext.Current.CancellationToken);
+
+        Assert.False(File.Exists(provenOutput));
+        Assert.True(File.Exists(transfer));
+        Assert.True(File.Exists(sidecar));
+        Assert.DoesNotContain(item, context.State.Downloading);
+        Assert.Null(await context.Store.FindAsync(taskId, TestContext.Current.CancellationToken));
+        var remainingProvenance = await context.Store.GetPublishedAsync(
+            taskId,
+            TestContext.Current.CancellationToken);
+        Assert.True(remainingProvenance.IsSuccess);
+        Assert.Empty(remainingProvenance.RequireValue());
     }
 
     [Fact]
@@ -139,7 +178,7 @@ public sealed class DownloadManagerCoordinatorTests
             "downkyi-download-manager-tests",
             Guid.NewGuid().ToString("N"));
 
-        public CoordinatorContext()
+        public CoordinatorContext(bool enableOutputProvenance = false)
         {
             Directory.CreateDirectory(_directory);
             Store = new SqliteDownloadTaskStore(
@@ -152,9 +191,14 @@ public sealed class DownloadManagerCoordinatorTests
             Queue = new RecordingDownloadTaskQueue();
             State = new DownloadListState();
             Launcher = new RecordingPlatformLauncher();
+            OutputProvenance = enableOutputProvenance
+                ? new DownloadOutputArtifactProvenanceApplicationService(Store, clock)
+                : null;
             var fileService = new DownloadTaskFileService(
                 new AriaRuntimeClientRegistry(),
-                NullLogger<DownloadTaskFileService>.Instance);
+                NullLogger<DownloadTaskFileService>.Instance,
+                OutputProvenance,
+                enableOutputProvenance ? new DeletingOwnershipProvider() : null);
             Coordinator = new DownloadManagerCoordinator(
                 Storage,
                 StateWriter,
@@ -177,6 +221,8 @@ public sealed class DownloadManagerCoordinatorTests
         public DownloadListState State { get; }
 
         public RecordingPlatformLauncher Launcher { get; }
+
+        public DownloadOutputArtifactProvenanceApplicationService? OutputProvenance { get; }
 
         public DownloadManagerCoordinator Coordinator { get; }
 
@@ -254,6 +300,27 @@ public sealed class DownloadManagerCoordinatorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(true);
+        }
+    }
+
+    private sealed class DeletingOwnershipProvider : IOutputArtifactOwnershipProvider
+    {
+        public Task<OutputArtifactEvidenceCaptureResult> CapturePublicationEvidenceAsync(
+            string temporaryPath,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(OutputArtifactEvidenceCaptureResult.Unsupported());
+        }
+
+        public Task<OutputArtifactSafeDeleteResult> DeleteIfOwnedAsync(
+            string candidatePath,
+            DownloadOutputArtifactProvenance provenance,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Delete(candidatePath);
+            return Task.FromResult(OutputArtifactSafeDeleteResult.DeletedResult());
         }
     }
 }
