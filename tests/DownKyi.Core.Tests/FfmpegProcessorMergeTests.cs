@@ -166,6 +166,33 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
         Assert.Equal(
             originalDestination,
             await File.ReadAllBytesAsync(destination, TestContext.Current.CancellationToken));
+        Assert.Empty(Directory.EnumerateFiles(_directory, "*.partial.mp4"));
+    }
+
+    [Fact]
+    public async Task LateDestinationConflictPreservesForeignOutputAndCleansPartial()
+    {
+        var audio = CreateInput("late-destination-audio.m4s");
+        var video = CreateInput("late-destination-video.m4s");
+        var destination = Path.Combine(_directory, "late-destination.mp4");
+        byte[] foreignContent = [9, 8, 7];
+        var processor = new FfmpegProcessor(
+            _settings,
+            NullLoggerFactory.Instance,
+            new SuccessfulMergeRunner(() => File.WriteAllBytes(destination, foreignContent)));
+
+        var result = await processor.MergeMediaAsync(
+            _settings.Current.Video,
+            audio,
+            video,
+            destination,
+            overwriteDestination: false,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(FfmpegOperationFailureKind.DestinationConflict, result.FailureKind);
+        Assert.Equal(foreignContent, await File.ReadAllBytesAsync(destination, TestContext.Current.CancellationToken));
+        Assert.Empty(Directory.EnumerateFiles(_directory, "*.partial.mp4"));
     }
 
     [Fact]
@@ -344,7 +371,7 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
         }
     }
 
-    private sealed class SuccessfulMergeRunner : IFfmpegProcessRunner
+    private sealed class SuccessfulMergeRunner(Action? afterOutputWritten = null) : IFfmpegProcessRunner
     {
         public int CallCount { get; private set; }
 
@@ -360,6 +387,7 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
                 command.Arguments[^1],
                 [1, 2, 3],
                 cancellationToken).ConfigureAwait(false);
+            afterOutputWritten?.Invoke();
             return new FfmpegProcessResult(true, 0, string.Empty, string.Empty, false);
         }
     }
