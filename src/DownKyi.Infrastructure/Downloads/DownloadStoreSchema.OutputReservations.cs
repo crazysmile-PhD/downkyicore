@@ -6,7 +6,8 @@ using Microsoft.Data.Sqlite;
 namespace DownKyi.Infrastructure.Downloads;
 
 internal static partial class DownloadStoreSchema
-{    private static async Task ApplyVersionThreeAsync(
+{
+    private static async Task ApplyVersionThreeAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         DateTimeOffset appliedAtUtc,
