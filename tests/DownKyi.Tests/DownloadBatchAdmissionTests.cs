@@ -30,8 +30,8 @@ public sealed class DownloadBatchAdmissionTests
         Assert.Equal(output, first.DownloadBase.FilePath);
         Assert.Equal(output, second.DownloadBase.FilePath);
         Assert.Equal(["suffix-off-first"], store.AddedTaskIds);
-        Assert.Equal(1, lists.Downloading.Count);
-        Assert.Equal(1, queue.Enqueued.Count);
+        Assert.Single(lists.Downloading);
+        Assert.Single(queue.Enqueued);
         Assert.Equal(0, store.AtomicCalls);
     }
 
@@ -120,8 +120,14 @@ public sealed class DownloadBatchAdmissionTests
     {
         DownloadBase = new DownloadBase
         {
-            Id = id, Avid = cid, Bvid = $"BV-{id}", Cid = cid, FilePath = path, Name = id,
-            Resolution = new DownKyi.Core.BiliApi.BiliUtils.Quality { Id = 80, Name = "1080P" }, VideoCodecName = "AVC"
+            Id = id,
+            Avid = cid,
+            Bvid = $"BV-{id}",
+            Cid = cid,
+            FilePath = path,
+            Name = id,
+            Resolution = new DownKyi.Core.BiliApi.BiliUtils.Quality { Id = 80, Name = "1080P" },
+            VideoCodecName = "AVC"
         },
         Downloading = new Downloading
         {
