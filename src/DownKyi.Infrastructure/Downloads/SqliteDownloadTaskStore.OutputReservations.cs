@@ -75,6 +75,87 @@ public sealed partial class SqliteDownloadTaskStore
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<OperationResult> AddManyAtomicAsync(
+        IReadOnlyList<DownloadTask> tasks,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(tasks);
+        if (tasks.Count == 0)
+        {
+            return OperationResult.Success();
+        }
+
+        foreach (var task in tasks)
+        {
+            ArgumentNullException.ThrowIfNull(task);
+            if (task.Phase == DownloadPhase.Deleted)
+            {
+                throw new ArgumentException("A deleted task cannot be inserted.", nameof(tasks));
+            }
+        }
+
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var transaction = BeginImmediateTransaction(connection);
+        var currentTaskId = tasks[0].Id;
+        try
+        {
+            foreach (var task in tasks)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                currentTaskId = task.Id;
+                if (task.Phase != DownloadPhase.Completed &&
+                    await IsOutputPathReservedCoreAsync(
+                        connection, transaction, task.Output.BasePath,
+                        DownloadOutputPathKey.UsesCaseInsensitiveComparison, cancellationToken).ConfigureAwait(false))
+                {
+                    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                    return OutputPathConflict();
+                }
+
+                await DownloadTaskSqlWriter.InsertBaseAsync(connection, transaction, task, cancellationToken).ConfigureAwait(false);
+                await DownloadTaskSqlWriter.WriteStateRowAsync(connection, transaction, task, cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return OperationResult.Success();
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            return exception.Message.Contains("output_reservation_key", StringComparison.OrdinalIgnoreCase)
+                ? OutputPathConflict()
+                : Conflict(currentTaskId, "already exists");
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    public async Task<IReadOnlyList<string>> GetActiveOutputPathsAsync(CancellationToken cancellationToken)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT db.file_path FROM download_base db
+            INNER JOIN downloading dl ON dl.id = db.id
+            WHERE NOT EXISTS (SELECT 1 FROM download_quarantine q
+                WHERE q.source_table = 'downloading' AND q.record_id = db.id)
+            ORDER BY db.id
+            """;
+        var paths = new List<string>();
+        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            paths.Add(reader.GetString(0));
+        }
+
+        return paths;
+    }
+
     private static async Task<bool> IsOutputPathReservedCoreAsync(
         SqliteConnection connection,
         SqliteTransaction? transaction,

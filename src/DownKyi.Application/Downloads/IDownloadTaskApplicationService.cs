@@ -17,6 +17,12 @@ public interface IDownloadTaskApplicationService
 
     Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken);
 
+    async Task<IReadOnlyList<string>> GetActiveOutputPathsAsync(CancellationToken cancellationToken)
+    {
+        var tasks = await GetUnfinishedAsync(cancellationToken).ConfigureAwait(false);
+        return tasks.Select(static task => task.Output.BasePath).ToArray();
+    }
+
     Task<bool> IsOutputPathReservedAsync(
         string basePath,
         bool ignoreCase,

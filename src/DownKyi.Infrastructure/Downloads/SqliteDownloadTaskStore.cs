@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DownKyi.Infrastructure.Downloads;
 
-public sealed partial class SqliteDownloadTaskStore : IDownloadTaskStore, IDisposable
+public sealed partial class SqliteDownloadTaskStore : IDownloadTaskStore, IDownloadTaskAtomicBatchStore, IDisposable
 {
     private const int MaximumHistoryPageSize = 500;
     private static readonly Action<ILogger, int, Exception?> LogOrphanCleanup = LoggerMessage.Define<int>(
