@@ -479,6 +479,305 @@ public sealed class DownloadArtifactStageTests
         Assert.Empty(context.GetTemporaryOutputFiles());
     }
 
+    [Fact]
+    public async Task AtomicPublisherReturnsEvidenceOnlyAfterTheDestinationIsPublishedAndVerified()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "downkyi-atomic-output-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var destination = Path.Combine(directory, "output.mp4");
+            var ownershipProvider = new RecordingPublicationOwnershipProvider();
+            var publisher = new AtomicOutputPublisher(ownershipProvider);
+
+            var result = await publisher.PublishAsync(
+                destination,
+                (temporaryPath, token) => File.WriteAllTextAsync(
+                    temporaryPath,
+                    "published media",
+                    token),
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+            Assert.True(result.Succeeded);
+            Assert.Same(ownershipProvider.Evidence, result.PublicationEvidence);
+            Assert.Equal("published media", await File.ReadAllTextAsync(
+                destination,
+                TestContext.Current.CancellationToken).ConfigureAwait(true));
+            var capture = Assert.Single(ownershipProvider.Captures);
+            Assert.True(capture.ExistedWhenObserved);
+            Assert.Contains(".downkyi-tmp", capture.Path, StringComparison.Ordinal);
+            var verification = Assert.Single(ownershipProvider.Verifications);
+            Assert.Equal(Path.GetFullPath(destination), verification.Path);
+            Assert.True(verification.ExistedWhenObserved);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task AtomicPublisherLeavesOutputUntrackedWhenPostMoveIdentityVerificationFails()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "downkyi-atomic-output-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var destination = Path.Combine(directory, "output.mp4");
+            var ownershipProvider = new RecordingPublicationOwnershipProvider
+            {
+                VerifyPublishedIdentity = false
+            };
+            var publisher = new AtomicOutputPublisher(ownershipProvider);
+
+            var result = await publisher.PublishAsync(
+                destination,
+                (temporaryPath, token) => File.WriteAllTextAsync(
+                    temporaryPath,
+                    "published media",
+                    token),
+                TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+            Assert.True(result.Succeeded);
+            Assert.Null(result.PublicationEvidence);
+            Assert.True(File.Exists(destination));
+            Assert.Single(ownershipProvider.Captures);
+            Assert.Single(ownershipProvider.Verifications);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(nameof(ArtifactKind.MainCover))]
+    [InlineData(nameof(ArtifactKind.PageCover))]
+    [InlineData(nameof(ArtifactKind.Subtitle))]
+    [InlineData(nameof(ArtifactKind.Danmaku))]
+    [InlineData(nameof(ArtifactKind.Nfo))]
+    public async Task SuccessfulArtifactPublicationsPersistProvenanceAfterEachOutputIsPublished(
+        string kindName)
+    {
+        var kind = Enum.Parse<ArtifactKind>(kindName);
+        var provenance = new RecordingOutputProvenanceService();
+        var ownershipProvider = new RecordingPublicationOwnershipProvider();
+        var recorder = new DownloadOutputArtifactProvenanceRecorder(
+            provenance,
+            NullLogger<DownloadOutputArtifactProvenanceRecorder>.Instance);
+        using var context = await ArtifactTestContext.CreateAsync(
+            CreateSuccessfulArtifactClient(kind),
+            cover: kind is ArtifactKind.MainCover or ArtifactKind.PageCover,
+            subtitle: kind == ArtifactKind.Subtitle,
+            danmaku: kind == ArtifactKind.Danmaku,
+            generateMetadata: kind == ArtifactKind.Nfo,
+            outputPublisher: new AtomicOutputPublisher(ownershipProvider),
+            provenanceRecorder: recorder).ConfigureAwait(true);
+        if (kind == ArtifactKind.MainCover)
+        {
+            context.Downloading.DownloadBase.CoverUrl = "https://example.test/main.jpg";
+        }
+        else if (kind == ArtifactKind.PageCover)
+        {
+            context.Downloading.DownloadBase.PageCoverUrl = "https://example.test/page.jpg";
+        }
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        (string ArtifactKey, string ArtifactKind)[] expected = kind switch
+        {
+            ArtifactKind.MainCover =>
+            new[]
+            {
+                (DownloadArtifactWriter.MainCoverTransferKey, DownloadArtifactWriter.CoverArtifactKind)
+            },
+            ArtifactKind.PageCover =>
+            new[]
+            {
+                (DownloadArtifactWriter.PageCoverTransferKey, DownloadArtifactWriter.PageCoverArtifactKind)
+            },
+            ArtifactKind.Subtitle =>
+            new[]
+            {
+                (DownloadArtifactWriter.GetSubtitleTrackTransferKey(0), DownloadArtifactWriter.SubtitleArtifactKind),
+                (DownloadArtifactWriter.GetSubtitleTrackTransferKey(1), DownloadArtifactWriter.SubtitleArtifactKind),
+                (DownloadArtifactWriter.DefaultSubtitleTransferKey, DownloadArtifactWriter.SubtitleArtifactKind)
+            },
+            ArtifactKind.Danmaku =>
+            new[]
+            {
+                ("danmaku", DownloadArtifactWriter.DanmakuArtifactKind)
+            },
+            ArtifactKind.Nfo =>
+            new[]
+            {
+                ("nfo", DownloadArtifactWriter.NfoArtifactKind)
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(kindName), kind, null)
+        };
+
+        Assert.Equal(expected, provenance.Persisted
+            .Select(record => (record.ArtifactKey, record.ArtifactKind))
+            .ToArray());
+        Assert.Equal(expected.Length, ownershipProvider.Captures.Count);
+        Assert.Equal(expected.Length, ownershipProvider.Verifications.Count);
+        Assert.All(provenance.Persisted, record =>
+        {
+            Assert.Equal(context.Execution.TaskId, record.TaskId);
+            Assert.True(record.DestinationExistedWhenRecorded);
+            Assert.True(File.Exists(record.CanonicalPath));
+            Assert.Same(ownershipProvider.Evidence, record.PublicationEvidence);
+        });
+    }
+
+    [Fact]
+    public async Task FailedArtifactPublicationDoesNotRecordProvenance()
+    {
+        var provenance = new RecordingOutputProvenanceService();
+        var ownershipProvider = new RecordingPublicationOwnershipProvider();
+        var client = new TestBilibiliApiClient
+        {
+            DownloadFileAsyncHandler = (_, _, _) =>
+                Task.FromException(new IOException("write failed"))
+        };
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: true,
+            outputPublisher: new AtomicOutputPublisher(ownershipProvider),
+            provenanceRecorder: new DownloadOutputArtifactProvenanceRecorder(
+                provenance,
+                NullLogger<DownloadOutputArtifactProvenanceRecorder>.Instance))
+            .ConfigureAwait(true);
+        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.jpg";
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Empty(provenance.Attempts);
+        Assert.Empty(provenance.Persisted);
+        Assert.Empty(ownershipProvider.Captures);
+        Assert.False(File.Exists(context.Execution.CoverFile));
+    }
+
+    [Fact]
+    public async Task DestinationCollisionDoesNotRecordProvenance()
+    {
+        string? foreignPath = null;
+        var provenance = new RecordingOutputProvenanceService();
+        var ownershipProvider = new RecordingPublicationOwnershipProvider();
+        var publisher = new AtomicOutputPublisher(
+            path =>
+            {
+                foreignPath = path;
+                File.WriteAllText(path, "foreign artifact");
+            },
+            ownershipProvider);
+        using var context = await ArtifactTestContext.CreateAsync(
+            CreateSuccessfulArtifactClient(ArtifactKind.MainCover),
+            cover: true,
+            outputPublisher: publisher,
+            provenanceRecorder: new DownloadOutputArtifactProvenanceRecorder(
+                provenance,
+                NullLogger<DownloadOutputArtifactProvenanceRecorder>.Instance))
+            .ConfigureAwait(true);
+        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.jpg";
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.output.destination-collision", result.Error?.Code);
+        Assert.Empty(provenance.Attempts);
+        Assert.Empty(provenance.Persisted);
+        Assert.Single(ownershipProvider.Captures);
+        Assert.Empty(ownershipProvider.Verifications);
+        Assert.Equal("foreign artifact", await File.ReadAllTextAsync(
+            Assert.IsType<string>(foreignPath),
+            TestContext.Current.CancellationToken).ConfigureAwait(true));
+    }
+
+    [Fact]
+    public async Task CanceledArtifactPublicationDoesNotRecordProvenance()
+    {
+        var provenance = new RecordingOutputProvenanceService();
+        var ownershipProvider = new RecordingPublicationOwnershipProvider();
+        var client = new TestBilibiliApiClient
+        {
+            DownloadFileAsyncHandler = (_, _, token) =>
+                Task.FromException(new OperationCanceledException(token))
+        };
+        using var context = await ArtifactTestContext.CreateAsync(
+            client,
+            cover: true,
+            outputPublisher: new AtomicOutputPublisher(ownershipProvider),
+            provenanceRecorder: new DownloadOutputArtifactProvenanceRecorder(
+                provenance,
+                NullLogger<DownloadOutputArtifactProvenanceRecorder>.Instance))
+            .ConfigureAwait(true);
+        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.jpg";
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            context.Stage.ExecuteAsync(
+                context.Execution,
+                TestContext.Current.CancellationToken)).ConfigureAwait(true);
+
+        Assert.Empty(provenance.Attempts);
+        Assert.Empty(provenance.Persisted);
+        Assert.Empty(ownershipProvider.Captures);
+        Assert.False(File.Exists(context.Execution.CoverFile));
+    }
+
+    [Fact]
+    public async Task ProvenancePersistenceFailureLeavesSuccessfulOutputUntracked()
+    {
+        var provenance = new RecordingOutputProvenanceService
+        {
+            RecordResult = OperationResult.Failure(
+                OperationError.Unexpected(
+                    "download.output_provenance.write_failed",
+                    "The durable provenance write failed."))
+        };
+        var ownershipProvider = new RecordingPublicationOwnershipProvider();
+        using var context = await ArtifactTestContext.CreateAsync(
+            CreateSuccessfulArtifactClient(ArtifactKind.MainCover),
+            cover: true,
+            outputPublisher: new AtomicOutputPublisher(ownershipProvider),
+            provenanceRecorder: new DownloadOutputArtifactProvenanceRecorder(
+                provenance,
+                NullLogger<DownloadOutputArtifactProvenanceRecorder>.Instance))
+            .ConfigureAwait(true);
+        context.Downloading.DownloadBase.CoverUrl = "https://example.test/cover.jpg";
+
+        var result = await context.Stage.ExecuteAsync(
+            context.Execution,
+            TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Single(provenance.Attempts);
+        Assert.Empty(provenance.Persisted);
+        Assert.True(File.Exists(context.Execution.CoverFile));
+        Assert.Single(ownershipProvider.Captures);
+        Assert.Single(ownershipProvider.Verifications);
+    }
+
     private static StringComparer PathComparer =>
         OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
             ? StringComparer.OrdinalIgnoreCase
@@ -618,6 +917,107 @@ public sealed class DownloadArtifactStageTests
         };
     }
 
+    private sealed record PublicationPathObservation(
+        string Path,
+        bool ExistedWhenObserved);
+
+    private sealed record RecordedArtifactPublication(
+        DownloadTaskId TaskId,
+        string ArtifactKey,
+        string ArtifactKind,
+        string CanonicalPath,
+        OutputArtifactPublicationEvidence PublicationEvidence,
+        bool DestinationExistedWhenRecorded);
+
+    private sealed class RecordingOutputProvenanceService
+        : IDownloadOutputArtifactProvenanceApplicationService
+    {
+        public List<RecordedArtifactPublication> Attempts { get; } = [];
+
+        public List<RecordedArtifactPublication> Persisted { get; } = [];
+
+        public OperationResult RecordResult { get; init; } = OperationResult.Success();
+
+        public Task<OperationResult> RecordPublishedAsync(
+            DownloadTaskId taskId,
+            string artifactKey,
+            string artifactKind,
+            string canonicalPath,
+            OutputArtifactPublicationEvidence publicationEvidence,
+            CancellationToken cancellationToken)
+        {
+            var record = new RecordedArtifactPublication(
+                taskId,
+                artifactKey,
+                artifactKind,
+                Path.GetFullPath(canonicalPath),
+                publicationEvidence,
+                File.Exists(canonicalPath));
+            Attempts.Add(record);
+            if (RecordResult.IsSuccess)
+            {
+                Persisted.Add(record);
+            }
+
+            return Task.FromResult(RecordResult);
+        }
+
+        public Task<OperationResult<IReadOnlyList<DownloadOutputArtifactProvenance>>> GetPublishedAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(
+                OperationResult.Success<IReadOnlyList<DownloadOutputArtifactProvenance>>([]));
+        }
+    }
+
+    private sealed class RecordingPublicationOwnershipProvider : IOutputArtifactOwnershipProvider
+    {
+        public OutputArtifactPublicationEvidence Evidence { get; } = new(
+            ByteLength: 42,
+            Sha256: new string('a', 64),
+            IdentityProvider: "test-publication-provider",
+            FilesystemIdentity: "test-file-identity");
+
+        public List<PublicationPathObservation> Captures { get; } = [];
+
+        public List<PublicationPathObservation> Verifications { get; } = [];
+
+        public bool VerifyPublishedIdentity { get; init; } = true;
+
+        public Task<OutputArtifactEvidenceCaptureResult> CapturePublicationEvidenceAsync(
+            string temporaryPath,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Captures.Add(new PublicationPathObservation(
+                Path.GetFullPath(temporaryPath),
+                File.Exists(temporaryPath)));
+            return Task.FromResult(OutputArtifactEvidenceCaptureResult.Captured(Evidence));
+        }
+
+        public Task<bool> VerifyPublishedObjectIdentityAsync(
+            string destinationPath,
+            OutputArtifactPublicationEvidence evidence,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Verifications.Add(new PublicationPathObservation(
+                Path.GetFullPath(destinationPath),
+                File.Exists(destinationPath)));
+            return Task.FromResult(VerifyPublishedIdentity);
+        }
+
+        public Task<OutputArtifactSafeDeleteResult> DeleteIfOwnedAsync(
+            string candidatePath,
+            DownloadOutputArtifactProvenance provenance,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(OutputArtifactSafeDeleteResult.Unsupported());
+        }
+    }
+
     private sealed class CallbackStage(Action callback) : IDownloadPipelineStage
     {
         public string Name => "finalize";
@@ -709,7 +1109,8 @@ public sealed class DownloadArtifactStageTests
             bool danmaku = false,
             bool generateMetadata = false,
             bool useMissingOutputDirectory = false,
-            IAtomicOutputPublisher? outputPublisher = null)
+            IAtomicOutputPublisher? outputPublisher = null,
+            DownloadOutputArtifactProvenanceRecorder? provenanceRecorder = null)
         {
             var directory = Path.Combine(
                 Path.GetTempPath(),
@@ -787,7 +1188,8 @@ public sealed class DownloadArtifactStageTests
                 stateWriter,
                 NullLogger<DownloadArtifactWriter>.Instance,
                 client,
-                outputPublisher);
+                outputPublisher,
+                provenanceRecorder);
             var execution = new DownloadExecutionContext(
                 taskId,
                 downloading,

@@ -24,7 +24,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(true);
         using var version = connection.CreateCommand();
         version.CommandText = "PRAGMA user_version";
-        Assert.Equal(4L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(5L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             await reopened.InitializeAsync(TestContext.Current.CancellationToken);
         }
 
-        Assert.Equal(4, await ReadSchemaVersionAsync());
+        Assert.Equal(5, await ReadSchemaVersionAsync());
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
     }
 
@@ -142,7 +142,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
         await store.InitializeAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(4, await ReadSchemaVersionAsync());
+        Assert.Equal(5, await ReadSchemaVersionAsync());
         Assert.Equal(1, await CountDownloadBaseRecordAsync("legacy-resume"));
         Assert.Equal(1, await CountDownloadingRecordAsync("legacy-resume"));
         Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
@@ -374,7 +374,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         }
 
         Assert.Equal(
-            4,
+            5,
             await ReadSchemaVersionAsync()
                 .ConfigureAwait(true));
 

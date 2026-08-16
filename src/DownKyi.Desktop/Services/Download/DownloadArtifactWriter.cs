@@ -30,19 +30,22 @@ internal sealed partial class DownloadArtifactWriter
     private readonly ILogger _logger;
     private readonly IBilibiliApiClient _client;
     private readonly IAtomicOutputPublisher _outputPublisher;
+    private readonly DownloadOutputArtifactProvenanceRecorder? _provenanceRecorder;
 
     public DownloadArtifactWriter(
         IWbiKeyProvider wbiKeyProvider,
         DownloadTaskStateWriter stateWriter,
         ILogger logger,
         IBilibiliApiClient client,
-        IAtomicOutputPublisher? outputPublisher = null)
+        IAtomicOutputPublisher? outputPublisher = null,
+        DownloadOutputArtifactProvenanceRecorder? provenanceRecorder = null)
     {
         _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _outputPublisher = outputPublisher ?? new AtomicOutputPublisher();
+        _provenanceRecorder = provenanceRecorder;
     }
 
     public async Task<OperationResult<DownloadArtifactWriteResult>> DownloadCoverAsync(
@@ -90,6 +93,12 @@ internal sealed partial class DownloadArtifactWriter
                     "The requested cover output is missing or invalid.");
             }
 
+            await RecordPublishedArtifactAsync(
+                taskId,
+                transferKey,
+                GetCoverArtifactKind(transferKey),
+                fileName,
+                publish).ConfigureAwait(false);
             return OperationResult.Success(DownloadArtifactWriteResult.Created(fileName));
         }
         catch (OperationCanceledException)
@@ -184,6 +193,12 @@ internal sealed partial class DownloadArtifactWriter
                     "The requested danmaku output is missing or invalid.");
             }
 
+            await RecordPublishedArtifactAsync(
+                taskId,
+                "danmaku",
+                DanmakuArtifactKind,
+                assFile,
+                publish).ConfigureAwait(false);
             return OperationResult.Success(DownloadArtifactWriteResult.Created(assFile));
         }
         catch (OperationCanceledException)
@@ -321,6 +336,12 @@ internal sealed partial class DownloadArtifactWriter
                         "A requested subtitle output is missing or invalid.");
                 }
 
+                await RecordPublishedArtifactAsync(
+                    taskId,
+                    GetSubtitleTrackTransferKey(index),
+                    SubtitleArtifactKind,
+                    srtFile,
+                    publish).ConfigureAwait(false);
                 srtFiles.Add(srtFile);
             }
             catch (IOException e)
@@ -362,6 +383,12 @@ internal sealed partial class DownloadArtifactWriter
                     "The default subtitle output is missing or invalid.");
             }
 
+            await RecordPublishedArtifactAsync(
+                taskId,
+                DefaultSubtitleTransferKey,
+                SubtitleArtifactKind,
+                defaultSubtitleFile,
+                publish).ConfigureAwait(false);
             srtFiles.Add(defaultSubtitleFile);
         }
         catch (IOException e)
@@ -416,6 +443,12 @@ internal sealed partial class DownloadArtifactWriter
                     "The requested metadata output is missing or invalid.");
             }
 
+            await RecordPublishedArtifactAsync(
+                new DownloadTaskId(downloading.DownloadBase.Id),
+                "nfo",
+                NfoArtifactKind,
+                nfoFile,
+                publish).ConfigureAwait(false);
             return OperationResult.Success(DownloadArtifactWriteResult.Created(nfoFile));
         }
         catch (IOException e)
@@ -439,14 +472,6 @@ internal sealed partial class DownloadArtifactWriter
                 "download.artifact.nfo.xml",
                 "The requested metadata file could not be generated.");
         }
-    }
-
-    private static OperationResult<DownloadArtifactWriteResult> ArtifactFailure(
-        string code,
-        string message)
-    {
-        return OperationResult.Failure<DownloadArtifactWriteResult>(
-            OperationError.Unexpected(code, message));
     }
 
     private static XmlWriter CreateNfoWriter(string path)
