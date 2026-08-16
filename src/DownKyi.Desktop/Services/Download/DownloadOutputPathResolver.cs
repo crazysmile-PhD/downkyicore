@@ -62,6 +62,6 @@ internal static class DownloadOutputPathResolver
 
     private static string Normalize(string path)
     {
-        return DownloadOutputPathKey.Create(path, ignoreCase: false);
+        return DownloadOutputPathKey.NormalizeLogicalPath(path);
     }
 }

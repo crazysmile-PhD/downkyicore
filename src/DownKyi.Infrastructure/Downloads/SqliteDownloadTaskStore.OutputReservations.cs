@@ -116,9 +116,74 @@ public sealed partial class SqliteDownloadTaskStore
         command.Parameters.AddWithValue("@key", key);
         command.Parameters.AddWithValue("@file_path", basePath);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture) != 0;
+        if (Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture) != 0)
+        {
+            return true;
+        }
+
+        return await HasLegacyPhysicalReservationAsync(
+                connection,
+                transaction,
+                key,
+                ignoreCase,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
+    private static async Task<bool> HasLegacyPhysicalReservationAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string reservationKey,
+        bool ignoreCase,
+        CancellationToken cancellationToken)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT db.file_path
+            FROM download_base db
+            INNER JOIN downloading dl ON dl.id = db.id
+            WHERE db.output_reservation_key IS NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM download_quarantine q
+                  WHERE q.source_table = 'downloading'
+                    AND q.record_id = db.id)
+            ORDER BY db.id
+            """;
+
+        using var reader =
+            await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            string candidateKey;
+            try
+            {
+                candidateKey =
+                    DownloadOutputPathKey.Create(
+                        reader.GetString(0),
+                        ignoreCase);
+            }
+            catch (Exception exception)
+                when (exception is ArgumentException
+                      or IOException
+                      or NotSupportedException)
+            {
+                continue;
+            }
+
+            if (string.Equals(
+                    candidateKey,
+                    reservationKey,
+                    StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
     private static OperationResult OutputPathConflict()
     {
         return OperationResult.Failure(new OperationError(

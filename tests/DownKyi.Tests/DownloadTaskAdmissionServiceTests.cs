@@ -170,6 +170,164 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task JunctionAliasUsesDistinctLogicalSuffix()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(_directory);
+
+        var realDirectory =
+            Path.Combine(_directory, "junction-real");
+
+        var aliasDirectory =
+            Path.Combine(_directory, "junction-alias");
+
+        Directory.CreateDirectory(realDirectory);
+
+        await CreateDirectoryJunctionAsync(
+                aliasDirectory,
+                realDirectory,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        try
+        {
+            using var store = CreateStore();
+            var clock = new SystemClock();
+            using var tasks =
+                new DownloadTaskApplicationService(store, clock);
+            using var projections =
+                new DownloadTaskProjectionStore(tasks, clock);
+            using var admission =
+                new DownloadTaskAdmissionService(
+                    new DownloadListState(),
+                    tasks,
+                    projections,
+                    new RecordingDownloadTaskQueue());
+
+            var realOutput =
+                Path.Combine(realDirectory, "same-output");
+
+            var aliasOutput =
+                Path.Combine(aliasDirectory, "same-output");
+
+            var first =
+                CreateItem("junction-real-owner", realOutput);
+
+            var second =
+                CreateItem("junction-alias-owner", aliasOutput);
+
+            await admission.AdmitAsync(
+                    first,
+                    true,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+
+            await admission.AdmitAsync(
+                    second,
+                    true,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+
+            Assert.Equal(
+                Path.GetFullPath(aliasOutput + "(1)"),
+                second.DownloadBase.FilePath);
+        }
+        finally
+        {
+            if (Directory.Exists(aliasDirectory))
+            {
+                Directory.Delete(aliasDirectory);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task JunctionAliasFailsClosedWhenAutoSuffixDisabled()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(_directory);
+
+        var realDirectory =
+            Path.Combine(_directory, "no-suffix-real");
+
+        var aliasDirectory =
+            Path.Combine(_directory, "no-suffix-alias");
+
+        Directory.CreateDirectory(realDirectory);
+
+        await CreateDirectoryJunctionAsync(
+                aliasDirectory,
+                realDirectory,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        try
+        {
+            using var store = CreateStore();
+            var clock = new SystemClock();
+            using var tasks =
+                new DownloadTaskApplicationService(store, clock);
+            using var projections =
+                new DownloadTaskProjectionStore(tasks, clock);
+            using var admission =
+                new DownloadTaskAdmissionService(
+                    new DownloadListState(),
+                    tasks,
+                    projections,
+                    new RecordingDownloadTaskQueue());
+
+            var realOutput =
+                Path.Combine(realDirectory, "same-output");
+
+            var aliasOutput =
+                Path.Combine(aliasDirectory, "same-output");
+
+            var first =
+                CreateItem("no-suffix-real-owner", realOutput);
+
+            var second =
+                CreateItem("no-suffix-alias-owner", aliasOutput);
+
+            await admission.AdmitAsync(
+                    first,
+                    true,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+
+            await Assert.ThrowsAsync<IOException>(
+                () => admission.AdmitAsync(
+                    second,
+                    false,
+                    TestContext.Current.CancellationToken));
+
+            Assert.Equal(
+                aliasOutput,
+                second.DownloadBase.FilePath);
+
+            var persisted =
+                await tasks.GetUnfinishedAsync(
+                        TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+
+            Assert.Single(persisted);
+        }
+        finally
+        {
+            if (Directory.Exists(aliasDirectory))
+            {
+                Directory.Delete(aliasDirectory);
+            }
+        }
+    }
+    [Fact]
     public void CaseInsensitivePathKeyTreatsMacStyleCaseVariantsAsOneOutput()
     {
         var first = Path.Combine(_directory, "Video");
@@ -219,6 +377,43 @@ public sealed class DownloadTaskAdmissionServiceTests : IDisposable
         Assert.Equal(20, store.ReservationProbeCount);
     }
 
+    private static async Task CreateDirectoryJunctionAsync(
+        string junctionPath,
+        string targetPath,
+        CancellationToken cancellationToken)
+    {
+        var startInfo =
+            new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments =
+                    $"/d /c mklink /J \"{junctionPath}\" \"{targetPath}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+        using var process =
+            System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException(
+                "Failed to start cmd.exe for junction creation.");
+
+        await process.WaitForExitAsync(
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (process.ExitCode != 0)
+        {
+            var error =
+                await process.StandardError.ReadToEndAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+            throw new IOException(
+                $"Failed to create junction: {error}");
+        }
+    }
     private SqliteDownloadTaskStore CreateStore()
     {
         return new SqliteDownloadTaskStore(

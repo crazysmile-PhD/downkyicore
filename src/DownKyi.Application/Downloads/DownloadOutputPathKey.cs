@@ -1,18 +1,29 @@
-using System.Text;
-
 namespace DownKyi.Application.Downloads;
 
 public static class DownloadOutputPathKey
 {
+    private static readonly FileSystemOutputIdentityProvider IdentityProvider =
+        FileSystemOutputIdentityProvider.Instance;
+
     public static bool UsesCaseInsensitiveComparison =>
         OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
 
-    public static string Create(string basePath, bool ignoreCase)
+    public static string NormalizeLogicalPath(
+        string basePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
-        var normalized = Path
-            .TrimEndingDirectorySeparator(Path.GetFullPath(basePath))
-            .Normalize(NormalizationForm.FormC);
-        return ignoreCase ? normalized.ToUpperInvariant() : normalized;
+
+        return Path.TrimEndingDirectorySeparator(
+            Path.GetFullPath(
+                basePath));
+    }
+
+    public static string Create(
+        string basePath,
+        bool ignoreCase)
+    {
+        return IdentityProvider.CreateReservationKey(
+            basePath,
+            ignoreCase);
     }
 }
