@@ -77,13 +77,7 @@ internal sealed partial class DownloadArtifactWriter
                 transferKey,
                 fileName,
                 cancellationToken).ConfigureAwait(false);
-            var publish = await _outputPublisher.PublishAsync(
-                fileName,
-                (temporaryPath, token) => _client.DownloadFileAsync(
-                    new BilibiliHttpRequest(coverUrl),
-                    temporaryPath,
-                    token),
-                cancellationToken).ConfigureAwait(false);
+            var publish = await PublishCoverAsync(fileName, coverUrl, cancellationToken).ConfigureAwait(false);
             if (publish.IsDestinationCollision)
             {
                 return OutputCollisionFailure();
@@ -172,15 +166,11 @@ internal sealed partial class DownloadArtifactWriter
                 "danmaku",
                 assFile,
                 cancellationToken).ConfigureAwait(false);
-            var publish = await _outputPublisher.PublishAsync(
+            var publish = await PublishDanmakuAsync(
                 assFile,
-                (temporaryPath, token) => converter.CreateAsync(
-                    _client,
-                    downloadBase.Avid,
-                    downloadBase.Cid,
-                    subtitleConfig,
-                    temporaryPath,
-                    token),
+                converter,
+                downloadBase,
+                subtitleConfig,
                 cancellationToken).ConfigureAwait(false);
             if (publish.IsDestinationCollision)
             {
@@ -315,12 +305,9 @@ internal sealed partial class DownloadArtifactWriter
                     GetSubtitleTrackTransferKey(index),
                     srtFile,
                     cancellationToken).ConfigureAwait(false);
-                var publish = await _outputPublisher.PublishAsync(
+                var publish = await PublishSubtitleAsync(
                     srtFile,
-                    (temporaryPath, token) => File.WriteAllTextAsync(
-                        temporaryPath,
-                        subRip.SrtString,
-                        token),
+                    subRip.SrtString,
                     cancellationToken).ConfigureAwait(false);
                 if (publish.IsDestinationCollision)
                 {
@@ -360,13 +347,9 @@ internal sealed partial class DownloadArtifactWriter
                 DefaultSubtitleTransferKey,
                 defaultSubtitleFile,
                 cancellationToken).ConfigureAwait(false);
-            var publish = await _outputPublisher.PublishAsync(
+            var publish = await PublishDefaultSubtitleAsync(
                 defaultSubtitleFile,
-                (temporaryPath, _) =>
-                {
-                    File.Copy(srtFiles[0], temporaryPath, overwrite: true);
-                    return Task.CompletedTask;
-                },
+                srtFiles[0],
                 cancellationToken).ConfigureAwait(false);
             if (publish.IsDestinationCollision)
             {
@@ -417,23 +400,9 @@ internal sealed partial class DownloadArtifactWriter
                 "nfo",
                 nfoFile,
                 cancellationToken).ConfigureAwait(false);
-            var publish = await _outputPublisher.PublishAsync(
+            var publish = await PublishNfoAsync(
                 nfoFile,
-                async (temporaryPath, _) =>
-                {
-                    var writer = XmlWriter.Create(
-                        temporaryPath,
-                        new XmlWriterSettings { Async = true, Indent = true });
-                    try
-                    {
-                        WriteMovieMetadata(writer, downloading.Metadata);
-                        await writer.FlushAsync().ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        await writer.DisposeAsync().ConfigureAwait(false);
-                    }
-                },
+                downloading.Metadata,
                 cancellationToken).ConfigureAwait(false);
             if (publish.IsDestinationCollision)
             {
@@ -480,60 +449,9 @@ internal sealed partial class DownloadArtifactWriter
             OperationError.Unexpected(code, message));
     }
 
-    private static OperationResult<DownloadArtifactWriteResult> OutputCollisionFailure()
+    private static XmlWriter CreateNfoWriter(string path)
     {
-        return ArtifactFailure(
-            "download.output.destination-collision",
-            "The output destination is already occupied by another file.");
-    }
-
-    private static void WriteMovieMetadata(XmlWriter writer, MovieMetadata metadata)
-    {
-        writer.WriteStartDocument();
-        writer.WriteStartElement("movie");
-        writer.WriteElementString("title", metadata.Title);
-        writer.WriteElementString("plot", metadata.Plot);
-        writer.WriteElementString("year", metadata.Year);
-
-        foreach (var genre in metadata.Genres)
-        {
-            writer.WriteElementString("genre", genre);
-        }
-
-        foreach (var tag in metadata.Tags)
-        {
-            writer.WriteElementString("tag", tag);
-        }
-
-        foreach (var actor in metadata.Actors)
-        {
-            writer.WriteStartElement("actor");
-            writer.WriteElementString("name", actor.Name);
-            writer.WriteElementString("role", actor.Role);
-            writer.WriteEndElement();
-        }
-
-        if (metadata.BilibiliId != null)
-        {
-            writer.WriteStartElement("uniqueid");
-            writer.WriteAttributeString("type", metadata.BilibiliId.Type);
-            writer.WriteString(metadata.BilibiliId.Value);
-            writer.WriteEndElement();
-        }
-
-        writer.WriteElementString("premiered", metadata.Premiered);
-        foreach (var rating in metadata.Ratings)
-        {
-            writer.WriteStartElement("rating");
-            writer.WriteAttributeString("name", rating.Name);
-            writer.WriteAttributeString("max", rating.Max.ToString(CultureInfo.InvariantCulture));
-            writer.WriteAttributeString("default", rating.IsDefault ? "true" : "false");
-            writer.WriteString(rating.Value.ToString(CultureInfo.InvariantCulture));
-            writer.WriteEndElement();
-        }
-
-        writer.WriteEndElement();
-        writer.WriteEndDocument();
+        return XmlWriter.Create(path, new XmlWriterSettings { Async = true, Indent = true });
     }
 
     private static string GetDanmakuLayoutAlgorithmValue(DanmakuLayoutAlgorithm algorithm)

@@ -80,6 +80,7 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
             }
             catch (IOException) when (attempt < MaximumTemporaryPathAttempts - 1)
             {
+                continue;
             }
         }
 
@@ -94,9 +95,11 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
         }
         catch (IOException)
         {
+            return;
         }
         catch (UnauthorizedAccessException)
         {
+            return;
         }
     }
 }
