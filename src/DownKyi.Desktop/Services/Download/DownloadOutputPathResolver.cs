@@ -15,13 +15,16 @@ internal static class DownloadOutputPathResolver
         bool autoAddNumberSuffix,
         Func<string, CancellationToken, Task<bool>> isReservedAsync,
         CancellationToken cancellationToken,
-        StringComparer? comparer = null)
+        StringComparer? comparer = null,
+        int initialSuffix = 0,
+        IReadOnlySet<string>? occupiedPaths = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
         ArgumentNullException.ThrowIfNull(isReservedAsync);
         comparer ??= PlatformComparer;
-        var occupiedPaths = GetExistingBasePaths(basePath).ToHashSet(comparer);
-        for (var suffix = 0; ; suffix++)
+        ArgumentOutOfRangeException.ThrowIfNegative(initialSuffix);
+        occupiedPaths ??= GetExistingBasePaths(basePath).ToHashSet(comparer);
+        for (var suffix = initialSuffix; ; suffix++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = suffix == 0 ? basePath : $"{basePath}({suffix})";
@@ -43,6 +46,29 @@ internal static class DownloadOutputPathResolver
         DownloadOutputPathKey.UsesCaseInsensitiveComparison
             ? StringComparer.OrdinalIgnoreCase
             : StringComparer.Ordinal;
+
+    public static IReadOnlySet<string> CaptureExistingBasePaths(IEnumerable<string> basePaths, StringComparer? comparer = null)
+    {
+        ArgumentNullException.ThrowIfNull(basePaths);
+        comparer ??= PlatformComparer;
+        var directories = new HashSet<string>(comparer);
+        foreach (var basePath in basePaths)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
+            var directory = Path.GetDirectoryName(Normalize(basePath));
+            if (!string.IsNullOrEmpty(directory)) directories.Add(directory);
+        }
+
+        var occupied = new HashSet<string>(comparer);
+        foreach (var directory in directories)
+        {
+            if (!Directory.Exists(directory)) continue;
+            foreach (var file in Directory.EnumerateFiles(directory))
+                occupied.Add(Normalize(Path.Combine(directory, Path.GetFileNameWithoutExtension(file))));
+        }
+
+        return occupied;
+    }
 
     private static string[] GetExistingBasePaths(string basePath)
     {

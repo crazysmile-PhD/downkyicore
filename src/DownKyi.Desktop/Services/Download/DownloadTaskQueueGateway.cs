@@ -104,6 +104,64 @@ internal sealed class DownloadTaskQueueGateway : IDownloadTaskQueue
         }
     }
 
+    public async Task EnqueueManyAsync(
+        IReadOnlyList<DownloadTaskId> taskIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(taskIds);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (taskIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var taskId in taskIds)
+        {
+            ArgumentNullException.ThrowIfNull(taskId);
+        }
+
+        IDownloadRuntime? runtime;
+        lock (_sync)
+        {
+            runtime = _runtime;
+            if (runtime == null)
+            {
+                foreach (var taskId in taskIds)
+                {
+                    _pending.Add(taskId);
+                }
+
+                return;
+            }
+        }
+
+        var index = 0;
+        try
+        {
+            for (; index < taskIds.Count; index++)
+            {
+                await runtime.EnqueueAsync(taskIds[index], cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            lock (_sync)
+            {
+                if (ReferenceEquals(_runtime, runtime))
+                {
+                    _runtime = null;
+                }
+
+                for (var pendingIndex = index; pendingIndex < taskIds.Count; pendingIndex++)
+                {
+                    _pending.Add(taskIds[pendingIndex]);
+                }
+            }
+
+            throw;
+        }
+    }
+
     public Task<bool> CancelAsync(DownloadTaskId taskId)
     {
         ArgumentNullException.ThrowIfNull(taskId);

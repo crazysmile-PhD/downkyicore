@@ -12,6 +12,7 @@ using DownKyi.Core.Settings;
 using DownKyi.Presentation;
 using DownKyi.Services.Video;
 using DownKyi.Utils;
+using DownKyi.ViewModels.DownloadManager;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Services.Download;
@@ -206,68 +207,77 @@ internal sealed class AddToDownloadService : IAddToDownloadSession
 
         var settings = _settingsStore.Current;
         var addedCount = 0;
-        foreach (var section in _videoSections)
+        const int admissionBatchSize = 64;
+        var admissionBatch = new List<DownloadingItem>(admissionBatchSize);
+        var admissionFlushFailed = false;
+
+        async Task FlushAdmissionBatchAsync(CancellationToken admissionCancellationToken)
         {
-            foreach (var page in section.VideoPages)
+            if (admissionBatch.Count == 0)
             {
-                if ((!isAll && !page.IsSelected) || page.PlayUrl == null)
-                {
-                    continue;
-                }
-
-                var retry = 0;
-                while (page.VideoQuality == null && retry < 5)
-                {
-                    var playUrl = await _videoInfoService
-                        .GetVideoStreamAsync(page, cancellationToken)
-                        .ConfigureAwait(false);
-                    VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
-                    retry++;
-                }
-
-                if (page.VideoQuality == null)
-                {
-                    continue;
-                }
-
-                var videoQuality = page.VideoQuality;
-                if (await _duplicatePolicy
-                    .ShouldSkipAsync(
-                        page,
-                        videoQuality,
-                        settings.Basic.RepeatDownloadStrategy,
-                        cancellationToken)
-                    .ConfigureAwait(true))
-                {
-                    continue;
-                }
-
-                var downloadingItem = DownloadTaskDraftFactory.Create(
-                    directory,
-                    _videoInfoView,
-                    section,
-                    _videoSections.Count,
-                    page,
-                    videoQuality,
-                    settings,
-                    _downloadContent);
-                if (settings.Video.Content.GenerateMovieMetadata && _downloadContent.Video)
-                {
-                    downloadingItem.Metadata = await _metadataBuilder
-                        .BuildAsync(_videoInfoView, page, cancellationToken)
-                        .ConfigureAwait(true);
-                }
-
-                await _admission
-                    .AdmitAsync(
-                        downloadingItem,
-                        settings.Basic.RepeatFileAutoAddNumberSuffix,
-                        cancellationToken)
-                    .ConfigureAwait(true);
-                addedCount++;
+                return;
             }
+
+            var count = admissionBatch.Count;
+            admissionFlushFailed = true;
+            await _admission.AdmitManyAsync(
+                admissionBatch,
+                settings.Basic.RepeatFileAutoAddNumberSuffix,
+                admissionCancellationToken).ConfigureAwait(true);
+            admissionFlushFailed = false;
+            addedCount += count;
+            admissionBatch.Clear();
         }
 
+        try
+        {
+            foreach (var section in _videoSections)
+            {
+                foreach (var page in section.VideoPages)
+                {
+                    if ((!isAll && !page.IsSelected) || page.PlayUrl == null) continue;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var retry = 0;
+                    while (page.VideoQuality == null && retry < 5)
+                    {
+                        var playUrl = await _videoInfoService.GetVideoStreamAsync(page, cancellationToken).ConfigureAwait(false);
+                        VideoPagePlaybackMapper.ApplyPlayUrl(playUrl, page, settings);
+                        retry++;
+                    }
+
+                    if (page.VideoQuality == null) continue;
+                    var videoQuality = page.VideoQuality;
+                    if (await _duplicatePolicy.ShouldSkipAsync(
+                        page, videoQuality, settings.Basic.RepeatDownloadStrategy, cancellationToken, admissionBatch).ConfigureAwait(true)) continue;
+
+                    var downloadingItem = DownloadTaskDraftFactory.Create(
+                        directory, _videoInfoView, section, _videoSections.Count, page, videoQuality, settings, _downloadContent);
+                    if (settings.Video.Content.GenerateMovieMetadata && _downloadContent.Video)
+                    {
+                        downloadingItem.Metadata = await _metadataBuilder.BuildAsync(_videoInfoView, page, cancellationToken).ConfigureAwait(true);
+                    }
+
+                    admissionBatch.Add(downloadingItem);
+                    if (admissionBatch.Count >= admissionBatchSize)
+                    {
+                        await FlushAdmissionBatchAsync(cancellationToken).ConfigureAwait(true);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Pages fully prepared before later failure retain the prior partial-success behavior.
+            // Never retry a batch whose durable outcome is uncertain.
+            if (!admissionFlushFailed && admissionBatch.Count is > 0 and < admissionBatchSize)
+            {
+                await FlushAdmissionBatchAsync(CancellationToken.None).ConfigureAwait(true);
+            }
+
+            throw;
+        }
+
+        await FlushAdmissionBatchAsync(cancellationToken).ConfigureAwait(true);
         return addedCount;
     }
 

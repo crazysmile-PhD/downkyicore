@@ -492,6 +492,69 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task AtomicBatchRollsBackAllRowsWhenAReservationCollides()
+    {
+        using var store = CreateStore();
+        var path = Path.Combine(_directory, "atomic-collision");
+        var first = CreateQueuedTask("atomic-first", path);
+        var second = CreateQueuedTask("atomic-second", path);
+
+        var result = await store.AddManyAtomicAsync(
+            [first, second], TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("download.store.output_path_reserved", result.Error?.Code);
+        Assert.Empty(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AtomicBatchJunctionAliasRollsBackBothTasks()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var realDirectory = Path.Combine(_directory, "atomic-junction-real");
+        var aliasDirectory = Path.Combine(_directory, "atomic-junction-alias");
+        Directory.CreateDirectory(realDirectory);
+        await CreateDirectoryJunctionAsync(aliasDirectory, realDirectory, TestContext.Current.CancellationToken);
+        try
+        {
+            using var store = CreateStore();
+            var result = await store.AddManyAtomicAsync(
+                [
+                    CreateQueuedTask("atomic-junction-real", Path.Combine(realDirectory, "output")),
+                    CreateQueuedTask("atomic-junction-alias", Path.Combine(aliasDirectory, "output"))
+                ],
+                TestContext.Current.CancellationToken);
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal("download.store.output_path_reserved", result.Error?.Code);
+            Assert.Empty(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            if (Directory.Exists(aliasDirectory)) Directory.Delete(aliasDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task CanceledAtomicBatchLeavesNoRows()
+    {
+        using var store = CreateStore();
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            store.AddManyAtomicAsync(
+                [CreateQueuedTask("atomic-cancel", Path.Combine(_directory, "atomic-cancel"))],
+                cancellation.Token));
+
+        Assert.Empty(await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task ConcurrentAddsAtomicallyClaimOneOutputPath()
     {
         var outputPath = Path.Combine(_directory, "shared-output");

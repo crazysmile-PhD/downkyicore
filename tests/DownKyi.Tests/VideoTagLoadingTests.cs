@@ -132,6 +132,107 @@ public sealed class VideoTagLoadingTests : IDisposable
     }
 
     [Fact]
+    public async Task AddToDownloadAdmitsSixtyFourPreparedPagesInOneAtomicBatch()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        context.PreparePages(CreatePages(64));
+
+        var added = await context.Service.AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(64, added);
+        Assert.Equal([64], context.Store.AtomicBatchSizes);
+        Assert.Equal(64, context.ListState.Downloading.Count);
+        Assert.Equal(64, context.Queue.Enqueued.Count);
+    }
+
+    [Fact]
+    public async Task AddToDownloadFinishesCommittedBatchAfterCallerCancellation()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        context.Store.AfterAtomicBatchAsync = operation.CancelAsync;
+        context.PreparePages(CreatePages(64));
+
+        var added = await context.Service.AddToDownload(_directory, cancellationToken: operation.Token);
+
+        Assert.True(operation.IsCancellationRequested);
+        Assert.Equal(64, added);
+        Assert.Equal([64], context.Store.AtomicBatchSizes);
+        Assert.Equal(64, context.ListState.Downloading.Count);
+        Assert.Equal(64, context.Queue.Enqueued.Count);
+    }
+
+    [Fact]
+    public async Task AddToDownloadDoesNotReplayAnUncertainAdmissionBatch()
+    {
+        using var context = CreateContext(generateMetadata: false);
+        context.Store.AtomicException = new InvalidOperationException("indeterminate batch result");
+        context.PreparePages(CreatePages(64));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            context.Service.AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal([64], context.Store.AtomicBatchSizes);
+        Assert.Equal(0, context.Store.AddCount);
+        Assert.Empty(context.ListState.Downloading);
+        Assert.Empty(context.Queue.Enqueued);
+    }
+
+    [Fact]
+    public async Task CancellationDuringLaterPreparationRetainsPreparedTrailingBatch()
+    {
+        using var context = CreateContext(generateMetadata: true);
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var pages = CreatePages(66);
+        pages[^1].LoadTagsAsync = async _ =>
+        {
+            await operation.CancelAsync().ConfigureAwait(false);
+            operation.Token.ThrowIfCancellationRequested();
+            return Array.Empty<string>();
+        };
+        context.PreparePages(pages);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            context.Service.AddToDownload(_directory, cancellationToken: operation.Token));
+
+        Assert.Equal([64], context.Store.AtomicBatchSizes);
+        Assert.Equal(65, context.Store.AddCount);
+        Assert.Equal(65, context.ListState.Downloading.Count);
+        Assert.Equal(65, context.Queue.Enqueued.Count);
+    }
+
+    [Fact]
+    public async Task AddToDownloadAdmitsPreparedTrailingPageAfterFullBatch()
+    {
+        using var context = CreateContext(generateMetadata: true);
+        context.PreparePages(CreatePages(65));
+
+        var added = await context.Service.AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(65, added);
+        Assert.Equal([64], context.Store.AtomicBatchSizes);
+        Assert.Equal(65, context.Store.AddCount);
+    }
+
+    [Fact]
+    public async Task LaterPreparationFailureRecoversAlreadyPreparedTrailingItem()
+    {
+        using var context = CreateContext(generateMetadata: true);
+        var pages = CreatePages(66);
+        pages[^1].LoadTagsAsync = _ => Task.FromException<IReadOnlyList<string>>(
+            new OperationCanceledException("later preparation failed"));
+        context.PreparePages(pages);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            context.Service.AddToDownload(_directory, cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal([64], context.Store.AtomicBatchSizes);
+        Assert.Equal(65, context.Store.AddCount);
+        Assert.Equal(65, context.ListState.Downloading.Count);
+        Assert.Equal(65, context.Queue.Enqueued.Count);
+    }
+
+    [Fact]
     public async Task TagNetworkFailureDoesNotBlockDownloadTaskCreation()
     {
         using var context = CreateContext(generateMetadata: true);
@@ -238,6 +339,19 @@ public sealed class VideoTagLoadingTests : IDisposable
         };
     }
 
+    private static VideoPage[] CreatePages(int count) => Enumerable.Range(0, count)
+        .Select(index =>
+        {
+            var page = CreatePage(_ => Task.FromResult<IReadOnlyList<string>>([]));
+            page.Avid = index + 1;
+            page.Bvid = $"BV1batch{index:D3}";
+            page.Cid = index + 1;
+            page.Name = $"page-{index:D3}";
+            page.Order = index + 1;
+            return page;
+        })
+        .ToArray();
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))
@@ -310,6 +424,11 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         public void Prepare(VideoPage page)
         {
+            PreparePages([page]);
+        }
+
+        public void PreparePages(IReadOnlyList<VideoPage> pages)
+        {
             Service.GetVideo(
                 new VideoInfoView
                 {
@@ -323,7 +442,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                         Id = 1,
                         IsSelected = true,
                         Title = "section",
-                        VideoPages = [page]
+                        VideoPages = pages.ToList()
                     }
                 ]);
         }
@@ -353,11 +472,17 @@ public sealed class VideoTagLoadingTests : IDisposable
         }
     }
 
-    private sealed class RecordingDownloadTaskStore : IDownloadTaskStore
+    private sealed class RecordingDownloadTaskStore : IDownloadTaskStore, IDownloadTaskAtomicBatchStore
     {
         public int AddCount { get; private set; }
 
         public Func<Task>? AfterAddAsync { get; set; }
+
+        public Func<Task>? AfterAtomicBatchAsync { get; set; }
+
+        public Exception? AtomicException { get; set; }
+
+        public List<int> AtomicBatchSizes { get; } = [];
 
         public async Task<OperationResult> AddAsync(
             DownloadTask task,
@@ -368,6 +493,26 @@ public sealed class VideoTagLoadingTests : IDisposable
             if (AfterAddAsync != null)
             {
                 await AfterAddAsync().ConfigureAwait(false);
+            }
+
+            return OperationResult.Success();
+        }
+
+        public async Task<OperationResult> AddManyAtomicAsync(
+            IReadOnlyList<DownloadTask> tasks,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AtomicBatchSizes.Add(tasks.Count);
+            if (AtomicException != null)
+            {
+                throw AtomicException;
+            }
+
+            AddCount += tasks.Count;
+            if (AfterAtomicBatchAsync != null)
+            {
+                await AfterAtomicBatchAsync().ConfigureAwait(false);
             }
 
             return OperationResult.Success();

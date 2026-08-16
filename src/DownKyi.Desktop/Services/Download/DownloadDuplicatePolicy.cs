@@ -33,11 +33,24 @@ internal sealed class DownloadDuplicatePolicy
         VideoPage page,
         VideoQuality videoQuality,
         RepeatDownloadStrategy strategy,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<DownloadingItem>? pendingDownloading = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(videoQuality);
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (pendingDownloading != null)
+        {
+            foreach (var item in pendingDownloading)
+            {
+                if (IsSameVideo(item, page, videoQuality))
+                {
+                    _notificationService.Show($"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloading")}");
+                    return true;
+                }
+            }
+        }
 
         foreach (var item in _downloadLists.Downloading)
         {

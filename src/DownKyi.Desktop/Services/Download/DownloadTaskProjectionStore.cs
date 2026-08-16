@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using DownKyi.Application.Downloads;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
+using DownKyi.Domain.Results;
 using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
@@ -35,9 +36,20 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
         DownloadingItem? downloadingItem,
         CancellationToken cancellationToken = default)
     {
+        var result = await TryAddDownloadingAsync(downloadingItem, cancellationToken).ConfigureAwait(true);
+        if (!result.IsSuccess)
+        {
+            ThrowStoreFailure(result.ErrorMessage);
+        }
+    }
+
+    public async Task<DownloadProjectionAddResult> TryAddDownloadingAsync(
+        DownloadingItem? downloadingItem,
+        CancellationToken cancellationToken = default)
+    {
         if (downloadingItem?.DownloadBase == null)
         {
-            return;
+            return DownloadProjectionAddResult.Success();
         }
 
         var task = DownloadTaskProjectionMapper.CreateNewTask(downloadingItem, _clock.UtcNow);
@@ -45,18 +57,79 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
         var result = await _tasks.AddAsync(task, cancellationToken).ConfigureAwait(true);
         if (result.IsSuccess)
         {
-            return;
+            return DownloadProjectionAddResult.Success();
         }
 
         var existing = await _tasks.FindAsync(task.Id, cancellationToken).ConfigureAwait(true);
         if (existing != null)
         {
             Publish(existing);
-            return;
+            return DownloadProjectionAddResult.Success();
         }
 
         _downloadingProjections.TryRemove(task.Id, out _);
-        ThrowStoreFailure(result.Error?.Message);
+        return DownloadProjectionAddResult.Failure(
+            result.Error?.Code == "download.store.output_path_reserved",
+            result.Error?.Message);
+    }
+
+    public async Task<DownloadProjectionAddResult> TryAddDownloadingManyAtomicAsync(
+        IReadOnlyList<DownloadingItem> downloadingItems,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(downloadingItems);
+        if (downloadingItems.Count == 0)
+        {
+            return DownloadProjectionAddResult.Success();
+        }
+
+        if (_tasks is not IDownloadTaskAtomicBatchApplicationService batchTasks)
+        {
+            throw new NotSupportedException("The configured application service does not support atomic batch insertion.");
+        }
+
+        var tasks = new DownloadTask[downloadingItems.Count];
+        for (var index = 0; index < downloadingItems.Count; index++)
+        {
+            var item = downloadingItems[index];
+            ArgumentNullException.ThrowIfNull(item);
+            if (item.DownloadBase == null)
+            {
+                throw new ArgumentException("A downloading item has no DownloadBase.", nameof(downloadingItems));
+            }
+
+            var task = DownloadTaskProjectionMapper.CreateNewTask(item, _clock.UtcNow);
+            tasks[index] = task;
+            _downloadingProjections[task.Id] = item;
+        }
+
+        OperationResult result;
+        try
+        {
+            result = await batchTasks.AddManyAtomicAsync(tasks, cancellationToken).ConfigureAwait(true);
+        }
+        catch
+        {
+            foreach (var task in tasks)
+            {
+                _downloadingProjections.TryRemove(task.Id, out _);
+            }
+
+            throw;
+        }
+
+        if (result.IsSuccess)
+        {
+            return DownloadProjectionAddResult.Success();
+        }
+
+        foreach (var task in tasks)
+        {
+            _downloadingProjections.TryRemove(task.Id, out _);
+        }
+
+        return DownloadProjectionAddResult.Failure(
+            result.Error?.Code == "download.store.output_path_reserved", result.Error?.Message);
     }
 
     public async Task<IReadOnlyList<DownloadingItem>> GetDownloadingAsync(
@@ -265,6 +338,13 @@ internal sealed class DownloadTaskProjectionStore : IDisposable
     {
         throw new InvalidOperationException(message ?? "Download storage operation failed.");
     }
+}
+
+internal sealed record DownloadProjectionAddResult(bool IsSuccess, bool IsOutputPathConflict, string? ErrorMessage)
+{
+    public static DownloadProjectionAddResult Success() => new(true, false, null);
+    public static DownloadProjectionAddResult Failure(bool isOutputPathConflict, string? errorMessage) =>
+        new(false, isOutputPathConflict, errorMessage);
 }
 
 internal sealed record DownloadTaskProjectionStartupState(
