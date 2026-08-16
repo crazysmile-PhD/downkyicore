@@ -87,7 +87,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
         return result.Succeeded
             ? DownloadStageResult.Success(Name)
             : DownloadStageResult.Failure(
-                GetFailureCode("download.mux.dash", invalidation),
+                GetFailureCode("download.mux.dash", result, invalidation),
                 "Audio and video streams could not be finalized.");
     }
 
@@ -129,7 +129,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
             return mergeResult.Succeeded
                 ? DownloadStageResult.Success(Name)
                 : DownloadStageResult.Failure(
-                    GetFailureCode("download.mux.durl", singleInvalidation),
+                    GetFailureCode("download.mux.durl", mergeResult, singleInvalidation),
                     "The media segment could not be finalized.");
         }
 
@@ -164,7 +164,7 @@ internal sealed class MuxStage : IDownloadPipelineStage
         return result.Succeeded
             ? DownloadStageResult.Success(Name)
             : DownloadStageResult.Failure(
-                GetFailureCode("download.mux.concat", invalidation),
+                GetFailureCode("download.mux.concat", result, invalidation),
                 "Segmented media could not be concatenated.");
     }
 
@@ -236,8 +236,14 @@ internal sealed class MuxStage : IDownloadPipelineStage
 
     private static string GetFailureCode(
         string defaultCode,
+        FfmpegOperationResult operationResult,
         SourceInvalidationOutcome invalidation)
     {
+        if (operationResult.FailureKind == FfmpegOperationFailureKind.DestinationConflict)
+        {
+            return "download.output.destination-collision";
+        }
+
         return invalidation switch
         {
             SourceInvalidationOutcome.Invalidated => "download.mux.invalid-source",

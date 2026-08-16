@@ -29,17 +29,20 @@ internal sealed partial class DownloadArtifactWriter
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly ILogger _logger;
     private readonly IBilibiliApiClient _client;
+    private readonly IAtomicOutputPublisher _outputPublisher;
 
     public DownloadArtifactWriter(
         IWbiKeyProvider wbiKeyProvider,
         DownloadTaskStateWriter stateWriter,
         ILogger logger,
-        IBilibiliApiClient client)
+        IBilibiliApiClient client,
+        IAtomicOutputPublisher? outputPublisher = null)
     {
         _wbiKeyProvider = wbiKeyProvider ?? throw new ArgumentNullException(nameof(wbiKeyProvider));
         _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _outputPublisher = outputPublisher ?? new AtomicOutputPublisher();
     }
 
     public async Task<OperationResult<DownloadArtifactWriteResult>> DownloadCoverAsync(
@@ -74,10 +77,17 @@ internal sealed partial class DownloadArtifactWriter
                 transferKey,
                 fileName,
                 cancellationToken).ConfigureAwait(false);
-            await _client.DownloadFileAsync(
-                new BilibiliHttpRequest(coverUrl),
+            var publish = await _outputPublisher.PublishAsync(
                 fileName,
+                (temporaryPath, token) => _client.DownloadFileAsync(
+                    new BilibiliHttpRequest(coverUrl),
+                    temporaryPath,
+                    token),
                 cancellationToken).ConfigureAwait(false);
+            if (publish.IsDestinationCollision)
+            {
+                return OutputCollisionFailure();
+            }
             var integrity = DownloadFileIntegrity.Check(fileName);
             if (!integrity.IsUsable)
             {
@@ -162,13 +172,20 @@ internal sealed partial class DownloadArtifactWriter
                 "danmaku",
                 assFile,
                 cancellationToken).ConfigureAwait(false);
-            await converter.CreateAsync(
-                _client,
-                downloadBase.Avid,
-                downloadBase.Cid,
-                subtitleConfig,
+            var publish = await _outputPublisher.PublishAsync(
                 assFile,
+                (temporaryPath, token) => converter.CreateAsync(
+                    _client,
+                    downloadBase.Avid,
+                    downloadBase.Cid,
+                    subtitleConfig,
+                    temporaryPath,
+                    token),
                 cancellationToken).ConfigureAwait(false);
+            if (publish.IsDestinationCollision)
+            {
+                return OutputCollisionFailure();
+            }
             var integrity = DownloadFileIntegrity.Check(assFile);
             if (!integrity.IsUsable)
             {
@@ -298,7 +315,17 @@ internal sealed partial class DownloadArtifactWriter
                     GetSubtitleTrackTransferKey(index),
                     srtFile,
                     cancellationToken).ConfigureAwait(false);
-                await File.WriteAllTextAsync(srtFile, subRip.SrtString, cancellationToken).ConfigureAwait(false);
+                var publish = await _outputPublisher.PublishAsync(
+                    srtFile,
+                    (temporaryPath, token) => File.WriteAllTextAsync(
+                        temporaryPath,
+                        subRip.SrtString,
+                        token),
+                    cancellationToken).ConfigureAwait(false);
+                if (publish.IsDestinationCollision)
+                {
+                    return OutputCollisionFailure();
+                }
                 var integrity = DownloadFileIntegrity.Check(srtFile);
                 if (!integrity.IsUsable)
                 {
@@ -333,7 +360,18 @@ internal sealed partial class DownloadArtifactWriter
                 DefaultSubtitleTransferKey,
                 defaultSubtitleFile,
                 cancellationToken).ConfigureAwait(false);
-            File.Copy(srtFiles[0], defaultSubtitleFile, true);
+            var publish = await _outputPublisher.PublishAsync(
+                defaultSubtitleFile,
+                (temporaryPath, _) =>
+                {
+                    File.Copy(srtFiles[0], temporaryPath, overwrite: true);
+                    return Task.CompletedTask;
+                },
+                cancellationToken).ConfigureAwait(false);
+            if (publish.IsDestinationCollision)
+            {
+                return OutputCollisionFailure();
+            }
             if (!DownloadFileIntegrity.Check(defaultSubtitleFile).IsUsable)
             {
                 return ArtifactFailure(
@@ -379,17 +417,27 @@ internal sealed partial class DownloadArtifactWriter
                 "nfo",
                 nfoFile,
                 cancellationToken).ConfigureAwait(false);
-            var writer = XmlWriter.Create(
+            var publish = await _outputPublisher.PublishAsync(
                 nfoFile,
-                new XmlWriterSettings { Async = true, Indent = true });
-            try
+                async (temporaryPath, _) =>
+                {
+                    var writer = XmlWriter.Create(
+                        temporaryPath,
+                        new XmlWriterSettings { Async = true, Indent = true });
+                    try
+                    {
+                        WriteMovieMetadata(writer, downloading.Metadata);
+                        await writer.FlushAsync().ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        await writer.DisposeAsync().ConfigureAwait(false);
+                    }
+                },
+                cancellationToken).ConfigureAwait(false);
+            if (publish.IsDestinationCollision)
             {
-                WriteMovieMetadata(writer, downloading.Metadata);
-                await writer.FlushAsync().ConfigureAwait(false);
-            }
-            finally
-            {
-                await writer.DisposeAsync().ConfigureAwait(false);
+                return OutputCollisionFailure();
             }
 
             if (!DownloadFileIntegrity.Check(nfoFile).IsUsable)
@@ -430,6 +478,13 @@ internal sealed partial class DownloadArtifactWriter
     {
         return OperationResult.Failure<DownloadArtifactWriteResult>(
             OperationError.Unexpected(code, message));
+    }
+
+    private static OperationResult<DownloadArtifactWriteResult> OutputCollisionFailure()
+    {
+        return ArtifactFailure(
+            "download.output.destination-collision",
+            "The output destination is already occupied by another file.");
     }
 
     private static void WriteMovieMetadata(XmlWriter writer, MovieMetadata metadata)
