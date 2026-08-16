@@ -194,6 +194,29 @@ public sealed class DownloadTaskApplicationServiceTests
     }
 
     [Fact]
+    public async Task AtomicBatchPublishesAddedOnlyAfterTheStoreSucceeds()
+    {
+        var store = new RecordingStore { AtomicSucceeds = false };
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+        var events = 0;
+        service.TaskChanged += (_, args) =>
+        {
+            Assert.True(store.AtomicPersisted);
+            Assert.Equal(DownloadTaskChangeKind.Added, args.Kind);
+            events++;
+        };
+
+        var rejected = await service.AddManyAtomicAsync([CreateTask()], TestContext.Current.CancellationToken);
+        Assert.False(rejected.IsSuccess);
+        Assert.Equal(0, events);
+
+        store.AtomicSucceeds = true;
+        var admitted = await service.AddManyAtomicAsync([CreateTask()], TestContext.Current.CancellationToken);
+        Assert.True(admitted.IsSuccess);
+        Assert.Equal(1, events);
+    }
+
+    [Fact]
     public async Task InvalidCommandDoesNotPersistOrPublishAReplacementSnapshot()
     {
         var store = new RecordingStore();
@@ -249,13 +272,17 @@ public sealed class DownloadTaskApplicationServiceTests
         }
     }
 
-    private sealed class RecordingStore : IDownloadTaskStore
+    private sealed class RecordingStore : IDownloadTaskStore, IDownloadTaskAtomicBatchStore
     {
         private readonly Lock _sync = new();
 
         public DownloadTask? Current { get; private set; }
 
         public List<long> ExpectedVersions { get; } = [];
+
+        public bool AtomicSucceeds { get; set; } = true;
+
+        public bool AtomicPersisted { get; private set; }
 
         public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -275,6 +302,21 @@ public sealed class DownloadTaskApplicationServiceTests
                 Current = task;
                 return Task.FromResult(OperationResult.Success());
             }
+        }
+
+        public Task<OperationResult> AddManyAtomicAsync(
+            IReadOnlyList<DownloadTask> tasks,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!AtomicSucceeds)
+            {
+                return Task.FromResult(OperationResult.Failure(new OperationError(
+                    "download.store.output_path_reserved", "Reserved.", OperationErrorKind.Conflict)));
+            }
+
+            AtomicPersisted = true;
+            return Task.FromResult(OperationResult.Success());
         }
 
         public Task<OperationResult> UpdateAsync(
