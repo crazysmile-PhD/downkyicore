@@ -1,0 +1,261 @@
+name: Issue 183 Hosted Windows Exact Capture V4
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Sampling duration per Hosted Windows VM'
+        required: false
+        default: '285'
+        type: string
+      max_iterations:
+        description: 'Maximum Core executions per shard'
+        required: false
+        default: '5000'
+        type: string
+  push:
+    branches:
+      - experiment/issue-183-capture-v2
+    paths:
+      - '.github/workflows/issue-183-hosted-exact-capture.yml'
+      - 'script/research/issue_183_exact_watchdog_capture.py'
+
+jobs:
+  preflight:
+    name: Validate exact-signal capture pipeline
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout instrumentation
+        uses: actions/checkout@v7
+        with:
+          ref: experiment/issue-183-capture-v2
+          path: instrumentation
+
+      - name: Checkout historical failure SHA
+        uses: actions/checkout@v7
+        with:
+          ref: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+          fetch-depth: 0
+          path: target
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install dotnet-dump
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+
+      - name: Restore historical checkout
+        working-directory: target
+        run: dotnet restore ./DownKyi.sln
+
+      - name: Strict Release build
+        working-directory: target
+        run: >
+          dotnet build ./DownKyi.sln
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
+
+      - name: Validate observer syntax
+        shell: pwsh
+        run: |
+          python -m py_compile "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_exact_watchdog_capture.py"
+          if ($LASTEXITCODE -ne 0) { throw 'Exact observer syntax validation failed.' }
+
+      - name: Run exact-signal end-to-end self-test
+        shell: pwsh
+        run: |
+          $observer = "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_exact_watchdog_capture.py"
+          $dump = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-exact-preflight"
+          python $observer --self-test --dump-tool $dump --out $out
+          if ($LASTEXITCODE -ne 0) { throw 'Exact-signal capture preflight failed.' }
+
+      - name: Verify historical execution inputs
+        shell: pwsh
+        run: |
+          $target = "$env:GITHUB_WORKSPACE\target"
+          $sha = (& git -C $target rev-parse HEAD).Trim()
+          if ($sha -ne '0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8') { throw "Historical SHA mismatch: $sha" }
+          $assembly = Join-Path $target 'tests\DownKyi.Core.Tests\bin\Release\net10.0\DownKyi.Core.Tests.dll'
+          $probe = Join-Path $target 'tools\DownKyi.AssemblyLifecycleProbe\bin\Release\net10.0\DownKyi.AssemblyLifecycleProbe.dll'
+          if (-not (Test-Path $assembly -PathType Leaf)) { throw 'Historical Core assembly missing.' }
+          if (-not (Test-Path $probe -PathType Leaf)) { throw 'Historical lifecycle probe missing.' }
+          Write-Host 'PREFLIGHT PASSED: exact stdout trigger produced a Full dump; historical target inputs are present.'
+
+      - name: Upload preflight proof
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-exact-preflight-v4
+          path: issue-183-exact-preflight
+          if-no-files-found: error
+          retention-days: 7
+
+  capture:
+    name: Exact capture / shard ${{ matrix.shard }}
+    needs: preflight
+    runs-on: windows-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    env:
+      DURATION_MINUTES: ${{ inputs.duration_minutes || '285' }}
+      MAX_ITERATIONS: ${{ inputs.max_iterations || '5000' }}
+
+    steps:
+      - name: Checkout instrumentation
+        uses: actions/checkout@v7
+        with:
+          ref: experiment/issue-183-capture-v2
+          path: instrumentation
+
+      - name: Checkout historical failure SHA
+        uses: actions/checkout@v7
+        with:
+          ref: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+          fetch-depth: 0
+          path: target
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install dotnet-dump
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+
+      - name: Restore historical checkout
+        working-directory: target
+        run: dotnet restore ./DownKyi.sln
+
+      - name: Strict Release build
+        working-directory: target
+        run: >
+          dotnet build ./DownKyi.sln
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
+
+      - name: Sample historical Core with exact stdout trigger
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $observer = "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_exact_watchdog_capture.py"
+          $dump = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-exact-shard-${{ matrix.shard }}"
+          python $observer `
+            --repo "$env:GITHUB_WORKSPACE\target" `
+            --dump-tool $dump `
+            --out $out `
+            --duration-minutes $env:DURATION_MINUTES `
+            --max-iterations $env:MAX_ITERATIONS
+          if ($LASTEXITCODE -ne 0) { throw "Exact sampler failed closed with exit code $LASTEXITCODE" }
+
+      - name: Upload shard evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-exact-shard-${{ matrix.shard }}
+          path: issue-183-exact-shard-${{ matrix.shard }}
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 1
+
+  aggregate:
+    name: Aggregate exact capture report
+    needs: capture
+    if: always()
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Download shard artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: issue-183-exact-shard-*
+          path: collected
+          merge-multiple: true
+
+      - name: Build aggregate report
+        shell: pwsh
+        run: |
+          $summaries = @(
+            Get-ChildItem collected -Recurse -File -Filter summary.json -ErrorAction SilentlyContinue |
+              ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json }
+          )
+          $iterations = 0; $watchdogs = 0; $captures = 0; $phaseFailures = 0
+          foreach ($s in $summaries) {
+            $iterations += [int]$s.iterations
+            $watchdogs += [int]$s.watchdogExecutions
+            $captures += [int]$s.confirmedCaptures
+            $phaseFailures += [int]$s.phaseFailures
+          }
+          $report = @(
+            '# Issue #183 — Exact watchdog capture V4'
+            ''
+            '- Historical SHA: `0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8`'
+            "- Shard summaries: $($summaries.Count) / 6"
+            "- Core executions: $iterations"
+            "- Exact watchdog executions: $watchdogs"
+            "- **Confirmed exact-watchdog + Full-dump captures: $captures**"
+            "- Other retained phase failures: $phaseFailures"
+            ''
+            'Observer policy: exact line-triggered Full dump; no generic slow-phase dotnet-stack capture; same historical load/info/discovery/execution command sequence; fail closed if watchdog is seen without a dump.'
+          )
+          if ($captures -gt 0) {
+            $report += ''
+            $report += '**Result:** forensic specimen acquired. Analyze the retained Full dump before changing production behavior.'
+          } elseif ($watchdogs -gt 0) {
+            $report += ''
+            $report += '**Result:** exact watchdog reproduced but capture failed; treat as instrumentation failure and do not increase blind stress.'
+          } else {
+            $report += ''
+            $report += '**Result:** no exact watchdog observed in this sample; negative reproduction evidence only.'
+          }
+          $report | Set-Content issue-183-exact-capture-report.md -Encoding utf8
+          $report | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $report | ForEach-Object { Write-Host $_ }
+
+      - name: Upload aggregate report
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-exact-capture-report-v4
+          path: issue-183-exact-capture-report.md
+          retention-days: 30
