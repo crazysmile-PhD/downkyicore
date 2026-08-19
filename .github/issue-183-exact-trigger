@@ -1,5 +1,5 @@
 Issue #183 exact-watchdog Capture V4 canonical run trigger.
 
 Purpose: launch the fail-closed, exact stdout-triggered dump experiment after retiring V3 timing-triggered capture.
-Instrumentation base: 624a6fe33ffcf56b39413eaf7fe7b5294613b992.
-This trigger is for the immutable exact-capture workflow that checks out github.sha.
+Instrumentation base: a8a9252a4d666711229a029a0be9c93f50d91bad.
+This trigger uses the immutable github.sha checkout, Windows CREATE_NO_WINDOW child semantics, exact line-triggered Full dump, and concurrency cancellation for superseded V4 runs.
