@@ -77,8 +77,9 @@ def run_tool_to_file(command: list[str], output_path: Path, timeout: float | Non
         output_path.write_text(completed.stdout or "", encoding="utf-8")
         return completed.returncode
     except subprocess.TimeoutExpired as exc:
-        text = (exc.stdout or "") + "\nANALYSIS TIMEOUT\n"
-        output_path.write_text(text, encoding="utf-8")
+        raw = exc.stdout or ""
+        text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+        output_path.write_text(text + "\nANALYSIS TIMEOUT\n", encoding="utf-8")
         return -3
     except Exception as exc:
         output_path.write_text(f"tool invocation failed: {exc!r}\n", encoding="utf-8")
@@ -218,6 +219,7 @@ def run_observed(
         env.update(environment)
 
     started_perf = time.perf_counter_ns()
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     process = subprocess.Popen(
         command,
         cwd=str(cwd),
@@ -228,6 +230,7 @@ def run_observed(
         encoding="utf-8",
         errors="replace",
         bufsize=1,
+        creationflags=creationflags,
     )
     assert process.stdout is not None and process.stderr is not None
 
