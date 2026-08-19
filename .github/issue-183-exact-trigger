@@ -4,4 +4,5 @@ Purpose: launch the fail-closed, exact stdout-triggered dump experiment after re
 Instrumentation base: a8a9252a4d666711229a029a0be9c93f50d91bad.
 Workflow base: e07889cb625a1e3c6f137ad02db57c3933aa8ea3.
 This trigger uses immutable github.sha checkout, Windows CREATE_NO_WINDOW child semantics, exact line-triggered Full dump, and concurrency cancellation for superseded V4 runs.
-Canonical trigger generation: 2.
+Canonical trigger generation: FINAL.
+Do not edit this trigger again unless intentionally starting a new canonical capture run.
