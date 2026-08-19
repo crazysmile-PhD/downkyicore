@@ -1,0 +1,5 @@
+Issue #183 historical same-VM topology V7
+Trigger: 2026-08-20
+Historical SHA: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+Variable: restore original seven-assembly same-Hosted-Windows-VM ordering only
+Observer: external exact xUnit watchdog -> same-PID Full dump
