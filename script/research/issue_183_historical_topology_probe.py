@@ -22,7 +22,6 @@ ASSEMBLIES = [
     "DownKyi.Infrastructure.Tests",
     "DownKyi.Tests",
 ]
-WATCHDOG = "Waiting 10 seconds for foreground threads to exit"
 
 
 def utc_now() -> datetime:
@@ -54,6 +53,27 @@ def phase_record(name: str, result) -> dict[str, object]:
         "dumpSizeBytes": result.capture.dump_size_bytes if result.capture else 0,
         "durationMs": result.duration_ms,
     }
+
+
+def completed_test_assembly_with_failures(stdout_path: Path) -> bool:
+    """Return true only for a completed xUnit run whose nonzero exit is ordinary test failure."""
+    if not stdout_path.is_file():
+        return False
+    try:
+        for raw in reversed(stdout_path.read_text(encoding="utf-8", errors="replace").splitlines()):
+            raw = raw.strip()
+            if not raw.startswith("{"):
+                continue
+            try:
+                message = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if message.get("$type") != "test-assembly-finished":
+                continue
+            return int(message.get("TestsFailed", 0)) > 0
+    except OSError:
+        return False
+    return False
 
 
 def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minutes: int) -> int:
@@ -88,6 +108,7 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
     watchdogs = 0
     captures = 0
     unexpected = 0
+    ordinary_test_failures = 0
     completed_passes = 0
     per_assembly = {name: 0 for name in ASSEMBLIES}
 
@@ -97,8 +118,6 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
 
         for assembly_name in ASSEMBLIES:
             dll = assemblies[assembly_name]
-            # Historical harness topology: finish all 50 iterations for one assembly
-            # before advancing to the next assembly on the same Hosted Windows VM.
             for iteration in range(1, 51):
                 if utc_now() >= deadline:
                     break
@@ -112,6 +131,7 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
                 fatal: str | None = None
                 watchdog_phase: str | None = None
                 dump_succeeded = False
+                ordinary_test_failure = False
 
                 try:
                     load = run_observed(
@@ -158,10 +178,11 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
 
                     if not fatal and not watchdog_phase:
                         marker = root / "execution.lifecycle"
+                        stdout_path = root / "execution.stdout.txt"
                         execution = run_observed(
                             ["dotnet", str(dll), "-automated", "-noLogo", "-noColor", "-parallel", "none"],
                             repo,
-                            root / "execution.stdout.txt",
+                            stdout_path,
                             root / "execution.stderr.txt",
                             180,
                             dump_tool,
@@ -178,26 +199,36 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
                             dump_succeeded = bool(execution.capture and execution.capture.dump_succeeded)
                             if dump_succeeded:
                                 captures += 1
-                        elif execution.timed_out or execution.exit_code != 0:
-                            fatal = f"execution failed exit={execution.exit_code} timeout={execution.timed_out}"
+                        elif execution.timed_out:
+                            fatal = f"execution timed out exit={execution.exit_code}"
+                        elif execution.exit_code != 0:
+                            # A fully completed xUnit assembly may legitimately return nonzero because
+                            # one test assertion failed. That is orthogonal to this shutdown experiment;
+                            # retain it as evidence, record it, and continue the historical host sequence.
+                            ordinary_test_failure = completed_test_assembly_with_failures(stdout_path)
+                            if ordinary_test_failure:
+                                ordinary_test_failures += 1
+                            else:
+                                fatal = f"execution failed exit={execution.exit_code} timeout=False without completed failing assembly"
 
                 except Exception as exc:
                     fatal = repr(exc)
 
                 record = {
-                    "schemaVersion": 7,
+                    "schemaVersion": 8,
                     "pass": pass_index,
                     "assembly": assembly_name,
                     "iteration": iteration,
                     "startedAtUtc": iso(),
                     "watchdogPhase": watchdog_phase,
                     "dumpSucceeded": dump_succeeded,
+                    "ordinaryTestFailure": ordinary_test_failure,
                     "fatal": fatal,
                     "phases": phases,
                 }
                 append_jsonl(jsonl, record)
 
-                if watchdog_phase or fatal:
+                if watchdog_phase or fatal or ordinary_test_failure:
                     destination = retained / token
                     if destination.exists():
                         shutil.rmtree(destination)
@@ -207,7 +238,7 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
 
                 if watchdog_phase:
                     summary = {
-                        "schemaVersion": 7,
+                        "schemaVersion": 8,
                         "historicalSha": HISTORICAL_SHA,
                         "historicalOrder": ASSEMBLIES,
                         "iterationsPerAssemblyPerPass": 50,
@@ -217,6 +248,7 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
                         "perAssemblyExecutions": per_assembly,
                         "watchdogExecutions": watchdogs,
                         "confirmedCaptures": captures,
+                        "ordinaryTestFailures": ordinary_test_failures,
                         "unexpectedFailures": unexpected,
                         "watchdogAssembly": assembly_name,
                         "watchdogIteration": iteration,
@@ -227,13 +259,12 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
                     }
                     write_json(output / "summary.json", summary)
                     print(json.dumps(summary, indent=2))
-                    # Exact watchdog with no dump is instrumentation failure and must fail closed.
                     return 0 if dump_succeeded else 3
 
                 if fatal:
                     unexpected += 1
                     summary = {
-                        "schemaVersion": 7,
+                        "schemaVersion": 8,
                         "historicalSha": HISTORICAL_SHA,
                         "historicalOrder": ASSEMBLIES,
                         "iterationsPerAssemblyPerPass": 50,
@@ -243,6 +274,7 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
                         "perAssemblyExecutions": per_assembly,
                         "watchdogExecutions": watchdogs,
                         "confirmedCaptures": captures,
+                        "ordinaryTestFailures": ordinary_test_failures,
                         "unexpectedFailures": unexpected,
                         "fatal": fatal,
                         "startedAtUtc": iso(started),
@@ -260,7 +292,7 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
         completed_passes = pass_index
 
     summary = {
-        "schemaVersion": 7,
+        "schemaVersion": 8,
         "historicalSha": HISTORICAL_SHA,
         "historicalOrder": ASSEMBLIES,
         "iterationsPerAssemblyPerPass": 50,
@@ -270,6 +302,7 @@ def run_probe(repo: Path, dump_tool: Path, output: Path, passes: int, max_minute
         "perAssemblyExecutions": per_assembly,
         "watchdogExecutions": watchdogs,
         "confirmedCaptures": captures,
+        "ordinaryTestFailures": ordinary_test_failures,
         "unexpectedFailures": unexpected,
         "startedAtUtc": iso(started),
         "finishedAtUtc": iso(),
