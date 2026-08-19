@@ -1,4 +1,4 @@
-name: Issue 183 Hosted Windows Capture V2
+name: Issue 183 Hosted Windows Capture V3
 
 permissions:
   contents: read
@@ -24,8 +24,314 @@ on:
       - '.github/workflows/issue-183-hosted-capture.yml'
 
 jobs:
+  preflight:
+    name: Validate capture pipeline
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact historical failure SHA
+        uses: actions/checkout@v7
+        with:
+          ref: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+          fetch-depth: 0
+          path: target
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install diagnostics
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-stack --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+
+      - name: Restore historical checkout
+        working-directory: target
+        run: dotnet restore ./DownKyi.sln
+
+      - name: Strict Release build
+        working-directory: target
+        run: >
+          dotnet build ./DownKyi.sln
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
+
+      - name: Patch historical harness for dump-first capture
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          function Replace-RequiredLiteral {
+            param(
+              [Parameter(Mandatory)][string]$Source,
+              [Parameter(Mandatory)][string]$Old,
+              [Parameter(Mandatory)][string]$New,
+              [Parameter(Mandatory)][string]$Label
+            )
+            if (-not $Source.Contains($Old,[StringComparison]::Ordinal)) {
+              throw "Required patch target was not found: $Label"
+            }
+            return $Source.Replace($Old,$New,[StringComparison]::Ordinal)
+          }
+
+          function Replace-RequiredRegex {
+            param(
+              [Parameter(Mandatory)][string]$Source,
+              [Parameter(Mandatory)][string]$Pattern,
+              [Parameter(Mandatory)][string]$Replacement,
+              [Parameter(Mandatory)][string]$Label
+            )
+            $regex = [regex]::new(
+              $Pattern,
+              [Text.RegularExpressions.RegexOptions]::Singleline)
+            if (-not $regex.IsMatch($Source)) {
+              throw "Required regex patch target was not found: $Label"
+            }
+            return $regex.Replace($Source,$Replacement)
+          }
+
+          $target = "$env:GITHUB_WORKSPACE\target"
+          $harness = Join-Path $target "script\test-assembly-lifecycle.ps1"
+          $content = Get-Content -LiteralPath $harness -Raw
+
+          $content = Replace-RequiredLiteral `
+            -Source $content `
+            -Old '$marker?.disposed' `
+            -New '${marker}?.disposed' `
+            -Label 'PowerShell null-conditional marker syntax'
+
+          $content = Replace-RequiredLiteral `
+            -Source $content `
+            -Old '[double]($diagnosticDurations | Measure-Object -Sum).Sum' `
+            -New '[double](($diagnosticDurations | Measure-Object -Sum).Sum)' `
+            -Label 'per-group diagnostic sum'
+          $content = Replace-RequiredLiteral `
+            -Source $content `
+            -Old '[double]($diagnosticDurations | Measure-Object -Maximum).Maximum' `
+            -New '[double](($diagnosticDurations | Measure-Object -Maximum).Maximum)' `
+            -Label 'per-group diagnostic maximum'
+          $content = Replace-RequiredLiteral `
+            -Source $content `
+            -Old '[double]($durations | Measure-Object -Maximum).Maximum' `
+            -New '[double](($durations | Measure-Object -Maximum).Maximum)' `
+            -Label 'per-group duration maximum'
+
+          $content = Replace-RequiredRegex `
+            -Source $content `
+            -Pattern '\[int\]\(\s*\$transientChildResults\s*\|\s*Measure-Object\s+-Property\s+transientChildCount\s+-Sum\s*\)\.Sum' `
+            -Replacement '[int](($$transientChildResults | Measure-Object -Property transientChildCount -Sum).Sum)' `
+            -Label 'transient-child aggregate sum'
+          $content = Replace-RequiredRegex `
+            -Source $content `
+            -Pattern '\[int\]\(\s*\$residualChildResults\s*\|\s*Measure-Object\s+-Property\s+residualChildCount\s+-Sum\s*\)\.Sum' `
+            -Replacement '[int](($$residualChildResults | Measure-Object -Property residualChildCount -Sum).Sum)' `
+            -Label 'residual-child aggregate sum'
+          $content = Replace-RequiredRegex `
+            -Source $content `
+            -Pattern '\[double\]\(\s*\$phaseResults\s*\|\s*Measure-Object\s+-Property\s+diagnosticCaptureDurationMs\s+-Sum\s*\)\.Sum' `
+            -Replacement '[double](($$phaseResults | Measure-Object -Property diagnosticCaptureDurationMs -Sum).Sum)' `
+            -Label 'global diagnostic-duration aggregate sum'
+
+          $functionOffset = $content.IndexOf(
+            'function Save-ProcessEvidence',
+            [StringComparison]::Ordinal)
+          if ($functionOffset -lt 0) {
+            throw "Could not locate Save-ProcessEvidence."
+          }
+          $directoryLine = '    New-Item -ItemType Directory -Force -Path $directory | Out-Null'
+          $directoryOffset = $content.IndexOf(
+            $directoryLine,
+            $functionOffset,
+            [StringComparison]::Ordinal)
+          $threadOffset = $content.IndexOf(
+            '    $threadSnapshot = @()',
+            $functionOffset,
+            [StringComparison]::Ordinal)
+          if ($directoryOffset -lt 0 -or $threadOffset -lt 0) {
+            throw "Could not locate dump-first injection point."
+          }
+          $lineEnd = $content.IndexOf("`n",$directoryOffset)
+          if ($lineEnd -lt 0 -or $lineEnd -ge $threadOffset) {
+            throw "Invalid dump-first injection boundary."
+          }
+          $insertOffset = $lineEnd + 1
+          $nl = if ($content.Contains("`r`n",[StringComparison]::Ordinal)) { "`r`n" } else { "`n" }
+
+          $inject = @(
+            '',
+            '    $captureSelfTest = $env:DOWNKYI_ISSUE183_CAPTURE_SELFTEST -eq "1"',
+            '    if ($Reason -eq "slow-exit-after-teardown" -and -not $Process.HasExited -and',
+            '        ($AssemblyName -ne "Gate.Forensics" -or $captureSelfTest)) {',
+            '        $triagePath = Join-Path $directory "process-triage.dmp"',
+            '        $triageLog = Join-Path $directory "process-triage-dump.log"',
+            '        try {',
+            '            $triageLines = @(& $env:DOWNKYI_DOTNET_DUMP collect --type Triage --process-id $Process.Id --output $triagePath 2>&1)',
+            '            $triageLines | Set-Content -LiteralPath $triageLog -Encoding utf8',
+            '        } catch {',
+            '            ("Triage dump capture failed: " + $_.Exception.ToString()) | Set-Content -LiteralPath $triageLog -Encoding utf8',
+            '        }',
+            '',
+            '        if (-not $Process.HasExited) {',
+            '            $fullPath = Join-Path $directory "process-full.dmp"',
+            '            $fullLog = Join-Path $directory "process-full-dump.log"',
+            '            try {',
+            '                $fullLines = @(& $env:DOWNKYI_DOTNET_DUMP collect --type Full --process-id $Process.Id --output $fullPath 2>&1)',
+            '                $fullLines | Set-Content -LiteralPath $fullLog -Encoding utf8',
+            '            } catch {',
+            '                ("Full dump capture failed: " + $_.Exception.ToString()) | Set-Content -LiteralPath $fullLog -Encoding utf8',
+            '            }',
+            '        }',
+            '    }',
+            ''
+          ) -join $nl
+          $content = $content.Substring(0,$insertOffset) +
+            $inject +
+            $content.Substring($insertOffset)
+
+          $triageOffset = $content.IndexOf('process-triage.dmp',$functionOffset,[StringComparison]::Ordinal)
+          $threadOffsetAfterPatch = $content.IndexOf('    $threadSnapshot = @()',$functionOffset,[StringComparison]::Ordinal)
+          if ($triageOffset -lt 0 -or $triageOffset -gt $threadOffsetAfterPatch) {
+            throw "Triage capture is not positioned before thread enumeration."
+          }
+
+          $tokens = $null
+          $parseErrors = $null
+          $null = [Management.Automation.Language.Parser]::ParseInput(
+            $content,[ref]$tokens,[ref]$parseErrors)
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            throw "Patched historical harness failed parser validation."
+          }
+
+          [IO.File]::WriteAllText(
+            $harness,
+            $content,
+            [Text.UTF8Encoding]::new($false))
+
+          $actualSha = (& git -C $target rev-parse HEAD).Trim()
+          if ($actualSha -ne '0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8') {
+            throw "Historical SHA mismatch: $actualSha"
+          }
+
+      - name: Validate dotnet-dump against a live managed process
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $probe = "$env:GITHUB_WORKSPACE\target\tools\DownKyi.AssemblyLifecycleProbe\bin\Release\net10.0\DownKyi.AssemblyLifecycleProbe.dll"
+          $dumpTool = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          $preflightRoot = "$env:GITHUB_WORKSPACE\issue-183-preflight"
+          New-Item -ItemType Directory -Force $preflightRoot | Out-Null
+
+          $startInfo = [Diagnostics.ProcessStartInfo]::new()
+          $startInfo.FileName = "dotnet"
+          $startInfo.UseShellExecute = $false
+          $startInfo.CreateNoWindow = $true
+          $startInfo.ArgumentList.Add($probe)
+          $startInfo.ArgumentList.Add("--child-hold-ms")
+          $startInfo.ArgumentList.Add("20000")
+          $process = [Diagnostics.Process]::new()
+          $process.StartInfo = $startInfo
+
+          try {
+            if (-not $process.Start()) {
+              throw "Managed hold process failed to start."
+            }
+            Start-Sleep -Milliseconds 250
+            if ($process.HasExited) {
+              throw "Managed hold process exited before dump validation."
+            }
+
+            $triage = Join-Path $preflightRoot "preflight-triage.dmp"
+            & $dumpTool collect --type Triage --process-id $process.Id --output $triage
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $triage -PathType Leaf)) {
+              throw "Triage dump preflight failed."
+            }
+
+            if ($process.HasExited) {
+              throw "Managed hold process exited before Full dump validation."
+            }
+            $full = Join-Path $preflightRoot "preflight-full.dmp"
+            & $dumpTool collect --type Full --process-id $process.Id --output $full
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $full -PathType Leaf)) {
+              throw "Full dump preflight failed."
+            }
+
+            Write-Host "DUMP PREFLIGHT PASSED: triage=$((Get-Item $triage).Length) full=$((Get-Item $full).Length)"
+          }
+          finally {
+            if (-not $process.HasExited) {
+              $process.Kill($true)
+              $process.WaitForExit()
+            }
+            $process.Dispose()
+          }
+
+      - name: Validate patched harness aggregation
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $target = "$env:GITHUB_WORKSPACE\target"
+          $harness = Join-Path $target "script\test-assembly-lifecycle.ps1"
+          $stackTool = "$env:GITHUB_WORKSPACE\tools\dotnet-stack.exe"
+          $dumpTool = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          $env:DOWNKYI_DOTNET_DUMP = $dumpTool
+          Remove-Item Env:DOWNKYI_ISSUE183_CAPTURE_SELFTEST -ErrorAction SilentlyContinue
+
+          $results = "$env:GITHUB_WORKSPACE\issue-183-preflight-harness"
+          & $harness `
+            -Configuration Release `
+            -Profile Main `
+            -Iterations 1 `
+            -PhaseTimeoutSeconds 180 `
+            -SlowPhaseThresholdSeconds 5 `
+            -ExitThresholdSeconds 0.25 `
+            -AssemblyPattern "DownKyi.Core.Tests" `
+            -ResultsDirectory $results `
+            -DiagnosticsToolPath $stackTool `
+            -ValidateForensics `
+            -NoBuild
+
+          Write-Host "HARNESS PREFLIGHT PASSED: report aggregation completed without exception."
+
+          $validated = "$env:GITHUB_WORKSPACE\validated-harness"
+          New-Item -ItemType Directory -Force $validated | Out-Null
+          Copy-Item -LiteralPath $harness -Destination (Join-Path $validated "test-assembly-lifecycle.ps1") -Force
+          @(
+            "Issue #183 capture V3 preflight passed."
+            "Historical SHA: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8"
+            "Triage/Full dump tool validation: passed"
+            "Patched harness parser validation: passed"
+            "Patched harness aggregation validation: passed"
+            "Capture order: Triage/Full before OS-thread enumeration"
+          ) | Set-Content (Join-Path $validated "preflight.txt") -Encoding utf8
+
+      - name: Upload validated harness
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-validated-harness-v3
+          path: validated-harness
+          if-no-files-found: error
+          retention-days: 7
+
   capture:
     name: Core capture / shard ${{ matrix.shard }}
+    needs: preflight
     runs-on: windows-latest
     timeout-minutes: 330
     continue-on-error: true
@@ -75,99 +381,31 @@ jobs:
           -p:EnforceCodeStyleInBuild=true
           -p:UseSharedCompilation=false
 
-      - name: Patch historical harness for early capture
+      - name: Download validated harness
+        uses: actions/download-artifact@v7
+        with:
+          name: issue-183-validated-harness-v3
+          path: validated-harness
+
+      - name: Install validated historical harness patch
         shell: pwsh
         run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = "Stop"
-
-          $target = "$env:GITHUB_WORKSPACE\target"
-          $harness = Join-Path $target "script\test-assembly-lifecycle.ps1"
-          $content = Get-Content -LiteralPath $harness -Raw
-
-          $content = $content.Replace(
-            '$marker?.disposed',
-            '${marker}?.disposed',
-            [StringComparison]::Ordinal)
-          $content = $content.Replace(
-            '[double]($diagnosticDurations | Measure-Object -Sum).Sum',
-            '[double](($diagnosticDurations | Measure-Object -Sum).Sum)',
-            [StringComparison]::Ordinal)
-          $content = $content.Replace(
-            '[double]($diagnosticDurations | Measure-Object -Maximum).Maximum',
-            '[double](($diagnosticDurations | Measure-Object -Maximum).Maximum)',
-            [StringComparison]::Ordinal)
-          $content = $content.Replace(
-            '[double]($durations | Measure-Object -Maximum).Maximum',
-            '[double](($durations | Measure-Object -Maximum).Maximum)',
-            [StringComparison]::Ordinal)
-
-          if (-not $content.Contains('process-triage.dmp',[StringComparison]::Ordinal)) {
-            $functionOffset = $content.IndexOf(
-              'function Save-ProcessEvidence',
-              [StringComparison]::Ordinal)
-            $processTreeOffset = $content.IndexOf(
-              '$processTree = @(Get-ProcessTree -RootProcessId $Process.Id)',
-              $functionOffset,
-              [StringComparison]::Ordinal)
-            if ($functionOffset -lt 0 -or $processTreeOffset -lt 0) {
-              throw "Could not locate Save-ProcessEvidence injection point."
-            }
-
-            $lineOffset = $content.LastIndexOf("`n",$processTreeOffset)
-            if ($lineOffset -lt 0) { $lineOffset = $processTreeOffset } else { $lineOffset++ }
-            $nl = if ($content.Contains("`r`n",[StringComparison]::Ordinal)) { "`r`n" } else { "`n" }
-
-            $inject = @(
-              '    if ($Reason -eq "slow-exit-after-teardown" -and -not $Process.HasExited) {',
-              '        $triagePath = Join-Path $directory "process-triage.dmp"',
-              '        $triageLog = Join-Path $directory "process-triage-dump.log"',
-              '        try {',
-              '            $triageLines = @(& $env:DOWNKYI_DOTNET_DUMP collect --type Triage --process-id $Process.Id --output $triagePath 2>&1)',
-              '            $triageLines | Set-Content -LiteralPath $triageLog -Encoding utf8',
-              '        } catch {',
-              '            ("Triage dump capture failed: " + $_.Exception.ToString()) | Set-Content -LiteralPath $triageLog -Encoding utf8',
-              '        }',
-              '',
-              '        if (-not $Process.HasExited) {',
-              '            $fullPath = Join-Path $directory "process-full.dmp"',
-              '            $fullLog = Join-Path $directory "process-full-dump.log"',
-              '            try {',
-              '                $fullLines = @(& $env:DOWNKYI_DOTNET_DUMP collect --type Full --process-id $Process.Id --output $fullPath 2>&1)',
-              '                $fullLines | Set-Content -LiteralPath $fullLog -Encoding utf8',
-              '            } catch {',
-              '                ("Full dump capture failed: " + $_.Exception.ToString()) | Set-Content -LiteralPath $fullLog -Encoding utf8',
-              '            }',
-              '        }',
-              '    }',
-              ''
-            ) -join $nl
-
-            $content = $content.Substring(0,$lineOffset) +
-              $inject +
-              $content.Substring($lineOffset)
+          $source = "$env:GITHUB_WORKSPACE\validated-harness\test-assembly-lifecycle.ps1"
+          $destination = "$env:GITHUB_WORKSPACE\target\script\test-assembly-lifecycle.ps1"
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "Validated harness artifact is missing."
           }
-
+          Copy-Item -LiteralPath $source -Destination $destination -Force
           $tokens = $null
           $parseErrors = $null
+          $content = Get-Content -LiteralPath $destination -Raw
           $null = [Management.Automation.Language.Parser]::ParseInput(
             $content,[ref]$tokens,[ref]$parseErrors)
           if ($parseErrors.Count -gt 0) {
-            $parseErrors | ForEach-Object { Write-Error $_.Message }
-            throw "Patched historical harness failed parser validation."
+            throw "Validated harness failed parser validation after artifact transfer."
           }
 
-          [IO.File]::WriteAllText(
-            $harness,
-            $content,
-            [Text.UTF8Encoding]::new($false))
-
-          $actualSha = (& git -C $target rev-parse HEAD).Trim()
-          if ($actualSha -ne '0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8') {
-            throw "Historical SHA mismatch: $actualSha"
-          }
-
-      - name: Core-only sampling with 250ms post-teardown capture
+      - name: Core-only sampling with dump-first 250ms capture
         shell: pwsh
         run: |
           Set-StrictMode -Version Latest
@@ -185,6 +423,7 @@ jobs:
           $stackTool = "$env:GITHUB_WORKSPACE\tools\dotnet-stack.exe"
           $dumpTool = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
           $env:DOWNKYI_DOTNET_DUMP = $dumpTool
+          Remove-Item Env:DOWNKYI_ISSUE183_CAPTURE_SELFTEST -ErrorAction SilentlyContinue
 
           $watchdogText = "Waiting 10 seconds for foreground threads to exit"
           $iterations = [int]$env:ITERATIONS_PER_BATCH
@@ -251,13 +490,18 @@ jobs:
 
             $slowDirs = @(
               Get-ChildItem $batchRoot -Recurse -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -like "*slow-exit-after-teardown*" }
+                Where-Object {
+                  $_.Name -like "*slow-exit-after-teardown*" -and
+                  $_.FullName -match [regex]::Escape("DownKyi.Core.Tests")
+                }
             )
             $triageFiles = @(
-              Get-ChildItem $batchRoot -Recurse -File -Filter "process-triage.dmp" -ErrorAction SilentlyContinue
+              Get-ChildItem $batchRoot -Recurse -File -Filter "process-triage.dmp" -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match [regex]::Escape("DownKyi.Core.Tests") }
             )
             $fullFiles = @(
-              Get-ChildItem $batchRoot -Recurse -File -Filter "process-full.dmp" -ErrorAction SilentlyContinue
+              Get-ChildItem $batchRoot -Recurse -File -Filter "process-full.dmp" -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match [regex]::Escape("DownKyi.Core.Tests") }
             )
 
             $watchdogs += $watchdogEvents.Count
@@ -318,7 +562,7 @@ jobs:
           }
 
           $summary = [ordered]@{
-            schemaVersion = 2
+            schemaVersion = 3
             shard = $shard
             historicalSha = "0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8"
             batches = $batch
@@ -388,7 +632,7 @@ jobs:
           }
 
           $report = @(
-            "# Issue #183 — Hosted Windows Capture V2"
+            "# Issue #183 — Hosted Windows Capture V3"
             ""
             "- Historical SHA: ``0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8``"
             "- Core executions: $core"
@@ -399,7 +643,7 @@ jobs:
             "- **Confirmed watchdog + dump captures: $confirmed**"
             "- Harness batch errors: $harnessErrors"
             ""
-            "Capture policy: Core-only; arm at 250 ms after teardown marker; capture Triage first and Full second; stop a shard after its first confirmed watchdog+dump sample."
+            "Capture policy: fail-closed preflight; validated patched harness; Core-only; arm at 250 ms after teardown marker; capture Triage/Full before OS-thread enumeration; stop a shard after its first confirmed watchdog+dump sample."
           )
           $report | Set-Content issue-183-capture-report.md -Encoding utf8
           $report | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
