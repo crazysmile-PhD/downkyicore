@@ -20,8 +20,11 @@ on:
     branches:
       - experiment/issue-183-capture-v2
     paths:
-      - '.github/workflows/issue-183-hosted-exact-capture.yml'
-      - 'script/research/issue_183_exact_watchdog_capture.py'
+      - '.github/issue-183-exact-trigger'
+
+concurrency:
+  group: issue-183-exact-capture-v4
+  cancel-in-progress: true
 
 jobs:
   preflight:
@@ -33,7 +36,7 @@ jobs:
       - name: Checkout instrumentation
         uses: actions/checkout@v7
         with:
-          ref: experiment/issue-183-capture-v2
+          ref: ${{ github.sha }}
           path: instrumentation
 
       - name: Checkout historical failure SHA
@@ -129,7 +132,7 @@ jobs:
       - name: Checkout instrumentation
         uses: actions/checkout@v7
         with:
-          ref: experiment/issue-183-capture-v2
+          ref: ${{ github.sha }}
           path: instrumentation
 
       - name: Checkout historical failure SHA
