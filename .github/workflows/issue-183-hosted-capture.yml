@@ -1,0 +1,417 @@
+name: Issue 183 Hosted Windows Capture V2
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Sampling duration per Hosted Windows VM'
+        required: false
+        default: '285'
+        type: string
+      iterations_per_batch:
+        description: 'Core lifecycle iterations per batch'
+        required: false
+        default: '50'
+        type: string
+  push:
+    branches:
+      - main
+      - experiment/issue-183-capture-v2
+    paths:
+      - '.github/workflows/issue-183-hosted-capture.yml'
+
+jobs:
+  capture:
+    name: Core capture / shard ${{ matrix.shard }}
+    runs-on: windows-latest
+    timeout-minutes: 330
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    env:
+      DURATION_MINUTES: ${{ inputs.duration_minutes || '285' }}
+      ITERATIONS_PER_BATCH: ${{ inputs.iterations_per_batch || '50' }}
+
+    steps:
+      - name: Checkout exact historical failure SHA
+        uses: actions/checkout@v7
+        with:
+          ref: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+          fetch-depth: 0
+          path: target
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install diagnostics
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-stack --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+
+      - name: Restore historical checkout
+        working-directory: target
+        run: dotnet restore ./DownKyi.sln
+
+      - name: Strict Release build
+        working-directory: target
+        run: >
+          dotnet build ./DownKyi.sln
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
+
+      - name: Patch historical harness for early capture
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $target = "$env:GITHUB_WORKSPACE\target"
+          $harness = Join-Path $target "script\test-assembly-lifecycle.ps1"
+          $content = Get-Content -LiteralPath $harness -Raw
+
+          $content = $content.Replace(
+            '$marker?.disposed',
+            '${marker}?.disposed',
+            [StringComparison]::Ordinal)
+          $content = $content.Replace(
+            '[double]($diagnosticDurations | Measure-Object -Sum).Sum',
+            '[double](($diagnosticDurations | Measure-Object -Sum).Sum)',
+            [StringComparison]::Ordinal)
+          $content = $content.Replace(
+            '[double]($diagnosticDurations | Measure-Object -Maximum).Maximum',
+            '[double](($diagnosticDurations | Measure-Object -Maximum).Maximum)',
+            [StringComparison]::Ordinal)
+          $content = $content.Replace(
+            '[double]($durations | Measure-Object -Maximum).Maximum',
+            '[double](($durations | Measure-Object -Maximum).Maximum)',
+            [StringComparison]::Ordinal)
+
+          if (-not $content.Contains('process-triage.dmp',[StringComparison]::Ordinal)) {
+            $functionOffset = $content.IndexOf(
+              'function Save-ProcessEvidence',
+              [StringComparison]::Ordinal)
+            $processTreeOffset = $content.IndexOf(
+              '$processTree = @(Get-ProcessTree -RootProcessId $Process.Id)',
+              $functionOffset,
+              [StringComparison]::Ordinal)
+            if ($functionOffset -lt 0 -or $processTreeOffset -lt 0) {
+              throw "Could not locate Save-ProcessEvidence injection point."
+            }
+
+            $lineOffset = $content.LastIndexOf("`n",$processTreeOffset)
+            if ($lineOffset -lt 0) { $lineOffset = $processTreeOffset } else { $lineOffset++ }
+            $nl = if ($content.Contains("`r`n",[StringComparison]::Ordinal)) { "`r`n" } else { "`n" }
+
+            $inject = @(
+              '    if ($Reason -eq "slow-exit-after-teardown" -and -not $Process.HasExited) {',
+              '        $triagePath = Join-Path $directory "process-triage.dmp"',
+              '        $triageLog = Join-Path $directory "process-triage-dump.log"',
+              '        try {',
+              '            $triageLines = @(& $env:DOWNKYI_DOTNET_DUMP collect --type Triage --process-id $Process.Id --output $triagePath 2>&1)',
+              '            $triageLines | Set-Content -LiteralPath $triageLog -Encoding utf8',
+              '        } catch {',
+              '            ("Triage dump capture failed: " + $_.Exception.ToString()) | Set-Content -LiteralPath $triageLog -Encoding utf8',
+              '        }',
+              '',
+              '        if (-not $Process.HasExited) {',
+              '            $fullPath = Join-Path $directory "process-full.dmp"',
+              '            $fullLog = Join-Path $directory "process-full-dump.log"',
+              '            try {',
+              '                $fullLines = @(& $env:DOWNKYI_DOTNET_DUMP collect --type Full --process-id $Process.Id --output $fullPath 2>&1)',
+              '                $fullLines | Set-Content -LiteralPath $fullLog -Encoding utf8',
+              '            } catch {',
+              '                ("Full dump capture failed: " + $_.Exception.ToString()) | Set-Content -LiteralPath $fullLog -Encoding utf8',
+              '            }',
+              '        }',
+              '    }',
+              ''
+            ) -join $nl
+
+            $content = $content.Substring(0,$lineOffset) +
+              $inject +
+              $content.Substring($lineOffset)
+          }
+
+          $tokens = $null
+          $parseErrors = $null
+          $null = [Management.Automation.Language.Parser]::ParseInput(
+            $content,[ref]$tokens,[ref]$parseErrors)
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            throw "Patched historical harness failed parser validation."
+          }
+
+          [IO.File]::WriteAllText(
+            $harness,
+            $content,
+            [Text.UTF8Encoding]::new($false))
+
+          $actualSha = (& git -C $target rev-parse HEAD).Trim()
+          if ($actualSha -ne '0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8') {
+            throw "Historical SHA mismatch: $actualSha"
+          }
+
+      - name: Core-only sampling with 250ms post-teardown capture
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $shard = ${{ matrix.shard }}
+          $target = "$env:GITHUB_WORKSPACE\target"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-capture-shard-$shard"
+          $work = Join-Path $out "work"
+          $evidence = Join-Path $out "evidence"
+          $inconclusive = Join-Path $out "inconclusive"
+          New-Item -ItemType Directory -Force $out,$work,$evidence,$inconclusive | Out-Null
+
+          $harness = Join-Path $target "script\test-assembly-lifecycle.ps1"
+          $stackTool = "$env:GITHUB_WORKSPACE\tools\dotnet-stack.exe"
+          $dumpTool = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          $env:DOWNKYI_DOTNET_DUMP = $dumpTool
+
+          $watchdogText = "Waiting 10 seconds for foreground threads to exit"
+          $iterations = [int]$env:ITERATIONS_PER_BATCH
+          $duration = [int]$env:DURATION_MINUTES
+          $deadline = [DateTimeOffset]::UtcNow.AddMinutes($duration)
+
+          $batch = 0
+          $executions = 0
+          $watchdogs = 0
+          $slowExits = 0
+          $triageDumps = 0
+          $fullDumps = 0
+          $harnessErrors = 0
+          $confirmedCaptures = 0
+          $events = [Collections.Generic.List[object]]::new()
+
+          while ([DateTimeOffset]::UtcNow -lt $deadline -and $confirmedCaptures -eq 0) {
+            $batch++
+            $batchName = "batch-{0:D4}" -f $batch
+            $batchRoot = Join-Path $work $batchName
+            New-Item -ItemType Directory -Force $batchRoot | Out-Null
+            Write-Host "=== shard $shard / $batchName / $iterations Core iterations ==="
+
+            $harnessError = ""
+            try {
+              & $harness `
+                -Configuration Release `
+                -Profile Main `
+                -Iterations $iterations `
+                -PhaseTimeoutSeconds 180 `
+                -SlowPhaseThresholdSeconds 5 `
+                -ExitThresholdSeconds 0.25 `
+                -AssemblyPattern "DownKyi.Core.Tests" `
+                -ResultsDirectory $batchRoot `
+                -DiagnosticsToolPath $stackTool `
+                -ValidateForensics `
+                -NoBuild
+            } catch {
+              $harnessError = $_.Exception.Message
+              $harnessErrors++
+              Write-Warning "Harness error recorded; evidence is retained: $harnessError"
+            }
+
+            $executionFiles = @(
+              Get-ChildItem $batchRoot -Recurse -File -Filter "execution.stdout.txt" -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match [regex]::Escape("DownKyi.Core.Tests") }
+            )
+            $executions += $executionFiles.Count
+
+            $watchdogEvents = [Collections.Generic.List[object]]::new()
+            foreach ($file in $executionFiles) {
+              $stderrPath = Join-Path $file.Directory.FullName "execution.stderr.txt"
+              $combined = Get-Content $file.FullName -Raw
+              if (Test-Path $stderrPath) {
+                $combined += "`n" + (Get-Content $stderrPath -Raw)
+              }
+              if ($combined.Contains($watchdogText,[StringComparison]::OrdinalIgnoreCase)) {
+                $watchdogEvents.Add([pscustomobject]@{
+                  iteration = $file.Directory.Name
+                  iterationDirectory = $file.Directory.FullName
+                })
+              }
+            }
+
+            $slowDirs = @(
+              Get-ChildItem $batchRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like "*slow-exit-after-teardown*" }
+            )
+            $triageFiles = @(
+              Get-ChildItem $batchRoot -Recurse -File -Filter "process-triage.dmp" -ErrorAction SilentlyContinue
+            )
+            $fullFiles = @(
+              Get-ChildItem $batchRoot -Recurse -File -Filter "process-full.dmp" -ErrorAction SilentlyContinue
+            )
+
+            $watchdogs += $watchdogEvents.Count
+            $slowExits += $slowDirs.Count
+            $triageDumps += $triageFiles.Count
+            $fullDumps += $fullFiles.Count
+
+            foreach ($event in $watchdogEvents) {
+              $iterationEvidence = @(
+                $slowDirs | Where-Object {
+                  $_.Parent.Name -eq $event.iteration -and
+                  $_.Parent.Parent.Name -eq "DownKyi.Core.Tests"
+                }
+              )
+              $eventDumpCount = 0
+              foreach ($dir in $iterationEvidence) {
+                $eventDumpCount += @(
+                  Get-ChildItem $dir.FullName -File -Filter "*.dmp" -ErrorAction SilentlyContinue
+                ).Count
+              }
+              if ($eventDumpCount -gt 0) {
+                $confirmedCaptures++
+              }
+              $events.Add([pscustomobject]@{
+                shard = $shard
+                batch = $batch
+                assembly = "DownKyi.Core.Tests"
+                iteration = $event.iteration
+                watchdog = $true
+                dumpCount = $eventDumpCount
+                confirmedCapture = ($eventDumpCount -gt 0)
+                observedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
+              })
+            }
+
+            $suspicious = $watchdogEvents.Count -gt 0 -or
+              $slowDirs.Count -gt 0 -or
+              $triageFiles.Count -gt 0 -or
+              $fullFiles.Count -gt 0 -or
+              -not [string]::IsNullOrWhiteSpace($harnessError)
+
+            if ($suspicious) {
+              $retained = Join-Path $evidence $batchName
+              Move-Item $batchRoot $retained
+              Write-Host "TARGET SIGNAL: watchdog=$($watchdogEvents.Count) slowExit=$($slowDirs.Count) triage=$($triageFiles.Count) full=$($fullFiles.Count) confirmed=$confirmedCaptures"
+            } elseif ($executionFiles.Count -ne $iterations) {
+              $retained = Join-Path $inconclusive $batchName
+              Move-Item $batchRoot $retained
+              Write-Warning "Incomplete batch retained."
+            } else {
+              Remove-Item $batchRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+
+            if ($events.Count -gt 0) {
+              @($events) |
+                Export-Csv (Join-Path $out "events.csv") -NoTypeInformation -Encoding utf8
+            }
+          }
+
+          $summary = [ordered]@{
+            schemaVersion = 2
+            shard = $shard
+            historicalSha = "0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8"
+            batches = $batch
+            coreExecutions = $executions
+            watchdogExecutions = $watchdogs
+            slowExitEvents = $slowExits
+            triageDumps = $triageDumps
+            fullDumps = $fullDumps
+            confirmedCaptures = $confirmedCaptures
+            harnessBatchErrors = $harnessErrors
+            stoppedAfterConfirmedCapture = ($confirmedCaptures -gt 0)
+            finishedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
+          }
+          $summary | ConvertTo-Json -Depth 6 |
+            Set-Content (Join-Path $out "shard-$shard-summary.json") -Encoding utf8
+          Write-Host "SHARD COMPLETE: core=$executions watchdogs=$watchdogs slow=$slowExits triage=$triageDumps full=$fullDumps confirmed=$confirmedCaptures harnessErrors=$harnessErrors"
+
+      - name: Upload capture evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-capture-shard-${{ matrix.shard }}
+          path: issue-183-capture-shard-${{ matrix.shard }}
+          if-no-files-found: warn
+          retention-days: 14
+
+  aggregate:
+    name: Aggregate capture report
+    needs: capture
+    if: always()
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Download shard artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: issue-183-capture-shard-*
+          path: collected
+          merge-multiple: true
+
+      - name: Build capture report
+        shell: pwsh
+        run: |
+          $summaries = @(
+            Get-ChildItem collected -Recurse -File -Filter "shard-*-summary.json" -ErrorAction SilentlyContinue |
+              ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json }
+          )
+
+          $core=0; $watchdogs=0; $slow=0; $triage=0; $full=0; $confirmed=0; $harnessErrors=0
+          foreach ($s in $summaries) {
+            $core += [int]$s.coreExecutions
+            $watchdogs += [int]$s.watchdogExecutions
+            $slow += [int]$s.slowExitEvents
+            $triage += [int]$s.triageDumps
+            $full += [int]$s.fullDumps
+            $confirmed += [int]$s.confirmedCaptures
+            $harnessErrors += [int]$s.harnessBatchErrors
+          }
+
+          $allEvents = @(
+            Get-ChildItem collected -Recurse -File -Filter "events.csv" -ErrorAction SilentlyContinue |
+              ForEach-Object { Import-Csv $_.FullName }
+          )
+          if ($allEvents.Count -gt 0) {
+            $allEvents | Export-Csv issue-183-capture-events.csv -NoTypeInformation -Encoding utf8
+          }
+
+          $report = @(
+            "# Issue #183 — Hosted Windows Capture V2"
+            ""
+            "- Historical SHA: ``0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8``"
+            "- Core executions: $core"
+            "- Exact watchdog executions: $watchdogs"
+            "- Slow-exit-after-teardown events: $slow"
+            "- Triage dumps captured: $triage"
+            "- Full dumps captured: $full"
+            "- **Confirmed watchdog + dump captures: $confirmed**"
+            "- Harness batch errors: $harnessErrors"
+            ""
+            "Capture policy: Core-only; arm at 250 ms after teardown marker; capture Triage first and Full second; stop a shard after its first confirmed watchdog+dump sample."
+          )
+          $report | Set-Content issue-183-capture-report.md -Encoding utf8
+          $report | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $report | ForEach-Object { Write-Host $_ }
+
+      - name: Upload aggregate capture report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-capture-report
+          path: |
+            issue-183-capture-report.md
+            issue-183-capture-events.csv
+          if-no-files-found: warn
+          retention-days: 30
