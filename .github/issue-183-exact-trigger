@@ -1,0 +1,4 @@
+Issue #183 exact-watchdog Capture V4 canonical run trigger.
+
+Purpose: launch the fail-closed, exact stdout-triggered dump experiment after retiring V3 timing-triggered capture.
+Triggered after instrumentation commit e07889cb625a1e3c6f137ad02db57c3933aa8ea3.
