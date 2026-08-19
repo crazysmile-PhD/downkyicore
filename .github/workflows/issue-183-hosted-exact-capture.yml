@@ -2,6 +2,8 @@ name: Issue 183 Hosted Windows Exact Capture V4
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 on:
   workflow_dispatch:
@@ -33,6 +35,15 @@ jobs:
     timeout-minutes: 45
 
     steps:
+      - name: Publish run reference
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 exact-watchdog Capture V4 started: $runUrl`n`nTrigger SHA: ``$env:GITHUB_SHA``. This run must pass exact-signal dump preflight before any six-shard sampling starts."
+
       - name: Checkout instrumentation
         uses: actions/checkout@v7
         with:
@@ -255,6 +266,16 @@ jobs:
           $report | Set-Content issue-183-exact-capture-report.md -Encoding utf8
           $report | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           $report | ForEach-Object { Write-Host $_ }
+
+      - name: Publish completion reference
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 exact-watchdog Capture V4 finished aggregation: $runUrl`n`nOpen the ``issue-183-exact-capture-report-v4`` artifact and retained shard evidence before deciding the next step."
 
       - name: Upload aggregate report
         uses: actions/upload-artifact@v7
