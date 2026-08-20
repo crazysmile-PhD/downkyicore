@@ -1,0 +1,158 @@
+name: Issue 183 Aria to Settings Interaction Probe
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/issue-183-capture-v2
+    paths:
+      - '.github/workflows/issue-183-aria-settings-interaction.yml'
+      - '.github/issue-183-aria-settings-interaction-trigger'
+      - 'script/research/issue_183_aria_settings_interaction_probe.py'
+
+env:
+  HISTORICAL_SHA: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+  POSITIVE_SDK: 10.0.400
+  POSITIVE_RUNTIME: 10.0.11
+
+jobs:
+  aria-settings-interaction:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - name: Publish run reference
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 controlled Aria→Settings interaction probe started: $url`n`nThis is a new causal slice, not blind Core stress. It repeatedly runs only AriaClientSecurityTests + SettingsStoreTests in one historical async xUnit process, preserving their positive-run order (Aria before Settings), with the exact independent watchdog -> same-PID Full-dump observer."
+
+      - name: Checkout instrumentation
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: instrumentation
+
+      - name: Checkout historical subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HISTORICAL_SHA }}
+          fetch-depth: 0
+          path: target
+
+      - name: Install fresh-positive .NET SDK and runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "$env:GITHUB_WORKSPACE\dotnet-positive"
+          $installer = "$env:RUNNER_TEMP\dotnet-install.ps1"
+          Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile $installer
+          & pwsh -NoLogo -NoProfile -NonInteractive -File $installer -InstallDir $root -Version $env:POSITIVE_SDK -NoPath
+          if ($LASTEXITCODE -ne 0) { throw 'SDK install failed.' }
+          & pwsh -NoLogo -NoProfile -NonInteractive -File $installer -InstallDir $root -Runtime dotnet -Version $env:POSITIVE_RUNTIME -NoPath
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime install failed.' }
+          $sdk = (& "$root\dotnet.exe" --version).Trim()
+          if ($sdk -ne $env:POSITIVE_SDK) { throw "SDK mismatch: $sdk" }
+          $runtimes = @(& "$root\dotnet.exe" --list-runtimes)
+          if (-not ($runtimes -match "Microsoft.NETCore.App $([regex]::Escape($env:POSITIVE_RUNTIME)) ")) { throw 'Runtime missing.' }
+          "DOTNET_ROOT=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DOTNET_MULTILEVEL_LOOKUP=0" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $root | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install dotnet-dump
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+          if ($LASTEXITCODE -ne 0) { throw 'dotnet-dump install failed.' }
+
+      - name: Strict-build historical Core tests
+        shell: pwsh
+        working-directory: target
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sha = (& git rev-parse HEAD).Trim()
+          if ($sha -ne $env:HISTORICAL_SHA) { throw "Historical SHA mismatch: $sha" }
+          dotnet restore tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj
+          if ($LASTEXITCODE -ne 0) { throw 'Restore failed.' }
+          dotnet build tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj -c Release --no-restore --no-incremental -p:TreatWarningsAsErrors=true -p:CodeAnalysisTreatWarningsAsErrors=true -p:EnableNETAnalyzers=true -p:AnalysisMode=All -p:EnforceCodeStyleInBuild=true -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+
+      - name: Validate exact observer and interaction selection
+        shell: pwsh
+        run: |
+          $scripts = "$env:GITHUB_WORKSPACE\instrumentation\script\research"
+          $dump = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          Push-Location $scripts
+          try {
+            python -m py_compile issue_183_exact_watchdog_capture.py issue_183_aria_tls_candidate_probe.py issue_183_aria_settings_interaction_probe.py
+            if ($LASTEXITCODE -ne 0) { throw 'Probe syntax validation failed.' }
+            python issue_183_exact_watchdog_capture.py --self-test --dump-tool $dump --out "$env:GITHUB_WORKSPACE\issue-183-aria-settings-preflight"
+            if ($LASTEXITCODE -ne 0) { throw 'Exact watchdog self-test failed.' }
+          } finally { Pop-Location }
+
+          Push-Location "$env:GITHUB_WORKSPACE\target"
+          try {
+            $dll = "$PWD\tests\DownKyi.Core.Tests\bin\Release\net10.0\DownKyi.Core.Tests.dll"
+            $listing = & dotnet $dll -list tests -automated async -noLogo -noColor -class "DownKyi.Core.Tests.AriaClientSecurityTests" -class "DownKyi.Core.Tests.SettingsStoreTests"
+            if ($LASTEXITCODE -ne 0) { throw 'Interaction filter discovery failed.' }
+            $listing | Out-File "$env:GITHUB_WORKSPACE\interaction-selection.txt" -Encoding utf8
+            if (-not ($listing -match 'RemoteHttpsRpcRejectsAnUntrustedCertificate')) { throw 'Aria TLS positive-run method missing from interaction selection.' }
+            if (-not ($listing -match 'AsyncDisposeCancelsPendingDebounceAndFlushesWithoutWaitingForDelay')) { throw 'Settings lifecycle method missing from interaction selection.' }
+          } finally { Pop-Location }
+
+      - name: Run controlled Aria to Settings interaction loop
+        shell: pwsh
+        run: |
+          $scripts = "$env:GITHUB_WORKSPACE\instrumentation\script\research"
+          $dump = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-aria-settings-interaction"
+          Push-Location $scripts
+          try {
+            python issue_183_aria_settings_interaction_probe.py --repo "$env:GITHUB_WORKSPACE\target" --dump-tool $dump --out $out --duration-minutes 110 --max-iterations 1200 --timeout-seconds 180
+            if ($LASTEXITCODE -ne 0) { throw "Interaction probe failed closed with exit code $LASTEXITCODE" }
+          } finally { Pop-Location }
+
+      - name: Publish result summary
+        if: always()
+        shell: pwsh
+        run: |
+          $summary = "$env:GITHUB_WORKSPACE\issue-183-aria-settings-interaction\summary.json"
+          if (Test-Path $summary) {
+            $s = Get-Content $summary -Raw | ConvertFrom-Json
+            @('# Issue #183 — Aria→Settings interaction','',"- Iterations: $($s.iterations)","- Tests started: $($s.testsStarted)","- Exact watchdogs: $($s.watchdogExecutions)","- Confirmed same-PID Full dumps: $($s.confirmedCaptures)","- Timeout dumps captured before kill: $($s.hangCaptures)","- Instrumentation failures: $($s.instrumentationFailures)") | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
+      - name: Upload interaction evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-aria-settings-interaction
+          path: |
+            issue-183-aria-settings-interaction
+            interaction-selection.txt
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 1
+
+      - name: Publish completion reference
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 controlled Aria→Settings interaction probe finished: $url`n`nInspect the artifact before changing any other variable. A watchdog-correlated same-PID Full dump ends stress work and must be analyzed immediately."
