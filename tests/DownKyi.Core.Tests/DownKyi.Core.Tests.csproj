@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
-    <DownKyiTestPlatform>cross-platform</DownKyiTestPlatform>
+    <DownKyiTestPlatforms>Windows;Linux;macOS</DownKyiTestPlatforms>
   </PropertyGroup>
 
   <ItemGroup>

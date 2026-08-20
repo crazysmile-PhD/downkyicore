@@ -15,6 +15,17 @@ Avoid mixing package updates with large refactors unless the refactor is require
 
 ## CI Policy
 
+### Test Platform Ownership
+
+Every `*.Tests.csproj` must declare `DownKyiTestPlatforms` as an explicit
+semicolon-separated subset of `Windows;Linux;macOS`; projects that support all
+three list all three, with no implicit default. Native behavioral tests belong
+in an OS-owned project. `test-solution.ps1`, `test-assembly-lifecycle.ps1` and
+direct project execution through `test-project-runner.ps1` reject missing or
+unknown declarations and run a project only when its list contains the current
+OS. Architecture tests verify this ownership and wiring but do not emulate a
+different OS's native behavior.
+
 Assembly/process lifecycle is a separate quality dimension from test
 assertions. Run `script/audit-lifecycle-ownership.ps1` after changing any
 thread, Dispatcher, timer, Host, global event, fixture or external-process

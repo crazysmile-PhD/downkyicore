@@ -13,12 +13,15 @@
     Name="ValidateDownKyiTestPlatformOwnership"
     BeforeTargets="PrepareForBuild"
     Condition="'$(MSBuildProjectName)' != 'DownKyi.TestInfrastructure'">
+    <ItemGroup>
+      <_DownKyiDeclaredTestPlatform Include="$(DownKyiTestPlatforms)" />
+    </ItemGroup>
     <Error
-      Condition="'$(DownKyiTestPlatform)' == ''"
-      Text="Test project $(MSBuildProjectName) must declare DownKyiTestPlatform." />
+      Condition="'$(DownKyiTestPlatforms)' == ''"
+      Text="Test project $(MSBuildProjectName) must declare DownKyiTestPlatforms." />
     <Error
-      Condition="'$(DownKyiTestPlatform)' != '' and '$(DownKyiTestPlatform)' != 'cross-platform' and '$(DownKyiTestPlatform)' != 'windows' and '$(DownKyiTestPlatform)' != 'linux' and '$(DownKyiTestPlatform)' != 'macos'"
-      Text="Test project $(MSBuildProjectName) has unsupported DownKyiTestPlatform '$(DownKyiTestPlatform)'." />
+      Condition="'%(_DownKyiDeclaredTestPlatform.Identity)' != '' and '%(_DownKyiDeclaredTestPlatform.Identity)' != 'Windows' and '%(_DownKyiDeclaredTestPlatform.Identity)' != 'Linux' and '%(_DownKyiDeclaredTestPlatform.Identity)' != 'macOS'"
+      Text="Test project $(MSBuildProjectName) has unsupported DownKyiTestPlatforms value '%(_DownKyiDeclaredTestPlatform.Identity)'." />
   </Target>
 
 </Project>

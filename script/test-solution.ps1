@@ -10,6 +10,7 @@ param(
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot "test-project-runner.ps1")
+& (Join-Path $PSScriptRoot "test-platform-selector.ps1")
 $testsRoot = Join-Path $repositoryRoot "tests"
 $allTestProjects = @(
     Get-ChildItem -LiteralPath $testsRoot -Filter "*.Tests.csproj" -File -Recurse |

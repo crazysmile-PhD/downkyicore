@@ -2469,6 +2469,8 @@ type: workflow
 paths:
   - .github/workflows/quality.yml
   - .github/workflows/build.yml
+  - script/test-project-runner.ps1
+  - script/test-platform-selector.ps1
   - script/test-solution.ps1
   - script/test-review-invariants.ps1
   - docs/testing/review-invariant-corpus.json
@@ -2486,6 +2488,7 @@ contracts:
   - Compiler and CA warnings block every PR on Windows, Linux, and macOS with the repository default `CodeAnalysisTreatWarningsAsErrors=true`.
   - Cleaned analyzer rules are promoted to errors and cannot regress.
   - Test projects run in stable path order so one constrained runner cannot make independent xUnit hosts starve one another during discovery or shutdown.
+  - Every test project explicitly lists its supported subset of Windows, Linux and macOS; shared runners reject missing or unknown declarations and select only projects that include the current OS.
   - Every test project writes a distinct assembly-named TRX; no solution-level logger filename may overwrite earlier project evidence.
   - Windows PR and main jobs must run the Assembly Lifecycle Stability Gate and upload its reports even when a phase fails.
   - Every PR runs the six-RID real-binary aria2 TLS security matrix; a unit-test-only pass cannot replace it.
