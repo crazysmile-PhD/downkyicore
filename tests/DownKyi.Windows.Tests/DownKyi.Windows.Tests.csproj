@@ -1,27 +1,28 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
-    <DownKyiTestPlatform>cross-platform</DownKyiTestPlatform>
+    <DownKyiTestPlatform>windows</DownKyiTestPlatform>
   </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
+
   <ItemGroup>
-    <ProjectReference Include="..\..\src\DownKyi.Application\DownKyi.Application.csproj" />
-    <ProjectReference Include="..\..\src\DownKyi.Infrastructure\DownKyi.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\DownKyi.Core\DownKyi.Core.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="Fixtures\*.db" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+
 </Project>

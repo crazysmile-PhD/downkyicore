@@ -41,8 +41,9 @@ process exit as separate fail-closed phases.
 
 ## Dynamic Phases
 
-`script/test-assembly-lifecycle.ps1` discovers every `*.Tests.csproj` and runs
-each phase in an independent child process:
+`script/test-assembly-lifecycle.ps1` discovers every `*.Tests.csproj`, validates
+its explicit platform ownership, and probes only cross-platform plus current-OS
+assemblies. It runs each phase in an independent child process:
 
 1. `load`: a collectible `AssemblyLoadContext` loads the assembly, runs its
    module constructor, unloads it and proves the context is no longer rooted.

@@ -3146,6 +3146,7 @@ test.durl-seekability:
 test.process-cleanup:
   paths:
     - tests/DownKyi.Core.Tests/AriaServerProcessTests.cs
+    - tests/DownKyi.Windows.Tests/AriaServerWindowsTests.cs
   guards:
     - tracked aria2-compatible process is terminated and released
     - packaged aria arguments keep loopback-only RPC, parent monitoring, session persistence, and continuation
@@ -3162,6 +3163,7 @@ test.ui-theme:
 test.release-packaging:
   paths:
     - tests/DownKyi.Architecture.Tests/ReleaseWorkflowArchitectureTests.cs
+    - tests/DownKyi.MacOS.Tests/MacSigningScriptTests.cs
     - script/validate-publish-output.ps1
   guards:
     - release workflow remains manually dispatchable and gates packages on strict Windows/Linux/macOS build and tests
@@ -3195,6 +3197,7 @@ test.architecture-boundaries:
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/UiThemeArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/ReleaseWorkflowArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/TestPlatformOwnershipArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/BilibiliApiInventoryArchitectureTests.cs
   guards:
     - production project references remain acyclic
@@ -3392,7 +3395,7 @@ test.review-invariant-corpus:
     - review findings trigger violated-invariant, full failure-path, sibling-path and earliest-boundary analysis before production edits
     - repeated failure families in one PR stop local patches and escalate to shared typed-result, state, ownership or transaction remediation
     - scope containment keeps unrelated invariants and incidental product defects out of the active PR
-    - deterministic PR coverage resolves to existing classes across all seven test projects and proves each class executed
+    - deterministic PR coverage resolves to existing classes across every platform-eligible test project and proves each class executed
     - Main/rehearsal retains lifecycle stress and real-binary transfer evidence
 
 test.infrastructure-clock:

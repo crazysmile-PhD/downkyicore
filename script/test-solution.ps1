@@ -11,14 +11,28 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot "test-project-runner.ps1")
 $testsRoot = Join-Path $repositoryRoot "tests"
-$testProjects = @(
+$allTestProjects = @(
     Get-ChildItem -LiteralPath $testsRoot -Filter "*.Tests.csproj" -File -Recurse |
         Sort-Object FullName
 )
 
-if ($testProjects.Count -eq 0) {
+if ($allTestProjects.Count -eq 0) {
     throw "No test projects were found under $testsRoot."
 }
+
+$currentPlatform = Get-DownKyiCurrentTestPlatform
+$testProjects = @(
+    Select-DownKyiTestProjectsForCurrentPlatform `
+        -Projects $allTestProjects `
+        -CurrentPlatform $currentPlatform
+)
+if ($testProjects.Count -eq 0) {
+    throw "No test projects are owned by '$currentPlatform'."
+}
+
+Write-Host (
+    "Selected $($testProjects.Count) of $($allTestProjects.Count) test projects " +
+    "for '$currentPlatform'.")
 
 $resolvedResultsDirectory = $null
 if (-not [string]::IsNullOrWhiteSpace($ResultsDirectory)) {
@@ -43,4 +57,4 @@ foreach ($testProject in $testProjects) {
     }
 }
 
-Write-Host "Passed $($testProjects.Count) test projects."
+Write-Host "Passed $($testProjects.Count) '$currentPlatform' test projects."
