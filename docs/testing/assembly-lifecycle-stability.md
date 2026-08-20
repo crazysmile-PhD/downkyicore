@@ -69,6 +69,10 @@ asynchronous `MessageBus` reporter foreground thread, so any future
 foreground-thread watchdog must come from the tested assembly or another
 explicit owner.
 
+This is the verified engineering mitigation for the lifecycle gate. It does
+not claim that the final direct blocker in the historical intermittent
+specimen was captured or proven with complete forensic certainty.
+
 Every phase records its exit code, duration, timeout state, stdout/stderr
 protocol state and child-process observations. A child observed immediately
 after the parent exits is `transient` when it drains inside the bounded

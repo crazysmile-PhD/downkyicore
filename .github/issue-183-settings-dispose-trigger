@@ -1,2 +1,0 @@
-V5 targeted SettingsManager async-dispose hang probe
-Canonical trigger created after V4 run 32230225860 completed with 23,795 Core executions, 0 watchdogs, and three identical hangs in AsyncDisposeCancelsPendingDebounceAndFlushesWithoutWaitingForDelay.

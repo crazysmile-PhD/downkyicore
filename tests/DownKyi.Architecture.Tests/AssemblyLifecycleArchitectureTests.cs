@@ -112,13 +112,9 @@ public sealed class AssemblyLifecycleArchitectureTests
             "$forensicsSelfTestCaptureLeadValidated =",
             source,
             StringComparison.Ordinal);
-        var normalizedSource = source.Replace("\r\n", "\n", StringComparison.Ordinal);
-        var synchronousAutomatedReporting = "\"-automated\",\n                \"sync\"";
-        Assert.True(
-            normalizedSource.Split(
-                synchronousAutomatedReporting,
-                StringSplitOptions.None).Length - 1 >= 3,
-            "Assembly-info, discovery and execution must use xUnit synchronous automated reporting.");
+        AssertUsesSynchronousAutomatedReporting(source, "assembly-info");
+        AssertUsesSynchronousAutomatedReporting(source, "discovery");
+        AssertUsesSynchronousAutomatedReporting(source, "execution");
     }
 
     [Fact]
@@ -314,6 +310,22 @@ public sealed class AssemblyLifecycleArchitectureTests
             Assert.NotEmpty(owner.GetProperty("paths").EnumerateArray());
             Assert.NotEmpty(owner.GetProperty("allowedMechanisms").EnumerateArray());
         }
+    }
+
+    private static void AssertUsesSynchronousAutomatedReporting(string source, string phase)
+    {
+        var phaseMarker = $"-Phase \"{phase}\"";
+        var phaseStart = source.LastIndexOf(phaseMarker, StringComparison.Ordinal);
+        Assert.True(phaseStart >= 0, $"Lifecycle phase was not found: {phase}");
+
+        var phaseEnd = source.IndexOf(
+            "$phaseResults += New-ProcessPhaseResult",
+            phaseStart,
+            StringComparison.Ordinal);
+        Assert.True(phaseEnd > phaseStart, $"Lifecycle phase result was not found: {phase}");
+
+        var phaseInvocation = source[phaseStart..phaseEnd];
+        Assert.Matches("\"-automated\",\\s*\"sync\"", phaseInvocation);
     }
 
     private static string Read(string relativePath)
