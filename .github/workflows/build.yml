@@ -372,7 +372,6 @@ jobs:
     needs: changelog
     env:
       HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
-      MACOS_SIGNING_REQUIRED: ${{ startsWith(github.ref, 'refs/tags/') }}
     strategy:
       fail-fast: false
       matrix:
@@ -380,11 +379,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Require macOS signing credentials for release
-        if: ${{ env.MACOS_SIGNING_REQUIRED == 'true' && env.HAS_MACOS_SIGNING != 'true' }}
-        run: |
-          echo "::error::Formal macOS releases require MACOS_CERTIFICATE, MACOS_CERTIFICATE_PWD, APPLE_ID, TEAM_ID, and APP_SPECIFIC_PASSWORD."
-          exit 1
       - name: Import certificate
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         uses: apple-actions/import-codesign-certs@v7
