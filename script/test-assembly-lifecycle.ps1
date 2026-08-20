@@ -1787,6 +1787,7 @@ foreach ($testProject in $testProjects) {
                 "-list",
                 "full",
                 "-automated",
+                "sync",
                 "-noLogo",
                 "-noColor"
             )
@@ -1802,6 +1803,7 @@ foreach ($testProject in $testProjects) {
             -Arguments @(
                 $assemblyPath,
                 "-automated",
+                "sync",
                 "-noLogo",
                 "-noColor",
                 "-parallel",

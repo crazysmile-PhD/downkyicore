@@ -112,6 +112,13 @@ public sealed class AssemblyLifecycleArchitectureTests
             "$forensicsSelfTestCaptureLeadValidated =",
             source,
             StringComparison.Ordinal);
+        var normalizedSource = source.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var synchronousAutomatedReporting = "\"-automated\",\n                \"sync\"";
+        Assert.True(
+            normalizedSource.Split(
+                synchronousAutomatedReporting,
+                StringSplitOptions.None).Length - 1 >= 2,
+            "Discovery and execution must use xUnit synchronous automated reporting.");
     }
 
     [Fact]
