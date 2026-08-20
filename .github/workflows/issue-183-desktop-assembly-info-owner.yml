@@ -1,0 +1,146 @@
+name: Issue 183 Desktop AssemblyInfo Owner Capture
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  push:
+    branches:
+      - investigation/issue-183-assembly-info-owner
+    paths:
+      - '.github/workflows/issue-183-desktop-assembly-info-owner.yml'
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: Focused sampling duration
+        required: false
+        default: '70'
+        type: string
+      max_iterations:
+        description: Maximum assembly-info executions
+        required: false
+        default: '2000'
+        type: string
+
+concurrency:
+  group: issue-183-desktop-assembly-info-owner
+  cancel-in-progress: true
+
+jobs:
+  focused-capture:
+    runs-on: windows-latest
+    timeout-minutes: 100
+    env:
+      DURATION_MINUTES: ${{ inputs.duration_minutes || '70' }}
+      MAX_ITERATIONS: ${{ inputs.max_iterations || '2000' }}
+    steps:
+      - name: Checkout instrumentation
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: instrumentation
+
+      - name: Checkout exact pre-fix positive subject
+        uses: actions/checkout@v7
+        with:
+          ref: 75bff22801972ada7cfd24be595b0753780a7592
+          fetch-depth: 0
+          path: target
+
+      - name: Install exact fresh-positive .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.400'
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install dotnet-dump
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+
+      - name: Verify exact subject and probe syntax
+        shell: pwsh
+        run: |
+          $sha = (& git -C "$env:GITHUB_WORKSPACE\target" rev-parse HEAD).Trim()
+          if ($sha -ne '75bff22801972ada7cfd24be595b0753780a7592') { throw "Subject SHA mismatch: $sha" }
+          python -m py_compile "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_desktop_assembly_info_probe.py"
+          if ($LASTEXITCODE -ne 0) { throw 'Probe syntax validation failed.' }
+          dotnet --info
+
+      - name: Restore Desktop test subject
+        working-directory: target
+        run: dotnet restore ./tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj
+
+      - name: Strict-build Desktop test subject
+        working-directory: target
+        run: >
+          dotnet build ./tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
+
+      - name: Run exact pre-fix invocation with external 500ms pre-arm
+        shell: pwsh
+        run: |
+          $probe = "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_desktop_assembly_info_probe.py"
+          $dump = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-desktop-assembly-info-owner"
+          python $probe `
+            --repo "$env:GITHUB_WORKSPACE\target" `
+            --dump-tool $dump `
+            --out $out `
+            --duration-minutes $env:DURATION_MINUTES `
+            --max-iterations $env:MAX_ITERATIONS `
+            --timeout-seconds 30
+          if ($LASTEXITCODE -ne 0) { throw "Focused probe failed closed with exit code $LASTEXITCODE" }
+
+      - name: Publish summary
+        if: always()
+        shell: pwsh
+        run: |
+          $path = "$env:GITHUB_WORKSPACE\issue-183-desktop-assembly-info-owner\summary.json"
+          if (Test-Path $path) {
+            $s = Get-Content $path -Raw | ConvertFrom-Json
+            @(
+              '# Issue #183 — Desktop assembly-info owner capture',
+              '',
+              "- Target SHA: ``$($s.targetSha)``",
+              "- Executions: $($s.iterations)",
+              "- Alive 500 ms after JSON: $($s.alive500msAfterJson)",
+              "- Exact watchdogs: $($s.watchdogs)",
+              "- Confirmed watchdog + same-PID Full dumps: $($s.confirmedWatchdogDumps)",
+              "- Timeouts: $($s.timeouts)"
+            ) | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          }
+
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-desktop-assembly-info-owner
+          path: issue-183-desktop-assembly-info-owner
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 1
+
+      - name: Publish run reference to PR ledger
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 focused Desktop assembly-info owner capture: $runUrl`n`nThis uses exact pre-fix invocation semantics (no -automated sync), external continuous stdout/stderr draining, and a same-PID Full-dump pre-arm when the process is still alive 500 ms after assembly-info JSON. Inspect any first specimen before changing another variable."
