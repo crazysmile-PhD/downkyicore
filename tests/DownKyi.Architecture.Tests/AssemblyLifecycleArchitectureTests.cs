@@ -77,6 +77,10 @@ public sealed class AssemblyLifecycleArchitectureTests
             "markerReadErrorType",
             "markerReaderSelfTestPassed",
             "markerReaderSelfTest",
+            "RedirectStandardInput = $true",
+            "$process.StandardInput.Close()",
+            "Test-XunitReporterContractMutation",
+            "reporterContractSelfTestPassed",
             "[System.IO.FileShare]::ReadWrite",
             "ValidateForensics"
         ];
@@ -317,6 +321,18 @@ public sealed class AssemblyLifecycleArchitectureTests
         var phaseMarker = $"-Phase \"{phase}\"";
         var phaseStart = source.LastIndexOf(phaseMarker, StringComparison.Ordinal);
         Assert.True(phaseStart >= 0, $"Lifecycle phase was not found: {phase}");
+
+        var previousResult = source.LastIndexOf(
+            "$phaseResults += New-ProcessPhaseResult",
+            phaseStart,
+            StringComparison.Ordinal);
+        var guardedInvocation = source.LastIndexOf(
+            "Invoke-XunitAutomatedPhase",
+            phaseStart,
+            StringComparison.Ordinal);
+        Assert.True(
+            guardedInvocation > previousResult,
+            $"Lifecycle phase must use the guarded xUnit invocation: {phase}");
 
         var phaseEnd = source.IndexOf(
             "$phaseResults += New-ProcessPhaseResult",
