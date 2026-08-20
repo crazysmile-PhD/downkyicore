@@ -18,7 +18,7 @@ codesign_app_path() {
 }
 
 find "$APP_NAME/Contents" -type f -print0 | while IFS= read -r -d '' file; do
-  if file "$file" | grep -q "Mach-O"; then
+  if is_signable_app_file "$file"; then
     echo "[INFO] Signing $file"
     codesign_app_path "$file"
   fi

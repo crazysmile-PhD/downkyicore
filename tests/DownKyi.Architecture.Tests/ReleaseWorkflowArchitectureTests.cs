@@ -377,6 +377,8 @@ public sealed class ReleaseWorkflowArchitectureTests
             Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
         var signScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "sign.sh"));
+        var codesignCommonScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "codesign-common.sh"));
         var verifyAppScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-app.sh"));
         var verifyDmgScript = File.ReadAllText(
@@ -417,9 +419,13 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.DoesNotContain("codesign --deep --force", signScript, StringComparison.Ordinal);
         Assert.Contains("resolve_signing_identity", signScript, StringComparison.Ordinal);
         Assert.Contains("find \"$APP_NAME/Contents\" -type f", signScript, StringComparison.Ordinal);
+        Assert.Contains("is_signable_app_file \"$file\"", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$file\"", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$APP_NAME\"", signScript, StringComparison.Ordinal);
         Assert.DoesNotContain("CODESIGN_TIMESTAMP_ARGS", signScript, StringComparison.Ordinal);
+        Assert.Contains("is_signable_app_file()", codesignCommonScript, StringComparison.Ordinal);
+        Assert.Contains("*.dll|*.exe)", codesignCommonScript, StringComparison.Ordinal);
+        Assert.Contains("file \"$path\" | grep -q \"Mach-O\"", codesignCommonScript, StringComparison.Ordinal);
 
         Assert.Contains("codesign --verify --deep --strict --verbose=2", verifyAppScript, StringComparison.Ordinal);
         Assert.Contains("spctl --assess --type execute", verifyAppScript, StringComparison.Ordinal);
