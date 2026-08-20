@@ -371,7 +371,7 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
-    public void MacReleaseFailsClosedAndVerifiesFinalSignedArtifacts()
+    public void MacReleaseAdHocSignsAndVerifiesFinalArtifacts()
     {
         var workflow = File.ReadAllText(
             Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
@@ -382,12 +382,15 @@ public sealed class ReleaseWorkflowArchitectureTests
         var verifyDmgScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg.sh"));
 
-        Assert.Contains(
-            "MACOS_SIGNING_REQUIRED: ${{ startsWith(github.ref, 'refs/tags/') }}",
+        Assert.DoesNotContain(
+            "MACOS_SIGNING_REQUIRED",
             workflow,
             StringComparison.Ordinal);
-        Assert.Contains("Require macOS signing credentials for release", workflow, StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
+            "Require macOS signing credentials for release",
+            workflow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
             "Formal macOS releases require MACOS_CERTIFICATE, MACOS_CERTIFICATE_PWD, APPLE_ID, TEAM_ID, and APP_SPECIFIC_PASSWORD.",
             workflow,
             StringComparison.Ordinal);

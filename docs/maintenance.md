@@ -407,8 +407,8 @@ Before pushing a release tag:
 
 1. Confirm `version.txt` matches the planned tag.
 2. Manually dispatch `.github/workflows/build.yml` on the release commit and require all Windows, Linux, and macOS release-gate/package jobs to pass.
-3. For macOS, treat unsigned or unnotarized DMGs as rehearsal-only artifacts. A formal tag release requires `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD`, `APPLE_ID`, `TEAM_ID`, and `APP_SPECIFIC_PASSWORD`; missing credentials must fail the macOS package job.
-4. Confirm macOS x64 and arm64 final app bundles passed `codesign --verify --deep --strict`, notarization, stapling, Gatekeeper assessment, DMG signing, DMG verification, DMG notarization, and final DMG assessment before upload.
+3. For macOS without Apple credentials, require the final app bundle to use ad-hoc signing and pass `codesign --verify --deep --strict` before DMG creation. Record that the resulting DMG is not Developer ID signed, notarized, stapled, or Gatekeeper-trusted.
+4. When `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD`, `APPLE_ID`, `TEAM_ID`, and `APP_SPECIFIC_PASSWORD` are available, additionally confirm macOS x64 and arm64 app notarization, stapling, Gatekeeper assessment, DMG signing, DMG verification, DMG notarization, and final DMG assessment before upload.
 5. Confirm each uploaded publish manifest contains non-empty DownKyi, aria2, FFmpeg, and ffprobe binaries with SHA-256 values and the expected application version.
 6. Run the quality commands from the dependency section and `git diff --check`.
 7. Review `README.md` and `CHANGELOG.md` for user-visible changes.

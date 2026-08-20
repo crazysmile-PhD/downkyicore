@@ -2722,9 +2722,9 @@ contracts:
   - `script/validate-release-version.ps1` requires stable `major.minor.patch` text and blocks a tag whose `refs/tags/v<version>` value differs from `version.txt`.
   - Each RID validates a fixed publish directory containing non-empty DownKyi, aria2, FFmpeg, ffprobe, and dependency-manifest files.
   - Publish validation checks the expected assembly version, requires Fluent, rejects Simple, and emits per-file SHA-256 values.
-  - Formal macOS tag releases require imported Developer ID signing and Apple notarization credentials; missing credentials fail the macOS package job before any release artifact can be uploaded.
-  - macOS package scripts copy app contents and apply executable permissions before signing. The final app bundle is then signed, verified with `codesign --verify --deep --strict`, notarized, stapled, and Gatekeeper-assessed before DMG creation.
-  - macOS release DMGs are signed, verified, notarized, stapled, and assessed before hashing or upload. Non-tag CI may ad-hoc sign the app to test bundle integrity, but it is not formal release evidence.
+  - macOS tag releases without Apple credentials ad-hoc sign the final app and must pass `codesign --verify --deep --strict` before DMG creation. This proves bundle integrity but is not Developer ID signing, notarization, stapling, or Gatekeeper trust.
+  - macOS package scripts copy app contents and apply executable permissions before signing. The final app bundle is then signed and strictly verified; when Developer ID and notarization credentials are available, it is additionally notarized, stapled, and Gatekeeper-assessed before DMG creation.
+  - With Apple credentials, macOS release DMGs are signed, verified, notarized, stapled, and assessed before hashing or upload. Without them, the DMG remains unnotarized and is hashed or uploaded only after the ad-hoc signed app passes strict bundle verification.
   - Every package uploads its own `.sha256` sidecar and publish manifest with the artifact.
   - External archive URLs and SHA-256 values have one owner in `script/assets/external-assets.json`; every PowerShell and Bash downloader resolves that manifest relative to its own file.
   - External archives use immutable release tags and are accepted only after TLS validation, a successful HTTP status and their manifest SHA-256 match.
@@ -2736,7 +2736,7 @@ hazards:
   - Inferring the SDK `RuntimeIdentifier` from the runner host corrupts cross-target restore graphs, such as osx-x64 publication on an arm64 runner.
   - Inspecting PupNet's temporary publish path is not stable; validation publish directories must be explicit.
   - Cross-compiling proves package shape, not native execution. Native Host/XAML tests remain owned by each matrix runner.
-  - A green GitHub Actions release run is not sufficient macOS evidence if signing, notarization, final app verification, or final DMG verification were skipped.
+  - A green GitHub Actions release run is not sufficient macOS evidence if final app signing or strict verification was skipped. Developer ID, notarization, stapling, Gatekeeper, and signed-DMG verification are additional evidence only when Apple credentials are available.
 tests:
   - test.release-packaging
   - github.actions
@@ -3167,8 +3167,8 @@ test.release-packaging:
     - release workflow remains manually dispatchable and gates packages on strict Windows/Linux/macOS build and tests
     - all three platform package jobs run the shared publish validator and emit SHA-256 sidecars
     - publish output requires DownKyi, aria2, FFmpeg, ffprobe, expected version, and Fluent without Simple
-    - formal macOS tag releases fail closed when Developer ID signing or notarization credentials are absent
-    - final macOS app and DMG verification steps run after signing/notarization and before hash/upload
+    - macOS tag releases without Apple credentials use ad-hoc signing and still fail closed when final app strict verification fails
+    - final macOS app verification runs after signing and before DMG creation; credentialed DMG verification runs after signing/notarization and before hash/upload
 
 test.null-contracts:
   paths:

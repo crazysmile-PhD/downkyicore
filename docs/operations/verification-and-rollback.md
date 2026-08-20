@@ -109,10 +109,11 @@ Core 只保存外部 binary catalog，不得選擇平台內容或設定 SDK
 catalog 檔案加入 output/publish；自訂 RID 不得跨 ProjectReference。
 推 tag 前手動執行 `build.yml`，下載每個 artifact，重算 package
 sidecar，並檢查 manifest、版本、必要 binary、Fluent theme 與使用者
-資料排除。macOS artifact 另需確認 x64 與 arm64 package job 沒有跳過
-Developer ID signing、app notarization、DMG signing、DMG notarization 或最終
-verification steps；正式 release 若缺任一 Apple signing/notary credential
-必須 fail closed，不得產生可發布 DMG。
+資料排除。macOS artifact 另需確認 x64 與 arm64 final app 均已完成簽章並
+通過 `codesign --verify --deep --strict`；缺少 Apple credentials 時使用 ad-hoc
+簽章，Developer ID、notarization、stapling、Gatekeeper 與 signed-DMG 驗證會
+跳過，產物不得宣稱具備這些信任屬性。具備完整 Apple credentials 時才要求
+上述額外步驟全部通過。任何 final app bundle 完整性失敗仍必須 fail closed。
 
 歷史 rehearsal `30431043860` 證明 v1.1.0 candidate 的三個 release
 gate、九個 package job、sidecar、manifest 與實際套件內容正確；它不是
