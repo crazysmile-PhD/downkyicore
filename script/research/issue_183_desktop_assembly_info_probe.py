@@ -27,8 +27,16 @@ def write_json(path: Path, value: object) -> None:
 
 def run_tool(command: list[str], log: Path, timeout: float | None = None) -> int:
     try:
-        cp = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
+        cp = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
         log.write_text(cp.stdout or "", encoding="utf-8")
         return cp.returncode
     except subprocess.TimeoutExpired as exc:
@@ -48,20 +56,26 @@ def capture_dump(pid: int, dump_tool: Path, out: Path, reason: str) -> dict:
     log = out / "dotnet-dump.log"
     analysis = out / "sos-analysis.txt"
     started = time.perf_counter()
-    exit_code = run_tool([
-        str(dump_tool), "collect", "--type", "Full", "--process-id", str(pid), "--output", str(dump)
-    ], log, timeout=90)
+    exit_code = run_tool(
+        [str(dump_tool), "collect", "--type", "Full", "--process-id", str(pid), "--output", str(dump)],
+        log,
+        timeout=90,
+    )
     size = dump.stat().st_size if dump.exists() else 0
     ok = exit_code == 0 and size > 0
     if ok:
-        run_tool([
-            str(dump_tool), "analyze", str(dump),
-            "-c", "clrthreads",
-            "-c", "threadpool",
-            "-c", "clrstack -all",
-            "-c", "dumpheap -stat",
-            "-c", "exit"
-        ], analysis, timeout=120)
+        run_tool(
+            [
+                str(dump_tool), "analyze", str(dump),
+                "-c", "clrthreads",
+                "-c", "threadpool",
+                "-c", "clrstack -all",
+                "-c", "dumpheap -stat",
+                "-c", "exit",
+            ],
+            analysis,
+            timeout=120,
+        )
     result = {
         "reason": reason,
         "processId": pid,
@@ -83,6 +97,20 @@ def reader(name: str, stream, path: Path, events: queue.Queue) -> None:
             f.flush()
             events.put((name, line.rstrip("\r\n"), time.perf_counter(), now()))
     events.put((name, None, time.perf_counter(), now()))
+
+
+def is_assembly_info_json(line: str) -> bool:
+    if not line.lstrip().startswith("{"):
+        return False
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(obj, dict):
+        return False
+    # xUnit v3.2.2 emits kebab-case keys. Accept the older camel-case spelling only
+    # for compatibility, but the real historical output is "target-framework".
+    return "target-framework" in obj or "targetFramework" in obj
 
 
 def run_once(dll: Path, cwd: Path, dump_tool: Path, out: Path, iteration: int, timeout_seconds: int) -> dict:
@@ -126,14 +154,9 @@ def run_once(dll: Path, cwd: Path, dump_tool: Path, out: Path, iteration: int, t
             if line is None:
                 done_streams.add(stream)
             else:
-                if stream == "stdout" and json_seen_at is None and line.lstrip().startswith("{"):
-                    try:
-                        obj = json.loads(line)
-                        if isinstance(obj, dict) and "targetFramework" in obj:
-                            json_seen_at = perf
-                            json_seen_utc = utc
-                    except json.JSONDecodeError:
-                        pass
+                if stream == "stdout" and json_seen_at is None and is_assembly_info_json(line):
+                    json_seen_at = perf
+                    json_seen_utc = utc
                 if WATCHDOG in line and not watchdog:
                     watchdog = True
                     watchdog_utc = utc
@@ -174,6 +197,7 @@ def run_once(dll: Path, cwd: Path, dump_tool: Path, out: Path, iteration: int, t
         "exitCode": p.returncode,
         "durationMs": duration_ms,
         "assemblyInfoJsonSeenAtUtc": json_seen_utc,
+        "instrumentationValid": json_seen_utc is not None,
         "alive500msAfterJson": prearm_done and prearm is not None,
         "watchdogSeen": watchdog,
         "watchdogSeenAtUtc": watchdog_utc,
@@ -213,16 +237,18 @@ def main() -> int:
             break
         result = run_once(dll, repo, args.dump_tool.resolve(), out / "iterations" / f"iteration-{i:06d}", i, args.timeout_seconds)
         results.append(result)
-        if result["watchdogSeen"]:
+        if not result["instrumentationValid"] or result["watchdogSeen"]:
             break
 
     summary = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "targetSha": TARGET_SHA,
         "assembly": ASSEMBLY,
         "phase": "assembly-info",
         "invocation": "dotnet DownKyi.Desktop.Tests.dll -assemblyInfo",
         "iterations": len(results),
+        "jsonDetections": sum(1 for r in results if r["instrumentationValid"]),
+        "instrumentationFailures": sum(1 for r in results if not r["instrumentationValid"]),
         "alive500msAfterJson": sum(1 for r in results if r["alive500msAfterJson"]),
         "watchdogs": sum(1 for r in results if r["watchdogSeen"]),
         "confirmedWatchdogDumps": sum(1 for r in results if r["confirmedWatchdogDump"]),
@@ -232,6 +258,8 @@ def main() -> int:
     write_json(out / "summary.json", summary)
     print(json.dumps(summary, indent=2))
 
+    if summary["instrumentationFailures"]:
+        return 4
     if summary["watchdogs"] and not summary["confirmedWatchdogDumps"]:
         return 3
     return 0
