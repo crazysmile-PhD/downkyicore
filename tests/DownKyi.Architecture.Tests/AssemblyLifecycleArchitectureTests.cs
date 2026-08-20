@@ -214,7 +214,7 @@ public sealed class AssemblyLifecycleArchitectureTests
     }
 
     [Fact]
-    public void LifecycleProfilesRemainConfiguredWithV112OwnerWaiver()
+    public void LifecycleProfilesRemainConfiguredForNormalRelease()
     {
         var quality = Read(".github/workflows/quality.yml");
         var release = Read(".github/workflows/build.yml");
@@ -226,14 +226,13 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.Contains("dotnet-stack", quality, StringComparison.Ordinal);
 
         Assert.Contains("assembly-lifecycle-release:", release, StringComparison.Ordinal);
-        Assert.Contains("if: ${{ github.ref != 'refs/tags/v1.1.2' }}", release, StringComparison.Ordinal);
         Assert.Contains("-Profile Rehearsal", release, StringComparison.Ordinal);
         Assert.Contains("-ValidateForensics", release, StringComparison.Ordinal);
-        Assert.Contains("assembly-lifecycle-release", release, StringComparison.Ordinal);
         Assert.Contains(
-            "needs.assembly-lifecycle-release.result == 'success' || github.ref == 'refs/tags/v1.1.2'",
+            "needs.assembly-lifecycle-release.result == 'success'",
             release,
             StringComparison.Ordinal);
+        Assert.DoesNotContain("refs/tags/v1.1.2", release, StringComparison.Ordinal);
     }
 
     [Fact]
