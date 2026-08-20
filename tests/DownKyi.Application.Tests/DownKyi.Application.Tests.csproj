@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
+    <DownKyiTestPlatform>cross-platform</DownKyiTestPlatform>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />

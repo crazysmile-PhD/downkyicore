@@ -21,6 +21,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "test-project-runner.ps1")
 $solutionPath = Join-Path $repositoryRoot "DownKyi.sln"
 $probeProject = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj"
 $probeAssembly = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe/bin/$Configuration/net10.0/DownKyi.AssemblyLifecycleProbe.dll"
@@ -1219,19 +1220,28 @@ if (-not (Test-Path -LiteralPath $probeAssembly -PathType Leaf)) {
     throw "Assembly lifecycle probe was not built: $probeAssembly"
 }
 
-$testProjects = @(
+$allTestProjects = @(
     Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "tests") `
         -Filter "*.Tests.csproj" `
         -File `
         -Recurse |
+        Sort-Object BaseName
+)
+$currentPlatform = Get-DownKyiCurrentTestPlatform
+$platformTestProjects = @(
+    Select-DownKyiTestProjectsForCurrentPlatform `
+        -Projects $allTestProjects `
+        -CurrentPlatform $currentPlatform
+)
+$testProjects = @(
+    $platformTestProjects |
         Where-Object {
             $project = $_
             @($AssemblyPattern | Where-Object { $project.BaseName -like $_ }).Count -gt 0
-        } |
-        Sort-Object BaseName
+        }
 )
 if ($testProjects.Count -eq 0) {
-    throw "No xUnit test assemblies were found."
+    throw "No '$currentPlatform' xUnit test assemblies matched the requested patterns."
 }
 
 $phaseResults = @()
