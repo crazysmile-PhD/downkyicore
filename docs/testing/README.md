@@ -9,6 +9,21 @@
 - `DownKyi.Desktop.Tests`：real Host、XAML 與 typed navigation smoke tests。
 - `DownKyi.Tests`：目前 executable compatibility 與 end-to-end service tests。
 - `DownKyi.Architecture.Tests`：依賴方向、禁止模式、AI environment 與 debt ratchets。
+- `DownKyi.Windows.Tests`：Windows process、Job Object 與 native handle 行為。
+- `DownKyi.MacOS.Tests`：macOS system Bash、signing 與 packaging 行為。
+
+每個 `*.Tests.csproj` 必須明確宣告 `DownKyiTestPlatform`，值只能是
+`cross-platform`、`windows`、`linux` 或 `macos`。MSBuild、
+`script/test-solution.ps1` 與 Assembly Lifecycle runner 都會先驗證完整
+project inventory，再只執行 cross-platform 與目前 runner 所有的平台項目；
+遺漏、條件式或無效 ownership 會 fail closed。OS-specific behavioral tests
+必須位於對應 platform project；Architecture tests 只驗證 ownership、workflow
+wiring 與靜態 release invariant，不模擬另一個作業系統。
+
+目前 audit 已將 macOS signing 行為移至 `DownKyi.MacOS.Tests`，並將 Windows
+Job Object 與 startup secret handle 行為移至 `DownKyi.Windows.Tests`。
+TLS runtime、certificate storage、path comparison 與 Unix file-mode assertions
+仍是刻意跨平台執行的 platform-adaptive coverage，不是整個 test 的 OS skip。
 
 重要文件：
 
