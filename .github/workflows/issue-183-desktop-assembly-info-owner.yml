@@ -66,11 +66,12 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Install dotnet-dump
+      - name: Install lifecycle diagnostics
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
           dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+          dotnet tool install dotnet-stack --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
 
       - name: Verify exact subject and probe syntax
         shell: pwsh
@@ -81,14 +82,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Probe syntax validation failed.' }
           dotnet --info
 
-      - name: Restore Desktop test subject
+      - name: Restore exact full PR subject
         working-directory: target
-        run: dotnet restore ./tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj
+        run: dotnet restore ./DownKyi.sln
 
-      - name: Strict-build Desktop test subject
+      - name: Strict-build exact full PR subject
         working-directory: target
         run: >
-          dotnet build ./tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj
+          dotnet build ./DownKyi.sln
           -c Release
           --no-restore
           --no-incremental
@@ -99,7 +100,26 @@ jobs:
           -p:EnforceCodeStyleInBuild=true
           -p:UseSharedCompilation=false
 
-      - name: Run exact pre-fix invocation with external 500ms pre-arm
+      - name: Restore positive PR lifecycle prelude
+        shell: pwsh
+        working-directory: target
+        run: |
+          $diag = "$env:GITHUB_WORKSPACE\tools\dotnet-stack.exe"
+          ./script/test-assembly-lifecycle.ps1 `
+            -Configuration Release `
+            -Profile PR `
+            -NoBuild `
+            -ValidateForensics `
+            -AssemblyPattern @(
+              "DownKyi.Application.Tests",
+              "DownKyi.Architecture.Tests",
+              "DownKyi.Core.Tests"
+            ) `
+            -DiagnosticsToolPath $diag `
+            -ResultsDirectory "$env:GITHUB_WORKSPACE\issue-183-positive-prelude"
+          if ($LASTEXITCODE -ne 0) { throw "Positive PR prelude failed with exit code $LASTEXITCODE" }
+
+      - name: Run exact pre-fix Desktop assembly-info with external 500ms pre-arm
         shell: pwsh
         run: |
           $probe = "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_desktop_assembly_info_probe.py"
@@ -122,10 +142,12 @@ jobs:
           if (Test-Path $path) {
             $s = Get-Content $path -Raw | ConvertFrom-Json
             @(
-              '# Issue #183 — Desktop assembly-info owner capture',
+              '# Issue #183 — Desktop assembly-info owner capture after exact PR prelude',
               '',
               "- Target SHA: ``$($s.targetSha)``",
               "- Executions: $($s.iterations)",
+              "- JSON detections: $($s.jsonDetections)",
+              "- Instrumentation failures: $($s.instrumentationFailures)",
               "- Alive 500 ms after JSON: $($s.alive500msAfterJson)",
               "- Exact watchdogs: $($s.watchdogs)",
               "- Confirmed watchdog + same-PID Full dumps: $($s.confirmedWatchdogDumps)",
@@ -138,7 +160,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: issue-183-desktop-assembly-info-owner
-          path: issue-183-desktop-assembly-info-owner
+          path: |
+            issue-183-desktop-assembly-info-owner
+            issue-183-positive-prelude
           if-no-files-found: warn
           retention-days: 30
           compression-level: 1
@@ -151,4 +175,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 focused Desktop assembly-info owner capture: $runUrl`n`nThis uses exact pre-fix invocation semantics (no -automated sync), external continuous stdout/stderr draining, and a same-PID Full-dump pre-arm when the process is still alive 500 ms after assembly-info JSON. Inspect any first specimen before changing another variable."
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 Desktop assembly-info capture after restoring the positive PR lifecycle prelude: $runUrl`n`nExact pre-fix target, full-solution build, preceding Application/Architecture/Core PR lifecycle activity, then isolated Desktop -assemblyInfo with external 500 ms same-PID Full-dump pre-arm. Inspect any first specimen before changing another variable."
