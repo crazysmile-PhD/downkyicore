@@ -186,6 +186,7 @@ jobs:
     name: Generate changelog
     runs-on: ubuntu-latest
     needs: [release-gate, assembly-lifecycle-release]
+    if: ${{ always() && needs.release-gate.result == 'success' && needs.assembly-lifecycle-release.result == 'success' }}
     outputs:
       release_body: ${{ steps.git-cliff.outputs.content }}
     steps:
@@ -385,6 +386,15 @@ jobs:
         with:
           p12-file-base64: ${{ secrets.MACOS_CERTIFICATE }}
           p12-password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+      - name: Resolve signing identity
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          identity="$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+          if [ -z "$identity" ]; then
+            echo "::error::No Developer ID Application signing identity was imported."
+            exit 1
+          fi
+          echo "MACOS_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
       - name: Install Tool Via HomeBrew
         run: |
           export HOMEBREW_NO_AUTO_UPDATE=true
@@ -427,10 +437,15 @@ jobs:
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
             -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
       - name: Sign app
-        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         run: |
-          chmod +x sign.sh
+          chmod +x codesign-common.sh sign.sh verify-app.sh sign-dmg.sh verify-dmg.sh
           ./sign.sh
+        working-directory: ./script/macos
+        env:
+          MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}
+      - name: Verify app signature
+        run: |
+          ./verify-app.sh
         working-directory: ./script/macos
       - name: Notarize app
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
@@ -440,6 +455,13 @@ jobs:
           xcrun stapler staple 哔哩下载姬.app
           rm -rf ./哔哩下载姬.zip
         working-directory: ./script/macos
+      - name: Verify notarized app
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          ./verify-app.sh
+        working-directory: ./script/macos
+        env:
+          MACOS_VERIFY_GATEKEEPER: true
       - name: Create DMG
         run: |
           create-dmg \
@@ -450,12 +472,29 @@ jobs:
           --window-size 660 400 \
           DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg 哔哩下载姬.app
         working-directory: ./script/macos
+      - name: Sign DMG
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          ./sign-dmg.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+        working-directory: ./script/macos
+      - name: Verify signed DMG
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          ./verify-dmg.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+        working-directory: ./script/macos
       - name: Notarize DMG
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         run: |
           xcrun notarytool submit DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.TEAM_ID }}" --password "${{ secrets.APP_SPECIFIC_PASSWORD }}" --wait
           xcrun stapler staple DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
         working-directory: ./script/macos
+      - name: Verify notarized DMG
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          ./verify-dmg.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+        working-directory: ./script/macos
+        env:
+          MACOS_VERIFY_NOTARIZATION: true
       - name: Hash DMG
         shell: pwsh
         run: |

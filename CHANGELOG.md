@@ -1,5 +1,17 @@
 # 更新日志
 
+## [1.1.2] - 2026-08-20
+
+### Bug Fixes
+
+- 修复影片详情页载入完成后「解析影片」与「下载选中」仍可能保持停用的问题，并防止异步 Command 状态更新时重复执行。
+- 修复 macOS 最终 App bundle 的资源封印可能在打包过程中失效的问题；所有内容复制与权限修改完成后才签章，并在建立 DMG 前强制执行 `codesign --verify --deep --strict`。
+
+### Release
+
+- macOS x64 与 arm64 在未配置 Apple Developer 凭证时使用 ad-hoc 签章；bundle 完整性验证失败会阻止 hash 与上传。
+- v1.1.2 的 macOS DMG 不是 Developer ID 签章、Apple notarized、stapled 或 Gatekeeper-trusted 发行版；完整 Apple 凭证可用时，既有 workflow 仍支持这些额外步骤。
+
 ## [1.1.1] - 2026-07-29
 
 ### Security

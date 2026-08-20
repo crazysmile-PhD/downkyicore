@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using DownKyi.Application.Diagnostics;
@@ -14,7 +15,7 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
     private readonly Func<T, bool>? _canExecute;
     private readonly ILogger _logger;
     private readonly Func<bool>? _isCancellationExpected;
-    private bool _isExecuting;
+    private int _isExecuting;
 
     public event EventHandler? CanExecuteChanged;
 
@@ -34,19 +35,30 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
     {
         if (parameter is null && typeof(T) == typeof(object))
         {
-            return !_isExecuting && (_canExecute?.Invoke(default!) ?? true);
+            return Volatile.Read(ref _isExecuting) == 0 && (_canExecute?.Invoke(default!) ?? true);
         }
 
         if (parameter is not T typedParameter)
         {
             return false;
         }
-        return !_isExecuting && (_canExecute?.Invoke(typedParameter) ?? true);
+        return Volatile.Read(ref _isExecuting) == 0 && (_canExecute?.Invoke(typedParameter) ?? true);
     }
 
     public void Execute(object? parameter)
     {
+        if (!CanExecute(parameter)
+            || Interlocked.CompareExchange(ref _isExecuting, 1, 0) != 0)
+        {
+            return;
+        }
+
         _ = ExecuteAsync(parameter);
+    }
+
+    public void NotifyCanExecuteChanged()
+    {
+        OnCanExecuteChanged();
     }
 
     private async Task ExecuteAsync(object? parameter)
@@ -65,7 +77,6 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
             return;
         }
 
-        _isExecuting = true;
         OnCanExecuteChanged();
 
         try
@@ -86,7 +97,7 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
         }
         finally
         {
-            _isExecuting = false;
+            Volatile.Write(ref _isExecuting, 0);
             OnCanExecuteChanged();
         }
     }
@@ -97,7 +108,7 @@ internal class DownKyiAsyncDelegateCommand<T> : ICommand
             ?? exception.CancellationToken.IsCancellationRequested;
     }
 
-    protected void OnCanExecuteChanged()
+    private void OnCanExecuteChanged()
     {
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }
