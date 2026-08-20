@@ -5,6 +5,13 @@ permissions:
   pull-requests: write
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/issue-183-desktop-assembly-info-trigger'
+      - '.github/workflows/issue-183-desktop-assembly-info-owner.yml'
+      - 'script/research/issue_183_desktop_assembly_info_probe.py'
   push:
     branches:
       - investigation/issue-183-assembly-info-owner
