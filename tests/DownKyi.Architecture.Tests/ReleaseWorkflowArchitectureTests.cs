@@ -549,7 +549,7 @@ public sealed class ReleaseWorkflowArchitectureTests
 
             var startInfo = new ProcessStartInfo
             {
-                FileName = OperatingSystem.IsWindows() ? "bash" : "/bin/bash",
+                FileName = ResolveBashExecutable(),
                 WorkingDirectory = fixtureRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -586,6 +586,42 @@ public sealed class ReleaseWorkflowArchitectureTests
         {
             Directory.Delete(fixtureRoot, recursive: true);
         }
+    }
+
+    private static string ResolveBashExecutable()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return "/bin/bash";
+        }
+
+        var candidates = new[]
+        {
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "Git",
+                "bin",
+                "bash.exe"),
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "Git",
+                "usr",
+                "bin",
+                "bash.exe"),
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                "Git",
+                "bin",
+                "bash.exe"),
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                "Git",
+                "usr",
+                "bin",
+                "bash.exe")
+        };
+
+        return candidates.FirstOrDefault(File.Exists) ?? "bash";
     }
 
     private static void AssertCodesignIdentity(string[] arguments, string identity)
