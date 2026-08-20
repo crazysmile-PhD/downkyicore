@@ -1,0 +1,153 @@
+name: Issue 183 Focused Aria TLS Shutdown Probe
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/issue-183-capture-v2
+    paths:
+      - '.github/workflows/issue-183-aria-tls-candidate.yml'
+      - '.github/issue-183-aria-tls-trigger'
+
+env:
+  HISTORICAL_SHA: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+  HISTORICAL_SDK: 10.0.302
+  HISTORICAL_RUNTIME: 10.0.10
+
+jobs:
+  focused-candidate:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - name: Publish run reference
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 focused Aria TLS shutdown probe started: $url`n`nCandidate is the exact historical method `RemoteHttpsRpcRejectsAnUntrustedCertificate`, selected because the retained positive Core execution's pre-watchdog stack was inside `SslStream.DisposeAsync -> LoopbackTlsFileServer.DisposeAsync` for this test. Exact watchdog -> same-PID Full dump remains the only #183 success signal; any hard timeout is dumped before termination."
+
+      - name: Checkout instrumentation
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: instrumentation
+
+      - name: Checkout historical subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HISTORICAL_SHA }}
+          fetch-depth: 0
+          path: target
+
+      - name: Install exact historical .NET SDK and runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "$env:GITHUB_WORKSPACE\dotnet-historical"
+          $installer = "$env:RUNNER_TEMP\dotnet-install.ps1"
+          Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile $installer
+          & pwsh -NoLogo -NoProfile -NonInteractive -File $installer -InstallDir $root -Version $env:HISTORICAL_SDK -NoPath
+          if ($LASTEXITCODE -ne 0) { throw 'Historical SDK install failed.' }
+          & pwsh -NoLogo -NoProfile -NonInteractive -File $installer -InstallDir $root -Runtime dotnet -Version $env:HISTORICAL_RUNTIME -NoPath
+          if ($LASTEXITCODE -ne 0) { throw 'Historical runtime install failed.' }
+          $sdk = (& "$root\dotnet.exe" --version).Trim()
+          if ($sdk -ne $env:HISTORICAL_SDK) { throw "SDK mismatch: $sdk" }
+          $runtimes = @(& "$root\dotnet.exe" --list-runtimes)
+          if (-not ($runtimes -match "Microsoft.NETCore.App $([regex]::Escape($env:HISTORICAL_RUNTIME)) ")) { throw 'Historical runtime missing.' }
+          "DOTNET_ROOT=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DOTNET_MULTILEVEL_LOOKUP=0" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $root | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Install Python and dump tool
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install dotnet-dump
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+          if ($LASTEXITCODE -ne 0) { throw 'dotnet-dump install failed.' }
+
+      - name: Strict-build historical Core tests
+        shell: pwsh
+        working-directory: target
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sha = (& git rev-parse HEAD).Trim()
+          if ($sha -ne $env:HISTORICAL_SHA) { throw "Historical SHA mismatch: $sha" }
+          dotnet restore tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj
+          if ($LASTEXITCODE -ne 0) { throw 'Restore failed.' }
+          dotnet build tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj -c Release --no-restore --no-incremental -p:TreatWarningsAsErrors=true -p:CodeAnalysisTreatWarningsAsErrors=true -p:EnableNETAnalyzers=true -p:AnalysisMode=All -p:EnforceCodeStyleInBuild=true -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+
+      - name: Validate exact watchdog observer
+        shell: pwsh
+        run: |
+          $scripts = "$env:GITHUB_WORKSPACE\instrumentation\script\research"
+          $dump = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          Push-Location $scripts
+          try {
+            python -m py_compile issue_183_exact_watchdog_capture.py issue_183_aria_tls_candidate_probe.py
+            if ($LASTEXITCODE -ne 0) { throw 'Probe syntax validation failed.' }
+            python issue_183_exact_watchdog_capture.py --self-test --dump-tool $dump --out "$env:GITHUB_WORKSPACE\issue-183-aria-preflight"
+            if ($LASTEXITCODE -ne 0) { throw 'Exact watchdog self-test failed.' }
+          } finally { Pop-Location }
+
+      - name: Verify candidate selection
+        shell: pwsh
+        working-directory: target
+        run: |
+          $dll = "$PWD\tests\DownKyi.Core.Tests\bin\Release\net10.0\DownKyi.Core.Tests.dll"
+          dotnet $dll -list full -automated -noLogo -noColor -method "DownKyi.Core.Tests.AriaClientSecurityTests.RemoteHttpsRpcRejectsAnUntrustedCertificate"
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate discovery/filter failed.' }
+
+      - name: Run focused candidate loop
+        shell: pwsh
+        run: |
+          $scripts = "$env:GITHUB_WORKSPACE\instrumentation\script\research"
+          $dump = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-aria-tls-candidate"
+          Push-Location $scripts
+          try {
+            python issue_183_aria_tls_candidate_probe.py --repo "$env:GITHUB_WORKSPACE\target" --dump-tool $dump --out $out --duration-minutes 110 --max-iterations 3000 --timeout-seconds 180
+            if ($LASTEXITCODE -ne 0) { throw "Focused candidate probe failed closed with exit code $LASTEXITCODE" }
+          } finally { Pop-Location }
+
+      - name: Publish result summary
+        if: always()
+        shell: pwsh
+        run: |
+          $summary = "$env:GITHUB_WORKSPACE\issue-183-aria-tls-candidate\summary.json"
+          if (Test-Path $summary) {
+            $s = Get-Content $summary -Raw | ConvertFrom-Json
+            @('# Issue #183 — focused Aria TLS candidate','',"- Method: ``$($s.method)``","- Executions: $($s.iterations)","- Exact watchdogs: $($s.watchdogExecutions)","- Confirmed same-PID Full dumps: $($s.confirmedCaptures)","- Timeout dumps captured before kill: $($s.hangCaptures)","- Instrumentation failures: $($s.instrumentationFailures)") | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-aria-tls-candidate
+          path: issue-183-aria-tls-candidate
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 1
+
+      - name: Publish completion reference
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 focused Aria TLS shutdown probe finished: $url`n`nInspect summary/artifact before any broader run. A watchdog-correlated Full dump supersedes further stress and must be analyzed immediately."
