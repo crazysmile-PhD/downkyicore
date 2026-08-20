@@ -25,10 +25,3 @@ resolve_signing_identity() {
 
   printf '%s\n' "$identity"
 }
-
-set_codesign_timestamp_args() {
-  CODESIGN_TIMESTAMP_ARGS=()
-  if [ "$1" != "-" ]; then
-    CODESIGN_TIMESTAMP_ARGS=(--timestamp)
-  fi
-}
