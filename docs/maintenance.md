@@ -407,13 +407,17 @@ Before pushing a release tag:
 
 1. Confirm `version.txt` matches the planned tag.
 2. Manually dispatch `.github/workflows/build.yml` on the release commit and require all Windows, Linux, and macOS release-gate/package jobs to pass.
-3. Confirm each uploaded publish manifest contains non-empty DownKyi, aria2, FFmpeg, and ffprobe binaries with SHA-256 values and the expected application version.
-4. Run the quality commands from the dependency section and `git diff --check`.
-5. Review `README.md` and `CHANGELOG.md` for user-visible changes.
-6. Push `main`, then push the `v*` tag so the same workflow recreates the validated packages.
-7. Verify generated packages, per-package `.sha256` files, and publish manifests are attached to the release.
+3. For macOS, treat unsigned or unnotarized DMGs as rehearsal-only artifacts. A formal tag release requires `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD`, `APPLE_ID`, `TEAM_ID`, and `APP_SPECIFIC_PASSWORD`; missing credentials must fail the macOS package job.
+4. Confirm macOS x64 and arm64 final app bundles passed `codesign --verify --deep --strict`, notarization, stapling, Gatekeeper assessment, DMG signing, DMG verification, DMG notarization, and final DMG assessment before upload.
+5. Confirm each uploaded publish manifest contains non-empty DownKyi, aria2, FFmpeg, and ffprobe binaries with SHA-256 values and the expected application version.
+6. Run the quality commands from the dependency section and `git diff --check`.
+7. Review `README.md` and `CHANGELOG.md` for user-visible changes.
+8. Push `main`, then push the `v*` tag so the same workflow recreates the validated packages.
+9. Verify generated packages, per-package `.sha256` files, and publish manifests are attached to the release.
 
 `script/validate-publish-output.ps1` is the common package-content gate. It also rejects a runtime that drops the Fluent theme, restores the Simple theme, omits ffprobe, or publishes a mismatched assembly version. Do not replace it with a file-exists check in only one platform job.
+
+macOS signing is deliberately last-mile. `script/macos/package.sh` may create the app bundle, copy `Info.plist`, icon and publish output, and apply executable bits to aria2/FFmpeg. No content or permission step may run after `script/macos/sign.sh`; a later mutation invalidates the resource seal. The release workflow verifies the exact app bundle that will enter the DMG, not just an earlier signing command.
 
 ## Regression Checklist
 

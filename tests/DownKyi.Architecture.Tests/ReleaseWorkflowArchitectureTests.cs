@@ -371,6 +371,59 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
+    public void MacReleaseFailsClosedAndVerifiesFinalSignedArtifacts()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var signScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "sign.sh"));
+        var verifyAppScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-app.sh"));
+        var verifyDmgScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg.sh"));
+
+        Assert.Contains(
+            "MACOS_SIGNING_REQUIRED: ${{ startsWith(github.ref, 'refs/tags/') }}",
+            workflow,
+            StringComparison.Ordinal);
+        Assert.Contains("Require macOS signing credentials for release", workflow, StringComparison.Ordinal);
+        Assert.Contains(
+            "Formal macOS releases require MACOS_CERTIFICATE, MACOS_CERTIFICATE_PWD, APPLE_ID, TEAM_ID, and APP_SPECIFIC_PASSWORD.",
+            workflow,
+            StringComparison.Ordinal);
+        Assert.Contains("Resolve signing identity", workflow, StringComparison.Ordinal);
+        Assert.Contains("MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}", workflow, StringComparison.Ordinal);
+
+        AssertInOrder(
+            workflow,
+            "Package app",
+            "Validate packaged runtime",
+            "Sign app",
+            "Verify app signature",
+            "Notarize app",
+            "Verify notarized app",
+            "Create DMG",
+            "Sign DMG",
+            "Verify signed DMG",
+            "Notarize DMG",
+            "Verify notarized DMG",
+            "Hash DMG",
+            "Upload build artifacts");
+
+        Assert.DoesNotContain("biao yao", signScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("codesign --deep --force", signScript, StringComparison.Ordinal);
+        Assert.Contains("resolve_signing_identity", signScript, StringComparison.Ordinal);
+        Assert.Contains("find \"$APP_NAME/Contents\" -type f", signScript, StringComparison.Ordinal);
+        Assert.Contains("codesign --force \"${CODESIGN_TIMESTAMP_ARGS[@]}\" --options=runtime", signScript, StringComparison.Ordinal);
+
+        Assert.Contains("codesign --verify --deep --strict --verbose=2", verifyAppScript, StringComparison.Ordinal);
+        Assert.Contains("spctl --assess --type execute", verifyAppScript, StringComparison.Ordinal);
+        Assert.Contains("codesign --verify --verbose=2", verifyDmgScript, StringComparison.Ordinal);
+        Assert.Contains("xcrun stapler validate", verifyDmgScript, StringComparison.Ordinal);
+        Assert.Contains("spctl --assess --type open --context context:primary-signature", verifyDmgScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void VersionFileIsTheOnlyProjectVersionSourceAndControlsAssemblyMetadata()
     {
         var versionText = File.ReadAllText(Path.Combine(RepositoryRoot, "version.txt")).Trim();
@@ -418,6 +471,17 @@ public sealed class ReleaseWorkflowArchitectureTests
     private static int CountOccurrences(string source, string value)
     {
         return source.Split(value, StringSplitOptions.None).Length - 1;
+    }
+
+    private static void AssertInOrder(string source, params string[] fragments)
+    {
+        var previousIndex = -1;
+        foreach (var fragment in fragments)
+        {
+            var index = source.IndexOf(fragment, previousIndex + 1, StringComparison.Ordinal);
+            Assert.True(index > previousIndex, $"Expected '{fragment}' after index {previousIndex}.");
+            previousIndex = index;
+        }
     }
 
     private static bool HasRunnableManifestDetectionDependency(string workflow)
