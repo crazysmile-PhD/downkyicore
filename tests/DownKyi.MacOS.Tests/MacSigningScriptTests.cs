@@ -14,7 +14,7 @@ public sealed class MacSigningScriptTests
     {
         var calls = RunSigningFixture(adHoc: true);
 
-        Assert.Equal(2, calls.Length);
+        AssertSigningCoverage(calls);
         Assert.All(calls, arguments =>
         {
             Assert.DoesNotContain("--timestamp", arguments);
@@ -28,7 +28,7 @@ public sealed class MacSigningScriptTests
         const string identity = "Developer ID Application: DownKyi Test";
         var calls = RunSigningFixture(adHoc: false, identity);
 
-        Assert.Equal(2, calls.Length);
+        AssertSigningCoverage(calls);
         Assert.All(calls, arguments =>
         {
             Assert.Contains("--timestamp", arguments);
@@ -62,7 +62,21 @@ public sealed class MacSigningScriptTests
 
             File.WriteAllText(
                 Path.Combine(stubDirectory, "file"),
-                "#!/bin/bash\nset -eu\nprintf '%s\\n' 'Mach-O 64-bit executable'\n");
+                """
+                #!/bin/bash
+                set -eu
+                case "$1" in
+                  */DownKyi|*.dylib)
+                    printf '%s: Mach-O 64-bit executable\n' "$1"
+                    ;;
+                  *.dll)
+                    printf '%s: PE32 executable Mono/.Net assembly\n' "$1"
+                    ;;
+                  *)
+                    printf '%s: ASCII text\n' "$1"
+                    ;;
+                esac
+                """.Replace("\r\n", "\n", StringComparison.Ordinal));
             File.WriteAllText(
                 Path.Combine(stubDirectory, "codesign"),
                 """
@@ -76,7 +90,10 @@ public sealed class MacSigningScriptTests
                   printf '\n'
                 } >> "$CODESIGN_LOG"
                 """.Replace("\r\n", "\n", StringComparison.Ordinal));
-            File.WriteAllText(Path.Combine(appBinaryDirectory, "test-binary"), "fixture");
+            File.WriteAllText(Path.Combine(appBinaryDirectory, "DownKyi"), "fixture");
+            File.WriteAllText(Path.Combine(appBinaryDirectory, "libfixture.dylib"), "fixture");
+            File.WriteAllText(Path.Combine(appBinaryDirectory, "ManagedDependency.dll"), "fixture");
+            File.WriteAllText(Path.Combine(appBinaryDirectory, "runtimeconfig.json"), "{}");
 
             var startInfo = new ProcessStartInfo
             {
@@ -124,6 +141,18 @@ public sealed class MacSigningScriptTests
         var signIndex = Array.IndexOf(arguments, "--sign");
         Assert.True(signIndex >= 0 && signIndex + 1 < arguments.Length, "codesign must include --sign identity.");
         Assert.Equal(identity, arguments[signIndex + 1]);
+    }
+
+    private static void AssertSigningCoverage(string[][] calls)
+    {
+        Assert.Equal(4, calls.Length);
+
+        var signedPaths = calls.Select(arguments => arguments[^1]).ToArray();
+        Assert.Contains("Test.app/Contents/MacOS/DownKyi", signedPaths);
+        Assert.Contains("Test.app/Contents/MacOS/libfixture.dylib", signedPaths);
+        Assert.Contains("Test.app/Contents/MacOS/ManagedDependency.dll", signedPaths);
+        Assert.DoesNotContain("Test.app/Contents/MacOS/runtimeconfig.json", signedPaths);
+        Assert.Equal("Test.app", signedPaths[^1]);
     }
 
     private static string FindRepositoryRoot()

@@ -25,3 +25,15 @@ resolve_signing_identity() {
 
   printf '%s\n' "$identity"
 }
+
+is_signable_app_file() {
+  local path="$1"
+
+  case "$path" in
+    *.dll|*.exe)
+      return 0
+      ;;
+  esac
+
+  file "$path" | grep -q "Mach-O"
+}
