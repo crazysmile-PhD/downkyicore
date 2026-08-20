@@ -4,23 +4,23 @@ function Get-DownKyiCurrentTestPlatform {
 
     if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
             [System.Runtime.InteropServices.OSPlatform]::Windows)) {
-        return "windows"
+        return "Windows"
     }
 
     if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
             [System.Runtime.InteropServices.OSPlatform]::Linux)) {
-        return "linux"
+        return "Linux"
     }
 
     if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
             [System.Runtime.InteropServices.OSPlatform]::OSX)) {
-        return "macos"
+        return "macOS"
     }
 
     throw "The current operating system has no declared DownKyi test platform."
 }
 
-function Get-DownKyiTestProjectPlatform {
+function Get-DownKyiTestProjectPlatforms {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -30,22 +30,55 @@ function Get-DownKyiTestProjectPlatform {
     $project = Get-Item -LiteralPath $ProjectPath
     [xml]$projectXml = Get-Content -LiteralPath $project.FullName -Raw
     $declarations = @($projectXml.SelectNodes(
-            "/Project/PropertyGroup[not(@Condition)]/DownKyiTestPlatform[not(@Condition)]"))
+            "/Project/PropertyGroup[not(@Condition)]/DownKyiTestPlatforms[not(@Condition)]"))
     if ($declarations.Count -ne 1) {
         throw (
             "Test project must declare exactly one unconditional " +
-            "DownKyiTestPlatform: $($project.FullName)")
+            "DownKyiTestPlatforms value: $($project.FullName)")
     }
 
-    $platform = $declarations[0].InnerText.Trim().ToLowerInvariant()
-    $allowedPlatforms = @("cross-platform", "windows", "linux", "macos")
-    if (-not $allowedPlatforms.Contains($platform)) {
-        throw (
-            "Unsupported DownKyiTestPlatform '$platform' in $($project.FullName). " +
-            "Allowed values: $($allowedPlatforms -join ', ').")
+    $platformTokens = @($declarations[0].InnerText.Split(';'))
+    if ($platformTokens.Count -eq 0 -or
+        @($platformTokens | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
+        throw "DownKyiTestPlatforms contains an empty platform in $($project.FullName)."
     }
 
-    return $platform
+    $allowedPlatforms = @("Windows", "Linux", "macOS")
+    $platforms = @($platformTokens | ForEach-Object { $_.Trim() })
+    $seenPlatforms = [System.Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::Ordinal)
+    foreach ($platform in $platforms) {
+        if (-not $allowedPlatforms.Contains($platform)) {
+            throw (
+                "Unsupported DownKyiTestPlatforms value '$platform' in " +
+                "$($project.FullName). Allowed values: $($allowedPlatforms -join ', ').")
+        }
+
+        if (-not $seenPlatforms.Add($platform)) {
+            throw "Duplicate DownKyiTestPlatforms value '$platform' in $($project.FullName)."
+        }
+    }
+
+    return $platforms
+}
+
+function Test-DownKyiTestProjectSupportsPlatform {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProjectPath,
+
+        [Parameter(Mandatory)]
+        [string]$Platform
+    )
+
+    $allowedPlatforms = @("Windows", "Linux", "macOS")
+    if (-not $allowedPlatforms.Contains($Platform)) {
+        throw "Unsupported current test platform '$Platform'."
+    }
+
+    $projectPlatforms = @(Get-DownKyiTestProjectPlatforms -ProjectPath $ProjectPath)
+    return $projectPlatforms.Contains($Platform)
 }
 
 function Select-DownKyiTestProjectsForCurrentPlatform {
@@ -57,16 +90,22 @@ function Select-DownKyiTestProjectsForCurrentPlatform {
         [string]$CurrentPlatform = (Get-DownKyiCurrentTestPlatform)
     )
 
-    $allowedCurrentPlatforms = @("windows", "linux", "macos")
+    $allowedCurrentPlatforms = @("Windows", "Linux", "macOS")
     if (-not $allowedCurrentPlatforms.Contains($CurrentPlatform)) {
         throw "Unsupported current test platform '$CurrentPlatform'."
     }
 
     foreach ($project in @($Projects)) {
-        $projectItem = Get-Item -LiteralPath $project.FullName
-        $projectPlatform = Get-DownKyiTestProjectPlatform -ProjectPath $projectItem.FullName
-        if ($projectPlatform -eq "cross-platform" -or
-            $projectPlatform -eq $CurrentPlatform) {
+        $projectPath = if ($project -is [System.IO.FileSystemInfo]) {
+            $project.FullName
+        }
+        else {
+            [string]$project
+        }
+        $projectItem = Get-Item -LiteralPath $projectPath
+        if (Test-DownKyiTestProjectSupportsPlatform `
+                -ProjectPath $projectItem.FullName `
+                -Platform $CurrentPlatform) {
             $projectItem
         }
     }
@@ -141,12 +180,13 @@ function Invoke-DownKyiTestProject {
 
     $project = Get-Item -LiteralPath $ProjectPath
     $currentPlatform = Get-DownKyiCurrentTestPlatform
-    $projectPlatform = Get-DownKyiTestProjectPlatform -ProjectPath $project.FullName
-    if ($projectPlatform -ne "cross-platform" -and
-        $projectPlatform -ne $currentPlatform) {
+    if (-not (Test-DownKyiTestProjectSupportsPlatform `
+                -ProjectPath $project.FullName `
+                -Platform $currentPlatform)) {
+        $projectPlatforms = @(Get-DownKyiTestProjectPlatforms -ProjectPath $project.FullName)
         throw (
-            "Test project $($project.FullName) is owned by '$projectPlatform' " +
-            "and cannot run on '$currentPlatform'.")
+            "Test project $($project.FullName) supports " +
+            "[$($projectPlatforms -join ', ')] and cannot run on '$currentPlatform'.")
     }
 
     $runnerPolicy = Get-DownKyiTestRunnerPolicy `

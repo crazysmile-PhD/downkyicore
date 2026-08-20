@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
-    <DownKyiTestPlatform>windows</DownKyiTestPlatform>
+    <DownKyiTestPlatforms>Windows</DownKyiTestPlatforms>
   </PropertyGroup>
 
   <ItemGroup>

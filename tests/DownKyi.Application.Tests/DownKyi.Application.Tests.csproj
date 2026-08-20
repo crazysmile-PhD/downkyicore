@@ -4,7 +4,7 @@
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
-    <DownKyiTestPlatform>cross-platform</DownKyiTestPlatform>
+    <DownKyiTestPlatforms>Windows;Linux;macOS</DownKyiTestPlatforms>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />

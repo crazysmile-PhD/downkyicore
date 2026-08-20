@@ -7,7 +7,9 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
     private static readonly string[] AllowedPlatforms =
-        ["cross-platform", "windows", "linux", "macos"];
+        ["Windows", "Linux", "macOS"];
+    private static readonly string[] MacOnlyPlatforms = ["macOS"];
+    private static readonly string[] WindowsOnlyPlatforms = ["Windows"];
 
     [Fact]
     public void EveryRunnableTestProjectDeclaresPlatformOwnership()
@@ -19,8 +21,9 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
         Assert.NotEmpty(projects);
         foreach (var project in projects)
         {
-            var platform = ReadDeclaredPlatform(project);
-            Assert.Contains(platform, AllowedPlatforms);
+            var platforms = ReadDeclaredPlatforms(project);
+            Assert.NotEmpty(platforms);
+            Assert.All(platforms, platform => Assert.Contains(platform, AllowedPlatforms));
 
             var relativePath = Path.GetRelativePath(RepositoryRoot, project).Replace('\\', '/');
             Assert.Contains(relativePath, solution, StringComparison.Ordinal);
@@ -32,18 +35,27 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
     {
         var directoryProps = Read("tests/Directory.Build.props");
         var runner = Read("script/test-project-runner.ps1");
+        var selectorTests = Read("script/test-platform-selector.ps1");
         var solutionRunner = Read("script/test-solution.ps1");
         var lifecycleRunner = Read("script/test-assembly-lifecycle.ps1");
+        var reviewRunner = Read("script/test-review-invariants.ps1");
 
         Assert.Contains("ValidateDownKyiTestPlatformOwnership", directoryProps, StringComparison.Ordinal);
-        Assert.Contains("must declare DownKyiTestPlatform", directoryProps, StringComparison.Ordinal);
+        Assert.Contains("must declare DownKyiTestPlatforms", directoryProps, StringComparison.Ordinal);
         Assert.Contains("Get-DownKyiCurrentTestPlatform", runner, StringComparison.Ordinal);
-        Assert.Contains("Get-DownKyiTestProjectPlatform", runner, StringComparison.Ordinal);
+        Assert.Contains("Get-DownKyiTestProjectPlatforms", runner, StringComparison.Ordinal);
+        Assert.Contains("Test-DownKyiTestProjectSupportsPlatform", runner, StringComparison.Ordinal);
         Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", runner, StringComparison.Ordinal);
         Assert.Contains("cannot run on", runner, StringComparison.Ordinal);
+        Assert.Contains("DownKyi.MacOS.Tests", selectorTests, StringComparison.Ordinal);
+        Assert.Contains("missing ownership", selectorTests, StringComparison.Ordinal);
+        Assert.Contains("unknown platform", selectorTests, StringComparison.Ordinal);
+        Assert.Contains("test-platform-selector.ps1", solutionRunner, StringComparison.Ordinal);
         Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", solutionRunner, StringComparison.Ordinal);
         Assert.Contains("test-project-runner.ps1", lifecycleRunner, StringComparison.Ordinal);
         Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", lifecycleRunner, StringComparison.Ordinal);
+        Assert.Contains("test-project-runner.ps1", reviewRunner, StringComparison.Ordinal);
+        Assert.Contains("Invoke-DownKyiTestProject", reviewRunner, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -64,8 +76,8 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
         var macBehavior = Read("tests/DownKyi.MacOS.Tests/MacSigningScriptTests.cs");
         var buildWorkflow = Read(".github/workflows/build.yml");
 
-        Assert.Equal("macos", ReadDeclaredPlatform(macProject));
-        Assert.Equal("windows", ReadDeclaredPlatform(windowsProject));
+        Assert.Equal(MacOnlyPlatforms, ReadDeclaredPlatforms(macProject));
+        Assert.Equal(WindowsOnlyPlatforms, ReadDeclaredPlatforms(windowsProject));
         Assert.DoesNotContain("RunMacSigningFixture", releaseArchitecture, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "MacAdHocSigningExecutesUnderNounsetWithoutTimestamp",
@@ -82,7 +94,12 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
     public void CrossPlatformProjectsCannotSilentlySkipTestsByOperatingSystem()
     {
         var violations = FindTestProjects()
-            .Where(project => ReadDeclaredPlatform(project) == "cross-platform")
+            .Where(project =>
+            {
+                var platforms = ReadDeclaredPlatforms(project);
+                return platforms.Length == AllowedPlatforms.Length &&
+                       AllowedPlatforms.All(platforms.Contains);
+            })
             .SelectMany(project => Directory.EnumerateFiles(
                 Path.GetDirectoryName(project)!,
                 "*.cs",
@@ -108,26 +125,37 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
             .ToArray();
     }
 
-    private static string ReadDeclaredPlatform(string projectPath)
+    private static string[] ReadDeclaredPlatforms(string projectPath)
     {
         var document = XDocument.Load(projectPath);
         var declarations = document
             .Descendants()
-            .Where(element => element.Name.LocalName == "DownKyiTestPlatform")
+            .Where(element => element.Name.LocalName == "DownKyiTestPlatforms")
             .ToArray();
         var relativePath = Path.GetRelativePath(RepositoryRoot, projectPath);
 
         Assert.True(
             declarations.Length == 1,
-            $"{relativePath} must declare exactly one DownKyiTestPlatform.");
+            $"{relativePath} must declare exactly one DownKyiTestPlatforms value.");
 
         var declaration = declarations[0];
         Assert.False(
             declaration.Attributes().Any(attribute => attribute.Name.LocalName == "Condition") ||
             declaration.Parent?.Attributes().Any(attribute => attribute.Name.LocalName == "Condition") == true,
-            $"{relativePath} must declare DownKyiTestPlatform unconditionally.");
+            $"{relativePath} must declare DownKyiTestPlatforms unconditionally.");
 
-        return declaration.Value.Trim();
+        var tokens = declaration.Value.Split(';');
+        Assert.All(
+            tokens,
+            token => Assert.False(
+                string.IsNullOrWhiteSpace(token),
+                $"{relativePath} contains an empty platform."));
+
+        var platforms = tokens.Select(token => token.Trim()).ToArray();
+        Assert.Equal(
+            platforms.Length,
+            platforms.Distinct(StringComparer.Ordinal).Count());
+        return platforms;
     }
 
     private static string Read(string relativePath)

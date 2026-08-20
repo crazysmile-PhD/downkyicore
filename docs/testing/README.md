@@ -12,10 +12,11 @@
 - `DownKyi.Windows.Tests`：Windows process、Job Object 與 native handle 行為。
 - `DownKyi.MacOS.Tests`：macOS system Bash、signing 與 packaging 行為。
 
-每個 `*.Tests.csproj` 必須明確宣告 `DownKyiTestPlatform`，值只能是
-`cross-platform`、`windows`、`linux` 或 `macos`。MSBuild、
+每個 `*.Tests.csproj` 必須以 `DownKyiTestPlatforms` 明確列出
+`Windows`、`Linux`、`macOS` 的適用集合；全平台 project 必須三項全列，
+沒有 default 或 `cross-platform` 別名。MSBuild、
 `script/test-solution.ps1` 與 Assembly Lifecycle runner 都會先驗證完整
-project inventory，再只執行 cross-platform 與目前 runner 所有的平台項目；
+project inventory，再只執行明確包含目前 runner OS 的項目；
 遺漏、條件式或無效 ownership 會 fail closed。OS-specific behavioral tests
 必須位於對應 platform project；Architecture tests 只驗證 ownership、workflow
 wiring 與靜態 release invariant，不模擬另一個作業系統。
