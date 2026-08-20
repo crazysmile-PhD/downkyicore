@@ -1774,7 +1774,12 @@ foreach ($testProject in $testProjects) {
             -Iteration $iteration `
             -Phase "assembly-info" `
             -FileName "dotnet" `
-            -Arguments @($assemblyPath, "-assemblyInfo")
+            -Arguments @(
+                $assemblyPath,
+                "-assemblyInfo",
+                "-automated",
+                "sync"
+            )
         $phaseResults += New-ProcessPhaseResult -ProcessResult $assemblyInfo
 
         $discovery = Invoke-IsolatedProcess `

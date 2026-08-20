@@ -117,8 +117,8 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.True(
             normalizedSource.Split(
                 synchronousAutomatedReporting,
-                StringSplitOptions.None).Length - 1 >= 2,
-            "Discovery and execution must use xUnit synchronous automated reporting.");
+                StringSplitOptions.None).Length - 1 >= 3,
+            "Assembly-info, discovery and execution must use xUnit synchronous automated reporting.");
     }
 
     [Fact]
