@@ -1,0 +1,203 @@
+name: Issue 183 Synchronous Observer Perturbation V12
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Sampling duration per shard'
+        required: false
+        default: '285'
+        type: string
+  push:
+    branches:
+      - experiment/issue-183-capture-v2
+    paths:
+      - '.github/issue-183-synchronous-observer-trigger'
+
+concurrency:
+  group: issue-183-synchronous-observer-v12
+  cancel-in-progress: true
+
+env:
+  HISTORICAL_SHA: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+  SDK_VERSION: 10.0.400
+  RUNTIME_VERSION: 10.0.11
+
+jobs:
+  preflight:
+    name: Validate independent exact observer
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Publish run reference
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 V12 synchronous-observer perturbation started: $url`n`nThis restores the historical ~4s synchronous dotnet-stack blockage on the controlling process-observation loop while the exact watchdog -> same-PID Full-dump observer remains independent."
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: instrumentation
+
+      - name: Install .NET and diagnostics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "$env:GITHUB_WORKSPACE\dotnet-v12"
+          $installer = "$env:RUNNER_TEMP\dotnet-install.ps1"
+          Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile $installer
+          $sdk = Start-Process pwsh -Wait -PassThru -NoNewWindow -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-File',$installer,'-InstallDir',$root,'-Version',$env:SDK_VERSION,'-NoPath')
+          if ($sdk.ExitCode -ne 0) { throw "SDK installer exit=$($sdk.ExitCode)" }
+          $runtime = Start-Process pwsh -Wait -PassThru -NoNewWindow -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-File',$installer,'-InstallDir',$root,'-Runtime','dotnet','-Version',$env:RUNTIME_VERSION,'-NoPath')
+          if ($runtime.ExitCode -ne 0) { throw "Runtime installer exit=$($runtime.ExitCode)" }
+          "DOTNET_ROOT=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DOTNET_MULTILEVEL_LOOKUP=0" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $root | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          & "$root\dotnet.exe" tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+          & "$root\dotnet.exe" tool install dotnet-stack --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Fail-closed observer preflight
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scripts = "$env:GITHUB_WORKSPACE\instrumentation\script\research"
+          Push-Location $scripts
+          try {
+            python -m py_compile issue_183_exact_watchdog_capture.py issue_183_sync_observer_perturbation.py
+            if ($LASTEXITCODE -ne 0) { throw 'Probe syntax validation failed.' }
+            python issue_183_exact_watchdog_capture.py --self-test --dump-tool "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe" --out "$env:GITHUB_WORKSPACE\v12-preflight"
+            if ($LASTEXITCODE -ne 0) { throw 'Exact watchdog -> Full dump preflight failed.' }
+          } finally { Pop-Location }
+
+  sample:
+    name: Historical synchronous perturbation / shard ${{ matrix.shard }}
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    runs-on: windows-latest
+    timeout-minutes: 330
+    env:
+      DURATION_MINUTES: ${{ inputs.duration_minutes || '285' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: instrumentation
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HISTORICAL_SHA }}
+          fetch-depth: 0
+          path: target
+
+      - name: Install exact fresh-positive .NET toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "$env:GITHUB_WORKSPACE\dotnet-v12"
+          $installer = "$env:RUNNER_TEMP\dotnet-install.ps1"
+          Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile $installer
+          $sdk = Start-Process pwsh -Wait -PassThru -NoNewWindow -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-File',$installer,'-InstallDir',$root,'-Version',$env:SDK_VERSION,'-NoPath')
+          if ($sdk.ExitCode -ne 0) { throw "SDK installer exit=$($sdk.ExitCode)" }
+          $runtime = Start-Process pwsh -Wait -PassThru -NoNewWindow -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-File',$installer,'-InstallDir',$root,'-Runtime','dotnet','-Version',$env:RUNTIME_VERSION,'-NoPath')
+          if ($runtime.ExitCode -ne 0) { throw "Runtime installer exit=$($runtime.ExitCode)" }
+          $actualSdk = (& "$root\dotnet.exe" --version).Trim()
+          if ($actualSdk -ne $env:SDK_VERSION) { throw "SDK mismatch: $actualSdk" }
+          $runtimes = @(& "$root\dotnet.exe" --list-runtimes)
+          if (-not ($runtimes -match "Microsoft.NETCore.App $([regex]::Escape($env:RUNTIME_VERSION)) ")) { throw 'Runtime mismatch.' }
+          "DOTNET_ROOT=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DOTNET_MULTILEVEL_LOOKUP=0" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $root | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install diagnostics
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+          dotnet tool install dotnet-stack --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+
+      - name: Restore and strict-build historical subject
+        working-directory: target
+        shell: pwsh
+        run: |
+          dotnet restore ./DownKyi.sln
+          if ($LASTEXITCODE -ne 0) { throw 'Restore failed.' }
+          dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental -p:TreatWarningsAsErrors=true -p:CodeAnalysisTreatWarningsAsErrors=true -p:EnableNETAnalyzers=true -p:AnalysisMode=All -p:EnforceCodeStyleInBuild=true -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+          $sha = (& git rev-parse HEAD).Trim()
+          if ($sha -ne $env:HISTORICAL_SHA) { throw "Historical SHA mismatch: $sha" }
+
+      - name: Run V12 controlled perturbation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scripts = "$env:GITHUB_WORKSPACE\instrumentation\script\research"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-v12-shard-${{ matrix.shard }}"
+          Push-Location $scripts
+          try {
+            python issue_183_sync_observer_perturbation.py `
+              --repo "$env:GITHUB_WORKSPACE\target" `
+              --dump-tool "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe" `
+              --stack-tool "$env:GITHUB_WORKSPACE\tools\dotnet-stack.exe" `
+              --out $out `
+              --duration-minutes $env:DURATION_MINUTES `
+              --iterations-per-batch 25
+            if ($LASTEXITCODE -ne 0) { throw "V12 probe failed closed with exit code $LASTEXITCODE" }
+          } finally { Pop-Location }
+
+      - name: Publish shard summary
+        if: always()
+        shell: pwsh
+        run: |
+          $path = "$env:GITHUB_WORKSPACE\issue-183-v12-shard-${{ matrix.shard }}\summary.json"
+          if (Test-Path $path) {
+            $s = Get-Content $path -Raw | ConvertFrom-Json
+            @("# V12 shard ${{ matrix.shard }}",'',"- Executions: $($s.totalExecutions)","- Synchronous ~4s perturbations: $($s.synchronousPerturbations)","- Exact watchdogs: $($s.watchdogExecutions)","- Same-PID dumps: $($s.confirmedCaptures)","- Phase failures: $($s.phaseFailures)") | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
+      - name: Upload V12 evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-v12-shard-${{ matrix.shard }}
+          path: issue-183-v12-shard-${{ matrix.shard }}
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 1
+
+  completion:
+    name: Publish V12 completion
+    if: always()
+    needs: sample
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish completion reference
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh pr comment 185 --repo "$GITHUB_REPOSITORY" --body "Issue #183 V12 synchronous-observer perturbation finished: $url
+
+Inspect exact-watchdog evidence before changing any variable. A watchdog without a same-PID dump is instrumentation failure and must fail closed."
