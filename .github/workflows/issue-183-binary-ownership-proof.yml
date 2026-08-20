@@ -1,0 +1,138 @@
+name: Issue 183 Binary Ownership Proof
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/issue-183-capture-v2
+    paths:
+      - '.github/issue-183-binary-ownership-trigger'
+      - '.github/workflows/issue-183-binary-ownership-proof.yml'
+
+env:
+  HISTORICAL_SHA: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+
+jobs:
+  prove:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout instrumentation
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: instrumentation
+
+      - name: Checkout historical subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HISTORICAL_SHA }}
+          path: target
+          fetch-depth: 0
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build historical Core test executable
+        shell: pwsh
+        working-directory: target
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sha = (& git rev-parse HEAD).Trim()
+          if ($sha -ne $env:HISTORICAL_SHA) { throw "Historical SHA mismatch: $sha" }
+          dotnet restore tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj
+          if ($LASTEXITCODE -ne 0) { throw 'Restore failed.' }
+          dotnet build tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj -c Release --no-restore --no-incremental
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+
+      - name: Install ILSpy command line
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install ilspycmd --tool-path "$env:GITHUB_WORKSPACE\tools"
+          if ($LASTEXITCODE -ne 0) { throw 'ilspycmd install failed.' }
+          & "$env:GITHUB_WORKSPACE\tools\ilspycmd.exe" --version
+
+      - name: Scan non-runtime output assemblies for lifecycle owners
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = "$env:GITHUB_WORKSPACE\issue-183-binary-ownership"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $bin = "$env:GITHUB_WORKSPACE\target\tests\DownKyi.Core.Tests\bin\Release\net10.0"
+          $ilspy = "$env:GITHUB_WORKSPACE\tools\ilspycmd.exe"
+          $patterns = @(
+            'System.Threading.Thread::.ctor',
+            'System.AppDomain::add_ProcessExit',
+            'System.Runtime.Loader.AssemblyLoadContext::add_Unloading',
+            'System.Console::add_CancelKeyPress',
+            'System.AppDomain::add_UnhandledException',
+            'System.Threading.Thread::set_IsBackground'
+          )
+          $rows = [System.Collections.Generic.List[object]]::new()
+          $assemblies = @(Get-ChildItem -LiteralPath $bin -File -Filter '*.dll' | Sort-Object Name)
+          foreach ($assembly in $assemblies) {
+            $ilPath = Join-Path $out ($assembly.BaseName + '.il.txt')
+            try {
+              & $ilspy -il $assembly.FullName 2>&1 | Set-Content -LiteralPath $ilPath -Encoding utf8
+              if ($LASTEXITCODE -ne 0) { continue }
+            } catch { continue }
+            $lines = [System.IO.File]::ReadAllLines($ilPath)
+            for ($i = 0; $i -lt $lines.Length; $i++) {
+              foreach ($pattern in $patterns) {
+                if ($lines[$i].Contains($pattern, [System.StringComparison]::Ordinal)) {
+                  $start = [Math]::Max(0, $i - 12)
+                  $context = ($lines[$start..$i] -join "`n")
+                  $rows.Add([pscustomobject]@{
+                    assembly = $assembly.Name
+                    pattern = $pattern
+                    line = $i + 1
+                    context = $context
+                  })
+                }
+              }
+            }
+          }
+          $rows | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $out 'ownership-hits.json') -Encoding utf8
+          $summary = [System.Collections.Generic.List[string]]::new()
+          $summary.Add('# Issue #183 binary ownership proof')
+          $summary.Add('')
+          $summary.Add("- Historical SHA: ``$env:HISTORICAL_SHA``")
+          $summary.Add("- Scanned DLLs: $($assemblies.Count)")
+          $summary.Add("- Lifecycle API hits: $($rows.Count)")
+          $summary.Add('')
+          foreach ($row in $rows) {
+            $summary.Add("## $($row.assembly) — $($row.pattern) — IL line $($row.line)")
+            $summary.Add('```text')
+            $summary.Add($row.context)
+            $summary.Add('```')
+            $summary.Add('')
+          }
+          $summary | Set-Content (Join-Path $out 'ownership-report.md') -Encoding utf8
+          Get-Content (Join-Path $out 'ownership-report.md') | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Upload ownership proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-binary-ownership-proof
+          path: issue-183-binary-ownership
+          retention-days: 30
+          compression-level: 1
+
+      - name: Publish run reference
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 fixed-scope binary ownership proof finished: $url`n`nThis scans the rebuilt historical Core test output for explicit Thread construction and process-shutdown hooks. Inspect ownership-report.md before any new stress experiment."
