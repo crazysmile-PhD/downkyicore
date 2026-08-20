@@ -9,6 +9,7 @@ on:
     branches:
       - investigation/issue-183-assembly-info-owner
     paths:
+      - '.github/issue-183-desktop-assembly-info-trigger'
       - '.github/workflows/issue-183-desktop-assembly-info-owner.yml'
   workflow_dispatch:
     inputs:
