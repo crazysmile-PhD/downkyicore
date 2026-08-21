@@ -379,6 +379,10 @@ public sealed class ReleaseWorkflowArchitectureTests
             Path.Combine(RepositoryRoot, "script", "macos", "sign.sh"));
         var codesignCommonScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "codesign-common.sh"));
+        var packageScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "package.sh"));
+        var prepareAppLayoutScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "prepare-app-layout.sh"));
         var verifyAppScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-app.sh"));
         var verifyDmgScript = File.ReadAllText(
@@ -398,6 +402,10 @@ public sealed class ReleaseWorkflowArchitectureTests
             StringComparison.Ordinal);
         Assert.Contains("Resolve signing identity", workflow, StringComparison.Ordinal);
         Assert.Contains("MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("os: macos-15-intel", workflow, StringComparison.Ordinal);
+        Assert.Contains("os: macos-15", workflow, StringComparison.Ordinal);
+        Assert.Contains("Run macOS packaging regressions", workflow, StringComparison.Ordinal);
+        Assert.Contains("Verify packaged DMG contents and launch app", workflow, StringComparison.Ordinal);
 
         AssertInOrder(
             workflow,
@@ -426,6 +434,10 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("is_signable_app_file()", codesignCommonScript, StringComparison.Ordinal);
         Assert.Contains("*.dll|*.exe)", codesignCommonScript, StringComparison.Ordinal);
         Assert.Contains("file \"$path\" | grep -q \"Mach-O\"", codesignCommonScript, StringComparison.Ordinal);
+        Assert.Contains("/bin/bash ./prepare-app-layout.sh \"$APP_NAME\"", packageScript, StringComparison.Ordinal);
+        Assert.Contains("is_signable_app_file \"$path\"", prepareAppLayoutScript, StringComparison.Ordinal);
+        Assert.Contains("Contents/Resources/dotnet", prepareAppLayoutScript, StringComparison.Ordinal);
+        Assert.Contains("ln -s", prepareAppLayoutScript, StringComparison.Ordinal);
 
         Assert.Contains("codesign --verify --deep --strict --verbose=2", verifyAppScript, StringComparison.Ordinal);
         Assert.Contains("spctl --assess --type execute", verifyAppScript, StringComparison.Ordinal);

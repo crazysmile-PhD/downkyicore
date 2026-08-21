@@ -27,3 +27,5 @@ fi
 if [ ! -x "$APP_NAME/Contents/MacOS/ffmpeg/ffmpeg" ]; then
   chmod +x "$APP_NAME/Contents/MacOS/ffmpeg/ffmpeg"
 fi
+
+/bin/bash ./prepare-app-layout.sh "$APP_NAME"
