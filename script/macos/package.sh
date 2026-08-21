@@ -3,7 +3,7 @@ set -euo pipefail
 
 arch=$1
 APP_NAME="./哔哩下载姬.app"
-PUBLISH_OUTPUT_DIRECTORY="../../DownKyi/bin/Release/net10.0/osx-$arch/publish/."
+PUBLISH_OUTPUT_DIRECTORY="${PUBLISH_OUTPUT_DIRECTORY:-../../DownKyi/bin/Release/net10.0/osx-$arch/publish/.}"
 
 INFO_PLIST="./Info.plist"
 ICON_FILE="./logo.icns"
@@ -27,3 +27,5 @@ fi
 if [ ! -x "$APP_NAME/Contents/MacOS/ffmpeg/ffmpeg" ]; then
   chmod +x "$APP_NAME/Contents/MacOS/ffmpeg/ffmpeg"
 fi
+
+/bin/bash ./prepare-app-layout.sh "$APP_NAME"

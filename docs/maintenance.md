@@ -428,7 +428,7 @@ Before pushing a release tag:
 
 `script/validate-publish-output.ps1` is the common package-content gate. It also rejects a runtime that drops the Fluent theme, restores the Simple theme, omits ffprobe, or publishes a mismatched assembly version. Do not replace it with a file-exists check in only one platform job.
 
-macOS signing is deliberately last-mile and inside-out: managed assemblies and Mach-O files in the app bundle are signed explicitly before the outer app. `script/macos/package.sh` may create the app bundle, copy `Info.plist`, icon and publish output, and apply executable bits to aria2/FFmpeg. No content or permission step may run after `script/macos/sign.sh`; a later mutation invalidates the resource seal. The release workflow verifies the exact app bundle that will enter the DMG, not just an earlier signing command.
+macOS signing is deliberately last-mile and inside-out: managed assemblies and Mach-O files in the app bundle are signed explicitly before the outer app. Non-code publish files are stored under `Contents/Resources` and linked from their host-expected relative paths; `Contents/MacOS` must not contain unsigned regular data files. `script/macos/package.sh` may create the app bundle, copy `Info.plist`, icon and publish output, and apply executable bits to aria2/FFmpeg. No content or permission step may run after `script/macos/sign.sh`; a later mutation invalidates the resource seal. The release workflow verifies and launches the exact app bundle from the completed DMG, not just an earlier signing command.
 
 ## Regression Checklist
 

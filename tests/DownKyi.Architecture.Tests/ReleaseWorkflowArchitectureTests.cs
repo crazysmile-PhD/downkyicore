@@ -379,8 +379,14 @@ public sealed class ReleaseWorkflowArchitectureTests
             Path.Combine(RepositoryRoot, "script", "macos", "sign.sh"));
         var codesignCommonScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "codesign-common.sh"));
+        var packageScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "package.sh"));
+        var prepareAppLayoutScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "prepare-app-layout.sh"));
         var verifyAppScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-app.sh"));
+        var verifyAppLaunchScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-app-launch.sh"));
         var verifyDmgScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg.sh"));
 
@@ -398,6 +404,10 @@ public sealed class ReleaseWorkflowArchitectureTests
             StringComparison.Ordinal);
         Assert.Contains("Resolve signing identity", workflow, StringComparison.Ordinal);
         Assert.Contains("MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("os: macos-15-intel", workflow, StringComparison.Ordinal);
+        Assert.Contains("os: macos-15", workflow, StringComparison.Ordinal);
+        Assert.Contains("Run macOS packaging regressions", workflow, StringComparison.Ordinal);
+        Assert.Contains("Verify packaged DMG contents and launch app", workflow, StringComparison.Ordinal);
 
         AssertInOrder(
             workflow,
@@ -421,17 +431,60 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("find \"$APP_NAME/Contents\" -type f", signScript, StringComparison.Ordinal);
         Assert.Contains("is_signable_app_file \"$file\"", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$file\"", signScript, StringComparison.Ordinal);
+        Assert.Contains("Print :CFBundleExecutable", signScript, StringComparison.Ordinal);
+        Assert.Contains("codesign_app_path \"$MAIN_EXECUTABLE\"", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$APP_NAME\"", signScript, StringComparison.Ordinal);
         Assert.DoesNotContain("CODESIGN_TIMESTAMP_ARGS", signScript, StringComparison.Ordinal);
         Assert.Contains("is_signable_app_file()", codesignCommonScript, StringComparison.Ordinal);
         Assert.Contains("*.dll|*.exe)", codesignCommonScript, StringComparison.Ordinal);
         Assert.Contains("file \"$path\" | grep -q \"Mach-O\"", codesignCommonScript, StringComparison.Ordinal);
+        Assert.Contains("/bin/bash ./prepare-app-layout.sh \"$APP_NAME\"", packageScript, StringComparison.Ordinal);
+        Assert.Contains("is_signable_app_file \"$path\"", prepareAppLayoutScript, StringComparison.Ordinal);
+        Assert.Contains("Contents/Resources/dotnet", prepareAppLayoutScript, StringComparison.Ordinal);
+        Assert.Contains("ln -s", prepareAppLayoutScript, StringComparison.Ordinal);
 
         Assert.Contains("codesign --verify --deep --strict --verbose=2", verifyAppScript, StringComparison.Ordinal);
         Assert.Contains("spctl --assess --type execute", verifyAppScript, StringComparison.Ordinal);
+        Assert.Contains("kill -TERM \"$PID\"", verifyAppLaunchScript, StringComparison.Ordinal);
+        Assert.Contains("kill -KILL \"$PID\"", verifyAppLaunchScript, StringComparison.Ordinal);
         Assert.Contains("codesign --verify --verbose=2", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("xcrun stapler validate", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("spctl --assess --type open --context context:primary-signature", verifyDmgScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void V112RecoverySeparatesControlPlaneFromImmutableReleaseSubject()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "release-v112-recovery.yml"));
+        var subjectValidator = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "validate-v112-recovery-subject.ps1"));
+        var artifactValidator = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "validate-v112-release-artifacts.ps1"));
+
+        Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("push:", workflow, StringComparison.Ordinal);
+        Assert.Contains("path: tooling", workflow, StringComparison.Ordinal);
+        Assert.Contains("path: subject", workflow, StringComparison.Ordinal);
+        Assert.Contains("ref: ${{ inputs.subject_sha }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("dotnet publish ./subject/DownKyi/DownKyi.csproj", workflow, StringComparison.Ordinal);
+        Assert.Contains("working-directory: subject", workflow, StringComparison.Ordinal);
+        Assert.Contains("Formal v1.1.2 recovery requires all Apple signing and notarization credentials.", workflow, StringComparison.Ordinal);
+        Assert.Contains("./verify-dmg-contents.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("tag: v1.1.2", workflow, StringComparison.Ordinal);
+        Assert.Contains("commit: 16c690d8719f86eb6eecb56c24efabc1afc41d55", workflow, StringComparison.Ordinal);
+        Assert.Contains("prerelease: false", workflow, StringComparison.Ordinal);
+        Assert.Contains("makeLatest: true", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("git tag", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("push --force", workflow, StringComparison.Ordinal);
+
+        Assert.Contains("$expectedReleaseVersion = 'v1.1.2'", subjectValidator, StringComparison.Ordinal);
+        Assert.Contains("$expectedSubjectSha = '16c690d8719f86eb6eecb56c24efabc1afc41d55'", subjectValidator, StringComparison.Ordinal);
+        Assert.Contains("cat-file -t $expectedReleaseVersion", subjectValidator, StringComparison.Ordinal);
+        Assert.Contains("status --porcelain --untracked-files=no", subjectValidator, StringComparison.Ordinal);
+        Assert.Contains("Validated $($expected.Count) v1.1.2 packages", artifactValidator, StringComparison.Ordinal);
+        Assert.Contains("Get-FileHash", artifactValidator, StringComparison.Ordinal);
+        Assert.Contains("Publish manifest contract failed", artifactValidator, StringComparison.Ordinal);
     }
 
     [Fact]

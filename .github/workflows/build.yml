@@ -369,14 +369,18 @@ jobs:
             script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}.sha256
             script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json
   build-macos:
-    runs-on: macos-15
+    runs-on: ${{ matrix.os }}
     needs: changelog
     env:
       HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
     strategy:
       fail-fast: false
       matrix:
-        cpu: [ x64, arm64 ]
+        include:
+          - cpu: x64
+            os: macos-15-intel
+          - cpu: arm64
+            os: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -404,6 +408,8 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      - name: Run macOS packaging regressions
+        run: dotnet test tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj -c Release
       - name: Install Python for FFmpeg manifest verification
         uses: actions/setup-python@v6
         with:
@@ -438,7 +444,7 @@ jobs:
             -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
       - name: Sign app
         run: |
-          chmod +x codesign-common.sh sign.sh verify-app.sh sign-dmg.sh verify-dmg.sh
+          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh
           ./sign.sh
         working-directory: ./script/macos
         env:
@@ -495,6 +501,12 @@ jobs:
         working-directory: ./script/macos
         env:
           MACOS_VERIFY_NOTARIZATION: true
+      - name: Verify packaged DMG contents and launch app
+        run: |
+          ./verify-dmg-contents.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+        working-directory: ./script/macos
+        env:
+          MACOS_VERIFY_GATEKEEPER: ${{ env.HAS_MACOS_SIGNING == 'true' }}
       - name: Hash DMG
         shell: pwsh
         run: |

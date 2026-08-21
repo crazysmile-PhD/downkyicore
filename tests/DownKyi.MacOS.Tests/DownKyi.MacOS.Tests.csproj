@@ -20,4 +20,8 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="Fixtures/**/*.cs" />
+  </ItemGroup>
+
 </Project>

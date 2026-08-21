@@ -42,7 +42,8 @@ public sealed class MacSigningScriptTests
     {
         var fixtureRoot = Path.Combine(Path.GetTempPath(), $"downkyi-signing-{Guid.NewGuid():N}");
         var stubDirectory = Path.Combine(fixtureRoot, "stub-bin");
-        var appBinaryDirectory = Path.Combine(fixtureRoot, "Test.app", "Contents", "MacOS");
+        var appContentsDirectory = Path.Combine(fixtureRoot, "Test.app", "Contents");
+        var appBinaryDirectory = Path.Combine(appContentsDirectory, "MacOS");
         var codesignLog = Path.Combine(fixtureRoot, "codesign.log");
 
         Directory.CreateDirectory(stubDirectory);
@@ -94,6 +95,19 @@ public sealed class MacSigningScriptTests
             File.WriteAllText(Path.Combine(appBinaryDirectory, "libfixture.dylib"), "fixture");
             File.WriteAllText(Path.Combine(appBinaryDirectory, "ManagedDependency.dll"), "fixture");
             File.WriteAllText(Path.Combine(appBinaryDirectory, "runtimeconfig.json"), "{}");
+            File.WriteAllText(
+                Path.Combine(appContentsDirectory, "Info.plist"),
+                """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+                <plist version="1.0">
+                <dict>
+                  <key>CFBundleExecutable</key>
+                  <string>DownKyi</string>
+                </dict>
+                </plist>
+                """,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
             var startInfo = new ProcessStartInfo
             {
@@ -152,6 +166,7 @@ public sealed class MacSigningScriptTests
         Assert.Contains("Test.app/Contents/MacOS/libfixture.dylib", signedPaths);
         Assert.Contains("Test.app/Contents/MacOS/ManagedDependency.dll", signedPaths);
         Assert.DoesNotContain("Test.app/Contents/MacOS/runtimeconfig.json", signedPaths);
+        Assert.Equal("Test.app/Contents/MacOS/DownKyi", signedPaths[^2]);
         Assert.Equal("Test.app", signedPaths[^1]);
     }
 
