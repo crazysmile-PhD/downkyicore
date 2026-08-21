@@ -32,8 +32,8 @@ on:
         type: string
 
 concurrency:
-  group: issue-183-desktop-assembly-info-owner
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   focused-capture:
@@ -73,14 +73,16 @@ jobs:
           dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
           dotnet tool install dotnet-stack --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
 
-      - name: Verify exact subject and probe syntax
+      - name: Verify exact subject, SDK, and probe syntax
         shell: pwsh
         run: |
           $sha = (& git -C "$env:GITHUB_WORKSPACE\target" rev-parse HEAD).Trim()
           if ($sha -ne '75bff22801972ada7cfd24be595b0753780a7592') { throw "Subject SHA mismatch: $sha" }
+          Push-Location "$env:GITHUB_WORKSPACE\target"
+          try { $sdk = (& dotnet --version).Trim() } finally { Pop-Location }
+          if ($sdk -ne '10.0.400') { throw "Target resolved SDK $sdk instead of required 10.0.400." }
           python -m py_compile "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_desktop_assembly_info_probe.py"
           if ($LASTEXITCODE -ne 0) { throw 'Probe syntax validation failed.' }
-          dotnet --info
 
       - name: Restore exact full PR subject
         working-directory: target
@@ -147,7 +149,9 @@ jobs:
               "- Target SHA: ``$($s.targetSha)``",
               "- Executions: $($s.iterations)",
               "- JSON detections: $($s.jsonDetections)",
-              "- Instrumentation failures: $($s.instrumentationFailures)",
+              "- Invalid executions: $($s.invalidExecutions)",
+              "- Nonzero exits: $($s.nonzeroExits)",
+              "- Reader failures: $($s.readerFailures)",
               "- Alive 500 ms after JSON: $($s.alive500msAfterJson)",
               "- Exact watchdogs: $($s.watchdogs)",
               "- Confirmed watchdog + same-PID Full dumps: $($s.confirmedWatchdogDumps)",
