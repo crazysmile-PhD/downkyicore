@@ -429,6 +429,8 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("find \"$APP_NAME/Contents\" -type f", signScript, StringComparison.Ordinal);
         Assert.Contains("is_signable_app_file \"$file\"", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$file\"", signScript, StringComparison.Ordinal);
+        Assert.Contains("Print :CFBundleExecutable", signScript, StringComparison.Ordinal);
+        Assert.Contains("codesign_app_path \"$MAIN_EXECUTABLE\"", signScript, StringComparison.Ordinal);
         Assert.Contains("codesign_app_path \"$APP_NAME\"", signScript, StringComparison.Ordinal);
         Assert.DoesNotContain("CODESIGN_TIMESTAMP_ARGS", signScript, StringComparison.Ordinal);
         Assert.Contains("is_signable_app_file()", codesignCommonScript, StringComparison.Ordinal);
