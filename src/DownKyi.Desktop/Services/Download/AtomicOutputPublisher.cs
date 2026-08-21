@@ -21,6 +21,7 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
     private readonly IOutputArtifactOwnershipProvider? _ownershipProvider;
 
     public AtomicOutputPublisher()
+        : this(new WindowsOutputArtifactOwnershipProvider())
     {
     }
 
@@ -31,8 +32,8 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
     }
 
     internal AtomicOutputPublisher(Action<string> beforePublish)
+        : this(beforePublish, new WindowsOutputArtifactOwnershipProvider())
     {
-        _beforePublish = beforePublish ?? throw new ArgumentNullException(nameof(beforePublish));
     }
 
     internal AtomicOutputPublisher(
@@ -51,16 +52,19 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
         ArgumentNullException.ThrowIfNull(writeTemporaryAsync);
-        var temporaryPath = CreateTemporaryFile(destinationPath);
+        var temporary = CreateTemporaryFile(destinationPath);
         try
         {
-            await writeTemporaryAsync(temporaryPath, cancellationToken).ConfigureAwait(false);
+            await writeTemporaryAsync(temporary.Path, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             OutputArtifactPublicationEvidence? publicationEvidence = null;
-            if (_ownershipProvider != null)
+            if (_ownershipProvider != null && temporary.Claim is not null)
             {
                 var captured = await _ownershipProvider
-                    .CapturePublicationEvidenceAsync(temporaryPath, cancellationToken)
+                    .CapturePublicationEvidenceAsync(
+                        temporary.Path,
+                        temporary.Claim,
+                        cancellationToken)
                     .ConfigureAwait(false);
                 publicationEvidence = captured.Succeeded ? captured.Evidence : null;
             }
@@ -68,7 +72,8 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
             _beforePublish?.Invoke(destinationPath);
             try
             {
-                File.Move(temporaryPath, destinationPath, overwrite: false);
+                cancellationToken.ThrowIfCancellationRequested();
+                File.Move(temporary.Path, destinationPath, overwrite: false);
             }
             catch (IOException exception) when (File.Exists(destinationPath))
             {
@@ -91,11 +96,11 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
         }
         finally
         {
-            DeleteTemporaryFile(temporaryPath);
+            await DeleteTemporaryIfOwnedAsync(temporary).ConfigureAwait(false);
         }
     }
 
-    private static string CreateTemporaryFile(string destinationPath)
+    private TemporaryOutput CreateTemporaryFile(string destinationPath)
     {
         var fullDestinationPath = Path.GetFullPath(destinationPath);
         var directory = Path.GetDirectoryName(fullDestinationPath)
@@ -112,9 +117,12 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
                 using var stream = new FileStream(
                     temporaryPath,
                     FileMode.CreateNew,
-                    FileAccess.Write,
+                    FileAccess.ReadWrite,
                     FileShare.None);
-                return temporaryPath;
+                var claim = _ownershipProvider?.ClaimTemporaryObject(stream.SafeFileHandle);
+                return new TemporaryOutput(
+                    temporaryPath,
+                    claim is { Succeeded: true } ? claim.Claim : null);
             }
             catch (IOException) when (attempt < MaximumTemporaryPathAttempts - 1)
             {
@@ -123,6 +131,32 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
         }
 
         throw new IOException("A unique temporary output file could not be created.");
+    }
+
+    private async Task DeleteTemporaryIfOwnedAsync(TemporaryOutput temporary)
+    {
+        if (_ownershipProvider is null || temporary.Claim is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ownershipProvider
+                .DeleteTemporaryIfOwnedAsync(
+                    temporary.Path,
+                    temporary.Claim,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException
+                                         or UnauthorizedAccessException
+                                         or InvalidOperationException
+                                         or ArgumentException
+                                         or NotSupportedException)
+        {
+            return;
+        }
     }
 
     private async Task<bool> VerifyPublishedIdentityAsync(
@@ -156,21 +190,9 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
         }
     }
 
-    private static void DeleteTemporaryFile(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (IOException)
-        {
-            return;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return;
-        }
-    }
+    private sealed record TemporaryOutput(
+        string Path,
+        OutputArtifactTemporaryClaim? Claim);
 }
 
 internal sealed record AtomicOutputPublishResult(

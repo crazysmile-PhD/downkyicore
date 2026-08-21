@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Downloads;
+using Microsoft.Win32.SafeHandles;
 
 namespace DownKyi.Services.Download;
 
@@ -30,11 +31,35 @@ internal sealed class WindowsOutputArtifactOwnershipProvider
         _fileSystem = fileSystem;
     }
 
+    public OutputArtifactTemporaryClaimResult ClaimTemporaryObject(
+        SafeFileHandle temporaryHandle)
+    {
+        ArgumentNullException.ThrowIfNull(temporaryHandle);
+        if (!_fileSystem.IsSupported)
+        {
+            return OutputArtifactTemporaryClaimResult.Unsupported();
+        }
+
+        var capture = _fileSystem.CaptureIdentity(temporaryHandle);
+        return capture.Status switch
+        {
+            OutputArtifactNativeIdentityCaptureStatus.Captured
+                when !string.IsNullOrWhiteSpace(capture.FilesystemIdentity) =>
+                OutputArtifactTemporaryClaimResult.Claimed(
+                    new WindowsOutputArtifactTemporaryClaim(capture.FilesystemIdentity)),
+            OutputArtifactNativeIdentityCaptureStatus.Unsupported =>
+                OutputArtifactTemporaryClaimResult.Unsupported(),
+            _ => OutputArtifactTemporaryClaimResult.Failed()
+        };
+    }
+
     public async Task<OutputArtifactEvidenceCaptureResult> CapturePublicationEvidenceAsync(
         string temporaryPath,
+        OutputArtifactTemporaryClaim temporaryClaim,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(temporaryPath);
+        ArgumentNullException.ThrowIfNull(temporaryClaim);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_fileSystem.IsSupported)
@@ -42,12 +67,22 @@ internal sealed class WindowsOutputArtifactOwnershipProvider
             return OutputArtifactEvidenceCaptureResult.Unsupported();
         }
 
+        if (temporaryClaim is not WindowsOutputArtifactTemporaryClaim windowsClaim)
+        {
+            return OutputArtifactEvidenceCaptureResult.Failed();
+        }
+
         var capture = await _fileSystem
             .CaptureEvidenceAsync(temporaryPath, cancellationToken)
             .ConfigureAwait(false);
         return capture.Status switch
         {
-            OutputArtifactNativeCaptureStatus.Captured when capture.Evidence is not null =>
+            OutputArtifactNativeCaptureStatus.Captured
+                when capture.Evidence is not null
+                     && string.Equals(
+                         capture.Evidence.FilesystemIdentity,
+                         windowsClaim.FilesystemIdentity,
+                         StringComparison.Ordinal) =>
                 OutputArtifactEvidenceCaptureResult.Captured(
                     new OutputArtifactPublicationEvidence(
                         capture.Evidence.ByteLength,
@@ -60,6 +95,34 @@ internal sealed class WindowsOutputArtifactOwnershipProvider
                 OutputArtifactEvidenceCaptureResult.Unsupported(),
             _ => OutputArtifactEvidenceCaptureResult.Failed()
         };
+    }
+
+    public async Task<OutputArtifactSafeDeleteResult> DeleteTemporaryIfOwnedAsync(
+        string temporaryPath,
+        OutputArtifactTemporaryClaim temporaryClaim,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(temporaryPath);
+        ArgumentNullException.ThrowIfNull(temporaryClaim);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_fileSystem.IsSupported)
+        {
+            return OutputArtifactSafeDeleteResult.Unsupported();
+        }
+
+        if (temporaryClaim is not WindowsOutputArtifactTemporaryClaim windowsClaim)
+        {
+            return OutputArtifactSafeDeleteResult.Unproven();
+        }
+
+        var result = await _fileSystem
+            .DeleteIfIdentityMatchesAsync(
+                temporaryPath,
+                windowsClaim.FilesystemIdentity,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return MapSafeDeleteResult(result);
     }
 
     public async Task<OutputArtifactSafeDeleteResult> DeleteIfOwnedAsync(
@@ -90,20 +153,7 @@ internal sealed class WindowsOutputArtifactOwnershipProvider
                     provenance.FilesystemIdentity),
                 cancellationToken)
             .ConfigureAwait(false);
-        return result.Status switch
-        {
-            OutputArtifactNativeSafeDeleteStatus.Deleted =>
-                OutputArtifactSafeDeleteResult.DeletedResult(),
-            OutputArtifactNativeSafeDeleteStatus.Missing =>
-                OutputArtifactSafeDeleteResult.Missing(),
-            OutputArtifactNativeSafeDeleteStatus.Replaced =>
-                OutputArtifactSafeDeleteResult.Replaced(),
-            OutputArtifactNativeSafeDeleteStatus.Modified =>
-                OutputArtifactSafeDeleteResult.Modified(),
-            OutputArtifactNativeSafeDeleteStatus.Unsupported =>
-                OutputArtifactSafeDeleteResult.Unsupported(),
-            _ => OutputArtifactSafeDeleteResult.Failed()
-        };
+        return MapSafeDeleteResult(result);
     }
 
     public async Task<bool> VerifyPublishedObjectIdentityAsync(
@@ -204,6 +254,28 @@ internal sealed class WindowsOutputArtifactOwnershipProvider
 
         return true;
     }
+
+    private static OutputArtifactSafeDeleteResult MapSafeDeleteResult(
+        OutputArtifactNativeSafeDeleteResult result)
+    {
+        return result.Status switch
+        {
+            OutputArtifactNativeSafeDeleteStatus.Deleted =>
+                OutputArtifactSafeDeleteResult.DeletedResult(),
+            OutputArtifactNativeSafeDeleteStatus.Missing =>
+                OutputArtifactSafeDeleteResult.Missing(),
+            OutputArtifactNativeSafeDeleteStatus.Replaced =>
+                OutputArtifactSafeDeleteResult.Replaced(),
+            OutputArtifactNativeSafeDeleteStatus.Modified =>
+                OutputArtifactSafeDeleteResult.Modified(),
+            OutputArtifactNativeSafeDeleteStatus.Unsupported =>
+                OutputArtifactSafeDeleteResult.Unsupported(),
+            _ => OutputArtifactSafeDeleteResult.Failed()
+        };
+    }
+
+    private sealed record WindowsOutputArtifactTemporaryClaim(
+        string FilesystemIdentity) : OutputArtifactTemporaryClaim;
 }
 
 /// <summary>
@@ -215,6 +287,9 @@ internal interface IOutputArtifactNativeFileSystem
 {
     bool IsSupported { get; }
 
+    OutputArtifactNativeIdentityCaptureResult CaptureIdentity(
+        SafeFileHandle handle);
+
     Task<OutputArtifactNativeCaptureResult> CaptureEvidenceAsync(
         string path,
         CancellationToken cancellationToken);
@@ -224,10 +299,41 @@ internal interface IOutputArtifactNativeFileSystem
         OutputArtifactNativeEvidence expectedEvidence,
         CancellationToken cancellationToken);
 
+    Task<OutputArtifactNativeSafeDeleteResult> DeleteIfIdentityMatchesAsync(
+        string path,
+        string expectedFilesystemIdentity,
+        CancellationToken cancellationToken);
+
     Task<bool> VerifyIdentityAndLengthAsync(
         string path,
         OutputArtifactNativeEvidence expectedEvidence,
         CancellationToken cancellationToken);
+}
+
+internal enum OutputArtifactNativeIdentityCaptureStatus
+{
+    Captured,
+    Unsupported,
+    Failed
+}
+
+internal sealed record OutputArtifactNativeIdentityCaptureResult(
+    OutputArtifactNativeIdentityCaptureStatus Status,
+    string? FilesystemIdentity)
+{
+    public static OutputArtifactNativeIdentityCaptureResult Captured(string filesystemIdentity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filesystemIdentity);
+        return new OutputArtifactNativeIdentityCaptureResult(
+            OutputArtifactNativeIdentityCaptureStatus.Captured,
+            filesystemIdentity);
+    }
+
+    public static OutputArtifactNativeIdentityCaptureResult Unsupported() =>
+        new(OutputArtifactNativeIdentityCaptureStatus.Unsupported, null);
+
+    public static OutputArtifactNativeIdentityCaptureResult Failed() =>
+        new(OutputArtifactNativeIdentityCaptureStatus.Failed, null);
 }
 
 internal enum OutputArtifactNativeCaptureStatus
@@ -297,5 +403,3 @@ internal sealed record OutputArtifactNativeEvidence(
     long ByteLength,
     string Sha256,
     string FilesystemIdentity);
-
-

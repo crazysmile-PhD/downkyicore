@@ -8,6 +8,7 @@ using DownKyi.Services.Download;
 using DownKyi.ViewModels.DownloadManager;
 using Google.Protobuf;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Win32.SafeHandles;
 
 namespace DownKyi.Tests;
 
@@ -973,6 +974,8 @@ public sealed class DownloadArtifactStageTests
 
     private sealed class RecordingPublicationOwnershipProvider : IOutputArtifactOwnershipProvider
     {
+        private sealed record TemporaryClaim : OutputArtifactTemporaryClaim;
+
         public OutputArtifactPublicationEvidence Evidence { get; } = new(
             ByteLength: 42,
             Sha256: new string('a', 64),
@@ -985,15 +988,41 @@ public sealed class DownloadArtifactStageTests
 
         public bool VerifyPublishedIdentity { get; init; } = true;
 
+        public OutputArtifactTemporaryClaimResult ClaimTemporaryObject(
+            SafeFileHandle temporaryHandle)
+        {
+            Assert.False(temporaryHandle.IsClosed);
+            Assert.False(temporaryHandle.IsInvalid);
+            return OutputArtifactTemporaryClaimResult.Claimed(new TemporaryClaim());
+        }
+
         public Task<OutputArtifactEvidenceCaptureResult> CapturePublicationEvidenceAsync(
             string temporaryPath,
+            OutputArtifactTemporaryClaim temporaryClaim,
             CancellationToken cancellationToken)
         {
+            Assert.IsType<TemporaryClaim>(temporaryClaim);
             cancellationToken.ThrowIfCancellationRequested();
             Captures.Add(new PublicationPathObservation(
                 Path.GetFullPath(temporaryPath),
                 File.Exists(temporaryPath)));
             return Task.FromResult(OutputArtifactEvidenceCaptureResult.Captured(Evidence));
+        }
+
+        public Task<OutputArtifactSafeDeleteResult> DeleteTemporaryIfOwnedAsync(
+            string temporaryPath,
+            OutputArtifactTemporaryClaim temporaryClaim,
+            CancellationToken cancellationToken)
+        {
+            Assert.IsType<TemporaryClaim>(temporaryClaim);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!File.Exists(temporaryPath))
+            {
+                return Task.FromResult(OutputArtifactSafeDeleteResult.Missing());
+            }
+
+            File.Delete(temporaryPath);
+            return Task.FromResult(OutputArtifactSafeDeleteResult.DeletedResult());
         }
 
         public Task<bool> VerifyPublishedObjectIdentityAsync(

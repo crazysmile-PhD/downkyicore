@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using DownKyi.Services.Download;
+using Microsoft.Win32.SafeHandles;
 
 namespace DownKyi.Tests;
 
@@ -21,7 +22,8 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
         var destinationPath = Path.Combine(_directory, "episode.mp4");
         var provider = new WindowsOutputArtifactOwnershipProvider();
 
-        var capture = await provider.CapturePublicationEvidenceAsync(
+        var capture = await CaptureClaimedEvidenceAsync(
+            provider,
             temporaryPath,
             TestContext.Current.CancellationToken);
 
@@ -56,7 +58,8 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
         var destinationPath = Path.Combine(_directory, "episode.mp4");
         var replacementPath = CreateFile(".foreign.downkyi-tmp.mp4", "foreign output");
         var provider = new WindowsOutputArtifactOwnershipProvider();
-        var capture = await provider.CapturePublicationEvidenceAsync(
+        var capture = await CaptureClaimedEvidenceAsync(
+            provider,
             temporaryPath,
             TestContext.Current.CancellationToken);
         var evidence = Assert.IsType<OutputArtifactPublicationEvidence>(capture.Evidence);
@@ -89,7 +92,8 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
         var destinationPath = Path.Combine(_directory, "episode.mp4");
         var replacementPath = CreateFile(".foreign.downkyi-tmp.mp4", "foreign output");
         var provider = new WindowsOutputArtifactOwnershipProvider();
-        var capture = await provider.CapturePublicationEvidenceAsync(
+        var capture = await CaptureClaimedEvidenceAsync(
+            provider,
             temporaryPath,
             TestContext.Current.CancellationToken);
         var evidence = Assert.IsType<OutputArtifactPublicationEvidence>(capture.Evidence);
@@ -118,7 +122,8 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
         var temporaryPath = CreateFile(".episode.downkyi-tmp.mp4", "owned output");
         var destinationPath = Path.Combine(_directory, "episode.mp4");
         var provider = new WindowsOutputArtifactOwnershipProvider();
-        var capture = await provider.CapturePublicationEvidenceAsync(
+        var capture = await CaptureClaimedEvidenceAsync(
+            provider,
             temporaryPath,
             TestContext.Current.CancellationToken);
         var evidence = Assert.IsType<OutputArtifactPublicationEvidence>(capture.Evidence);
@@ -150,7 +155,8 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
         var temporaryPath = CreateFile(".episode.downkyi-tmp.mp4", "owned output");
         var destinationPath = Path.Combine(_directory, "episode.mp4");
         var provider = new WindowsOutputArtifactOwnershipProvider();
-        var capture = await provider.CapturePublicationEvidenceAsync(
+        var capture = await CaptureClaimedEvidenceAsync(
+            provider,
             temporaryPath,
             TestContext.Current.CancellationToken);
         var evidence = Assert.IsType<OutputArtifactPublicationEvidence>(capture.Evidence);
@@ -178,9 +184,16 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
         var provider = new WindowsOutputArtifactOwnershipProvider(fileSystem);
         var evidence = CreateEvidence();
 
-        var capture = await provider.CapturePublicationEvidenceAsync(
-            path,
-            TestContext.Current.CancellationToken);
+        OutputArtifactTemporaryClaimResult claim;
+        using (var stream = new FileStream(
+                   path,
+                   FileMode.Open,
+                   FileAccess.ReadWrite,
+                   FileShare.None))
+        {
+            claim = provider.ClaimTemporaryObject(stream.SafeFileHandle);
+        }
+
         var deletion = await provider.DeleteIfOwnedAsync(
             path,
             CreateProvenance(path, evidence),
@@ -190,7 +203,7 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
             evidence,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(OutputArtifactEvidenceCaptureStatus.Unsupported, capture.Status);
+        Assert.Equal(OutputArtifactTemporaryClaimStatus.Unsupported, claim.Status);
         Assert.Equal(OutputArtifactSafeDeleteStatus.Unsupported, deletion.Status);
         Assert.False(verified);
         Assert.Equal(0, fileSystem.CaptureCalls);
@@ -315,6 +328,28 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
         Assert.Equal(1, fileSystem.DeleteCalls);
     }
 
+    private static async Task<OutputArtifactEvidenceCaptureResult> CaptureClaimedEvidenceAsync(
+        WindowsOutputArtifactOwnershipProvider provider,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        OutputArtifactTemporaryClaim claim;
+        using (var stream = new FileStream(
+                   path,
+                   FileMode.Open,
+                   FileAccess.ReadWrite,
+                   FileShare.None))
+        {
+            var claimed = provider.ClaimTemporaryObject(stream.SafeFileHandle);
+            Assert.True(claimed.Succeeded);
+            claim = Assert.IsAssignableFrom<OutputArtifactTemporaryClaim>(claimed.Claim);
+        }
+
+        return await provider
+            .CapturePublicationEvidenceAsync(path, claim, cancellationToken)
+            .ConfigureAwait(true);
+    }
+
     private static DownloadOutputArtifactProvenance CreateProvenance(
         string path,
         OutputArtifactPublicationEvidence evidence)
@@ -373,6 +408,9 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
         public OutputArtifactNativeCaptureResult CaptureResult { get; init; } =
             OutputArtifactNativeCaptureResult.Failed();
 
+        public OutputArtifactNativeIdentityCaptureResult IdentityCaptureResult { get; init; } =
+            OutputArtifactNativeIdentityCaptureResult.Failed();
+
         public OutputArtifactNativeSafeDeleteResult DeleteResult { get; init; } =
             OutputArtifactNativeSafeDeleteResult.Failed();
 
@@ -382,9 +420,18 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
 
         public int CaptureCalls { get; private set; }
 
+        public int IdentityCaptureCalls { get; private set; }
+
         public int DeleteCalls { get; private set; }
 
         public int VerifyCalls { get; private set; }
+
+        public OutputArtifactNativeIdentityCaptureResult CaptureIdentity(
+            SafeFileHandle handle)
+        {
+            IdentityCaptureCalls++;
+            return IdentityCaptureResult;
+        }
 
         public Task<OutputArtifactNativeCaptureResult> CaptureEvidenceAsync(
             string path,
@@ -398,6 +445,17 @@ public sealed class WindowsOutputArtifactOwnershipProviderTests : IDisposable
         public Task<OutputArtifactNativeSafeDeleteResult> DeleteIfEvidenceMatchesAsync(
             string path,
             OutputArtifactNativeEvidence expectedEvidence,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            DeleteCalls++;
+            OnDeleteIfEvidenceMatches?.Invoke();
+            return Task.FromResult(DeleteResult);
+        }
+
+        public Task<OutputArtifactNativeSafeDeleteResult> DeleteIfIdentityMatchesAsync(
+            string path,
+            string expectedFilesystemIdentity,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();

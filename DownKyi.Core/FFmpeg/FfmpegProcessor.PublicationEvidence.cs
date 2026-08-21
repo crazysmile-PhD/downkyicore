@@ -4,6 +4,23 @@ namespace DownKyi.Core.FFmpeg;
 
 public sealed partial class FfmpegProcessor
 {
+    private async Task<bool> RunToFileSucceededAsync(
+        Func<string, FfmpegCommand> commandFactory,
+        string destination,
+        bool overwriteDestination,
+        Action<string>? action,
+        CancellationToken cancellationToken)
+    {
+        var result = await RunToFileAsync(
+            commandFactory,
+            destination,
+            overwriteDestination,
+            action: action,
+            outputArtifactOwnershipProvider: null,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return result.Succeeded;
+    }
+
     private static async Task<bool> VerifyPublishedIdentityAsync(
         IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider,
         string destination,

@@ -19,6 +19,9 @@ internal sealed partial class WindowsOutputArtifactNativeFileSystem
     private const uint FileAttributeReparsePoint = 0x00000400;
     private const uint FileFlagOverlapped = 0x40000000;
     private const uint FileFlagOpenReparsePoint = 0x00200000;
+    private const uint FileShareRead = 0x00000001;
+    private const uint FileShareWrite = 0x00000002;
+    private const uint FileShareDelete = 0x00000004;
     private const uint LockFileFailImmediately = 0x00000001;
     private const uint LockFileExclusiveLock = 0x00000002;
     private const int ErrorFileNotFound = 2;
@@ -153,6 +156,7 @@ internal sealed partial class WindowsOutputArtifactNativeFileSystem
                     return OutputArtifactNativeSafeDeleteResult.Modified();
                 }
 
+                _beforeDelete?.Invoke(handle);
                 return MarkOpenedFileForDeletion(handle)
                     ? OutputArtifactNativeSafeDeleteResult.Deleted()
                     : OutputArtifactNativeSafeDeleteResult.Failed();
@@ -291,7 +295,7 @@ internal sealed partial class WindowsOutputArtifactNativeFileSystem
         }
     }
 
-    private static OutputArtifactNativeOpenStatus TryOpen(
+    private OutputArtifactNativeOpenStatus TryOpen(
         string path,
         bool includeDeleteAccess,
         out SafeFileHandle? handle)
@@ -302,7 +306,7 @@ internal sealed partial class WindowsOutputArtifactNativeFileSystem
             var openedHandle = WindowsOutputArtifactNativeMethods.CreateFile(
                 path,
                 includeDeleteAccess ? GenericRead | Delete : GenericRead,
-                shareMode: 0,
+                shareMode: _shareMode,
                 IntPtr.Zero,
                 OpenExisting,
                 FileAttributeNormal | FileFlagOverlapped | FileFlagOpenReparsePoint,
@@ -422,6 +426,29 @@ internal sealed partial class WindowsOutputArtifactNativeFileSystem
             throw new IOException("Reparse points are not eligible for output ownership evidence.");
         }
 
+        return FormatFileIdForEvidence(
+            information.VolumeSerialNumber,
+            information.FileIdHigh,
+            information.FileIdLow);
+    }
+
+    internal static string FormatFileIdForEvidence(
+        ulong volumeSerialNumber,
+        ulong fileIdHigh,
+        ulong fileIdLow)
+    {
+        if ((fileIdHigh == 0 && fileIdLow == 0)
+            || (fileIdHigh == ulong.MaxValue && fileIdLow == ulong.MaxValue))
+        {
+            throw new IOException("The output filesystem returned a sentinel file identity.");
+        }
+
+        var information = new FileIdInformation
+        {
+            VolumeSerialNumber = volumeSerialNumber,
+            FileIdHigh = fileIdHigh,
+            FileIdLow = fileIdLow
+        };
         return string.Create(
             49,
             information,
