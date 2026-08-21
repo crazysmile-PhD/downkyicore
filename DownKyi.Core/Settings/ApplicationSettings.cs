@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using DownKyi.Core.Aria2cNet.Server;
 using DownKyi.Core.FileName;
+using DownKyi.Core.Versioning;
 
 namespace DownKyi.Core.Settings;
 
@@ -266,8 +267,10 @@ internal static class ApplicationSettingsValidator
         {
             IsReceiveBetaVersion = AllowValue(settings.About.IsReceiveBetaVersion, AllowStatus.No, "About.IsReceiveBetaVersion", corrections),
             AutoUpdateWhenLaunch = AllowValue(settings.About.AutoUpdateWhenLaunch, AllowStatus.No, "About.AutoUpdateWhenLaunch", corrections),
-            SkipVersionOnLaunch = Version.TryParse(settings.About.SkipVersionOnLaunch, out _)
-                ? settings.About.SkipVersionOnLaunch
+            SkipVersionOnLaunch = SemanticVersionPolicy.TryNormalizeIdentity(
+                settings.About.SkipVersionOnLaunch,
+                out var normalizedSkipVersion)
+                ? normalizedSkipVersion
                 : string.Empty
         };
         var user = settings.User with

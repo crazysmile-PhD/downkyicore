@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 using System.Reflection;
-using System.Text.RegularExpressions;
+using DownKyi.Core.Versioning;
 
 namespace DownKyi.Models;
 
@@ -25,13 +25,7 @@ internal class AppInfo
 
     public static string NormalizeVersionName(string? versionName)
     {
-        if (string.IsNullOrWhiteSpace(versionName))
-        {
-            return string.Empty;
-        }
-
-        var match = Regex.Match(versionName, @"v?(\d+\.\d+\.\d+)", RegexOptions.IgnoreCase);
-        return match.Success ? match.Groups[1].Value : string.Empty;
+        return SemanticVersionPolicy.NormalizeForDisplay(versionName);
     }
 
     public static int VersionNameToCode(string versionName)
@@ -39,21 +33,18 @@ internal class AppInfo
         var code = 0;
         var normalizedVersion = NormalizeVersionName(versionName);
 
-        var isMatch = Regex.IsMatch(normalizedVersion, @"^\d+\.\d+\.\d+$");
-        if (!isMatch)
+        var coreVersion = normalizedVersion.Split('-', 2)[0];
+        var parts = coreVersion.Split('.');
+        if (parts.Length != 3)
         {
             return 0;
         }
 
-        var parts = normalizedVersion.Split('.');
-        if (parts.Length == 3)
+        var i = 2;
+        foreach (var item in parts)
         {
-            var i = 2;
-            foreach (var item in parts)
-            {
-                code += int.Parse(item, CultureInfo.InvariantCulture) * (int)Math.Pow(100, i);
-                i--;
-            }
+            code += int.Parse(item, CultureInfo.InvariantCulture) * (int)Math.Pow(100, i);
+            i--;
         }
 
         return code;

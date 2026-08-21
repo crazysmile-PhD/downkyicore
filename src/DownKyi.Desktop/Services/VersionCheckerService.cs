@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Core.Versioning;
 using DownKyi.Models;
 
 namespace DownKyi.Services;
@@ -21,11 +22,20 @@ internal sealed class VersionCheckerService
     }
 
     internal VersionCheckerService(HttpClient httpClient, string repoOwner, string repoName)
+        : this(httpClient, repoOwner, repoName, new AppInfo().VersionName)
+    {
+    }
+
+    internal VersionCheckerService(
+        HttpClient httpClient,
+        string repoOwner,
+        string repoName,
+        string currentVersion)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _repoOwner = repoOwner ?? throw new ArgumentNullException(nameof(repoOwner));
         _repoName = repoName ?? throw new ArgumentNullException(nameof(repoName));
-        _currentVersion = AppInfo.NormalizeVersionName(new AppInfo().VersionName);
+        _currentVersion = SemanticVersionPolicy.NormalizeForDisplay(currentVersion);
     }
 
     public async Task<GitHubRelease?> GetLatestReleaseAsync(
@@ -45,30 +55,27 @@ internal sealed class VersionCheckerService
             var releases = JsonSerializer.Deserialize(
                 responseJson,
                 GitHubJsonContext.Default.GitHubReleaseArray);
-            return string.IsNullOrEmpty(excludedVersion)
-                ? releases?.FirstOrDefault()
-                : releases?.FirstOrDefault(release =>
-                    release.TagName.TrimStart('v') != excludedVersion);
+            return releases?.FirstOrDefault(release => !IsExcluded(
+                release.TagName,
+                excludedVersion));
         }
 
         var latestRelease = JsonSerializer.Deserialize(
             responseJson,
             GitHubJsonContext.Default.GitHubRelease);
-        return string.IsNullOrEmpty(excludedVersion) ||
-               latestRelease?.TagName.TrimStart('v') != excludedVersion
+        return latestRelease != null && !IsExcluded(latestRelease.TagName, excludedVersion)
             ? latestRelease
             : null;
     }
 
     public bool IsNewVersionAvailable(string latestVersion)
     {
-        var latestReleaseVersion = AppInfo.NormalizeVersionName(latestVersion);
-        if (!Version.TryParse(_currentVersion, out var current) ||
-            !Version.TryParse(latestReleaseVersion, out var latest))
-        {
-            return false;
-        }
+        return SemanticVersionPolicy.IsNewer(latestVersion, _currentVersion);
+    }
 
-        return latest > current;
+    private static bool IsExcluded(string releaseVersion, string? excludedVersion)
+    {
+        return !string.IsNullOrWhiteSpace(excludedVersion) &&
+               SemanticVersionPolicy.HasSamePrecedence(releaseVersion, excludedVersion);
     }
 }
