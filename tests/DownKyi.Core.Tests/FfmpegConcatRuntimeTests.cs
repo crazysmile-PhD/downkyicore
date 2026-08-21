@@ -25,7 +25,8 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             runner,
             validator,
             new AsyncConcurrencyGate(() => 1),
-            NullLogger<FfmpegConcatRuntime>.Instance);
+            NullLogger<FfmpegConcatRuntime>.Instance,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
         var output = Path.Combine(_testDirectory, "result.mp4");
 
         var result = await runtime.ConcatAsync(
@@ -58,7 +59,8 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             runner,
             validator,
             new AsyncConcurrencyGate(() => 1),
-            NullLogger<FfmpegConcatRuntime>.Instance);
+            NullLogger<FfmpegConcatRuntime>.Instance,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
         var output = Path.Combine(_testDirectory, "result.mp4");
 
         var result = await runtime.ConcatAsync(
@@ -84,7 +86,8 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             runner,
             new StubMediaValidator(isValid: true),
             new AsyncConcurrencyGate(() => 1),
-            NullLogger<FfmpegConcatRuntime>.Instance);
+            NullLogger<FfmpegConcatRuntime>.Instance,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
         var output = Path.Combine(_testDirectory, "owned-by-another-task.mp4");
         byte[] existingContent = [9, 8, 7];
         await File.WriteAllBytesAsync(output, existingContent, TestContext.Current.CancellationToken);
@@ -116,7 +119,8 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             runner,
             new StubMediaValidator(isValid: true),
             new AsyncConcurrencyGate(() => 1),
-            NullLogger<FfmpegConcatRuntime>.Instance);
+            NullLogger<FfmpegConcatRuntime>.Instance,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
 
         var result = await runtime.ConcatAsync(
             [new FfmpegConcatSegment(1, segment, TimeSpan.FromSeconds(5))],
@@ -141,7 +145,8 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             runner,
             new StubMediaValidator(isValid: false),
             new AsyncConcurrencyGate(() => 1),
-            NullLogger<FfmpegConcatRuntime>.Instance);
+            NullLogger<FfmpegConcatRuntime>.Instance,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
         var output = Path.Combine(_testDirectory, "existing.mp4");
         byte[] existingContent = [6, 5, 4];
         await File.WriteAllBytesAsync(output, existingContent, TestContext.Current.CancellationToken);
@@ -170,7 +175,8 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             runner,
             new StubMediaValidator(isValid: false),
             new AsyncConcurrencyGate(() => 1),
-            NullLogger<FfmpegConcatRuntime>.Instance);
+            NullLogger<FfmpegConcatRuntime>.Instance,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
 
         var result = await runtime.ConcatAsync(
             [
@@ -206,7 +212,8 @@ public sealed class FfmpegConcatRuntimeTests : IDisposable
             runner,
             new StubMediaValidator(isValid: true),
             new AsyncConcurrencyGate(() => 1),
-            NullLogger<FfmpegConcatRuntime>.Instance);
+            NullLogger<FfmpegConcatRuntime>.Instance,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
 
         var result = await runtime.ConcatAsync(
             [new FfmpegConcatSegment(1, directoryInput, TimeSpan.FromSeconds(5))],

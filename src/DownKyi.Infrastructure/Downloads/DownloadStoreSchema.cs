@@ -8,7 +8,7 @@ namespace DownKyi.Infrastructure.Downloads;
 
 internal static partial class DownloadStoreSchema
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     private enum VersionTwoColumn
     {
@@ -76,6 +76,12 @@ internal static partial class DownloadStoreSchema
             if (currentVersion < 4)
             {
                 await ApplyVersionFourAsync(connection, transaction, clock.UtcNow, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (currentVersion < 5)
+            {
+                await ApplyVersionFiveAsync(connection, transaction, clock.UtcNow, cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -371,7 +377,7 @@ internal static partial class DownloadStoreSchema
         // SQLite PRAGMA assignments do not support normal SQL parameters.
         // Keep this as a compile-time literal so CA2100 can prove that no
         // user-controlled SQL reaches CommandText.
-        command.CommandText = "PRAGMA user_version = 4";
+        command.CommandText = "PRAGMA user_version = 5";
 
         await command
             .ExecuteNonQueryAsync(cancellationToken)

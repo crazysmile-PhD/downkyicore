@@ -31,13 +31,14 @@
     },
     {
       "id": "output-cleanup-ownership",
-      "historicalRoots": ["PR #85", "PR #120"],
-      "guards": "Task rows, transfer inputs, resume state, generated files and sidecars are changed through their existing owners; retry checkpoints survive every pre-commit failure and transfer inputs are cleaned only after durable completion.",
+      "historicalRoots": ["PR #85", "PR #120", "Issue #177"],
+      "guards": "Task rows, transfer inputs, resume state, generated files and sidecars are changed through their existing owners; retry checkpoints survive every pre-commit failure, transfer inputs are cleaned only after durable completion, and external objects cannot acquire publication or deletion authority through pathname replacement.",
       "testClasses": [
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.SqliteDownloadTaskStoreTests" },
         { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.FfmpegCommitBoundaryTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadTaskFileServiceTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadArtifactStageTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.OutputArtifactOwnershipAdversarialTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadPipelineCommitBoundaryTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadTaskProjectionStoreResumeTests" }
       ],

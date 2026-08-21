@@ -1,4 +1,5 @@
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Downloads;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Core.FFmpeg;
@@ -78,7 +79,8 @@ public sealed record FfmpegOperationResult
         string? failureReason,
         TimeSpan duration,
         FfmpegOperationFailureKind failureKind,
-        IReadOnlyList<FfmpegInputFailure> inputFailures)
+        IReadOnlyList<FfmpegInputFailure> inputFailures,
+        OutputArtifactPublicationEvidence? publicationEvidence = null)
     {
         ArgumentNullException.ThrowIfNull(inputFailures);
         if (succeeded != (failureKind == FfmpegOperationFailureKind.None))
@@ -88,11 +90,19 @@ public sealed record FfmpegOperationResult
                 nameof(failureKind));
         }
 
+        if (!succeeded && publicationEvidence is not null)
+        {
+            throw new ArgumentException(
+                "Failed FFmpeg operations cannot expose publication evidence.",
+                nameof(publicationEvidence));
+        }
+
         Succeeded = succeeded;
         OutputPath = outputPath;
         FailureReason = failureReason;
         Duration = duration;
         FailureKind = failureKind;
+        PublicationEvidence = publicationEvidence;
         InputFailures = inputFailures.ToArray();
         InvalidInputPaths = InputFailures
             .Where(failure => failure.CanInvalidate)
@@ -110,6 +120,14 @@ public sealed record FfmpegOperationResult
     public TimeSpan Duration { get; }
 
     public FfmpegOperationFailureKind FailureKind { get; }
+
+    /// <summary>
+    /// Evidence captured from the temporary media output and verified against
+    /// the object at its final path after publication. It is null when either
+    /// step was unavailable or did not succeed; callers must not infer
+    /// ownership from the output path.
+    /// </summary>
+    public OutputArtifactPublicationEvidence? PublicationEvidence { get; }
 
     public IReadOnlyList<FfmpegInputFailure> InputFailures { get; }
 
@@ -175,17 +193,20 @@ internal sealed class FfmpegConcatRuntime
     private readonly IFfmpegMediaValidator _mediaValidator;
     private readonly IFfmpegProcessRunner _processRunner;
     private readonly ILogger<FfmpegConcatRuntime> _logger;
+    private readonly IOutputArtifactOwnershipProvider? _outputArtifactOwnershipProvider;
 
     public FfmpegConcatRuntime(
         IFfmpegProcessRunner processRunner,
         IFfmpegMediaValidator mediaValidator,
         AsyncConcurrencyGate concurrencyGate,
-        ILogger<FfmpegConcatRuntime> logger)
+        ILogger<FfmpegConcatRuntime> logger,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null)
     {
         _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
         _mediaValidator = mediaValidator ?? throw new ArgumentNullException(nameof(mediaValidator));
         _concurrencyGate = concurrencyGate ?? throw new ArgumentNullException(nameof(concurrencyGate));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _outputArtifactOwnershipProvider = outputArtifactOwnershipProvider;
     }
 
     public async Task<FfmpegOperationResult> ConcatAsync(
@@ -195,10 +216,13 @@ internal sealed class FfmpegConcatRuntime
         bool allowStreamCopy,
         bool overwriteDestination,
         Action<string>? progress = null,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(segments);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFile);
+        var ownershipProvider = outputArtifactOwnershipProvider
+            ?? _outputArtifactOwnershipProvider;
         if (segments.Count == 0)
         {
             return FfmpegOperationResult.Failure(
@@ -244,8 +268,12 @@ internal sealed class FfmpegConcatRuntime
                     var temporaryOutput = Path.Combine(
                         outputDirectory,
                         $".{Path.GetFileNameWithoutExtension(outputFile)}-{Guid.NewGuid():N}.partial.mp4");
+                    FfmpegTemporaryOutput? temporaryOwnership = null;
                     try
                     {
+                        temporaryOwnership = FfmpegTemporaryOutput.Create(
+                            temporaryOutput,
+                            ownershipProvider);
                         progress?.Invoke($"FFmpeg {strategy}");
                         var command = FfmpegCommandFactory.BuildConcat(
                             listFile,
@@ -278,18 +306,48 @@ internal sealed class FfmpegConcatRuntime
                             continue;
                         }
 
+                        OutputArtifactPublicationEvidence? publicationEvidence = null;
+                        if (ownershipProvider is not null
+                            && temporaryOwnership?.Claim is { } temporaryClaim)
+                        {
+                            var capture = await ownershipProvider
+                                .CapturePublicationEvidenceAsync(
+                                    temporaryOutput,
+                                    temporaryClaim,
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                            publicationEvidence = capture.Succeeded ? capture.Evidence : null;
+                        }
+
+                        cancellationToken.ThrowIfCancellationRequested();
                         File.Move(temporaryOutput, outputFile, overwrite: overwriteDestination);
+                        if (publicationEvidence is not null
+                            && !await VerifyPublishedIdentityAsync(
+                                    ownershipProvider,
+                                    outputFile,
+                                    publicationEvidence)
+                                .ConfigureAwait(false))
+                        {
+                            publicationEvidence = null;
+                        }
+
                         return new FfmpegOperationResult(
                             true,
                             outputFile,
                             null,
                             validation.Duration,
                             FfmpegOperationFailureKind.None,
-                            []);
+                            [],
+                            publicationEvidence);
                     }
                     finally
                     {
-                        DeleteFile(temporaryOutput);
+                        if (temporaryOwnership is not null)
+                        {
+                            await temporaryOwnership
+                                .DeleteIfOwnedAsync(ownershipProvider)
+                                .ConfigureAwait(false);
+                        }
                     }
                 }
             }
@@ -348,6 +406,35 @@ internal sealed class FfmpegConcatRuntime
             : result.StandardError.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "unknown";
         _logger.LogInformationMessage(
             $"FFmpeg operation completed. operation={command.Operation}; exitCode={result.ExitCode}; timedOut={result.TimedOut}; error={error}");
+    }
+
+    private static async Task<bool> VerifyPublishedIdentityAsync(
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider,
+        string outputFile,
+        OutputArtifactPublicationEvidence publicationEvidence)
+    {
+        if (outputArtifactOwnershipProvider is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return await outputArtifactOwnershipProvider
+                .VerifyPublishedObjectIdentityAsync(
+                    outputFile,
+                    publicationEvidence,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException
+                                         or UnauthorizedAccessException
+                                         or InvalidOperationException
+                                         or ArgumentException
+                                         or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     private void DeleteFile(string file)

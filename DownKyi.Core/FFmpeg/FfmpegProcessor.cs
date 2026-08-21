@@ -1,4 +1,5 @@
 using DownKyi.Application.Diagnostics;
+using DownKyi.Application.Downloads;
 using DownKyi.Core.Settings;
 using Microsoft.Extensions.Logging;
 
@@ -14,6 +15,24 @@ public interface IFfmpegMediaMuxer
         Action<string>? action = null,
         CancellationToken cancellationToken = default);
 
+    Task<FfmpegOperationResult> ConcatDurlVideosWithEvidenceAsync(
+        VideoApplicationSettings videoSettings,
+        IReadOnlyList<FfmpegConcatSegment> segments,
+        string outputVideo,
+        bool overwriteDestination,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null,
+        Action<string>? action = null,
+        CancellationToken cancellationToken = default)
+    {
+        return ConcatDurlVideosAsync(
+            videoSettings,
+            segments,
+            outputVideo,
+            overwriteDestination,
+            action,
+            cancellationToken);
+    }
+
     Task<FfmpegOperationResult> MergeMediaAsync(
         VideoApplicationSettings videoSettings,
         string? audio,
@@ -21,9 +40,27 @@ public interface IFfmpegMediaMuxer
         string destination,
         bool overwriteDestination,
         CancellationToken cancellationToken = default);
+
+    Task<FfmpegOperationResult> MergeMediaWithEvidenceAsync(
+        VideoApplicationSettings videoSettings,
+        string? audio,
+        string? video,
+        string destination,
+        bool overwriteDestination,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null,
+        CancellationToken cancellationToken = default)
+    {
+        return MergeMediaAsync(
+            videoSettings,
+            audio,
+            video,
+            destination,
+            overwriteDestination,
+            cancellationToken);
+    }
 }
 
-public sealed class FfmpegProcessor : IFfmpegMediaMuxer
+public sealed partial class FfmpegProcessor : IFfmpegMediaMuxer
 {
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromHours(2);
     private readonly AsyncConcurrencyGate _operationGate;
@@ -32,22 +69,32 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
     private readonly ISettingsStore _settingsStore;
     private readonly ILogger<FfmpegProcessor> _logger;
     private readonly FfmpegHardwareEncoderDetector _hardwareEncoderDetector;
+    private readonly IOutputArtifactOwnershipProvider? _outputArtifactOwnershipProvider;
 
-    public FfmpegProcessor(ISettingsStore settingsStore, ILoggerFactory loggerFactory)
-        : this(settingsStore, loggerFactory, new FfmpegProcessRunner())
+    public FfmpegProcessor(
+        ISettingsStore settingsStore,
+        ILoggerFactory loggerFactory,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null)
+        : this(
+            settingsStore,
+            loggerFactory,
+            new FfmpegProcessRunner(),
+            outputArtifactOwnershipProvider)
     {
     }
 
     internal FfmpegProcessor(
         ISettingsStore settingsStore,
         ILoggerFactory loggerFactory,
-        IFfmpegProcessRunner processRunner)
+        IFfmpegProcessRunner processRunner,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(loggerFactory);
         _settingsStore = settingsStore;
         _logger = loggerFactory.CreateLogger<FfmpegProcessor>();
         _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
+        _outputArtifactOwnershipProvider = outputArtifactOwnershipProvider;
         _hardwareEncoderDetector = new FfmpegHardwareEncoderDetector(
             loggerFactory.CreateLogger<FfmpegHardwareEncoderDetector>());
         _operationGate = new AsyncConcurrencyGate(
@@ -56,14 +103,34 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
             _processRunner,
             new FfmpegMediaValidator(_processRunner),
             _operationGate,
-            loggerFactory.CreateLogger<FfmpegConcatRuntime>());
+            loggerFactory.CreateLogger<FfmpegConcatRuntime>(),
+            outputArtifactOwnershipProvider);
     }
 
-    public async Task<FfmpegOperationResult> ConcatDurlVideosAsync(
+    public Task<FfmpegOperationResult> ConcatDurlVideosAsync(
         VideoApplicationSettings videoSettings,
         IReadOnlyList<FfmpegConcatSegment> segments,
         string outputVideo,
         bool overwriteDestination,
+        Action<string>? action = null,
+        CancellationToken cancellationToken = default)
+    {
+        return ConcatDurlVideosWithEvidenceAsync(
+            videoSettings,
+            segments,
+            outputVideo,
+            overwriteDestination,
+            outputArtifactOwnershipProvider: null,
+            action: action,
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task<FfmpegOperationResult> ConcatDurlVideosWithEvidenceAsync(
+        VideoApplicationSettings videoSettings,
+        IReadOnlyList<FfmpegConcatSegment> segments,
+        string outputVideo,
+        bool overwriteDestination,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null,
         Action<string>? action = null,
         CancellationToken cancellationToken = default)
     {
@@ -78,8 +145,9 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
                 encoder,
                 allowStreamCopy: false,
                 overwriteDestination,
-                action,
-                cancellationToken)
+                progress: action,
+                outputArtifactOwnershipProvider: outputArtifactOwnershipProvider,
+                cancellationToken: cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -101,12 +169,31 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         return result.Succeeded;
     }
 
-    public async Task<FfmpegOperationResult> MergeMediaAsync(
+    public Task<FfmpegOperationResult> MergeMediaAsync(
         VideoApplicationSettings videoSettings,
         string? audio,
         string? video,
         string destination,
         bool overwriteDestination,
+        CancellationToken cancellationToken = default)
+    {
+        return MergeMediaWithEvidenceAsync(
+            videoSettings,
+            audio,
+            video,
+            destination,
+            overwriteDestination,
+            outputArtifactOwnershipProvider: null,
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task<FfmpegOperationResult> MergeMediaWithEvidenceAsync(
+        VideoApplicationSettings videoSettings,
+        string? audio,
+        string? video,
+        string destination,
+        bool overwriteDestination,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(videoSettings);
@@ -145,7 +232,8 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
             destination,
             overwriteDestination,
             action: null,
-            cancellationToken).ConfigureAwait(false);
+            outputArtifactOwnershipProvider: outputArtifactOwnershipProvider,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         if (outputResult.Succeeded)
         {
             return new FfmpegOperationResult(
@@ -154,7 +242,8 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
                 null,
                 TimeSpan.Zero,
                 FfmpegOperationFailureKind.None,
-                []);
+                [],
+                outputResult.PublicationEvidence);
         }
 
         if (outputResult.FailureKind != FfmpegOperationFailureKind.ProcessFailure)
@@ -263,39 +352,30 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         }
     }
 
-    private async Task<bool> RunToFileSucceededAsync(
-        Func<string, FfmpegCommand> commandFactory,
-        string destination,
-        bool overwriteDestination,
-        Action<string>? action,
-        CancellationToken cancellationToken)
-    {
-        var result = await RunToFileAsync(
-            commandFactory,
-            destination,
-            overwriteDestination,
-            action,
-            cancellationToken).ConfigureAwait(false);
-        return result.Succeeded;
-    }
-
     private async Task<FfmpegOutputResult> RunToFileAsync(
         Func<string, FfmpegCommand> commandFactory,
         string destination,
         bool overwriteDestination,
         Action<string>? action,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(commandFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(destination);
         var extension = Path.GetExtension(destination);
-        var temporaryOutput = Path.Combine(
+        var temporaryPath = Path.Combine(
             Path.GetDirectoryName(Path.GetFullPath(destination))!,
             $".{Path.GetFileNameWithoutExtension(destination)}-{Guid.NewGuid():N}.partial{extension}");
+        FfmpegTemporaryOutput? temporaryOutput = null;
+        var ownershipProvider = outputArtifactOwnershipProvider
+            ?? _outputArtifactOwnershipProvider;
         try
         {
             using var slot = await _operationGate.EnterAsync(cancellationToken).ConfigureAwait(false);
-            var command = commandFactory(temporaryOutput);
+            temporaryOutput = FfmpegTemporaryOutput.Create(
+                temporaryPath,
+                ownershipProvider);
+            var command = commandFactory(temporaryPath);
             var result = await _processRunner
                 .RunAsync(command, OperationTimeout, cancellationToken)
                 .ConfigureAwait(false);
@@ -310,13 +390,37 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
                             : FfmpegOperationFailureKind.ProcessFailure);
             }
 
-            if (!File.Exists(temporaryOutput) || new FileInfo(temporaryOutput).Length == 0)
+            if (!File.Exists(temporaryPath) || new FileInfo(temporaryPath).Length == 0)
             {
                 return FfmpegOutputResult.Failure(FfmpegOperationFailureKind.OutputInvalid);
             }
 
-            File.Move(temporaryOutput, destination, overwrite: overwriteDestination);
-            return FfmpegOutputResult.Success();
+            OutputArtifactPublicationEvidence? publicationEvidence = null;
+            if (ownershipProvider is not null
+                && temporaryOutput?.Claim is { } temporaryClaim)
+            {
+                var capture = await ownershipProvider
+                    .CapturePublicationEvidenceAsync(
+                        temporaryPath,
+                        temporaryClaim,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                publicationEvidence = capture.Succeeded ? capture.Evidence : null;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporaryPath, destination, overwrite: overwriteDestination);
+            if (publicationEvidence is not null
+                && !await VerifyPublishedIdentityAsync(
+                        ownershipProvider,
+                        destination,
+                        publicationEvidence)
+                    .ConfigureAwait(false))
+            {
+                publicationEvidence = null;
+            }
+
+            return FfmpegOutputResult.Success(publicationEvidence);
         }
         catch (IOException e)
         {
@@ -334,7 +438,12 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
         }
         finally
         {
-            DeleteFile(temporaryOutput);
+            if (temporaryOutput is not null)
+            {
+                await temporaryOutput
+                    .DeleteIfOwnedAsync(ownershipProvider)
+                    .ConfigureAwait(false);
+            }
         }
     }
 
@@ -376,12 +485,14 @@ public sealed class FfmpegProcessor : IFfmpegMediaMuxer
 
     private sealed record FfmpegOutputResult(
         bool Succeeded,
-        FfmpegOperationFailureKind FailureKind)
+        FfmpegOperationFailureKind FailureKind,
+        OutputArtifactPublicationEvidence? PublicationEvidence)
     {
-        public static FfmpegOutputResult Success() =>
-            new(true, FfmpegOperationFailureKind.None);
+        public static FfmpegOutputResult Success(
+            OutputArtifactPublicationEvidence? publicationEvidence) =>
+            new(true, FfmpegOperationFailureKind.None, publicationEvidence);
 
         public static FfmpegOutputResult Failure(FfmpegOperationFailureKind failureKind) =>
-            new(false, failureKind);
+            new(false, failureKind, null);
     }
 }

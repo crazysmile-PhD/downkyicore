@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using DownKyi.Application.Downloads;
 
 namespace DownKyi.Services.Download;
 
@@ -17,14 +18,31 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
 {
     private const int MaximumTemporaryPathAttempts = 8;
     private readonly Action<string>? _beforePublish;
+    private readonly IOutputArtifactOwnershipProvider? _ownershipProvider;
 
     public AtomicOutputPublisher()
+        : this(new WindowsOutputArtifactOwnershipProvider())
     {
     }
 
+    public AtomicOutputPublisher(IOutputArtifactOwnershipProvider ownershipProvider)
+    {
+        _ownershipProvider = ownershipProvider
+            ?? throw new ArgumentNullException(nameof(ownershipProvider));
+    }
+
     internal AtomicOutputPublisher(Action<string> beforePublish)
+        : this(beforePublish, new WindowsOutputArtifactOwnershipProvider())
+    {
+    }
+
+    internal AtomicOutputPublisher(
+        Action<string> beforePublish,
+        IOutputArtifactOwnershipProvider ownershipProvider)
     {
         _beforePublish = beforePublish ?? throw new ArgumentNullException(nameof(beforePublish));
+        _ownershipProvider = ownershipProvider
+            ?? throw new ArgumentNullException(nameof(ownershipProvider));
     }
 
     public async Task<AtomicOutputPublishResult> PublishAsync(
@@ -34,30 +52,55 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
         ArgumentNullException.ThrowIfNull(writeTemporaryAsync);
-        var temporaryPath = CreateTemporaryFile(destinationPath);
+        var temporary = CreateTemporaryFile(destinationPath);
         try
         {
-            await writeTemporaryAsync(temporaryPath, cancellationToken).ConfigureAwait(false);
+            await writeTemporaryAsync(temporary.Path, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            OutputArtifactPublicationEvidence? publicationEvidence = null;
+            if (_ownershipProvider != null && temporary.Claim is not null)
+            {
+                var captured = await _ownershipProvider
+                    .CapturePublicationEvidenceAsync(
+                        temporary.Path,
+                        temporary.Claim,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                publicationEvidence = captured.Succeeded ? captured.Evidence : null;
+            }
+
             _beforePublish?.Invoke(destinationPath);
             try
             {
-                File.Move(temporaryPath, destinationPath, overwrite: false);
+                cancellationToken.ThrowIfCancellationRequested();
+                File.Move(temporary.Path, destinationPath, overwrite: false);
             }
             catch (IOException exception) when (File.Exists(destinationPath))
             {
                 return AtomicOutputPublishResult.DestinationCollision(exception);
             }
 
-            return AtomicOutputPublishResult.Published();
+            if (publicationEvidence is not null
+                && !await VerifyPublishedIdentityAsync(
+                        destinationPath,
+                        publicationEvidence)
+                    .ConfigureAwait(false))
+            {
+                // The final name no longer resolves to the object whose hash
+                // was captured before the move. The file remains published,
+                // but it must stay untracked and therefore undeletable.
+                publicationEvidence = null;
+            }
+
+            return AtomicOutputPublishResult.Published(publicationEvidence);
         }
         finally
         {
-            DeleteTemporaryFile(temporaryPath);
+            await DeleteTemporaryIfOwnedAsync(temporary).ConfigureAwait(false);
         }
     }
 
-    private static string CreateTemporaryFile(string destinationPath)
+    private TemporaryOutput CreateTemporaryFile(string destinationPath)
     {
         var fullDestinationPath = Path.GetFullPath(destinationPath);
         var directory = Path.GetDirectoryName(fullDestinationPath)
@@ -74,9 +117,12 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
                 using var stream = new FileStream(
                     temporaryPath,
                     FileMode.CreateNew,
-                    FileAccess.Write,
+                    FileAccess.ReadWrite,
                     FileShare.None);
-                return temporaryPath;
+                var claim = _ownershipProvider?.ClaimTemporaryObject(stream.SafeFileHandle);
+                return new TemporaryOutput(
+                    temporaryPath,
+                    claim is { Succeeded: true } ? claim.Claim : null);
             }
             catch (IOException) when (attempt < MaximumTemporaryPathAttempts - 1)
             {
@@ -87,30 +133,78 @@ internal sealed class AtomicOutputPublisher : IAtomicOutputPublisher
         throw new IOException("A unique temporary output file could not be created.");
     }
 
-    private static void DeleteTemporaryFile(string path)
+    private async Task DeleteTemporaryIfOwnedAsync(TemporaryOutput temporary)
     {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (IOException)
+        if (_ownershipProvider is null || temporary.Claim is null)
         {
             return;
         }
-        catch (UnauthorizedAccessException)
+
+        try
+        {
+            await _ownershipProvider
+                .DeleteTemporaryIfOwnedAsync(
+                    temporary.Path,
+                    temporary.Claim,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException
+                                         or UnauthorizedAccessException
+                                         or InvalidOperationException
+                                         or ArgumentException
+                                         or NotSupportedException)
         {
             return;
         }
     }
+
+    private async Task<bool> VerifyPublishedIdentityAsync(
+        string destinationPath,
+        OutputArtifactPublicationEvidence publicationEvidence)
+    {
+        if (_ownershipProvider is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            // Publication is irreversible at this point. Do not let a later
+            // cancellation change its success outcome; absent verification is
+            // represented by null evidence and an untracked output.
+            return await _ownershipProvider
+                .VerifyPublishedObjectIdentityAsync(
+                    destinationPath,
+                    publicationEvidence,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException
+                                         or UnauthorizedAccessException
+                                         or InvalidOperationException
+                                         or ArgumentException
+                                         or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private sealed record TemporaryOutput(
+        string Path,
+        OutputArtifactTemporaryClaim? Claim);
 }
 
 internal sealed record AtomicOutputPublishResult(
     bool Succeeded,
     bool IsDestinationCollision,
-    IOException? Error)
+    IOException? Error,
+    OutputArtifactPublicationEvidence? PublicationEvidence)
 {
-    public static AtomicOutputPublishResult Published() => new(true, false, null);
+    public static AtomicOutputPublishResult Published(
+        OutputArtifactPublicationEvidence? publicationEvidence = null) =>
+        new(true, false, null, publicationEvidence);
 
     public static AtomicOutputPublishResult DestinationCollision(IOException error) =>
-        new(false, true, error);
+        new(false, true, error, null);
 }

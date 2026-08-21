@@ -91,8 +91,16 @@ internal static class DesktopComposition
         });
         services.AddSingleton<IWbiKeyProvider, WbiKeyProvider>();
         services.AddSingleton<FfmpegProcessor>();
-        services.AddSingleton<IDownloadTaskStore, SqliteDownloadTaskStore>();
+        services.AddSingleton<SqliteDownloadTaskStore>();
+        services.AddSingleton<IDownloadTaskStore>(provider =>
+            provider.GetRequiredService<SqliteDownloadTaskStore>());
+        services.AddSingleton<IDownloadOutputArtifactProvenanceStore>(provider =>
+            provider.GetRequiredService<SqliteDownloadTaskStore>());
         services.AddSingleton<IDownloadTaskApplicationService, DownloadTaskApplicationService>();
+        services.AddSingleton<IDownloadOutputArtifactProvenanceApplicationService,
+            DownloadOutputArtifactProvenanceApplicationService>();
+        services.AddSingleton<IOutputArtifactOwnershipProvider,
+            WindowsOutputArtifactOwnershipProvider>();
         services.AddSingleton<DownloadTaskProjectionStore>();
         services.AddSingleton<DownloadTaskStateWriter>();
         services.AddSingleton<DownloadTaskQueueGateway>();
