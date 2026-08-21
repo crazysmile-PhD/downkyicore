@@ -1,0 +1,562 @@
+name: Recover v1.1.2 release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Exact existing release tag to recover.
+        required: true
+        default: v1.1.2
+        type: string
+      subject_sha:
+        description: Exact immutable v1.1.2 product source commit.
+        required: true
+        default: 16c690d8719f86eb6eecb56c24efabc1afc41d55
+        type: string
+      validated_build_run_id:
+        description: Successful Build run that validated this recovery control plane.
+        required: true
+        type: string
+      publish_release:
+        description: Publish to the existing v1.1.2 tag after all package checks pass.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v1.1.2-release-recovery
+  cancel-in-progress: false
+
+env:
+  EXPECTED_RELEASE_VERSION: v1.1.2
+  EXPECTED_SUBJECT_SHA: 16c690d8719f86eb6eecb56c24efabc1afc41d55
+
+jobs:
+  authority:
+    name: Validate recovery authority
+    runs-on: ubuntu-latest
+    env:
+      HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout recovery tooling
+        uses: actions/checkout@v7
+        with:
+          path: tooling
+          fetch-depth: 0
+      - name: Checkout immutable release subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.subject_sha }}
+          path: subject
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Validate exact version, subject, and existing annotated tag
+        shell: pwsh
+        run: >
+          ./tooling/script/validate-v112-recovery-subject.ps1
+          -SubjectDirectory ./subject
+          -ReleaseVersion '${{ inputs.release_version }}'
+          -SubjectSha '${{ inputs.subject_sha }}'
+      - name: Validate prior Build gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${{ inputs.validated_build_run_id }}")"
+          run_workflow="$(jq -r '.path' <<<"$run_json")"
+          run_event="$(jq -r '.event' <<<"$run_json")"
+          run_conclusion="$(jq -r '.conclusion' <<<"$run_json")"
+          run_head="$(jq -r '.head_sha' <<<"$run_json")"
+          if [ "$run_workflow" != ".github/workflows/build.yml" ] ||
+             [ "$run_event" != "workflow_dispatch" ] ||
+             [ "$run_conclusion" != "success" ]; then
+            echo "::error::The supplied run is not a successful manual Build workflow run."
+            exit 1
+          fi
+          if ! git -C tooling merge-base --is-ancestor "$run_head" "$GITHUB_SHA"; then
+            echo "::error::Validated Build head $run_head is not an ancestor of recovery tooling $GITHUB_SHA."
+            exit 1
+          fi
+          unexpected="$(git -C tooling diff --name-only "$run_head" "$GITHUB_SHA" -- | grep -Ev '^(.github/workflows/release-v112-recovery.yml|script/validate-v112-recovery-subject.ps1|script/validate-v112-release-artifacts.ps1|script/macos/package.sh|tests/DownKyi.Architecture.Tests/ReleaseWorkflowArchitectureTests.cs)$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "::error::Recovery commits after the validated Build run modify files outside the release control-plane allowlist:"
+            printf '%s\n' "$unexpected"
+            exit 1
+          fi
+      - name: Require Apple credentials for formal publish
+        if: ${{ inputs.publish_release }}
+        shell: bash
+        run: |
+          if [ "$HAS_MACOS_SIGNING" != "true" ]; then
+            echo "::error::Formal v1.1.2 recovery requires all Apple signing and notarization credentials."
+            exit 1
+          fi
+      - name: Validate recovery workflow syntax
+        uses: raven-actions/actionlint@v2
+        with:
+          files: tooling/.github/workflows/release-v112-recovery.yml
+          fail-on-error: true
+          pyflakes: true
+          shellcheck: true
+
+  build-windows:
+    name: Recover Windows ${{ matrix.cpu }} package
+    needs: authority
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cpu: [x64, x86]
+    steps:
+      - name: Checkout recovery tooling
+        uses: actions/checkout@v7
+        with:
+          path: tooling
+      - name: Checkout immutable release subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.subject_sha }}
+          path: subject
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Validate immutable subject
+        shell: pwsh
+        run: >
+          ./tooling/script/validate-v112-recovery-subject.ps1
+          -SubjectDirectory ./subject
+          -ReleaseVersion '${{ inputs.release_version }}'
+          -SubjectSha '${{ inputs.subject_sha }}'
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install PupNet
+        run: dotnet tool install --tool-path .\tooling\.tools KuiperZone.PupNet --version 1.8.0
+      - name: Get exact-subject dependencies
+        shell: pwsh
+        working-directory: subject/script
+        run: |
+          ./ffmpeg.ps1 ${{ matrix.cpu }}
+          ./aria2.ps1 ${{ matrix.cpu }}
+      - name: Build validation publish from exact subject
+        shell: pwsh
+        run: >
+          dotnet publish ./subject/DownKyi/DownKyi.csproj
+          -c Release
+          -r win-${{ matrix.cpu }}
+          --self-contained
+          -p:Version=1.1.2
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o ./subject/artifacts/publish/win-${{ matrix.cpu }}
+      - name: Package exact subject
+        shell: pwsh
+        working-directory: subject/script/pupnet
+        run: >
+          & "$env:GITHUB_WORKSPACE\tooling\.tools\pupnet.exe"
+          DownKyi.pupnet.conf
+          --app-version 1.1.2
+          --kind zip
+          -r win-${{ matrix.cpu }}
+          -y
+      - name: Validate package and hash
+        shell: pwsh
+        run: |
+          ./tooling/script/validate-publish-output.ps1 `
+            -PublishDirectory "subject/artifacts/publish/win-${{ matrix.cpu }}" `
+            -RuntimeIdentifier "win-${{ matrix.cpu }}" `
+            -ExpectedVersion '1.1.2' `
+            -OutputPath "subject/script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json"
+          $package = "subject/script/pupnet/output/DownKyi-1.1.2-1.win-${{ matrix.cpu }}.zip"
+          $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
+          ./tooling/script/validate-v112-recovery-subject.ps1 `
+            -SubjectDirectory ./subject `
+            -ReleaseVersion '${{ inputs.release_version }}' `
+            -SubjectSha '${{ inputs.subject_sha }}'
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovery-DownKyi-1.1.2-1.win-${{ matrix.cpu }}.zip
+          path: |
+            subject/script/pupnet/output/DownKyi-1.1.2-1.win-${{ matrix.cpu }}.zip
+            subject/script/pupnet/output/DownKyi-1.1.2-1.win-${{ matrix.cpu }}.zip.sha256
+            subject/script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json
+          if-no-files-found: error
+
+  build-linux:
+    name: Recover Linux ${{ matrix.cpu }} ${{ matrix.kind }} package
+    needs: authority
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cpu: x64
+            kind: AppImage
+            package: DownKyi-1.1.2_linux_self-contained.x86_64.AppImage
+          - cpu: x64
+            kind: deb
+            package: downkyi_1.1.2_linux_self-contained_amd64.deb
+          - cpu: x64
+            kind: rpm
+            package: downkyi_1.1.2_linux_self-contained.x86_64.rpm
+          - cpu: arm64
+            kind: AppImage
+            package: DownKyi-1.1.2_linux_self-contained.aarch64.AppImage
+          - cpu: arm64
+            kind: deb
+            package: downkyi_1.1.2_linux_self-contained_arm64.deb
+    steps:
+      - name: Checkout recovery tooling
+        uses: actions/checkout@v7
+        with:
+          path: tooling
+      - name: Checkout immutable release subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.subject_sha }}
+          path: subject
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Validate immutable subject
+        shell: pwsh
+        run: >
+          ./tooling/script/validate-v112-recovery-subject.ps1
+          -SubjectDirectory ./subject
+          -ReleaseVersion '${{ inputs.release_version }}'
+          -SubjectSha '${{ inputs.subject_sha }}'
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install PupNet
+        run: |
+          dotnet tool install --tool-path ./tooling/.tools KuiperZone.PupNet --version 1.8.0
+          sudo apt-get update
+          sudo apt-get install -y libfuse2
+      - name: Get exact-subject dependencies
+        working-directory: subject/script
+        run: |
+          chmod +x ffmpeg.sh aria2.sh
+          ./ffmpeg.sh linux ${{ matrix.cpu }}
+          ./aria2.sh linux-${{ matrix.cpu }}
+      - name: Build validation publish from exact subject
+        run: >
+          dotnet publish ./subject/DownKyi/DownKyi.csproj
+          -c Release
+          -r linux-${{ matrix.cpu }}
+          --self-contained
+          -p:Version=1.1.2
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o ./subject/artifacts/publish/linux-${{ matrix.cpu }}
+      - name: Package exact subject
+        working-directory: subject/script/pupnet
+        run: >
+          "$GITHUB_WORKSPACE/tooling/.tools/pupnet"
+          DownKyi.pupnet.conf
+          --app-version 1.1.2
+          --kind ${{ matrix.kind }}
+          -r linux-${{ matrix.cpu }}
+          -y
+      - name: Normalize package name
+        working-directory: subject/script/pupnet/output
+        run: |
+          package="$(find . -maxdepth 1 -type f -name '*.${{ matrix.kind }}' -print -quit)"
+          if [ -z "$package" ]; then
+            echo "::error::Expected Linux package was not produced."
+            exit 1
+          fi
+          mv "$package" '${{ matrix.package }}'
+      - name: Validate package and hash
+        shell: pwsh
+        run: |
+          ./tooling/script/validate-publish-output.ps1 `
+            -PublishDirectory "subject/artifacts/publish/linux-${{ matrix.cpu }}" `
+            -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
+            -ExpectedVersion '1.1.2' `
+            -OutputPath "subject/script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
+          $package = "subject/script/pupnet/output/${{ matrix.package }}"
+          $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
+          ./tooling/script/validate-v112-recovery-subject.ps1 `
+            -SubjectDirectory ./subject `
+            -ReleaseVersion '${{ inputs.release_version }}' `
+            -SubjectSha '${{ inputs.subject_sha }}'
+      - name: Upload Linux package
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovery-${{ matrix.package }}
+          path: |
+            subject/script/pupnet/output/${{ matrix.package }}
+            subject/script/pupnet/output/${{ matrix.package }}.sha256
+            subject/script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json
+          if-no-files-found: error
+
+  build-macos:
+    name: Recover macOS ${{ matrix.cpu }} DMG
+    needs: authority
+    runs-on: ${{ matrix.os }}
+    env:
+      HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cpu: x64
+            os: macos-15-intel
+          - cpu: arm64
+            os: macos-15
+    steps:
+      - name: Checkout recovery tooling
+        uses: actions/checkout@v7
+        with:
+          path: tooling
+      - name: Checkout immutable release subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.subject_sha }}
+          path: subject
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Validate immutable subject
+        shell: pwsh
+        run: >
+          ./tooling/script/validate-v112-recovery-subject.ps1
+          -SubjectDirectory ./subject
+          -ReleaseVersion '${{ inputs.release_version }}'
+          -SubjectSha '${{ inputs.subject_sha }}'
+      - name: Import Apple certificate
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        uses: apple-actions/import-codesign-certs@v7
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+      - name: Resolve Developer ID identity
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          identity="$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+          if [ -z "$identity" ]; then
+            echo "::error::No Developer ID Application signing identity was imported."
+            exit 1
+          fi
+          echo "MACOS_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+      - name: Install packaging tools
+        run: |
+          export HOMEBREW_NO_AUTO_UPDATE=true
+          brew untap aws/tap || true
+          brew install create-dmg tree
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Run native recovery tooling regressions
+        run: dotnet test tooling/tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj -c Release
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Get exact-subject dependencies
+        working-directory: subject/script
+        run: |
+          chmod +x aria2.sh ffmpeg.sh
+          ./aria2.sh osx-${{ matrix.cpu }}
+          ./ffmpeg.sh mac ${{ matrix.cpu }}
+      - name: Build exact release subject
+        working-directory: subject
+        run: |
+          dotnet restore DownKyi/DownKyi.csproj -r osx-${{ matrix.cpu }}
+          dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ matrix.cpu }} -c Release -p:Version=1.1.2 -p:DebugType=None -p:DebugSymbols=false
+      - name: Package app with recovery tooling
+        working-directory: tooling/script/macos
+        env:
+          PUBLISH_OUTPUT_DIRECTORY: ${{ github.workspace }}/subject/DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish/.
+        run: |
+          chmod +x package.sh prepare-app-layout.sh codesign-common.sh
+          ./package.sh ${{ matrix.cpu }}
+      - name: Validate packaged runtime
+        shell: pwsh
+        run: >
+          ./tooling/script/validate-publish-output.ps1
+          -PublishDirectory 'subject/DownKyi/bin/Release/net10.0/osx-${{ matrix.cpu }}/publish'
+          -RuntimeIdentifier 'osx-${{ matrix.cpu }}'
+          -ExpectedVersion '1.1.2'
+          -OutputPath 'tooling/script/macos/publish-manifest-osx-${{ matrix.cpu }}.json'
+      - name: Sign app
+        working-directory: tooling/script/macos
+        env:
+          MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}
+        run: |
+          chmod +x sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh
+          ./sign.sh
+      - name: Strictly verify final app
+        working-directory: tooling/script/macos
+        run: ./verify-app.sh
+      - name: Notarize and verify app
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        working-directory: tooling/script/macos
+        env:
+          MACOS_VERIFY_GATEKEEPER: true
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent 哔哩下载姬.app 哔哩下载姬.zip
+          xcrun notarytool submit 哔哩下载姬.zip --apple-id '${{ secrets.APPLE_ID }}' --team-id '${{ secrets.TEAM_ID }}' --password '${{ secrets.APP_SPECIFIC_PASSWORD }}' --wait
+          xcrun stapler staple 哔哩下载姬.app
+          rm 哔哩下载姬.zip
+          ./verify-app.sh
+      - name: Create DMG
+        working-directory: tooling/script/macos
+        run: |
+          create-dmg \
+            --hdiutil-quiet \
+            --icon 哔哩下载姬.app 165 175 \
+            --icon-size 120 \
+            --app-drop-link 495 175 \
+            --window-size 660 400 \
+            DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg 哔哩下载姬.app
+      - name: Sign, notarize, and verify DMG
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        working-directory: tooling/script/macos
+        run: |
+          ./sign-dmg.sh DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg
+          ./verify-dmg.sh DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg
+          xcrun notarytool submit DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg --apple-id '${{ secrets.APPLE_ID }}' --team-id '${{ secrets.TEAM_ID }}' --password '${{ secrets.APP_SPECIFIC_PASSWORD }}' --wait
+          xcrun stapler staple DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg
+          MACOS_VERIFY_NOTARIZATION=true ./verify-dmg.sh DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg
+      - name: Remount DMG, strictly verify, and launch app
+        working-directory: tooling/script/macos
+        env:
+          MACOS_VERIFY_GATEKEEPER: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: ./verify-dmg-contents.sh DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg
+      - name: Hash DMG and revalidate subject
+        shell: pwsh
+        run: |
+          $package = 'tooling/script/macos/DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg'
+          $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
+          ./tooling/script/validate-v112-recovery-subject.ps1 `
+            -SubjectDirectory ./subject `
+            -ReleaseVersion '${{ inputs.release_version }}' `
+            -SubjectSha '${{ inputs.subject_sha }}'
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovery-DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg
+          path: |
+            tooling/script/macos/DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg
+            tooling/script/macos/DownKyi-1.1.2-osx-${{ matrix.cpu }}.dmg.sha256
+            tooling/script/macos/publish-manifest-osx-${{ matrix.cpu }}.json
+          if-no-files-found: error
+
+  validate-artifacts:
+    name: Validate recovery artifacts and manifests
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout recovery tooling
+        uses: actions/checkout@v7
+        with:
+          path: tooling
+      - name: Download all packages
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+          pattern: recovery-*
+          merge-multiple: true
+      - name: Verify exact asset set, SHA256, and publish manifests
+        shell: pwsh
+        run: ./tooling/script/validate-v112-release-artifacts.ps1 -ArtifactsDirectory ./artifacts
+      - name: Preserve validated rehearsal evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: v1.1.2-recovery-validated-assets-${{ github.run_attempt }}
+          path: artifacts
+          if-no-files-found: error
+
+  publish:
+    name: Publish recovered v1.1.2 release
+    needs: [authority, validate-artifacts]
+    if: ${{ inputs.publish_release }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout recovery tooling
+        uses: actions/checkout@v7
+        with:
+          path: tooling
+      - name: Checkout immutable release subject
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.subject_sha }}
+          path: subject
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Revalidate existing tag before publish
+        shell: pwsh
+        run: >
+          ./tooling/script/validate-v112-recovery-subject.ps1
+          -SubjectDirectory ./subject
+          -ReleaseVersion '${{ inputs.release_version }}'
+          -SubjectSha '${{ inputs.subject_sha }}'
+      - name: Download validated packages
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+          pattern: recovery-*
+          merge-multiple: true
+      - name: Revalidate release assets
+        shell: pwsh
+        run: ./tooling/script/validate-v112-release-artifacts.ps1 -ArtifactsDirectory ./artifacts
+      - name: Publish to existing v1.1.2 tag
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v1.1.2
+          commit: 16c690d8719f86eb6eecb56c24efabc1afc41d55
+          name: v1.1.2
+          body: 'Recovered v1.1.2 release. Product source: 16c690d8719f86eb6eecb56c24efabc1afc41d55.'
+          artifacts: artifacts/*
+          artifactErrorsFailBuild: true
+          allowUpdates: true
+          replacesArtifacts: true
+          draft: false
+          prerelease: false
+          makeLatest: true
+      - name: Verify stable release read-back and immutable tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v1.1.2")"
+          latest_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest")"
+          if [ "$(jq -r '.draft' <<<"$release_json")" != "false" ] ||
+             [ "$(jq -r '.prerelease' <<<"$release_json")" != "false" ] ||
+             [ "$(jq -r '.tag_name' <<<"$latest_json")" != "v1.1.2" ]; then
+            echo "::error::v1.1.2 release is not the latest stable release."
+            exit 1
+          fi
+          asset_count="$(jq '.assets | length' <<<"$release_json")"
+          if [ "$asset_count" -ne 27 ]; then
+            echo "::error::Published release has $asset_count assets; expected 27."
+            exit 1
+          fi
+          jq -e '.assets[] | select((.browser_download_url | length) == 0)' <<<"$release_json" >/dev/null && {
+            echo "::error::A published asset has no download URL."
+            exit 1
+          } || true
+          pwsh ./tooling/script/validate-v112-recovery-subject.ps1 \
+            -SubjectDirectory ./subject \
+            -ReleaseVersion v1.1.2 \
+            -SubjectSha 16c690d8719f86eb6eecb56c24efabc1afc41d55
