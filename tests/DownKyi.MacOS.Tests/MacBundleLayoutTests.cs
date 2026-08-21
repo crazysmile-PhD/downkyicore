@@ -117,6 +117,47 @@ public sealed class MacBundleLayoutTests
         }
     }
 
+    [Fact]
+    public void LaunchVerificationBoundsCleanupForTermResistantApp()
+    {
+        var fixtureRoot = Path.Combine(Path.GetTempPath(), $"downkyi-launch-{Guid.NewGuid():N}");
+        var appPath = Path.Combine(fixtureRoot, "Test.app");
+        var executableDirectory = Path.Combine(appPath, "Contents", "MacOS");
+        var executablePath = Path.Combine(executableDirectory, "TestApp");
+        Directory.CreateDirectory(executableDirectory);
+
+        try
+        {
+            File.WriteAllText(
+                executablePath,
+                "#!/bin/bash\ntrap '' TERM\nwhile true; do sleep 1; done\n",
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            AssertSuccess(Run("/bin/chmod", fixtureRoot, "+x", executablePath));
+
+            var stopwatch = Stopwatch.StartNew();
+            var result = Run(
+                "/bin/bash",
+                RepositoryRoot,
+                new Dictionary<string, string?>
+                {
+                    ["MACOS_EXECUTABLE_NAME"] = "TestApp",
+                    ["MACOS_LAUNCH_SECONDS"] = "1"
+                },
+                Path.Combine(RepositoryRoot, "script", "macos", "verify-app-launch.sh"),
+                appPath);
+            stopwatch.Stop();
+
+            AssertSuccess(result);
+            Assert.True(
+                stopwatch.Elapsed < TimeSpan.FromSeconds(15),
+                $"Launch cleanup exceeded its bound: {stopwatch.Elapsed}.");
+        }
+        finally
+        {
+            Directory.Delete(fixtureRoot, recursive: true);
+        }
+    }
+
     private static ProcessResult RunSigningScript(string appPath)
     {
         return Run(

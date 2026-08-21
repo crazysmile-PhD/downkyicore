@@ -8,10 +8,25 @@ EXECUTABLE="$APP_NAME/Contents/MacOS/$EXECUTABLE_NAME"
 LOG_FILE="$(mktemp "${TMPDIR:-/tmp}/downkyi-app-launch.XXXXXX")"
 PID=""
 
+terminate_process() {
+  local attempts=0
+
+  kill -TERM "$PID" 2>/dev/null || true
+  while kill -0 "$PID" 2>/dev/null && [ "$attempts" -lt 20 ]; do
+    sleep 0.25
+    attempts=$((attempts + 1))
+  done
+
+  if kill -0 "$PID" 2>/dev/null; then
+    kill -KILL "$PID" 2>/dev/null || true
+  fi
+
+  wait "$PID" 2>/dev/null || true
+}
+
 cleanup() {
   if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
-    kill -TERM "$PID" 2>/dev/null || true
-    wait "$PID" 2>/dev/null || true
+    terminate_process
   fi
   rm -f "$LOG_FILE"
 }

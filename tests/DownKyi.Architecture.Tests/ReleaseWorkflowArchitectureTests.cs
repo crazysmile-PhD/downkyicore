@@ -385,6 +385,8 @@ public sealed class ReleaseWorkflowArchitectureTests
             Path.Combine(RepositoryRoot, "script", "macos", "prepare-app-layout.sh"));
         var verifyAppScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-app.sh"));
+        var verifyAppLaunchScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-app-launch.sh"));
         var verifyDmgScript = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg.sh"));
 
@@ -443,6 +445,8 @@ public sealed class ReleaseWorkflowArchitectureTests
 
         Assert.Contains("codesign --verify --deep --strict --verbose=2", verifyAppScript, StringComparison.Ordinal);
         Assert.Contains("spctl --assess --type execute", verifyAppScript, StringComparison.Ordinal);
+        Assert.Contains("kill -TERM \"$PID\"", verifyAppLaunchScript, StringComparison.Ordinal);
+        Assert.Contains("kill -KILL \"$PID\"", verifyAppLaunchScript, StringComparison.Ordinal);
         Assert.Contains("codesign --verify --verbose=2", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("xcrun stapler validate", verifyDmgScript, StringComparison.Ordinal);
         Assert.Contains("spctl --assess --type open --context context:primary-signature", verifyDmgScript, StringComparison.Ordinal);
