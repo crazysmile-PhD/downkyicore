@@ -59,6 +59,14 @@ dotnet_diagnostic.CA2227.severity = error
 dotnet_diagnostic.CA2234.severity = error
 dotnet_diagnostic.CA2263.severity = error
 
+# Maintainability code-metric rules are not enabled by AnalysisMode=All in .NET 10,
+# so they are pinned explicitly. Thresholds live in CodeMetricsConfig.txt.
+dotnet_diagnostic.CA1501.severity = error
+dotnet_diagnostic.CA1502.severity = error
+dotnet_diagnostic.CA1505.severity = error
+dotnet_diagnostic.CA1506.severity = error
+dotnet_diagnostic.CA1509.severity = error
+
 # Performance and allocation rules cleaned in PR 02.
 dotnet_diagnostic.CA1802.severity = error
 dotnet_diagnostic.CA1805.severity = error
