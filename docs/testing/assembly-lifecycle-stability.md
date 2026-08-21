@@ -60,6 +60,29 @@ independent child process:
 6. `process-exit`: the process must exit within the configured post-teardown
    deadline without residual children or runner-protocol pollution.
 
+The lifecycle gate uses xUnit's synchronous automated reporting mode
+(`-automated sync`) for assembly-info, discovery and execution. This is not a
+diagnostic suppression: stdout remains machine-readable JSON, stderr is still
+captured, and the same timeout, slow-phase and process-exit checks remain
+active. The setting prevents the gate itself from creating xUnit's
+asynchronous `MessageBus` reporter foreground thread, so any future
+foreground-thread watchdog must come from the tested assembly or another
+explicit owner. Because xUnit's synchronous reporter normally waits for a
+carriage return after each report, every isolated child has redirected stdin
+closed immediately after launch. The reporter therefore observes deterministic
+EOF instead of depending on whether the gate was launched from an interactive
+terminal.
+
+The three xUnit phases share one guarded invocation path. It rejects any
+reporter arguments other than exactly one `-automated sync` pair before process
+launch. A runtime mutation self-test deliberately substitutes `async` and must
+be rejected by the same validator; the machine report records the result as
+`reporterContractSelfTestPassed`.
+
+This is the verified engineering mitigation for the lifecycle gate. It does
+not claim that the final direct blocker in the historical intermittent
+specimen was captured or proven with complete forensic certainty.
+
 Every phase records its exit code, duration, timeout state, stdout/stderr
 protocol state and child-process observations. A child observed immediately
 after the parent exits is `transient` when it drains inside the bounded

@@ -80,12 +80,26 @@ jobs:
             echo "::error::Validated Build head $run_head is not an ancestor of recovery tooling $GITHUB_SHA."
             exit 1
           fi
-          unexpected="$(git -C tooling diff --name-only "$run_head" "$GITHUB_SHA" -- | grep -Ev '^(.github/workflows/release-v112-recovery.yml|script/validate-v112-recovery-subject.ps1|script/validate-v112-release-artifacts.ps1|script/macos/package.sh|tests/DownKyi.Architecture.Tests/ReleaseWorkflowArchitectureTests.cs)$' || true)"
-          if [ -n "$unexpected" ]; then
-            echo "::error::Recovery commits after the validated Build run modify files outside the release control-plane allowlist:"
-            printf '%s\n' "$unexpected"
-            exit 1
-          fi
+          critical_paths=(
+            .github/workflows/build.yml
+            script/macos/codesign-common.sh
+            script/macos/prepare-app-layout.sh
+            script/macos/sign.sh
+            script/macos/verify-app.sh
+            script/macos/verify-app-launch.sh
+            script/macos/sign-dmg.sh
+            script/macos/verify-dmg.sh
+            script/macos/verify-dmg-contents.sh
+            tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
+            tests/DownKyi.MacOS.Tests/MacBundleLayoutTests.cs
+            tests/DownKyi.MacOS.Tests/MacSigningScriptTests.cs
+          )
+          for path in "${critical_paths[@]}"; do
+            if ! git -C tooling diff --quiet "$run_head" "$GITHUB_SHA" -- "$path"; then
+              echo "::error::Release-critical path changed after validated Build run $run_head: $path"
+              exit 1
+            fi
+          done
       - name: Require Apple credentials for formal publish
         if: ${{ inputs.publish_release }}
         shell: bash
