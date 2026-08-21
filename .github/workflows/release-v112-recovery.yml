@@ -263,9 +263,8 @@ jobs:
       - name: Get exact-subject dependencies
         working-directory: subject/script
         run: |
-          chmod +x ffmpeg.sh aria2.sh
-          ./ffmpeg.sh linux ${{ matrix.cpu }}
-          ./aria2.sh linux-${{ matrix.cpu }}
+          /bin/bash ./ffmpeg.sh linux ${{ matrix.cpu }}
+          /bin/bash ./aria2.sh linux-${{ matrix.cpu }}
       - name: Build validation publish from exact subject
         run: >
           dotnet publish ./subject/DownKyi/DownKyi.csproj
@@ -385,9 +384,8 @@ jobs:
       - name: Get exact-subject dependencies
         working-directory: subject/script
         run: |
-          chmod +x aria2.sh ffmpeg.sh
-          ./aria2.sh osx-${{ matrix.cpu }}
-          ./ffmpeg.sh mac ${{ matrix.cpu }}
+          /bin/bash ./aria2.sh osx-${{ matrix.cpu }}
+          /bin/bash ./ffmpeg.sh mac ${{ matrix.cpu }}
       - name: Build exact release subject
         working-directory: subject
         run: |
