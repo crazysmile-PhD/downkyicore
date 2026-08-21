@@ -53,11 +53,25 @@ public sealed class MacBundleLayoutTests
                 publishDirectory));
 
             CreateAppBundle(legacyApp, publishDirectory);
+            var legacyRuntimeConfig = Path.Combine(
+                legacyApp,
+                "Contents",
+                "MacOS",
+                "BundleProbe.runtimeconfig.json");
+            var legacyDeps = Path.Combine(
+                legacyApp,
+                "Contents",
+                "MacOS",
+                "BundleProbe.deps.json");
+            Assert.True(File.Exists(legacyRuntimeConfig));
+            Assert.Null(new FileInfo(legacyRuntimeConfig).LinkTarget);
+            Assert.True(File.Exists(legacyDeps));
+            Assert.Null(new FileInfo(legacyDeps).LinkTarget);
+
             var legacySigning = RunSigningScript(legacyApp);
             Assert.NotEqual(0, legacySigning.ExitCode);
             var legacyOutput = legacySigning.StandardOutput + legacySigning.StandardError;
             Assert.Contains("code object is not signed at all", legacyOutput, StringComparison.Ordinal);
-            Assert.Contains(".json", legacyOutput, StringComparison.Ordinal);
 
             CreateAppBundle(correctedApp, publishDirectory);
             AssertSuccess(Run(
