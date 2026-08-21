@@ -25,6 +25,38 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def sanitized_child_env() -> dict[str, str]:
+    allowed = {
+        "APPDATA",
+        "COMSPEC",
+        "DOTNET_CLI_HOME",
+        "DOTNET_MULTILEVEL_LOOKUP",
+        "DOTNET_ROOT",
+        "DOTNET_ROOT_X64",
+        "DOTNET_ROOT_X86",
+        "HOME",
+        "LOCALAPPDATA",
+        "NUMBER_OF_PROCESSORS",
+        "PATH",
+        "PATHEXT",
+        "PROCESSOR_ARCHITECTURE",
+        "PROCESSOR_IDENTIFIER",
+        "PROGRAMDATA",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "SYSTEMDRIVE",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
+        "WINDIR",
+    }
+    env = {key: value for key, value in os.environ.items() if key.upper() in allowed}
+    env["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1"
+    env["DOTNET_NOLOGO"] = "1"
+    return env
+
+
 def run_tool(command: list[str], log: Path, timeout: float | None = None) -> int:
     try:
         cp = subprocess.run(
@@ -91,12 +123,17 @@ def capture_dump(pid: int, dump_tool: Path, out: Path, reason: str) -> dict:
 
 
 def reader(name: str, stream, path: Path, events: queue.Queue) -> None:
-    with path.open("w", encoding="utf-8", newline="") as f:
-        for line in iter(stream.readline, ""):
-            f.write(line)
-            f.flush()
-            events.put((name, line.rstrip("\r\n"), time.perf_counter(), now()))
-    events.put((name, None, time.perf_counter(), now()))
+    error: str | None = None
+    try:
+        with path.open("w", encoding="utf-8", newline="") as f:
+            for line in iter(stream.readline, ""):
+                f.write(line)
+                f.flush()
+                events.put((name, line.rstrip("\r\n"), time.perf_counter(), now(), None))
+    except Exception as exc:
+        error = repr(exc)
+    finally:
+        events.put((name, None, time.perf_counter(), now(), error))
 
 
 def is_assembly_info_json(line: str) -> bool:
@@ -118,6 +155,7 @@ def run_once(dll: Path, cwd: Path, dump_tool: Path, out: Path, iteration: int, t
     p = subprocess.Popen(
         ["dotnet", str(dll), "-assemblyInfo"],
         cwd=str(cwd),
+        env=sanitized_child_env(),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -146,13 +184,18 @@ def run_once(dll: Path, cwd: Path, dump_tool: Path, out: Path, iteration: int, t
     prearm: dict | None = None
     exact: dict | None = None
     timed_out = False
+    reader_errors: list[dict[str, str]] = []
     done_streams: set[str] = set()
 
     while p.poll() is None or len(done_streams) < 2 or not events.empty():
         try:
-            stream, line, perf, utc = events.get(timeout=0.01)
+            stream, line, perf, utc, reader_error = events.get(timeout=0.01)
             if line is None:
                 done_streams.add(stream)
+                if reader_error is not None:
+                    reader_errors.append({"stream": stream, "error": reader_error})
+                    if p.poll() is None:
+                        p.kill()
             else:
                 if stream == "stdout" and json_seen_at is None and is_assembly_info_json(line):
                     json_seen_at = perf
@@ -191,13 +234,16 @@ def run_once(dll: Path, cwd: Path, dump_tool: Path, out: Path, iteration: int, t
 
     duration_ms = round((time.perf_counter() - started) * 1000, 3)
     confirmed = watchdog and bool((prearm and prearm.get("dumpSucceeded")) or (exact and exact.get("dumpSucceeded")))
+    execution_valid = not timed_out and p.returncode == 0 and json_seen_utc is not None and not reader_errors
     result = {
         "iteration": iteration,
         "processId": p.pid,
         "exitCode": p.returncode,
         "durationMs": duration_ms,
         "assemblyInfoJsonSeenAtUtc": json_seen_utc,
-        "instrumentationValid": json_seen_utc is not None,
+        "instrumentationValid": json_seen_utc is not None and not reader_errors,
+        "executionValid": execution_valid,
+        "readerErrors": reader_errors,
         "alive500msAfterJson": prearm_done and prearm is not None,
         "watchdogSeen": watchdog,
         "watchdogSeenAtUtc": watchdog_utc,
@@ -237,11 +283,11 @@ def main() -> int:
             break
         result = run_once(dll, repo, args.dump_tool.resolve(), out / "iterations" / f"iteration-{i:06d}", i, args.timeout_seconds)
         results.append(result)
-        if not result["instrumentationValid"] or result["watchdogSeen"]:
+        if not result["executionValid"] or result["watchdogSeen"]:
             break
 
     summary = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "targetSha": TARGET_SHA,
         "assembly": ASSEMBLY,
         "phase": "assembly-info",
@@ -249,6 +295,9 @@ def main() -> int:
         "iterations": len(results),
         "jsonDetections": sum(1 for r in results if r["instrumentationValid"]),
         "instrumentationFailures": sum(1 for r in results if not r["instrumentationValid"]),
+        "invalidExecutions": sum(1 for r in results if not r["executionValid"]),
+        "nonzeroExits": sum(1 for r in results if r["exitCode"] != 0),
+        "readerFailures": sum(1 for r in results if r["readerErrors"]),
         "alive500msAfterJson": sum(1 for r in results if r["alive500msAfterJson"]),
         "watchdogs": sum(1 for r in results if r["watchdogSeen"]),
         "confirmedWatchdogDumps": sum(1 for r in results if r["confirmedWatchdogDump"]),
@@ -258,7 +307,7 @@ def main() -> int:
     write_json(out / "summary.json", summary)
     print(json.dumps(summary, indent=2))
 
-    if summary["instrumentationFailures"]:
+    if summary["invalidExecutions"]:
         return 4
     if summary["watchdogs"] and not summary["confirmedWatchdogDumps"]:
         return 3
