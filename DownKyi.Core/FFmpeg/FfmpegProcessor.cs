@@ -69,22 +69,32 @@ public sealed partial class FfmpegProcessor : IFfmpegMediaMuxer
     private readonly ISettingsStore _settingsStore;
     private readonly ILogger<FfmpegProcessor> _logger;
     private readonly FfmpegHardwareEncoderDetector _hardwareEncoderDetector;
+    private readonly IOutputArtifactOwnershipProvider? _outputArtifactOwnershipProvider;
 
-    public FfmpegProcessor(ISettingsStore settingsStore, ILoggerFactory loggerFactory)
-        : this(settingsStore, loggerFactory, new FfmpegProcessRunner())
+    public FfmpegProcessor(
+        ISettingsStore settingsStore,
+        ILoggerFactory loggerFactory,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null)
+        : this(
+            settingsStore,
+            loggerFactory,
+            new FfmpegProcessRunner(),
+            outputArtifactOwnershipProvider)
     {
     }
 
     internal FfmpegProcessor(
         ISettingsStore settingsStore,
         ILoggerFactory loggerFactory,
-        IFfmpegProcessRunner processRunner)
+        IFfmpegProcessRunner processRunner,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(loggerFactory);
         _settingsStore = settingsStore;
         _logger = loggerFactory.CreateLogger<FfmpegProcessor>();
         _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
+        _outputArtifactOwnershipProvider = outputArtifactOwnershipProvider;
         _hardwareEncoderDetector = new FfmpegHardwareEncoderDetector(
             loggerFactory.CreateLogger<FfmpegHardwareEncoderDetector>());
         _operationGate = new AsyncConcurrencyGate(
@@ -93,7 +103,8 @@ public sealed partial class FfmpegProcessor : IFfmpegMediaMuxer
             _processRunner,
             new FfmpegMediaValidator(_processRunner),
             _operationGate,
-            loggerFactory.CreateLogger<FfmpegConcatRuntime>());
+            loggerFactory.CreateLogger<FfmpegConcatRuntime>(),
+            outputArtifactOwnershipProvider);
     }
 
     public Task<FfmpegOperationResult> ConcatDurlVideosAsync(
@@ -341,23 +352,6 @@ public sealed partial class FfmpegProcessor : IFfmpegMediaMuxer
         }
     }
 
-    private async Task<bool> RunToFileSucceededAsync(
-        Func<string, FfmpegCommand> commandFactory,
-        string destination,
-        bool overwriteDestination,
-        Action<string>? action,
-        CancellationToken cancellationToken)
-    {
-        var result = await RunToFileAsync(
-            commandFactory,
-            destination,
-            overwriteDestination,
-            action: action,
-            outputArtifactOwnershipProvider: null,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        return result.Succeeded;
-    }
-
     private async Task<FfmpegOutputResult> RunToFileAsync(
         Func<string, FfmpegCommand> commandFactory,
         string destination,
@@ -369,13 +363,19 @@ public sealed partial class FfmpegProcessor : IFfmpegMediaMuxer
         ArgumentNullException.ThrowIfNull(commandFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(destination);
         var extension = Path.GetExtension(destination);
-        var temporaryOutput = Path.Combine(
+        var temporaryPath = Path.Combine(
             Path.GetDirectoryName(Path.GetFullPath(destination))!,
             $".{Path.GetFileNameWithoutExtension(destination)}-{Guid.NewGuid():N}.partial{extension}");
+        FfmpegTemporaryOutput? temporaryOutput = null;
+        var ownershipProvider = outputArtifactOwnershipProvider
+            ?? _outputArtifactOwnershipProvider;
         try
         {
             using var slot = await _operationGate.EnterAsync(cancellationToken).ConfigureAwait(false);
-            var command = commandFactory(temporaryOutput);
+            temporaryOutput = FfmpegTemporaryOutput.Create(
+                temporaryPath,
+                ownershipProvider);
+            var command = commandFactory(temporaryPath);
             var result = await _processRunner
                 .RunAsync(command, OperationTimeout, cancellationToken)
                 .ConfigureAwait(false);
@@ -390,24 +390,29 @@ public sealed partial class FfmpegProcessor : IFfmpegMediaMuxer
                             : FfmpegOperationFailureKind.ProcessFailure);
             }
 
-            if (!File.Exists(temporaryOutput) || new FileInfo(temporaryOutput).Length == 0)
+            if (!File.Exists(temporaryPath) || new FileInfo(temporaryPath).Length == 0)
             {
                 return FfmpegOutputResult.Failure(FfmpegOperationFailureKind.OutputInvalid);
             }
 
             OutputArtifactPublicationEvidence? publicationEvidence = null;
-            if (outputArtifactOwnershipProvider is not null)
+            if (ownershipProvider is not null
+                && temporaryOutput?.Claim is { } temporaryClaim)
             {
-                var capture = await outputArtifactOwnershipProvider
-                    .CapturePublicationEvidenceAsync(temporaryOutput, cancellationToken)
+                var capture = await ownershipProvider
+                    .CapturePublicationEvidenceAsync(
+                        temporaryPath,
+                        temporaryClaim,
+                        cancellationToken)
                     .ConfigureAwait(false);
                 publicationEvidence = capture.Succeeded ? capture.Evidence : null;
             }
 
-            File.Move(temporaryOutput, destination, overwrite: overwriteDestination);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporaryPath, destination, overwrite: overwriteDestination);
             if (publicationEvidence is not null
                 && !await VerifyPublishedIdentityAsync(
-                        outputArtifactOwnershipProvider,
+                        ownershipProvider,
                         destination,
                         publicationEvidence)
                     .ConfigureAwait(false))
@@ -433,7 +438,12 @@ public sealed partial class FfmpegProcessor : IFfmpegMediaMuxer
         }
         finally
         {
-            DeleteFile(temporaryOutput);
+            if (temporaryOutput is not null)
+            {
+                await temporaryOutput
+                    .DeleteIfOwnedAsync(ownershipProvider)
+                    .ConfigureAwait(false);
+            }
         }
     }
 

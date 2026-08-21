@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Win32.SafeHandles;
 
 namespace DownKyi.Application.Downloads;
 
@@ -13,15 +14,81 @@ namespace DownKyi.Application.Downloads;
 /// is provider-owned and opaque. Consumers may persist it, but must not
 /// interpret, synthesize, or compare it themselves.
 /// </remarks>
+public abstract record OutputArtifactTemporaryClaim;
+
+public enum OutputArtifactTemporaryClaimStatus
+{
+    Claimed,
+    Unsupported,
+    Failed
+}
+
+public sealed record OutputArtifactTemporaryClaimResult(
+    OutputArtifactTemporaryClaimStatus Status,
+    OutputArtifactTemporaryClaim? Claim)
+{
+    public bool Succeeded =>
+        Status == OutputArtifactTemporaryClaimStatus.Claimed && Claim is not null;
+
+    public static OutputArtifactTemporaryClaimResult Claimed(
+        OutputArtifactTemporaryClaim claim)
+    {
+        ArgumentNullException.ThrowIfNull(claim);
+        return new OutputArtifactTemporaryClaimResult(
+            OutputArtifactTemporaryClaimStatus.Claimed,
+            claim);
+    }
+
+    public static OutputArtifactTemporaryClaimResult Unsupported() =>
+        new(OutputArtifactTemporaryClaimStatus.Unsupported, null);
+
+    public static OutputArtifactTemporaryClaimResult Failed() =>
+        new(OutputArtifactTemporaryClaimStatus.Failed, null);
+}
+
 public interface IOutputArtifactOwnershipProvider
 {
     /// <summary>
-    /// Captures evidence from the temporary file before it is atomically
-    /// published to its final path.
+    /// Claims the exact temporary object while its creation handle is still
+    /// open. The returned capability is provider-owned and opaque.
+    /// </summary>
+    OutputArtifactTemporaryClaimResult ClaimTemporaryObject(
+        SafeFileHandle temporaryHandle)
+    {
+        ArgumentNullException.ThrowIfNull(temporaryHandle);
+        return OutputArtifactTemporaryClaimResult.Unsupported();
+    }
+
+    /// <summary>
+    /// Captures final provenance evidence only when the temporary pathname
+    /// still resolves to the previously claimed object.
     /// </summary>
     Task<OutputArtifactEvidenceCaptureResult> CapturePublicationEvidenceAsync(
         string temporaryPath,
-        CancellationToken cancellationToken);
+        OutputArtifactTemporaryClaim temporaryClaim,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(temporaryPath);
+        ArgumentNullException.ThrowIfNull(temporaryClaim);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(OutputArtifactEvidenceCaptureResult.Unsupported());
+    }
+
+    /// <summary>
+    /// Deletes a temporary pathname only when it still resolves to the
+    /// previously claimed object. Content changes made by the producer are
+    /// deliberately irrelevant to temporary cleanup authority.
+    /// </summary>
+    Task<OutputArtifactSafeDeleteResult> DeleteTemporaryIfOwnedAsync(
+        string temporaryPath,
+        OutputArtifactTemporaryClaim temporaryClaim,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(temporaryPath);
+        ArgumentNullException.ThrowIfNull(temporaryClaim);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(OutputArtifactSafeDeleteResult.Unsupported());
+    }
 
     /// <summary>
     /// Verifies, without re-hashing, that the object at a final path is still

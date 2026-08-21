@@ -38,4 +38,3 @@ internal sealed partial class DownloadArtifactWriter
             : CoverArtifactKind;
     }
 }
-

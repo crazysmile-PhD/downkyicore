@@ -1980,6 +1980,10 @@ paths:
   - src/DownKyi.Desktop/Services/Download/DownloadOutputRecorder.cs
   - src/DownKyi.Desktop/Services/Download/DownloadTaskFileService.cs
   - src/DownKyi.Desktop/Services/Download/DownloadFileIntegrity.cs
+  - src/DownKyi.Desktop/Services/Download/AtomicOutputPublisher.cs
+  - src/DownKyi.Desktop/Services/Download/WindowsOutputArtifactOwnershipProvider.cs
+  - src/DownKyi.Desktop/Services/Download/WindowsOutputArtifactNativeFileSystem.cs
+  - src/DownKyi.Desktop/Services/Download/WindowsOutputArtifactNativeFileSystem.TemporaryOwnership.cs
   - src/DownKyi.Desktop/Services/Download/DownloadDiagnosticLogger.cs
   - src/DownKyi.Desktop/Services/Download/DownloadShutdownCoordinator.cs
 responsibility: Admits committed task IDs directly, selects one transfer backend, dispatches bounded workers, orders typed download stages, centrally budgets transfer retries, writes auxiliary artifacts and task state through dedicated owners, verifies integrity, and projects completed tasks.
@@ -2031,6 +2035,8 @@ contracts:
   - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO generation; its typed result distinguishes created output, source-not-available, HTTP/parse/conversion/write/permission failure, invalid or zero-byte output, and cancellation. `DownloadTaskStateWriter` is a typed Application-command adapter and never accepts a UI task model.
   - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `DownloadArtifactsStage`, `MuxStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages, so requested artifact failure cannot produce completed history.
   - Download mux and DURL concat finalize through same-directory temporary files with `overwriteDestination: false`. A pre-existing destination fails the stage without deleting the foreign file or the valid source streams.
+  - Atomic artifact, FFmpeg merge, and concat outputs claim temporary object identity from the live creation handle before producer execution. Post-producer provenance requires the pathname to resolve to that claimed object, and cancellation is checked immediately before the publication move.
+  - Temporary cleanup is identity-bound and content-independent; final cleanup requires persisted identity, length, and hash. Windows validates and marks deletion through the same live handle, so a pathname replacement cannot transfer deletion authority to a foreign object.
   - `DownloadMediaStage` carries each persisted transfer key beside its audio, video or DURL file into `MuxStage`. Mux failure may revoke only paths listed by the typed FFmpeg invalid-input result; it reuses `DownloadTransferFileCleanup` and `DownloadTaskApplicationService.InvalidateCompletedFileAsync` instead of owning a parallel reset path.
   - Completed-key invalidation clears the task's backend identity in the same durable Application mutation. Confirmed invalid input removes its file and `.aria2` / `.download` sidecars; infrastructure-only mux failure preserves source files, completed keys and resume identity for retry.
   - `DownloadExecutionContext` captures one immutable settings snapshot and accepts the current operation token at each active check; it cannot retain a short-lived command token.

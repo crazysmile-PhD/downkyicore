@@ -193,17 +193,20 @@ internal sealed class FfmpegConcatRuntime
     private readonly IFfmpegMediaValidator _mediaValidator;
     private readonly IFfmpegProcessRunner _processRunner;
     private readonly ILogger<FfmpegConcatRuntime> _logger;
+    private readonly IOutputArtifactOwnershipProvider? _outputArtifactOwnershipProvider;
 
     public FfmpegConcatRuntime(
         IFfmpegProcessRunner processRunner,
         IFfmpegMediaValidator mediaValidator,
         AsyncConcurrencyGate concurrencyGate,
-        ILogger<FfmpegConcatRuntime> logger)
+        ILogger<FfmpegConcatRuntime> logger,
+        IOutputArtifactOwnershipProvider? outputArtifactOwnershipProvider = null)
     {
         _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
         _mediaValidator = mediaValidator ?? throw new ArgumentNullException(nameof(mediaValidator));
         _concurrencyGate = concurrencyGate ?? throw new ArgumentNullException(nameof(concurrencyGate));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _outputArtifactOwnershipProvider = outputArtifactOwnershipProvider;
     }
 
     public async Task<FfmpegOperationResult> ConcatAsync(
@@ -218,6 +221,8 @@ internal sealed class FfmpegConcatRuntime
     {
         ArgumentNullException.ThrowIfNull(segments);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFile);
+        var ownershipProvider = outputArtifactOwnershipProvider
+            ?? _outputArtifactOwnershipProvider;
         if (segments.Count == 0)
         {
             return FfmpegOperationResult.Failure(
@@ -263,8 +268,12 @@ internal sealed class FfmpegConcatRuntime
                     var temporaryOutput = Path.Combine(
                         outputDirectory,
                         $".{Path.GetFileNameWithoutExtension(outputFile)}-{Guid.NewGuid():N}.partial.mp4");
+                    FfmpegTemporaryOutput? temporaryOwnership = null;
                     try
                     {
+                        temporaryOwnership = FfmpegTemporaryOutput.Create(
+                            temporaryOutput,
+                            ownershipProvider);
                         progress?.Invoke($"FFmpeg {strategy}");
                         var command = FfmpegCommandFactory.BuildConcat(
                             listFile,
@@ -298,18 +307,23 @@ internal sealed class FfmpegConcatRuntime
                         }
 
                         OutputArtifactPublicationEvidence? publicationEvidence = null;
-                        if (outputArtifactOwnershipProvider is not null)
+                        if (ownershipProvider is not null
+                            && temporaryOwnership?.Claim is { } temporaryClaim)
                         {
-                            var capture = await outputArtifactOwnershipProvider
-                                .CapturePublicationEvidenceAsync(temporaryOutput, cancellationToken)
+                            var capture = await ownershipProvider
+                                .CapturePublicationEvidenceAsync(
+                                    temporaryOutput,
+                                    temporaryClaim,
+                                    cancellationToken)
                                 .ConfigureAwait(false);
                             publicationEvidence = capture.Succeeded ? capture.Evidence : null;
                         }
 
+                        cancellationToken.ThrowIfCancellationRequested();
                         File.Move(temporaryOutput, outputFile, overwrite: overwriteDestination);
                         if (publicationEvidence is not null
                             && !await VerifyPublishedIdentityAsync(
-                                    outputArtifactOwnershipProvider,
+                                    ownershipProvider,
                                     outputFile,
                                     publicationEvidence)
                                 .ConfigureAwait(false))
@@ -328,7 +342,12 @@ internal sealed class FfmpegConcatRuntime
                     }
                     finally
                     {
-                        DeleteFile(temporaryOutput);
+                        if (temporaryOwnership is not null)
+                        {
+                            await temporaryOwnership
+                                .DeleteIfOwnedAsync(ownershipProvider)
+                                .ConfigureAwait(false);
+                        }
                     }
                 }
             }

@@ -128,5 +128,3 @@ internal sealed partial class WindowsOutputArtifactNativeFileSystem
             ref FileLockOverlapped overlapped);
     }
 }
-
-

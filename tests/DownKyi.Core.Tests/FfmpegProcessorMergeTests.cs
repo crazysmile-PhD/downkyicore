@@ -26,7 +26,8 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
         var processor = new FfmpegProcessor(
             _settings,
             NullLoggerFactory.Instance,
-            runner);
+            runner,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
 
         var result = await processor.MergeMediaAsync(
             _settings.Current.Video,
@@ -55,7 +56,8 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
         var processor = new FfmpegProcessor(
             _settings,
             NullLoggerFactory.Instance,
-            new MergeFailureRunner(audio, DiagnosticFailure.ProcessNotStarted));
+            new MergeFailureRunner(audio, DiagnosticFailure.ProcessNotStarted),
+            FfmpegTemporaryOwnershipTestProvider.Instance);
 
         var result = await processor.MergeMediaAsync(
             _settings.Current.Video,
@@ -80,7 +82,8 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
         var processor = new FfmpegProcessor(
             _settings,
             NullLoggerFactory.Instance,
-            new MergeFailureRunner(audio, DiagnosticFailure.StartedInfrastructure));
+            new MergeFailureRunner(audio, DiagnosticFailure.StartedInfrastructure),
+            FfmpegTemporaryOwnershipTestProvider.Instance);
 
         var result = await processor.MergeMediaAsync(
             _settings.Current.Video,
@@ -110,7 +113,8 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
         var processor = new FfmpegProcessor(
             _settings,
             NullLoggerFactory.Instance,
-            runner);
+            runner,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
 
         var result = await processor.MergeMediaAsync(
             _settings.Current.Video,
@@ -146,7 +150,8 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
         var processor = new FfmpegProcessor(
             _settings,
             NullLoggerFactory.Instance,
-            runner);
+            runner,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
 
         var result = await processor.MergeMediaAsync(
             _settings.Current.Video,
@@ -179,7 +184,8 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
         var processor = new FfmpegProcessor(
             _settings,
             NullLoggerFactory.Instance,
-            new SuccessfulMergeRunner(() => File.WriteAllBytes(destination, foreignContent)));
+            new SuccessfulMergeRunner(() => File.WriteAllBytes(destination, foreignContent)),
+            FfmpegTemporaryOwnershipTestProvider.Instance);
 
         var result = await processor.MergeMediaAsync(
             _settings.Current.Video,
@@ -210,7 +216,8 @@ public sealed class FfmpegProcessorMergeTests : IDisposable
         var processor = new FfmpegProcessor(
             _settings,
             NullLoggerFactory.Instance,
-            runner);
+            runner,
+            FfmpegTemporaryOwnershipTestProvider.Instance);
 
         var first = processor.MergeMediaAsync(
             _settings.Current.Video,

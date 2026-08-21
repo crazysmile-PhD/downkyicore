@@ -344,14 +344,6 @@ public sealed class DownloadTaskFileServiceTests : IDisposable
     {
         public List<string> DeleteCandidates { get; } = [];
 
-        public Task<OutputArtifactEvidenceCaptureResult> CapturePublicationEvidenceAsync(
-            string temporaryPath,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(OutputArtifactEvidenceCaptureResult.Unsupported());
-        }
-
         public Task<OutputArtifactSafeDeleteResult> DeleteIfOwnedAsync(
             string candidatePath,
             DownloadOutputArtifactProvenance provenance,

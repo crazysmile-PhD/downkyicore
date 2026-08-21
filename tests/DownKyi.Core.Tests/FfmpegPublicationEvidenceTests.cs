@@ -3,6 +3,7 @@ using DownKyi.Application.Downloads;
 using DownKyi.Core.FFmpeg;
 using DownKyi.Core.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Win32.SafeHandles;
 
 namespace DownKyi.Core.Tests;
 
@@ -218,6 +219,8 @@ public sealed class FfmpegPublicationEvidenceTests : IDisposable
 
     private sealed class RecordingOwnershipProvider(string destination) : IOutputArtifactOwnershipProvider
     {
+        private sealed record TemporaryClaim : OutputArtifactTemporaryClaim;
+
         public byte[]? CapturedBytes { get; private set; }
 
         public bool DestinationExistedDuringCapture { get; private set; }
@@ -226,10 +229,20 @@ public sealed class FfmpegPublicationEvidenceTests : IDisposable
 
         public string? TemporaryPath { get; private set; }
 
+        public OutputArtifactTemporaryClaimResult ClaimTemporaryObject(
+            SafeFileHandle temporaryHandle)
+        {
+            Assert.False(temporaryHandle.IsClosed);
+            Assert.False(temporaryHandle.IsInvalid);
+            return OutputArtifactTemporaryClaimResult.Claimed(new TemporaryClaim());
+        }
+
         public async Task<OutputArtifactEvidenceCaptureResult> CapturePublicationEvidenceAsync(
             string temporaryPath,
+            OutputArtifactTemporaryClaim temporaryClaim,
             CancellationToken cancellationToken)
         {
+            Assert.IsType<TemporaryClaim>(temporaryClaim);
             cancellationToken.ThrowIfCancellationRequested();
             TemporaryPath = Path.GetFullPath(temporaryPath);
             DestinationExistedDuringCapture = File.Exists(destination);
@@ -242,6 +255,22 @@ public sealed class FfmpegPublicationEvidenceTests : IDisposable
                 "test",
                 "test-filesystem-identity");
             return OutputArtifactEvidenceCaptureResult.Captured(Evidence);
+        }
+
+        public Task<OutputArtifactSafeDeleteResult> DeleteTemporaryIfOwnedAsync(
+            string temporaryPath,
+            OutputArtifactTemporaryClaim temporaryClaim,
+            CancellationToken cancellationToken)
+        {
+            Assert.IsType<TemporaryClaim>(temporaryClaim);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!File.Exists(temporaryPath))
+            {
+                return Task.FromResult(OutputArtifactSafeDeleteResult.Missing());
+            }
+
+            File.Delete(temporaryPath);
+            return Task.FromResult(OutputArtifactSafeDeleteResult.DeletedResult());
         }
 
         public Task<OutputArtifactSafeDeleteResult> DeleteIfOwnedAsync(
@@ -266,14 +295,6 @@ public sealed class FfmpegPublicationEvidenceTests : IDisposable
 
     private sealed class UnsupportedOwnershipProvider : IOutputArtifactOwnershipProvider
     {
-        public Task<OutputArtifactEvidenceCaptureResult> CapturePublicationEvidenceAsync(
-            string temporaryPath,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(OutputArtifactEvidenceCaptureResult.Unsupported());
-        }
-
         public Task<OutputArtifactSafeDeleteResult> DeleteIfOwnedAsync(
             string candidatePath,
             DownloadOutputArtifactProvenance provenance,

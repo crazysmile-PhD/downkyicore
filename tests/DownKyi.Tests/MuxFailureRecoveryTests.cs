@@ -593,13 +593,6 @@ public sealed class MuxFailureRecoveryTests
 
     private sealed class TestOwnershipProvider : IOutputArtifactOwnershipProvider
     {
-        public Task<OutputArtifactEvidenceCaptureResult> CapturePublicationEvidenceAsync(
-            string temporaryPath,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(OutputArtifactEvidenceCaptureResult.Unsupported());
-        }
-
         public Task<OutputArtifactSafeDeleteResult> DeleteIfOwnedAsync(
             string candidatePath,
             DownloadOutputArtifactProvenance provenance,
