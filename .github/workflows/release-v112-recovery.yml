@@ -566,10 +566,10 @@ jobs:
             echo "::error::Published release has $asset_count assets; expected 27."
             exit 1
           fi
-          jq -e '.assets[] | select((.browser_download_url | length) == 0)' <<<"$release_json" >/dev/null && {
+          if jq -e '.assets[] | select((.browser_download_url | length) == 0)' <<<"$release_json" >/dev/null; then
             echo "::error::A published asset has no download URL."
             exit 1
-          } || true
+          fi
           pwsh ./tooling/script/validate-v112-recovery-subject.ps1 \
             -SubjectDirectory ./subject \
             -ReleaseVersion v1.1.2 \
