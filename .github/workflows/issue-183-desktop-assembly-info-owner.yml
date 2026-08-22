@@ -12,12 +12,16 @@ on:
       - '.github/issue-183-desktop-assembly-info-trigger'
       - '.github/workflows/issue-183-desktop-assembly-info-owner.yml'
       - 'script/research/issue_183_desktop_assembly_info_probe.py'
+      - 'script/research/issue_183_powershell_topology_probe.py'
+      - 'script/research/issue_183_powershell_process_launcher.ps1'
   push:
     branches:
       - investigation/issue-183-assembly-info-owner
     paths:
       - '.github/issue-183-desktop-assembly-info-trigger'
       - '.github/workflows/issue-183-desktop-assembly-info-owner.yml'
+      - 'script/research/issue_183_powershell_topology_probe.py'
+      - 'script/research/issue_183_powershell_process_launcher.ps1'
   workflow_dispatch:
     inputs:
       duration_minutes:
@@ -73,7 +77,7 @@ jobs:
           dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
           dotnet tool install dotnet-stack --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
 
-      - name: Verify exact subject, SDK, and probe syntax
+      - name: Verify exact subject, SDK, and topology probe syntax
         shell: pwsh
         run: |
           $sha = (& git -C "$env:GITHUB_WORKSPACE\target" rev-parse HEAD).Trim()
@@ -81,8 +85,15 @@ jobs:
           Push-Location "$env:GITHUB_WORKSPACE\target"
           try { $sdk = (& dotnet --version).Trim() } finally { Pop-Location }
           if ($sdk -ne '10.0.400') { throw "Target resolved SDK $sdk instead of required 10.0.400." }
-          python -m py_compile "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_desktop_assembly_info_probe.py"
+          python -m py_compile `
+            "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_desktop_assembly_info_probe.py" `
+            "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_powershell_topology_probe.py"
           if ($LASTEXITCODE -ne 0) { throw 'Probe syntax validation failed.' }
+          $tokens = $null
+          $errors = $null
+          $launcher = Get-Content "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_powershell_process_launcher.ps1" -Raw
+          $null = [Management.Automation.Language.Parser]::ParseInput($launcher, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -ne 0) { throw "Launcher syntax validation failed: $($errors[0].Message)" }
 
       - name: Restore exact full PR subject
         working-directory: target
@@ -121,38 +132,41 @@ jobs:
             -ResultsDirectory "$env:GITHUB_WORKSPACE\issue-183-positive-prelude"
           if ($LASTEXITCODE -ne 0) { throw "Positive PR prelude failed with exit code $LASTEXITCODE" }
 
-      - name: Run exact pre-fix Desktop assembly-info with external 500ms pre-arm
+      - name: Run exact Desktop assembly-info through historical PowerShell Process topology
         shell: pwsh
         run: |
-          $probe = "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_desktop_assembly_info_probe.py"
+          $probe = "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_powershell_topology_probe.py"
+          $launcher = "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_powershell_process_launcher.ps1"
           $dump = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
-          $out = "$env:GITHUB_WORKSPACE\issue-183-desktop-assembly-info-owner"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-desktop-powershell-topology"
           python $probe `
             --repo "$env:GITHUB_WORKSPACE\target" `
+            --launcher $launcher `
             --dump-tool $dump `
             --out $out `
             --duration-minutes $env:DURATION_MINUTES `
             --max-iterations $env:MAX_ITERATIONS `
             --timeout-seconds 30
-          if ($LASTEXITCODE -ne 0) { throw "Focused probe failed closed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "Topology probe failed closed with exit code $LASTEXITCODE" }
 
       - name: Publish summary
         if: always()
         shell: pwsh
         run: |
-          $path = "$env:GITHUB_WORKSPACE\issue-183-desktop-assembly-info-owner\summary.json"
+          $path = "$env:GITHUB_WORKSPACE\issue-183-desktop-powershell-topology\summary.json"
           if (Test-Path $path) {
             $s = Get-Content $path -Raw | ConvertFrom-Json
             @(
-              '# Issue #183 — Desktop assembly-info owner capture after exact PR prelude',
+              '# Issue #183 — historical PowerShell launch-topology falsification',
               '',
               "- Target SHA: ``$($s.targetSha)``",
+              "- Launch topology: $($s.launchTopology)",
               "- Executions: $($s.iterations)",
               "- JSON detections: $($s.jsonDetections)",
               "- Invalid executions: $($s.invalidExecutions)",
-              "- Nonzero exits: $($s.nonzeroExits)",
+              "- Nonzero target exits: $($s.nonzeroTargetExits)",
               "- Reader failures: $($s.readerFailures)",
-              "- Alive 500 ms after JSON: $($s.alive500msAfterJson)",
+              "- Alive 500 ms after JSON with Full dump: $($s.alive500msAfterJson)",
               "- Exact watchdogs: $($s.watchdogs)",
               "- Confirmed watchdog + same-PID Full dumps: $($s.confirmedWatchdogDumps)",
               "- Timeouts: $($s.timeouts)"
@@ -163,9 +177,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: issue-183-desktop-assembly-info-owner
+          name: issue-183-desktop-powershell-topology
           path: |
-            issue-183-desktop-assembly-info-owner
+            issue-183-desktop-powershell-topology
             issue-183-positive-prelude
           if-no-files-found: warn
           retention-days: 30
@@ -179,4 +193,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 Desktop assembly-info capture after restoring the positive PR lifecycle prelude: $runUrl`n`nExact pre-fix target, full-solution build, preceding Application/Architecture/Core PR lifecycle activity, then isolated Desktop -assemblyInfo with external 500 ms same-PID Full-dump pre-arm. Inspect any first specimen before changing another variable."
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 controlled historical PowerShell launch-topology probe: $runUrl`n`nExact pre-fix target and PR lifecycle prelude retained. The only restored causal variable is target launch topology: pwsh -> System.Diagnostics.Process -> dotnet with redirected stdout/stderr. The independent external observer still pre-arms a same-PID Full dump at 500 ms and requires a same-execution dump for any watchdog."
