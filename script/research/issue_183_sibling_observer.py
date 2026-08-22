@@ -56,6 +56,19 @@ def read_new_lines(path: Path, offset: int) -> tuple[list[str], int, bool]:
     return text.splitlines(), new_offset, False
 
 
+def read_control_text(path: Path) -> tuple[str | None, bool]:
+    """Read a launcher control file without treating transient Windows sharing as evidence."""
+    if not path.exists():
+        return None, False
+    try:
+        return path.read_text(encoding="utf-8"), False
+    except PermissionError:
+        # The workflow-step launcher owns these files. A transient sharing conflict is a
+        # control-plane race, not a target failure; preserve the exact observer deadline
+        # and retry. Persistent inability to read still fails closed at that deadline.
+        return None, True
+
+
 def kill_target_tree(pid: int, log: Path) -> None:
     base.run_tool(["taskkill", "/PID", str(pid), "/T", "/F"], log, timeout=15)
 
@@ -92,13 +105,16 @@ def main() -> int:
     timed_out = False
     observer_errors: list[str] = []
     read_contention_count = 0
+    control_contention_count = 0
 
     while True:
         try:
-            if target_pid is None and pid_path.exists():
-                value = pid_path.read_text(encoding="utf-8").strip()
-                if value:
-                    target_pid = int(value)
+            if target_pid is None:
+                value, contended = read_control_text(pid_path)
+                if contended:
+                    control_contention_count += 1
+                elif value is not None and value.strip():
+                    target_pid = int(value.strip())
 
             for path, stream_name in ((stdout_path, "stdout"), (stderr_path, "stderr")):
                 offset = stdout_offset if stream_name == "stdout" else stderr_offset
@@ -141,8 +157,11 @@ def main() -> int:
                         "alive-500ms-after-json-sibling-observer",
                     )
 
-            if exit_path.exists():
-                payload = json.loads(exit_path.read_text(encoding="utf-8"))
+            exit_text, exit_contended = read_control_text(exit_path)
+            if exit_contended:
+                control_contention_count += 1
+            elif exit_text is not None:
+                payload = json.loads(exit_text)
                 target_exit_code = int(payload["exitCode"])
                 # One final scan after the launcher has drained both redirected streams.
                 for path, stream_name in ((stdout_path, "stdout"), (stderr_path, "stderr")):
@@ -214,6 +233,7 @@ def main() -> int:
         "executionValid": valid,
         "observerErrors": observer_errors,
         "readContentionCount": read_contention_count,
+        "controlContentionCount": control_contention_count,
         "alive500msAfterJson": alive_500ms,
         "watchdogSeen": watchdog,
         "watchdogSeenAtUtc": watchdog_utc,
