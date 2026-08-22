@@ -38,16 +38,22 @@ def process_is_alive(pid: int) -> bool:
         kernel32.CloseHandle(handle)
 
 
-def read_new_lines(path: Path, offset: int) -> tuple[list[str], int]:
+def read_new_lines(path: Path, offset: int) -> tuple[list[str], int, bool]:
     if not path.exists():
-        return [], offset
-    with path.open("r", encoding="utf-8", errors="replace", newline="") as stream:
-        stream.seek(offset)
-        text = stream.read()
-        new_offset = stream.tell()
+        return [], offset, False
+    try:
+        with path.open("r", encoding="utf-8", errors="replace", newline="") as stream:
+            stream.seek(offset)
+            text = stream.read()
+            new_offset = stream.tell()
+    except PermissionError:
+        # PowerShell's short-lived AppendAllText writer may transiently hold the file
+        # without compatible sharing. Preserve the offset and retry on the next observer
+        # poll; a persistent access problem still fails closed via the existing deadline.
+        return [], offset, True
     if not text:
-        return [], new_offset
-    return text.splitlines(), new_offset
+        return [], new_offset, False
+    return text.splitlines(), new_offset, False
 
 
 def kill_target_tree(pid: int, log: Path) -> None:
@@ -85,6 +91,7 @@ def main() -> int:
     exact: dict | None = None
     timed_out = False
     observer_errors: list[str] = []
+    read_contention_count = 0
 
     while True:
         try:
@@ -95,7 +102,9 @@ def main() -> int:
 
             for path, stream_name in ((stdout_path, "stdout"), (stderr_path, "stderr")):
                 offset = stdout_offset if stream_name == "stdout" else stderr_offset
-                lines, new_offset = read_new_lines(path, offset)
+                lines, new_offset, contended = read_new_lines(path, offset)
+                if contended:
+                    read_contention_count += 1
                 if stream_name == "stdout":
                     stdout_offset = new_offset
                 else:
@@ -138,7 +147,14 @@ def main() -> int:
                 # One final scan after the launcher has drained both redirected streams.
                 for path, stream_name in ((stdout_path, "stdout"), (stderr_path, "stderr")):
                     offset = stdout_offset if stream_name == "stdout" else stderr_offset
-                    lines, new_offset = read_new_lines(path, offset)
+                    lines, new_offset, contended = read_new_lines(path, offset)
+                    if contended:
+                        read_contention_count += 1
+                        # The launcher publishes exit state only after both redirected
+                        # streams are drained, so contention here is transient. Retry the
+                        # normal observer loop instead of accepting an incomplete final scan.
+                        target_exit_code = None
+                        break
                     if stream_name == "stdout":
                         stdout_offset = new_offset
                     else:
@@ -159,7 +175,8 @@ def main() -> int:
                                     control / "exact-watchdog",
                                     "exact-watchdog-sibling-observer-final-scan",
                                 )
-                break
+                if target_exit_code is not None:
+                    break
 
             if time.perf_counter() >= deadline:
                 timed_out = True
@@ -196,6 +213,7 @@ def main() -> int:
         "assemblyInfoJsonSeenAtUtc": json_seen_utc,
         "executionValid": valid,
         "observerErrors": observer_errors,
+        "readContentionCount": read_contention_count,
         "alive500msAfterJson": alive_500ms,
         "watchdogSeen": watchdog,
         "watchdogSeenAtUtc": watchdog_utc,
