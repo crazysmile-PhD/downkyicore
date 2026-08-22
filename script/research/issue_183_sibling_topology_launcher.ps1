@@ -62,6 +62,25 @@ function Append-Line {
     [IO.File]::AppendAllText($Path, $Line + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 }
 
+function Publish-JsonAtomically {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][object]$Value
+    )
+
+    $temporaryPath = "$Path.tmp-$([Guid]::NewGuid().ToString('N'))"
+    try {
+        $json = $Value | ConvertTo-Json -Compress
+        [IO.File]::WriteAllText($temporaryPath, $json, [Text.UTF8Encoding]::new($false))
+        [IO.File]::Move($temporaryPath, $Path)
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
+            Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force $outputRoot | Out-Null
 $deadline = [DateTimeOffset]::UtcNow.AddMinutes($DurationMinutes)
@@ -156,8 +175,7 @@ for ($iteration = 1; $iteration -le $MaxIterations; $iteration++) {
             }
         }
         $target.WaitForExit()
-        @{ exitCode = $target.ExitCode } | ConvertTo-Json -Compress |
-            Set-Content -LiteralPath $exitPath -Encoding utf8NoBOM
+        Publish-JsonAtomically -Path $exitPath -Value @{ exitCode = $target.ExitCode }
 
         if (-not $observer.WaitForExit(($TimeoutSeconds + 150) * 1000)) {
             $observer.Kill($true)
