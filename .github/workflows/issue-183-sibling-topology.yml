@@ -1,0 +1,189 @@
+name: Issue 183 Sibling Observer Topology
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  push:
+    branches:
+      - investigation/issue-183-assembly-info-owner
+    paths:
+      - '.github/workflows/issue-183-sibling-topology.yml'
+      - 'script/research/issue_183_sibling_observer.py'
+      - 'script/research/issue_183_sibling_topology_launcher.ps1'
+      - 'script/research/issue_183_desktop_assembly_info_probe.py'
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: Focused sampling duration
+        required: false
+        default: '70'
+        type: string
+      max_iterations:
+        description: Maximum assembly-info executions
+        required: false
+        default: '2000'
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sibling-topology-capture:
+    runs-on: windows-latest
+    timeout-minutes: 100
+    env:
+      DURATION_MINUTES: ${{ inputs.duration_minutes || '70' }}
+      MAX_ITERATIONS: ${{ inputs.max_iterations || '2000' }}
+    steps:
+      - name: Checkout instrumentation
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: instrumentation
+
+      - name: Checkout exact pre-fix positive subject
+        uses: actions/checkout@v7
+        with:
+          ref: 75bff22801972ada7cfd24be595b0753780a7592
+          fetch-depth: 0
+          path: target
+
+      - name: Install exact fresh-positive .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.400'
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install lifecycle diagnostics
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+          dotnet tool install dotnet-stack --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+
+      - name: Verify exact subject, SDK, and probe syntax
+        shell: pwsh
+        run: |
+          $sha = (& git -C "$env:GITHUB_WORKSPACE\target" rev-parse HEAD).Trim()
+          if ($sha -ne '75bff22801972ada7cfd24be595b0753780a7592') { throw "Subject SHA mismatch: $sha" }
+          Push-Location "$env:GITHUB_WORKSPACE\target"
+          try { $sdk = (& dotnet --version).Trim() } finally { Pop-Location }
+          if ($sdk -ne '10.0.400') { throw "Target resolved SDK $sdk instead of required 10.0.400." }
+          python -m py_compile `
+            "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_desktop_assembly_info_probe.py" `
+            "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_sibling_observer.py"
+          if ($LASTEXITCODE -ne 0) { throw 'Python probe syntax validation failed.' }
+          $tokens = $null
+          $errors = $null
+          $launcher = Get-Content "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_sibling_topology_launcher.ps1" -Raw
+          $null = [Management.Automation.Language.Parser]::ParseInput($launcher, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -ne 0) { throw "Launcher syntax validation failed: $($errors[0].Message)" }
+
+      - name: Restore exact full PR subject
+        working-directory: target
+        run: dotnet restore ./DownKyi.sln
+
+      - name: Strict-build exact full PR subject
+        working-directory: target
+        run: >
+          dotnet build ./DownKyi.sln
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
+
+      - name: Restore positive PR lifecycle prelude
+        shell: pwsh
+        working-directory: target
+        run: |
+          $diag = "$env:GITHUB_WORKSPACE\tools\dotnet-stack.exe"
+          ./script/test-assembly-lifecycle.ps1 `
+            -Configuration Release `
+            -Profile PR `
+            -NoBuild `
+            -ValidateForensics `
+            -AssemblyPattern @(
+              "DownKyi.Application.Tests",
+              "DownKyi.Architecture.Tests",
+              "DownKyi.Core.Tests"
+            ) `
+            -DiagnosticsToolPath $diag `
+            -ResultsDirectory "$env:GITHUB_WORKSPACE\issue-183-positive-prelude"
+          if ($LASTEXITCODE -ne 0) { throw "Positive PR prelude failed with exit code $LASTEXITCODE" }
+
+      - name: Run exact Desktop assembly-info with sibling observer
+        shell: pwsh
+        run: |
+          $launcher = "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_sibling_topology_launcher.ps1"
+          $observer = "$env:GITHUB_WORKSPACE\instrumentation\script\research\issue_183_sibling_observer.py"
+          $dump = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          $assembly = "$env:GITHUB_WORKSPACE\target\tests\DownKyi.Desktop.Tests\bin\Release\net10.0\DownKyi.Desktop.Tests.dll"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-desktop-sibling-topology"
+          & $launcher `
+            -Repository "$env:GITHUB_WORKSPACE\target" `
+            -AssemblyPath $assembly `
+            -ObserverScript $observer `
+            -DumpTool $dump `
+            -OutputDirectory $out `
+            -DurationMinutes ([int]$env:DURATION_MINUTES) `
+            -MaxIterations ([int]$env:MAX_ITERATIONS) `
+            -TimeoutSeconds 30
+          if ($LASTEXITCODE -ne 0) { throw "Sibling topology probe failed closed with exit code $LASTEXITCODE" }
+
+      - name: Publish summary
+        if: always()
+        shell: pwsh
+        run: |
+          $path = "$env:GITHUB_WORKSPACE\issue-183-desktop-sibling-topology\summary.json"
+          if (Test-Path $path) {
+            $s = Get-Content $path -Raw | ConvertFrom-Json
+            @(
+              '# Issue #183 — workflow-step direct launch / sibling observer falsification',
+              '',
+              "- Target SHA: ``$($s.targetSha)``",
+              "- Launch topology: $($s.launchTopology)",
+              "- Executions: $($s.iterations)",
+              "- JSON detections: $($s.jsonDetections)",
+              "- Invalid executions: $($s.invalidExecutions)",
+              "- Nonzero target exits: $($s.nonzeroTargetExits)",
+              "- Observer failures: $($s.observerFailures)",
+              "- Alive 500 ms after JSON: $($s.alive500msAfterJson)",
+              "- Exact watchdogs: $($s.watchdogs)",
+              "- Confirmed watchdog + same-PID Full dumps: $($s.confirmedWatchdogDumps)",
+              "- Timeouts: $($s.timeouts)"
+            ) | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          }
+
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-desktop-sibling-topology
+          path: |
+            issue-183-desktop-sibling-topology
+            issue-183-positive-prelude
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 1
+
+      - name: Publish run reference to PR ledger
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 workflow-step direct-launch / sibling-observer probe: $runUrl`n`nExact pre-fix target, SDK, full-solution build, PR lifecycle prelude, safe ambient environment, target invocation, and 500 ms same-PID Full-dump contract are retained. The only changed causal variable is ancestry/handle topology: the workflow PowerShell step directly owns System.Diagnostics.Process target, while the Python observer is a sibling rather than an ancestor."
