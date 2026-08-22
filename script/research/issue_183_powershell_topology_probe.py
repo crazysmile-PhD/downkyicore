@@ -18,6 +18,61 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 SYNCHRONIZE = 0x00100000
 WAIT_TIMEOUT = 0x00000102
 
+SAFE_AMBIENT_NAMES = {
+    "CI",
+    "GITHUB_ACTIONS",
+    "RUNNER_ARCH",
+    "RUNNER_ENVIRONMENT",
+    "RUNNER_OS",
+    "ImageOS",
+    "ImageVersion",
+}
+SAFE_AMBIENT_PREFIXES = (
+    "COMPLUS_",
+    "CORECLR_",
+    "COREHOST_",
+    "DOTNET_",
+)
+FORBIDDEN_ENV_TOKENS = (
+    "AUTH",
+    "BEARER",
+    "COOKIE",
+    "CREDENTIAL",
+    "KEY",
+    "PASSWORD",
+    "SECRET",
+    "TOKEN",
+)
+
+
+def historical_safe_child_env() -> dict[str, str]:
+    """Restore only non-secret runtime/CI ambient state from the historical job.
+
+    The original PowerShell harness inherited the Actions job environment. Full
+    inheritance is unsafe because a same-PID Full dump can retain CI credentials.
+    This controlled slice restores only runtime-affecting DOTNET/CLR/host variables
+    and non-secret CI identity flags while rejecting credential-like names.
+    """
+    env = base.sanitized_child_env()
+    for key, value in os.environ.items():
+        upper = key.upper()
+        selected = key in SAFE_AMBIENT_NAMES or any(
+            upper.startswith(prefix) for prefix in SAFE_AMBIENT_PREFIXES
+        )
+        if not selected:
+            continue
+        if any(token in upper for token in FORBIDDEN_ENV_TOKENS):
+            continue
+        env[key] = value
+
+    forbidden = sorted(
+        key for key in env
+        if any(token in key.upper() for token in FORBIDDEN_ENV_TOKENS)
+    )
+    if forbidden:
+        raise RuntimeError(f"unsafe child environment keys selected: {forbidden}")
+    return env
+
 
 def process_is_alive(pid: int) -> bool:
     if os.name != "nt":
@@ -69,6 +124,7 @@ def run_once(
     timeout_seconds: int,
 ) -> dict:
     out.mkdir(parents=True, exist_ok=True)
+    child_env = historical_safe_child_env()
     wrapper = subprocess.Popen(
         [
             "pwsh",
@@ -83,7 +139,7 @@ def run_once(
             str(dll),
         ],
         cwd=str(cwd),
-        env=base.sanitized_child_env(),
+        env=child_env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -156,7 +212,7 @@ def run_once(
                             target_pid,
                             dump_tool,
                             out / "exact-watchdog",
-                            "exact-watchdog-powershell-topology",
+                            "exact-watchdog-powershell-topology-safe-ambient",
                         )
         except queue.Empty:
             pass
@@ -172,7 +228,7 @@ def run_once(
                     target_pid,
                     dump_tool,
                     out / "prearm-500ms",
-                    "alive-500ms-after-json-powershell-topology",
+                    "alive-500ms-after-json-powershell-topology-safe-ambient",
                 )
 
         if time.perf_counter() >= deadline and wrapper.poll() is None:
@@ -183,7 +239,7 @@ def run_once(
                         target_pid,
                         dump_tool,
                         out / "timeout-evidence",
-                        "phase-timeout-powershell-topology",
+                        "phase-timeout-powershell-topology-safe-ambient",
                     )
                 kill_target_tree(target_pid, out / "taskkill.log")
             wrapper.kill()
@@ -199,7 +255,7 @@ def run_once(
                     target_pid,
                     dump_tool,
                     out / "post-loop-evidence",
-                    "target-still-alive-after-observer-loop",
+                    "target-still-alive-after-observer-loop-safe-ambient",
                 )
             kill_target_tree(target_pid, out / "taskkill-post-loop.log")
         wrapper.kill()
@@ -280,6 +336,15 @@ def main() -> int:
     if not dll.is_file():
         raise RuntimeError(f"missing target: {dll}")
 
+    selected_env_names = sorted(
+        key for key in historical_safe_child_env()
+        if key not in base.sanitized_child_env()
+    )
+    base.write_json(out / "ambient-environment.json", {
+        "selectedVariableNames": selected_env_names,
+        "valuesPublished": False,
+    })
+
     deadline = time.monotonic() + args.duration_minutes * 60
     results: list[dict] = []
     for iteration in range(1, args.max_iterations + 1):
@@ -299,11 +364,13 @@ def main() -> int:
             break
 
     summary = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "targetSha": base.TARGET_SHA,
         "assembly": base.ASSEMBLY,
         "phase": "assembly-info",
         "launchTopology": "Python observer -> pwsh -> System.Diagnostics.Process -> dotnet target",
+        "ambientEnvironment": "sanitized baseline plus non-secret DOTNET/CLR/host/CI variables",
+        "selectedAmbientVariableNames": selected_env_names,
         "targetInvocation": "dotnet DownKyi.Desktop.Tests.dll -assemblyInfo",
         "iterations": len(results),
         "jsonDetections": sum(1 for result in results if result["assemblyInfoJsonSeenAtUtc"]),
