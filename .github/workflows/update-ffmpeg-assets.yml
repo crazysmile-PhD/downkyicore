@@ -1,0 +1,218 @@
+name: Update mirrored FFmpeg assets
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: 'Mirror all six existing RID sources before enabling normal scheduled updates.'
+        required: false
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      bootstrap:
+        required: false
+        default: false
+        type: boolean
+      manifest_base:
+        required: false
+        default: ''
+        type: string
+
+# This workflow never pushes to main.  The two scoped secrets below are used
+# only in the jobs that need them; the default token remains read-only.
+permissions:
+  contents: read
+
+env:
+  MANIFEST_BASE_BRANCH: ${{ inputs.manifest_base || github.event.repository.default_branch }}
+
+jobs:
+  discover:
+    name: Discover fixed upstream candidate
+    runs-on: ubuntu-latest
+    outputs:
+      no_op: ${{ steps.candidate.outputs.no_op }}
+      matrix: ${{ steps.candidate.outputs.matrix }}
+      mirror_tag: ${{ steps.candidate.outputs.mirror_tag }}
+      manifest_base: ${{ steps.authority.outputs.manifest_base }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify updater branch authority
+        id: authority
+        shell: bash
+        run: |
+          python script/ffmpeg-assets.py validate-workflow-authority \
+            --ref-type "$GITHUB_REF_TYPE" \
+            --ref-name "$GITHUB_REF_NAME" \
+            --manifest-base "$MANIFEST_BASE_BRANCH"
+          echo "manifest_base=$MANIFEST_BASE_BRANCH" >> "$GITHUB_OUTPUT"
+      - name: Discover complete fixed releases through GitHub APIs
+        id: candidate
+        shell: bash
+        run: |
+          bootstrap_args=()
+          if [[ "${{ inputs.bootstrap }}" == "true" ]]; then
+            bootstrap_args+=(--bootstrap)
+          fi
+          mkdir -p .ffmpeg-update
+          python script/ffmpeg-assets.py discover \
+            --manifest script/assets/external-assets.json \
+            --output .ffmpeg-update/candidates.json \
+            "${bootstrap_args[@]}"
+          python script/ffmpeg-assets.py workflow-output \
+            --candidates .ffmpeg-update/candidates.json >> "$GITHUB_OUTPUT"
+      - name: Upload candidate metadata
+        if: steps.candidate.outputs.no_op != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-candidate
+          path: .ffmpeg-update/candidates.json
+          if-no-files-found: error
+
+  validate:
+    name: Validate ${{ matrix.rid }} candidate
+    needs: discover
+    if: needs.discover.outputs.no_op != 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Download candidate metadata
+        uses: actions/download-artifact@v7
+        with:
+          name: ffmpeg-candidate
+          path: .ffmpeg-update
+      - name: Download, verify and validate candidate archive
+        shell: bash
+        run: |
+          mkdir -p .ffmpeg-update/${{ matrix.rid }}
+          python script/ffmpeg-assets.py download-candidate \
+            --candidates .ffmpeg-update/candidates.json \
+            --rid '${{ matrix.rid }}' \
+            --destination .ffmpeg-update/${{ matrix.rid }}
+          arguments=(
+            validate-candidate
+            --candidates .ffmpeg-update/candidates.json
+            --rid '${{ matrix.rid }}'
+            --directory .ffmpeg-update/${{ matrix.rid }}
+            --execute
+          )
+          if [[ -n '${{ matrix.requiredEncoder }}' ]]; then
+            arguments+=(--required-encoder '${{ matrix.requiredEncoder }}')
+          fi
+          python script/ffmpeg-assets.py "${arguments[@]}"
+
+  mirror-and-pr:
+    name: Mirror validated candidate and open PR
+    needs: [discover, validate]
+    if: needs.discover.outputs.no_op != 'true'
+    runs-on: ubuntu-latest
+    env:
+      RUNTIME_ASSETS_REPOSITORY: crazysmile-PhD/downkyi-runtime-assets
+      RUNTIME_ASSETS_TOKEN: ${{ secrets.RUNTIME_ASSETS_TOKEN }}
+      DOWNKYI_AUTOMATION_TOKEN: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Download candidate metadata
+        uses: actions/download-artifact@v7
+        with:
+          name: ffmpeg-candidate
+          path: .ffmpeg-update
+      - name: Download the already validated fixed candidate again and verify SHA-256
+        shell: bash
+        run: |
+          mkdir -p .ffmpeg-update/mirror
+          while IFS= read -r rid; do
+            python script/ffmpeg-assets.py download-candidate \
+              --candidates .ffmpeg-update/candidates.json \
+              --rid "$rid" \
+              --destination .ffmpeg-update/mirror
+          done < <(python -c 'import json; print("\n".join(json.load(open(".ffmpeg-update/candidates.json"))["assets"]))')
+          python script/ffmpeg-assets.py record-downloaded-sizes \
+            --candidates .ffmpeg-update/candidates.json \
+            --directory .ffmpeg-update/mirror
+      - name: Create a new immutable mirror release or resume exact immutable evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RUNTIME_ASSETS_TOKEN }}
+        run: |
+          if [[ -z "$RUNTIME_ASSETS_TOKEN" ]]; then
+            echo 'RUNTIME_ASSETS_TOKEN is required and must only have Contents: write on the runtime-assets repository.' >&2
+            exit 1
+          fi
+          immutable_enabled=$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$RUNTIME_ASSETS_REPOSITORY/immutable-releases" \
+            --jq '.enabled')
+          if [[ "$immutable_enabled" != "true" ]]; then
+            echo "Immutable releases must be enabled for $RUNTIME_ASSETS_REPOSITORY before mirroring." >&2
+            exit 1
+          fi
+          if gh release view '${{ needs.discover.outputs.mirror_tag }}' --repo "$RUNTIME_ASSETS_REPOSITORY" >/dev/null 2>&1; then
+            echo 'An existing release will not be modified; exact immutable asset read-back is required before manifest mutation.'
+          else
+            gh release create '${{ needs.discover.outputs.mirror_tag }}' \
+              --repo "$RUNTIME_ASSETS_REPOSITORY" \
+              --title 'DownKyi FFmpeg ${{ needs.discover.outputs.mirror_tag }}' \
+              --notes-file .ffmpeg-update/candidates.json \
+              --draft
+            gh release upload '${{ needs.discover.outputs.mirror_tag }}' .ffmpeg-update/mirror/* \
+              --repo "$RUNTIME_ASSETS_REPOSITORY"
+            gh release edit '${{ needs.discover.outputs.mirror_tag }}' \
+              --repo "$RUNTIME_ASSETS_REPOSITORY" \
+              --draft=false
+          fi
+      - name: Read back immutable mirror release evidence and update the manifest in the PR workspace
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RUNTIME_ASSETS_TOKEN }}
+        run: |
+          previous_version=$(python -c 'import json; print(json.load(open("script/assets/external-assets.json"))["ffmpeg"]["version"])')
+          python script/ffmpeg-assets.py read-mirror-evidence \
+            --candidates .ffmpeg-update/candidates.json \
+            --repository "$RUNTIME_ASSETS_REPOSITORY" \
+            --tag '${{ needs.discover.outputs.mirror_tag }}' \
+            --output .ffmpeg-update/mirror-result.json
+          python script/ffmpeg-assets.py apply-update \
+            --manifest script/assets/external-assets.json \
+            --candidates .ffmpeg-update/candidates.json \
+            --mirror .ffmpeg-update/mirror-result.json
+          python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json
+          python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30
+          python script/ffmpeg-assets.py pr-body \
+            --candidates .ffmpeg-update/candidates.json \
+            --mirror .ffmpeg-update/mirror-result.json \
+            --previous-version "$previous_version" \
+            --output .ffmpeg-update/pr-body.md
+      - name: Create manifest pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.DOWNKYI_AUTOMATION_TOKEN }}
+          add-paths: script/assets/external-assets.json
+          commit-message: "build(deps): update mirrored FFmpeg to ${{ needs.discover.outputs.mirror_tag }}"
+          branch: automation/ffmpeg-${{ needs.discover.outputs.mirror_tag }}
+          base: ${{ needs.discover.outputs.manifest_base }}
+          delete-branch: true
+          title: "build(deps): update mirrored FFmpeg to ${{ needs.discover.outputs.mirror_tag }}"
+          body-path: .ffmpeg-update/pr-body.md

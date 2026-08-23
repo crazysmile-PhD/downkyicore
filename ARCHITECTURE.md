@@ -58,7 +58,7 @@ Program
 
 `DesktopApplication`、`DownKyiHost` 與 `DesktopComposition` 共同形成 Desktop composition root；executable 只做單次委派。
 
-Bilibili endpoint adapters 仍位於 `DownKyi.Core/BiliApi` 以保留 DTO 與外部協定相容性，但所有 production 呼叫都接收注入的 `IBilibiliApiClient` 並使用 async API。Host 是 client、cookie provider、buvid provider 與網路設定的唯一組合點；static client、全域 `Configure()` 和同步 HTTP compatibility path 已刪除。
+Bilibili endpoint adapters 仍位於 `DownKyi.Core/BiliApi` 以保留 DTO 與外部協定相容性，但所有 production 呼叫都接收注入的 async port。普通 API 使用 `IBilibiliApiClient`；QR 登入使用隔離的 `IBilibiliLoginSession`，由同一 session 貫穿 generate、poll 和受信任 callback，保留 response cookies。Host 是 client、login session factory、cookie provider、buvid provider 與網路設定的唯一組合點；static client、全域 `Configure()` 和同步 HTTP compatibility path 已刪除。
 
 ## 目前導航與 UserSpace 資料流
 
@@ -186,13 +186,15 @@ command
 ```text
 ResolvePlaybackStage
 DownloadMediaStage
-DownloadArtifactsStage
 MuxStage
+DownloadArtifactsStage
 ValidateStage
 FinalizeStage
 ```
 
 每個 stage 接受 `DownloadExecutionContext` 與 `CancellationToken`，回傳 typed result。UI 文字由 Desktop presenter 依 domain/application phase 投影，不可由 pipeline 直接讀取資源字典。
+
+下載來源、續傳 sidecar 與 completed transfer key 在所有必要 stage 通過前都屬於可重試狀態。FFmpeg 只能發布已驗證輸出，不得刪除輸入；只有 `FinalizeStage` 成功提交 Domain `Completed` 後，才能透過既有 `DownloadTaskFileService` 清理該任務的精確來源與 sidecar。Artifact、mux、validation、取消或 SQLite completion 失敗都必須保留這些 retry checkpoint。
 
 下載重試只有一個預算 owner：
 
@@ -203,7 +205,9 @@ DownloadMediaStage
   -> ITransferBackend (exactly one URL, one backend attempt)
 ```
 
-`DownloadTransferResult` 區分 transient network、rate limit、expired address、resume rejected、invalid media、disk 與 permanent failure。403 可觸發一次播放地址重解；429 在 backend 能提供 `Retry-After` 時遵守最多 30 秒的 bounded delay；resume rejected 只允許清理該 transfer 的檔案與 sidecar 後重試一次；cancellation 不會轉成失敗或 retry。Built-in Downloader 與 aria2 的內部 retry 必須停用，每個 aria RPC client call 只能送出一次實體請求，避免和 coordinator 的 budget 相乘。網路失敗保留 partial/resume sidecar，只有確定無效的 media 或被拒絕的續傳狀態才清理。aria2 RPC 層失敗必須保留最新 GID；只有 terminal task failure 或明確的 task-not-found 才能清除。
+`DownloadTransferResult` 區分 transient network、rate limit、expired address、resume rejected、invalid media、disk 與 permanent failure。403 可觸發一次播放地址重解；429 在 backend 能提供 `Retry-After` 時遵守最多 30 秒的 bounded delay；resume rejected 只允許清理該 transfer 的檔案與 sidecar 後重試一次；cancellation 不會轉成失敗或 retry。Built-in Downloader 與 aria2 的內部 retry 必須停用，每個 aria RPC client call 只能送出一次實體請求，避免和 coordinator 的 budget 相乘。網路失敗只在重試完全相同的 URL 時保留 partial、resume sidecar 與 GID；切換 backup 或 refreshed URL 前，coordinator 必須先要求 backend 停止舊 transfer，再清除 identity、目標檔與 sidecar，任何 teardown/cleanup 失敗都 fail closed。aria2 RPC 層失敗必須保留最新 GID；只有 terminal task failure、明確的 task-not-found 或安全的來源切換 teardown 才能清除。
+
+Mux 失敗不等於來源損壞。`FfmpegProcessor` 只在 fail-on-error decode 的 stderr 含有明確媒體解碼損壞證據時回報 invalid input；單純已啟動且非零 exit code 不足以判定來源損壞。多段 DURL concat 失敗後必須逐段診斷，`MuxStage` 只能沿用既有 completed-key invalidation 與 sidecar cleanup 撤銷已確認損壞的那些段。正式 mux、concat 與失敗診斷共用同一個 `FfmpegMaxParallelJobs` gate。FFmpeg 缺失、逾時、runtime 或權限錯誤、目的檔衝突必須保留來源、completed key 與 resume identity。
 
 `AriaClient` 是專案內維護的 JSON-RPC compatibility adapter，不是生成檔。核心 partial 只擁有 immutable endpoint/token、序列化、response decoding 與單次 HTTP transport；下載控制、狀態/URI、選項、生命週期與 `system.*` methods 各自由責任 partial 擁有。所有 `aria2.*` method 的 token 位置與 RPC method name 由全公開方法合約測試固定。來源證據、owner 表和變更流程位於 `docs/design-docs/aria2-rpc-client-ownership.md`。
 
@@ -275,6 +279,7 @@ legacy `UseSsl` migration and third-party binary evidence are documented in
 - SQLite 下載紀錄、未完成任務、partial files、aria2 GID 與續傳資料不可遺失。
 - 外部 Bilibili envelope、WBI、DURL 與 protobuf contract 必須由 fixture 測試保護。
 - 固定 Bilibili 端點必須登錄於 `docs/operations/bilibili-api-audit.md`；匿名或明確授權的登入態 live probe 只提供清理後時點證據，不可取代 deterministic contract tests，也不可保存 credential、raw response 或帳號值。
+- QR 登入 callback 只允許 HTTPS Bilibili host；只有父網域 Cookie 可離開隔離 session。`Set-Cookie` 與 callback 參數合併後必須原子寫入、從磁碟重載並通過 `/nav isLogin=true`，才可顯示成功或取代既有登入檔；舊 Cookie JSON 缺少 wire-value 標記時必須保留既有編碼語意。
 - XAML resource URI、compiled binding 和 typed route 改名必須有 UI smoke coverage。
 - 任何跨層搬移都先建立 adapter 或 migration，再移除舊 owner。
 

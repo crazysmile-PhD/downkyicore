@@ -15,6 +15,17 @@ Avoid mixing package updates with large refactors unless the refactor is require
 
 ## CI Policy
 
+### Test Platform Ownership
+
+Every `*.Tests.csproj` must declare `DownKyiTestPlatforms` as an explicit
+semicolon-separated subset of `Windows;Linux;macOS`; projects that support all
+three list all three, with no implicit default. Native behavioral tests belong
+in an OS-owned project. `test-solution.ps1`, `test-assembly-lifecycle.ps1` and
+direct project execution through `test-project-runner.ps1` reject missing or
+unknown declarations and run a project only when its list contains the current
+OS. Architecture tests verify this ownership and wiring but do not emulate a
+different OS's native behavior.
+
 Assembly/process lifecycle is a separate quality dimension from test
 assertions. Run `script/audit-lifecycle-ownership.ps1` after changing any
 thread, Dispatcher, timer, Host, global event, fixture or external-process
@@ -211,12 +222,15 @@ PR 03-06 result: legacy GID, partial-file maps, completed asset keys, paused sta
 
 - Queue consumption uses a bounded Channel and fixed workers. Do not restore per-item task spawning or synchronous persistence callbacks.
 - New, resumed, and startup-restored work enters through `DownloadTaskQueueGateway` as `DownloadTaskId`. The unbounded admission channel isolates UI/startup callers from worker-channel capacity; only the internal dispatcher waits for bounded worker capacity. Runtime scheduling must never poll `ObservableCollection`.
+- New task admission is serialized by the singleton `DownloadTaskAdmissionService`. It selects one normalized base path against authoritative unfinished Domain tasks and current disk outputs, persists it before UI/queue publication, and uses case-insensitive comparison on Windows. Failed retryable tasks retain the reservation; canceled/completed/deleted tasks release active ownership.
 - Built-in and aria2 transfers share key, resume, integrity, and persistence behavior. Custom aria2 is a backend selection, not a copied workflow.
 - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO output. `DownloadTaskStateWriter` adapts runtime calls to typed Application commands; it cannot accept `DownloadingItem` or persist reconstructed UI state.
 - Pause first persists `Pausing`; built-in/aria2 backends preserve partial files and return a paused outcome; the worker confirms `Paused` only after transfer teardown. Process shutdown returns active `Downloading`/`Pausing` tasks to `Queued` without dropping GID, partial-file maps, completed keys, progress, output size, or optimistic version.
 - Explicit task deletion persists `Canceled`, stops the physical backend, removes generated media and `.aria2` / `.download` sidecars, then deletes the row. A cleanup failure leaves a retryable canceled record rather than pretending deletion succeeded.
 - Multi-segment DURL identity includes `DURL.Order`, input is sorted by that order, and concat never starts with stream copy.
 - FFmpeg operations use `FfmpegProcessRunner`, bounded concurrency, cancellation, timeout, captured stderr, and process-tree cleanup. Hardware encoding is attempted when available, with CPU fallback kept for success rate.
+- Download mux/concat writes a same-directory temporary output and refuses to overwrite an existing destination. Failure cleans only its temporary file and preserves both foreign destination content and valid source streams; toolbox transforms keep their explicitly separate overwrite contract.
+- FFmpeg mux failure returns typed invalid-input evidence. Only a source that a real fail-on-error decode rejects may have its completed transfer key, backend identity, file and sidecars revoked; process startup, timeout, permission, destination and other infrastructure failures preserve reusable source state.
 - A multi-segment output is complete only after ffprobe confirms a video stream, expected duration, and successful middle/tail seek decoding. Invalid partial output is deleted.
 - Bilibili requests use injected `IBilibiliApiClient` and `IBuvidProvider` ports backed by the Infrastructure `IHttpClientFactory` transport. Endpoint adapters are async; static client state, global configuration and synchronous HTTP compatibility paths are prohibited.
 - HTTP 401/403 and API schema rejection are non-retryable, 429 honors bounded `Retry-After`, cancellation is never retried, and empty/HTML/malformed responses fail visibly.
@@ -341,6 +355,11 @@ Release packaging downloads aria2 and FFmpeg from the scripts in `script/`.
 
 - `script/aria2.ps1` and `script/aria2.sh` manage aria2 assets.
 - `script/ffmpeg.ps1` and `script/ffmpeg.sh` manage FFmpeg and ffprobe assets.
+- FFmpeg upstream discovery and project-owned immutable mirroring are owned by
+  `.github/workflows/update-ffmpeg-assets.yml`; see
+  `docs/operations/ffmpeg-asset-mirroring.md`. Production entries must be
+  fixed project-owned release URLs, never BtbN/yt-dlp/martin-riedl URLs or
+  `latest` aliases.
 - Windows and Linux packages prefer FFmpeg builds with hardware encoders. Windows x86 uses the pinned yt-dlp FFmpeg build because the former compact archive omitted ffprobe.
 - macOS packages prefer builds that expose VideoToolbox when available.
 - Every script resolves the manifest, download directory and binary output
@@ -399,13 +418,17 @@ Before pushing a release tag:
 
 1. Confirm `version.txt` matches the planned tag.
 2. Manually dispatch `.github/workflows/build.yml` on the release commit and require all Windows, Linux, and macOS release-gate/package jobs to pass.
-3. Confirm each uploaded publish manifest contains non-empty DownKyi, aria2, FFmpeg, and ffprobe binaries with SHA-256 values and the expected application version.
-4. Run the quality commands from the dependency section and `git diff --check`.
-5. Review `README.md` and `CHANGELOG.md` for user-visible changes.
-6. Push `main`, then push the `v*` tag so the same workflow recreates the validated packages.
-7. Verify generated packages, per-package `.sha256` files, and publish manifests are attached to the release.
+3. For macOS without Apple credentials, require the final app bundle to use ad-hoc signing and pass `codesign --verify --deep --strict` before DMG creation. Record that the resulting DMG is not Developer ID signed, notarized, stapled, or Gatekeeper-trusted.
+4. When `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PWD`, `APPLE_ID`, `TEAM_ID`, and `APP_SPECIFIC_PASSWORD` are available, additionally confirm macOS x64 and arm64 app notarization, stapling, Gatekeeper assessment, DMG signing, DMG verification, DMG notarization, and final DMG assessment before upload.
+5. Confirm each uploaded publish manifest contains non-empty DownKyi, aria2, FFmpeg, and ffprobe binaries with SHA-256 values and the expected application version.
+6. Run the quality commands from the dependency section and `git diff --check`.
+7. Review `README.md` and `CHANGELOG.md` for user-visible changes.
+8. Push `main`, then push the `v*` tag so the same workflow recreates the validated packages.
+9. Verify generated packages, per-package `.sha256` files, and publish manifests are attached to the release.
 
 `script/validate-publish-output.ps1` is the common package-content gate. It also rejects a runtime that drops the Fluent theme, restores the Simple theme, omits ffprobe, or publishes a mismatched assembly version. Do not replace it with a file-exists check in only one platform job.
+
+macOS signing is deliberately last-mile and inside-out: managed assemblies and Mach-O files in the app bundle are signed explicitly before the outer app. Non-code publish files are stored under `Contents/Resources` and linked from their host-expected relative paths; `Contents/MacOS` must not contain unsigned regular data files. `script/macos/package.sh` may create the app bundle, copy `Info.plist`, icon and publish output, and apply executable bits to aria2/FFmpeg. No content or permission step may run after `script/macos/sign.sh`; a later mutation invalidates the resource seal. The release workflow verifies and launches the exact app bundle from the completed DMG, not just an earlier signing command.
 
 ## Regression Checklist
 

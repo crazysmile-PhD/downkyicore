@@ -1,0 +1,304 @@
+name: Issue 183 Capture V2
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Sampling duration per Hosted Windows VM'
+        required: false
+        default: '285'
+        type: string
+      iterations_per_batch:
+        description: 'Core lifecycle iterations per batch'
+        required: false
+        default: '25'
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/issue-183-capture-v2.yml'
+
+jobs:
+  capture:
+    name: Core live capture / shard ${{ matrix.shard }}
+    runs-on: windows-latest
+    timeout-minutes: 330
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    env:
+      DURATION_MINUTES: ${{ inputs.duration_minutes || '285' }}
+      ITERATIONS_PER_BATCH: ${{ inputs.iterations_per_batch || '25' }}
+
+    steps:
+      - name: Checkout historical failure SHA
+        uses: actions/checkout@v7
+        with:
+          ref: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+          fetch-depth: 0
+          path: target
+
+      - name: Install .NET and diagnostics
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install diagnostic tools
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-stack --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+
+      - name: Restore and build historical checkout
+        working-directory: target
+        shell: pwsh
+        run: |
+          dotnet restore ./DownKyi.sln
+          if ($LASTEXITCODE -ne 0) { throw "Restore failed." }
+          dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental `
+            -p:TreatWarningsAsErrors=true `
+            -p:CodeAnalysisTreatWarningsAsErrors=true `
+            -p:EnableNETAnalyzers=true `
+            -p:AnalysisMode=All `
+            -p:EnforceCodeStyleInBuild=true `
+            -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { throw "Build failed." }
+
+      - name: Stress Core and capture shutdown blocker
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $shard = ${{ matrix.shard }}
+          $target = "$env:GITHUB_WORKSPACE\target"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-v2-shard-$shard"
+          $work = Join-Path $out "work"
+          $evidence = Join-Path $out "evidence"
+          New-Item -ItemType Directory -Force $out,$work,$evidence | Out-Null
+
+          $historicalSha = "0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8"
+          $watchdogText = "Waiting 10 seconds for foreground threads to exit"
+          $iterations = [int]$env:ITERATIONS_PER_BATCH
+          $duration = [int]$env:DURATION_MINUTES
+          $stackTool = "$env:GITHUB_WORKSPACE\tools\dotnet-stack.exe"
+          $dumpTool = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+          $harness = Join-Path $target "script\test-assembly-lifecycle.ps1"
+          $env:DOWNKYI_DOTNET_DUMP = $dumpTool
+
+          if ((& git -C $target rev-parse HEAD).Trim() -ne $historicalSha) {
+            throw "Historical SHA mismatch."
+          }
+
+          # Keep production code untouched. Patch only the historical research harness:
+          # 1) PowerShell compatibility for the nullable marker expression.
+          # 2) Full dump capture at slow-exit-after-teardown, before thread/stack work.
+          $content = Get-Content -LiteralPath $harness -Raw
+          $content = $content.Replace(
+            '$marker?.disposed',
+            '${marker}?.disposed',
+            [StringComparison]::Ordinal)
+
+          if (-not $content.Contains('process-full.dmp',[StringComparison]::Ordinal)) {
+            $f = $content.IndexOf("function Save-ProcessEvidence",[StringComparison]::Ordinal)
+            $s = $content.IndexOf('$threadSnapshot = @()',$f,[StringComparison]::Ordinal)
+            if ($f -lt 0 -or $s -lt 0) {
+              throw "Could not locate Save-ProcessEvidence."
+            }
+            $line = $content.LastIndexOf("`n",$s)
+            if ($line -lt 0) { $line = $s } else { $line++ }
+            $nl = if ($content.Contains("`r`n",[StringComparison]::Ordinal)) { "`r`n" } else { "`n" }
+            $inject = @(
+              '    if ($Reason -eq "slow-exit-after-teardown" -and',
+              '        $AssemblyName -eq "DownKyi.Core.Tests" -and',
+              '        -not $Process.HasExited) {',
+              '        $dumpPath = Join-Path $directory "process-full.dmp"',
+              '        $dumpLog = Join-Path $directory "process-full-dump.log"',
+              '        try {',
+              '            $dumpLines = @(& $env:DOWNKYI_DOTNET_DUMP collect --type Full --process-id $Process.Id --output $dumpPath 2>&1)',
+              '            $dumpExitCode = $LASTEXITCODE',
+              '            $dumpLines | Set-Content -LiteralPath $dumpLog -Encoding utf8',
+              '            ("exitCode=" + $dumpExitCode) | Add-Content -LiteralPath $dumpLog -Encoding utf8',
+              '        } catch {',
+              '            ("Full dump capture failed: " + $_.Exception.ToString()) | Set-Content -LiteralPath $dumpLog -Encoding utf8',
+              '        }',
+              '    }',
+              ''
+            ) -join $nl
+            $content = $content.Substring(0,$line) + $inject + $content.Substring($line)
+          }
+
+          $tokens = $null
+          $parseErrors = $null
+          $null = [Management.Automation.Language.Parser]::ParseInput(
+            $content,[ref]$tokens,[ref]$parseErrors)
+          if ($parseErrors.Count -gt 0) {
+            throw "Patched historical harness failed parser validation."
+          }
+          [IO.File]::WriteAllText(
+            $harness,$content,[Text.UTF8Encoding]::new($false))
+
+          $cpu = $null
+          try { $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 } catch {}
+          [ordered]@{
+            shard=$shard
+            historicalSha=$historicalSha
+            runnerName=$env:RUNNER_NAME
+            imageOs=$env:ImageOS
+            imageVersion=$env:ImageVersion
+            processorName=if ($null -ne $cpu) { [string]$cpu.Name } else { $null }
+            logicalProcessors=if ($null -ne $cpu) { [int]$cpu.NumberOfLogicalProcessors } else { $null }
+            dotnetVersion=(& dotnet --version).Trim()
+            startedAtUtc=[DateTimeOffset]::UtcNow.ToString("O")
+          } | ConvertTo-Json -Depth 5 |
+            Set-Content (Join-Path $out "environment.json") -Encoding utf8
+
+          $deadline = [DateTimeOffset]::UtcNow.AddMinutes($duration)
+          $batch = 0
+          $core = 0
+          $watchdogs = 0
+          $slowExits = 0
+          $dumps = 0
+          $harnessErrors = 0
+          $captured = $false
+          $rows = [Collections.Generic.List[object]]::new()
+
+          while ([DateTimeOffset]::UtcNow -lt $deadline -and -not $captured) {
+            $batch++
+            $batchName = "batch-{0:D4}" -f $batch
+            $batchRoot = Join-Path $work $batchName
+            New-Item -ItemType Directory -Force $batchRoot | Out-Null
+            Write-Host "=== shard $shard / $batchName / $iterations Core iterations ==="
+
+            $harnessError = ""
+            try {
+              # The old harness was not written to inherit StrictMode Latest.
+              # Turning it off here restores its original report semantics and
+              # removes the repeated Measure-Object .Sum compatibility failure.
+              Set-StrictMode -Off
+              & $harness `
+                -Configuration Release `
+                -Profile Main `
+                -Iterations $iterations `
+                -PhaseTimeoutSeconds 180 `
+                -SlowPhaseThresholdSeconds 60 `
+                -ExitThresholdSeconds 1 `
+                -AssemblyPattern @("DownKyi.Core.Tests") `
+                -ResultsDirectory $batchRoot `
+                -DiagnosticsToolPath $stackTool `
+                -ValidateForensics `
+                -NoBuild
+            } catch {
+              $harnessError = $_.Exception.Message
+              $harnessErrors++
+              Write-Warning "Harness error retained: $harnessError"
+            } finally {
+              Set-StrictMode -Version Latest
+            }
+
+            $executionFiles = @(
+              Get-ChildItem $batchRoot -Recurse -File -Filter "execution.stdout.txt" -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match [regex]::Escape("DownKyi.Core.Tests") }
+            )
+            $coreBatch = $executionFiles.Count
+            $core += $coreBatch
+
+            $watchdogBatch = 0
+            foreach ($file in $executionFiles) {
+              $stderrPath = Join-Path $file.Directory.FullName "execution.stderr.txt"
+              $combined = Get-Content $file.FullName -Raw
+              if (Test-Path $stderrPath) {
+                $combined += "`n" + (Get-Content $stderrPath -Raw)
+              }
+              if ($combined.Contains($watchdogText,[StringComparison]::OrdinalIgnoreCase)) {
+                $watchdogBatch++
+              }
+            }
+
+            $slowDirs = @(
+              Get-ChildItem $batchRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like "*slow-exit-after-teardown*" }
+            )
+            $dumpFiles = @(
+              Get-ChildItem $batchRoot -Recurse -File -Filter "process-full.dmp" -ErrorAction SilentlyContinue
+            )
+
+            $watchdogs += $watchdogBatch
+            $slowExits += $slowDirs.Count
+            $dumps += $dumpFiles.Count
+            $captured = $watchdogBatch -gt 0 -and $dumpFiles.Count -gt 0
+
+            $suspicious =
+              $watchdogBatch -gt 0 -or $slowDirs.Count -gt 0 -or $dumpFiles.Count -gt 0
+
+            $retained = ""
+            if ($suspicious) {
+              $retained = Join-Path $evidence $batchName
+              Move-Item $batchRoot $retained
+              Write-Host (
+                "TARGET SIGNAL: watchdog=$watchdogBatch slowExit=$($slowDirs.Count) " +
+                "dumps=$($dumpFiles.Count) captured=$captured")
+            } else {
+              Remove-Item $batchRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+
+            $rows.Add([pscustomobject]@{
+              shard=$shard
+              batch=$batch
+              coreExecutions=$coreBatch
+              watchdogExecutions=$watchdogBatch
+              slowExitEvents=$slowDirs.Count
+              fullDumps=$dumpFiles.Count
+              forensicCaptureSucceeded=$captured
+              harnessError=$harnessError
+              retainedPath=$retained
+            })
+            @($rows) |
+              Export-Csv (Join-Path $out "batch-summary.csv") -NoTypeInformation -Encoding utf8
+
+            if ($captured) {
+              Write-Host "FORENSIC SUCCESS: exact watchdog and Full dump are retained. This shard stops."
+            }
+          }
+
+          $rate = if ($core -gt 0) {
+            [Math]::Round(($watchdogs / $core) * 100.0,6)
+          } else {
+            0.0
+          }
+
+          [ordered]@{
+            schemaVersion=2
+            shard=$shard
+            historicalSha=$historicalSha
+            batches=$batch
+            coreExecutions=$core
+            watchdogExecutions=$watchdogs
+            slowExitEvents=$slowExits
+            fullDumps=$dumps
+            forensicCaptureSucceeded=$captured
+            watchdogRatePercent=$rate
+            harnessBatchErrors=$harnessErrors
+            finishedAtUtc=[DateTimeOffset]::UtcNow.ToString("O")
+          } | ConvertTo-Json -Depth 5 |
+            Set-Content (Join-Path $out "shard-summary.json") -Encoding utf8
+
+          Write-Host (
+            "SHARD COMPLETE: core=$core watchdogs=$watchdogs slowExit=$slowExits " +
+            "dumps=$dumps captured=$captured harnessErrors=$harnessErrors")
+
+      - name: Upload shard evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-v2-shard-${{ matrix.shard }}
+          path: issue-183-v2-shard-${{ matrix.shard }}
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 1

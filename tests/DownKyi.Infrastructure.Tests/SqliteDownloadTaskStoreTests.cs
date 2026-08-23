@@ -1,3 +1,4 @@
+using DownKyi.Application.Downloads;
 using DownKyi.Application.Time;
 using DownKyi.Domain.Downloads;
 using DownKyi.Infrastructure.Downloads;
@@ -23,7 +24,7 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(true);
         using var version = connection.CreateCommand();
         version.CommandText = "PRAGMA user_version";
-        Assert.Equal(2L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(3L, await version.ExecuteScalarAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -58,6 +59,113 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             await store.GetUnfinishedAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(DownloadPhase.Queued, restored.Phase);
+    }
+
+    [Fact]
+    public async Task OrphanedLegacyDownloadingRecordIsDeletedDuringInitialization()
+    {
+        await CreateLegacyDatabaseAsync();
+        await InsertOrphanedLegacyDownloadingRecordAsync();
+        using var store = CreateStore();
+
+        var restored = await store.GetUnfinishedAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("legacy-resume", Assert.Single(restored).Id.Value);
+        Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
+    }
+
+    [Fact]
+    public async Task ValidDownloadingRecordIsPreservedDuringOrphanCleanup()
+    {
+        using (var store = CreateStore())
+        {
+            Assert.True((await store.AddAsync(
+                CreatePausedTask("valid-download"),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await InsertOrphanedLegacyDownloadingRecordAsync();
+        using var reopened = CreateStore();
+        var restored = Assert.Single(
+            await reopened.GetUnfinishedAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal("valid-download", restored.Id.Value);
+        Assert.Equal(1, await CountDownloadBaseRecordAsync("valid-download"));
+        Assert.Equal(1, await CountDownloadingRecordAsync("valid-download"));
+        Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
+    }
+
+    [Fact]
+    public async Task OrphanCleanupIsIdempotent()
+    {
+        await CreateLegacyDatabaseAsync();
+        await InsertOrphanedLegacyDownloadingRecordAsync();
+        using (var first = CreateStore())
+        {
+            await first.InitializeAsync(TestContext.Current.CancellationToken);
+        }
+
+        using (var second = CreateStore())
+        {
+            await second.InitializeAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
+        Assert.Equal(1, await CountDownloadBaseRecordAsync("legacy-resume"));
+        Assert.Equal(1, await CountDownloadingRecordAsync("legacy-resume"));
+    }
+
+    [Fact]
+    public async Task CurrentSchemaDatabaseStillCleansOrphanedDownloadingRecords()
+    {
+        using (var store = CreateStore())
+        {
+            await store.InitializeAsync(TestContext.Current.CancellationToken);
+        }
+
+        await InsertOrphanedLegacyDownloadingRecordAsync();
+        using (var reopened = CreateStore())
+        {
+            await reopened.InitializeAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(3, await ReadSchemaVersionAsync());
+        Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
+    }
+
+    [Fact]
+    public async Task MigratedLegacyDatabaseCleansOrphanedDownloadingRecords()
+    {
+        await CreateLegacyDatabaseAsync();
+        await InsertOrphanedLegacyDownloadingRecordAsync();
+        using var store = CreateStore();
+
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, await ReadSchemaVersionAsync());
+        Assert.Equal(1, await CountDownloadBaseRecordAsync("legacy-resume"));
+        Assert.Equal(1, await CountDownloadingRecordAsync("legacy-resume"));
+        Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
+    }
+
+    [Fact]
+    public async Task OrphanCleanupDoesNotAffectDownloadHistory()
+    {
+        using (var store = CreateStore())
+        {
+            Assert.True((await store.AddAsync(
+                CreateCompletedTask("history-preserved", 123),
+                TestContext.Current.CancellationToken)).IsSuccess);
+        }
+
+        await InsertOrphanedLegacyDownloadingRecordAsync();
+        using var reopened = CreateStore();
+        var history = await reopened.GetHistoryPageAsync(null, 10, TestContext.Current.CancellationToken);
+
+        Assert.Equal("history-preserved", Assert.Single(history.Items).Id.Value);
+        Assert.Equal(1, await CountDownloadBaseRecordAsync("history-preserved"));
+        Assert.Equal(1, await CountDownloadedRecordAsync("history-preserved"));
+        Assert.Equal(0, await CountDownloadingRecordAsync("orphaned-download"));
     }
 
     [Fact]
@@ -101,6 +209,49 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
         Assert.False(stale.IsSuccess);
         Assert.Equal("download.store.conflict", stale.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ConcurrentAddsAtomicallyClaimOneOutputPath()
+    {
+        var outputPath = Path.Combine(_directory, "shared-output");
+        var first = CreateQueuedTask("claim-first", outputPath);
+        var second = CreateQueuedTask("claim-second", outputPath);
+        using var firstStore = CreateStore();
+        using var secondStore = CreateStore();
+
+        var results = await Task.WhenAll(
+            firstStore.AddAsync(first, TestContext.Current.CancellationToken),
+            secondStore.AddAsync(second, TestContext.Current.CancellationToken));
+
+        Assert.Single(results, result => result.IsSuccess);
+        var rejected = Assert.Single(results, result => !result.IsSuccess);
+        Assert.Equal("download.store.output_path_reserved", rejected.Error?.Code);
+    }
+
+    [Fact]
+    public async Task CanceledOutputClaimIsReleasedOnlyWhenTaskIsDeleted()
+    {
+        var outputPath = Path.Combine(_directory, "cleanup-owned-output");
+        var task = CreateQueuedTask("cleanup-owner", outputPath);
+        using var store = CreateStore();
+        Assert.True((await store.AddAsync(task, TestContext.Current.CancellationToken)).IsSuccess);
+        var canceled = task.Cancel(_clock.UtcNow.AddSeconds(1)).RequireValue();
+        Assert.True((await store
+            .UpdateAsync(canceled, task.Version, TestContext.Current.CancellationToken)).IsSuccess);
+
+        Assert.True(await store.IsOutputPathReservedAsync(
+            outputPath,
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+            TestContext.Current.CancellationToken));
+
+        var deleted = canceled.Delete(_clock.UtcNow.AddSeconds(2)).RequireValue();
+        Assert.True((await store
+            .UpdateAsync(deleted, canceled.Version, TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.False(await store.IsOutputPathReservedAsync(
+            outputPath,
+            DownloadOutputPathKey.UsesCaseInsensitiveComparison,
+            TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -214,16 +365,38 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task DisposeReleasesTheOwnedConnectionPool()
+    public async Task DisposeDoesNotClearProviderPoolOwnedBySiblingConnections()
     {
         var databasePath = Path.Combine(_directory, "download.db");
         var store = CreateStore();
         await store.InitializeAsync(TestContext.Current.CancellationToken);
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = true,
+            DefaultTimeout = 5
+        }.ToString();
+
+        using (var sibling = new SqliteConnection(connectionString))
+        {
+            await sibling.OpenAsync(TestContext.Current.CancellationToken);
+            await using var createProbe = sibling.CreateCommand();
+            createProbe.CommandText = "CREATE TEMP TABLE pool_owner_probe(value INTEGER);";
+            await createProbe.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
 
         store.Dispose();
-        File.Delete(databasePath);
 
-        Assert.False(File.Exists(databasePath));
+        using var observer = new SqliteConnection(connectionString);
+        await observer.OpenAsync(TestContext.Current.CancellationToken);
+        await using var findProbe = observer.CreateCommand();
+        findProbe.CommandText =
+            "SELECT COUNT(*) FROM sqlite_temp_master WHERE type = 'table' AND name = 'pool_owner_probe';";
+
+        Assert.Equal(
+            1L,
+            (long)(await findProbe.ExecuteScalarAsync(TestContext.Current.CancellationToken))!);
     }
 
     public void Dispose()
@@ -260,6 +433,16 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
             _clock.UtcNow.AddSeconds(3)).RequireValue();
         task = task.Pause(_clock.UtcNow.AddSeconds(4)).RequireValue();
         return task.ConfirmPaused(_clock.UtcNow.AddSeconds(5)).RequireValue();
+    }
+
+    private DownloadTask CreateQueuedTask(string id, string outputPath)
+    {
+        return DownloadTask.Create(
+            new DownloadTaskId(id),
+            CreateMetadata(id),
+            CreatePlan(),
+            new DownloadOutput(outputPath, null),
+            _clock.UtcNow);
     }
 
     private DownloadTask CreateCompletedTask(string id, long finishedTimestamp)
@@ -310,6 +493,41 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         return connection;
     }
 
+    private async Task<long> CountDownloadBaseRecordAsync(string id)
+    {
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM download_base WHERE id = @id";
+        command.Parameters.AddWithValue("@id", id);
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken).ConfigureAwait(false))!;
+    }
+
+    private async Task<long> CountDownloadingRecordAsync(string id)
+    {
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM downloading WHERE id = @id";
+        command.Parameters.AddWithValue("@id", id);
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken).ConfigureAwait(false))!;
+    }
+
+    private async Task<long> CountDownloadedRecordAsync(string id)
+    {
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM downloaded WHERE id = @id";
+        command.Parameters.AddWithValue("@id", id);
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken).ConfigureAwait(false))!;
+    }
+
+    private async Task<long> ReadSchemaVersionAsync()
+    {
+        using var connection = await OpenReadOnlyConnectionAsync().ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA user_version";
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken).ConfigureAwait(false))!;
+    }
+
     private async Task CorruptRequestedAssetsAsync(string id, string sensitiveValue)
     {
         using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
@@ -326,6 +544,21 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var command = connection.CreateCommand();
         command.CommandText = "UPDATE downloading SET download_status = @status";
         command.Parameters.AddWithValue("@status", status);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task InsertOrphanedLegacyDownloadingRecordAsync()
+    {
+        using var connection = await OpenConnectionAsync(readOnly: false).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            PRAGMA foreign_keys = OFF;
+            INSERT INTO downloading
+                (id, download_files, downloaded_files, play_stream_type, download_status,
+                 progress, max_speed)
+            VALUES
+                ('orphaned-download', '{}', '[]', 0, 0, 0, 0)
+            """;
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
     }
 

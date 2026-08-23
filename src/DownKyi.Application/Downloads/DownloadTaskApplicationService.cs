@@ -54,6 +54,16 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         return _store.GetUnfinishedAsync(cancellationToken);
     }
 
+    public Task<bool> IsOutputPathReservedAsync(
+        string basePath,
+        bool ignoreCase,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _store.IsOutputPathReservedAsync(basePath, ignoreCase, cancellationToken);
+    }
+
     public Task<DownloadHistoryPage> GetHistoryPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,
@@ -128,14 +138,79 @@ public sealed class DownloadTaskApplicationService : IDownloadTaskApplicationSer
         }, cancellationToken);
     }
 
+    public Task<OperationResult<DownloadTask>> ClaimTransferFileAsync(
+        DownloadTaskId taskId,
+        string key,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        return MutateAsync(taskId, (task, now) =>
+        {
+            var files = task.Plan.TransferFiles;
+            if (files.Values.Contains(filePath, StringComparer.Ordinal))
+            {
+                return task.UpdatePlan(task.Plan, task.Transfer, now);
+            }
+
+            var claimKey = key;
+            if (files.ContainsKey(claimKey))
+            {
+                for (var suffix = 1; suffix <= files.Count + 1; suffix++)
+                {
+                    var candidate = $"{key}-owner-{suffix:D4}";
+                    if (!files.ContainsKey(candidate))
+                    {
+                        claimKey = candidate;
+                        break;
+                    }
+                }
+            }
+
+            var claimedFiles = files.Add(claimKey, filePath);
+            var plan = new DownloadPlan(
+                task.Plan.RequestedAssets,
+                claimedFiles,
+                task.Plan.StreamType);
+            return task.UpdatePlan(plan, task.Transfer, now);
+        }, cancellationToken);
+    }
+
     public Task<OperationResult<DownloadTask>> InvalidateCompletedFileAsync(
         DownloadTaskId taskId,
         string key,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        return InvalidateCompletedFilesAsync(taskId, [key], cancellationToken);
+    }
+
+    public Task<OperationResult<DownloadTask>> InvalidateCompletedFilesAsync(
+        DownloadTaskId taskId,
+        IReadOnlyCollection<string> keys,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        if (keys.Count == 0)
+        {
+            throw new ArgumentException("At least one completed file key is required.", nameof(keys));
+        }
+
+        var distinctKeys = keys
+            .Select(key =>
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(key);
+                return key;
+            })
+            .ToHashSet(StringComparer.Ordinal);
         return MutateAsync(taskId, (task, now) => task.UpdateTransferState(
-            CopyTransfer(task.Transfer, completedFileKeys: task.Transfer.CompletedFileKeys.Remove(key)),
+            CopyTransfer(
+                task.Transfer,
+                backendIdentity: null,
+                replaceBackendIdentity: true,
+                completedFileKeys: task.Transfer.CompletedFileKeys
+                    .Where(key => !distinctKeys.Contains(key))),
             now), cancellationToken);
     }
 

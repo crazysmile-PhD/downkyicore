@@ -2,6 +2,8 @@ param($arch)
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "download-external-asset.ps1")
+
 function Create-Dir($dir) {
     if (!(Test-Path -Path $dir)) {
         New-Item $dir -ItemType "directory" | Out-Null
@@ -15,9 +17,10 @@ function Get-Asset($tool, $rid) {
 }
 
 function Verify-Asset($path, $expectedSha256) {
-    $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -ne $expectedSha256) {
-        throw "Checksum mismatch for $path. Expected $expectedSha256, got $actual."
+    $verifier = Join-Path $PSScriptRoot "ffmpeg-assets.py"
+    & python $verifier verify-file --path $path --sha256 $expectedSha256
+    if ($LASTEXITCODE -ne 0) {
+        throw "Checksum verification failed for $path."
     }
 }
 
@@ -35,7 +38,7 @@ $archive = Join-Path $downloadDir "ffmpeg-$arch.zip"
 if (Test-Path -LiteralPath $archive) {
     Remove-Item -LiteralPath $archive -Force
 }
-Start-BitsTransfer -Source $asset.url -Destination $archive
+Invoke-ExternalAssetDownload -Uri $asset.url -Destination $archive
 Verify-Asset $archive $asset.sha256
 
 $destDir = Join-Path $binaryRoot "$rid\ffmpeg"

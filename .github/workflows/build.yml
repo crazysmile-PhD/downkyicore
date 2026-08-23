@@ -2,17 +2,106 @@ name: Build
 
 permissions:
   contents: read
+  pull-requests: read
 
 on:
   push:
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - main
+      - release/v1.1.1-integration
+    paths:
+      - 'script/assets/external-assets.json'
+      - 'script/ffmpeg-assets.py'
+      - 'script/ffmpeg.ps1'
+      - 'script/ffmpeg.sh'
+      - 'script/tests/test_ffmpeg_assets.py'
+      - '.github/workflows/build.yml'
+      - '.github/workflows/update-ffmpeg-assets.yml'
   workflow_dispatch:
+    inputs:
+      update_ffmpeg_assets:
+        description: 'Run the FFmpeg mirror updater from the selected branch instead of the release build.'
+        required: false
+        default: false
+        type: boolean
+      bootstrap_ffmpeg_assets:
+        description: 'Import all six pinned RID sources during the first mirror run.'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
+  ffmpeg-tooling:
+    name: FFmpeg tooling / implementation gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Validate GitHub Actions workflow syntax
+        uses: raven-actions/actionlint@v2
+        with:
+          files: .github/workflows/build.yml,.github/workflows/update-ffmpeg-assets.yml
+          fail-on-error: true
+          pyflakes: true
+          shellcheck: true
+      - name: Run FFmpeg asset guards
+        run: python -m unittest script/tests/test_ffmpeg_assets.py -v
+
+  ffmpeg-asset-updater:
+    name: Update mirrored FFmpeg assets
+    needs: ffmpeg-tooling
+    if: ${{ inputs.update_ffmpeg_assets }}
+    uses: ./.github/workflows/update-ffmpeg-assets.yml
+    with:
+      bootstrap: ${{ inputs.bootstrap_ffmpeg_assets }}
+      manifest_base: ${{ github.ref_name }}
+    secrets: inherit
+
+  detect-production-manifest-change:
+    name: Detect production manifest change
+    runs-on: ubuntu-latest
+    outputs:
+      external_assets: ${{ steps.filter.outputs.external_assets }}
+    steps:
+      - name: Detect external asset manifest changes in the PR diff
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            external_assets:
+              - 'script/assets/external-assets.json'
+
+  external-assets-preflight:
+    name: Production manifest preflight
+    needs:
+      - ffmpeg-tooling
+      - detect-production-manifest-change
+    if: ${{ always() && !inputs.update_ffmpeg_assets && needs.ffmpeg-tooling.result == 'success' && (github.event_name != 'pull_request' || needs.detect-production-manifest-change.outputs.external_assets == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Validate immutable FFmpeg manifest
+        run: python script/ffmpeg-assets.py validate-manifest --manifest script/assets/external-assets.json
+      - name: Check external asset availability
+        run: python script/ffmpeg-assets.py preflight --manifest script/assets/external-assets.json --timeout 30
+
   release-gate:
     name: Release gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: external-assets-preflight
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +140,7 @@ jobs:
   assembly-lifecycle-release:
     name: Assembly lifecycle release gate
     runs-on: windows-latest
+    needs: external-assets-preflight
     timeout-minutes: 180
     steps:
       - name: Checkout
@@ -96,6 +186,7 @@ jobs:
     name: Generate changelog
     runs-on: ubuntu-latest
     needs: [release-gate, assembly-lifecycle-release]
+    if: ${{ always() && needs.release-gate.result == 'success' && needs.assembly-lifecycle-release.result == 'success' }}
     outputs:
       release_body: ${{ steps.git-cliff.outputs.content }}
     steps:
@@ -128,6 +219,10 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      - name: Install Python for FFmpeg manifest verification
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
       - name: Read Version Text
         id: version
         shell: pwsh
@@ -215,6 +310,10 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      - name: Install Python for FFmpeg manifest verification
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
       - name: Read Version Text
         id: version
         run: |
@@ -270,14 +369,18 @@ jobs:
             script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}.sha256
             script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json
   build-macos:
-    runs-on: macos-15
+    runs-on: ${{ matrix.os }}
     needs: changelog
     env:
       HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
     strategy:
       fail-fast: false
       matrix:
-        cpu: [ x64, arm64 ]
+        include:
+          - cpu: x64
+            os: macos-15-intel
+          - cpu: arm64
+            os: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -287,6 +390,15 @@ jobs:
         with:
           p12-file-base64: ${{ secrets.MACOS_CERTIFICATE }}
           p12-password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+      - name: Resolve signing identity
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          identity="$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+          if [ -z "$identity" ]; then
+            echo "::error::No Developer ID Application signing identity was imported."
+            exit 1
+          fi
+          echo "MACOS_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
       - name: Install Tool Via HomeBrew
         run: |
           export HOMEBREW_NO_AUTO_UPDATE=true
@@ -296,6 +408,12 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      - name: Run macOS packaging regressions
+        run: dotnet test tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj -c Release
+      - name: Install Python for FFmpeg manifest verification
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
       - name: Read Version Text
         id: version
         run: |
@@ -325,10 +443,15 @@ jobs:
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
             -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
       - name: Sign app
-        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         run: |
-          chmod +x sign.sh
+          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh
           ./sign.sh
+        working-directory: ./script/macos
+        env:
+          MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}
+      - name: Verify app signature
+        run: |
+          ./verify-app.sh
         working-directory: ./script/macos
       - name: Notarize app
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
@@ -338,6 +461,13 @@ jobs:
           xcrun stapler staple 哔哩下载姬.app
           rm -rf ./哔哩下载姬.zip
         working-directory: ./script/macos
+      - name: Verify notarized app
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          ./verify-app.sh
+        working-directory: ./script/macos
+        env:
+          MACOS_VERIFY_GATEKEEPER: true
       - name: Create DMG
         run: |
           create-dmg \
@@ -348,12 +478,35 @@ jobs:
           --window-size 660 400 \
           DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg 哔哩下载姬.app
         working-directory: ./script/macos
+      - name: Sign DMG
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          ./sign-dmg.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+        working-directory: ./script/macos
+      - name: Verify signed DMG
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          ./verify-dmg.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+        working-directory: ./script/macos
       - name: Notarize DMG
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         run: |
           xcrun notarytool submit DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.TEAM_ID }}" --password "${{ secrets.APP_SPECIFIC_PASSWORD }}" --wait
           xcrun stapler staple DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
         working-directory: ./script/macos
+      - name: Verify notarized DMG
+        if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
+        run: |
+          ./verify-dmg.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+        working-directory: ./script/macos
+        env:
+          MACOS_VERIFY_NOTARIZATION: true
+      - name: Verify packaged DMG contents and launch app
+        run: |
+          ./verify-dmg-contents.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+        working-directory: ./script/macos
+        env:
+          MACOS_VERIFY_GATEKEEPER: ${{ env.HAS_MACOS_SIGNING == 'true' }}
       - name: Hash DMG
         shell: pwsh
         run: |

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "projects": [
+    {
+      "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Avoid xunit/xunit#3576 in the VSTest adapter while the independent assembly lifecycle gate continues to verify assembly-info and process exit."
+    }
+  ]
+}

@@ -77,6 +77,10 @@ public sealed class AssemblyLifecycleArchitectureTests
             "markerReadErrorType",
             "markerReaderSelfTestPassed",
             "markerReaderSelfTest",
+            "RedirectStandardInput = $true",
+            "$process.StandardInput.Close()",
+            "Test-XunitReporterContractMutation",
+            "reporterContractSelfTestPassed",
             "[System.IO.FileShare]::ReadWrite",
             "ValidateForensics"
         ];
@@ -112,6 +116,9 @@ public sealed class AssemblyLifecycleArchitectureTests
             "$forensicsSelfTestCaptureLeadValidated =",
             source,
             StringComparison.Ordinal);
+        AssertUsesSynchronousAutomatedReporting(source, "assembly-info");
+        AssertUsesSynchronousAutomatedReporting(source, "discovery");
+        AssertUsesSynchronousAutomatedReporting(source, "execution");
     }
 
     [Fact]
@@ -214,7 +221,7 @@ public sealed class AssemblyLifecycleArchitectureTests
     }
 
     [Fact]
-    public void LifecycleProfilesAreRequiredByPrMainAndReleaseWorkflows()
+    public void LifecycleProfilesRemainConfiguredForNormalRelease()
     {
         var quality = Read(".github/workflows/quality.yml");
         var release = Read(".github/workflows/build.yml");
@@ -228,7 +235,11 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.Contains("assembly-lifecycle-release:", release, StringComparison.Ordinal);
         Assert.Contains("-Profile Rehearsal", release, StringComparison.Ordinal);
         Assert.Contains("-ValidateForensics", release, StringComparison.Ordinal);
-        Assert.Contains("assembly-lifecycle-release", release, StringComparison.Ordinal);
+        Assert.Contains(
+            "needs.assembly-lifecycle-release.result == 'success'",
+            release,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("refs/tags/v1.1.2", release, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -303,6 +314,34 @@ public sealed class AssemblyLifecycleArchitectureTests
             Assert.NotEmpty(owner.GetProperty("paths").EnumerateArray());
             Assert.NotEmpty(owner.GetProperty("allowedMechanisms").EnumerateArray());
         }
+    }
+
+    private static void AssertUsesSynchronousAutomatedReporting(string source, string phase)
+    {
+        var phaseMarker = $"-Phase \"{phase}\"";
+        var phaseStart = source.LastIndexOf(phaseMarker, StringComparison.Ordinal);
+        Assert.True(phaseStart >= 0, $"Lifecycle phase was not found: {phase}");
+
+        var previousResult = source.LastIndexOf(
+            "$phaseResults += New-ProcessPhaseResult",
+            phaseStart,
+            StringComparison.Ordinal);
+        var guardedInvocation = source.LastIndexOf(
+            "Invoke-XunitAutomatedPhase",
+            phaseStart,
+            StringComparison.Ordinal);
+        Assert.True(
+            guardedInvocation > previousResult,
+            $"Lifecycle phase must use the guarded xUnit invocation: {phase}");
+
+        var phaseEnd = source.IndexOf(
+            "$phaseResults += New-ProcessPhaseResult",
+            phaseStart,
+            StringComparison.Ordinal);
+        Assert.True(phaseEnd > phaseStart, $"Lifecycle phase result was not found: {phase}");
+
+        var phaseInvocation = source[phaseStart..phaseEnd];
+        Assert.Matches("\"-automated\",\\s*\"sync\"", phaseInvocation);
     }
 
     private static string Read(string relativePath)

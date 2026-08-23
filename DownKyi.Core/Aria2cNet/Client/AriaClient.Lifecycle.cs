@@ -52,7 +52,9 @@ public sealed partial class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public async Task<AriaRemove> RemoveDownloadResultAsync(string gid)
+    public async Task<AriaRemove> RemoveDownloadResultAsync(
+        string gid,
+        CancellationToken cancellationToken = default)
     {
         List<object> ariaParams = new List<object>
         {
@@ -66,7 +68,7 @@ public sealed partial class AriaClient
             Method = "aria2.removeDownloadResult",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaRemove>(ariaSend).ConfigureAwait(false);
+        return await GetRpcResponseAsync<AriaRemove>(ariaSend, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

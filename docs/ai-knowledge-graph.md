@@ -148,6 +148,7 @@ flowchart TD
     ReviewInvariants["test.review-invariant-corpus\nroot-cause failure corpus"]
     AriaTlsCI["workflow.aria2-tls-security\nsix RID real-binary gate"]
     Release["workflow.release-packaging\n.github/workflows/build.yml"]
+    FFmpegAssetUpdate["workflow.ffmpeg-asset-update\nimmutable mirror + manifest PR"]
     Nightly["workflow.system-baselines\nnightly cross-platform reports"]
     AnalyzerInventory["workflow.analyzer-inventory\nscript/analyzer-inventory.ps1"]
     LifecycleGate["workflow.assembly-lifecycle\nload + discovery + execution + teardown + exit"]
@@ -183,6 +184,8 @@ flowchart TD
     CI -->|runs deterministic corpus| ReviewInvariants
     ReviewInvariants -->|guards| Tests
     Release -->|runs rehearsal profile| LifecycleGate
+    FFmpegAssetUpdate -->|updates through PR| Release
+    FFmpegAssetUpdate -->|guards manifest assets| FFmpeg
     LifecycleOwners -->|governs| LifecycleGate
     LifecycleGate -->|guards| Tests
     LifecycleGate -->|guards| Host
@@ -730,9 +733,13 @@ inbound:
   - viewmodel.login
 outbound:
   - core.bili-api
+  - infra.bilibili-http
   - core.legacy-settings-migration
 contracts:
-  - Caller cancellation reaches every network operation and is checked around compatibility file persistence.
+  - One isolated QR login session owns generate, poll and trusted HTTPS callback traversal; automatic redirects cannot bypass host validation.
+  - Poll/callback response cookies override legacy callback-query values. Only parent-domain cookies may leave the session because the compatibility provider emits one shared header.
+  - Login success is committed only after the complete candidate set is persisted, reloaded through the production cookie provider and `/nav` returns `isLogin=true`; cancellation or validation failure restores the previous login file.
+  - New response cookies retain their wire values while legacy JSON without a wire-value marker retains its historical encoding behavior.
   - Navigation user data maps to the existing `UserInfoSettings` schema without changing keys or login-file location.
   - WBI key extraction accepts absolute and protocol-relative addresses and strips query/fragment suffixes using ordinal parsing.
   - Missing or partial navigation WBI metadata cannot erase previously validated persisted keys.
@@ -1732,19 +1739,21 @@ type: infrastructure
 paths:
   - src/DownKyi.Application/Bilibili/IBilibiliApiClient.cs
   - src/DownKyi.Application/Bilibili/IBuvidProvider.cs
+  - src/DownKyi.Application/Bilibili/IBilibiliLoginSession.cs
   - src/DownKyi.Infrastructure/Bilibili/BilibiliApiClient.cs
   - src/DownKyi.Infrastructure/Bilibili/BilibiliHttpTransport.cs
   - src/DownKyi.Infrastructure/Bilibili/BilibiliBuvidProvider.cs
+  - src/DownKyi.Infrastructure/Bilibili/BilibiliLoginSession.cs
   - src/DownKyi.Infrastructure/Bilibili/BilibiliServiceCollectionExtensions.cs
   - src/DownKyi.Desktop/Services/Account/BilibiliCookieProvider.cs
-responsibility: Implements injected async Bilibili transport, credential and buvid composition, bounded cancellation-aware retries, response stream ownership, and atomic file downloads.
+responsibility: Implements injected async Bilibili transport, isolated QR login session ownership, credential and buvid composition, bounded cancellation-aware retries, response stream ownership, and atomic file downloads.
 inbound:
   - core.bili-api
 outbound:
   - external.bilibili
   - core.settings
 contracts:
-  - Host composition registers one `IBilibiliApiClient`, `IBuvidProvider`, and cookie provider through Microsoft DI.
+  - Host composition registers one `IBilibiliApiClient`, `IBuvidProvider`, cookie provider and `IBilibiliLoginSessionFactory` through Microsoft DI.
   - API callers receive the client explicitly; no static client, global Configure call, or service locator is permitted.
   - All HTTP, response reads, stream copies, and retry delays are asynchronous and cancellation-aware.
   - Retry is iterative, not recursive.
@@ -1754,6 +1763,7 @@ contracts:
   - HTTP 401/403 are non-retryable; HTTP 429 honors Retry-After with a bounded delay; retryable 5xx and transport failures remain bounded.
   - Concurrent buvid callers share one in-flight request; canceling one waiter cannot cancel the shared load.
   - Response/request ownership follows the returned stream, and failed file transfers remove the `.download` temporary file.
+  - The QR login named client disables automatic redirects and handler cookie ownership; its session manually validates every HTTPS hop, captures all response cookies, and never exports host-only cookies to the domain-agnostic compatibility provider.
   - Cookies, request headers, full sensitive URLs, and account data never enter diagnostics or fixtures.
 hazards:
   - Bilibili may change fingerprint and API envelopes; source-generated DTO fields must preserve exact wire names and nullable absence.
@@ -1960,6 +1970,7 @@ paths:
   - src/DownKyi.Desktop/Services/Download/DownloadCompletionProjector.cs
   - src/DownKyi.Desktop/Services/Download/BuiltinTransferBackend.cs
   - src/DownKyi.Desktop/Services/Download/Aria2TransferBackend.cs
+  - src/DownKyi.Desktop/Services/Download/Aria2TransferBackend.Reset.cs
   - src/DownKyi.Desktop/Services/Download/Aria2TransferFailureClassifier.cs
   - src/DownKyi.Desktop/Services/Download/AriaRuntimeClientRegistry.cs
   - src/DownKyi.Desktop/Services/Download/DownloadArtifactWriter.cs
@@ -1986,7 +1997,13 @@ outbound:
 contracts:
   - A bounded Channel and fixed workers own queue consumption; global shutdown and per-task cancellation cannot create unbounded transfer tasks.
   - New, resumed, and persisted startup tasks enqueue `DownloadTaskId` directly; no runtime owner scans an observable UI collection for work.
+  - `DownloadTaskAdmissionService` is the singleton admission coordinator. Under one asynchronous gate it probes indexed candidates, resolves on-disk collisions, persists the selected base path, then publishes the UI projection and queue ID; it never reloads all unfinished tasks for each admission.
+  - SQLite schema v3 stores the normalized active reservation key in `download_base`. Task insertion claims that key in the same transaction, and a partial unique index rejects check-then-insert races. The Domain/SQLite store remains the ownership truth; no mutable path registry, cache, or UI collection owns reservations.
+  - `SqliteDownloadTaskStore` owns only its initialization gate and operation-scoped connections. Its disposal cannot clear the provider-global connection pool shared by sibling stores or connections; process/test-host teardown is the only layer allowed to perform global pool cleanup.
+  - Queued, Downloading, Pausing, Paused, Failed, and Canceled tasks retain normalized output reservations. Canceled tasks release the claim only after generated-file cleanup succeeds and the task commits Deleted; Completed tasks release it during the completion transaction. Existing output files still prevent reuse.
+  - Output-path comparison is ordinal and case-insensitive on Windows and macOS, and ordinal on Linux. The macOS rule is deliberately fail-closed for the default case-insensitive filesystems. When automatic numeric suffixing is disabled, any active or on-disk collision rejects admission instead of silently renaming the output.
   - `DownloadTransferCoordinator` is the only media-transfer retry budget owner. It supplies exactly one URL to a backend call, rotates backup addresses, and permits one playback-address refresh.
+  - Same normalized URL retries may preserve partial state and backend identity. Before selecting a different backup or refreshed URL, the coordinator must successfully reset the old backend transfer, clear its identity, and use `DownloadTransferFileCleanup` to remove the target plus `.aria2` / `.download`; reset or cleanup failure stops before the new source is contacted.
   - `DownloadRetryPolicy` maps transient network/5xx to bounded exponential backoff, 429 to bounded server delay when available, expired address/403 to backup or one refresh, rejected resume state to one cleanup plus same-address retry, invalid media to the next backup, disk/permanent failure to immediate stop, and cancellation to propagation.
   - Built-in and aria2 backends return typed results and cannot own a second retry budget. Downloader uses `MaxTryAgainOnFailure=0`; aria2 uses `max-tries=1`, `retry-wait=0`, `always-resume=false` and `max-resume-failure-tries=0`.
   - Built-in and aria2 backends share key generation, resume path selection, integrity checks, and awaited persistence; custom aria settings select the same aria backend with external process ownership.
@@ -2010,8 +2027,12 @@ contracts:
   - `DownloadTaskFileService` is an injected instance so cancellation, sidecar cleanup, retry, and permission failures use the same logger without a static owner.
   - Shutdown cancellation while enqueue or workers wait cannot skip fixed-worker drain or resumable-state recovery; active `Downloading` or `Pausing` Domain rows return to `Queued` and are persisted before exit completes.
   - Recovery persistence after cancellation explicitly ignores the canceled operation token; ordinary transfer and progress writes continue to propagate their caller token.
-  - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO generation; `DownloadTaskStateWriter` is a typed Application-command adapter and never accepts a UI task model.
-  - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `DownloadArtifactsStage`, `MuxStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages.
+  - `OperationCanceledException` is an expected stop only when the execution/shutdown owner canceled its token or durable state already left the active phase. Cancellation observed while the owning token remains active is persisted as a retryable failure and cannot terminate a worker or leave a row `Downloading`.
+  - `DownloadArtifactWriter` owns cover, subtitle, danmaku, and NFO generation; its typed result distinguishes created output, source-not-available, HTTP/parse/conversion/write/permission failure, invalid or zero-byte output, and cancellation. `DownloadTaskStateWriter` is a typed Application-command adapter and never accepts a UI task model.
+  - `DownloadPipeline` creates one context and orders `ResolvePlaybackStage`, `DownloadMediaStage`, `DownloadArtifactsStage`, `MuxStage`, `ValidateStage`, and `FinalizeStage`; the first typed failure stops later stages, so requested artifact failure cannot produce completed history.
+  - Download mux and DURL concat finalize through same-directory temporary files with `overwriteDestination: false`. A pre-existing destination fails the stage without deleting the foreign file or the valid source streams.
+  - `DownloadMediaStage` carries each persisted transfer key beside its audio, video or DURL file into `MuxStage`. Mux failure may revoke only paths listed by the typed FFmpeg invalid-input result; it reuses `DownloadTransferFileCleanup` and `DownloadTaskApplicationService.InvalidateCompletedFileAsync` instead of owning a parallel reset path.
+  - Completed-key invalidation clears the task's backend identity in the same durable Application mutation. Confirmed invalid input removes its file and `.aria2` / `.download` sidecars; infrastructure-only mux failure preserves source files, completed keys and resume identity for retry.
   - `DownloadExecutionContext` captures one immutable settings snapshot and accepts the current operation token at each active check; it cannot retain a short-lived command token.
   - `DownloadActivityPresenter` is the only stage-adjacent localized resource owner. `DownloadCompletionProjector` owns UI-thread completion-list mutation; both belong to Desktop.
   - `DownloadPipeline` cannot regain subtitle API, danmaku converter, NFO XML, direct projection-update, localized resource, FFmpeg, or SQLite implementation details.
@@ -2022,6 +2043,7 @@ hazards:
   - aria2 reports a machine-readable failure code but does not expose HTTP `Retry-After`; those 429 responses use the policy's bounded fallback delay instead of a server-provided value.
   - `DownloadingItem` still crosses into the media execution context; later extraction must replace it with a typed execution input without weakening Domain authority.
   - Letting an expected shutdown `OperationCanceledException` escape before state recovery leaves rows stored as active and prevents clean resume after restart.
+  - Treating every FFmpeg failure as source corruption destroys valid cached media when the executable, destination or permissions are the actual fault. Only typed invalid-input evidence authorizes source revocation.
   - Resume behavior depends on preserving partial files while delete behavior must remove them.
   - aria2 process cleanup is platform-sensitive.
   - Reusing Id+codec or runtime GetHashCode values across DURL segments overwrites temporary files and can produce non-seekable MP4 output.
@@ -2251,14 +2273,18 @@ contracts:
   - Hardware encode failure must fall back to CPU for success rate.
   - Windows x86 uses a pinned full FFmpeg build containing both ffmpeg and ffprobe; a compact ffmpeg-only archive is not a valid release asset.
   - Host composition creates one `FfmpegProcessor`; downloads and toolbox operations share one concurrency gate.
+  - `IFfmpegMediaMuxer` is the narrow download-stage contract implemented by that same processor; it is a testable boundary, not a second FFmpeg runtime owner.
   - `FfmpegProcessor.Instance` is forbidden because separate or implicit owners can exceed the configured CPU/GPU concurrency.
   - Multi-segment completion is accepted only after ffprobe verifies a video stream, positive expected duration, and decodable middle/tail seeks.
+  - Download-owned merge and concat callers must deny destination overwrite. FFmpeg validation/finalization failure cleans only the operation's temporary output; it cannot delete a pre-existing destination. Explicit toolbox transforms retain their separate overwrite behavior.
+  - A failed ordinary merge or multi-segment concat runs fail-on-error decode diagnostics against each requested source. A source is reported invalid only when stderr contains positive decode-corruption evidence; a started process with permission/runtime failure, startup failure, or timeout remains an infrastructure failure with an empty invalid-input set.
+  - Multi-segment DURL diagnosis reports exact corrupt segment paths so the existing transfer-key invalidation owner preserves valid sibling segments.
   - Command generation is separate from the async process runner; every process has cancellation, a timeout, captured stderr, and process-tree cleanup.
   - Hardware encoder discovery is cached and runs through the same bounded async process runner.
   - `FfmpegProcessor`, concat validation, and hardware encoder detection use typed loggers from the shared application `ILoggerFactory`; static `LogManager` access is forbidden in this boundary.
   - The hardware encoder cache is owned by the injected detector instance, which in production belongs to the singleton `FfmpegProcessor` composition owner.
   - Release packages must include cross-platform ffmpeg and ffprobe binaries with checksums.
-  - FFmpeg concurrency state belongs to the singleton runtime instance; every operation, including frame extraction, must enter and release the same bounded slot gate.
+  - FFmpeg concurrency state belongs to the singleton runtime instance; every operation, including frame extraction and post-failure input diagnostics, must enter and release the same bounded slot gate.
 hazards:
   - GPU encoder flags differ across OS/GPU/driver.
   - Full transcode can spike CPU and memory during batch downloads.
@@ -2356,6 +2382,7 @@ paths:
   - src/DownKyi.Desktop/Services/Download/AriaTaskHeaderPolicy.cs
   - src/DownKyi.Desktop/Services/Download/TlsFailureClassifier.cs
   - src/DownKyi.Desktop/Services/Download/Aria2TransferBackend.cs
+  - src/DownKyi.Desktop/Services/Download/Aria2TransferBackend.Reset.cs
 responsibility: Owns packaged aria2 RPC endpoint creation, startup-secret transfer, process identity checks, task-level credential scope and typed TLS failure behavior.
 inbound:
   - service.download-runtime
@@ -2442,6 +2469,8 @@ type: workflow
 paths:
   - .github/workflows/quality.yml
   - .github/workflows/build.yml
+  - script/test-project-runner.ps1
+  - script/test-platform-selector.ps1
   - script/test-solution.ps1
   - script/test-review-invariants.ps1
   - docs/testing/review-invariant-corpus.json
@@ -2459,6 +2488,7 @@ contracts:
   - Compiler and CA warnings block every PR on Windows, Linux, and macOS with the repository default `CodeAnalysisTreatWarningsAsErrors=true`.
   - Cleaned analyzer rules are promoted to errors and cannot regress.
   - Test projects run in stable path order so one constrained runner cannot make independent xUnit hosts starve one another during discovery or shutdown.
+  - Every test project explicitly lists its supported subset of Windows, Linux and macOS; shared runners reject missing or unknown declarations and select only projects that include the current OS.
   - Every test project writes a distinct assembly-named TRX; no solution-level logger filename may overwrite earlier project evidence.
   - Windows PR and main jobs must run the Assembly Lifecycle Stability Gate and upload its reports even when a phase fails.
   - Every PR runs the six-RID real-binary aria2 TLS security matrix; a unit-test-only pass cannot replace it.
@@ -2473,6 +2503,39 @@ hazards:
 tests:
   - test.review-invariant-corpus
   - github.actions
+```
+
+### workflow.ffmpeg-asset-update
+
+```yaml
+id: workflow.ffmpeg-asset-update
+type: workflow
+paths:
+  - .github/workflows/update-ffmpeg-assets.yml
+  - script/ffmpeg-assets.py
+  - script/assets/external-assets.json
+  - script/ffmpeg.ps1
+  - script/ffmpeg.sh
+  - docs/operations/ffmpeg-asset-mirroring.md
+responsibility: Discovers fixed upstream FFmpeg releases, validates them, mirrors verified archives into a project-owned immutable release, and opens a manifest pull request.
+inbound:
+  - github.schedule
+  - github.workflow_dispatch
+outbound:
+  - workflow.release-packaging
+  - external.ffmpeg
+contracts:
+  - Normal package builds read only the manifest and verify every archive SHA-256; they never resolve an upstream latest build.
+  - Discovery uses the publisher release API, rejects incomplete releases and floating tags, and preserves platform-specific upstream ownership.
+  - A manifest update is permitted only after all selected archives have passed layout, executable and capability validation and a new mirror release upload has succeeded.
+  - The workflow creates a pull request with a scoped automation token and never pushes main.
+  - Mirror tags and assets are append-only historical release inputs; production URLs use a fixed project-owned release tag and never latest.
+hazards:
+  - Missing mirror-repository or automation-token permissions must fail before a production manifest mutation.
+  - GitHub Release upload is not transactional; a failed initial upload can leave an unreferenced partial mirror release but cannot replace a referenced one.
+tests:
+  - script/tests/test_ffmpeg_assets.py
+  - workflow.release-packaging
 ```
 
 ### workflow.aria2-tls-security
@@ -2641,6 +2704,11 @@ paths:
   - script/aria2.sh
   - script/ffmpeg.ps1
   - script/ffmpeg.sh
+  - script/macos/package.sh
+  - script/macos/sign.sh
+  - script/macos/sign-dmg.sh
+  - script/macos/verify-app.sh
+  - script/macos/verify-dmg.sh
 responsibility: Gates tags and manual release rehearsals on strict cross-platform tests, builds every supported package, verifies required runtime contents, and publishes SHA-256 evidence.
 inbound:
   - github.tag
@@ -2657,6 +2725,9 @@ contracts:
   - `script/validate-release-version.ps1` requires stable `major.minor.patch` text and blocks a tag whose `refs/tags/v<version>` value differs from `version.txt`.
   - Each RID validates a fixed publish directory containing non-empty DownKyi, aria2, FFmpeg, ffprobe, and dependency-manifest files.
   - Publish validation checks the expected assembly version, requires Fluent, rejects Simple, and emits per-file SHA-256 values.
+  - macOS tag releases without Apple credentials ad-hoc sign the final app and must pass `codesign --verify --deep --strict` before DMG creation. This proves bundle integrity but is not Developer ID signing, notarization, stapling, or Gatekeeper trust.
+  - macOS package scripts copy app contents and apply executable permissions before signing. The final app bundle is then signed and strictly verified; when Developer ID and notarization credentials are available, it is additionally notarized, stapled, and Gatekeeper-assessed before DMG creation.
+  - With Apple credentials, macOS release DMGs are signed, verified, notarized, stapled, and assessed before hashing or upload. Without them, the DMG remains unnotarized and is hashed or uploaded only after the ad-hoc signed app passes strict bundle verification.
   - Every package uploads its own `.sha256` sidecar and publish manifest with the artifact.
   - External archive URLs and SHA-256 values have one owner in `script/assets/external-assets.json`; every PowerShell and Bash downloader resolves that manifest relative to its own file.
   - External archives use immutable release tags and are accepted only after TLS validation, a successful HTTP status and their manifest SHA-256 match.
@@ -2668,6 +2739,7 @@ hazards:
   - Inferring the SDK `RuntimeIdentifier` from the runner host corrupts cross-target restore graphs, such as osx-x64 publication on an arm64 runner.
   - Inspecting PupNet's temporary publish path is not stable; validation publish directories must be explicit.
   - Cross-compiling proves package shape, not native execution. Native Host/XAML tests remain owned by each matrix runner.
+  - A green GitHub Actions release run is not sufficient macOS evidence if final app signing or strict verification was skipped. Developer ID, notarization, stapling, Gatekeeper, and signed-DMG verification are additional evidence only when Apple credentials are available.
 tests:
   - test.release-packaging
   - github.actions
@@ -3077,6 +3149,7 @@ test.durl-seekability:
 test.process-cleanup:
   paths:
     - tests/DownKyi.Core.Tests/AriaServerProcessTests.cs
+    - tests/DownKyi.Windows.Tests/AriaServerWindowsTests.cs
   guards:
     - tracked aria2-compatible process is terminated and released
     - packaged aria arguments keep loopback-only RPC, parent monitoring, session persistence, and continuation
@@ -3093,11 +3166,14 @@ test.ui-theme:
 test.release-packaging:
   paths:
     - tests/DownKyi.Architecture.Tests/ReleaseWorkflowArchitectureTests.cs
+    - tests/DownKyi.MacOS.Tests/MacSigningScriptTests.cs
     - script/validate-publish-output.ps1
   guards:
     - release workflow remains manually dispatchable and gates packages on strict Windows/Linux/macOS build and tests
     - all three platform package jobs run the shared publish validator and emit SHA-256 sidecars
     - publish output requires DownKyi, aria2, FFmpeg, ffprobe, expected version, and Fluent without Simple
+    - macOS tag releases without Apple credentials use ad-hoc signing and still fail closed when final app strict verification fails
+    - final macOS app verification runs after signing and before DMG creation; credentialed DMG verification runs after signing/notarization and before hash/upload
 
 test.null-contracts:
   paths:
@@ -3124,6 +3200,7 @@ test.architecture-boundaries:
     - tests/DownKyi.Architecture.Tests/MediaAndHttpRuntimeArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/UiThemeArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/ReleaseWorkflowArchitectureTests.cs
+    - tests/DownKyi.Architecture.Tests/TestPlatformOwnershipArchitectureTests.cs
     - tests/DownKyi.Architecture.Tests/BilibiliApiInventoryArchitectureTests.cs
   guards:
     - production project references remain acyclic
@@ -3321,7 +3398,7 @@ test.review-invariant-corpus:
     - review findings trigger violated-invariant, full failure-path, sibling-path and earliest-boundary analysis before production edits
     - repeated failure families in one PR stop local patches and escalate to shared typed-result, state, ownership or transaction remediation
     - scope containment keeps unrelated invariants and incidental product defects out of the active PR
-    - deterministic PR coverage resolves to existing classes across all seven test projects and proves each class executed
+    - deterministic PR coverage resolves to existing classes across every platform-eligible test project and proves each class executed
     - Main/rehearsal retains lifecycle stress and real-binary transfer evidence
 
 test.infrastructure-clock:

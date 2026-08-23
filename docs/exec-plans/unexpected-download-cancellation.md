@@ -1,6 +1,6 @@
 # Unexpected Download Cancellation Recovery
 
-Status: v1.1.1 release-health candidate; revalidate on the integration branch
+Status: integrated v1.1.1 release invariant
 
 ## Invariant
 
@@ -23,20 +23,22 @@ durably `Downloading`.
 - the orchestrator does not confuse an expected stop signal with an unexpected
   transport cancellation.
 
-## Checkpoint
+## Implementation
 
-A local uncommitted prototype was started on
-`fix/unexpected-cancellation-recovery`, but it is not authoritative and must not
-be copied mechanically. Reconcile the invariant against the final v1.1.1
-integration architecture, search sibling cancellation paths, and derive the
-transition matrix before retaining any implementation.
+- `DownloadPipeline` catches cancellation only when its owning token is canceled.
+- `DownloadOrchestrator` distinguishes shutdown, per-task cancellation, and an
+  unexpected cancellation while the execution token remains active.
+- Unexpected cancellation calls the existing retryable failure owner with an
+  uncanceled persistence token. The durable-phase guard prevents mutation after
+  pause, cancel, completion, or deletion.
+- The worker continues after recording the failure, so one transport timeout
+  cannot reduce the fixed worker pool.
 
 ## Acceptance
 
-The pre-fix deterministic regression must demonstrate the stuck-Downloading
-failure, then pass on the focused fix. Strict Release, all affected tests,
-review invariants, architecture and lifecycle gates must pass on the final
-integration exact head.
+The deterministic regression demonstrates the old stuck-Downloading failure and
+proves the fixed worker records Failed before executing the next queued task.
+Strict Release and the formal exact-head gates remain release requirements.
 
 ## Rollback
 

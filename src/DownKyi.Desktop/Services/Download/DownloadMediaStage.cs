@@ -108,14 +108,15 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
                 SelectAudio(context),
                 playUrl => SelectAudio(context, playUrl),
                 cancellationToken).ConfigureAwait(true);
-            if (!result.TryGetValue(out var audioFile))
+            if (!result.TryGetValue(out var audioTransfer))
             {
                 return DownloadStageResult.Failure(
                     result.Error?.Code ?? "download.media.audio",
                     result.Error?.Message ?? "Audio transfer failed.");
             }
 
-            context.AudioFile = audioFile;
+            context.AudioFile = audioTransfer.FilePath;
+            context.AudioTransferKey = audioTransfer.Key;
         }
 
         context.EnsureActive(cancellationToken);
@@ -127,14 +128,15 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
                 SelectVideo(context),
                 playUrl => SelectVideo(context, playUrl),
                 cancellationToken).ConfigureAwait(true);
-            if (!result.TryGetValue(out var videoFile))
+            if (!result.TryGetValue(out var videoTransfer))
             {
                 return DownloadStageResult.Failure(
                     result.Error?.Code ?? "download.media.video",
                     result.Error?.Message ?? "Video transfer failed.");
             }
 
-            context.VideoFile = videoFile;
+            context.VideoFile = videoTransfer.FilePath;
+            context.VideoTransferKey = videoTransfer.Key;
         }
 
         context.EnsureActive(cancellationToken);
@@ -165,33 +167,34 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
                 CreateDurlDownloadDescriptor([download.Durl]),
                 playUrl => SelectDurl(playUrl, download.Durl.Order),
                 cancellationToken).ConfigureAwait(true);
-            if (!result.TryGetValue(out var filePath))
+            if (!result.TryGetValue(out var transfer))
             {
                 return DownloadStageResult.Failure(
                     result.Error?.Code ?? "download.media.durl",
                     result.Error?.Message ?? "A segmented media transfer failed.");
             }
 
-            download.FilePath = filePath;
+            download.Transfer = transfer;
         }
 
         context.DurlDownloads = downloads
             .Select(download => new DurlDownloadResult(
                 download.Durl,
-                GetCompletedFilePath(download)))
+                GetCompletedTransfer(download).FilePath,
+                GetCompletedTransfer(download).Key))
             .ToArray();
         context.EnsureActive(cancellationToken);
         return DownloadStageResult.Success(Name);
     }
 
-    private static string GetCompletedFilePath(PendingDurlDownload download)
+    private static DownloadedMediaTransfer GetCompletedTransfer(PendingDurlDownload download)
     {
-        return download.FilePath
+        return download.Transfer
                ?? throw new InvalidOperationException(
-                   "A completed DURL transfer must have a file path.");
+                   "A completed DURL transfer must have a transfer reference.");
     }
 
-    private async Task<OperationResult<string>> DownloadMediaFileAsync(
+    private async Task<OperationResult<DownloadedMediaTransfer>> DownloadMediaFileAsync(
         DownloadExecutionContext context,
         PlayUrlDashVideo? media,
         Func<PlayUrl, PlayUrlDashVideo?> selectRefreshedMedia,
@@ -199,7 +202,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
     {
         if (media == null)
         {
-            return OperationResult.Failure<string>(OperationError.Unexpected(
+            return OperationResult.Failure<DownloadedMediaTransfer>(OperationError.Unexpected(
                 "download.media.descriptor",
                 "The selected media stream is unavailable."));
         }
@@ -208,7 +211,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         var urls = CreateAddresses(media);
         if (urls.Count == 0)
         {
-            return OperationResult.Failure<string>(OperationError.Unexpected(
+            return OperationResult.Failure<DownloadedMediaTransfer>(OperationError.Unexpected(
                 "download.media.url",
                 "The selected media stream has no usable address."));
         }
@@ -216,7 +219,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         var path = context.DownloadDirectory;
         if (string.IsNullOrWhiteSpace(path))
         {
-            return OperationResult.Failure<string>(OperationError.Unexpected(
+            return OperationResult.Failure<DownloadedMediaTransfer>(OperationError.Unexpected(
                 "download.media.directory",
                 "The download directory is unavailable."));
         }
@@ -231,12 +234,19 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             if (snapshot.Transfer.CompletedFileKeys.Contains(key, StringComparer.Ordinal) &&
                 IsDownloadedMediaFileUsable(cachedFile, media.ExpectedSize))
             {
-                return OperationResult.Success(cachedFile);
+                return OperationResult.Success(new DownloadedMediaTransfer(key, cachedFile));
             }
 
             if (snapshot.Transfer.CompletedFileKeys.Contains(key, StringComparer.Ordinal))
             {
-                DownloadTransferFileCleanup.DeleteInvalidArtifacts(cachedFile, _logger);
+                var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                    cachedFile,
+                    _logger);
+                if (!cleanup.Succeeded)
+                {
+                    return CleanupFailure();
+                }
+
                 await _stateWriter.InvalidateCompletedFileAsync(
                     context.TaskId,
                     key,
@@ -275,12 +285,19 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
         {
             if (!IsDownloadedMediaFileUsable(targetFile, media.ExpectedSize))
             {
-                DownloadTransferFileCleanup.DeleteInvalidArtifacts(targetFile, _logger);
+                var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                    targetFile,
+                    _logger);
+                if (!cleanup.Succeeded)
+                {
+                    return CleanupFailure();
+                }
+
                 await _stateWriter.SetBackendIdentityAsync(
                     context.TaskId,
                     null,
                     cancellationToken).ConfigureAwait(true);
-                return OperationResult.Failure<string>(OperationError.Unexpected(
+                return OperationResult.Failure<DownloadedMediaTransfer>(OperationError.Unexpected(
                     "download.transfer.invalid-media",
                     "The transfer completed with an invalid media file."));
             }
@@ -289,7 +306,7 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
                 context.TaskId,
                 key,
                 cancellationToken).ConfigureAwait(true);
-            return OperationResult.Success(targetFile);
+            return OperationResult.Success(new DownloadedMediaTransfer(key, targetFile));
         }
 
         if (result.Outcome == DownloadTransferOutcome.Paused)
@@ -297,9 +314,16 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
             throw new OperationCanceledException("Download was paused.");
         }
 
-        return OperationResult.Failure<string>(OperationError.Unexpected(
+        return OperationResult.Failure<DownloadedMediaTransfer>(OperationError.Unexpected(
             result.ErrorCode,
             "Media transfer did not produce a valid file."));
+    }
+
+    private static OperationResult<DownloadedMediaTransfer> CleanupFailure()
+    {
+        return OperationResult.Failure<DownloadedMediaTransfer>(OperationError.Unexpected(
+            "download.transfer.cleanup",
+            "Invalid transfer artifacts could not be removed safely."));
     }
 
     private static PlayUrlDashVideo? SelectAudio(DownloadExecutionContext context)
@@ -431,6 +455,8 @@ internal sealed class DownloadMediaStage : IDownloadPipelineStage
     {
         public PlayUrlDurl Durl { get; } = durl;
 
-        public string? FilePath { get; set; }
+        public DownloadedMediaTransfer? Transfer { get; set; }
     }
+
+    private sealed record DownloadedMediaTransfer(string Key, string FilePath);
 }

@@ -213,6 +213,13 @@ internal sealed class DownloadOrchestrator : IDownloadRuntime
                 {
                     continue;
                 }
+                catch (OperationCanceledException exception)
+                {
+                    _logger.LogErrorMessage(
+                        "Download worker observed cancellation while its owning token remained active.",
+                        exception);
+                    await TryMarkFailedAsync(taskId).ConfigureAwait(false);
+                }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
                     or InvalidOperationException or ArgumentException or FormatException
                     or NotSupportedException or TimeoutException or HttpRequestException

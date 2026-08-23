@@ -251,6 +251,7 @@ public sealed class VideoTagLoadingTests : IDisposable
         private readonly DownKyi.Core.Settings.SettingsStore _settings;
         private readonly DownloadTaskApplicationService _taskService;
         private readonly DownloadTaskProjectionStore _projectionStore;
+        private readonly DownloadTaskAdmissionService _admission;
 
         public DownloadTestContext(string settingsPath, bool generateMetadata)
         {
@@ -274,8 +275,9 @@ public sealed class VideoTagLoadingTests : IDisposable
             Logger = new RecordingLogger<DownloadMovieMetadataBuilder>();
             var desktop = new TestDesktopInteractionContext();
             var client = new TestBilibiliApiClient();
-            var admission = new DownloadTaskAdmissionService(
+            _admission = new DownloadTaskAdmissionService(
                 ListState,
+                _taskService,
                 _projectionStore,
                 Queue);
             var duplicatePolicy = new DownloadDuplicatePolicy(
@@ -285,7 +287,7 @@ public sealed class VideoTagLoadingTests : IDisposable
                 desktop.Dialogs);
             Service = new AddToDownloadService(
                 DownKyi.Core.BiliApi.VideoStream.PlayStreamType.Video,
-                admission,
+                _admission,
                 duplicatePolicy,
                 new DownloadMovieMetadataBuilder(Logger),
                 _settings,
@@ -328,6 +330,7 @@ public sealed class VideoTagLoadingTests : IDisposable
 
         public void Dispose()
         {
+            _admission.Dispose();
             _projectionStore.Dispose();
             _taskService.Dispose();
             _settings.Dispose();
@@ -394,6 +397,11 @@ public sealed class VideoTagLoadingTests : IDisposable
         public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<DownloadTask>>(
                 Array.Empty<DownloadTask>());
+
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) => Task.FromResult(false);
 
         public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

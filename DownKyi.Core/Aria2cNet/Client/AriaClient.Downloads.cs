@@ -150,7 +150,9 @@ public sealed partial class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public async Task<AriaRemove> RemoveAsync(string gid)
+    public async Task<AriaRemove> RemoveAsync(
+        string gid,
+        CancellationToken cancellationToken = default)
     {
         List<object> ariaParams = new List<object>
         {
@@ -164,7 +166,7 @@ public sealed partial class AriaClient
             Method = "aria2.remove",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaRemove>(ariaSend).ConfigureAwait(false);
+        return await GetRpcResponseAsync<AriaRemove>(ariaSend, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -175,7 +177,9 @@ public sealed partial class AriaClient
     /// </summary>
     /// <param name="gid"></param>
     /// <returns></returns>
-    public async Task<AriaRemove> ForceRemoveAsync(string gid)
+    public async Task<AriaRemove> ForceRemoveAsync(
+        string gid,
+        CancellationToken cancellationToken = default)
     {
         List<object> ariaParams = new List<object>
         {
@@ -189,7 +193,7 @@ public sealed partial class AriaClient
             Method = "aria2.forceRemove",
             Params = ariaParams
         };
-        return await GetRpcResponseAsync<AriaRemove>(ariaSend).ConfigureAwait(false);
+        return await GetRpcResponseAsync<AriaRemove>(ariaSend, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

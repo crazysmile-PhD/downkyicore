@@ -82,9 +82,18 @@ must not be reported as already implemented.
 - Investigation may widen evidence, but **不能自動擴大目前 PR 的修改範圍**.
   A different invariant goes to the owner-requested backlog 或 separate PR;
   do not opportunistically add it to the active change.
-- Derive regression tests from the invariant or external protocol. Retry,
-  cleanup, lifecycle and persistence work needs a failure/transition matrix;
-  important static rules need adversarial evidence that the gate can fail.
+- Follow `finding -> root cause -> invariant -> sibling-path search ->
+  generator/state space -> adversarial proof -> production fix`. Derive
+  regression tests from the invariant or external protocol; a single example
+  is only a counterexample when the failure family has a generatable state
+  space. Retry, cleanup, lifecycle and persistence work needs a
+  failure/transition matrix.
+- Any operation-created file must be recorded in durable task state before its
+  first write, or be observably removed before the operation returns. Do not
+  leave physical output without a durable owner or add a second path registry.
+- Important invariant gates need an adversarial or mutation fixture proving an
+  intentionally broken owner, transition or contract makes CI fail. Checking
+  only for a source string does not establish a fail-closed gate.
 
 ## Change Locality
 

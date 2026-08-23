@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 
@@ -25,6 +26,67 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Equal(4, CountOccurrences(workflow, "fail-fast: false"));
         Assert.Equal(3, CountOccurrences(workflow, "validate-publish-output.ps1"));
         Assert.Equal(3, CountOccurrences(workflow, "Get-FileHash"));
+    }
+
+    [Fact]
+    public void TagReleaseDependencyChainDoesNotStartFromASkippedPullRequestOnlyJob()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+
+        Assert.True(
+            HasRunnableManifestDetectionDependency(workflow),
+            "The manifest-detection dependency must succeed on tag/manual events instead of skipping the release chain.");
+    }
+
+    [Fact]
+    public void TagReleaseDependencyGuardRejectsJobLevelSkipsAndNonExecutableLookalikes()
+    {
+        const string validWorkflow = """
+            jobs:
+              detect-production-manifest-change:
+                runs-on: ubuntu-latest
+                steps:
+                  - name: Detect pull request changes
+                    id: filter
+                    if: github.event_name == 'pull_request'
+                    uses: dorny/paths-filter@v3
+            """;
+        string[] invalidMutations =
+        [
+            validWorkflow.Replace(
+                "    runs-on: ubuntu-latest",
+                "    if: github.event_name == 'pull_request'\n    runs-on: ubuntu-latest",
+                StringComparison.Ordinal),
+            validWorkflow.Replace(
+                "if: github.event_name == 'pull_request'",
+                "if: github.event_name != 'pull_request'",
+                StringComparison.Ordinal),
+            validWorkflow.Replace(
+                "uses: dorny/paths-filter@v3",
+                "run: echo not-a-diff-detector",
+                StringComparison.Ordinal),
+            validWorkflow.Replace(
+                "uses: dorny/paths-filter@v3",
+                "continue-on-error: true\n        uses: dorny/paths-filter@v3",
+                StringComparison.Ordinal),
+            validWorkflow + """
+                  - name: Failing non-PR transition
+                    if: github.event_name != 'pull_request'
+                    run: exit 1
+                """,
+            validWorkflow + """
+                  - name: Failing multiline non-PR transition
+                    if: github.event_name != 'pull_request'
+                    run: |
+                      echo starting
+                      exit 1
+                """
+        ];
+
+        Assert.True(HasRunnableManifestDetectionDependency(validWorkflow));
+        Assert.All(invalidMutations, mutation =>
+            Assert.False(HasRunnableManifestDetectionDependency(mutation)));
     }
 
     [Fact]
@@ -188,6 +250,111 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
+    public void WindowsExternalAssetInstallersUseTheSharedBoundedRetryOwner()
+    {
+        var aria2Installer = File.ReadAllText(Path.Combine(RepositoryRoot, "script", "aria2.ps1"));
+        var ffmpegInstaller = File.ReadAllText(Path.Combine(RepositoryRoot, "script", "ffmpeg.ps1"));
+
+        Assert.All(new[] { aria2Installer, ffmpegInstaller }, source =>
+        {
+            Assert.Contains("download-external-asset.ps1", source, StringComparison.Ordinal);
+            Assert.Contains("Invoke-ExternalAssetDownload", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("Start-BitsTransfer", source, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public void ExternalAssetDownloadRetriesTransientFailuresAndFailsClosed()
+    {
+        var helperPath = Path.Combine(RepositoryRoot, "script", "download-external-asset.ps1");
+        var command = $$"""
+            $ErrorActionPreference = 'Stop'
+            $ProgressPreference = 'SilentlyContinue'
+            . '{{helperPath.Replace("'", "''", StringComparison.Ordinal)}}'
+            $successPath = [IO.Path]::GetTempFileName()
+            $failurePath = [IO.Path]::GetTempFileName()
+            try {
+                $successAttempts = 0
+                Invoke-ExternalAssetDownload `
+                    -Uri 'https://example.invalid/immutable.zip' `
+                    -Destination $successPath `
+                    -MaximumAttempts 3 `
+                    -RetryDelaySeconds 0 `
+                    -TransferOperation {
+                        param($source, $destination)
+                        $script:successAttempts++
+                        if ($script:successAttempts -lt 3) {
+                            throw [IO.IOException]::new('injected transient transport failure')
+                        }
+                        [IO.File]::WriteAllText($destination, 'verified later by the manifest checksum')
+                    }
+                if ($successAttempts -ne 3 -or -not (Test-Path -LiteralPath $successPath)) {
+                    throw 'The bounded retry did not recover on the final allowed attempt.'
+                }
+
+                $failureAttempts = 0
+                $failedClosed = $false
+                try {
+                    Invoke-ExternalAssetDownload `
+                        -Uri 'https://example.invalid/immutable.zip' `
+                        -Destination $failurePath `
+                        -MaximumAttempts 3 `
+                        -RetryDelaySeconds 0 `
+                        -TransferOperation {
+                            param($source, $destination)
+                            $script:failureAttempts++
+                            [IO.File]::WriteAllText($destination, 'injected partial response')
+                            throw [IO.IOException]::new('injected persistent transport failure')
+                        }
+                }
+                catch [IO.IOException] {
+                    $failedClosed = $true
+                }
+                if (-not $failedClosed -or $failureAttempts -ne 3) {
+                    throw 'Retry exhaustion did not preserve the transport failure.'
+                }
+                if (Test-Path -LiteralPath $failurePath) {
+                    throw 'Retry exhaustion left an unverified partial asset behind.'
+                }
+            }
+            finally {
+                foreach ($path in @($successPath, $failurePath)) {
+                    if (Test-Path -LiteralPath $path) {
+                        Remove-Item -LiteralPath $path -Force
+                    }
+                }
+            }
+            exit 0
+            """;
+
+        var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(command));
+        using var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = "pwsh",
+            ArgumentList =
+            {
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand",
+                encodedCommand
+            },
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        });
+        Assert.NotNull(process);
+        Assert.True(process.WaitForExit(30_000), "The external-asset retry regression timed out.");
+
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        Assert.True(
+            process.ExitCode == 0,
+            $"External-asset retry regression failed. stdout={standardOutput} stderr={standardError}");
+    }
+
+    [Fact]
     public void MacPackageBuildRestoresTheRequestedRuntimeBeforePublishing()
     {
         var workflow = File.ReadAllText(
@@ -201,6 +368,123 @@ public sealed class ReleaseWorkflowArchitectureTests
             "dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ matrix.cpu }}",
             workflow,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MacReleaseAdHocSignsAndVerifiesFinalArtifacts()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var signScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "sign.sh"));
+        var codesignCommonScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "codesign-common.sh"));
+        var packageScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "package.sh"));
+        var prepareAppLayoutScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "prepare-app-layout.sh"));
+        var verifyAppScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-app.sh"));
+        var verifyAppLaunchScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-app-launch.sh"));
+        var verifyDmgScript = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "macos", "verify-dmg.sh"));
+
+        Assert.DoesNotContain(
+            "MACOS_SIGNING_REQUIRED",
+            workflow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Require macOS signing credentials for release",
+            workflow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Formal macOS releases require MACOS_CERTIFICATE, MACOS_CERTIFICATE_PWD, APPLE_ID, TEAM_ID, and APP_SPECIFIC_PASSWORD.",
+            workflow,
+            StringComparison.Ordinal);
+        Assert.Contains("Resolve signing identity", workflow, StringComparison.Ordinal);
+        Assert.Contains("MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("os: macos-15-intel", workflow, StringComparison.Ordinal);
+        Assert.Contains("os: macos-15", workflow, StringComparison.Ordinal);
+        Assert.Contains("Run macOS packaging regressions", workflow, StringComparison.Ordinal);
+        Assert.Contains("Verify packaged DMG contents and launch app", workflow, StringComparison.Ordinal);
+
+        AssertInOrder(
+            workflow,
+            "Package app",
+            "Validate packaged runtime",
+            "Sign app",
+            "Verify app signature",
+            "Notarize app",
+            "Verify notarized app",
+            "Create DMG",
+            "Sign DMG",
+            "Verify signed DMG",
+            "Notarize DMG",
+            "Verify notarized DMG",
+            "Hash DMG",
+            "Upload build artifacts");
+
+        Assert.DoesNotContain("biao yao", signScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("codesign --deep --force", signScript, StringComparison.Ordinal);
+        Assert.Contains("resolve_signing_identity", signScript, StringComparison.Ordinal);
+        Assert.Contains("find \"$APP_NAME/Contents\" -type f", signScript, StringComparison.Ordinal);
+        Assert.Contains("is_signable_app_file \"$file\"", signScript, StringComparison.Ordinal);
+        Assert.Contains("codesign_app_path \"$file\"", signScript, StringComparison.Ordinal);
+        Assert.Contains("Print :CFBundleExecutable", signScript, StringComparison.Ordinal);
+        Assert.Contains("codesign_app_path \"$MAIN_EXECUTABLE\"", signScript, StringComparison.Ordinal);
+        Assert.Contains("codesign_app_path \"$APP_NAME\"", signScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("CODESIGN_TIMESTAMP_ARGS", signScript, StringComparison.Ordinal);
+        Assert.Contains("is_signable_app_file()", codesignCommonScript, StringComparison.Ordinal);
+        Assert.Contains("*.dll|*.exe)", codesignCommonScript, StringComparison.Ordinal);
+        Assert.Contains("file \"$path\" | grep -q \"Mach-O\"", codesignCommonScript, StringComparison.Ordinal);
+        Assert.Contains("/bin/bash ./prepare-app-layout.sh \"$APP_NAME\"", packageScript, StringComparison.Ordinal);
+        Assert.Contains("is_signable_app_file \"$path\"", prepareAppLayoutScript, StringComparison.Ordinal);
+        Assert.Contains("Contents/Resources/dotnet", prepareAppLayoutScript, StringComparison.Ordinal);
+        Assert.Contains("ln -s", prepareAppLayoutScript, StringComparison.Ordinal);
+
+        Assert.Contains("codesign --verify --deep --strict --verbose=2", verifyAppScript, StringComparison.Ordinal);
+        Assert.Contains("spctl --assess --type execute", verifyAppScript, StringComparison.Ordinal);
+        Assert.Contains("kill -TERM \"$PID\"", verifyAppLaunchScript, StringComparison.Ordinal);
+        Assert.Contains("kill -KILL \"$PID\"", verifyAppLaunchScript, StringComparison.Ordinal);
+        Assert.Contains("codesign --verify --verbose=2", verifyDmgScript, StringComparison.Ordinal);
+        Assert.Contains("xcrun stapler validate", verifyDmgScript, StringComparison.Ordinal);
+        Assert.Contains("spctl --assess --type open --context context:primary-signature", verifyDmgScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void V112RecoverySeparatesControlPlaneFromImmutableReleaseSubject()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(RepositoryRoot, ".github", "workflows", "release-v112-recovery.yml"));
+        var subjectValidator = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "validate-v112-recovery-subject.ps1"));
+        var artifactValidator = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "validate-v112-release-artifacts.ps1"));
+
+        Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("push:", workflow, StringComparison.Ordinal);
+        Assert.Contains("path: tooling", workflow, StringComparison.Ordinal);
+        Assert.Contains("path: subject", workflow, StringComparison.Ordinal);
+        Assert.Contains("ref: ${{ inputs.subject_sha }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("dotnet publish ./subject/DownKyi/DownKyi.csproj", workflow, StringComparison.Ordinal);
+        Assert.Contains("working-directory: subject", workflow, StringComparison.Ordinal);
+        Assert.Contains("Formal v1.1.2 recovery requires all Apple signing and notarization credentials.", workflow, StringComparison.Ordinal);
+        Assert.Contains("./verify-dmg-contents.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("tag: v1.1.2", workflow, StringComparison.Ordinal);
+        Assert.Contains("commit: 16c690d8719f86eb6eecb56c24efabc1afc41d55", workflow, StringComparison.Ordinal);
+        Assert.Contains("prerelease: false", workflow, StringComparison.Ordinal);
+        Assert.Contains("makeLatest: true", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("git tag", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("push --force", workflow, StringComparison.Ordinal);
+
+        Assert.Contains("$expectedReleaseVersion = 'v1.1.2'", subjectValidator, StringComparison.Ordinal);
+        Assert.Contains("$expectedSubjectSha = '16c690d8719f86eb6eecb56c24efabc1afc41d55'", subjectValidator, StringComparison.Ordinal);
+        Assert.Contains("cat-file -t $expectedReleaseVersion", subjectValidator, StringComparison.Ordinal);
+        Assert.Contains("status --porcelain --untracked-files=no", subjectValidator, StringComparison.Ordinal);
+        Assert.Contains("Validated $($expected.Count) v1.1.2 packages", artifactValidator, StringComparison.Ordinal);
+        Assert.Contains("Get-FileHash", artifactValidator, StringComparison.Ordinal);
+        Assert.Contains("Publish manifest contract failed", artifactValidator, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -251,6 +535,140 @@ public sealed class ReleaseWorkflowArchitectureTests
     private static int CountOccurrences(string source, string value)
     {
         return source.Split(value, StringSplitOptions.None).Length - 1;
+    }
+
+    private static void AssertInOrder(string source, params string[] fragments)
+    {
+        var previousIndex = -1;
+        foreach (var fragment in fragments)
+        {
+            var index = source.IndexOf(fragment, previousIndex + 1, StringComparison.Ordinal);
+            Assert.True(index > previousIndex, $"Expected '{fragment}' after index {previousIndex}.");
+            previousIndex = index;
+        }
+    }
+
+    private static bool HasRunnableManifestDetectionDependency(string workflow)
+    {
+        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var job = GetYamlBlock(lines, "  detect-production-manifest-change:", 2);
+        if (job.Count == 0 || HasYamlKeyPrefix(job, 4, "if:"))
+        {
+            return false;
+        }
+
+        var stepsStart = job.FindIndex(line =>
+            GetIndent(line) == 4 && string.Equals(line.Trim(), "steps:", StringComparison.Ordinal));
+        if (stepsStart < 0)
+        {
+            return false;
+        }
+
+        var steps = GetYamlSequenceBlocks(job[(stepsStart + 1)..], 6);
+        var pullRequestDetector = steps.Any(step =>
+            HasExactIf(step, "github.event_name == 'pull_request'") &&
+            HasYamlKey(step, 8, "id: filter") &&
+            HasYamlValuePrefix(step, 8, "uses:", "dorny/paths-filter@") &&
+            !HasYamlKey(step, 8, "continue-on-error: true"));
+
+        return pullRequestDetector && steps.Count == 1;
+    }
+
+    private static List<string> GetYamlBlock(
+        string[] lines,
+        string header,
+        int headerIndent)
+    {
+        var start = -1;
+        for (var index = 0; index < lines.Length; index++)
+        {
+            if (string.Equals(lines[index], header, StringComparison.Ordinal))
+            {
+                start = index;
+                break;
+            }
+        }
+
+        if (start < 0)
+        {
+            return [];
+        }
+
+        var result = new List<string>();
+        for (var index = start + 1; index < lines.Length; index++)
+        {
+            var line = lines[index];
+            if (!string.IsNullOrWhiteSpace(line) &&
+                !line.TrimStart().StartsWith('#') &&
+                GetIndent(line) <= headerIndent)
+            {
+                break;
+            }
+
+            result.Add(line);
+        }
+
+        return result;
+    }
+
+    private static List<List<string>> GetYamlSequenceBlocks(
+        IReadOnlyList<string> lines,
+        int itemIndent)
+    {
+        var result = new List<List<string>>();
+        List<string>? current = null;
+        foreach (var line in lines)
+        {
+            if (!string.IsNullOrWhiteSpace(line) && GetIndent(line) < itemIndent)
+            {
+                break;
+            }
+
+            if (GetIndent(line) == itemIndent && line.TrimStart().StartsWith("- ", StringComparison.Ordinal))
+            {
+                current = [];
+                result.Add(current);
+            }
+
+            current?.Add(line);
+        }
+
+        return result;
+    }
+
+    private static bool HasExactIf(IReadOnlyList<string> block, string expression)
+    {
+        return block.Any(line =>
+            GetIndent(line) == 8 &&
+            string.Equals(line.Trim(), $"if: {expression}", StringComparison.Ordinal));
+    }
+
+    private static bool HasYamlKey(IReadOnlyList<string> block, int indent, string key)
+    {
+        return block.Any(line =>
+            GetIndent(line) == indent && string.Equals(line.Trim(), key, StringComparison.Ordinal));
+    }
+
+    private static bool HasYamlKeyPrefix(IReadOnlyList<string> block, int indent, string key)
+    {
+        return block.Any(line =>
+            GetIndent(line) == indent && line.Trim().StartsWith(key, StringComparison.Ordinal));
+    }
+
+    private static bool HasYamlValuePrefix(
+        IReadOnlyList<string> block,
+        int indent,
+        string key,
+        string valuePrefix)
+    {
+        return block.Any(line =>
+            GetIndent(line) == indent &&
+            line.Trim().StartsWith($"{key} {valuePrefix}", StringComparison.Ordinal));
+    }
+
+    private static int GetIndent(string line)
+    {
+        return line.Length - line.TrimStart().Length;
     }
 
     private static void AssertPinnedAsset(

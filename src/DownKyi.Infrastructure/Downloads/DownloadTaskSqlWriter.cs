@@ -1,3 +1,4 @@
+using DownKyi.Application.Downloads;
 using DownKyi.Domain.Downloads;
 using Microsoft.Data.Sqlite;
 
@@ -17,11 +18,13 @@ internal static class DownloadTaskSqlWriter
             INSERT INTO download_base
                 (id, need_download_content, bvid, avid, cid, episode_id, cover_url, page_cover_url,
                  zone_id, [order], main_title, name, duration, video_codec_name, resolution,
-                 audio_codec, file_path, file_size, page, version, created_at_utc, updated_at_utc)
+                 audio_codec, file_path, output_reservation_key, file_size, page, version,
+                 created_at_utc, updated_at_utc)
             VALUES
                 (@id, @need_download_content, @bvid, @avid, @cid, @episode_id, @cover_url, @page_cover_url,
                  @zone_id, @order, @main_title, @name, @duration, @video_codec_name, @resolution,
-                 @audio_codec, @file_path, @file_size, @page, @version, @created_at_utc, @updated_at_utc)
+                 @audio_codec, @file_path, @output_reservation_key, @file_size, @page, @version,
+                 @created_at_utc, @updated_at_utc)
             """;
         BindBase(command, task);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -43,7 +46,13 @@ internal static class DownloadTaskSqlWriter
                 cover_url = @cover_url, page_cover_url = @page_cover_url,
                 zone_id = @zone_id, [order] = @order, main_title = @main_title, name = @name,
                 duration = @duration, video_codec_name = @video_codec_name, resolution = @resolution,
-                audio_codec = @audio_codec, file_path = @file_path, file_size = @file_size, page = @page,
+                audio_codec = @audio_codec, file_path = @file_path,
+                output_reservation_key = CASE
+                    WHEN @output_reservation_key IS NULL THEN NULL
+                    WHEN output_reservation_key IS NULL THEN NULL
+                    ELSE @output_reservation_key
+                END,
+                file_size = @file_size, page = @page,
                 version = @version, created_at_utc = @created_at_utc, updated_at_utc = @updated_at_utc
             WHERE id = @id AND version = @expected_version
             """;
@@ -117,6 +126,13 @@ internal static class DownloadTaskSqlWriter
         command.Parameters.AddWithValue("@resolution", DownloadStoreJson.WriteQuality(task.Metadata.Resolution));
         command.Parameters.AddWithValue("@audio_codec", DownloadStoreJson.WriteQuality(task.Metadata.AudioCodec));
         command.Parameters.AddWithValue("@file_path", task.Output.BasePath);
+        command.Parameters.AddWithValue(
+            "@output_reservation_key",
+            task.Phase is DownloadPhase.Completed or DownloadPhase.Deleted
+                ? DBNull.Value
+                : DownloadOutputPathKey.Create(
+                    task.Output.BasePath,
+                    DownloadOutputPathKey.UsesCaseInsensitiveComparison));
         command.Parameters.AddWithValue("@file_size", task.Output.FileSizeText ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("@page", task.Metadata.Media.Page);
         command.Parameters.AddWithValue("@version", task.Version);

@@ -22,6 +22,11 @@ public interface IDownloadTaskStore
 
     Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken);
 
+    Task<bool> IsOutputPathReservedAsync(
+        string basePath,
+        bool ignoreCase,
+        CancellationToken cancellationToken);
+
     Task<DownloadHistoryPage> GetHistoryPageAsync(
         DownloadHistoryCursor? cursor,
         int pageSize,

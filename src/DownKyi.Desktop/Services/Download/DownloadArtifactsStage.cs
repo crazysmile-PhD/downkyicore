@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Domain.Results;
@@ -25,23 +26,41 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
         var downloading = context.Downloading;
         if (context.Settings.Video.Content.GenerateMovieMetadata)
         {
-            _artifactWriter.GenerateNfoFile(downloading);
+            var nfoResult = await _artifactWriter.GenerateNfoFileAsync(
+                downloading,
+                cancellationToken).ConfigureAwait(true);
+            if (!nfoResult.IsSuccess)
+            {
+                return StageFailure(nfoResult.Error);
+            }
         }
 
         if (context.NeedsDanmaku)
         {
-            context.DanmakuFile = await _artifactWriter.DownloadDanmakuAsync(
+            var danmakuResult = await _artifactWriter.DownloadDanmakuAsync(
                 downloading,
                 context.Settings.Danmaku,
                 cancellationToken).ConfigureAwait(true);
+            if (!danmakuResult.TryGetValue(out var danmaku))
+            {
+                return StageFailure(danmakuResult.Error);
+            }
+
+            context.DanmakuFile = danmaku.Files.SingleOrDefault();
         }
 
         context.EnsureActive(cancellationToken);
         if (context.NeedsSubtitle)
         {
-            context.SubtitleFiles = await _artifactWriter.DownloadSubtitleAsync(
+            var subtitleResult = await _artifactWriter.DownloadSubtitleAsync(
                 downloading,
                 cancellationToken).ConfigureAwait(true);
+            if (!subtitleResult.TryGetValue(out var subtitles))
+            {
+                return StageFailure(subtitleResult.Error);
+            }
+
+            context.SubtitleFiles = subtitles.Files;
         }
 
         context.EnsureActive(cancellationToken);
@@ -49,23 +68,45 @@ internal sealed class DownloadArtifactsStage : IDownloadPipelineStage
         {
             var pageCoverFileName =
                 $"{downloading.DownloadBase.FilePath}.{GetImageExtension(downloading.DownloadBase.PageCoverUrl)}";
-            context.PageCoverFile = await _artifactWriter.DownloadCoverAsync(
+            var pageCoverResult = await _artifactWriter.DownloadCoverAsync(
                 downloading,
                 downloading.DownloadBase.PageCoverUrl,
                 pageCoverFileName,
+                DownloadArtifactWriter.PageCoverTransferKey,
                 cancellationToken).ConfigureAwait(true);
+            if (!pageCoverResult.TryGetValue(out var pageCover))
+            {
+                return StageFailure(pageCoverResult.Error);
+            }
+
+            context.PageCoverFile = pageCover.Files.SingleOrDefault();
 
             var coverFileName =
                 $"{downloading.DownloadBase.FilePath}.Cover.{GetImageExtension(downloading.DownloadBase.CoverUrl)}";
-            context.CoverFile = await _artifactWriter.DownloadCoverAsync(
+            var coverResult = await _artifactWriter.DownloadCoverAsync(
                 downloading,
                 downloading.DownloadBase.CoverUrl,
                 coverFileName,
+                DownloadArtifactWriter.MainCoverTransferKey,
                 cancellationToken).ConfigureAwait(true);
+            if (!coverResult.TryGetValue(out var cover))
+            {
+                return StageFailure(coverResult.Error);
+            }
+
+            context.CoverFile = cover.Files.SingleOrDefault();
         }
 
         context.EnsureActive(cancellationToken);
         return DownloadStageResult.Success(Name);
+    }
+
+    private static OperationResult<DownloadStageResult> StageFailure(OperationError? error)
+    {
+        return OperationResult.Failure<DownloadStageResult>(
+            error ?? OperationError.Unexpected(
+                "download.artifact.unknown",
+                "A requested download artifact could not be created."));
     }
 
     internal static string GetImageExtension(string? coverUrl)

@@ -8,7 +8,9 @@
 
             <Grid
                 Grid.Row="0"
-                Background="{DynamicResource BrushBackgroundGreyTranslucent3}" ColumnDefinitions="*,50,*,50">
+                Background="{DynamicResource BrushBackgroundGreyTranslucent3}"
+                WindowDecorationProperties.ElementRole="TitleBar"
+                ColumnDefinitions="*,50,*,50">
 
                 <TextBlock
                     Grid.Column="0"
@@ -21,6 +23,7 @@
                 <Button
                     Grid.Column="3"
                     Command="{Binding CloseCommand}"
+                    WindowDecorationProperties.ElementRole="User"
                     Theme="{StaticResource ImageBtnStyle}">
                     <Path
                         Width="{Binding CloseIcon.Width}"

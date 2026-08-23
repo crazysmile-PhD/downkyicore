@@ -62,6 +62,7 @@ internal sealed class AvaloniaDialogService : IAppDialogService
             AppDialogOutcome.Canceled,
             new Dictionary<string, object?>(StringComparer.Ordinal));
         var closeRequested = false;
+        var forcedCloseRequested = false;
         void OnCloseRequested(object? sender, AppDialogResult requestedResult)
         {
             result = requestedResult;
@@ -71,7 +72,7 @@ internal sealed class AvaloniaDialogService : IAppDialogService
 
         void OnClosing(object? sender, WindowClosingEventArgs args)
         {
-            if (!closeRequested && !viewModel.CanCloseDialog())
+            if (ShouldCancelClose(closeRequested, forcedCloseRequested, viewModel))
             {
                 args.Cancel = true;
             }
@@ -80,7 +81,11 @@ internal sealed class AvaloniaDialogService : IAppDialogService
         viewModel.CloseRequested += OnCloseRequested;
         window.Closing += OnClosing;
         using var cancellationRegistration = cancellationToken.Register(() =>
-            Dispatcher.UIThread.Post(window.Close));
+            Dispatcher.UIThread.Post(() =>
+            {
+                forcedCloseRequested = true;
+                window.Close();
+            }));
         try
         {
             viewModel.OnDialogOpened(request);
@@ -92,12 +97,37 @@ internal sealed class AvaloniaDialogService : IAppDialogService
         {
             window.Closing -= OnClosing;
             viewModel.CloseRequested -= OnCloseRequested;
-            viewModel.OnDialogClosed();
-            if (viewModel is IDisposable disposable)
+            await CompleteViewModelLifecycleAsync(viewModel).ConfigureAwait(true);
+        }
+    }
+
+    internal static async Task CompleteViewModelLifecycleAsync(BaseDialogViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        try
+        {
+            await viewModel.OnDialogClosedAsync().ConfigureAwait(true);
+        }
+        finally
+        {
+            if (viewModel is IAsyncDisposable asyncDisposable)
+            {
+                await asyncDisposable.DisposeAsync().ConfigureAwait(true);
+            }
+            else if (viewModel is IDisposable disposable)
             {
                 disposable.Dispose();
             }
         }
+    }
+
+    internal static bool ShouldCancelClose(
+        bool closeRequested,
+        bool forcedCloseRequested,
+        BaseDialogViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        return !closeRequested && !forcedCloseRequested && !viewModel.CanCloseDialog();
     }
 
     internal static (Type View, Type ViewModel) GetDialogTypes(AppDialog dialog)

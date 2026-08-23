@@ -12,6 +12,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "test-project-runner.ps1")
 $manifestPath = Join-Path $repositoryRoot "docs/testing/review-invariant-corpus.json"
 $resultRoot = [IO.Path]::GetFullPath((Join-Path $repositoryRoot $ResultsDirectory))
 
@@ -57,6 +58,33 @@ $testClasses = @(
         }
     }
 )
+$adversarialProofs = @(
+    foreach ($invariant in $invariants) {
+        $requirements = @(
+            $invariant.proofRequirements | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+        $proofs = @(
+            $invariant.adversarialProofs | Where-Object { $null -ne $_ }
+        )
+        if ("adversarial-mutation" -in $requirements -and $proofs.Count -eq 0) {
+            throw "Review invariant '$($invariant.id)' requires an adversarial mutation proof but declares no executable profile."
+        }
+
+        foreach ($proof in $proofs) {
+            if ($proof.kind -ne "adversarial-mutation" -or
+                $proof.kind -notin $requirements -or
+                [string]::IsNullOrWhiteSpace($proof.project) -or
+                [string]::IsNullOrWhiteSpace($proof.filter) -or
+                [string]::IsNullOrWhiteSpace($proof.environmentVariable) -or
+                [string]::IsNullOrWhiteSpace($proof.environmentValue) -or
+                $proof.expectedOutcome -ne "test-failure") {
+                throw "Review invariant '$($invariant.id)' contains an incomplete adversarial proof."
+            }
+
+            $proof
+        }
+    }
+)
 
 New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
 $projectGroups = @($testClasses | Group-Object project | Sort-Object Name)
@@ -69,31 +97,23 @@ foreach ($projectGroup in $projectGroups) {
     }
 
     $classNames = @($projectGroup.Group.class | Sort-Object -Unique)
-    $filter = ($classNames | ForEach-Object { "FullyQualifiedName~$_" }) -join "|"
     $safeName = [IO.Path]::GetFileNameWithoutExtension($projectPath)
     $trxName = "$safeName.trx"
-    $arguments = @(
-        "test",
-        $projectPath,
-        "-c", $Configuration,
-        "--filter", $filter,
-        "--logger", "trx;LogFileName=$trxName",
-        "--results-directory", $resultRoot
-    )
-    if ($NoRestore) {
-        $arguments += "--no-restore"
-    }
-    if ($NoBuild) {
-        $arguments += "--no-build"
-    }
-
     Write-Host "Running review invariants in $($projectGroup.Name)"
-    & dotnet @arguments
-    if ($LASTEXITCODE -ne 0) {
+    $result = Invoke-DownKyiTestProject `
+        -RepositoryRoot $repositoryRoot `
+        -ProjectPath $projectPath `
+        -Configuration $Configuration `
+        -NoRestore:$NoRestore `
+        -NoBuild:$NoBuild `
+        -ResultsDirectory $resultRoot `
+        -TrxName $trxName `
+        -ClassNames $classNames
+    if ($result.ExitCode -ne 0) {
         throw "Review invariant tests failed for $($projectGroup.Name)."
     }
 
-    $trxPath = Join-Path $resultRoot $trxName
+    $trxPath = $result.TrxPath
     if (-not (Test-Path -LiteralPath $trxPath -PathType Leaf)) {
         throw "Review invariant test report is missing: $trxPath"
     }
@@ -118,4 +138,58 @@ foreach ($projectGroup in $projectGroups) {
     $totalPassed += $passed
 }
 
-Write-Host "Review invariant gate passed: $($invariants.Count) root-cause invariants, $($projectGroups.Count) test projects, $totalPassed tests."
+foreach ($proof in $adversarialProofs) {
+    $projectPath = Join-Path $repositoryRoot $proof.project
+    if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
+        throw "Adversarial proof project is missing: $($proof.project)"
+    }
+
+    $safeName = [IO.Path]::GetFileNameWithoutExtension($projectPath)
+    $trxName = "$safeName.adversarial.trx"
+    $previousValue = [Environment]::GetEnvironmentVariable(
+        $proof.environmentVariable,
+        [EnvironmentVariableTarget]::Process)
+    try {
+        [Environment]::SetEnvironmentVariable(
+            $proof.environmentVariable,
+            $proof.environmentValue,
+            [EnvironmentVariableTarget]::Process)
+        Write-Host "Running adversarial proof: $($proof.kind) in $($proof.project)"
+        $result = Invoke-DownKyiTestProject `
+            -RepositoryRoot $repositoryRoot `
+            -ProjectPath $projectPath `
+            -Configuration $Configuration `
+            -NoRestore:$NoRestore `
+            -NoBuild:$NoBuild `
+            -ResultsDirectory $resultRoot `
+            -TrxName $trxName `
+            -Filter $proof.filter
+        $mutationExitCode = $result.ExitCode
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable(
+            $proof.environmentVariable,
+            $previousValue,
+            [EnvironmentVariableTarget]::Process)
+    }
+
+    $trxPath = $result.TrxPath
+    if (-not (Test-Path -LiteralPath $trxPath -PathType Leaf)) {
+        throw "Adversarial proof report is missing: $trxPath"
+    }
+
+    [xml]$trx = Get-Content -LiteralPath $trxPath -Raw
+    $counters = $trx.TestRun.ResultSummary.Counters
+    $failed = [int]$counters.failed
+    $executed = [int]$counters.executed
+    if ($mutationExitCode -eq 0 -or $failed -eq 0 -or $executed -eq 0) {
+        throw "Adversarial proof did not make the invariant test fail closed: project=$($proof.project) filter=$($proof.filter) exitCode=$mutationExitCode executed=$executed failed=$failed."
+    }
+
+    Write-Host "Adversarial proof rejected the injected mutation: executed=$executed failed=$failed."
+}
+
+Write-Host "Review invariant gate passed: $($invariants.Count) root-cause invariants, $($projectGroups.Count) test projects, $totalPassed tests, $($adversarialProofs.Count) adversarial proofs."
+
+# Expected mutation failures leave the native exit code nonzero on Unix hosts.
+exit 0

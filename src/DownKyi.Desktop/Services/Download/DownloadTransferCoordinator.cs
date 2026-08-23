@@ -62,10 +62,11 @@ internal sealed class DownloadTransferCoordinator
         {
             cancellationToken.ThrowIfCancellationRequested();
             attemptsForAddress++;
+            var currentAddress = addresses[addressIndex];
             var attemptRequest = request with
             {
                 BackendIdentity = backendIdentity,
-                Urls = [addresses[addressIndex]],
+                Urls = [currentAddress],
                 SetBackendIdentityAsync = SetBackendIdentityAsync,
                 CancellationToken = cancellationToken
             };
@@ -78,9 +79,15 @@ internal sealed class DownloadTransferCoordinator
             if (lastResult.FailureKind is DownloadTransferFailureKind.InvalidMedia
                 or DownloadTransferFailureKind.ResumeRejected)
             {
-                DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+                var cleanup = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                     Path.Combine(request.Directory, request.FileName),
                     _logger);
+                if (!cleanup.Succeeded)
+                {
+                    return DownloadTransferResult.Failed(
+                        DownloadTransferFailureKind.Disk,
+                        "download.transfer.cleanup-failed");
+                }
             }
 
             var decision = _retryPolicy.Decide(
@@ -110,17 +117,43 @@ internal sealed class DownloadTransferCoordinator
                 case DownloadRetryAction.RetrySameAddress:
                     break;
                 case DownloadRetryAction.TryNextAddress:
-                    addressIndex++;
+                    var nextAddressIndex = addressIndex + 1;
+                    var sourceChangeFailure = await ResetForSourceChangeAsync(
+                        request,
+                        currentAddress,
+                        addresses[nextAddressIndex],
+                        backendIdentity,
+                        SetBackendIdentityAsync,
+                        cancellationToken).ConfigureAwait(true);
+                    if (sourceChangeFailure != null)
+                    {
+                        return sourceChangeFailure;
+                    }
+
+                    addressIndex = nextAddressIndex;
                     attemptsForAddress = 0;
                     break;
                 case DownloadRetryAction.RefreshAddresses:
-                    addresses = NormalizeAddresses(
+                    var refreshedAddresses = NormalizeAddresses(
                         await refreshAddressesAsync(cancellationToken).ConfigureAwait(true));
-                    if (addresses.Length == 0)
+                    if (refreshedAddresses.Length == 0)
                     {
                         return lastResult;
                     }
 
+                    var refreshChangeFailure = await ResetForSourceChangeAsync(
+                        request,
+                        currentAddress,
+                        refreshedAddresses[0],
+                        backendIdentity,
+                        SetBackendIdentityAsync,
+                        cancellationToken).ConfigureAwait(true);
+                    if (refreshChangeFailure != null)
+                    {
+                        return refreshChangeFailure;
+                    }
+
+                    addresses = refreshedAddresses;
                     addressIndex = 0;
                     attemptsForAddress = 0;
                     canRefreshAddresses = false;
@@ -134,10 +167,50 @@ internal sealed class DownloadTransferCoordinator
         return lastResult;
     }
 
+    private async Task<DownloadTransferResult?> ResetForSourceChangeAsync(
+        DownloadTransferRequest request,
+        string currentAddress,
+        string nextAddress,
+        string? backendIdentity,
+        Func<string?, CancellationToken, Task> setBackendIdentityAsync,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(currentAddress, nextAddress, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var resetResult = await _backend
+            .ResetAsync(backendIdentity, cancellationToken)
+            .ConfigureAwait(true);
+        if (resetResult.Outcome != DownloadTransferOutcome.Succeeded)
+        {
+            return resetResult;
+        }
+
+        var cleanup = await DownloadTransferFileCleanup.DeleteInvalidArtifactsAsync(
+                Path.Combine(request.Directory, request.FileName),
+                _logger,
+                _timeProvider,
+                cancellationToken).ConfigureAwait(true);
+        if (!cleanup.Succeeded)
+        {
+            return DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.Disk,
+                "download.transfer.source-change-cleanup");
+        }
+
+        await setBackendIdentityAsync(null, cancellationToken).ConfigureAwait(true);
+        _logger.LogInformationMessage(
+            $"Download transfer source changed; backend={_backend.Name}; partialState=cleared.");
+        return null;
+    }
+
     private static string[] NormalizeAddresses(IEnumerable<string> addresses)
     {
         return addresses
             .Where(address => !string.IsNullOrWhiteSpace(address))
+            .Select(address => address.Trim())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
     }

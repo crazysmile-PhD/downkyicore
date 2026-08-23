@@ -146,7 +146,7 @@ internal class ViewLoginViewModel : ViewModelBase
                 continue;
             }
 
-            var loginData = loginStatus.Data ?? throw new BilibiliApiResponseException(
+            var loginData = loginStatus.Status.Data ?? throw new BilibiliApiResponseException(
                 nameof(GetLoginStatusAsync),
                 "Login status response did not contain its required data payload.");
             switch (loginData.Code)
@@ -172,29 +172,31 @@ internal class ViewLoginViewModel : ViewModelBase
                     break;
                 case 0:
                     // 确认登录
-
-                    // 发送通知
-                    Notifications.Show(DictionaryResource.GetString("LoginSuccessful"));
-                    _logger.LogInformationMessage("Login completed successfully.");
-
                     // 保存登录信息
+                    var isSucceed = false;
                     try
                     {
                         var redirectUri = new Uri(loginData.RedirectAddress, UriKind.Absolute);
-                        var isSucceed = await _loginCoordinator
-                            .SaveLoginCookiesAsync(redirectUri, cancellationToken)
+                        isSucceed = await _loginCoordinator
+                            .SaveLoginCookiesAsync(loginStatus, redirectUri, cancellationToken)
                             .ConfigureAwait(true);
-                        if (!isSucceed)
-                        {
-                            Notifications.Show(DictionaryResource.GetString("LoginFailed"));
-                            _logger.LogErrorMessage("Login cookies could not be persisted.");
-                        }
                     }
                     catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException
-                        or InvalidOperationException or ArgumentException or Newtonsoft.Json.JsonException)
+                        or System.Net.Http.HttpRequestException or InvalidOperationException
+                        or ArgumentException or FormatException or Newtonsoft.Json.JsonException)
                     {
                         _logger.LogErrorMessage("Login cookie persistence failed.", e);
+                    }
+
+                    if (isSucceed)
+                    {
+                        Notifications.Show(DictionaryResource.GetString("LoginSuccessful"));
+                        _logger.LogInformationMessage("Login completed successfully.");
+                    }
+                    else
+                    {
                         Notifications.Show(DictionaryResource.GetString("LoginFailed"));
+                        _logger.LogErrorMessage("Login cookies could not be persisted and validated.");
                     }
 
                     // 取消任务

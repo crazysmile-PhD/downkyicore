@@ -42,6 +42,7 @@ $probes = @(
     @{ Name = 'history-cursor-auth-control'; Uri = 'https://api.bilibili.com/x/web-interface/history/cursor?ps=1'; Kind = 'json' }
     @{ Name = 'watch-later-auth-control'; Uri = 'https://api.bilibili.com/x/v2/history/toview'; Kind = 'json' }
     @{ Name = 'watch-later-web-alternative'; Uri = 'https://api.bilibili.com/x/v2/history/toview/web?jsonp=jsonp'; Kind = 'json' }
+    @{ Name = 'danmaku-view-metadata'; Uri = 'https://api.bilibili.com/x/v2/dm/web/view?type=1&oid=279786&pid=170001'; Kind = 'binary' }
     @{ Name = 'danmaku-segment'; Uri = 'https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=279786&pid=170001&segment_index=1'; Kind = 'binary' }
     @{ Name = 'danmaku-segment-wbi-alternative'; Uri = 'https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=279786&pid=170001&segment_index=1'; Kind = 'binary' }
 )

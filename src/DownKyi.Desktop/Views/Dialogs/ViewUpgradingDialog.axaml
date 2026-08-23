@@ -12,7 +12,9 @@
         <Grid RowDefinitions="40,*">
             <Grid
                 Grid.Row="0"
-                Background="{DynamicResource BrushBackgroundGreyTranslucent3}" ColumnDefinitions="*,50,*,50">
+                Background="{DynamicResource BrushBackgroundGreyTranslucent3}"
+                WindowDecorationProperties.ElementRole="TitleBar"
+                ColumnDefinitions="*,50">
 
                 <TextBlock
                     Grid.Column="0"
@@ -21,16 +23,60 @@
                     FontSize="12"
                     Foreground="{DynamicResource BrushCaptionForeground}"
                     Text="{Binding Title}" />
+                <Button
+                    Grid.Column="1"
+                    Command="{Binding RequestCancelMigrationCommand}"
+                    WindowDecorationProperties.ElementRole="User"
+                    ToolTip.Tip="{DynamicResource Close}"
+                    Theme="{StaticResource CloseBtnStyle}">
+                    <Path
+                        Width="{Binding CloseIcon.Width}"
+                        Height="{Binding CloseIcon.Height}"
+                        Data="{Binding CloseIcon.Data}"
+                        Fill="{DynamicResource ColorSystemBtnTintDark}"
+                        Stretch="UniformToFill" />
+                </Button>
             </Grid>
-            <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <StackPanel Grid.Row="1"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        IsVisible="{Binding !CancelConfirmationVisible}">
                 <customControl:Loading Foreground="Gray" Width="50" Height="50" IsActive="True" />
                 <TextBlock TextAlignment="Center" Margin="0,10,0,0" Text="{Binding Message}" />
                 <ProgressBar Value="{Binding Percent}" ShowProgressText="True" Margin="0,10,0,0" />
+                <Button Theme="{StaticResource BtnStyle}"
+                        Margin="0,10,0,0"
+                        IsVisible="{Binding IsMigrationActive}"
+                        Command="{Binding RequestCancelMigrationCommand}">
+                    取消迁移
+                </Button>
                 <Button Theme="{StaticResource BtnStyle}" Margin="0,10,0,0"
                         IsVisible="{Binding RestartVisible}"
                         Command="{Binding RestartCommand}">
                     立即重启
                 </Button>
+            </StackPanel>
+            <StackPanel Grid.Row="1"
+                        Width="420"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        IsVisible="{Binding CancelConfirmationVisible}">
+                <TextBlock TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           Text="确定要取消数据迁移吗？已完成写入的数据会保留；剩余迁移可在下次启动时重新尝试。" />
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            Spacing="10"
+                            Margin="0,20,0,0">
+                    <Button Theme="{StaticResource BtnStyle}"
+                            Command="{Binding ContinueMigrationCommand}">
+                        继续迁移
+                    </Button>
+                    <Button Theme="{StaticResource BtnStyle}"
+                            Command="{Binding ConfirmCancelMigrationCommand}">
+                        取消迁移
+                    </Button>
+                </StackPanel>
             </StackPanel>
         </Grid>
     </Border>

@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
-using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Xaml.Interactivity;
@@ -27,6 +26,7 @@ using DownKyi.ViewModels;
 using DownKyi.ViewModels.Settings;
 using DownKyi.Views;
 using DownKyi.Views.Settings;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -48,7 +48,7 @@ public sealed class UiSmokeTests
     {
         await AvaloniaTestDispatcher.RunAsync(() =>
         {
-            EnsureProductThemeResources();
+            DesktopTestResources.EnsureProductThemeResources();
             ViewPublicationViewModel? publication = null;
             using var navigation = new AvaloniaNavigationService(
                 route => route switch
@@ -89,7 +89,7 @@ public sealed class UiSmokeTests
     {
         await AvaloniaTestDispatcher.RunAsync(async () =>
         {
-            EnsureProductThemeResources();
+            DesktopTestResources.EnsureProductThemeResources();
             var directory = Path.Combine(Path.GetTempPath(), $"downkyi-favorites-state-{Guid.NewGuid():N}");
             var settings = new SettingsStore(Path.Combine(directory, "settings.json"));
             try
@@ -143,7 +143,7 @@ public sealed class UiSmokeTests
     {
         return AvaloniaTestDispatcher.RunAsync(() =>
         {
-            var application = EnsureProductThemeResources();
+            var application = DesktopTestResources.EnsureProductThemeResources();
             var originalTheme = application.RequestedThemeVariant;
             var view = new ViewPublicFavorites();
             var window = new Window
@@ -375,6 +375,7 @@ public sealed class UiSmokeTests
                 loggerFactory.Dispose();
                 await logProvider.DisposeAsync().ConfigureAwait(true);
                 await settingsStore.DisposeAsync().ConfigureAwait(true);
+                SqliteConnection.ClearAllPools();
                 if (Directory.Exists(testDirectory))
                 {
                     Directory.Delete(testDirectory, recursive: true);
@@ -394,10 +395,11 @@ public sealed class UiSmokeTests
                 new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
             var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logProvider));
             var lifecycle = new ThrowingApplicationLifecycle();
+            IHost? host = null;
 
             try
             {
-                using var host = DownKyiHost.Create(services =>
+                host = DownKyiHost.Create(services =>
                 {
                     services.AddDownKyiDesktop(loggerFactory, logProvider);
                     services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
@@ -420,9 +422,15 @@ public sealed class UiSmokeTests
             }
             finally
             {
+                if (host is not null)
+                {
+                    await DisposeHostAsync(host).ConfigureAwait(true);
+                }
+
                 loggerFactory.Dispose();
                 await logProvider.DisposeAsync().ConfigureAwait(true);
                 await settingsStore.DisposeAsync().ConfigureAwait(true);
+                SqliteConnection.ClearAllPools();
                 if (Directory.Exists(testDirectory))
                 {
                     Directory.Delete(testDirectory, recursive: true);
@@ -517,6 +525,7 @@ public sealed class UiSmokeTests
                 loggerFactory.Dispose();
                 await logProvider.DisposeAsync().ConfigureAwait(true);
                 await settingsStore.DisposeAsync().ConfigureAwait(true);
+                SqliteConnection.ClearAllPools();
                 if (Directory.Exists(testDirectory))
                 {
                     Directory.Delete(testDirectory, recursive: true);
@@ -573,23 +582,6 @@ public sealed class UiSmokeTests
         {
             behaviors.Remove(behavior);
         }
-    }
-
-    private static Avalonia.Application EnsureProductThemeResources()
-    {
-        var application = Avalonia.Application.Current
-            ?? throw new InvalidOperationException("Avalonia application is not initialized.");
-        if (application.TryGetResource("ImageBtnStyle", ThemeVariant.Default, out _))
-        {
-            return application;
-        }
-
-        application.Resources.MergedDictionaries.Add(new ResourceInclude(
-            new Uri("avares://DownKyi.Desktop.Tests/"))
-        {
-            Source = new Uri("avares://DownKyi.Desktop/Themes/ThemeDefault.axaml")
-        });
-        return application;
     }
 
     private static async ValueTask DisposeHostAsync(IHost host)

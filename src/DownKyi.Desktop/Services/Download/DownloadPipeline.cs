@@ -61,6 +61,7 @@ internal sealed class DownloadPipeline : IDownloadTaskExecutor
                 cancellationToken).ConfigureAwait(true);
         }
         catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested)
         {
             _logger.LogDebugMessage(exception.Message);
         }

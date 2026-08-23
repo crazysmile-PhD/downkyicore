@@ -30,10 +30,21 @@ The permanent correction is:
 - `SqliteDownloadTaskStore.Dispose` clears only its owned connection pool;
 - the system benchmark dispatcher uses a bounded join.
 
+The regular solution and review-invariant gates additionally execute
+`DownKyi.Desktop.Tests` through the xUnit in-process executable declared in
+`test-runner-policy.json`. This avoids the VSTest adapter's hidden
+`-assemblyInfo` parse race tracked by `xunit/xunit#3576`; xUnit 4 prereleases
+cannot be used yet because `Avalonia.Headless.XUnit` 12.1.0 targets the xUnit 3
+discovery API. This is test-host routing only. The lifecycle gate below still
+executes and validates `-assemblyInfo`, discovery, execution, teardown and
+process exit as separate fail-closed phases.
+
 ## Dynamic Phases
 
-`script/test-assembly-lifecycle.ps1` discovers every `*.Tests.csproj` and runs
-each phase in an independent child process:
+`script/test-assembly-lifecycle.ps1` discovers every `*.Tests.csproj`, validates
+its explicit `Windows` / `Linux` / `macOS` ownership set, and probes only
+assemblies whose declaration includes the current OS. It runs each phase in an
+independent child process:
 
 1. `load`: a collectible `AssemblyLoadContext` loads the assembly, runs its
    module constructor, unloads it and proves the context is no longer rooted.
@@ -48,6 +59,29 @@ each phase in an independent child process:
    be absent.
 6. `process-exit`: the process must exit within the configured post-teardown
    deadline without residual children or runner-protocol pollution.
+
+The lifecycle gate uses xUnit's synchronous automated reporting mode
+(`-automated sync`) for assembly-info, discovery and execution. This is not a
+diagnostic suppression: stdout remains machine-readable JSON, stderr is still
+captured, and the same timeout, slow-phase and process-exit checks remain
+active. The setting prevents the gate itself from creating xUnit's
+asynchronous `MessageBus` reporter foreground thread, so any future
+foreground-thread watchdog must come from the tested assembly or another
+explicit owner. Because xUnit's synchronous reporter normally waits for a
+carriage return after each report, every isolated child has redirected stdin
+closed immediately after launch. The reporter therefore observes deterministic
+EOF instead of depending on whether the gate was launched from an interactive
+terminal.
+
+The three xUnit phases share one guarded invocation path. It rejects any
+reporter arguments other than exactly one `-automated sync` pair before process
+launch. A runtime mutation self-test deliberately substitutes `async` and must
+be rejected by the same validator; the machine report records the result as
+`reporterContractSelfTestPassed`.
+
+This is the verified engineering mitigation for the lifecycle gate. It does
+not claim that the final direct blocker in the historical intermittent
+specimen was captured or proven with complete forensic certainty.
 
 Every phase records its exit code, duration, timeout state, stdout/stderr
 protocol state and child-process observations. A child observed immediately

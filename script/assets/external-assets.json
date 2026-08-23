@@ -38,37 +38,110 @@
     }
   },
   "ffmpeg": {
-    "version": "btbn-autobuild-2026-07-28-13-32_ytdlp-autobuild-2026-07-28-16-25_martin-riedl-2026-07",
+    "version": "btbn-autobuild-2026-08-12-13-15_ytdlp-autobuild-2026-08-11-18-08_martin-riedl-pinned",
     "repository": "Windows x64/Linux: https://github.com/BtbN/FFmpeg-Builds; Windows x86: https://github.com/yt-dlp/FFmpeg-Builds; macOS: https://ffmpeg.martin-riedl.de",
     "assets": {
       "win-x86": {
-        "url": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-07-28-16-25/ffmpeg-N-125840-gf6fa0d3fda-win32-gpl.zip",
-        "sha256": "153acefd3818c3c0ca3ea2c2833ba66b7915054c1e76a2917db7b8c458f76ed2"
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-12-13-15_ytdlp-autobuild-2026-08-11-18-08_martin-riedl-pinned/ffmpeg-win-x86-autobuild-2026-08-11-18-08-11a0ef91f8a888c9.zip",
+        "sha256": "11a0ef91f8a888c939a23bbf636f9a19edc3a69165bf13b10f2addb27ce14621",
+        "fileName": "ffmpeg-win-x86-autobuild-2026-08-11-18-08-11a0ef91f8a888c9.zip",
+        "provenance": {
+          "upstreamRepository": "https://github.com/yt-dlp/FFmpeg-Builds",
+          "upstreamRelease": "autobuild-2026-08-11-18-08",
+          "originalAssetName": "ffmpeg-N-126061-g844e10e1a7-win32-gpl.zip",
+          "upstreamUrl": "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-08-11-18-08/ffmpeg-N-126061-g844e10e1a7-win32-gpl.zip",
+          "mirroredAt": "2026-08-13T05:32:08Z",
+          "ffmpegVersion": "ffmpeg-N-126061-g844e10e1a7-win32-gpl.zip"
+        }
       },
       "win-x64": {
-        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-28-13-32/ffmpeg-N-125829-gfe953596e9-win64-gpl.zip",
-        "sha256": "ea25042ce4092cb598f01171bb1affeaf3232903f8255b6b77cb88ee189ca45f"
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-12-13-15_ytdlp-autobuild-2026-08-11-18-08_martin-riedl-pinned/ffmpeg-win-x64-autobuild-2026-08-12-13-15-40b7fd8eebbc5ec7.zip",
+        "sha256": "40b7fd8eebbc5ec79b7f39e647654927165ab85621ff637e8de8f6985f851f23",
+        "fileName": "ffmpeg-win-x64-autobuild-2026-08-12-13-15-40b7fd8eebbc5ec7.zip",
+        "provenance": {
+          "upstreamRepository": "https://github.com/BtbN/FFmpeg-Builds",
+          "upstreamRelease": "autobuild-2026-08-12-13-15",
+          "originalAssetName": "ffmpeg-N-126086-ge5ecfe8970-win64-gpl.zip",
+          "upstreamUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-12-13-15/ffmpeg-N-126086-ge5ecfe8970-win64-gpl.zip",
+          "mirroredAt": "2026-08-13T05:32:08Z",
+          "ffmpegVersion": "ffmpeg-N-126086-ge5ecfe8970-win64-gpl.zip"
+        }
       },
       "linux-x64": {
-        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-28-13-32/ffmpeg-N-125829-gfe953596e9-linux64-gpl.tar.xz",
-        "sha256": "9ed999035ac57b56b53e171df1105bcde9462e4db2f14c729cb33f4205c105c6"
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-12-13-15_ytdlp-autobuild-2026-08-11-18-08_martin-riedl-pinned/ffmpeg-linux-x64-autobuild-2026-08-12-13-15-cf55934e9faa1969.tar.xz",
+        "sha256": "cf55934e9faa1969bff4c3fc1e1352707c9c9384e4d7986388830a8c8a726913",
+        "fileName": "ffmpeg-linux-x64-autobuild-2026-08-12-13-15-cf55934e9faa1969.tar.xz",
+        "provenance": {
+          "upstreamRepository": "https://github.com/BtbN/FFmpeg-Builds",
+          "upstreamRelease": "autobuild-2026-08-12-13-15",
+          "originalAssetName": "ffmpeg-N-126086-ge5ecfe8970-linux64-gpl.tar.xz",
+          "upstreamUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-12-13-15/ffmpeg-N-126086-ge5ecfe8970-linux64-gpl.tar.xz",
+          "mirroredAt": "2026-08-13T05:32:08Z",
+          "ffmpegVersion": "ffmpeg-N-126086-ge5ecfe8970-linux64-gpl.tar.xz"
+        }
       },
       "linux-arm64": {
-        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-28-13-32/ffmpeg-N-125829-gfe953596e9-linuxarm64-gpl.tar.xz",
-        "sha256": "4f3652b7188fd16d1bd98b2f439ef173be704bb3481972b7d8dfd13e474847c1"
-      },
-        "osx-x64": {
-          "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1767299902_N-122320-g38e89fe502/ffmpeg.zip",
-          "sha256": "6f0736d424b7426f8cbb7bba5c5448d94c976c138c669593b1f40ba534ed192f",
-          "ffprobeUrl": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1767299902_N-122320-g38e89fe502/ffprobe.zip",
-          "ffprobeSha256": "46852ce00ae6f722ed30be269f310ea96c106a4246f2905d3147c5e02293081c"
-        },
-        "osx-arm64": {
-          "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783164229_N-125450-gfad2e0bc50/ffmpeg.zip",
-          "sha256": "b5ce8b77f8c0686e4f68a46f8e4d094fe7e6f4ded50bcfacd9944ad1efdf66e9",
-          "ffprobeUrl": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783164229_N-125450-gfad2e0bc50/ffprobe.zip",
-          "ffprobeSha256": "fadcf23296a4b57921c70d6d7d8b9930a4c8d4e0658b8e696f188bae1dcc47d8"
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-12-13-15_ytdlp-autobuild-2026-08-11-18-08_martin-riedl-pinned/ffmpeg-linux-arm64-autobuild-2026-08-12-13-15-6fb99e871709d0c7.tar.xz",
+        "sha256": "6fb99e871709d0c77256d5737d67f440c8cb03a02d71c37a7632f9b66dc55e2d",
+        "fileName": "ffmpeg-linux-arm64-autobuild-2026-08-12-13-15-6fb99e871709d0c7.tar.xz",
+        "provenance": {
+          "upstreamRepository": "https://github.com/BtbN/FFmpeg-Builds",
+          "upstreamRelease": "autobuild-2026-08-12-13-15",
+          "originalAssetName": "ffmpeg-N-126086-ge5ecfe8970-linuxarm64-gpl.tar.xz",
+          "upstreamUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-12-13-15/ffmpeg-N-126086-ge5ecfe8970-linuxarm64-gpl.tar.xz",
+          "mirroredAt": "2026-08-13T05:32:08Z",
+          "ffmpegVersion": "ffmpeg-N-126086-ge5ecfe8970-linuxarm64-gpl.tar.xz"
         }
+      },
+      "osx-x64": {
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-12-13-15_ytdlp-autobuild-2026-08-11-18-08_martin-riedl-pinned/ffmpeg-osx-x64-martin-riedl-pinned-6f0736d424b7426f.zip",
+        "sha256": "6f0736d424b7426f8cbb7bba5c5448d94c976c138c669593b1f40ba534ed192f",
+        "fileName": "ffmpeg-osx-x64-martin-riedl-pinned-6f0736d424b7426f.zip",
+        "provenance": {
+          "upstreamRepository": "https://ffmpeg.martin-riedl.de",
+          "upstreamRelease": "pinned-source-import",
+          "originalAssetName": "ffmpeg.zip",
+          "upstreamUrl": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1767299902_N-122320-g38e89fe502/ffmpeg.zip",
+          "mirroredAt": "2026-08-13T05:32:08Z",
+          "ffmpegVersion": "ffmpeg.zip",
+          "ffprobeOriginalAssetName": "ffprobe.zip",
+          "ffprobeUpstreamUrl": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1767299902_N-122320-g38e89fe502/ffprobe.zip"
+        },
+        "ffprobeUrl": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-12-13-15_ytdlp-autobuild-2026-08-11-18-08_martin-riedl-pinned/ffmpeg-osx-x64-martin-riedl-pinned-46852ce00ae6f722.zip",
+        "ffprobeSha256": "46852ce00ae6f722ed30be269f310ea96c106a4246f2905d3147c5e02293081c",
+        "ffprobeFileName": "ffmpeg-osx-x64-martin-riedl-pinned-46852ce00ae6f722.zip"
+      },
+      "osx-arm64": {
+        "url": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-12-13-15_ytdlp-autobuild-2026-08-11-18-08_martin-riedl-pinned/ffmpeg-osx-arm64-martin-riedl-pinned-b5ce8b77f8c0686e.zip",
+        "sha256": "b5ce8b77f8c0686e4f68a46f8e4d094fe7e6f4ded50bcfacd9944ad1efdf66e9",
+        "fileName": "ffmpeg-osx-arm64-martin-riedl-pinned-b5ce8b77f8c0686e.zip",
+        "provenance": {
+          "upstreamRepository": "https://ffmpeg.martin-riedl.de",
+          "upstreamRelease": "pinned-source-import",
+          "originalAssetName": "ffmpeg.zip",
+          "upstreamUrl": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783164229_N-125450-gfad2e0bc50/ffmpeg.zip",
+          "mirroredAt": "2026-08-13T05:32:08Z",
+          "ffmpegVersion": "ffmpeg.zip",
+          "ffprobeOriginalAssetName": "ffprobe.zip",
+          "ffprobeUpstreamUrl": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783164229_N-125450-gfad2e0bc50/ffprobe.zip"
+        },
+        "ffprobeUrl": "https://github.com/crazysmile-PhD/downkyi-runtime-assets/releases/download/ffmpeg-btbn-autobuild-2026-08-12-13-15_ytdlp-autobuild-2026-08-11-18-08_martin-riedl-pinned/ffmpeg-osx-arm64-martin-riedl-pinned-fadcf23296a4b579.zip",
+        "ffprobeSha256": "fadcf23296a4b57921c70d6d7d8b9930a4c8d4e0658b8e696f188bae1dcc47d8",
+        "ffprobeFileName": "ffmpeg-osx-arm64-martin-riedl-pinned-fadcf23296a4b579.zip"
+      }
+    },
+    "requiredRids": [
+      "win-x86",
+      "win-x64",
+      "linux-x64",
+      "linux-arm64",
+      "osx-x64",
+      "osx-arm64"
+    ],
+    "mirror": {
+      "repository": "crazysmile-PhD/downkyi-runtime-assets",
+      "retention": "never-delete",
+      "tagPrefix": "ffmpeg-"
     }
   }
 }

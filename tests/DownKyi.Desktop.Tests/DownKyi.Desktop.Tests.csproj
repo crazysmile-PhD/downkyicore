@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <DownKyiTestPlatforms>Windows;Linux;macOS</DownKyiTestPlatforms>
   </PropertyGroup>
 
   <ItemGroup>

@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using DownKyi.Services.Download;
+using DownKyi.TestInfrastructure;
 using Downloader.Exceptions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -68,6 +69,261 @@ public sealed class DownloadRetryPolicyTests
 
         Assert.Equal(DownloadTransferOutcome.Succeeded, result.Outcome);
         Assert.Equal([null, "test-backend-id"], backend.ObservedIdentities);
+        Assert.Equal(0, backend.ResetCount);
+    }
+
+    [Fact]
+    public async Task CoordinatorClearsPartialStateBeforeContactingBackupSource()
+    {
+        var directory = CreateTemporaryDirectory("source-switch");
+        const string fileName = "media.tmp";
+        var target = Path.Combine(directory, fileName);
+        await File.WriteAllTextAsync(
+            target,
+            "partial",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            $"{target}.aria2",
+            "resume",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            $"{target}.download",
+            "resume",
+            TestContext.Current.CancellationToken);
+        var identityUpdates = new List<string?>();
+        using var backend = new InspectingBackend(
+            (attempt, request) =>
+            {
+                if (attempt <= 2)
+                {
+                    Assert.True(File.Exists(target));
+                    Assert.Equal("persisted-gid", request.BackendIdentity);
+                    return DownloadTransferResult.Failed(
+                        DownloadTransferFailureKind.TransientNetwork,
+                        "download.transfer.timeout");
+                }
+
+                Assert.False(File.Exists(target));
+                Assert.False(File.Exists($"{target}.aria2"));
+                Assert.False(File.Exists($"{target}.download"));
+                Assert.Null(request.BackendIdentity);
+                return DownloadTransferResult.Succeeded();
+            });
+
+        try
+        {
+            var result = await CreateCoordinator(backend, maximumAttempts: 5).TransferAsync(
+                CreateRequestAt(
+                    directory,
+                    fileName,
+                    "persisted-gid",
+                    (value, _) =>
+                    {
+                        identityUpdates.Add(value);
+                        return Task.CompletedTask;
+                    },
+                    "https://primary.invalid/media",
+                    "https://backup.invalid/media"),
+                static _ => Task.FromResult<IReadOnlyList<string>>([]),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(DownloadTransferOutcome.Succeeded, result.Outcome);
+            Assert.Equal(["persisted-gid"], backend.ResetIdentities);
+            Assert.Equal([null], identityUpdates);
+            Assert.Equal(3, backend.Requests.Count);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CoordinatorPreservesResumeStateWhenRefreshReturnsSameSource()
+    {
+        var directory = CreateTemporaryDirectory("same-source");
+        const string fileName = "media.tmp";
+        var target = Path.Combine(directory, fileName);
+        await File.WriteAllTextAsync(
+            target,
+            "partial",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            $"{target}.download",
+            "resume",
+            TestContext.Current.CancellationToken);
+        using var backend = new RecordingBackend(
+            DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.ExpiredAddress,
+                "download.transfer.http-403"),
+            DownloadTransferResult.Succeeded());
+
+        try
+        {
+            var result = await CreateCoordinator(backend, maximumAttempts: 5).TransferAsync(
+                CreateRequestAt(
+                    directory,
+                    fileName,
+                    "persisted-id",
+                    static (_, _) => Task.CompletedTask,
+                    "https://primary.invalid/media"),
+                static _ => Task.FromResult<IReadOnlyList<string>>(
+                    ["  https://primary.invalid/media  "]),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(DownloadTransferOutcome.Succeeded, result.Outcome);
+            Assert.Empty(backend.ResetIdentities);
+            Assert.True(File.Exists(target));
+            Assert.True(File.Exists($"{target}.download"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CoordinatorFailsClosedWhenSourceChangeCleanupCannotComplete()
+    {
+        var directory = CreateTemporaryDirectory("cleanup-failure");
+        const string fileName = "media.tmp";
+        var target = Path.Combine(directory, fileName);
+        Directory.CreateDirectory($"{target}.download");
+        using var backend = new RecordingBackend(
+            DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.TransientNetwork,
+                "download.transfer.timeout"));
+        var identityUpdates = new List<string?>();
+
+        try
+        {
+            var result = await CreateCoordinator(backend, maximumAttempts: 5).TransferAsync(
+                CreateRequestAt(
+                    directory,
+                    fileName,
+                    "persisted-id",
+                    (identity, _) =>
+                    {
+                        identityUpdates.Add(identity);
+                        return Task.CompletedTask;
+                    },
+                    "https://primary.invalid/media",
+                    "https://backup.invalid/media"),
+                static _ => Task.FromResult<IReadOnlyList<string>>([]),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(DownloadTransferFailureKind.Disk, result.FailureKind);
+            Assert.Equal("download.transfer.source-change-cleanup", result.ErrorCode);
+            Assert.Equal(2, backend.Requests.Count);
+            Assert.Equal(["persisted-id"], backend.ResetIdentities);
+            Assert.Empty(identityUpdates);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CoordinatorDoesNotContactBackupWhenBackendResetFails()
+    {
+        var directory = CreateTemporaryDirectory("reset-failure");
+        const string fileName = "media.tmp";
+        var target = Path.Combine(directory, fileName);
+        await File.WriteAllTextAsync(
+            target,
+            "partial",
+            TestContext.Current.CancellationToken);
+        var identityUpdates = new List<string?>();
+        using var backend = new RecordingBackend(
+            DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.TransientNetwork,
+                "download.transfer.timeout"))
+        {
+            ResetResult = DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.TransientNetwork,
+                "download.transfer.backend-reset")
+        };
+
+        try
+        {
+            var result = await CreateCoordinator(backend, maximumAttempts: 5).TransferAsync(
+                CreateRequestAt(
+                    directory,
+                    fileName,
+                    "persisted-id",
+                    (value, _) =>
+                    {
+                        identityUpdates.Add(value);
+                        return Task.CompletedTask;
+                    },
+                    "https://primary.invalid/media",
+                    "https://backup.invalid/media"),
+                static _ => Task.FromResult<IReadOnlyList<string>>([]),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(DownloadTransferFailureKind.TransientNetwork, result.FailureKind);
+            Assert.Equal("download.transfer.backend-reset", result.ErrorCode);
+            Assert.Equal(2, backend.Requests.Count);
+            Assert.Equal(["persisted-id"], backend.ResetIdentities);
+            Assert.Empty(identityUpdates);
+            Assert.True(File.Exists(target));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RealBuiltinDownloaderRestartsBackupSourceFromByteZero()
+    {
+        var payload = Enumerable.Repeat((byte)'B', 128 * 1024).ToArray();
+        await using var primary = LoopbackHttpServer.CreateRequestAware(
+            request => CreateRangeResponse(payload, request.RangeStart, truncate: true));
+        await using var backup = LoopbackHttpServer.CreateRequestAware(
+            request => CreateRangeResponse(payload, request.RangeStart, truncate: false));
+        var directory = CreateTemporaryDirectory("builtin-source-switch");
+        const string fileName = "media.tmp";
+        using var settings = new TestSettingsStore();
+        settings.Store.Update(current => current with
+        {
+            Network = current.Network with
+            {
+                Split = 1,
+                HighSpeedDownloadMode = DownKyi.Core.Settings.AllowStatus.No
+            }
+        });
+        using var backend = new BuiltinTransferBackend(
+            settings.Store,
+            new DownloadDiagnosticLogger(
+                NullLogger<DownloadDiagnosticLogger>.Instance),
+            NullLogger<BuiltinTransferBackend>.Instance);
+
+        try
+        {
+            var result = await CreateCoordinator(backend, maximumAttempts: 5).TransferAsync(
+                CreateRequestAt(
+                    directory,
+                    fileName,
+                    backendIdentity: null,
+                    static (_, _) => Task.CompletedTask,
+                    primary.Url.AbsoluteUri,
+                    backup.Url.AbsoluteUri),
+                static _ => Task.FromResult<IReadOnlyList<string>>([]),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(DownloadTransferOutcome.Succeeded, result.Outcome);
+            Assert.Contains(primary.Requests, request => request.RangeStart is > 0);
+            Assert.DoesNotContain(backup.Requests, request => request.RangeStart is > 0);
+            Assert.Equal(payload, await File.ReadAllBytesAsync(
+                Path.Combine(directory, fileName),
+                TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]
@@ -428,13 +684,66 @@ public sealed class DownloadRetryPolicyTests
 
         try
         {
-            DownloadTransferFileCleanup.DeleteInvalidArtifacts(
+            var result = DownloadTransferFileCleanup.DeleteInvalidArtifacts(
                 media,
                 NullLogger.Instance);
 
+            Assert.True(result.Succeeded);
+            Assert.Equal(3, result.AttemptedCount);
             Assert.False(File.Exists(media));
             Assert.False(File.Exists($"{media}.aria2"));
             Assert.False(File.Exists($"{media}.download"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CoordinatorStopsRetryWhenInvalidArtifactCleanupFails()
+    {
+        using var backend = new RecordingBackend(
+            DownloadTransferResult.Failed(
+                DownloadTransferFailureKind.InvalidMedia,
+                "invalid-media"),
+            DownloadTransferResult.Succeeded());
+        var coordinator = CreateCoordinator(backend, maximumAttempts: 5);
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-cleanup-failure-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var target = Path.Combine(directory, "blocked-target");
+        Directory.CreateDirectory(target);
+        await File.WriteAllTextAsync(
+            $"{target}.aria2",
+            "resume",
+            TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(
+            $"{target}.download",
+            "resume",
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            var request = CreateRequest("https://primary.invalid/media") with
+            {
+                Directory = directory,
+                FileName = Path.GetFileName(target)
+            };
+
+            var result = await coordinator.TransferAsync(
+                request,
+                static _ => Task.FromResult<IReadOnlyList<string>>([]),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(DownloadTransferOutcome.Failed, result.Outcome);
+            Assert.Equal(DownloadTransferFailureKind.Disk, result.FailureKind);
+            Assert.Equal("download.transfer.cleanup-failed", result.ErrorCode);
+            Assert.Single(backend.Requests);
+            Assert.True(Directory.Exists(target));
+            Assert.True(File.Exists($"{target}.aria2"));
+            Assert.True(File.Exists($"{target}.download"));
         }
         finally
         {
@@ -455,20 +764,65 @@ public sealed class DownloadRetryPolicyTests
 
     private static DownloadTransferRequest CreateRequest(params string[] addresses)
     {
+        return CreateRequestAt(
+            Path.GetTempPath(),
+            "retry-test.tmp",
+            backendIdentity: null,
+            static (_, _) => Task.CompletedTask,
+            addresses);
+    }
+
+    private static DownloadTransferRequest CreateRequestAt(
+        string directory,
+        string fileName,
+        string? backendIdentity,
+        Func<string?, CancellationToken, Task> setBackendIdentityAsync,
+        params string[] addresses)
+    {
         return new DownloadTransferRequest(
             new DownKyi.Domain.Downloads.DownloadTaskId("retry-test"),
-            BackendIdentity: null,
+            backendIdentity,
             addresses,
-            Directory: Path.GetTempPath(),
-            FileName: "retry-test.tmp",
+            Directory: directory,
+            FileName: fileName,
             ExpectedBytes: 0,
             EnsureActive: static () => { },
             IsPauseRequested: static () => false,
             PublishProgress: static _ => { },
             PersistProgressAsync: static (_, _) => Task.CompletedTask,
-            SetBackendIdentityAsync: static (_, _) => Task.CompletedTask,
+            SetBackendIdentityAsync: setBackendIdentityAsync,
             SetBuiltinDownloadService: static _ => { },
             CancellationToken.None);
+    }
+
+    private static string CreateTemporaryDirectory(string purpose)
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-{purpose}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private static LoopbackResponse CreateRangeResponse(
+        byte[] payload,
+        long? rangeStart,
+        bool truncate)
+    {
+        var start = checked((int)(rangeStart ?? 0));
+        var responseBody = payload[start..];
+        var headers = rangeStart.HasValue
+            ? new Dictionary<string, string>
+            {
+                ["Content-Range"] = $"bytes {start}-{payload.Length - 1}/{payload.Length}"
+            }
+            : null;
+        return new LoopbackResponse(
+            rangeStart.HasValue ? HttpStatusCode.PartialContent : HttpStatusCode.OK,
+            ContentLength: responseBody.Length,
+            BytesToSend: truncate ? Math.Min(4096, responseBody.Length) : null,
+            Headers: headers,
+            BodyBytes: responseBody);
     }
 
     private sealed class RecordingBackend(
@@ -477,6 +831,11 @@ public sealed class DownloadRetryPolicyTests
         private readonly Queue<DownloadTransferResult> _results = new(results);
 
         public List<DownloadTransferRequest> Requests { get; } = [];
+
+        public List<string?> ResetIdentities { get; } = [];
+
+        public DownloadTransferResult ResetResult { get; init; } =
+            DownloadTransferResult.Succeeded();
 
         public string Name => "recording";
 
@@ -490,6 +849,15 @@ public sealed class DownloadRetryPolicyTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.CompletedTask;
+        }
+
+        public Task<DownloadTransferResult> ResetAsync(
+            string? backendIdentity,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResetIdentities.Add(backendIdentity);
+            return Task.FromResult(ResetResult);
         }
 
         public Task<DownloadTransferResult> TransferAsync(DownloadTransferRequest request)
@@ -515,6 +883,11 @@ public sealed class DownloadRetryPolicyTests
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<DownloadTransferResult> ResetAsync(
+            string? backendIdentity,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(DownloadTransferResult.Succeeded());
 
         public Task<DownloadTransferResult> TransferAsync(DownloadTransferRequest request)
         {
@@ -542,6 +915,11 @@ public sealed class DownloadRetryPolicyTests
 
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+        public Task<DownloadTransferResult> ResetAsync(
+            string? backendIdentity,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(DownloadTransferResult.Succeeded());
+
         public Task<DownloadTransferResult> TransferAsync(DownloadTransferRequest request)
         {
             request.CancellationToken.ThrowIfCancellationRequested();
@@ -561,11 +939,21 @@ public sealed class DownloadRetryPolicyTests
     {
         public List<string?> ObservedIdentities { get; } = [];
 
+        public int ResetCount { get; private set; }
+
         public string Name => "identity-publishing";
 
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<DownloadTransferResult> ResetAsync(
+            string? backendIdentity,
+            CancellationToken cancellationToken)
+        {
+            ResetCount++;
+            return Task.FromResult(DownloadTransferResult.Succeeded());
+        }
 
         public async Task<DownloadTransferResult> TransferAsync(
             DownloadTransferRequest request)
@@ -582,6 +970,41 @@ public sealed class DownloadRetryPolicyTests
             }
 
             return DownloadTransferResult.Succeeded();
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class InspectingBackend(
+        Func<int, DownloadTransferRequest, DownloadTransferResult> transfer) : ITransferBackend
+    {
+        private int _attempt;
+
+        public List<DownloadTransferRequest> Requests { get; } = [];
+
+        public List<string?> ResetIdentities { get; } = [];
+
+        public string Name => "inspecting";
+
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<DownloadTransferResult> ResetAsync(
+            string? backendIdentity,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResetIdentities.Add(backendIdentity);
+            return Task.FromResult(DownloadTransferResult.Succeeded());
+        }
+
+        public Task<DownloadTransferResult> TransferAsync(DownloadTransferRequest request)
+        {
+            Requests.Add(request);
+            return Task.FromResult(transfer(++_attempt, request));
         }
 
         public void Dispose()

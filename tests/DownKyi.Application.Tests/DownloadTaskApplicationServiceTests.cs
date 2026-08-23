@@ -80,6 +80,120 @@ public sealed class DownloadTaskApplicationServiceTests
     }
 
     [Fact]
+    public async Task ArtifactClaimsPreservePriorPathsAndBackendIdentity()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+        var task = CreateTask();
+        await service.AddAsync(task, TestContext.Current.CancellationToken);
+        await service.StartAsync(task.Id, TestContext.Current.CancellationToken);
+        await service.SetBackendIdentityAsync(
+            task.Id,
+            "aria-gid",
+            TestContext.Current.CancellationToken);
+
+        await service.ClaimTransferFileAsync(
+            task.Id,
+            "subtitle-0001",
+            "episode_Chinese.srt",
+            TestContext.Current.CancellationToken);
+        await service.ClaimTransferFileAsync(
+            task.Id,
+            "subtitle-0001",
+            "episode_Traditional-Chinese.srt",
+            TestContext.Current.CancellationToken);
+        await service.ClaimTransferFileAsync(
+            task.Id,
+            "subtitle-0001",
+            "episode_Traditional-Chinese.srt",
+            TestContext.Current.CancellationToken);
+
+        var stored = Assert.IsType<DownloadTask>(store.Current);
+        Assert.Equal("aria-gid", stored.Transfer.BackendIdentity);
+        Assert.Equal(2, stored.Plan.TransferFiles.Count);
+        Assert.Equal("episode_Chinese.srt", stored.Plan.TransferFiles["subtitle-0001"]);
+        Assert.Contains("episode_Traditional-Chinese.srt", stored.Plan.TransferFiles.Values);
+    }
+
+    [Fact]
+    public async Task InvalidatingCompletedFileAlsoClearsBackendIdentity()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+        var task = CreateTask();
+        await service.AddAsync(task, TestContext.Current.CancellationToken);
+        await service.StartAsync(task.Id, TestContext.Current.CancellationToken);
+        await service.RecordTransferFileAsync(
+            task.Id,
+            "video-1",
+            "segment.m4s",
+            TestContext.Current.CancellationToken);
+        await service.CompleteTransferFileAsync(
+            task.Id,
+            "video-1",
+            TestContext.Current.CancellationToken);
+        await service.SetBackendIdentityAsync(
+            task.Id,
+            "stale-aria-gid",
+            TestContext.Current.CancellationToken);
+
+        var result = await service.InvalidateCompletedFileAsync(
+            task.Id,
+            "video-1",
+            TestContext.Current.CancellationToken);
+
+        var updated = result.RequireValue();
+        Assert.Empty(updated.Transfer.CompletedFileKeys);
+        Assert.Null(updated.Transfer.BackendIdentity);
+        Assert.Equal("segment.m4s", updated.Plan.TransferFiles["video-1"]);
+    }
+
+    [Fact]
+    public async Task InvalidatingCompletedFilesUsesOneDurableMutation()
+    {
+        var store = new RecordingStore();
+        using var service = new DownloadTaskApplicationService(store, new AdvancingClock());
+        var task = CreateTask();
+        await service.AddAsync(task, TestContext.Current.CancellationToken);
+        await service.StartAsync(task.Id, TestContext.Current.CancellationToken);
+        foreach (var (key, fileName) in new[]
+                 {
+                     ("audio-1", "audio.m4s"),
+                     ("video-1", "video.m4s"),
+                     ("keep-1", "keep.m4s")
+                 })
+        {
+            await service.RecordTransferFileAsync(
+                task.Id,
+                key,
+                fileName,
+                TestContext.Current.CancellationToken);
+            await service.CompleteTransferFileAsync(
+                task.Id,
+                key,
+                TestContext.Current.CancellationToken);
+        }
+
+        await service.SetBackendIdentityAsync(
+            task.Id,
+            "stale-aria-gid",
+            TestContext.Current.CancellationToken);
+        var updatesBeforeInvalidation = store.ExpectedVersions.Count;
+
+        var result = await service.InvalidateCompletedFilesAsync(
+            task.Id,
+            ["audio-1", "video-1"],
+            TestContext.Current.CancellationToken);
+
+        var updated = result.RequireValue();
+        Assert.Equal(updatesBeforeInvalidation + 1, store.ExpectedVersions.Count);
+        Assert.Equal("keep-1", Assert.Single(updated.Transfer.CompletedFileKeys));
+        Assert.Null(updated.Transfer.BackendIdentity);
+        Assert.Equal("audio.m4s", updated.Plan.TransferFiles["audio-1"]);
+        Assert.Equal("video.m4s", updated.Plan.TransferFiles["video-1"]);
+    }
+
+    [Fact]
     public async Task InvalidCommandDoesNotPersistOrPublishAReplacementSnapshot()
     {
         var store = new RecordingStore();
@@ -203,6 +317,11 @@ public sealed class DownloadTaskApplicationServiceTests
 
         public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<DownloadTask>>(Current == null ? [] : [Current]);
+
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) => Task.FromResult(false);
 
         public Task<DownloadHistoryPage> GetHistoryPageAsync(
             DownloadHistoryCursor? cursor,

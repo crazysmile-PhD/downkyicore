@@ -12,9 +12,12 @@ PRs do not update this file merely because their work state changed.
 
 ## Release Policy
 
-- Integrate dependency-ordered work upstream first. A downstream change must be
-  rechecked after its prerequisite merges; stale exact-head evidence does not
-  transfer to a different base.
+- Preserve true semantic dependencies and recheck a downstream change after its
+  prerequisite changes; stale exact-head evidence does not transfer to a new
+  base. Separate root causes may remain separate commits or review evidence,
+  but do not grow an unmerged release stack beyond roughly two or three layers
+  or material divergence from `main`. Consolidate accepted semantics onto one
+  clean current-main integration branch and validate that exact head.
 - Publish only from one clean final commit after strict quality, CodeQL, Main
   lifecycle, release rehearsal and Windows/Linux/macOS package validation pass
   for that exact commit.

@@ -31,6 +31,7 @@
 
     <!--  MySpace  -->
     <system:String x:Key="MySpace">我的个人空间</system:String><system:String x:Key="Logout">退出登录</system:String>
+    <system:String x:Key="BilibiliDynamics">Bilibili 动态</system:String>
     <system:String x:Key="MySpaceWait">请稍等，马上就好~</system:String>
     <system:String x:Key="Level">等级</system:String>
     <system:String x:Key="Following">关注数</system:String>

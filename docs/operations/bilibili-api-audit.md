@@ -1,6 +1,7 @@
 # Bilibili API Contract Audit
 
 Audit date: 2026-07-29
+Last targeted contract update: 2026-08-09 (PR #120 danmaku sequence bound)
 Code baseline: v1.1.0 integration candidate `355ef7cb773b3dff67cf5adc56fba942ba77fcf5`
 Scope: every fixed Bilibili HTTP endpoint under `DownKyi.Core/BiliApi`, plus the authenticated read-only subset used by account workflows
 
@@ -12,7 +13,8 @@ This is a runtime contract inventory, not an assertion that undocumented Bilibil
 - **AUTH-LIVE**: authenticated read-only request most recently repeated on 2026-07-29. The hard gate required `/nav` code 0 and `data.isLogin=true`; only the allowlisted sanitized contract fields in [`bilibili-authenticated-api-audit.json`](bilibili-authenticated-api-audit.json) were persisted.
 - **YT**: current [yt-dlp Bilibili extractor](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/bilibili.py).
 - **NEMO**: maintained bilibili-api endpoint maps for [users](https://github.com/Nemo2011/bilibili-api/blob/main/bilibili_api/data/api/user.json), [favorites](https://github.com/Nemo2011/bilibili-api/blob/main/bilibili_api/data/api/favorite-list.json), [videos](https://github.com/Nemo2011/bilibili-api/blob/main/bilibili_api/data/api/video.json), [bangumi](https://github.com/Nemo2011/bilibili-api/blob/main/bilibili_api/data/api/bangumi.json), and [login](https://github.com/Nemo2011/bilibili-api/blob/main/bilibili_api/data/api/login.json).
-- **DOC**: maintained community protocol documentation, including [protobuf danmaku](https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/danmaku/danmaku_proto.md) and [history/watch-later](https://github.com/SocialSisterYi/bilibili-API-collect/tree/master/docs/historytoview).
+- **IMPL**: pinned maintained implementations used as protocol corroboration, including [yutto danmaku metadata enumeration](https://github.com/yutto-dev/yutto/blob/30eb998c8c711a92c3a74ac24d54da8cfef510e7/src/yutto/api/danmaku.py) and [bilix danmaku metadata enumeration](https://github.com/HFrost0/bilix/blob/bb5b234cdfe3fafc4db9d992b91091f2edf791e5/bilix/sites/bilibili/api.py).
+- **DOC**: community protocol documentation retained as historical evidence, including [history/watch-later](https://github.com/SocialSisterYi/bilibili-API-collect/tree/master/docs/historytoview). The former protobuf-danmaku link is no longer treated as maintained evidence because that repository's active documentation tree was retired.
 - **FIXTURE**: deterministic local JSON/protobuf/loopback contract test. Tests never call production Bilibili.
 - **Active** means a current application workflow calls the endpoint. **Compatibility** means the public facade remains but no current workflow calls it.
 - **Auth-deferred** means a personal Cookie would be required for a conclusive live payload check. No maintainer Cookie was read, copied, logged, or sent by this audit.
@@ -33,8 +35,8 @@ Status values:
 | `api.bilibili.com/x/frontend/finger/spi` | `BilibiliBuvidProvider`; single-flight public buvid bootstrap for injected API requests | GET, `data.b_3/b_4`, anonymous | `fixed/current`; LIVE returned HTTP 200/code 0 | Keep. Exact `code`/`data` wire names, missing values, failed-load retry, concurrent sharing and per-waiter cancellation have deterministic Infrastructure tests. |
 | `api.bilibili.com/x/web-interface/nav` | `UserInfo.GetUserInfoForNavigation`; login snapshot and WBI image keys | GET, `data`; anonymous response is code `-101` but still carries public `data.wbi_img` | `fixed/current`; LIVE reproduced anonymous `-101`; AUTH-LIVE returned HTTP 200/code 0 with `isLogin=true`; YT also obtains WBI keys here | Only this endpoint may deserialize code `-101`. `UserNavigationContractTests` proves keys survive and all other endpoints still reject `-101`. |
 | `api.bilibili.com/x/space/myinfo` | `UserInfo.GetMyInfo`; current account details | GET, `data`, Cookie required | `current`; AUTH-LIVE returned HTTP 200/code 0 and the required account envelope without persisting any values; NEMO marks authenticated | Keep. Generic nonzero-code rejection and required-payload behavior apply. |
-| `passport.bilibili.com/x/passport-login/web/qrcode/generate` | `LoginQR.GetLoginUrl`; create login QR session | GET, `data.url/qrcode_key`, anonymous | `current`; LIVE code 0; NEMO login map agrees | Keep. Probe never emits the generated key or URL. Existing login coordinator tests use stubs. |
-| `passport.bilibili.com/x/passport-login/web/qrcode/poll` | `LoginQR.GetLoginStatus`; poll QR state | GET, `data`, generated key required | `current`; NEMO login map agrees; full live poll intentionally not persisted | Keep. The generated key is treated as sensitive transient state. |
+| `passport.bilibili.com/x/passport-login/web/qrcode/generate` | `LoginQr.GetLoginUrl`; create an isolated QR login session | GET, `data.url/qrcode_key`, anonymous | `current`; LIVE code 0; NEMO login map agrees | Keep. Probe never emits the generated key or URL. Deterministic tests keep login cookies synthetic. |
+| `passport.bilibili.com/x/passport-login/web/qrcode/poll` | `LoginQr.GetLoginStatus`; poll QR state and capture response cookies | GET, `data`, generated key required; successful response may set session cookies | `fixed/current`; NEMO login map agrees; full live poll intentionally not persisted | The same isolated session owns generate, poll and HTTPS Bilibili callback hops. The exact `passport.biligame.com/x/passport-login/web/crossDomain` landing terminates traversal without receiving a request. Parent-domain poll/callback cookies override legacy landing-query values, are atomically persisted with encoding provenance, reloaded and accepted only after `/nav` returns `isLogin=true`; failed or canceled validation restores the previous file. Deterministic coverage is in `BilibiliLoginSessionTests`, `LoginHelperTests` and `LoginCoordinatorTests`. |
 
 ## Ordinary Video, Playback And Media Metadata
 
@@ -46,7 +48,8 @@ Status values:
 | `api.bilibili.com/x/web-interface/view/detail/tag` | `VideoInfo.GetBiliTagInfo`; optional movie tags | GET, `data[]`, public/partly restricted | `current`; LIVE code 0 | Keep. Tag failures are optional metadata; cancellation still propagates. |
 | `api.bilibili.com/x/player/wbi/v2` | `VideoStreamApi.PlayerV2`; subtitles and player metadata | GET, WBI, `data` | `current`; NEMO and YT agree | Keep. Player payload is required; subtitle tests use deterministic responses. |
 | `api.bilibili.com/x/player/wbi/playurl` | `VideoStreamApi.GetVideoPlayUrl`; ordinary video streams | GET, WBI, `data` | `current`; NEMO/YT agree; fixed playback fixtures | Keep. `PlayUrlEnvelopeContractTests` rejects missing or empty `data`. |
-| `api.bilibili.com/x/v2/dm/web/seg.so` | `DanmakuProtobuf`; protobuf segments | GET, binary protobuf, semi-anonymous | `legacy-working`; LIVE returned HTTP 200 protobuf; DOC identifies newer WBI variant | Keep for compatibility in this gate. The WBI alternative also worked anonymously, but moving it requires injecting WBI ownership into the danmaku boundary. No current production caller was found. |
+| `api.bilibili.com/x/v2/dm/web/view` | `DanmakuProtobuf`; obtains the finite segment bound before requested ASS artifact enumeration | GET, binary `DmWebViewReply`, semi-anonymous | `fixed/current-production`; checked-in protobuf plus pinned yutto/bilix implementations use `dm_sge.total` | Keep. Missing or invalid `dm_sge.total` is a protocol failure; the client must not guess a bound from segment contents. `DanmakuSegmentContractTests` covers zero, missing/malformed metadata and an empty interior bucket. |
+| `api.bilibili.com/x/v2/dm/web/seg.so` | `DanmakuProtobuf` via `BilibiliDanmakuConverter` and `DownloadArtifactWriter`; requested ASS artifact segments | GET, binary `DmSegMobileReply`, semi-anonymous | `fixed/current-production`; LIVE returned HTTP 200 protobuf; IMPL enumerates exactly the metadata-advertised range | Keep for the active artifact pipeline. Request exactly `segment_index=1..dm_sge.total`; an empty segment is a valid quiet bucket and is not EOF. HTTP, IO and malformed metadata/segment protobuf failures remain typed artifact failures. The WBI alternative requires a separate ownership migration. |
 
 Dynamic media dependencies are not fixed API endpoints: subtitle JSON addresses come from `PlayerV2`, media addresses come from `PlayUrl`, and the ordinary-video web fallback reads `www.bilibili.com/video/...`. They must remain opaque response values and must never be copied into diagnostic logs.
 
@@ -125,6 +128,7 @@ The machine-readable artifact is [`bilibili-authenticated-api-audit.json`](bilib
 4. `BilibiliApiInventoryArchitectureTests` fails when a fixed Core endpoint is not present in this document or when the `/nav` nonzero-code exception spreads to another source file.
 5. `script/audit-bilibili-api.ps1 -ConfirmLive` reproduces the anonymous subset and outputs only sanitized diagnostics. It is an operator tool, not a CI test.
 6. `script/audit-bilibili-authenticated-api.ps1 -ConfirmAuthenticatedLive` gates authenticated probes on `/nav`, emits an allowlisted schema, and never persists raw account responses.
+7. Danmaku artifact enumeration obtains its finite bound from `/x/v2/dm/web/view`; empty segment payloads no longer truncate later advertised buckets.
 
 ## Deterministic Tests
 
@@ -140,6 +144,10 @@ The machine-readable artifact is [`bilibili-authenticated-api-audit.json`](bilib
 - `BangumiEpisodeIdentityTests.DownloadResolverPassesPersistedEpisodeIdToPlaybackRequest`
 - existing `PlayUrlEnvelopeContractTests` for ordinary video and cheese
 - existing `BvFixtureContractTests` for `BV1U7V66FEiK`
+- `DanmakuSegmentContractTests.AdvertisedSegmentCountIncludesEmptyInteriorSegments`
+- `DanmakuSegmentContractTests.ZeroAdvertisedSegmentsDoesNotGuessAnExtraRequest`
+- `DanmakuSegmentContractTests.MissingSegmentMetadataFailsInsteadOfGuessingTermination`
+- `DanmakuSegmentContractTests.MalformedSegmentMetadataFailsInsteadOfGuessingTermination`
 - `BilibiliApiInventoryArchitectureTests.EveryHardCodedBilibiliApiEndpointIsRecordedInTheAudit`
 - `BilibiliApiInventoryArchitectureTests.AnonymousNonSuccessCodeExceptionIsScopedToNavigation`
 - `BilibiliApiInventoryArchitectureTests.OptionalJsonEnvelopeFieldsCannotInventPayloads`

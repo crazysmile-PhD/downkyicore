@@ -494,6 +494,7 @@ public sealed class DownloadRuntimeArchitectureTests
             "DownloadTransferFileCleanup.DeleteInvalidArtifacts",
             coordinatorSource,
             StringComparison.Ordinal);
+        Assert.Contains("if (!cleanup.Succeeded)", coordinatorSource, StringComparison.Ordinal);
         Assert.Contains("request.Urls.Count != 1", builtinSource, StringComparison.Ordinal);
         Assert.Contains("request.Urls.Count != 1", ariaSource, StringComparison.Ordinal);
         Assert.DoesNotContain("foreach (var url in", builtinSource, StringComparison.Ordinal);
@@ -526,6 +527,7 @@ public sealed class DownloadRuntimeArchitectureTests
         var pipelineSource = File.ReadAllText(Path.Combine(directory, "DownloadPipeline.cs"));
         var factorySource = File.ReadAllText(Path.Combine(directory, "DownloadRuntimeFactory.cs"));
         var mediaSource = File.ReadAllText(Path.Combine(directory, "DownloadMediaStage.cs"));
+        var muxSource = File.ReadAllText(Path.Combine(directory, "MuxStage.cs"));
         var transferKeySource = File.ReadAllText(Path.Combine(directory, "DownloadTransferKey.cs"));
         string[] stageNames =
         [
@@ -558,6 +560,27 @@ public sealed class DownloadRuntimeArchitectureTests
         Assert.Contains("DownloadTransferKey.Create", mediaSource, StringComparison.Ordinal);
         Assert.DoesNotContain("GetHashCode", mediaSource, StringComparison.Ordinal);
         Assert.DoesNotContain("GetHashCode", transferKeySource, StringComparison.Ordinal);
+        Assert.Equal(
+            3,
+            System.Text.RegularExpressions.Regex.Count(
+                muxSource,
+                "overwriteDestination: false",
+                System.Text.RegularExpressions.RegexOptions.CultureInvariant));
+        Assert.Contains("InvalidInputPaths", muxSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "DownloadTransferFileCleanup.DeleteInvalidArtifacts",
+            muxSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "_stateWriter.InvalidateCompletedFilesAsync",
+            muxSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "FfmpegOperationFailureKind.InvalidInput",
+            muxSource,
+            StringComparison.Ordinal);
+        Assert.Contains("if (cleanedKeys.Count > 0)", muxSource, StringComparison.Ordinal);
+        Assert.Contains("return cleanupFailed", muxSource, StringComparison.Ordinal);
 
         var previousIndex = -1;
         foreach (var stageName in stageNames)
@@ -577,6 +600,29 @@ public sealed class DownloadRuntimeArchitectureTests
             Assert.True(currentIndex > previousIndex, $"{stageName} is out of order.");
             previousIndex = currentIndex;
         }
+    }
+
+    [Fact]
+    public void TransferInputCleanupOccursOnlyAfterDurableCompletion()
+    {
+        var downloadDirectory = Path.Combine(
+            RepositoryRoot,
+            "src", "DownKyi.Desktop", "Services", "Download");
+        var processorSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core", "FFmpeg", "FfmpegProcessor.cs"));
+        var concatSource = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "DownKyi.Core", "FFmpeg", "FfmpegConcatRuntime.cs"));
+        var finalizeSource = File.ReadAllText(Path.Combine(
+            downloadDirectory,
+            "FinalizeStage.cs"));
+
+        Assert.DoesNotContain("DeleteInput", processorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("DeleteSourceSegments", concatSource, StringComparison.Ordinal);
+        Assert.True(
+            finalizeSource.IndexOf("_stateWriter.CompleteAsync", StringComparison.Ordinal) <
+            finalizeSource.IndexOf("DeleteTransferFilesAsync", StringComparison.Ordinal));
     }
 
     private static string FindRepositoryRoot()

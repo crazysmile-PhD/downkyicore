@@ -29,11 +29,13 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
     private readonly VersionCheckerService _versionChecker;
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
+    private readonly CancellationToken _lifetimeToken;
 
     private bool _messageVisibility;
     private string? _oldMessage;
     private CancellationTokenSource? _messageCancellation;
     private CancellationTokenSource? _clipboardDebounceCancellation;
+    private Task? _startupDialogsTask;
 
     private object? _mainContent;
 
@@ -139,6 +141,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         _searchService = searchService ?? throw new ArgumentNullException(nameof(searchService));
         _versionChecker = versionChecker ?? throw new ArgumentNullException(nameof(versionChecker));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _lifetimeToken = _lifetimeCancellation.Token;
 
         #region MyRegion
 
@@ -156,8 +159,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
             {
                 return;
             }
-            Upgrade();
-            _ = CheckForUpdatesAsync();
+            StartStartupDialogs();
             _clipboardMonitor.Changed -= ClipboardMonitorOnChanged;
             _clipboardMonitor.Changed += ClipboardMonitorOnChanged;
             _navigationService.Navigate(new AppNavigationRequest(
@@ -262,9 +264,37 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     #endregion
 
-    private void Upgrade()
+    private void StartStartupDialogs()
     {
-        _ = ShowUpgradeDialogAsync();
+        if (_startupDialogsTask != null)
+        {
+            return;
+        }
+
+        _startupDialogsTask = RunStartupDialogsAsync();
+        ObserveStartupDialogs(_startupDialogsTask);
+    }
+
+    internal async Task RunStartupDialogsAsync()
+    {
+        await ShowUpgradeDialogAsync().ConfigureAwait(true);
+        if (_lifetimeToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        await CheckForUpdatesAsync().ConfigureAwait(true);
+    }
+
+    private void ObserveStartupDialogs(Task startupDialogsTask)
+    {
+        _ = startupDialogsTask.ContinueWith(
+            completed => _logger.LogErrorMessage(
+                "Startup dialog flow failed.",
+                completed.Exception!.GetBaseException()),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously | TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
     }
 
     private async Task ShowUpgradeDialogAsync()
@@ -272,10 +302,10 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             await _dialogService
-                .ShowAsync(new AppDialogRequest(AppDialog.LegacyUpgrade), _lifetimeCancellation.Token)
+                .ShowAsync(new AppDialogRequest(AppDialog.LegacyUpgrade), _lifetimeToken)
                 .ConfigureAwait(true);
         }
-        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+        catch (OperationCanceledException) when (_lifetimeToken.IsCancellationRequested)
         {
             return;
         }
@@ -296,7 +326,7 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
                 .GetLatestReleaseAsync(
                     about.IsReceiveBetaVersion == AllowStatus.Yes,
                     about.SkipVersionOnLaunch,
-                    _lifetimeCancellation.Token)
+                    _lifetimeToken)
                 .ConfigureAwait(true);
             if (release != null && _versionChecker.IsNewVersionAvailable(release.TagName))
             {
@@ -306,10 +336,10 @@ internal sealed class MainWindowViewModel : ObservableObject, IDisposable
                     {
                         ["release"] = release,
                         ["enableSkipVersion"] = true
-                    }), _lifetimeCancellation.Token).ConfigureAwait(true);
+                    }), _lifetimeToken).ConfigureAwait(true);
             }
         }
-        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+        catch (OperationCanceledException) when (_lifetimeToken.IsCancellationRequested)
         {
             return;
         }

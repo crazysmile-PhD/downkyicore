@@ -1,0 +1,421 @@
+name: Issue 183 Hosted Windows Stress
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Sampling duration per Hosted Windows VM'
+        required: false
+        default: '285'
+        type: string
+      iterations_per_batch:
+        description: 'Historical lifecycle iterations per assembly per batch'
+        required: false
+        default: '25'
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/issue-183-hosted-stress.yml'
+
+jobs:
+  stress:
+    name: Historical stress / shard ${{ matrix.shard }}
+    runs-on: windows-latest
+    timeout-minutes: 330
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    env:
+      DURATION_MINUTES: ${{ inputs.duration_minutes || '285' }}
+      ITERATIONS_PER_BATCH: ${{ inputs.iterations_per_batch || '25' }}
+
+    steps:
+      - name: Checkout exact historical failure SHA
+        uses: actions/checkout@v7
+        with:
+          ref: 0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8
+          fetch-depth: 0
+          path: target
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install diagnostics
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install dotnet-stack --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+          dotnet tool install dotnet-dump --tool-path "$env:GITHUB_WORKSPACE\tools" --version 9.0.661903
+
+      - name: Restore historical checkout
+        working-directory: target
+        run: dotnet restore ./DownKyi.sln
+
+      - name: Strict Release build
+        working-directory: target
+        run: >
+          dotnet build ./DownKyi.sln
+          -c Release
+          --no-restore
+          --no-incremental
+          -p:TreatWarningsAsErrors=true
+          -p:CodeAnalysisTreatWarningsAsErrors=true
+          -p:EnableNETAnalyzers=true
+          -p:AnalysisMode=All
+          -p:EnforceCodeStyleInBuild=true
+          -p:UseSharedCompilation=false
+
+      - name: Sample for hours; never fail-fast on target failures
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $shard = ${{ matrix.shard }}
+          $target = "$env:GITHUB_WORKSPACE\target"
+          $out = "$env:GITHUB_WORKSPACE\issue-183-shard-$shard"
+          $work = Join-Path $out "work"
+          $evidence = Join-Path $out "evidence"
+          $inconclusive = Join-Path $out "inconclusive"
+          New-Item -ItemType Directory -Force $out,$work,$evidence,$inconclusive | Out-Null
+
+          $historicalSha = "0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8"
+          $watchdogText = "Waiting 10 seconds for foreground threads to exit"
+          $assemblies = @("DownKyi.Core.Tests","DownKyi.Desktop.Tests")
+          $iterations = [int]$env:ITERATIONS_PER_BATCH
+          $duration = [int]$env:DURATION_MINUTES
+          $stackTool = "$env:GITHUB_WORKSPACE\tools\dotnet-stack.exe"
+          $dumpTool = "$env:GITHUB_WORKSPACE\tools\dotnet-dump.exe"
+
+          # Compatibility-only patch plus diagnostic-only Full dump capture.
+          $harness = Join-Path $target "script\test-assembly-lifecycle.ps1"
+          $content = Get-Content -LiteralPath $harness -Raw
+          $content = $content.Replace('$marker?.disposed','${marker}?.disposed',[StringComparison]::Ordinal)
+
+          if (-not $content.Contains('process-full.dmp',[StringComparison]::Ordinal)) {
+            $f = $content.IndexOf("function Save-ProcessEvidence",[StringComparison]::Ordinal)
+            $s = $content.IndexOf('$threadSnapshot = @()',$f,[StringComparison]::Ordinal)
+            if ($f -lt 0 -or $s -lt 0) { throw "Could not patch historical Save-ProcessEvidence." }
+            $line = $content.LastIndexOf("`n",$s)
+            if ($line -lt 0) { $line = $s } else { $line++ }
+            $nl = if ($content.Contains("`r`n",[StringComparison]::Ordinal)) { "`r`n" } else { "`n" }
+            $inject = @(
+              '    if ($Reason -eq "slow-exit-after-teardown" -and -not $Process.HasExited) {',
+              '        $dumpPath = Join-Path $directory "process-full.dmp"',
+              '        $dumpLog = Join-Path $directory "process-full-dump.log"',
+              '        try {',
+              '            $dumpLines = @(& $env:DOWNKYI_DOTNET_DUMP collect --type Full --process-id $Process.Id --output $dumpPath 2>&1)',
+              '            $dumpLines | Set-Content -LiteralPath $dumpLog -Encoding utf8',
+              '        } catch {',
+              '            ("Full dump capture failed: " + $_.Exception.ToString()) | Set-Content -LiteralPath $dumpLog -Encoding utf8',
+              '        }',
+              '    }',
+              ''
+            ) -join $nl
+            $content = $content.Substring(0,$line) + $inject + $content.Substring($line)
+          }
+
+          $tokens = $null
+          $parseErrors = $null
+          $null = [Management.Automation.Language.Parser]::ParseInput($content,[ref]$tokens,[ref]$parseErrors)
+          if ($parseErrors.Count -gt 0) { throw "Patched historical harness failed parser validation." }
+          [IO.File]::WriteAllText($harness,$content,[Text.UTF8Encoding]::new($false))
+          $env:DOWNKYI_DOTNET_DUMP = $dumpTool
+
+          $actualSha = (& git -C $target rev-parse HEAD).Trim()
+          if ($actualSha -ne $historicalSha) { throw "Historical SHA mismatch: $actualSha" }
+
+          $cpu = $null
+          try { $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 } catch {}
+          $environment = [ordered]@{
+            shard = $shard
+            historicalSha = $historicalSha
+            runnerName = $env:RUNNER_NAME
+            imageOs = $env:ImageOS
+            imageVersion = $env:ImageVersion
+            osDescription = [Runtime.InteropServices.RuntimeInformation]::OSDescription
+            processorName = if ($null -ne $cpu) { [string]$cpu.Name } else { $null }
+            logicalProcessors = if ($null -ne $cpu) { [int]$cpu.NumberOfLogicalProcessors } else { $null }
+            dotnetVersion = (& dotnet --version).Trim()
+            startedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
+          }
+          $environment | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $out "environment.json") -Encoding utf8
+          (& dotnet --info) | Set-Content (Join-Path $out "dotnet-info.txt") -Encoding utf8
+
+          $deadline = [DateTimeOffset]::UtcNow.AddMinutes($duration)
+          $batch = 0
+          $core = 0
+          $desktop = 0
+          $watchdogs = 0
+          $slowExits = 0
+          $dumps = 0
+          $harnessErrors = 0
+          $incomplete = 0
+          $failureKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          $batchRows = [Collections.Generic.List[object]]::new()
+          $eventRows = [Collections.Generic.List[object]]::new()
+
+          while ([DateTimeOffset]::UtcNow -lt $deadline) {
+            $batch++
+            $batchName = "batch-{0:D4}" -f $batch
+            $batchRoot = Join-Path $work $batchName
+            New-Item -ItemType Directory -Force $batchRoot | Out-Null
+            Write-Host "=== shard $shard / $batchName / $iterations iterations per assembly ==="
+
+            $harnessError = ""
+            try {
+              & $harness `
+                -Configuration Release `
+                -Profile Main `
+                -Iterations $iterations `
+                -PhaseTimeoutSeconds 180 `
+                -SlowPhaseThresholdSeconds 5 `
+                -ExitThresholdSeconds 1 `
+                -AssemblyPattern $assemblies `
+                -ResultsDirectory $batchRoot `
+                -DiagnosticsToolPath $stackTool `
+                -ValidateForensics `
+                -NoBuild
+            } catch {
+              $harnessError = $_.Exception.Message
+              $harnessErrors++
+              Write-Warning "Harness error recorded; next batch will still run: $harnessError"
+            }
+
+            $executionFiles = @(
+              Get-ChildItem $batchRoot -Recurse -File -Filter "execution.stdout.txt" -ErrorAction SilentlyContinue |
+                Where-Object {
+                  $_.FullName -match [regex]::Escape("DownKyi.Core.Tests") -or
+                  $_.FullName -match [regex]::Escape("DownKyi.Desktop.Tests")
+                }
+            )
+            $coreBatch = @($executionFiles | Where-Object { $_.FullName -match [regex]::Escape("DownKyi.Core.Tests") }).Count
+            $desktopBatch = @($executionFiles | Where-Object { $_.FullName -match [regex]::Escape("DownKyi.Desktop.Tests") }).Count
+            $core += $coreBatch
+            $desktop += $desktopBatch
+
+            $watchdogEvents = [Collections.Generic.List[object]]::new()
+            foreach ($file in $executionFiles) {
+              $stderrPath = Join-Path $file.Directory.FullName "execution.stderr.txt"
+              $combined = Get-Content $file.FullName -Raw
+              if (Test-Path $stderrPath) { $combined += "`n" + (Get-Content $stderrPath -Raw) }
+              if ($combined.Contains($watchdogText,[StringComparison]::OrdinalIgnoreCase)) {
+                $assembly = if ($file.FullName -match [regex]::Escape("DownKyi.Core.Tests")) { "DownKyi.Core.Tests" } else { "DownKyi.Desktop.Tests" }
+                $iterationName = $file.Directory.Name
+                $watchdogEvents.Add([pscustomobject]@{ assembly=$assembly; iteration=$iterationName; path=$file.FullName })
+              }
+            }
+
+            $slowDirs = @(
+              Get-ChildItem $batchRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like "*slow-exit-after-teardown*" }
+            )
+            $dumpFiles = @(
+              Get-ChildItem $batchRoot -Recurse -File -Filter "*.dmp" -ErrorAction SilentlyContinue
+            )
+            $watchdogs += $watchdogEvents.Count
+            $slowExits += $slowDirs.Count
+            $dumps += $dumpFiles.Count
+
+            foreach ($e in $watchdogEvents) {
+              $key = "$batchName|$($e.assembly)|$($e.iteration)"
+              $null = $failureKeys.Add($key)
+              $eventRows.Add([pscustomobject]@{
+                shard=$shard; batch=$batch; kind="watchdog"; assembly=$e.assembly;
+                iteration=$e.iteration; imageOs=$env:ImageOS; imageVersion=$env:ImageVersion;
+                runnerName=$env:RUNNER_NAME; observedAtUtc=[DateTimeOffset]::UtcNow.ToString("O")
+              })
+            }
+
+            foreach ($dir in $slowDirs) {
+              $iterationDir = $dir.Parent
+              $assemblyDir = if ($null -ne $iterationDir) { $iterationDir.Parent } else { $null }
+              $assembly = if ($null -ne $assemblyDir) { $assemblyDir.Name } else { "unknown" }
+              $iterationName = if ($null -ne $iterationDir) { $iterationDir.Name } else { "unknown" }
+              $key = "$batchName|$assembly|$iterationName"
+              $null = $failureKeys.Add($key)
+              $eventRows.Add([pscustomobject]@{
+                shard=$shard; batch=$batch; kind="slow-exit-after-teardown"; assembly=$assembly;
+                iteration=$iterationName; imageOs=$env:ImageOS; imageVersion=$env:ImageVersion;
+                runnerName=$env:RUNNER_NAME; observedAtUtc=[DateTimeOffset]::UtcNow.ToString("O")
+              })
+            }
+
+            foreach ($dump in $dumpFiles) {
+              $eventRows.Add([pscustomobject]@{
+                shard=$shard; batch=$batch; kind="full-dump"; assembly="unknown";
+                iteration="unknown"; imageOs=$env:ImageOS; imageVersion=$env:ImageVersion;
+                runnerName=$env:RUNNER_NAME; observedAtUtc=[DateTimeOffset]::UtcNow.ToString("O")
+              })
+            }
+
+            $complete = $coreBatch -eq $iterations -and $desktopBatch -eq $iterations
+            $suspicious = $watchdogEvents.Count -gt 0 -or $slowDirs.Count -gt 0 -or $dumpFiles.Count -gt 0
+            $retained = ""
+            if ($suspicious) {
+              $retained = Join-Path $evidence $batchName
+              Move-Item $batchRoot $retained
+              Write-Host "TARGET SIGNAL: watchdog=$($watchdogEvents.Count), slowExit=$($slowDirs.Count), dumps=$($dumpFiles.Count). Sampling continues."
+            } elseif (-not $complete) {
+              $incomplete++
+              $retained = Join-Path $inconclusive $batchName
+              Move-Item $batchRoot $retained
+              Write-Warning "Incomplete batch retained. Sampling continues."
+            } else {
+              Remove-Item $batchRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+
+            $batchRows.Add([pscustomobject]@{
+              shard=$shard; batch=$batch; coreExecutions=$coreBatch; desktopExecutions=$desktopBatch;
+              watchdogExecutions=$watchdogEvents.Count; slowExitEvents=$slowDirs.Count; fullDumps=$dumpFiles.Count;
+              complete=$complete; harnessError=$harnessError; retainedPath=$retained
+            })
+            @($batchRows) | Export-Csv (Join-Path $out "batch-summary.csv") -NoTypeInformation -Encoding utf8
+            if ($eventRows.Count -gt 0) {
+              @($eventRows) | Export-Csv (Join-Path $out "events.csv") -NoTypeInformation -Encoding utf8
+            }
+          }
+
+          $total = $core + $desktop
+          $failureCount = $failureKeys.Count
+          $rate = if ($total -gt 0) { [Math]::Round(($failureCount / $total) * 100.0,6) } else { 0.0 }
+          $summary = [ordered]@{
+            schemaVersion=1; shard=$shard; historicalSha=$historicalSha;
+            imageOs=$env:ImageOS; imageVersion=$env:ImageVersion; runnerName=$env:RUNNER_NAME;
+            processorName=$environment.processorName; logicalProcessors=$environment.logicalProcessors;
+            dotnetVersion=$environment.dotnetVersion; batches=$batch; coreExecutions=$core;
+            desktopExecutions=$desktop; totalTargetExecutions=$total;
+            uniqueTargetFailureExecutions=$failureCount; targetFailureRatePercent=$rate;
+            watchdogExecutions=$watchdogs; slowExitEvents=$slowExits; fullDumps=$dumps;
+            harnessBatchErrors=$harnessErrors; incompleteBatches=$incomplete;
+            finishedAtUtc=[DateTimeOffset]::UtcNow.ToString("O")
+          }
+          $summary | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $out "shard-$shard-summary.json") -Encoding utf8
+          Write-Host "SHARD COMPLETE: total=$total failures=$failureCount watchdogs=$watchdogs slowExits=$slowExits dumps=$dumps rate=$rate%"
+
+      - name: Upload shard report and retained evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-shard-${{ matrix.shard }}
+          path: issue-183-shard-${{ matrix.shard }}
+          if-no-files-found: warn
+          retention-days: 14
+
+  aggregate:
+    name: Aggregate complete report
+    needs: stress
+    if: always()
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Download all shard artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: issue-183-shard-*
+          path: collected
+          merge-multiple: true
+
+      - name: Build final report
+        shell: pwsh
+        run: |
+          $summaries = @(
+            Get-ChildItem collected -Recurse -File -Filter "shard-*-summary.json" -ErrorAction SilentlyContinue |
+              ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json }
+          )
+
+          $core=0; $desktop=0; $total=0; $failures=0; $watchdogs=0; $slow=0; $dumps=0; $harnessErrors=0; $incomplete=0
+          foreach ($s in $summaries) {
+            $core += [int]$s.coreExecutions
+            $desktop += [int]$s.desktopExecutions
+            $total += [int]$s.totalTargetExecutions
+            $failures += [int]$s.uniqueTargetFailureExecutions
+            $watchdogs += [int]$s.watchdogExecutions
+            $slow += [int]$s.slowExitEvents
+            $dumps += [int]$s.fullDumps
+            $harnessErrors += [int]$s.harnessBatchErrors
+            $incomplete += [int]$s.incompleteBatches
+          }
+          $rate = if ($total -gt 0) { [Math]::Round(($failures / $total) * 100.0,6) } else { 0.0 }
+
+          $allEvents = @(
+            Get-ChildItem collected -Recurse -File -Filter "events.csv" -ErrorAction SilentlyContinue |
+              ForEach-Object { Import-Csv $_.FullName }
+          )
+          if ($allEvents.Count -gt 0) {
+            $allEvents | Export-Csv issue-183-events.csv -NoTypeInformation -Encoding utf8
+          }
+
+          $final = [ordered]@{
+            schemaVersion=1
+            historicalSha="0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8"
+            generatedAtUtc=[DateTimeOffset]::UtcNow.ToString("O")
+            plannedShards=6
+            completedShardSummaries=$summaries.Count
+            coreExecutions=$core
+            desktopExecutions=$desktop
+            totalTargetExecutions=$total
+            uniqueTargetFailureExecutions=$failures
+            targetFailureRatePercent=$rate
+            exactWatchdogExecutions=$watchdogs
+            slowExitAfterTeardownEvents=$slow
+            fullDumps=$dumps
+            harnessBatchErrors=$harnessErrors
+            incompleteBatches=$incomplete
+          }
+          $final | ConvertTo-Json -Depth 6 | Set-Content issue-183-final-report.json -Encoding utf8
+
+          $md = [Collections.Generic.List[string]]::new()
+          $md.Add("# Issue #183 — Hosted Windows Historical Stress Final Report")
+          $md.Add("")
+          $md.Add("- Historical SHA: ``0ef53f0b3570dd5b5fe8f6fe6eda52e5f9badeb8``")
+          $md.Add("- Hosted VM shards planned / reported: 6 / $($summaries.Count)")
+          $md.Add("- Core executions: $core")
+          $md.Add("- Desktop executions: $desktop")
+          $md.Add("- **Total target executions: $total**")
+          $md.Add("- **Unique target failure executions: $failures**")
+          $md.Add("- **Observed failure rate: $rate%**")
+          $md.Add("- Exact xUnit watchdog executions: $watchdogs")
+          $md.Add("- Slow-exit-after-teardown events: $slow")
+          $md.Add("- Full dumps captured: $dumps")
+          $md.Add("- Harness batch errors; sampling continued: $harnessErrors")
+          $md.Add("- Incomplete batches: $incomplete")
+          $md.Add("")
+          $md.Add("## By Hosted VM")
+          $md.Add("")
+          $md.Add("| Shard | Runner image | CPU | Core | Desktop | Failure execs | Watchdogs | Slow exit | Dumps |")
+          $md.Add("| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+          foreach ($s in $summaries | Sort-Object shard) {
+            $md.Add("| $($s.shard) | $($s.imageOs) $($s.imageVersion) | $($s.processorName) | $($s.coreExecutions) | $($s.desktopExecutions) | $($s.uniqueTargetFailureExecutions) | $($s.watchdogExecutions) | $($s.slowExitEvents) | $($s.fullDumps) |")
+          }
+          $md.Add("")
+          if ($failures -gt 0) {
+            $md.Add("**Result:** the historical shutdown-failure class reproduced on Hosted Windows. The workflow deliberately continued sampling after every occurrence.")
+          } else {
+            $md.Add("**Result:** no target shutdown failure was observed in this Hosted Windows sample. This is negative reproduction evidence, not disproof of the historical incident.")
+          }
+
+          $md | Set-Content issue-183-final-report.md -Encoding utf8
+          $md | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $md | ForEach-Object { Write-Host $_ }
+
+      - name: Upload complete final report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-final-report
+          path: |
+            issue-183-final-report.md
+            issue-183-final-report.json
+            issue-183-events.csv
+          if-no-files-found: warn
+          retention-days: 30

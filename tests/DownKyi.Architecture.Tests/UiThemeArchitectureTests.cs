@@ -44,6 +44,7 @@ public sealed class UiThemeArchitectureTests
     [InlineData("src", "DownKyi.Desktop", "Views", "DownloadManager", "ViewDownloading.axaml")]
     [InlineData("src", "DownKyi.Desktop", "Views", "DownloadManager", "ViewDownloadFinished.axaml")]
     [InlineData("src", "DownKyi.Desktop", "Views", "ViewMyHistory.axaml")]
+    [InlineData("src", "DownKyi.Desktop", "Views", "ViewMyToViewVideo.axaml")]
     [InlineData("src", "DownKyi.Desktop", "Views", "ViewPublicFavorites.axaml")]
     public void LargeListsKeepVirtualizingPanels(params string[] pathParts)
     {

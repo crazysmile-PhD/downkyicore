@@ -23,17 +23,46 @@
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.ApplicationLogProviderTests" },
         { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.AriaServerProcessTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadOrchestratorTests" },
-        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.AriaRuntimeClientRegistryTests" }
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.AriaRuntimeClientRegistryTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DialogViewModelLifecycleTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.LegacyUpgradeViewModelTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.StartupDialogOrderingTests" }
       ]
     },
     {
       "id": "output-cleanup-ownership",
       "historicalRoots": ["PR #85", "PR #120"],
-      "guards": "Task rows, resume state, generated files and sidecars are changed through their existing owners; cancellation preserves recoverable state.",
+      "guards": "Task rows, transfer inputs, resume state, generated files and sidecars are changed through their existing owners; retry checkpoints survive every pre-commit failure and transfer inputs are cleaned only after durable completion.",
       "testClasses": [
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.SqliteDownloadTaskStoreTests" },
+        { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.FfmpegCommitBoundaryTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadTaskFileServiceTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadArtifactStageTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadPipelineCommitBoundaryTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadTaskProjectionStoreResumeTests" }
+      ],
+      "proofRequirements": [
+        "deterministic-generative",
+        "adversarial-mutation"
+      ],
+      "adversarialProofs": [
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj",
+          "filter": "FullyQualifiedName~DownKyi.Tests.DownloadArtifactStageTests.FileProducingArtifactStateSpaceOwnsEveryCreatedOutput",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_ARTIFACT_OWNER",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        }
+      ]
+    },
+    {
+      "id": "protocol-sequence-termination",
+      "historicalRoots": ["PR #120"],
+      "guards": "Finite external sequences use their advertised bound or terminal signal; missing metadata, valid empty elements and transport or parse failures remain distinct outcomes.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", "class": "DownKyi.Core.Tests.DanmakuSegmentContractTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DownloadArtifactStageTests" }
       ]
     },
     {
@@ -86,13 +115,24 @@
       ]
     },
     {
+      "id": "dialog-chrome-interaction",
+      "historicalRoots": ["PR #120", "Issue #123"],
+      "guards": "Borderless dialogs retain one draggable title bar, expose a visible close path, and keep interactive caption controls outside the drag hit region.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj", "class": "DownKyi.Desktop.Tests.DialogWindowChromeTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.LegacyUpgradeViewModelTests" }
+      ]
+    },
+    {
       "id": "host-process-and-log-lifecycle",
       "historicalRoots": ["PR #94", "PR #113", "PR #120", "PR #122"],
       "guards": "Host, process and logging owners dispose, exit and persist deterministically; accepted work is not reported completed before durable flush.",
       "testClasses": [
         { "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj", "class": "DownKyi.Desktop.Tests.UiSmokeTests" },
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.ApplicationLogProviderTests" },
-        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests" }
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DialogViewModelLifecycleTests" },
+        { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.LegacyUpgradeViewModelTests" }
       ]
     }
   ],

@@ -12,6 +12,7 @@ public sealed record BilibiliNetworkOptions(
 public static class BilibiliServiceCollectionExtensions
 {
     internal const string HttpClientName = "DownKyi.Bilibili";
+    internal const string LoginHttpClientName = "DownKyi.Bilibili.Login";
     internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
 
     public static IServiceCollection AddDownKyiBilibiliInfrastructure(
@@ -23,6 +24,9 @@ public static class BilibiliServiceCollectionExtensions
 
         services.AddSingleton(optionsFactory);
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IBilibiliLoginSessionFactory>(static provider =>
+            new BilibiliLoginSessionFactory(
+                provider.GetRequiredService<IHttpClientFactory>()));
         services.AddSingleton(static provider => new BilibiliHttpTransport(
             provider.GetRequiredService<IHttpClientFactory>(),
             provider.GetRequiredService<TimeProvider>()));
@@ -45,6 +49,23 @@ public static class BilibiliServiceCollectionExtensions
             })
             .ConfigurePrimaryHttpMessageHandler(provider =>
                 CreateHandler(provider.GetRequiredService<BilibiliNetworkOptions>()));
+        services.AddHttpClient(LoginHttpClientName, (provider, client) =>
+            {
+                var options = provider.GetRequiredService<BilibiliNetworkOptions>();
+                client.Timeout = RequestTimeout;
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
+                client.DefaultRequestHeaders.Add(
+                    "accept-language",
+                    "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
+            })
+            .ConfigurePrimaryHttpMessageHandler(provider =>
+            {
+                var handler = CreateHandler(
+                    provider.GetRequiredService<BilibiliNetworkOptions>());
+                handler.AllowAutoRedirect = false;
+                handler.UseCookies = false;
+                return handler;
+            });
         return services;
     }
 

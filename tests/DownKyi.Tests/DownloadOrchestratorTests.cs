@@ -174,6 +174,57 @@ public sealed class DownloadOrchestratorTests
         Assert.Equal(DownloadPhase.Queued, restored.Phase);
     }
 
+    [Fact]
+    public async Task UnexpectedCancellationFailsTaskWithoutStoppingWorker()
+    {
+        using var context = new OrchestratorContext();
+        DownloadTaskId[] taskIds = await context.AddQueuedTasksAsync(2);
+        var secondExecuted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var executor = new RecordingExecutor(
+            (taskId, _) => taskId == taskIds[0]
+                ? Task.FromException(new TaskCanceledException("Synthetic transport timeout."))
+                : CompleteSecondAsync(),
+            markFailed: (taskId, cancellationToken) => context.StateWriter.FailAsync(
+                taskId,
+                DownloadActivityPresenter.CreateRetryableFailure(),
+                cancellationToken));
+        using var orchestrator = context.CreateOrchestrator(executor, workerCount: 1);
+
+        await orchestrator.StartAsync(TestContext.Current.CancellationToken);
+        await orchestrator.EnqueueAsync(taskIds[0], TestContext.Current.CancellationToken);
+        await WaitForPhaseAsync(context, taskIds[0], DownloadPhase.Failed);
+        await orchestrator.EnqueueAsync(taskIds[1], TestContext.Current.CancellationToken);
+        await secondExecuted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+        await orchestrator.StopAsync(TestContext.Current.CancellationToken);
+
+        Task CompleteSecondAsync()
+        {
+            secondExecuted.TrySetResult();
+            return Task.CompletedTask;
+        }
+    }
+
+    private static async Task WaitForPhaseAsync(
+        OrchestratorContext context,
+        DownloadTaskId taskId,
+        DownloadPhase expected)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (true)
+        {
+            var task = await context.Tasks.FindAsync(taskId, timeout.Token).ConfigureAwait(false);
+            if (task?.Phase == expected)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token).ConfigureAwait(false);
+        }
+    }
+
     private sealed class OrchestratorContext : IDisposable
     {
         private readonly InMemoryDownloadTaskStore _store = new();
@@ -240,7 +291,8 @@ public sealed class DownloadOrchestratorTests
 
     private sealed class RecordingExecutor(
         Func<DownloadTaskId, CancellationToken, Task> execute,
-        Func<Task>? persist = null) : IDownloadTaskExecutor
+        Func<Task>? persist = null,
+        Func<DownloadTaskId, CancellationToken, Task>? markFailed = null) : IDownloadTaskExecutor
     {
         public Task StartAsync(CancellationToken cancellationToken = default)
         {
@@ -263,8 +315,7 @@ public sealed class DownloadOrchestratorTests
             DownloadTaskId taskId,
             CancellationToken cancellationToken = default)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
+            return markFailed?.Invoke(taskId, cancellationToken) ?? Task.CompletedTask;
         }
 
         public Task PersistShutdownStateAsync()
@@ -365,6 +416,21 @@ public sealed class DownloadOrchestratorTests
             {
                 return Task.FromResult<IReadOnlyList<DownloadTask>>(
                     _tasks.Values.Where(task => task.Phase != DownloadPhase.Completed).ToArray());
+            }
+        }
+
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            lock (_sync)
+            {
+                return Task.FromResult(_tasks.Values.Any(task =>
+                    task.Phase != DownloadPhase.Completed &&
+                    task.Output.BasePath.Equals(basePath, comparison)));
             }
         }
 

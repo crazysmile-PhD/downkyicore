@@ -8,6 +8,30 @@ namespace DownKyi.Core.BiliApi.DanmakuApi;
 
 public static class DanmakuProtobuf
 {
+    private const string Referer = "https://www.bilibili.com";
+
+    private static async Task<int> GetSegmentCountAsync(
+        IBilibiliApiClient client,
+        long avid,
+        long cid,
+        CancellationToken cancellationToken)
+    {
+        var url = $"https://api.bilibili.com/x/v2/dm/web/view?type=1&oid={cid}&pid={avid}";
+        var request = new BilibiliHttpRequest(url, Referer);
+        var input = await client.OpenReadAsync(request, cancellationToken).ConfigureAwait(false);
+        await using (input.ConfigureAwait(false))
+        {
+            var view = DmWebViewReply.Parser.ParseFrom(input);
+            if (view.DmSge == null || view.DmSge.Total < 0 || view.DmSge.Total >= int.MaxValue)
+            {
+                throw new InvalidDataException(
+                    "The danmaku metadata response does not contain a valid segment bound.");
+            }
+
+            return checked((int)view.DmSge.Total);
+        }
+    }
+
     /// <summary>
     /// 下载6分钟内的弹幕，返回弹幕列表
     /// </summary>
@@ -15,7 +39,7 @@ public static class DanmakuProtobuf
     /// <param name="cid">视频CID</param>
     /// <param name="segmentIndex">分包，每6分钟一包</param>
     /// <returns></returns>
-    private static async Task<List<BiliDanmaku>?> GetDanmakuProtoAsync(
+    private static async Task<List<BiliDanmaku>> GetDanmakuProtoAsync(
         IBilibiliApiClient client,
         long avid,
         long cid,
@@ -23,12 +47,10 @@ public static class DanmakuProtobuf
         CancellationToken cancellationToken = default)
     {
         var url = $"https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid={cid}&pid={avid}&segment_index={segmentIndex}";
-        const string referer = "https://www.bilibili.com";
-
         var danmakuList = new List<BiliDanmaku>();
         try
         {
-            var request = new BilibiliHttpRequest(url, referer);
+            var request = new BilibiliHttpRequest(url, Referer);
             var input = await client.OpenReadAsync(request, cancellationToken).ConfigureAwait(false);
             await using (input.ConfigureAwait(false))
             {
@@ -60,19 +82,6 @@ public static class DanmakuProtobuf
         {
             throw;
         }
-        catch (InvalidProtocolBufferException)
-        {
-            return null;
-        }
-        catch (HttpRequestException)
-        {
-            return null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-
         return danmakuList;
     }
 
@@ -90,23 +99,20 @@ public static class DanmakuProtobuf
     {
         ArgumentNullException.ThrowIfNull(client);
         var danmakuList = new List<BiliDanmaku>();
-
-        var segmentIndex = 0;
-        while (true)
+        var segmentCount = await GetSegmentCountAsync(
+            client,
+            avid,
+            cid,
+            cancellationToken).ConfigureAwait(false);
+        for (var segmentIndex = 1; segmentIndex <= segmentCount; segmentIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            segmentIndex += 1;
             var danmakus = await GetDanmakuProtoAsync(
                 client,
                 avid,
                 cid,
                 segmentIndex,
                 cancellationToken).ConfigureAwait(false);
-            if (danmakus == null)
-            {
-                break;
-            }
-
             danmakuList.AddRange(danmakus);
         }
 

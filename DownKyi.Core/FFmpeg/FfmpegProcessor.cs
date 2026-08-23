@@ -4,23 +4,50 @@ using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Core.FFmpeg;
 
-public sealed class FfmpegProcessor
+public interface IFfmpegMediaMuxer
+{
+    Task<FfmpegOperationResult> ConcatDurlVideosAsync(
+        VideoApplicationSettings videoSettings,
+        IReadOnlyList<FfmpegConcatSegment> segments,
+        string outputVideo,
+        bool overwriteDestination,
+        Action<string>? action = null,
+        CancellationToken cancellationToken = default);
+
+    Task<FfmpegOperationResult> MergeMediaAsync(
+        VideoApplicationSettings videoSettings,
+        string? audio,
+        string? video,
+        string destination,
+        bool overwriteDestination,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class FfmpegProcessor : IFfmpegMediaMuxer
 {
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromHours(2);
     private readonly AsyncConcurrencyGate _operationGate;
     private readonly FfmpegConcatRuntime _concatRuntime;
-    private readonly FfmpegProcessRunner _processRunner;
+    private readonly IFfmpegProcessRunner _processRunner;
     private readonly ISettingsStore _settingsStore;
     private readonly ILogger<FfmpegProcessor> _logger;
     private readonly FfmpegHardwareEncoderDetector _hardwareEncoderDetector;
 
     public FfmpegProcessor(ISettingsStore settingsStore, ILoggerFactory loggerFactory)
+        : this(settingsStore, loggerFactory, new FfmpegProcessRunner())
+    {
+    }
+
+    internal FfmpegProcessor(
+        ISettingsStore settingsStore,
+        ILoggerFactory loggerFactory,
+        IFfmpegProcessRunner processRunner)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(loggerFactory);
         _settingsStore = settingsStore;
         _logger = loggerFactory.CreateLogger<FfmpegProcessor>();
-        _processRunner = new FfmpegProcessRunner();
+        _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
         _hardwareEncoderDetector = new FfmpegHardwareEncoderDetector(
             loggerFactory.CreateLogger<FfmpegHardwareEncoderDetector>());
         _operationGate = new AsyncConcurrencyGate(
@@ -28,7 +55,7 @@ public sealed class FfmpegProcessor
         _concatRuntime = new FfmpegConcatRuntime(
             _processRunner,
             new FfmpegMediaValidator(_processRunner),
-            () => _settingsStore.Current.Video.FfmpegMaxParallelJobs,
+            _operationGate,
             loggerFactory.CreateLogger<FfmpegConcatRuntime>());
     }
 
@@ -36,6 +63,7 @@ public sealed class FfmpegProcessor
         VideoApplicationSettings videoSettings,
         IReadOnlyList<FfmpegConcatSegment> segments,
         string outputVideo,
+        bool overwriteDestination,
         Action<string>? action = null,
         CancellationToken cancellationToken = default)
     {
@@ -49,6 +77,7 @@ public sealed class FfmpegProcessor
                 outputVideo,
                 encoder,
                 allowStreamCopy: false,
+                overwriteDestination,
                 action,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -59,32 +88,98 @@ public sealed class FfmpegProcessor
         string? audio,
         string? video,
         string destination,
+        bool overwriteDestination,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await MergeMediaAsync(
+            videoSettings,
+            audio,
+            video,
+            destination,
+            overwriteDestination,
+            cancellationToken).ConfigureAwait(false);
+        return result.Succeeded;
+    }
+
+    public async Task<FfmpegOperationResult> MergeMediaAsync(
+        VideoApplicationSettings videoSettings,
+        string? audio,
+        string? video,
+        string destination,
+        bool overwriteDestination,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(videoSettings);
-        var audioPath = !string.IsNullOrWhiteSpace(audio) && File.Exists(audio) ? audio : null;
-        var videoPath = !string.IsNullOrWhiteSpace(video) && File.Exists(video) ? video : null;
+        var requestedInputs = new[] { audio, video }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Cast<string>()
+            .ToArray();
+        var audioPath = !string.IsNullOrWhiteSpace(audio) ? audio : null;
+        var videoPath = !string.IsNullOrWhiteSpace(video) ? video : null;
         if (audioPath == null && videoPath == null)
         {
-            return false;
+            return FfmpegOperationResult.Failure(
+                "No media inputs were provided.",
+                FfmpegOperationFailureKind.NoInput);
         }
 
-        var succeeded = await RunToFileAsync(
+        var preflightFailures = FfmpegInputDiagnostic.ProbeInputs(requestedInputs);
+        if (preflightFailures.Count > 0)
+        {
+            return FfmpegOperationResult.Failure(
+                preflightFailures.Any(failure => failure.CanInvalidate)
+                    ? "One or more media inputs are missing or empty."
+                    : "One or more media inputs could not be accessed.",
+                FfmpegInputDiagnostic.ClassifyOperationFailure(
+                    preflightFailures,
+                    FfmpegOperationFailureKind.InputAccess),
+                preflightFailures);
+        }
+
+        var outputResult = await RunToFileAsync(
             temporaryOutput => FfmpegCommandFactory.BuildMerge(
                 audioPath,
                 videoPath,
                 temporaryOutput,
                 videoSettings.IsTranscodingAacToMp3 == AllowStatus.Yes),
             destination,
+            overwriteDestination,
             action: null,
             cancellationToken).ConfigureAwait(false);
-        if (succeeded)
+        if (outputResult.Succeeded)
         {
-            DeleteInput(audio);
-            DeleteInput(video);
+            return new FfmpegOperationResult(
+                true,
+                destination,
+                null,
+                TimeSpan.Zero,
+                FfmpegOperationFailureKind.None,
+                []);
         }
 
-        return succeeded;
+        if (outputResult.FailureKind != FfmpegOperationFailureKind.ProcessFailure)
+        {
+            return FfmpegOperationResult.Failure(
+                "FFmpeg output could not be finalized.",
+                outputResult.FailureKind);
+        }
+
+        var inputFailures = await FfmpegInputDiagnostic.FindInputFailuresAsync(
+                _processRunner,
+                _operationGate,
+                requestedInputs,
+                OperationTimeout,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var failureKind = FfmpegInputDiagnostic.ClassifyOperationFailure(
+            inputFailures,
+            outputResult.FailureKind);
+        return FfmpegOperationResult.Failure(
+            failureKind == FfmpegOperationFailureKind.InvalidInput
+                ? "One or more media inputs could not be decoded."
+                : "FFmpeg output could not be finalized.",
+            failureKind,
+            inputFailures);
     }
 
     public Task<bool> DelogoAsync(
@@ -97,7 +192,7 @@ public sealed class FfmpegProcessor
         Action<string>? action = null,
         CancellationToken cancellationToken = default)
     {
-        return RunToFileAsync(
+        return RunToFileSucceededAsync(
             temporaryOutput => FfmpegCommandFactory.BuildDelogo(
                 video,
                 temporaryOutput,
@@ -106,6 +201,7 @@ public sealed class FfmpegProcessor
                 width,
                 height),
             destination,
+            overwriteDestination: true,
             action,
             cancellationToken);
     }
@@ -116,9 +212,10 @@ public sealed class FfmpegProcessor
         Action<string>? action = null,
         CancellationToken cancellationToken = default)
     {
-        return RunToFileAsync(
+        return RunToFileSucceededAsync(
             temporaryOutput => FfmpegCommandFactory.BuildExtractAudio(video, temporaryOutput),
             audio,
+            overwriteDestination: true,
             action,
             cancellationToken);
     }
@@ -129,9 +226,10 @@ public sealed class FfmpegProcessor
         Action<string>? action = null,
         CancellationToken cancellationToken = default)
     {
-        return RunToFileAsync(
+        return RunToFileSucceededAsync(
             temporaryOutput => FfmpegCommandFactory.BuildExtractVideo(video, temporaryOutput),
             destination,
+            overwriteDestination: true,
             action,
             cancellationToken);
     }
@@ -165,9 +263,26 @@ public sealed class FfmpegProcessor
         }
     }
 
-    private async Task<bool> RunToFileAsync(
+    private async Task<bool> RunToFileSucceededAsync(
         Func<string, FfmpegCommand> commandFactory,
         string destination,
+        bool overwriteDestination,
+        Action<string>? action,
+        CancellationToken cancellationToken)
+    {
+        var result = await RunToFileAsync(
+            commandFactory,
+            destination,
+            overwriteDestination,
+            action,
+            cancellationToken).ConfigureAwait(false);
+        return result.Succeeded;
+    }
+
+    private async Task<FfmpegOutputResult> RunToFileAsync(
+        Func<string, FfmpegCommand> commandFactory,
+        string destination,
+        bool overwriteDestination,
         Action<string>? action,
         CancellationToken cancellationToken)
     {
@@ -185,23 +300,37 @@ public sealed class FfmpegProcessor
                 .RunAsync(command, OperationTimeout, cancellationToken)
                 .ConfigureAwait(false);
             LogResult(result, command.Operation, action);
-            if (!result.Succeeded || !File.Exists(temporaryOutput) || new FileInfo(temporaryOutput).Length == 0)
+            if (!result.Succeeded)
             {
-                return false;
+                return FfmpegOutputResult.Failure(
+                    !result.ProcessStarted
+                        ? FfmpegOperationFailureKind.ProcessUnavailable
+                        : result.TimedOut
+                            ? FfmpegOperationFailureKind.Timeout
+                            : FfmpegOperationFailureKind.ProcessFailure);
             }
 
-            File.Move(temporaryOutput, destination, overwrite: true);
-            return true;
+            if (!File.Exists(temporaryOutput) || new FileInfo(temporaryOutput).Length == 0)
+            {
+                return FfmpegOutputResult.Failure(FfmpegOperationFailureKind.OutputInvalid);
+            }
+
+            File.Move(temporaryOutput, destination, overwrite: overwriteDestination);
+            return FfmpegOutputResult.Success();
         }
         catch (IOException e)
         {
             _logger.LogErrorMessage("FFmpeg output finalization failed.", e);
-            return false;
+            return FfmpegOutputResult.Failure(
+                !overwriteDestination && File.Exists(destination)
+                    ? FfmpegOperationFailureKind.DestinationConflict
+                    : FfmpegOperationFailureKind.OutputIoFailure);
         }
         catch (UnauthorizedAccessException e)
         {
             _logger.LogErrorMessage("FFmpeg output finalization was denied.", e);
-            return false;
+            return FfmpegOutputResult.Failure(
+                FfmpegOperationFailureKind.DestinationAccessDenied);
         }
         finally
         {
@@ -226,14 +355,6 @@ public sealed class FfmpegProcessor
         }
     }
 
-    private void DeleteInput(string? file)
-    {
-        if (!string.IsNullOrWhiteSpace(file))
-        {
-            DeleteFile(file);
-        }
-    }
-
     private void DeleteFile(string file)
     {
         try
@@ -251,5 +372,16 @@ public sealed class FfmpegProcessor
         {
             _logger.LogDebugMessage($"FFmpeg cleanup was denied: {e.Message}");
         }
+    }
+
+    private sealed record FfmpegOutputResult(
+        bool Succeeded,
+        FfmpegOperationFailureKind FailureKind)
+    {
+        public static FfmpegOutputResult Success() =>
+            new(true, FfmpegOperationFailureKind.None);
+
+        public static FfmpegOutputResult Failure(FfmpegOperationFailureKind failureKind) =>
+            new(false, failureKind);
     }
 }

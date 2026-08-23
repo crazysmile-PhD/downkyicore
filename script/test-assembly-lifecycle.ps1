@@ -21,6 +21,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "test-project-runner.ps1")
 $solutionPath = Join-Path $repositoryRoot "DownKyi.sln"
 $probeProject = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj"
 $probeAssembly = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe/bin/$Configuration/net10.0/DownKyi.AssemblyLifecycleProbe.dll"
@@ -759,6 +760,7 @@ function Invoke-IsolatedProcess {
     $startInfo.WorkingDirectory = $repositoryRoot
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     foreach ($argument in $Arguments) {
@@ -798,6 +800,7 @@ function Invoke-IsolatedProcess {
 
         $processId = $process.Id
         $processStartedAt = [DateTimeOffset]$process.StartTime.ToUniversalTime()
+        $process.StandardInput.Close()
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
         while (-not $process.WaitForExit(25)) {
@@ -972,6 +975,73 @@ function Invoke-IsolatedProcess {
     finally {
         $process.Dispose()
     }
+}
+
+function Assert-XunitSynchronousAutomatedReporting {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Phase,
+        [Parameter(Mandatory)]
+        [string[]]$Arguments
+    )
+
+    $automatedIndexes = @(
+        for ($index = 0; $index -lt $Arguments.Count; $index++) {
+            if ($Arguments[$index] -ceq "-automated") {
+                $index
+            }
+        }
+    )
+    $valid = $automatedIndexes.Count -eq 1 -and
+        $automatedIndexes[0] + 1 -lt $Arguments.Count -and
+        $Arguments[$automatedIndexes[0] + 1] -ceq "sync"
+    if (-not $valid) {
+        throw [System.InvalidOperationException]::new(
+            "Lifecycle phase '$Phase' must use exactly one '-automated sync' reporter.")
+    }
+}
+
+function Test-XunitReporterContractMutation {
+    try {
+        Assert-XunitSynchronousAutomatedReporting `
+            -Phase "mutation-fixture" `
+            -Arguments @("fixture.dll", "-automated", "async")
+    }
+    catch [System.InvalidOperationException] {
+        return $true
+    }
+
+    return $false
+}
+
+function Invoke-XunitAutomatedPhase {
+    param(
+        [Parameter(Mandatory)]
+        [string]$AssemblyName,
+        [Parameter(Mandatory)]
+        [int]$Iteration,
+        [Parameter(Mandatory)]
+        [string]$Phase,
+        [Parameter(Mandatory)]
+        [string[]]$Arguments,
+        [hashtable]$Environment = @{},
+        [string]$LifecycleMarkerPath
+    )
+
+    Assert-XunitSynchronousAutomatedReporting -Phase $Phase -Arguments $Arguments
+    return Invoke-IsolatedProcess `
+        -AssemblyName $AssemblyName `
+        -Iteration $Iteration `
+        -Phase $Phase `
+        -FileName "dotnet" `
+        -Arguments $Arguments `
+        -Environment $Environment `
+        -LifecycleMarkerPath $LifecycleMarkerPath
+}
+
+$reporterContractSelfTestPassed = Test-XunitReporterContractMutation
+if (-not $reporterContractSelfTestPassed) {
+    throw "xUnit reporter contract mutation self-test did not fail closed."
 }
 
 function Test-JsonProtocol {
@@ -1219,19 +1289,28 @@ if (-not (Test-Path -LiteralPath $probeAssembly -PathType Leaf)) {
     throw "Assembly lifecycle probe was not built: $probeAssembly"
 }
 
-$testProjects = @(
+$allTestProjects = @(
     Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "tests") `
         -Filter "*.Tests.csproj" `
         -File `
         -Recurse |
+        Sort-Object BaseName
+)
+$currentPlatform = Get-DownKyiCurrentTestPlatform
+$platformTestProjects = @(
+    Select-DownKyiTestProjectsForCurrentPlatform `
+        -Projects $allTestProjects `
+        -CurrentPlatform $currentPlatform
+)
+$testProjects = @(
+    $platformTestProjects |
         Where-Object {
             $project = $_
             @($AssemblyPattern | Where-Object { $project.BaseName -like $_ }).Count -gt 0
-        } |
-        Sort-Object BaseName
+        }
 )
 if ($testProjects.Count -eq 0) {
-    throw "No xUnit test assemblies were found."
+    throw "No '$currentPlatform' xUnit test assemblies matched the requested patterns."
 }
 
 $phaseResults = @()
@@ -1769,24 +1848,28 @@ foreach ($testProject in $testProjects) {
             -Arguments @($probeAssembly, "--assembly", $assemblyPath)
         $phaseResults += New-ProcessPhaseResult -ProcessResult $load
 
-        $assemblyInfo = Invoke-IsolatedProcess `
+        $assemblyInfo = Invoke-XunitAutomatedPhase `
             -AssemblyName $assemblyName `
             -Iteration $iteration `
             -Phase "assembly-info" `
-            -FileName "dotnet" `
-            -Arguments @($assemblyPath, "-assemblyInfo")
+            -Arguments @(
+                $assemblyPath,
+                "-assemblyInfo",
+                "-automated",
+                "sync"
+            )
         $phaseResults += New-ProcessPhaseResult -ProcessResult $assemblyInfo
 
-        $discovery = Invoke-IsolatedProcess `
+        $discovery = Invoke-XunitAutomatedPhase `
             -AssemblyName $assemblyName `
             -Iteration $iteration `
             -Phase "discovery" `
-            -FileName "dotnet" `
             -Arguments @(
                 $assemblyPath,
                 "-list",
                 "full",
                 "-automated",
+                "sync",
                 "-noLogo",
                 "-noColor"
             )
@@ -1794,14 +1877,14 @@ foreach ($testProject in $testProjects) {
 
         $markerPath = Join-Path $rawRoot (
             "$assemblyName/iteration-{0:D4}/execution.lifecycle" -f $iteration)
-        $execution = Invoke-IsolatedProcess `
+        $execution = Invoke-XunitAutomatedPhase `
             -AssemblyName $assemblyName `
             -Iteration $iteration `
             -Phase "execution" `
-            -FileName "dotnet" `
             -Arguments @(
                 $assemblyPath,
                 "-automated",
+                "sync",
                 "-noLogo",
                 "-noColor",
                 "-parallel",
@@ -1986,6 +2069,7 @@ $report = [ordered]@{
     residualChildPollMilliseconds = $residualChildPollMilliseconds
     forensicsSelfTestCaptureLeadValidated =
         $forensicsSelfTestCaptureLeadValidated
+    reporterContractSelfTestPassed = $reporterContractSelfTestPassed
     exitThresholdSeconds = $ExitThresholdSeconds
     diagnosticsTool = if ($null -eq $script:diagnosticsTool) {
         "unavailable"
@@ -2065,6 +2149,7 @@ $markdown.Add("- Diagnostic capture wall time: $diagnosticCaptureTotalMs ms")
 $markdown.Add(
     "- Forensics pre-threshold capture self-test: " +
     "$forensicsSelfTestCaptureLeadValidated")
+$markdown.Add("- Reporter contract mutation self-test: $reporterContractSelfTestPassed")
 $markdown.Add("- Marker read contentions: $script:markerReadContentionCount")
 $markdown.Add("- Marker read retry exhaustion: $script:markerReadRetriesExhaustedCount")
 $markdown.Add(

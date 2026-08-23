@@ -181,7 +181,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
     }
 
     [Fact]
-    public void DraftFactoryAddsDeterministicSuffixWhenBaseNameExists()
+    public void DraftFactoryDefersCollisionResolutionToAtomicAdmission()
     {
         Directory.CreateDirectory(_directory);
         using var settingsStore = new DownKyi.Core.Settings.SettingsStore(
@@ -226,7 +226,7 @@ public sealed class DownloadAddOwnerTests : IDisposable
             settings,
             DownloadContentSelection.All);
 
-        Assert.Equal($"{first.DownloadBase.FilePath}(1)", second.DownloadBase.FilePath);
+        Assert.Equal(first.DownloadBase.FilePath, second.DownloadBase.FilePath);
     }
 
     public void Dispose()
@@ -420,6 +420,11 @@ public sealed class DownloadAddOwnerTests : IDisposable
         public Task<IReadOnlyList<DownloadTask>> GetUnfinishedAsync(
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<DownloadTask>>([]);
+
+        public Task<bool> IsOutputPathReservedAsync(
+            string basePath,
+            bool ignoreCase,
+            CancellationToken cancellationToken) => Task.FromResult(false);
 
         public Task InitializeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

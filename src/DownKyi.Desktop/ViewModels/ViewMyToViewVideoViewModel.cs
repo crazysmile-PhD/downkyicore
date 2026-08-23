@@ -280,7 +280,6 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
     {
         LoadingVisibility = true;
         NoDataVisibility = false;
-        Medias.Clear();
         var cancellationToken = ReplaceCancellationSource(ref _loadCancellation);
         try
         {
@@ -288,17 +287,10 @@ internal class ViewMyToViewVideoViewModel : ViewModelBase
                 .LoadToViewAsync(cancellationToken)
                 .ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
-            if (medias.Count == 0)
-            {
-                LoadingVisibility = false;
-                NoDataVisibility = true;
-                return;
-            }
-
-            Medias.AddRange(medias);
-            ContentVisibility = true;
+            Medias.ReplaceRange(medias);
+            ContentVisibility = medias.Count > 0;
             LoadingVisibility = false;
-            NoDataVisibility = false;
+            NoDataVisibility = medias.Count == 0;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

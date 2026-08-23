@@ -57,6 +57,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
         ParseCommand = new DownKyiAsyncDelegateCommand<object>(ExecuteParseCommandAsync, _logger, _ => !UiState.IsBusy);
         ParseAllVideoCommand = new DownKyiAsyncDelegateCommand(ExecuteParseAllVideoCommandAsync, _logger, () => !UiState.IsBusy);
         AddToDownloadCommand = new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger, () => !UiState.IsBusy);
+        UiState.IsBusyChanged += OnIsBusyChanged;
     }
 
     public VideoDetailUiState UiState { get; } = new();
@@ -65,15 +66,23 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
 
     public RelayCommand BackSpaceCommand { get; }
     public RelayCommand DownloadManagerCommand { get; }
-    public ICommand InputCommand { get; }
+    public DownKyiAsyncDelegateCommand InputCommand { get; }
     public ICommand InputSearchCommand { get; }
     public ICommand CopyCoverUrlCommand { get; }
     public RelayCommand UpperCommand { get; }
     public RelayCommand SelectAllCommand { get; }
     public RelayCommand ClearSelectionCommand { get; }
-    public ICommand ParseCommand { get; }
-    public ICommand ParseAllVideoCommand { get; }
-    public ICommand AddToDownloadCommand { get; }
+    public DownKyiAsyncDelegateCommand<object> ParseCommand { get; }
+    public DownKyiAsyncDelegateCommand ParseAllVideoCommand { get; }
+    public DownKyiAsyncDelegateCommand AddToDownloadCommand { get; }
+
+    private void OnIsBusyChanged()
+    {
+        InputCommand.NotifyCanExecuteChanged();
+        ParseCommand.NotifyCanExecuteChanged();
+        ParseAllVideoCommand.NotifyCanExecuteChanged();
+        AddToDownloadCommand.NotifyCanExecuteChanged();
+    }
 
     protected internal override void ExecuteBackSpace()
     {
@@ -407,6 +416,7 @@ internal sealed class ViewVideoDetailViewModel : ViewModelBase
     {
         if (disposing && !IsDisposed)
         {
+            UiState.IsBusyChanged -= OnIsBusyChanged;
             _workflow.Dispose();
         }
 

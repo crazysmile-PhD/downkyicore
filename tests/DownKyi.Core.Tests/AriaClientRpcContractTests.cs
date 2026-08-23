@@ -61,6 +61,42 @@ public sealed class AriaClientRpcContractTests
         }
     }
 
+    [Theory]
+    [InlineData("remove")]
+    [InlineData("force-remove")]
+    [InlineData("remove-result")]
+    public async Task TransferRemovalMethodsPropagateCancellation(string operation)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var requestStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var observedToken = CancellationToken.None;
+        var client = new AriaClient(
+            "https://aria-contract.example",
+            35076,
+            "contract-token",
+            async (_, _, cancellationToken) =>
+            {
+                observedToken = cancellationToken;
+                requestStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+                return null;
+            });
+        var request = operation switch
+        {
+            "remove" => client.RemoveAsync("gid", cancellation.Token),
+            "force-remove" => client.ForceRemoveAsync("gid", cancellation.Token),
+            "remove-result" => client.RemoveDownloadResultAsync("gid", cancellation.Token),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+        };
+
+        await requestStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request);
+        Assert.Equal(cancellation.Token, observedToken);
+    }
+
     private static IReadOnlyList<RpcContractCase> CreateCases()
     {
         var sendOption = new AriaSendOption();
