@@ -9,6 +9,9 @@ namespace DownKyi.AssemblyLifecycleProbe;
 
 internal static class Program
 {
+    private const string TestAssemblyLoadOwnerKey = "DownKyi.CentralTestAssemblyLoadOwner";
+    private const string TestAssemblyLoadOwnerValue = "DownKyi.AssemblyLifecycleProbe";
+
     public static int Main(string[] args)
     {
         if (TryReadChildHoldArguments(args, out var childHoldMilliseconds))
@@ -165,7 +168,15 @@ internal static class Program
     {
         var context = new ProbeLoadContext(assemblyPath);
         var assembly = context.LoadFromAssemblyPath(assemblyPath);
-        RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle);
+        AppContext.SetData(TestAssemblyLoadOwnerKey, TestAssemblyLoadOwnerValue);
+        try
+        {
+            RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle);
+        }
+        finally
+        {
+            AppContext.SetData(TestAssemblyLoadOwnerKey, null);
+        }
 
         var name = assembly.GetName();
         var result = new LoadedAssembly(

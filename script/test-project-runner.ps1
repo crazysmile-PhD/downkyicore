@@ -152,7 +152,130 @@ function Get-DownKyiTestRunnerPolicy {
     return $entry
 }
 
-function Assert-DownKyiExpectedTestExecution {
+function New-DownKyiTestProcessAuthorization {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Diagnostics.ProcessStartInfo]$StartInfo,
+
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
+    )
+
+    $executableName = [IO.Path]::GetFileName($StartInfo.FileName)
+    if ($executableName -notin @("dotnet", "dotnet.exe") -or
+        $StartInfo.ArgumentList.Count -lt 1) {
+        throw "Authorized repository test execution requires dotnet with a test assembly as its first argument."
+    }
+
+    $requestedAssembly = [IO.Path]::GetFullPath(
+        [string]$StartInfo.ArgumentList[0],
+        $StartInfo.WorkingDirectory)
+    $policyPath = Join-Path $RepositoryRoot "docs/testing/test-runner-policy.json"
+    $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
+    $ownedAssemblies = @(
+        foreach ($entry in $policy.projects) {
+            $projectPath = [IO.Path]::GetFullPath(
+                [string]$entry.project,
+                $RepositoryRoot)
+            $projectDirectory = Split-Path -Parent $projectPath
+            $assemblyName = [IO.Path]::GetFileNameWithoutExtension($projectPath)
+            foreach ($configuration in @("Debug", "Release")) {
+                [IO.Path]::GetFullPath(
+                    "bin/$configuration/$($entry.targetFramework)/$assemblyName.dll",
+                    $projectDirectory)
+            }
+        }
+    )
+    if (-not $ownedAssemblies.Contains($requestedAssembly)) {
+        throw "The requested process is not a policy-owned repository test assembly: $requestedAssembly"
+    }
+
+    $pipe = [IO.Pipes.AnonymousPipeServerStream]::new(
+        [IO.Pipes.PipeDirection]::Out,
+        [IO.HandleInheritability]::Inheritable)
+    $token = [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+    $StartInfo.Environment["DOWNKYI_CENTRAL_TEST_PIPE"] = $pipe.GetClientHandleAsString()
+    $StartInfo.Environment["DOWNKYI_CENTRAL_TEST_TOKEN"] = [Convert]::ToBase64String($token)
+    return [pscustomobject]@{
+        Pipe = $pipe
+        Token = $token
+        Completed = $false
+    }
+}
+
+function Complete-DownKyiTestProcessAuthorization {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object]$Authorization
+    )
+
+    if ($Authorization.Completed) {
+        throw "Repository test process authorization was already completed."
+    }
+
+    $Authorization.Pipe.DisposeLocalCopyOfClientHandle()
+    try {
+        $Authorization.Pipe.Write($Authorization.Token, 0, $Authorization.Token.Length)
+        $Authorization.Pipe.Flush()
+        $Authorization.Completed = $true
+    }
+    finally {
+        $Authorization.Pipe.Dispose()
+    }
+}
+
+function Close-DownKyiTestProcessAuthorization {
+    [CmdletBinding()]
+    param(
+        [object]$Authorization
+    )
+
+    if ($null -ne $Authorization -and -not $Authorization.Completed) {
+        $Authorization.Pipe.Dispose()
+    }
+}
+
+function Invoke-DownKyiAuthorizedTestAssembly {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+
+        [Parameter(Mandatory)]
+        [string[]]$Arguments
+    )
+
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = "dotnet"
+    $startInfo.WorkingDirectory = $RepositoryRoot
+    $startInfo.UseShellExecute = $false
+    foreach ($argument in $Arguments) {
+        $startInfo.ArgumentList.Add($argument)
+    }
+
+    $authorization = New-DownKyiTestProcessAuthorization `
+        -StartInfo $startInfo `
+        -RepositoryRoot $RepositoryRoot
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) {
+            throw "The authorized repository test process did not start."
+        }
+
+        Complete-DownKyiTestProcessAuthorization -Authorization $authorization
+        $process.WaitForExit()
+        return $process.ExitCode
+    }
+    finally {
+        Close-DownKyiTestProcessAuthorization -Authorization $authorization
+        $process.Dispose()
+    }
+}
+
+function Assert-DownKyiTestExecutionReport {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -161,17 +284,17 @@ function Assert-DownKyiExpectedTestExecution {
         [Parameter(Mandatory)]
         [string]$TrxPath,
 
-        [Parameter(Mandatory)]
-        [string[]]$ExpectedClassNames
+        [string[]]$ExpectedClassNames = @(),
+
+        [switch]$RequireUniqueReport
     )
 
     if ($RunnerExitCode -ne 0) {
         throw "The test runner failed with exit code $RunnerExitCode."
     }
 
-    if ($ExpectedClassNames.Count -eq 0 -or
-        @($ExpectedClassNames | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
-        throw "At least one non-empty expected test class is required."
+    if (@($ExpectedClassNames | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
+        throw "Expected test class names cannot be empty."
     }
 
     if (-not (Test-Path -LiteralPath $TrxPath -PathType Leaf)) {
@@ -179,12 +302,14 @@ function Assert-DownKyiExpectedTestExecution {
     }
 
     $report = Get-Item -LiteralPath $TrxPath
-    $reports = @(Get-ChildItem -LiteralPath $report.DirectoryName -Filter *.trx -File)
-    if ($reports.Count -ne 1 -or
-        -not [IO.Path]::GetFullPath($reports[0].FullName).Equals(
-            [IO.Path]::GetFullPath($report.FullName),
-            [StringComparison]::OrdinalIgnoreCase)) {
-        throw "The test result directory must contain exactly the expected TRX report."
+    if ($RequireUniqueReport) {
+        $reports = @(Get-ChildItem -LiteralPath $report.DirectoryName -Filter *.trx -File)
+        if ($reports.Count -ne 1 -or
+            -not [IO.Path]::GetFullPath($reports[0].FullName).Equals(
+                [IO.Path]::GetFullPath($report.FullName),
+                [StringComparison]::OrdinalIgnoreCase)) {
+            throw "The test result directory must contain exactly the expected TRX report."
+        }
     }
 
     try {
@@ -270,7 +395,7 @@ function Assert-DownKyiExpectedTestExecution {
             $ExpectedClassNames.Contains([string]$definitionsById[$testId]) -and
             $_.GetAttribute("outcome") -eq "Passed"
         })
-    if ($executedExpectedTests.Count -lt 1) {
+    if ($ExpectedClassNames.Count -gt 0 -and $executedExpectedTests.Count -lt 1) {
         throw "The report contains no executed result for an expected test class."
     }
 
@@ -279,6 +404,30 @@ function Assert-DownKyiExpectedTestExecution {
         ExecutedExpected = $executedExpectedTests.Count
         ReportPath = $report.FullName
     }
+}
+
+function Assert-DownKyiExpectedTestExecution {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [int]$RunnerExitCode,
+
+        [Parameter(Mandatory)]
+        [string]$TrxPath,
+
+        [Parameter(Mandatory)]
+        [string[]]$ExpectedClassNames
+    )
+
+    if ($ExpectedClassNames.Count -eq 0) {
+        throw "At least one expected test class is required."
+    }
+
+    return Assert-DownKyiTestExecutionReport `
+        -RunnerExitCode $RunnerExitCode `
+        -TrxPath $TrxPath `
+        -ExpectedClassNames $ExpectedClassNames `
+        -RequireUniqueReport
 }
 
 function Invoke-DownKyiTestProject {
@@ -359,23 +508,54 @@ function Invoke-DownKyiTestProject {
         $arguments += @("-class", $className)
     }
 
-    $trxPath = $null
-    if (-not [string]::IsNullOrWhiteSpace($ResultsDirectory)) {
-        New-Item -ItemType Directory -Force -Path $ResultsDirectory | Out-Null
+    $temporaryResultsDirectory = $null
+    $reportedTrxPath = $null
+    $validationResultsDirectory = $ResultsDirectory
+    if ([string]::IsNullOrWhiteSpace($validationResultsDirectory)) {
+        $temporaryResultsDirectory = Join-Path (
+            [IO.Path]::GetTempPath()) "downkyi-test-$([Guid]::NewGuid().ToString('N'))"
+        $validationResultsDirectory = $temporaryResultsDirectory
+    }
+    else {
         $resolvedTrxName = if ([string]::IsNullOrWhiteSpace($TrxName)) {
             "$($project.BaseName).trx"
         }
         else {
             $TrxName
         }
-        $trxPath = Join-Path $ResultsDirectory $resolvedTrxName
-        $arguments += @("-trx", $trxPath)
+        $reportedTrxPath = Join-Path $validationResultsDirectory $resolvedTrxName
     }
 
-    & dotnet @arguments | Out-Host
-    return [pscustomobject]@{
-        ExitCode = $LASTEXITCODE
-        Runner = $runnerPolicy.runner
-        TrxPath = $trxPath
+    New-Item -ItemType Directory -Force -Path $validationResultsDirectory | Out-Null
+    $validationTrxPath = if ($null -ne $reportedTrxPath) {
+        $reportedTrxPath
+    }
+    else {
+        Join-Path $validationResultsDirectory "$($project.BaseName).trx"
+    }
+    if (Test-Path -LiteralPath $validationTrxPath) {
+        Remove-Item -LiteralPath $validationTrxPath -Force
+    }
+    $arguments += @("-trx", $validationTrxPath)
+
+    try {
+        $exitCode = Invoke-DownKyiAuthorizedTestAssembly `
+            -RepositoryRoot $RepositoryRoot `
+            -Arguments $arguments
+        $null = Assert-DownKyiTestExecutionReport `
+            -RunnerExitCode $exitCode `
+            -TrxPath $validationTrxPath `
+            -ExpectedClassNames $ClassNames
+        return [pscustomobject]@{
+            ExitCode = $exitCode
+            Runner = $runnerPolicy.runner
+            TrxPath = $reportedTrxPath
+        }
+    }
+    finally {
+        if ($null -ne $temporaryResultsDirectory -and
+            (Test-Path -LiteralPath $temporaryResultsDirectory)) {
+            Remove-Item -LiteralPath $temporaryResultsDirectory -Recurse -Force
+        }
     }
 }

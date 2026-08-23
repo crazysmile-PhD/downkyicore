@@ -746,6 +746,7 @@ function Invoke-IsolatedProcess {
         [string[]]$Arguments,
         [hashtable]$Environment = @{},
         [string]$LifecycleMarkerPath,
+        [switch]$AuthorizeRepositoryTestAssembly,
         [double]$EvidenceThresholdSeconds = $SlowPhaseThresholdSeconds
     )
 
@@ -768,6 +769,15 @@ function Invoke-IsolatedProcess {
     }
     foreach ($entry in $Environment.GetEnumerator()) {
         $startInfo.Environment[$entry.Key] = [string]$entry.Value
+    }
+
+    $authorization = if ($AuthorizeRepositoryTestAssembly) {
+        New-DownKyiTestProcessAuthorization `
+            -StartInfo $startInfo `
+            -RepositoryRoot $repositoryRoot
+    }
+    else {
+        $null
     }
 
     $process = [System.Diagnostics.Process]::new()
@@ -796,6 +806,9 @@ function Invoke-IsolatedProcess {
     try {
         if (-not $process.Start()) {
             throw "Process did not start for $AssemblyName/$Phase."
+        }
+        if ($null -ne $authorization) {
+            Complete-DownKyiTestProcessAuthorization -Authorization $authorization
         }
 
         $processId = $process.Id
@@ -973,6 +986,7 @@ function Invoke-IsolatedProcess {
         }
     }
     finally {
+        Close-DownKyiTestProcessAuthorization -Authorization $authorization
         $process.Dispose()
     }
 }
@@ -1036,7 +1050,8 @@ function Invoke-XunitAutomatedPhase {
         -FileName "dotnet" `
         -Arguments $Arguments `
         -Environment $Environment `
-        -LifecycleMarkerPath $LifecycleMarkerPath
+        -LifecycleMarkerPath $LifecycleMarkerPath `
+        -AuthorizeRepositoryTestAssembly
 }
 
 $reporterContractSelfTestPassed = Test-XunitReporterContractMutation

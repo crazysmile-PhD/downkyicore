@@ -1,4 +1,10 @@
 ﻿<Project>
+  <ItemGroup Condition="'$(DownKyiTestPlatforms)' != ''">
+    <Compile
+      Include="$(MSBuildThisFileDirectory)tests\CentralTestExecutionGuard.cs"
+      Link="DownKyi.TestInfrastructure\CentralTestExecutionGuard.cs" />
+  </ItemGroup>
+
   <Target
     Name="EnforceDownKyiCentralTestRunner"
     BeforeTargets="VSTest"

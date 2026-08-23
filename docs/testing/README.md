@@ -30,9 +30,10 @@ TLS runtime、certificate storage、path comparison 與 Unix file-mode assertion
 test execution 由 `script/test-project-runner.ps1` 統一處理 project ownership、
 platform routing 與 runner selection。這是 authoritative execution boundary；
 workflow 只委派 project 與 selection intent，不能自行選 test host。中央 runner
-對所有 test project 使用 in-process xUnit execution。MSBuild test target 無條件
-拒絕 VSTest，僅作為 defense-in-depth fail-closed guard，不是可由呼叫者提供
-property 的 authorization credential。
+對所有 test project 使用 in-process xUnit execution。所有宣告 test platform 的 assembly
+也共用 runtime execution guard，中央 runner 若退化成 VSTest 會在 assembly load 時
+fail closed。MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
+guard，不是可由呼叫者提供 property 的 authorization credential。
 需要證明實際 selection 的 security gate 必須使用共享 TRX
 validator，透過 test definition/result 關係確認預期 class 確實有通過的 execution
 result。

@@ -149,6 +149,83 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
+    public void VstestRunnerMutationFailsTheRuntimeExecutionOwnershipGuard()
+    {
+        var resultsDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-vstest-mutation-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(resultsDirectory);
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add("""
+                . $env:DOWNKYI_TEST_RUNNER
+                function Invoke-DownKyiAuthorizedTestAssembly {
+                    param([string]$RepositoryRoot, [string[]]$Arguments)
+                    $assembly = $Arguments[0]
+                    $classIndex = [Array]::IndexOf($Arguments, '-class')
+                    $trxIndex = [Array]::IndexOf($Arguments, '-trx')
+                    $className = $Arguments[$classIndex + 1]
+                    $trxPath = $Arguments[$trxIndex + 1]
+                    & dotnet vstest $assembly `
+                        "--Tests:$className" `
+                        "--logger:trx;LogFileName=$([IO.Path]::GetFileName($trxPath))" `
+                        "--ResultsDirectory:$([IO.Path]::GetDirectoryName($trxPath))" |
+                        Out-Host
+                    return $LASTEXITCODE
+                }
+                try {
+                    Invoke-DownKyiTestProject `
+                        -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
+                        -ProjectPath $env:DOWNKYI_ARCHITECTURE_PROJECT `
+                        -Configuration Release `
+                        -NoRestore `
+                        -NoBuild `
+                        -ResultsDirectory $env:DOWNKYI_MUTATION_RESULTS `
+                        -TrxName mutation.trx `
+                        -ClassNames DownKyi.Architecture.Tests.TestRunnerPolicyArchitectureTests.SharedRunnerInvocationDoesNotGrantWorkflowDirectExecutionCapability
+                    exit 0
+                }
+                catch {
+                    Write-Error $_
+                    exit 73
+                }
+                """);
+            startInfo.Environment["DOWNKYI_TEST_RUNNER"] =
+                Path.Combine(RepositoryRoot, "script", "test-project-runner.ps1");
+            startInfo.Environment["DOWNKYI_REPOSITORY_ROOT"] = RepositoryRoot;
+            startInfo.Environment["DOWNKYI_ARCHITECTURE_PROJECT"] = Path.Combine(
+                RepositoryRoot,
+                "tests",
+                "DownKyi.Architecture.Tests",
+                "DownKyi.Architecture.Tests.csproj");
+            startInfo.Environment["DOWNKYI_MUTATION_RESULTS"] = resultsDirectory;
+
+            var mutation = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken);
+
+            Assert.NotEqual(0, mutation.ExitCode);
+            Assert.Contains("expected test report", mutation.Output, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(resultsDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Aria2TlsWorkflowUsesExecutableExpectedClassValidation()
     {
         var workflow = Read(".github/workflows/quality.yml");
