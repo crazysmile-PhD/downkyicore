@@ -32,6 +32,7 @@ public sealed class AssemblyLifecycleArchitectureTests
     public void DesktopSmokeTestsClearOnlyTheirOwnedSqlitePools()
     {
         var source = Read("tests/DownKyi.Desktop.Tests/UiSmokeTests.cs");
+        var normalizedSource = source.Replace("\r\n", "\n", StringComparison.Ordinal);
         var globalCleanupCall = string.Concat("SqliteConnection.", "ClearAllPools()");
 
         Assert.DoesNotContain(
@@ -41,7 +42,7 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.Equal(
             3,
             Regex.Count(
-                source,
+                normalizedSource,
                 @"(?m)^\s+ClearOwnedSqlitePool\(databasePath\);$",
                 RegexOptions.CultureInvariant));
         Assert.Contains(
