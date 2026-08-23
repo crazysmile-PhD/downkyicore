@@ -49,7 +49,7 @@
         {
           "kind": "adversarial-mutation",
           "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj",
-          "filter": "FullyQualifiedName~DownKyi.Tests.DownloadArtifactStageTests.FileProducingArtifactStateSpaceOwnsEveryCreatedOutput",
+          "class": "DownKyi.Tests.DownloadArtifactStageTests",
           "environmentVariable": "DOWNKYI_TEST_MUTATE_ARTIFACT_OWNER",
           "environmentValue": "1",
           "expectedOutcome": "test-failure"

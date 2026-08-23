@@ -85,6 +85,21 @@ public sealed class TestRunnerPolicyArchitectureTests
         }
     }
 
+    [Fact]
+    public void ReviewInvariantMutationsUseRunnerNeutralClassLocators()
+    {
+        var runner = Read("script/test-review-invariants.ps1");
+        var corpus = Read("docs/testing/review-invariant-corpus.json");
+
+        Assert.Contains("-ClassNames @($proof.class)", runner, StringComparison.Ordinal);
+        Assert.DoesNotContain("-Filter $proof.filter", runner, StringComparison.Ordinal);
+        Assert.Contains(
+            "\"class\": \"DownKyi.Tests.DownloadArtifactStageTests\"",
+            corpus,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("FullyQualifiedName~", corpus, StringComparison.Ordinal);
+    }
+
     private static string Read(string relativePath)
     {
         return File.ReadAllText(Path.Combine(
