@@ -279,6 +279,19 @@
       ]
     },
     {
+      "id": "architecture-analyzer",
+      "paths": [
+        "tools/DownKyi.ArchitectureAnalyzers/**"
+      ],
+      "owner": "Roslyn compiler analyzer host",
+      "start": "The compiler loads the stateless architecture analyzer for a project compilation.",
+      "stop": "The compiler process releases the analyzer with the compilation.",
+      "teardown": "Only immutable diagnostic metadata may be initialized statically; the analyzer owns no thread, process, timer, event handler or disposable runtime resource.",
+      "allowedMechanisms": [
+        "static_initialization"
+      ]
+    },
+    {
       "id": "lifecycle-probe",
       "paths": [
         "tools/DownKyi.AssemblyLifecycleProbe/**"
