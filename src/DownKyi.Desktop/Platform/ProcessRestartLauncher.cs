@@ -59,12 +59,16 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
             return false;
         }
 
+        using var parent = CaptureParentProcess(parentProcessId);
         using var authorizationPipe = new AnonymousPipeClientStream(PipeDirection.In, pipeHandle);
         await ExecuteAuthorizedRestartAsync(
                 authorizationPipe,
                 async token =>
                 {
-                    await WaitForParentExitAsync(parentProcessId, token).ConfigureAwait(false);
+                    if (parent != null)
+                    {
+                        await parent.WaitForExitAsync(token).ConfigureAwait(false);
+                    }
 
                     token.ThrowIfCancellationRequested();
                     using var process = Process.Start(CreateStartInfo(null));
@@ -100,18 +104,26 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         return true;
     }
 
-    private static async Task WaitForParentExitAsync(
-        int parentProcessId,
-        CancellationToken cancellationToken)
+    internal static Process? CaptureParentProcess(int parentProcessId)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(parentProcessId);
         try
         {
-            using var parent = Process.GetProcessById(parentProcessId);
-            await parent.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            var parent = Process.GetProcessById(parentProcessId);
+            try
+            {
+                _ = parent.Handle;
+                return parent;
+            }
+            catch (InvalidOperationException)
+            {
+                parent.Dispose();
+                return null;
+            }
         }
         catch (ArgumentException)
         {
-            return;
+            return null;
         }
     }
 

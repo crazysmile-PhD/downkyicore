@@ -34,6 +34,19 @@
       ]
     },
     {
+      "id": "central-test-execution-guard",
+      "paths": [
+        "tests/CentralTestExecutionGuard.cs"
+      ],
+      "owner": "Central repository test runner",
+      "start": "The module initializer authenticates the live central runner before xUnit discovery begins.",
+      "stop": "Authorization is consumed once during module initialization.",
+      "teardown": "The initializer disposes its inherited authorization pipe before test discovery proceeds.",
+      "allowedMechanisms": [
+        "module_initializer"
+      ]
+    },
+    {
       "id": "test-suite-process",
       "paths": [
         "tests/**"
@@ -43,7 +56,6 @@
       "stop": "Tests and fixtures must dispose every created Host, timer, task and external process before returning.",
       "teardown": "Assembly fixture cleanup completes before the process is allowed to exit.",
       "allowedMechanisms": [
-        "module_initializer",
         "static_initialization",
         "external_process",
         "task_run",

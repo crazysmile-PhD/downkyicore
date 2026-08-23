@@ -56,6 +56,16 @@ public sealed class ProcessRestartLauncherTests
         Assert.DoesNotContain(ProcessRestartLauncher.WaitForParentArgument, startInfo.Arguments, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void RestartHelperCapturesAStableParentHandleBeforeAuthorizationWait()
+    {
+        using var parent = ProcessRestartLauncher.CaptureParentProcess(Environment.ProcessId);
+
+        Assert.NotNull(parent);
+        Assert.Equal(Environment.ProcessId, parent.Id);
+        Assert.NotEqual(nint.Zero, parent.Handle);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(0)]

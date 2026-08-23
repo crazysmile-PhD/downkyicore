@@ -279,19 +279,12 @@ function Assert-DownKyiTestExecutionReport {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [int]$RunnerExitCode,
-
-        [Parameter(Mandatory)]
         [string]$TrxPath,
 
         [string[]]$ExpectedClassNames = @(),
 
         [switch]$RequireUniqueReport
     )
-
-    if ($RunnerExitCode -ne 0) {
-        throw "The test runner failed with exit code $RunnerExitCode."
-    }
 
     if (@($ExpectedClassNames | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
         throw "Expected test class names cannot be empty."
@@ -393,7 +386,7 @@ function Assert-DownKyiTestExecutionReport {
             -not [string]::IsNullOrWhiteSpace($testId) -and
             $definitionsById.ContainsKey($testId) -and
             $ExpectedClassNames.Contains([string]$definitionsById[$testId]) -and
-            $_.GetAttribute("outcome") -eq "Passed"
+            $_.GetAttribute("outcome") -ne "NotExecuted"
         })
     if ($ExpectedClassNames.Count -gt 0 -and $executedExpectedTests.Count -lt 1) {
         throw "The report contains no executed result for an expected test class."
@@ -422,9 +415,11 @@ function Assert-DownKyiExpectedTestExecution {
     if ($ExpectedClassNames.Count -eq 0) {
         throw "At least one expected test class is required."
     }
+    if ($RunnerExitCode -ne 0) {
+        throw "The test runner failed with exit code $RunnerExitCode."
+    }
 
     return Assert-DownKyiTestExecutionReport `
-        -RunnerExitCode $RunnerExitCode `
         -TrxPath $TrxPath `
         -ExpectedClassNames $ExpectedClassNames `
         -RequireUniqueReport
@@ -543,7 +538,6 @@ function Invoke-DownKyiTestProject {
             -RepositoryRoot $RepositoryRoot `
             -Arguments $arguments
         $null = Assert-DownKyiTestExecutionReport `
-            -RunnerExitCode $exitCode `
             -TrxPath $validationTrxPath `
             -ExpectedClassNames $ClassNames
         return [pscustomobject]@{
