@@ -25,7 +25,11 @@ internal static class Program
             return RunResidualChildProbe(residualChildHoldMilliseconds);
         }
 
-        if (!TryReadArguments(args, out var assemblyPath, out var holdAfterUnloadMilliseconds))
+        if (!TryReadArguments(
+                args,
+                out var assemblyPath,
+                out var holdAfterUnloadMilliseconds,
+                out var holdAfterUnloadSignalPath))
         {
             WriteResult(new ProbeResult(false, null, null, false, "invalid_arguments", null));
             return 2;
@@ -37,6 +41,10 @@ internal static class Program
         if (holdAfterUnloadMilliseconds > 0)
         {
             Thread.Sleep(holdAfterUnloadMilliseconds);
+        }
+        else if (holdAfterUnloadSignalPath is not null)
+        {
+            WaitForSignal(holdAfterUnloadSignalPath);
         }
 
         WriteResult(new ProbeResult(
@@ -96,10 +104,12 @@ internal static class Program
     private static bool TryReadArguments(
         string[] args,
         out string assemblyPath,
-        out int holdAfterUnloadMilliseconds)
+        out int holdAfterUnloadMilliseconds,
+        out string? holdAfterUnloadSignalPath)
     {
         assemblyPath = string.Empty;
         holdAfterUnloadMilliseconds = 0;
+        holdAfterUnloadSignalPath = null;
         if (args.Length is not (2 or 4) ||
             !string.Equals(args[0], "--assembly", StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(args[1]))
@@ -118,13 +128,34 @@ internal static class Program
             return true;
         }
 
+        if (string.Equals(args[2], "--hold-after-unload-signal", StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(args[3]))
+        {
+            holdAfterUnloadSignalPath = Path.GetFullPath(args[3]);
+            return true;
+        }
+
         return string.Equals(args[2], "--hold-after-unload-ms", StringComparison.Ordinal) &&
-            int.TryParse(
-                args[3],
-                System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out holdAfterUnloadMilliseconds) &&
-            holdAfterUnloadMilliseconds is >= 0 and <= 30_000;
+               int.TryParse(
+                   args[3],
+                   System.Globalization.NumberStyles.None,
+                   System.Globalization.CultureInfo.InvariantCulture,
+                   out holdAfterUnloadMilliseconds) &&
+               holdAfterUnloadMilliseconds is >= 0 and <= 30_000;
+    }
+
+    private static void WaitForSignal(string signalPath)
+    {
+        var deadline = Stopwatch.StartNew();
+        while (!File.Exists(signalPath))
+        {
+            if (deadline.Elapsed >= TimeSpan.FromSeconds(30))
+            {
+                throw new TimeoutException("Forensics capture completion signal was not received.");
+            }
+
+            Thread.Sleep(25);
+        }
     }
 
     private static bool TryReadChildHoldArguments(

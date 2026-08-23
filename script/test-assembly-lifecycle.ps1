@@ -746,6 +746,7 @@ function Invoke-IsolatedProcess {
         [string[]]$Arguments,
         [hashtable]$Environment = @{},
         [string]$LifecycleMarkerPath,
+        [string]$EvidenceCompletionSignalPath,
         [switch]$AuthorizeRepositoryTestAssembly,
         [double]$EvidenceThresholdSeconds = $SlowPhaseThresholdSeconds
     )
@@ -840,6 +841,13 @@ function Invoke-IsolatedProcess {
                     $slowEvidenceErrorType = $_.Exception.GetType().Name
                 }
                 finally {
+                    if (-not [string]::IsNullOrWhiteSpace(
+                            $EvidenceCompletionSignalPath)) {
+                        [System.IO.File]::WriteAllText(
+                            $EvidenceCompletionSignalPath,
+                            "complete",
+                            [System.Text.UTF8Encoding]::new($false))
+                    }
                     $captureStopwatch.Stop()
                     $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
                 }
@@ -1337,6 +1345,8 @@ if ($ValidateForensics) {
     $selfTestAssembly = Join-Path $testProjects[0].DirectoryName (
         "bin/$Configuration/net10.0/$($testProjects[0].BaseName).dll")
     $selfTestMarker = Join-Path $rawRoot "Gate.Forensics/iteration-0001/execution.lifecycle"
+    $selfTestEvidenceComplete = Join-Path $rawRoot (
+        "Gate.Forensics/iteration-0001/evidence-complete.signal")
     $selfTest = Invoke-IsolatedProcess `
         -AssemblyName "Gate.Forensics" `
         -Iteration 1 `
@@ -1346,10 +1356,11 @@ if ($ValidateForensics) {
             $probeAssembly,
             "--assembly",
             $selfTestAssembly,
-            "--hold-after-unload-ms",
-            "5000"
+            "--hold-after-unload-signal",
+            $selfTestEvidenceComplete
         ) `
         -LifecycleMarkerPath $selfTestMarker `
+        -EvidenceCompletionSignalPath $selfTestEvidenceComplete `
         -EvidenceThresholdSeconds 1.25
     $selfTestPhase = New-ProcessPhaseResult -ProcessResult $selfTest
     $evidenceReports = @(

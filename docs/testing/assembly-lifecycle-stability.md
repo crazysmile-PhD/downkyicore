@@ -116,8 +116,10 @@ and must not carry unrelated self-test or lifecycle contract failures.
   threshold. `slowEvidenceStatus` is `captured`, `capture-failed`, or
   `process-exited-before-capture`; the latter two still fail a slow phase
   instead of leaving an unexplained empty evidence array.
-- `-ValidateForensics` uses its held child to prove the capture lead actually
-  ran before a synthetic 1.25-second threshold. The one-second lead therefore
+- `-ValidateForensics` uses a child held by a bounded completion handshake to
+  prove the capture lead actually ran before a synthetic 1.25-second threshold.
+  The child remains live until the capture attempt completes, so hosted-runner
+  diagnostic latency cannot invalidate the proof. The one-second lead therefore
   arms at 0.25 seconds instead of relying on a zero-clamped threshold. The
   machine report exposes `forensicsSelfTestCaptureLeadValidated`; the forensics
   self-test fails when that value is false, even if a later stack capture would
