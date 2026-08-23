@@ -469,8 +469,24 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("ref: ${{ inputs.subject_sha }}", workflow, StringComparison.Ordinal);
         Assert.Contains("dotnet publish ./subject/DownKyi/DownKyi.csproj", workflow, StringComparison.Ordinal);
         Assert.Contains("working-directory: subject", workflow, StringComparison.Ordinal);
-        Assert.Contains("Formal v1.1.2 recovery requires all Apple signing and notarization credentials.", workflow, StringComparison.Ordinal);
+        Assert.Contains("Resolve macOS release trust mode", workflow, StringComparison.Ordinal);
+        Assert.Contains("macos_trust_mode: ${{ steps.macos_trust.outputs.macos_trust_mode }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("HAS_MACOS_SIGNING: ${{ needs.authority.outputs.has_macos_signing }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("MACOS_ADHOC_SIGNING: ${{ env.HAS_MACOS_SIGNING != 'true' }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("if: ${{ env.HAS_MACOS_SIGNING == 'true' }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("Strictly verify final app", workflow, StringComparison.Ordinal);
         Assert.Contains("./verify-dmg-contents.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("Render release notes for selected trust mode", workflow, StringComparison.Ordinal);
+        Assert.Contains("bodyFile: tooling/artifacts/v1.1.2-release-notes.md", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Require Apple credentials for formal publish", workflow, StringComparison.Ordinal);
+
+        var macSteps = GetWorkflowSteps(workflow, "  build-macos:");
+        AssertStepCondition(macSteps, "Import Apple certificate", "${{ env.HAS_MACOS_SIGNING == 'true' }}");
+        AssertStepCondition(macSteps, "Resolve Developer ID identity", "${{ env.HAS_MACOS_SIGNING == 'true' }}");
+        AssertStepCondition(macSteps, "Notarize and verify app", "${{ env.HAS_MACOS_SIGNING == 'true' }}");
+        AssertStepCondition(macSteps, "Sign, notarize, and verify DMG", "${{ env.HAS_MACOS_SIGNING == 'true' }}");
+        AssertStepHasNoCondition(macSteps, "Strictly verify final app");
+        AssertStepHasNoCondition(macSteps, "Remount DMG, strictly verify, and launch app");
         Assert.Contains("tag: v1.1.2", workflow, StringComparison.Ordinal);
         Assert.Contains("commit: 16c690d8719f86eb6eecb56c24efabc1afc41d55", workflow, StringComparison.Ordinal);
         Assert.Contains("prerelease: false", workflow, StringComparison.Ordinal);
@@ -485,6 +501,85 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("Validated $($expected.Count) v1.1.2 packages", artifactValidator, StringComparison.Ordinal);
         Assert.Contains("Get-FileHash", artifactValidator, StringComparison.Ordinal);
         Assert.Contains("Publish manifest contract failed", artifactValidator, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void V112MacosTrustResolverRequiresZeroOrAllCredentials()
+    {
+        var script = Path.Combine(RepositoryRoot, "script", "resolve-v112-macos-trust.ps1");
+        var outputPath = Path.GetTempFileName();
+
+        try
+        {
+            var adHoc = RunPowerShellScript(
+                script,
+                ["-OutputPath", outputPath],
+                new Dictionary<string, string>());
+            Assert.Equal(0, adHoc.ExitCode);
+            Assert.Contains("ad-hoc", File.ReadAllText(outputPath), StringComparison.Ordinal);
+            Assert.DoesNotContain("developer-id", File.ReadAllText(outputPath), StringComparison.Ordinal);
+
+            IReadOnlyDictionary<string, string> developerIdEnvironment = new Dictionary<string, string>
+            {
+                ["MACOS_CERTIFICATE"] = "fixture-certificate",
+                ["MACOS_CERTIFICATE_PWD"] = "fixture-password",
+                ["APPLE_ID"] = "fixture@example.invalid",
+                ["TEAM_ID"] = "FIXTURETEAM",
+                ["APP_SPECIFIC_PASSWORD"] = "fixture-app-password"
+            };
+            var developerId = RunPowerShellScript(
+                script,
+                ["-OutputPath", outputPath],
+                developerIdEnvironment);
+            Assert.Equal(0, developerId.ExitCode);
+            Assert.Contains("developer-id", File.ReadAllText(outputPath), StringComparison.Ordinal);
+
+            var partial = RunPowerShellScript(
+                script,
+                ["-OutputPath", outputPath],
+                new Dictionary<string, string> { ["APPLE_ID"] = "fixture@example.invalid" });
+            Assert.NotEqual(0, partial.ExitCode);
+            Assert.Contains("Partial Apple credentials", partial.StandardError, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public void V112RecoveryReleaseNotesDiscloseSelectedTrustMode()
+    {
+        var script = Path.Combine(RepositoryRoot, "script", "render-v112-recovery-release-notes.ps1");
+        var outputPath = Path.GetTempFileName();
+
+        try
+        {
+            var adHoc = RunPowerShellScript(
+                script,
+                ["-TrustMode", "ad-hoc", "-OutputPath", outputPath],
+                new Dictionary<string, string>());
+            Assert.Equal(0, adHoc.ExitCode);
+            var adHocNotes = File.ReadAllText(outputPath);
+            Assert.Contains("ad-hoc identity", adHocNotes, StringComparison.Ordinal);
+            Assert.Contains("not notarized", adHocNotes, StringComparison.Ordinal);
+            Assert.Contains("does not have Gatekeeper distribution trust", adHocNotes, StringComparison.Ordinal);
+
+            var developerId = RunPowerShellScript(
+                script,
+                ["-TrustMode", "developer-id", "-OutputPath", outputPath],
+                new Dictionary<string, string>());
+            Assert.Equal(0, developerId.ExitCode);
+            var developerIdNotes = File.ReadAllText(outputPath);
+            Assert.Contains("Developer ID", developerIdNotes, StringComparison.Ordinal);
+            Assert.Contains("notarization", developerIdNotes, StringComparison.Ordinal);
+            Assert.Contains("stapling", developerIdNotes, StringComparison.Ordinal);
+            Assert.DoesNotContain("not notarized", developerIdNotes, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(outputPath);
+        }
     }
 
     [Fact]
@@ -537,6 +632,56 @@ public sealed class ReleaseWorkflowArchitectureTests
         return source.Split(value, StringSplitOptions.None).Length - 1;
     }
 
+    private static PowerShellResult RunPowerShellScript(
+        string script,
+        IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string> environment)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "pwsh",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-NoLogo");
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(script);
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        string[] credentialNames =
+        [
+            "MACOS_CERTIFICATE",
+            "MACOS_CERTIFICATE_PWD",
+            "APPLE_ID",
+            "TEAM_ID",
+            "APP_SPECIFIC_PASSWORD"
+        ];
+        foreach (var name in credentialNames)
+        {
+            startInfo.Environment.Remove(name);
+        }
+
+        foreach (var pair in environment)
+        {
+            startInfo.Environment[pair.Key] = pair.Value;
+        }
+
+        using var process = Process.Start(startInfo);
+        Assert.NotNull(process);
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        Assert.True(process.WaitForExit(30_000), $"Release trust regression timed out: {script}");
+        return new PowerShellResult(process.ExitCode, standardOutput, standardError);
+    }
+
+    private sealed record PowerShellResult(int ExitCode, string StandardOutput, string StandardError);
+
     private static void AssertInOrder(string source, params string[] fragments)
     {
         var previousIndex = -1;
@@ -572,6 +717,49 @@ public sealed class ReleaseWorkflowArchitectureTests
             !HasYamlKey(step, 8, "continue-on-error: true"));
 
         return pullRequestDetector && steps.Count == 1;
+    }
+
+    private static List<List<string>> GetWorkflowSteps(string workflow, string jobHeader)
+    {
+        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var job = GetYamlBlock(lines, jobHeader, 2);
+        var stepsStart = job.FindIndex(line =>
+            GetIndent(line) == 4 && string.Equals(line.Trim(), "steps:", StringComparison.Ordinal));
+        Assert.True(stepsStart >= 0, $"Workflow job {jobHeader.Trim()} has no steps.");
+        return GetYamlSequenceBlocks(job[(stepsStart + 1)..], 6);
+    }
+
+    private static void AssertStepCondition(
+        IReadOnlyList<List<string>> steps,
+        string stepName,
+        string expectedCondition)
+    {
+        var step = FindWorkflowStep(steps, stepName);
+        Assert.Contains(
+            step,
+            line => GetIndent(line) == 8 &&
+                    string.Equals(line.Trim(), $"if: {expectedCondition}", StringComparison.Ordinal));
+    }
+
+    private static void AssertStepHasNoCondition(
+        IReadOnlyList<List<string>> steps,
+        string stepName)
+    {
+        var step = FindWorkflowStep(steps, stepName);
+        Assert.DoesNotContain(
+            step,
+            line => GetIndent(line) == 8 && line.Trim().StartsWith("if:", StringComparison.Ordinal));
+    }
+
+    private static List<string> FindWorkflowStep(
+        IReadOnlyList<List<string>> steps,
+        string stepName)
+    {
+        var step = steps.SingleOrDefault(candidate => candidate.Any(line =>
+            GetIndent(line) == 6 &&
+            string.Equals(line.Trim(), $"- name: {stepName}", StringComparison.Ordinal)));
+        Assert.NotNull(step);
+        return step;
     }
 
     private static List<string> GetYamlBlock(
