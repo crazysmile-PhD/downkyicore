@@ -98,6 +98,8 @@ public sealed class TestRunnerPolicyArchitectureTests
     [InlineData("steps:\n  - run: |\n      dotnet test \\\n        --no-build \\\n        ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
     [InlineData("steps:\n  - run: |\n      $project = './tests/DownKyi.Tests/DownKyi.Tests.csproj'\n      dotnet test $project")]
     [InlineData("steps:\n  - run: |\n      project='./tests/DownKyi.Tests/DownKyi.Tests.csproj'\n      dotnet test \"$project\"")]
+    [InlineData("steps:\n  - run: dotnet test ${{ env.TEST_PROJECT }} --no-build")]
+    [InlineData("steps:\n  - run: dotnet test %TEST_PROJECT% --no-build")]
     public void DirectTestInvocationDetectorRejectsRepresentativeOptionOrderings(string workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -214,10 +216,11 @@ public sealed class TestRunnerPolicyArchitectureTests
         {
             var arguments = command.Groups["arguments"].Value;
             return arguments.Contains(projectPath, StringComparison.OrdinalIgnoreCase) ||
+                   arguments.Contains('$', StringComparison.Ordinal) ||
                    Regex.IsMatch(
                        arguments,
-                       @"\$(?:env:)?(?:\{)?[A-Za-z_][A-Za-z0-9_]*(?:\})?",
-                       RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+                       @"%[A-Za-z_][A-Za-z0-9_]*%",
+                       RegexOptions.CultureInvariant);
         });
     }
 

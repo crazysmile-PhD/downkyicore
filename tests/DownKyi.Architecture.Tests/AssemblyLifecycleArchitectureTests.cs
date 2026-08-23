@@ -67,11 +67,24 @@ public sealed class AssemblyLifecycleArchitectureTests
         [
             "benchmarks/DownKyi.SystemBenchmarks/Program.cs"
         ];
-        var actualOwners = Directory
+        var sourceFiles = Directory
             .EnumerateFiles(RepositoryRoot, "*.cs", SearchOption.AllDirectories)
             .Where(path => !IsGeneratedPath(path))
-            .Where(path => ContainsGlobalSqlitePoolCleanup(File.ReadAllText(path)))
-            .Select(path => Path.GetRelativePath(RepositoryRoot, path)
+            .Select(path => new
+            {
+                Path = path,
+                Root = CSharpSyntaxTree
+                    .ParseText(File.ReadAllText(path))
+                    .GetCompilationUnitRoot()
+            })
+            .ToArray();
+        var globalImports = CreateGlobalSqliteConnectionImports(
+            sourceFiles.Select(sourceFile => sourceFile.Root));
+        var actualOwners = sourceFiles
+            .Where(sourceFile => ContainsGlobalSqlitePoolCleanup(
+                sourceFile.Root,
+                globalImports))
+            .Select(sourceFile => Path.GetRelativePath(RepositoryRoot, sourceFile.Path)
                 .Replace('\\', '/'))
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -86,6 +99,25 @@ public sealed class AssemblyLifecycleArchitectureTests
     public void GlobalSqlitePoolCleanupDetectorRejectsEquivalentCSharpForms(string source)
     {
         Assert.True(ContainsGlobalSqlitePoolCleanup(source));
+    }
+
+    [Fact]
+    public void GlobalSqlitePoolCleanupDetectorResolvesGlobalStaticImportsAcrossFiles()
+    {
+        CompilationUnitSyntax[] roots =
+        [
+            CSharpSyntaxTree.ParseText(
+                "global using static Microsoft.Data.Sqlite.SqliteConnection;",
+                cancellationToken: TestContext.Current.CancellationToken)
+                .GetCompilationUnitRoot(TestContext.Current.CancellationToken),
+            CSharpSyntaxTree.ParseText(
+                "class C { void M() { ClearAllPools(); } }",
+                cancellationToken: TestContext.Current.CancellationToken)
+                .GetCompilationUnitRoot(TestContext.Current.CancellationToken)
+        ];
+        var globalImports = CreateGlobalSqliteConnectionImports(roots);
+
+        Assert.True(ContainsGlobalSqlitePoolCleanup(roots[1], globalImports));
     }
 
     [Fact]
@@ -469,30 +501,20 @@ public sealed class AssemblyLifecycleArchitectureTests
 
     private static bool ContainsGlobalSqlitePoolCleanup(string source)
     {
-        var root = CSharpSyntaxTree.ParseText(source).GetRoot();
-        var connectionIdentifiers = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "SqliteConnection"
-        };
-        var importsSqliteConnectionStatically = false;
+        var root = CSharpSyntaxTree.ParseText(source).GetCompilationUnitRoot();
+        var globalImports = CreateGlobalSqliteConnectionImports([root]);
+        return ContainsGlobalSqlitePoolCleanup(root, globalImports);
+    }
+
+    private static bool ContainsGlobalSqlitePoolCleanup(
+        CompilationUnitSyntax root,
+        SqliteConnectionImportContext globalImports)
+    {
+        var imports = globalImports.Clone();
 
         foreach (var usingDirective in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
         {
-            if (!string.Equals(
-                    GetRightmostIdentifier(usingDirective.Name),
-                    "SqliteConnection",
-                    StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (usingDirective.Alias != null)
-            {
-                connectionIdentifiers.Add(usingDirective.Alias.Name.Identifier.ValueText);
-            }
-
-            importsSqliteConnectionStatically |=
-                usingDirective.StaticKeyword.IsKind(SyntaxKind.StaticKeyword);
+            ApplySqliteConnectionImport(usingDirective, imports);
         }
 
         return root.DescendantNodes()
@@ -500,14 +522,50 @@ public sealed class AssemblyLifecycleArchitectureTests
             .Any(invocation => invocation.Expression switch
             {
                 IdentifierNameSyntax identifier =>
-                    importsSqliteConnectionStatically &&
+                    imports.ImportsStatically &&
                     identifier.Identifier.ValueText == "ClearAllPools",
                 MemberAccessExpressionSyntax memberAccess =>
                     memberAccess.Name.Identifier.ValueText == "ClearAllPools" &&
-                    connectionIdentifiers.Contains(
+                    imports.ConnectionIdentifiers.Contains(
                         GetRightmostIdentifier(memberAccess.Expression) ?? string.Empty),
                 _ => false
             });
+    }
+
+    private static SqliteConnectionImportContext CreateGlobalSqliteConnectionImports(
+        IEnumerable<CompilationUnitSyntax> roots)
+    {
+        var imports = new SqliteConnectionImportContext();
+        foreach (var usingDirective in roots
+                     .SelectMany(root => root.DescendantNodes().OfType<UsingDirectiveSyntax>())
+                     .Where(usingDirective =>
+                         usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword)))
+        {
+            ApplySqliteConnectionImport(usingDirective, imports);
+        }
+
+        return imports;
+    }
+
+    private static void ApplySqliteConnectionImport(
+        UsingDirectiveSyntax usingDirective,
+        SqliteConnectionImportContext imports)
+    {
+        if (!string.Equals(
+                GetRightmostIdentifier(usingDirective.Name),
+                "SqliteConnection",
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (usingDirective.Alias != null)
+        {
+            imports.ConnectionIdentifiers.Add(usingDirective.Alias.Name.Identifier.ValueText);
+        }
+
+        imports.ImportsStatically |=
+            usingDirective.StaticKeyword.IsKind(SyntaxKind.StaticKeyword);
     }
 
     private static string? GetRightmostIdentifier(SyntaxNode? syntax)
@@ -520,6 +578,26 @@ public sealed class AssemblyLifecycleArchitectureTests
             MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.ValueText,
             _ => null
         };
+    }
+
+    private sealed class SqliteConnectionImportContext
+    {
+        public bool ImportsStatically { get; set; }
+
+        public HashSet<string> ConnectionIdentifiers { get; } = new(StringComparer.Ordinal)
+        {
+            "SqliteConnection"
+        };
+
+        public SqliteConnectionImportContext Clone()
+        {
+            var clone = new SqliteConnectionImportContext
+            {
+                ImportsStatically = ImportsStatically
+            };
+            clone.ConnectionIdentifiers.UnionWith(ConnectionIdentifiers);
+            return clone;
+        }
     }
 
     private static bool IsGeneratedPath(string path)

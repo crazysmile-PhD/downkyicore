@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
@@ -102,31 +101,14 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
 
     public async Task ExitAsync(CancellationToken cancellationToken = default)
     {
-        TimeoutException? cleanupTimeoutException = null;
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            await RequestShutdownAsync(cancellationToken).ConfigureAwait(false);
+            await RequestShutdownAsync(CancellationToken.None).ConfigureAwait(false);
         }
-        catch (TimeoutException e)
-        {
-            cleanupTimeoutException = e;
-        }
-
-        try
+        finally
         {
             await _desktopShutdown().ConfigureAwait(false);
-        }
-        catch (Exception desktopShutdownException) when (cleanupTimeoutException != null)
-        {
-            throw new AggregateException(
-                "Application cleanup and desktop shutdown both failed.",
-                cleanupTimeoutException,
-                desktopShutdownException);
-        }
-
-        if (cleanupTimeoutException != null)
-        {
-            ExceptionDispatchInfo.Capture(cleanupTimeoutException).Throw();
         }
     }
 

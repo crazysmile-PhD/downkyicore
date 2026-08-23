@@ -170,6 +170,44 @@ public sealed class AvaloniaApplicationLifecycleTests
     }
 
     [Fact]
+    public async Task RestartCleanupFailureTerminatesDesktopAndPreservesFailure()
+    {
+        var directory = CreateTemporaryDirectory();
+        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
+        using var host = DownKyiHost.Create(services =>
+            services.AddSingleton<IHostedService>(new FatalStopHostedService()));
+        var restartLauncher = new StubRestartLauncher(true);
+        var desktopShutdownCount = 0;
+        var lifecycle = CreateLifecycle(
+            settingsStore,
+            new RecordingLogService(),
+            restartLauncher,
+            desktopShutdown: () =>
+            {
+                desktopShutdownCount++;
+                return Task.CompletedTask;
+            });
+        lifecycle.AttachHost(host);
+
+        try
+        {
+            await lifecycle.StartHostAsync().ConfigureAwait(true);
+
+            var exception = await Assert.ThrowsAsync<NotSupportedException>(() =>
+                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
+
+            Assert.Equal("fatal stop failure", exception.Message);
+            Assert.Equal(1, restartLauncher.StartCount);
+            Assert.Equal(1, desktopShutdownCount);
+        }
+        finally
+        {
+            await settingsStore.DisposeAsync().ConfigureAwait(true);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RestartHelperFailureKeepsRunningApplicationAlive()
     {
         var directory = CreateTemporaryDirectory();
@@ -318,6 +356,19 @@ public sealed class AvaloniaApplicationLifecycleTests
         public Task StopAsync(CancellationToken cancellationToken)
         {
             return Task.FromException(new InvalidOperationException("stop failed"));
+        }
+    }
+
+    private sealed class FatalStopHostedService : IHostedService
+    {
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromException(new NotSupportedException("fatal stop failure"));
         }
     }
 
