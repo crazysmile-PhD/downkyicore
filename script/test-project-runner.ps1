@@ -152,6 +152,124 @@ function Get-DownKyiTestRunnerPolicy {
     return $entry
 }
 
+function Assert-DownKyiExpectedTestExecution {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [int]$RunnerExitCode,
+
+        [Parameter(Mandatory)]
+        [string]$TrxPath,
+
+        [Parameter(Mandatory)]
+        [string[]]$ExpectedClassNames
+    )
+
+    if ($RunnerExitCode -ne 0) {
+        throw "The test runner failed with exit code $RunnerExitCode."
+    }
+
+    if ($ExpectedClassNames.Count -eq 0 -or
+        @($ExpectedClassNames | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
+        throw "At least one non-empty expected test class is required."
+    }
+
+    if (-not (Test-Path -LiteralPath $TrxPath -PathType Leaf)) {
+        throw "The expected test report is missing: $TrxPath"
+    }
+
+    $report = Get-Item -LiteralPath $TrxPath
+    $reports = @(Get-ChildItem -LiteralPath $report.DirectoryName -Filter *.trx -File)
+    if ($reports.Count -ne 1 -or
+        -not [IO.Path]::GetFullPath($reports[0].FullName).Equals(
+            [IO.Path]::GetFullPath($report.FullName),
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "The test result directory must contain exactly the expected TRX report."
+    }
+
+    try {
+        [xml]$trx = Get-Content -LiteralPath $report.FullName -Raw -ErrorAction Stop
+    }
+    catch {
+        throw "The expected test report is malformed: $($report.FullName)"
+    }
+
+    $counters = $trx.SelectSingleNode(
+        "/*[local-name()='TestRun']/*[local-name()='ResultSummary']/*[local-name()='Counters']")
+    $results = @($trx.SelectNodes(
+            "/*[local-name()='TestRun']/*[local-name()='Results']/*[local-name()='UnitTestResult']"))
+    $definitions = @($trx.SelectNodes(
+            "/*[local-name()='TestRun']/*[local-name()='TestDefinitions']/*[local-name()='UnitTest']"))
+    if ($null -eq $counters -or $results.Count -eq 0 -or $definitions.Count -eq 0) {
+        throw "The expected test report has an incomplete result structure."
+    }
+
+    $counterValues = @{}
+    foreach ($counterName in @("total", "executed", "passed", "failed")) {
+        $counterValue = 0
+        if (-not [int]::TryParse(
+                $counters.GetAttribute($counterName),
+                [Globalization.NumberStyles]::None,
+                [Globalization.CultureInfo]::InvariantCulture,
+                [ref]$counterValue) -or $counterValue -lt 0) {
+            throw "The expected test report has invalid execution counters."
+        }
+
+        $counterValues.Add($counterName, $counterValue)
+    }
+
+    $executed = [int]$counterValues.executed
+    if ($executed -lt 1) {
+        throw "The expected test selection executed no tests."
+    }
+    if ($executed -gt [int]$counterValues.total -or
+        [int]$counterValues.passed + [int]$counterValues.failed -gt $executed) {
+        throw "The expected test report has inconsistent execution counters."
+    }
+
+    $definitionsById = @{}
+    foreach ($definition in $definitions) {
+        $testId = $definition.GetAttribute("id")
+        $testMethod = $definition.SelectSingleNode("./*[local-name()='TestMethod']")
+        if ([string]::IsNullOrWhiteSpace($testId) -or $null -eq $testMethod) {
+            throw "The expected test report contains an invalid test definition."
+        }
+
+        $className = $testMethod.GetAttribute("className")
+        if ([string]::IsNullOrWhiteSpace($className) -or $definitionsById.ContainsKey($testId)) {
+            throw "The expected test report contains an ambiguous test definition."
+        }
+
+        $definitionsById.Add($testId, $className)
+    }
+
+    foreach ($result in $results) {
+        $testId = $result.GetAttribute("testId")
+        if ([string]::IsNullOrWhiteSpace($testId) -or
+            -not $definitionsById.ContainsKey($testId) -or
+            [string]::IsNullOrWhiteSpace($result.GetAttribute("outcome"))) {
+            throw "The expected test report contains an invalid execution result."
+        }
+    }
+
+    $executedExpectedTests = @($results | Where-Object {
+            $testId = $_.GetAttribute("testId")
+            -not [string]::IsNullOrWhiteSpace($testId) -and
+            $definitionsById.ContainsKey($testId) -and
+            $ExpectedClassNames.Contains([string]$definitionsById[$testId]) -and
+            $_.GetAttribute("outcome") -eq "Passed"
+        })
+    if ($executedExpectedTests.Count -lt 1) {
+        throw "The report contains no executed result for an expected test class."
+    }
+
+    return [pscustomobject]@{
+        Executed = $executed
+        ExecutedExpected = $executedExpectedTests.Count
+        ReportPath = $report.FullName
+    }
+}
+
 function Invoke-DownKyiTestProject {
     [CmdletBinding()]
     param(
@@ -194,7 +312,13 @@ function Invoke-DownKyiTestProject {
         -ProjectPath $project.FullName
 
     if ($null -eq $runnerPolicy) {
-        $arguments = @("test", $project.FullName, "-c", $Configuration)
+        $arguments = @(
+            "test",
+            $project.FullName,
+            "-c",
+            $Configuration,
+            "-p:DownKyiCentralTestRunner=true"
+        )
         if ($NoRestore) {
             $arguments += "--no-restore"
         }

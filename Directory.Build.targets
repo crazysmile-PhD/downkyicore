@@ -1,2 +1,8 @@
 ﻿<Project>
+  <Target
+    Name="EnforceDownKyiCentralTestRunner"
+    BeforeTargets="VSTest"
+    Condition="'$(IsTestProject)' == 'true' and '$(DownKyiCentralTestRunner)' != 'true'">
+    <Error Text="Repository test projects must be executed through script/test-project-runner.ps1." />
+  </Target>
 </Project>

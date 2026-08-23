@@ -97,7 +97,10 @@ jobs:
           critical_paths=(
             .github/workflows/build.yml
             .github/workflows/release-v112-recovery.yml
+            Directory.Build.props
+            Directory.Build.targets
             docs/operations/v1.1.2-release-notes.md
+            script/test-project-runner.ps1
             script/resolve-v112-macos-trust.ps1
             script/render-v112-recovery-release-notes.ps1
             script/macos/codesign-common.sh
@@ -111,6 +114,8 @@ jobs:
             tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
             tests/DownKyi.MacOS.Tests/MacBundleLayoutTests.cs
             tests/DownKyi.MacOS.Tests/MacSigningScriptTests.cs
+            tools/DownKyi.ArchitectureAnalyzers/DownKyi.ArchitectureAnalyzers.csproj
+            tools/DownKyi.ArchitectureAnalyzers/GlobalSqlitePoolCleanupAnalyzer.cs
           )
           for path in "${critical_paths[@]}"; do
             if ! git -C tooling diff --quiet "$run_head" "$GITHUB_SHA" -- "$path"; then
@@ -386,7 +391,16 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Run native recovery tooling regressions
-        run: dotnet test tooling/tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj -c Release
+        shell: pwsh
+        run: |
+          . ./tooling/script/test-project-runner.ps1
+          $result = Invoke-DownKyiTestProject `
+            -RepositoryRoot (Resolve-Path ./tooling).Path `
+            -ProjectPath ./tooling/tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj `
+            -Configuration Release
+          if ($result.ExitCode -ne 0) {
+            throw "Native recovery tooling regressions failed."
+          }
       - name: Install Python
         uses: actions/setup-python@v6
         with:

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -31,7 +32,86 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
-    public void Aria2TlsWorkflowUsesTheSharedRunnerAndExactTestClass()
+    public void FormalWorkflowsDelegateRepositoryTestsToTheSharedRunner()
+    {
+        var workflowPaths = Directory.EnumerateFiles(
+                Path.Combine(RepositoryRoot, ".github", "workflows"),
+                "*.y*ml",
+                SearchOption.TopDirectoryOnly)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var workflowPath in workflowPaths)
+        {
+            var workflow = File.ReadAllText(workflowPath);
+            Assert.DoesNotContain(
+                ExtractWorkflowRunScripts(workflow),
+                ContainsDirectTestEntrypoint);
+        }
+
+        AssertWorkflowUsesSharedRunner(
+            ".github/workflows/quality.yml",
+            ". ./script/test-project-runner.ps1");
+        AssertWorkflowUsesSharedRunner(
+            ".github/workflows/build.yml",
+            ". ./script/test-project-runner.ps1");
+        AssertWorkflowUsesSharedRunner(
+            ".github/workflows/release-v112-recovery.yml",
+            ". ./tooling/script/test-project-runner.ps1");
+    }
+
+    [Theory]
+    [InlineData("dotnet test $unknownTarget")]
+    [InlineData("dotnet vstest $unknownAssembly")]
+    [InlineData("dotnet ./tools/xunit.v3.runner.console.dll $unknownAssembly")]
+    [InlineData("vstest.console.exe $unknownAssembly")]
+    public void WorkflowTestCapabilityIsRejectedWithoutInferringItsTarget(string runScript)
+    {
+        Assert.True(ContainsDirectTestEntrypoint(runScript));
+    }
+
+    [Fact]
+    public void SharedRunnerInvocationDoesNotGrantWorkflowDirectExecutionCapability()
+    {
+        const string runScript = """
+            . ./script/test-project-runner.ps1
+            Invoke-DownKyiTestProject -ProjectPath $unknownTarget
+            """;
+
+        Assert.False(ContainsDirectTestEntrypoint(runScript));
+    }
+
+    [Fact]
+    public void MsBuildProtocolGuardFailsClosedWithoutSharedRunnerProtocol()
+    {
+        var project = Path.Combine(
+            RepositoryRoot,
+            "tests",
+            "DownKyi.Architecture.Tests",
+            "DownKyi.Architecture.Tests.csproj");
+
+        var rejected = RunDotnet(
+            "msbuild",
+            project,
+            "-t:EnforceDownKyiCentralTestRunner",
+            "-p:IsTestProject=true");
+        var authorized = RunDotnet(
+            "msbuild",
+            project,
+            "-t:EnforceDownKyiCentralTestRunner",
+            "-p:IsTestProject=true",
+            "-p:DownKyiCentralTestRunner=true");
+
+        Assert.NotEqual(0, rejected.ExitCode);
+        Assert.Contains(
+            "Repository test projects must be executed through script/test-project-runner.ps1.",
+            rejected.Output,
+            StringComparison.Ordinal);
+        Assert.Equal(0, authorized.ExitCode);
+    }
+
+    [Fact]
+    public void Aria2TlsWorkflowUsesExecutableExpectedClassValidation()
     {
         var workflow = Read(".github/workflows/quality.yml");
         var stepStart = workflow.IndexOf(
@@ -44,88 +124,13 @@ public sealed class TestRunnerPolicyArchitectureTests
         Assert.True(stepStart >= 0 && stepEnd > stepStart, "The aria2 TLS workflow step is missing.");
         var step = workflow[stepStart..stepEnd];
 
-        Assert.Contains("shell: pwsh", step, StringComparison.Ordinal);
-        Assert.Contains(". ./script/test-project-runner.ps1", step, StringComparison.Ordinal);
         Assert.Contains("Invoke-DownKyiTestProject", step, StringComparison.Ordinal);
+        Assert.Contains("Assert-DownKyiExpectedTestExecution", step, StringComparison.Ordinal);
         Assert.Contains(
-            "-ProjectPath ./tests/DownKyi.Tests/DownKyi.Tests.csproj",
+            "-ExpectedClassNames DownKyi.Tests.Aria2TlsIntegrationTests",
             step,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "-ClassNames DownKyi.Tests.Aria2TlsIntegrationTests",
-            step,
-            StringComparison.Ordinal);
-        Assert.Contains("-ResultsDirectory", step, StringComparison.Ordinal);
-        Assert.Contains("-TrxName", step, StringComparison.Ordinal);
-        Assert.Contains("Test-Path -LiteralPath $result.TrxPath", step, StringComparison.Ordinal);
-        Assert.Contains("SelectSingleNode", step, StringComparison.Ordinal);
-        Assert.Contains("GetAttribute(\"executed\")", step, StringComparison.Ordinal);
-        Assert.Contains("$executed -lt 1", step, StringComparison.Ordinal);
-        Assert.DoesNotContain("--filter Category=Aria2TlsIntegration", step, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void PolicyOwnedProjectsCannotBypassTheSharedRunnerInCiWorkflows()
-    {
-        using var policy = JsonDocument.Parse(Read("docs/testing/test-runner-policy.json"));
-        var workflowPaths = Directory.EnumerateFiles(
-                Path.Combine(RepositoryRoot, ".github", "workflows"),
-                "*.y*ml",
-                SearchOption.TopDirectoryOnly)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        foreach (var project in policy.RootElement.GetProperty("projects").EnumerateArray())
-        {
-            var projectPath = project.GetProperty("project").GetString()
-                ?? throw new InvalidDataException("Runner policy project path cannot be null.");
-
-            foreach (var workflowPath in workflowPaths)
-            {
-                var workflow = File.ReadAllText(workflowPath);
-                Assert.DoesNotContain(
-                    ExtractWorkflowRunScripts(workflow),
-                    runScript => ContainsDirectDotnetTestInvocation(runScript, projectPath));
-            }
-        }
-    }
-
-    [Theory]
-    [InlineData("steps:\n  - run: dotnet test ./tests/DownKyi.Tests/DownKyi.Tests.csproj --no-build")]
-    [InlineData("steps:\n  - run: dotnet test --no-build ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
-    [InlineData("steps:\n  - run: >\n      dotnet test\n      --no-build\n      ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
-    [InlineData("steps:\n  - run: |\n      dotnet test `\n        --no-build `\n        ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
-    [InlineData("steps:\n  - run: |\n      dotnet test \\\n        --no-build \\\n        ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
-    [InlineData("steps:\n  - run: |\n      $project = './tests/DownKyi.Tests/DownKyi.Tests.csproj'\n      dotnet test $project")]
-    [InlineData("steps:\n  - run: |\n      project='./tests/DownKyi.Tests/DownKyi.Tests.csproj'\n      dotnet test \"$project\"")]
-    [InlineData("steps:\n  - run: dotnet test ${{ env.TEST_PROJECT }} --no-build")]
-    [InlineData("steps:\n  - run: dotnet test %TEST_PROJECT% --no-build")]
-    public void DirectTestInvocationDetectorRejectsRepresentativeOptionOrderings(string workflow)
-    {
-        ArgumentNullException.ThrowIfNull(workflow);
-        var runScript = Assert.Single(ExtractWorkflowRunScripts(workflow));
-
-        Assert.True(ContainsDirectDotnetTestInvocation(
-            runScript,
-            "tests/DownKyi.Tests/DownKyi.Tests.csproj"));
-    }
-
-    [Fact]
-    public void DirectTestInvocationDetectorAllowsTheSharedRunner()
-    {
-        const string workflow = """
-            steps:
-              - run: |
-                  . ./script/test-project-runner.ps1
-                  Invoke-DownKyiTestProject `
-                    -ProjectPath ./tests/DownKyi.Tests/DownKyi.Tests.csproj `
-                    -ClassNames DownKyi.Tests.Aria2TlsIntegrationTests
-            """;
-        var runScript = Assert.Single(ExtractWorkflowRunScripts(workflow));
-
-        Assert.False(ContainsDirectDotnetTestInvocation(
-            runScript,
-            "tests/DownKyi.Tests/DownKyi.Tests.csproj"));
+        Assert.DoesNotContain("SelectSingleNode", step, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -143,11 +148,21 @@ public sealed class TestRunnerPolicyArchitectureTests
         Assert.DoesNotContain("FullyQualifiedName~", corpus, StringComparison.Ordinal);
     }
 
-    private static string Read(string relativePath)
+    private static void AssertWorkflowUsesSharedRunner(
+        string relativePath,
+        string runnerImport)
     {
-        return File.ReadAllText(Path.Combine(
-            RepositoryRoot,
-            relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var workflow = Read(relativePath);
+        Assert.Contains(runnerImport, workflow, StringComparison.Ordinal);
+        Assert.Contains("Invoke-DownKyiTestProject", workflow, StringComparison.Ordinal);
+    }
+
+    private static bool ContainsDirectTestEntrypoint(string runScript)
+    {
+        return Regex.IsMatch(
+            runScript,
+            @"(?im)(?:^|[;&|]\s*)(?:dotnet\s+(?:test|vstest)\b|dotnet\s+[^\r\n;&|]*xunit[^\r\n;&|]*\.dll\b|(?:vstest\.console|xunit(?:\.console)?)(?:\.exe)?\b)",
+            RegexOptions.CultureInvariant);
     }
 
     private static List<string> ExtractWorkflowRunScripts(string workflow)
@@ -201,27 +216,39 @@ public sealed class TestRunnerPolicyArchitectureTests
         return scripts;
     }
 
-    private static bool ContainsDirectDotnetTestInvocation(string runScript, string projectPath)
+    private static ProcessResult RunDotnet(params string[] arguments)
     {
-        var normalized = runScript
-            .Replace("\\\n", " ", StringComparison.Ordinal)
-            .Replace("`\n", " ", StringComparison.Ordinal)
-            .Replace('\\', '/');
-        var commands = Regex.Matches(
-            normalized,
-            @"(?im)(?:^|[;&|]\s*)dotnet\s+test\b(?<arguments>[^\r\n;&|]*)",
-            RegexOptions.CultureInvariant);
-
-        return commands.Any(command =>
+        using var process = new Process
         {
-            var arguments = command.Groups["arguments"].Value;
-            return arguments.Contains(projectPath, StringComparison.OrdinalIgnoreCase) ||
-                   arguments.Contains('$', StringComparison.Ordinal) ||
-                   Regex.IsMatch(
-                       arguments,
-                       @"%[A-Za-z_][A-Za-z0-9_]*%",
-                       RegexOptions.CultureInvariant);
-        });
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        foreach (var argument in arguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        process.Start();
+        var standardOutput = process.StandardOutput.ReadToEndAsync();
+        var standardError = process.StandardError.ReadToEndAsync();
+        process.WaitForExit();
+        return new ProcessResult(
+            process.ExitCode,
+            standardOutput.GetAwaiter().GetResult() + standardError.GetAwaiter().GetResult());
+    }
+
+    private static string Read(string relativePath)
+    {
+        return File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            relativePath.Replace('/', Path.DirectorySeparatorChar)));
     }
 
     private static string FindRepositoryRoot()
@@ -235,4 +262,6 @@ public sealed class TestRunnerPolicyArchitectureTests
         return directory?.FullName
                ?? throw new DirectoryNotFoundException("Could not locate the DownKyi repository root.");
     }
+
+    private sealed record ProcessResult(int ExitCode, string Output);
 }

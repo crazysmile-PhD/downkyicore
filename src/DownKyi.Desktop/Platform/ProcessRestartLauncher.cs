@@ -13,7 +13,14 @@ namespace DownKyi.Platform;
 
 internal interface IProcessRestartLauncher
 {
-    bool TryStartHelper(int parentProcessId);
+    IProcessRestartTransaction? TryPrepareHelper(int parentProcessId);
+}
+
+internal interface IProcessRestartTransaction
+{
+    Task CommitAsync();
+
+    Task RevokeAsync();
 }
 
 internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> logger) : IProcessRestartLauncher
@@ -23,25 +30,25 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
     private readonly ILogger<ProcessRestartLauncher> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
-    public bool TryStartHelper(int parentProcessId)
+    public IProcessRestartTransaction? TryPrepareHelper(int parentProcessId)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(parentProcessId);
         try
         {
-            using var process = Process.Start(CreateStartInfo(parentProcessId));
+            var process = Process.Start(CreateStartInfo(parentProcessId));
             if (process != null)
             {
-                return true;
+                return new ProcessRestartTransaction(process);
             }
 
             _logger.LogWarningMessage("The restart helper could not be started.");
-            return false;
+            return null;
         }
         catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception
             or PlatformNotSupportedException)
         {
             _logger.LogErrorMessage("The restart helper could not be started.", e);
-            return false;
+            return null;
         }
     }
 
@@ -131,5 +138,46 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         }
 
         return startInfo;
+    }
+
+    private sealed class ProcessRestartTransaction(Process process) : IProcessRestartTransaction
+    {
+        private readonly Process _process = process;
+        private int _completionState;
+
+        public Task CommitAsync()
+        {
+            EnsureOwnsHelper();
+            _completionState = 1;
+            _process.Dispose();
+            return Task.CompletedTask;
+        }
+
+        public async Task RevokeAsync()
+        {
+            EnsureOwnsHelper();
+            _completionState = 2;
+            try
+            {
+                if (!_process.HasExited)
+                {
+                    _process.Kill(entireProcessTree: true);
+                    await _process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _process.Dispose();
+            }
+        }
+
+        private void EnsureOwnsHelper()
+        {
+            if (_completionState != 0)
+            {
+                throw new InvalidOperationException(
+                    "The restart helper transaction has already completed.");
+            }
+        }
     }
 }

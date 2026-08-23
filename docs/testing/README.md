@@ -26,6 +26,20 @@ Job Object 與 startup secret handle 行為移至 `DownKyi.Windows.Tests`。
 TLS runtime、certificate storage、path comparison 與 Unix file-mode assertions
 仍是刻意跨平台執行的 platform-adaptive coverage，不是整個 test 的 OS skip。
 
+正式 workflow 不直接啟動 `dotnet test`、VSTest 或 xUnit；所有 repository
+test execution 由 `script/test-project-runner.ps1` 統一處理 project ownership、
+platform routing 與 runner selection。MSBuild test target 另提供 fail-closed
+protocol guard，但該 property 不是 authorization credential，不能取代 workflow
+execution boundary。需要證明實際 selection 的 security gate 必須使用共享 TRX
+validator，透過 test definition/result 關係確認預期 class 確實有通過的 execution
+result。
+
+`DKYI1001` compiler analyzer 以 compilation-resolved method symbol 禁止非 process
+owner 呼叫 `SqliteConnection.ClearAllPools`。它分析並回報 generated code，且必須在
+repository 支援的 Debug 與 Release compilation 都執行；語法、alias、global using
+與 preprocessor 形式不構成例外。唯一 process-level allowlist owner 是
+`DownKyi.SystemBenchmarks`。
+
 重要文件：
 
 - `module-boundary-ratchets.md`

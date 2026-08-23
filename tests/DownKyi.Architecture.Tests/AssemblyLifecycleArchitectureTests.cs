@@ -1,8 +1,5 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -37,7 +34,6 @@ public sealed class AssemblyLifecycleArchitectureTests
         var source = Read("tests/DownKyi.Desktop.Tests/UiSmokeTests.cs");
         var normalizedSource = source.Replace("\r\n", "\n", StringComparison.Ordinal);
 
-        Assert.False(ContainsGlobalSqlitePoolCleanup(source));
         Assert.Equal(
             3,
             Regex.Count(
@@ -58,81 +54,6 @@ public sealed class AssemblyLifecycleArchitectureTests
             "SqliteConnection.ClearPool(connection)",
             source,
             StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void GlobalSqlitePoolCleanupRequiresExplicitProcessOwnership()
-    {
-        string[] allowedProcessOwners =
-        [
-            "benchmarks/DownKyi.SystemBenchmarks/Program.cs"
-        ];
-        var sourceFiles = Directory
-            .EnumerateFiles(RepositoryRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(path => !IsGeneratedPath(path))
-            .Select(path => new
-            {
-                Path = path,
-                Root = CSharpSyntaxTree
-                    .ParseText(File.ReadAllText(path))
-                    .GetCompilationUnitRoot()
-            })
-            .ToArray();
-        var globalImports = CreateGlobalSqliteConnectionImports(
-            sourceFiles.Select(sourceFile => sourceFile.Root));
-        var actualOwners = sourceFiles
-            .Where(sourceFile => ContainsGlobalSqlitePoolCleanup(
-                sourceFile.Root,
-                globalImports))
-            .Select(sourceFile => Path.GetRelativePath(RepositoryRoot, sourceFile.Path)
-                .Replace('\\', '/'))
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Equal(allowedProcessOwners, actualOwners);
-    }
-
-    [Theory]
-    [InlineData("using Microsoft.Data.Sqlite; class C { void M() { SqliteConnection.ClearAllPools (); } }")]
-    [InlineData("using static Microsoft.Data.Sqlite.SqliteConnection; class C { void M() { ClearAllPools(); } }")]
-    [InlineData("using Connection = Microsoft.Data.Sqlite.SqliteConnection; class C { void M() { Connection.ClearAllPools(); } }")]
-    public void GlobalSqlitePoolCleanupDetectorRejectsEquivalentCSharpForms(string source)
-    {
-        Assert.True(ContainsGlobalSqlitePoolCleanup(source));
-    }
-
-    [Fact]
-    public void GlobalSqlitePoolCleanupDetectorResolvesGlobalStaticImportsAcrossFiles()
-    {
-        CompilationUnitSyntax[] roots =
-        [
-            CSharpSyntaxTree.ParseText(
-                "global using static Microsoft.Data.Sqlite.SqliteConnection;",
-                cancellationToken: TestContext.Current.CancellationToken)
-                .GetCompilationUnitRoot(TestContext.Current.CancellationToken),
-            CSharpSyntaxTree.ParseText(
-                "class C { void M() { ClearAllPools(); } }",
-                cancellationToken: TestContext.Current.CancellationToken)
-                .GetCompilationUnitRoot(TestContext.Current.CancellationToken)
-        ];
-        var globalImports = CreateGlobalSqliteConnectionImports(roots);
-
-        Assert.True(ContainsGlobalSqlitePoolCleanup(roots[1], globalImports));
-    }
-
-    [Fact]
-    public void GlobalSqlitePoolCleanupDetectorIgnoresTextAndScopedCleanup()
-    {
-        const string source = """
-            using Microsoft.Data.Sqlite;
-            class C
-            {
-                const string Text = "SqliteConnection.ClearAllPools()";
-                void M(SqliteConnection connection) => SqliteConnection.ClearPool(connection);
-            }
-            """;
-
-        Assert.False(ContainsGlobalSqlitePoolCleanup(source));
     }
 
     [Fact]
@@ -497,115 +418,6 @@ public sealed class AssemblyLifecycleArchitectureTests
         return File.ReadAllText(Path.Combine(
             RepositoryRoot,
             relativePath.Replace('/', Path.DirectorySeparatorChar)));
-    }
-
-    private static bool ContainsGlobalSqlitePoolCleanup(string source)
-    {
-        var root = CSharpSyntaxTree.ParseText(source).GetCompilationUnitRoot();
-        var globalImports = CreateGlobalSqliteConnectionImports([root]);
-        return ContainsGlobalSqlitePoolCleanup(root, globalImports);
-    }
-
-    private static bool ContainsGlobalSqlitePoolCleanup(
-        CompilationUnitSyntax root,
-        SqliteConnectionImportContext globalImports)
-    {
-        var imports = globalImports.Clone();
-
-        foreach (var usingDirective in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
-        {
-            ApplySqliteConnectionImport(usingDirective, imports);
-        }
-
-        return root.DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .Any(invocation => invocation.Expression switch
-            {
-                IdentifierNameSyntax identifier =>
-                    imports.ImportsStatically &&
-                    identifier.Identifier.ValueText == "ClearAllPools",
-                MemberAccessExpressionSyntax memberAccess =>
-                    memberAccess.Name.Identifier.ValueText == "ClearAllPools" &&
-                    imports.ConnectionIdentifiers.Contains(
-                        GetRightmostIdentifier(memberAccess.Expression) ?? string.Empty),
-                _ => false
-            });
-    }
-
-    private static SqliteConnectionImportContext CreateGlobalSqliteConnectionImports(
-        IEnumerable<CompilationUnitSyntax> roots)
-    {
-        var imports = new SqliteConnectionImportContext();
-        foreach (var usingDirective in roots
-                     .SelectMany(root => root.DescendantNodes().OfType<UsingDirectiveSyntax>())
-                     .Where(usingDirective =>
-                         usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword)))
-        {
-            ApplySqliteConnectionImport(usingDirective, imports);
-        }
-
-        return imports;
-    }
-
-    private static void ApplySqliteConnectionImport(
-        UsingDirectiveSyntax usingDirective,
-        SqliteConnectionImportContext imports)
-    {
-        if (!string.Equals(
-                GetRightmostIdentifier(usingDirective.Name),
-                "SqliteConnection",
-                StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        if (usingDirective.Alias != null)
-        {
-            imports.ConnectionIdentifiers.Add(usingDirective.Alias.Name.Identifier.ValueText);
-        }
-
-        imports.ImportsStatically |=
-            usingDirective.StaticKeyword.IsKind(SyntaxKind.StaticKeyword);
-    }
-
-    private static string? GetRightmostIdentifier(SyntaxNode? syntax)
-    {
-        return syntax switch
-        {
-            IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
-            QualifiedNameSyntax qualified => qualified.Right.Identifier.ValueText,
-            AliasQualifiedNameSyntax aliasQualified => aliasQualified.Name.Identifier.ValueText,
-            MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.ValueText,
-            _ => null
-        };
-    }
-
-    private sealed class SqliteConnectionImportContext
-    {
-        public bool ImportsStatically { get; set; }
-
-        public HashSet<string> ConnectionIdentifiers { get; } = new(StringComparer.Ordinal)
-        {
-            "SqliteConnection"
-        };
-
-        public SqliteConnectionImportContext Clone()
-        {
-            var clone = new SqliteConnectionImportContext
-            {
-                ImportsStatically = ImportsStatically
-            };
-            clone.ConnectionIdentifiers.UnionWith(ConnectionIdentifiers);
-            return clone;
-        }
-    }
-
-    private static bool IsGeneratedPath(string path)
-    {
-        var relativePath = Path.GetRelativePath(RepositoryRoot, path);
-        return relativePath
-            .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            .Any(segment => segment is "bin" or "obj" or ".git");
     }
 
     private static string FindRepositoryRoot()

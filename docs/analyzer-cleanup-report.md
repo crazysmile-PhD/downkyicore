@@ -128,7 +128,7 @@ dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental `
   -p:EnableNETAnalyzers=true `
   -p:AnalysisMode=All `
   -p:EnforceCodeStyleInBuild=true
-dotnet test ./DownKyi.sln -c Release --no-restore --no-build
+pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 dotnet format ./DownKyi.sln --verify-no-changes --no-restore
 git diff --check
 ```

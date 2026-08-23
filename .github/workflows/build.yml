@@ -409,7 +409,16 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Run macOS packaging regressions
-        run: dotnet test tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj -c Release
+        shell: pwsh
+        run: |
+          . ./script/test-project-runner.ps1
+          $result = Invoke-DownKyiTestProject `
+            -RepositoryRoot (Get-Location).Path `
+            -ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj `
+            -Configuration Release
+          if ($result.ExitCode -ne 0) {
+            throw "macOS packaging regressions failed."
+          }
       - name: Install Python for FFmpeg manifest verification
         uses: actions/setup-python@v6
         with:
