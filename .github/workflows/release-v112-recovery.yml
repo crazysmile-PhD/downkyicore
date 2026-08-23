@@ -38,8 +38,10 @@ jobs:
   authority:
     name: Validate recovery authority
     runs-on: ubuntu-latest
+    outputs:
+      macos_trust_mode: ${{ steps.macos_trust.outputs.macos_trust_mode }}
+      has_macos_signing: ${{ steps.macos_trust.outputs.has_macos_signing }}
     env:
-      HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout recovery tooling
@@ -61,6 +63,18 @@ jobs:
           -SubjectDirectory ./subject
           -ReleaseVersion '${{ inputs.release_version }}'
           -SubjectSha '${{ inputs.subject_sha }}'
+      - name: Resolve macOS release trust mode
+        id: macos_trust
+        shell: pwsh
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
+        run: >
+          ./tooling/script/resolve-v112-macos-trust.ps1
+          -GitHubOutputPath $env:GITHUB_OUTPUT
       - name: Validate prior Build gate
         shell: bash
         run: |
@@ -82,6 +96,10 @@ jobs:
           fi
           critical_paths=(
             .github/workflows/build.yml
+            .github/workflows/release-v112-recovery.yml
+            docs/operations/v1.1.2-release-notes.md
+            script/resolve-v112-macos-trust.ps1
+            script/render-v112-recovery-release-notes.ps1
             script/macos/codesign-common.sh
             script/macos/prepare-app-layout.sh
             script/macos/sign.sh
@@ -100,14 +118,6 @@ jobs:
               exit 1
             fi
           done
-      - name: Require Apple credentials for formal publish
-        if: ${{ inputs.publish_release }}
-        shell: bash
-        run: |
-          if [ "$HAS_MACOS_SIGNING" != "true" ]; then
-            echo "::error::Formal v1.1.2 recovery requires all Apple signing and notarization credentials."
-            exit 1
-          fi
       - name: Validate recovery workflow syntax
         uses: raven-actions/actionlint@v2
         with:
@@ -263,9 +273,8 @@ jobs:
       - name: Get exact-subject dependencies
         working-directory: subject/script
         run: |
-          chmod +x ffmpeg.sh aria2.sh
-          ./ffmpeg.sh linux ${{ matrix.cpu }}
-          ./aria2.sh linux-${{ matrix.cpu }}
+          /bin/bash ./ffmpeg.sh linux ${{ matrix.cpu }}
+          /bin/bash ./aria2.sh linux-${{ matrix.cpu }}
       - name: Build validation publish from exact subject
         run: >
           dotnet publish ./subject/DownKyi/DownKyi.csproj
@@ -324,7 +333,7 @@ jobs:
     needs: authority
     runs-on: ${{ matrix.os }}
     env:
-      HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
+      HAS_MACOS_SIGNING: ${{ needs.authority.outputs.has_macos_signing }}
     strategy:
       fail-fast: false
       matrix:
@@ -385,9 +394,8 @@ jobs:
       - name: Get exact-subject dependencies
         working-directory: subject/script
         run: |
-          chmod +x aria2.sh ffmpeg.sh
-          ./aria2.sh osx-${{ matrix.cpu }}
-          ./ffmpeg.sh mac ${{ matrix.cpu }}
+          /bin/bash ./aria2.sh osx-${{ matrix.cpu }}
+          /bin/bash ./ffmpeg.sh mac ${{ matrix.cpu }}
       - name: Build exact release subject
         working-directory: subject
         run: |
@@ -533,13 +541,19 @@ jobs:
       - name: Revalidate release assets
         shell: pwsh
         run: ./tooling/script/validate-v112-release-artifacts.ps1 -ArtifactsDirectory ./artifacts
+      - name: Render release notes for selected trust mode
+        shell: pwsh
+        run: >
+          ./tooling/script/render-v112-recovery-release-notes.ps1
+          -TrustMode '${{ needs.authority.outputs.macos_trust_mode }}'
+          -OutputPath ./tooling/artifacts/v1.1.2-release-notes.md
       - name: Publish to existing v1.1.2 tag
         uses: ncipollo/release-action@v1
         with:
           tag: v1.1.2
           commit: 16c690d8719f86eb6eecb56c24efabc1afc41d55
           name: v1.1.2
-          body: 'Recovered v1.1.2 release. Product source: 16c690d8719f86eb6eecb56c24efabc1afc41d55.'
+          bodyFile: tooling/artifacts/v1.1.2-release-notes.md
           artifacts: artifacts/*
           artifactErrorsFailBuild: true
           allowUpdates: true
@@ -566,10 +580,10 @@ jobs:
             echo "::error::Published release has $asset_count assets; expected 27."
             exit 1
           fi
-          jq -e '.assets[] | select((.browser_download_url | length) == 0)' <<<"$release_json" >/dev/null && {
+          if jq -e '.assets[] | select((.browser_download_url | length) == 0)' <<<"$release_json" >/dev/null; then
             echo "::error::A published asset has no download URL."
             exit 1
-          } || true
+          fi
           pwsh ./tooling/script/validate-v112-recovery-subject.ps1 \
             -SubjectDirectory ./subject \
             -ReleaseVersion v1.1.2 \
