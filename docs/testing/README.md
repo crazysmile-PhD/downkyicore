@@ -28,9 +28,12 @@ TLS runtime、certificate storage、path comparison 與 Unix file-mode assertion
 
 正式 workflow 不直接啟動 `dotnet test`、VSTest 或 xUnit；所有 repository
 test execution 由 `script/test-project-runner.ps1` 統一處理 project ownership、
-platform routing 與 runner selection。MSBuild test target 另提供 fail-closed
-protocol guard，但該 property 不是 authorization credential，不能取代 workflow
-execution boundary。需要證明實際 selection 的 security gate 必須使用共享 TRX
+platform routing 與 runner selection。這是 authoritative execution boundary；
+workflow 只委派 project 與 selection intent，不能自行選 test host。中央 runner
+對所有 test project 使用 in-process xUnit execution。MSBuild test target 無條件
+拒絕 VSTest，僅作為 defense-in-depth fail-closed guard，不是可由呼叫者提供
+property 的 authorization credential。
+需要證明實際 selection 的 security gate 必須使用共享 TRX
 validator，透過 test definition/result 關係確認預期 class 確實有通過的 execution
 result。
 

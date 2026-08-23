@@ -2,6 +2,27 @@
   "schemaVersion": 1,
   "projects": [
     {
+      "project": "tests/DownKyi.Application.Tests/DownKyi.Application.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Repository tests execute only through the central runner so project ownership, platform routing, and runner selection remain authoritative."
+    },
+    {
+      "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Repository tests execute only through the central runner so project ownership, platform routing, and runner selection remain authoritative."
+    },
+    {
+      "project": "tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Repository tests execute only through the central runner so project ownership, platform routing, and runner selection remain authoritative."
+    },
+    {
       "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj",
       "runner": "xunit-in-process",
       "targetFramework": "net10.0",
@@ -9,11 +30,39 @@
       "reason": "Avoid xunit/xunit#3576 in the VSTest adapter while the independent assembly lifecycle gate continues to verify assembly-info and process exit."
     },
     {
+      "project": "tests/DownKyi.Domain.Tests/DownKyi.Domain.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Repository tests execute only through the central runner so project ownership, platform routing, and runner selection remain authoritative."
+    },
+    {
+      "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Repository tests execute only through the central runner so project ownership, platform routing, and runner selection remain authoritative."
+    },
+    {
+      "project": "tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Repository tests execute only through the central runner so project ownership, platform routing, and runner selection remain authoritative."
+    },
+    {
       "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj",
       "runner": "xunit-in-process",
       "targetFramework": "net10.0",
       "parallel": "none",
       "reason": "Avoid xunit/xunit#3576 VSTest assembly-info stdout protocol corruption; assembly lifecycle behavior remains separately verified by the fail-closed lifecycle gate, so this routing does not suppress lifecycle failures."
+    },
+    {
+      "project": "tests/DownKyi.Windows.Tests/DownKyi.Windows.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Repository tests execute only through the central runner so project ownership, platform routing, and runner selection remain authoritative."
     }
   ]
 }

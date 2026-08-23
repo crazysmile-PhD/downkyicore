@@ -132,7 +132,7 @@ flowchart TD
 ```powershell
 dotnet restore
 dotnet build .\DownKyi.sln -c Release --no-restore --no-incremental
-dotnet test .\DownKyi.sln -c Release --no-restore --no-build
+pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 ```
 
 本机运行：

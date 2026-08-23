@@ -12,6 +12,8 @@ public sealed class TestExecutionValidatorBehaviorTests
     [InlineData("missing-counters")]
     [InlineData("zero-executed")]
     [InlineData("malformed-counters")]
+    [InlineData("contradictory-passed-counter")]
+    [InlineData("contradictory-total-counter")]
     [InlineData("malformed-report")]
     [InlineData("multiple-reports")]
     [InlineData("other-class-only")]
@@ -101,10 +103,34 @@ public sealed class TestExecutionValidatorBehaviorTests
             "malformed-report" => "<TestRun>",
             "multiple-reports" => CreateTrx(ExpectedClass, true, "1", "Passed"),
             "missing-counters" => CreateTrx(ExpectedClass, includeCounters: false, "1", "Passed"),
-            "zero-executed" => CreateTrx(ExpectedClass, includeCounters: true, "0", "NotExecuted"),
+            "zero-executed" => CreateTrx(
+                ExpectedClass,
+                includeCounters: true,
+                executed: "0",
+                outcome: "NotExecuted",
+                total: "1",
+                passed: "0"),
             "malformed-counters" => CreateTrx(ExpectedClass, true, "invalid", "Passed"),
+            "contradictory-passed-counter" => CreateTrx(
+                ExpectedClass,
+                true,
+                "1",
+                "Passed",
+                passed: "0"),
+            "contradictory-total-counter" => CreateTrx(
+                ExpectedClass,
+                true,
+                "1",
+                "Passed",
+                total: "2"),
             "other-class-only" => CreateTrx("DownKyi.Tests.UnrelatedTests", true, "1", "Passed"),
-            "expected-class-not-executed" => CreateTrx(ExpectedClass, true, "1", "NotExecuted"),
+            "expected-class-not-executed" => CreateTrx(
+                ExpectedClass,
+                true,
+                "0",
+                "NotExecuted",
+                total: "1",
+                passed: "0"),
             "runner-failure" => CreateTrx(ExpectedClass, true, "1", "Passed"),
             "valid" => CreateTrx(ExpectedClass, true, "1", "Passed"),
             _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null)
@@ -115,10 +141,14 @@ public sealed class TestExecutionValidatorBehaviorTests
         string className,
         bool includeCounters,
         string executed,
-        string outcome)
+        string outcome,
+        string? total = null,
+        string? passed = null)
     {
+        total ??= executed;
+        passed ??= executed;
         var counters = includeCounters
-            ? $"<Counters total=\"{executed}\" executed=\"{executed}\" passed=\"{executed}\" failed=\"0\" />"
+            ? $"<Counters total=\"{total}\" executed=\"{executed}\" passed=\"{passed}\" failed=\"0\" />"
             : string.Empty;
         return $$"""
             <?xml version="1.0" encoding="utf-8"?>

@@ -131,11 +131,15 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
                     CaptureOperation(helper.RevokeAsync))
                 .ConfigureAwait(false);
         }
+        var helperDisposalFailure = await ObserveFailureAsync(
+                CaptureOperation(() => helper.DisposeAsync().AsTask()))
+            .ConfigureAwait(false);
 
         ThrowFailures(
             outcome.CleanupFailure,
             outcome.DesktopHandoffFailure,
-            helperCompletionFailure);
+            helperCompletionFailure,
+            helperDisposalFailure);
         return true;
     }
 

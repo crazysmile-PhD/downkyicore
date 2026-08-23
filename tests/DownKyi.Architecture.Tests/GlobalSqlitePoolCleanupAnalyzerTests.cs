@@ -31,6 +31,10 @@ public sealed class GlobalSqlitePoolCleanupAnalyzerTests
             "DownKyi.ArchitectureAnalyzers.csproj",
             props,
             StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "'$(MSBuildProjectName)' != 'DownKyi.Architecture.Tests'",
+            props,
+            StringComparison.Ordinal);
         Assert.Contains("-c Release", workflow, StringComparison.Ordinal);
         Assert.Contains("-c Debug", workflow, StringComparison.Ordinal);
     }

@@ -522,6 +522,11 @@ public sealed class AvaloniaApplicationLifecycleTests
                     ? Task.CompletedTask
                     : Task.FromException(owner._revokeFailure);
             }
+
+            public ValueTask DisposeAsync()
+            {
+                return ValueTask.CompletedTask;
+            }
         }
     }
 

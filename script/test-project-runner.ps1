@@ -138,7 +138,7 @@ function Get-DownKyiTestRunnerPolicy {
     }
 
     if ($matches.Count -eq 0) {
-        return $null
+        throw "Test runner policy has no entry for $relativeProject."
     }
 
     $entry = $matches[0]
@@ -245,11 +245,22 @@ function Assert-DownKyiExpectedTestExecution {
 
     foreach ($result in $results) {
         $testId = $result.GetAttribute("testId")
+        $outcome = $result.GetAttribute("outcome")
         if ([string]::IsNullOrWhiteSpace($testId) -or
             -not $definitionsById.ContainsKey($testId) -or
-            [string]::IsNullOrWhiteSpace($result.GetAttribute("outcome"))) {
+            -not @("Passed", "Failed", "NotExecuted").Contains($outcome)) {
             throw "The expected test report contains an invalid execution result."
         }
+    }
+
+    $passedResults = @($results | Where-Object { $_.GetAttribute("outcome") -eq "Passed" })
+    $failedResults = @($results | Where-Object { $_.GetAttribute("outcome") -eq "Failed" })
+    $executedResults = @($results | Where-Object { $_.GetAttribute("outcome") -ne "NotExecuted" })
+    if ($results.Count -ne [int]$counterValues.total -or
+        $executedResults.Count -ne $executed -or
+        $passedResults.Count -ne [int]$counterValues.passed -or
+        $failedResults.Count -ne [int]$counterValues.failed) {
+        throw "The expected test report counters do not match its execution results."
     }
 
     $executedExpectedTests = @($results | Where-Object {
@@ -310,55 +321,6 @@ function Invoke-DownKyiTestProject {
     $runnerPolicy = Get-DownKyiTestRunnerPolicy `
         -RepositoryRoot $RepositoryRoot `
         -ProjectPath $project.FullName
-
-    if ($null -eq $runnerPolicy) {
-        $arguments = @(
-            "test",
-            $project.FullName,
-            "-c",
-            $Configuration,
-            "-p:DownKyiCentralTestRunner=true"
-        )
-        if ($NoRestore) {
-            $arguments += "--no-restore"
-        }
-        if ($NoBuild) {
-            $arguments += "--no-build"
-        }
-
-        $effectiveFilter = $Filter
-        if ([string]::IsNullOrWhiteSpace($effectiveFilter) -and $ClassNames.Count -gt 0) {
-            $effectiveFilter = ($ClassNames | Sort-Object -Unique | ForEach-Object {
-                    "FullyQualifiedName~$_"
-                }) -join "|"
-        }
-        if (-not [string]::IsNullOrWhiteSpace($effectiveFilter)) {
-            $arguments += @("--filter", $effectiveFilter)
-        }
-
-        $trxPath = $null
-        if (-not [string]::IsNullOrWhiteSpace($ResultsDirectory)) {
-            New-Item -ItemType Directory -Force -Path $ResultsDirectory | Out-Null
-            $resolvedTrxName = if ([string]::IsNullOrWhiteSpace($TrxName)) {
-                "$($project.BaseName).trx"
-            }
-            else {
-                $TrxName
-            }
-            $trxPath = Join-Path $ResultsDirectory $resolvedTrxName
-            $arguments += @(
-                "--logger", "trx;LogFileName=$resolvedTrxName",
-                "--results-directory", $ResultsDirectory
-            )
-        }
-
-        & dotnet @arguments | Out-Host
-        return [pscustomobject]@{
-            ExitCode = $LASTEXITCODE
-            Runner = "vstest-adapter"
-            TrxPath = $trxPath
-        }
-    }
 
     if (-not [string]::IsNullOrWhiteSpace($Filter)) {
         throw "The xUnit in-process runner requires class locators instead of a VSTest filter: $($project.FullName)"

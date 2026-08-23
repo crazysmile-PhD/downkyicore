@@ -19,7 +19,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\tools\DownKyi.ArchitectureAnalyzers\DownKyi.ArchitectureAnalyzers.csproj" />
+    <ProjectReference
+      Update="..\..\tools\DownKyi.ArchitectureAnalyzers\DownKyi.ArchitectureAnalyzers.csproj"
+      ReferenceOutputAssembly="true" />
   </ItemGroup>
 
   <ItemGroup>

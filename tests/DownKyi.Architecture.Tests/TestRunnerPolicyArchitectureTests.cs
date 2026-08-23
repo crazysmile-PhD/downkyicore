@@ -9,22 +9,36 @@ public sealed class TestRunnerPolicyArchitectureTests
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
-    public void DownKyiTestsUsesTheInProcessRunnerForVstestProtocolSafety()
+    public void EveryRepositoryTestProjectUsesTheCentralInProcessRunner()
     {
         using var policy = JsonDocument.Parse(Read("docs/testing/test-runner-policy.json"));
-        var project = policy.RootElement
+        var policyProjects = policy.RootElement
             .GetProperty("projects")
             .EnumerateArray()
-            .Single(entry => string.Equals(
-                entry.GetProperty("project").GetString(),
-                "tests/DownKyi.Tests/DownKyi.Tests.csproj",
-                StringComparison.Ordinal));
+            .ToDictionary(
+                entry => entry.GetProperty("project").GetString()!,
+                entry => entry,
+                StringComparer.Ordinal);
+        var testProjects = Directory.EnumerateFiles(
+                Path.Combine(RepositoryRoot, "tests"),
+                "*.Tests.csproj",
+                SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 
-        Assert.Equal("xunit-in-process", project.GetProperty("runner").GetString());
-        Assert.Equal("net10.0", project.GetProperty("targetFramework").GetString());
-        Assert.Equal("none", project.GetProperty("parallel").GetString());
+        Assert.Equal(testProjects, policyProjects.Keys.Order(StringComparer.Ordinal));
+        foreach (var project in policyProjects.Values)
+        {
+            Assert.Equal("xunit-in-process", project.GetProperty("runner").GetString());
+            Assert.Equal("net10.0", project.GetProperty("targetFramework").GetString());
+            Assert.Equal("none", project.GetProperty("parallel").GetString());
+            Assert.False(string.IsNullOrWhiteSpace(project.GetProperty("reason").GetString()));
+        }
 
-        var reason = project.GetProperty("reason").GetString();
+        var reason = policyProjects["tests/DownKyi.Tests/DownKyi.Tests.csproj"]
+            .GetProperty("reason")
+            .GetString();
         Assert.Contains("xunit/xunit#3576", reason, StringComparison.Ordinal);
         Assert.Contains("assembly-info stdout protocol corruption", reason, StringComparison.Ordinal);
         Assert.Contains("lifecycle", reason, StringComparison.OrdinalIgnoreCase);
@@ -65,6 +79,8 @@ public sealed class TestRunnerPolicyArchitectureTests
     [InlineData("dotnet vstest $unknownAssembly")]
     [InlineData("dotnet ./tools/xunit.v3.runner.console.dll $unknownAssembly")]
     [InlineData("vstest.console.exe $unknownAssembly")]
+    [InlineData("exec dotnet test $unknownTarget -p:DownKyiCentralTestRunner=true")]
+    [InlineData("sudo dotnet vstest $unknownAssembly")]
     public void WorkflowTestCapabilityIsRejectedWithoutInferringItsTarget(string runScript)
     {
         Assert.True(ContainsDirectTestEntrypoint(runScript));
@@ -82,7 +98,7 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
-    public void MsBuildProtocolGuardFailsClosedWithoutSharedRunnerProtocol()
+    public void MsBuildProtocolGuardCannotBeAuthorizedByCallerProperties()
     {
         var project = Path.Combine(
             RepositoryRoot,
@@ -95,7 +111,7 @@ public sealed class TestRunnerPolicyArchitectureTests
             project,
             "-t:EnforceDownKyiCentralTestRunner",
             "-p:IsTestProject=true");
-        var authorized = RunDotnet(
+        var forgedAuthorization = RunDotnet(
             "msbuild",
             project,
             "-t:EnforceDownKyiCentralTestRunner",
@@ -104,10 +120,14 @@ public sealed class TestRunnerPolicyArchitectureTests
 
         Assert.NotEqual(0, rejected.ExitCode);
         Assert.Contains(
-            "Repository test projects must be executed through script/test-project-runner.ps1.",
+            "VSTest execution is disabled for repository test projects",
             rejected.Output,
             StringComparison.Ordinal);
-        Assert.Equal(0, authorized.ExitCode);
+        Assert.NotEqual(0, forgedAuthorization.ExitCode);
+        Assert.Contains(
+            "VSTest execution is disabled for repository test projects",
+            forgedAuthorization.Output,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -161,7 +181,7 @@ public sealed class TestRunnerPolicyArchitectureTests
     {
         return Regex.IsMatch(
             runScript,
-            @"(?im)(?:^|[;&|]\s*)(?:dotnet\s+(?:test|vstest)\b|dotnet\s+[^\r\n;&|]*xunit[^\r\n;&|]*\.dll\b|(?:vstest\.console|xunit(?:\.console)?)(?:\.exe)?\b)",
+            @"(?im)\bdotnet\s+(?:test|vstest)\b|\bdotnet\s+[^\r\n]*xunit[^\r\n]*\.dll\b|\b(?:vstest\.console|xunit\.console)(?:\.exe)?\b",
             RegexOptions.CultureInvariant);
     }
 
