@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
@@ -23,6 +24,7 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
     private readonly IApplicationLogService _logService;
     private readonly ILogger<AvaloniaApplicationLifecycle> _logger;
     private readonly TimeSpan _cleanupTimeout;
+    private readonly Func<Task> _desktopShutdown;
     private IHost? _host;
     private Task? _hostStartupTask;
     private Task? _shutdownTask;
@@ -49,7 +51,8 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         ISettingsStore settingsStore,
         IApplicationLogService logService,
         ILogger<AvaloniaApplicationLifecycle> logger,
-        TimeSpan cleanupTimeout)
+        TimeSpan cleanupTimeout,
+        Func<Task>? desktopShutdown = null)
     {
         _desktopContext = desktopContext ?? throw new ArgumentNullException(nameof(desktopContext));
         _restartLauncher = restartLauncher ?? throw new ArgumentNullException(nameof(restartLauncher));
@@ -58,6 +61,7 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         ArgumentOutOfRangeException.ThrowIfLessThan(cleanupTimeout, TimeSpan.Zero);
         _cleanupTimeout = cleanupTimeout;
+        _desktopShutdown = desktopShutdown ?? _desktopContext.ShutdownAsync;
     }
 
     public CancellationToken ShutdownToken => GetHost()
@@ -98,8 +102,32 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
 
     public async Task ExitAsync(CancellationToken cancellationToken = default)
     {
-        await RequestShutdownAsync(cancellationToken).ConfigureAwait(false);
-        await _desktopContext.ShutdownAsync().ConfigureAwait(false);
+        TimeoutException? cleanupTimeoutException = null;
+        try
+        {
+            await RequestShutdownAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException e)
+        {
+            cleanupTimeoutException = e;
+        }
+
+        try
+        {
+            await _desktopShutdown().ConfigureAwait(false);
+        }
+        catch (Exception desktopShutdownException) when (cleanupTimeoutException != null)
+        {
+            throw new AggregateException(
+                "Application cleanup and desktop shutdown both failed.",
+                cleanupTimeoutException,
+                desktopShutdownException);
+        }
+
+        if (cleanupTimeoutException != null)
+        {
+            ExceptionDispatchInfo.Capture(cleanupTimeoutException).Throw();
+        }
     }
 
     public async Task<bool> RestartAsync(CancellationToken cancellationToken = default)

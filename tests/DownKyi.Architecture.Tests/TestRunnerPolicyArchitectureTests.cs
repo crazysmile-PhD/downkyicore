@@ -55,6 +55,12 @@ public sealed class TestRunnerPolicyArchitectureTests
             "-ClassNames DownKyi.Tests.Aria2TlsIntegrationTests",
             step,
             StringComparison.Ordinal);
+        Assert.Contains("-ResultsDirectory", step, StringComparison.Ordinal);
+        Assert.Contains("-TrxName", step, StringComparison.Ordinal);
+        Assert.Contains("Test-Path -LiteralPath $result.TrxPath", step, StringComparison.Ordinal);
+        Assert.Contains("SelectSingleNode", step, StringComparison.Ordinal);
+        Assert.Contains("GetAttribute(\"executed\")", step, StringComparison.Ordinal);
+        Assert.Contains("$executed -lt 1", step, StringComparison.Ordinal);
         Assert.DoesNotContain("--filter Category=Aria2TlsIntegration", step, StringComparison.Ordinal);
     }
 
@@ -90,6 +96,8 @@ public sealed class TestRunnerPolicyArchitectureTests
     [InlineData("steps:\n  - run: >\n      dotnet test\n      --no-build\n      ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
     [InlineData("steps:\n  - run: |\n      dotnet test `\n        --no-build `\n        ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
     [InlineData("steps:\n  - run: |\n      dotnet test \\\n        --no-build \\\n        ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
+    [InlineData("steps:\n  - run: |\n      $project = './tests/DownKyi.Tests/DownKyi.Tests.csproj'\n      dotnet test $project")]
+    [InlineData("steps:\n  - run: |\n      project='./tests/DownKyi.Tests/DownKyi.Tests.csproj'\n      dotnet test \"$project\"")]
     public void DirectTestInvocationDetectorRejectsRepresentativeOptionOrderings(string workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -202,9 +210,15 @@ public sealed class TestRunnerPolicyArchitectureTests
             @"(?im)(?:^|[;&|]\s*)dotnet\s+test\b(?<arguments>[^\r\n;&|]*)",
             RegexOptions.CultureInvariant);
 
-        return commands.Any(command => command.Groups["arguments"].Value.Contains(
-            projectPath,
-            StringComparison.OrdinalIgnoreCase));
+        return commands.Any(command =>
+        {
+            var arguments = command.Groups["arguments"].Value;
+            return arguments.Contains(projectPath, StringComparison.OrdinalIgnoreCase) ||
+                   Regex.IsMatch(
+                       arguments,
+                       @"\$(?:env:)?(?:\{)?[A-Za-z_][A-Za-z0-9_]*(?:\})?",
+                       RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        });
     }
 
     private static string FindRepositoryRoot()

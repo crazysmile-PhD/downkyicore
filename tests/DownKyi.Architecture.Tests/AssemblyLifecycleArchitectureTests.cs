@@ -1,5 +1,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -33,12 +36,8 @@ public sealed class AssemblyLifecycleArchitectureTests
     {
         var source = Read("tests/DownKyi.Desktop.Tests/UiSmokeTests.cs");
         var normalizedSource = source.Replace("\r\n", "\n", StringComparison.Ordinal);
-        var globalCleanupCall = string.Concat("SqliteConnection.", "ClearAllPools()");
 
-        Assert.DoesNotContain(
-            globalCleanupCall,
-            source,
-            StringComparison.Ordinal);
+        Assert.False(ContainsGlobalSqlitePoolCleanup(source));
         Assert.Equal(
             3,
             Regex.Count(
@@ -64,7 +63,6 @@ public sealed class AssemblyLifecycleArchitectureTests
     [Fact]
     public void GlobalSqlitePoolCleanupRequiresExplicitProcessOwnership()
     {
-        var globalCleanupCall = string.Concat("SqliteConnection.", "ClearAllPools()");
         string[] allowedProcessOwners =
         [
             "benchmarks/DownKyi.SystemBenchmarks/Program.cs"
@@ -72,15 +70,37 @@ public sealed class AssemblyLifecycleArchitectureTests
         var actualOwners = Directory
             .EnumerateFiles(RepositoryRoot, "*.cs", SearchOption.AllDirectories)
             .Where(path => !IsGeneratedPath(path))
-            .Where(path => File.ReadAllText(path).Contains(
-                globalCleanupCall,
-                StringComparison.Ordinal))
+            .Where(path => ContainsGlobalSqlitePoolCleanup(File.ReadAllText(path)))
             .Select(path => Path.GetRelativePath(RepositoryRoot, path)
                 .Replace('\\', '/'))
             .Order(StringComparer.Ordinal)
             .ToArray();
 
         Assert.Equal(allowedProcessOwners, actualOwners);
+    }
+
+    [Theory]
+    [InlineData("using Microsoft.Data.Sqlite; class C { void M() { SqliteConnection.ClearAllPools (); } }")]
+    [InlineData("using static Microsoft.Data.Sqlite.SqliteConnection; class C { void M() { ClearAllPools(); } }")]
+    [InlineData("using Connection = Microsoft.Data.Sqlite.SqliteConnection; class C { void M() { Connection.ClearAllPools(); } }")]
+    public void GlobalSqlitePoolCleanupDetectorRejectsEquivalentCSharpForms(string source)
+    {
+        Assert.True(ContainsGlobalSqlitePoolCleanup(source));
+    }
+
+    [Fact]
+    public void GlobalSqlitePoolCleanupDetectorIgnoresTextAndScopedCleanup()
+    {
+        const string source = """
+            using Microsoft.Data.Sqlite;
+            class C
+            {
+                const string Text = "SqliteConnection.ClearAllPools()";
+                void M(SqliteConnection connection) => SqliteConnection.ClearPool(connection);
+            }
+            """;
+
+        Assert.False(ContainsGlobalSqlitePoolCleanup(source));
     }
 
     [Fact]
@@ -445,6 +465,61 @@ public sealed class AssemblyLifecycleArchitectureTests
         return File.ReadAllText(Path.Combine(
             RepositoryRoot,
             relativePath.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
+    private static bool ContainsGlobalSqlitePoolCleanup(string source)
+    {
+        var root = CSharpSyntaxTree.ParseText(source).GetRoot();
+        var connectionIdentifiers = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "SqliteConnection"
+        };
+        var importsSqliteConnectionStatically = false;
+
+        foreach (var usingDirective in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
+        {
+            if (!string.Equals(
+                    GetRightmostIdentifier(usingDirective.Name),
+                    "SqliteConnection",
+                    StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (usingDirective.Alias != null)
+            {
+                connectionIdentifiers.Add(usingDirective.Alias.Name.Identifier.ValueText);
+            }
+
+            importsSqliteConnectionStatically |=
+                usingDirective.StaticKeyword.IsKind(SyntaxKind.StaticKeyword);
+        }
+
+        return root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Any(invocation => invocation.Expression switch
+            {
+                IdentifierNameSyntax identifier =>
+                    importsSqliteConnectionStatically &&
+                    identifier.Identifier.ValueText == "ClearAllPools",
+                MemberAccessExpressionSyntax memberAccess =>
+                    memberAccess.Name.Identifier.ValueText == "ClearAllPools" &&
+                    connectionIdentifiers.Contains(
+                        GetRightmostIdentifier(memberAccess.Expression) ?? string.Empty),
+                _ => false
+            });
+    }
+
+    private static string? GetRightmostIdentifier(SyntaxNode? syntax)
+    {
+        return syntax switch
+        {
+            IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
+            QualifiedNameSyntax qualified => qualified.Right.Identifier.ValueText,
+            AliasQualifiedNameSyntax aliasQualified => aliasQualified.Name.Identifier.ValueText,
+            MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.ValueText,
+            _ => null
+        };
     }
 
     private static bool IsGeneratedPath(string path)

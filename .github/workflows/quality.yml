@@ -175,9 +175,24 @@ jobs:
             -Configuration Release `
             -NoRestore `
             -NoBuild `
+            -ResultsDirectory "./TestResults/aria2-tls/$env:DOWNKYI_ARIA2_RID" `
+            -TrxName "aria2-tls-$env:DOWNKYI_ARIA2_RID.trx" `
             -ClassNames DownKyi.Tests.Aria2TlsIntegrationTests
           if ($result.ExitCode -ne 0) {
             throw "Packaged aria2 TLS integration tests failed."
+          }
+          if (-not (Test-Path -LiteralPath $result.TrxPath -PathType Leaf)) {
+            throw "Packaged aria2 TLS test report is missing: $($result.TrxPath)"
+          }
+          [xml]$trx = Get-Content -LiteralPath $result.TrxPath -Raw
+          $counters = $trx.SelectSingleNode(
+            "/*[local-name()='TestRun']/*[local-name()='ResultSummary']/*[local-name()='Counters']")
+          if ($null -eq $counters) {
+            throw "Packaged aria2 TLS test report has no execution counters."
+          }
+          $executed = [int]$counters.GetAttribute("executed")
+          if ($executed -lt 1) {
+            throw "Packaged aria2 TLS test selection executed no tests."
           }
       - name: Upload sanitized aria2 TLS report
         if: always()

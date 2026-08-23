@@ -128,6 +128,48 @@ public sealed class AvaloniaApplicationLifecycleTests
     }
 
     [Fact]
+    public async Task RestartCleanupTimeoutTerminatesDesktopAndStillFailsClosed()
+    {
+        var directory = CreateTemporaryDirectory();
+        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
+        var hostedService = new BlockingStopHostedService();
+        using var host = DownKyiHost.Create(services =>
+            services.AddSingleton<IHostedService>(hostedService));
+        var restartLauncher = new StubRestartLauncher(true);
+        var desktopShutdownCount = 0;
+        var lifecycle = CreateLifecycle(
+            settingsStore,
+            new RecordingLogService(),
+            restartLauncher,
+            TimeSpan.Zero,
+            () =>
+            {
+                desktopShutdownCount++;
+                return Task.CompletedTask;
+            });
+        lifecycle.AttachHost(host);
+
+        try
+        {
+            await lifecycle.StartHostAsync().ConfigureAwait(true);
+
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
+
+            Assert.Equal(1, restartLauncher.StartCount);
+            Assert.Equal(1, desktopShutdownCount);
+            Assert.False(hostedService.IsQuiescent);
+        }
+        finally
+        {
+            hostedService.AllowStop.TrySetResult();
+            await host.StopAsync(CancellationToken.None).ConfigureAwait(true);
+            await settingsStore.DisposeAsync().ConfigureAwait(true);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RestartHelperFailureKeepsRunningApplicationAlive()
     {
         var directory = CreateTemporaryDirectory();
@@ -198,16 +240,18 @@ public sealed class AvaloniaApplicationLifecycleTests
         ISettingsStore settingsStore,
         IApplicationLogService logService,
         IProcessRestartLauncher restartLauncher,
-        TimeSpan? cleanupTimeout = null)
+        TimeSpan? cleanupTimeout = null,
+        Func<Task>? desktopShutdown = null)
     {
-        return cleanupTimeout is { } timeout
+        return cleanupTimeout != null || desktopShutdown != null
             ? new AvaloniaApplicationLifecycle(
                 new AvaloniaDesktopContext(),
                 restartLauncher,
                 settingsStore,
                 logService,
                 NullLogger<AvaloniaApplicationLifecycle>.Instance,
-                timeout)
+                cleanupTimeout ?? AvaloniaApplicationLifecycle.DefaultCleanupTimeout,
+                desktopShutdown)
             : new AvaloniaApplicationLifecycle(
                 new AvaloniaDesktopContext(),
                 restartLauncher,
