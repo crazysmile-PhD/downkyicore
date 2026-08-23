@@ -16,6 +16,7 @@ namespace DownKyi.Services.Download;
 
 internal sealed class DownloadOrchestrator : IDownloadRuntime
 {
+    internal static readonly TimeSpan WorkerShutdownTimeout = TimeSpan.FromSeconds(4);
     private readonly IDownloadTaskExecutor _executor;
     private readonly DownloadTaskStateWriter _stateWriter;
     private readonly IDownloadTaskApplicationService _tasks;
@@ -134,7 +135,7 @@ internal sealed class DownloadOrchestrator : IDownloadRuntime
             await DownloadShutdownCoordinator.StopAsync(
                 _tokenSource,
                 [.. _downloadWorkers, _admissionWorker],
-                TimeSpan.FromSeconds(30),
+                WorkerShutdownTimeout,
                 exception => _logger.LogErrorMessage(
                     "Download workers failed during shutdown.",
                     exception),

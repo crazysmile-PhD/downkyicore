@@ -138,12 +138,14 @@ public sealed class DownloadManagerCoordinatorTests
             Path.GetTempPath(),
             "downkyi-download-manager-tests",
             Guid.NewGuid().ToString("N"));
+        private readonly string _databasePath;
 
         public CoordinatorContext()
         {
             Directory.CreateDirectory(_directory);
+            _databasePath = Path.Combine(_directory, "download.db");
             Store = new SqliteDownloadTaskStore(
-                new SqliteDownloadTaskStoreOptions(Path.Combine(_directory, "download.db")),
+                new SqliteDownloadTaskStoreOptions(_databasePath),
                 new SystemClock());
             var clock = new SystemClock();
             TaskService = new DownloadTaskApplicationService(Store, clock);
@@ -225,7 +227,14 @@ public sealed class DownloadManagerCoordinatorTests
             Storage.Dispose();
             TaskService.Dispose();
             Store.Dispose();
-            SqliteConnection.ClearAllPools();
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = _databasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = true,
+                DefaultTimeout = 5
+            }.ToString());
+            SqliteConnection.ClearPool(connection);
             if (Directory.Exists(_directory))
             {
                 Directory.Delete(_directory, recursive: true);

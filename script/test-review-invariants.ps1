@@ -74,7 +74,7 @@ $adversarialProofs = @(
             if ($proof.kind -ne "adversarial-mutation" -or
                 $proof.kind -notin $requirements -or
                 [string]::IsNullOrWhiteSpace($proof.project) -or
-                [string]::IsNullOrWhiteSpace($proof.filter) -or
+                [string]::IsNullOrWhiteSpace($proof.class) -or
                 [string]::IsNullOrWhiteSpace($proof.environmentVariable) -or
                 [string]::IsNullOrWhiteSpace($proof.environmentValue) -or
                 $proof.expectedOutcome -ne "test-failure") {
@@ -163,7 +163,7 @@ foreach ($proof in $adversarialProofs) {
             -NoBuild:$NoBuild `
             -ResultsDirectory $resultRoot `
             -TrxName $trxName `
-            -Filter $proof.filter
+            -ClassNames @($proof.class)
         $mutationExitCode = $result.ExitCode
     }
     finally {
@@ -183,7 +183,7 @@ foreach ($proof in $adversarialProofs) {
     $failed = [int]$counters.failed
     $executed = [int]$counters.executed
     if ($mutationExitCode -eq 0 -or $failed -eq 0 -or $executed -eq 0) {
-        throw "Adversarial proof did not make the invariant test fail closed: project=$($proof.project) filter=$($proof.filter) exitCode=$mutationExitCode executed=$executed failed=$failed."
+        throw "Adversarial proof did not make the invariant test fail closed: project=$($proof.project) class=$($proof.class) exitCode=$mutationExitCode executed=$executed failed=$failed."
     }
 
     Write-Host "Adversarial proof rejected the injected mutation: executed=$executed failed=$failed."

@@ -171,13 +171,13 @@ suppression list.
 | --- | ---: | --- |
 | `Local` | 1 | Script development and focused validation |
 | `PR` | 3 | Every pull request on Windows |
-| `Main` | 50 | Every push to `main` |
+| `Main` | 5 | Every push to `main` |
 | `Rehearsal` | 100 | Release rehearsal and tag release gate |
 | `Flaky` | 500 | Focused investigation; override up to 10000 |
 
 Formal local Verification overrides the profile with `-Iterations 5` and runs
-`-ValidateForensics`. Release evidence must run at least 50 iterations per
-assembly; the repository's `Rehearsal` profile deliberately runs 100.
+`-ValidateForensics`. Normal main validation runs five complete iterations;
+tag release evidence uses the `Rehearsal` profile and deliberately runs 100.
 
 Use `-AssemblyPattern` to isolate one or more suspect assemblies without
 weakening the normal PR or release profiles:

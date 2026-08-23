@@ -48,7 +48,7 @@ public sealed class ReviewInvariantCorpusTests
             {
                 var project = adversarialProof.GetProperty("project").GetString();
                 Assert.Equal("adversarial-mutation", adversarialProof.GetProperty("kind").GetString());
-                Assert.False(string.IsNullOrWhiteSpace(adversarialProof.GetProperty("filter").GetString()));
+                Assert.False(string.IsNullOrWhiteSpace(adversarialProof.GetProperty("class").GetString()));
                 Assert.False(string.IsNullOrWhiteSpace(
                     adversarialProof.GetProperty("environmentVariable").GetString()));
                 Assert.False(string.IsNullOrWhiteSpace(

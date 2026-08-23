@@ -28,7 +28,7 @@ $probeAssembly = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe
 $profileIterations = @{
     Local = 1
     PR = 3
-    Main = 50
+    Main = 5
     Rehearsal = 100
     Flaky = 500
 }

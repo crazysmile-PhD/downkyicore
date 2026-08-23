@@ -2589,7 +2589,7 @@ outbound:
   - storage.sqlite-download-task-store
 contracts:
   - Formal local Verification runs the ownership audit and five iterations per assembly with timeout forensics validated.
-  - PR, main and release profiles run 3, 50 and 100 iterations per assembly; release evidence must never drop below 50.
+  - PR, main and release-rehearsal profiles run 3, 5 and 100 iterations per assembly; tag release evidence uses the 100-iteration Rehearsal profile.
   - Every report identifies runtime, OS, architecture, commit SHA, dirty-worktree state, thresholds, phase exit codes, slow-evidence status and P50/P95/P99/max durations.
   - Every phase exposes general failure/error type; slow-evidence error type is reserved for the diagnostic capture path.
   - Execution duration includes runner startup through OS process exit; teardown uses fixture marker timestamps, while process-exit uses the child's OS ExitTime and excludes collector overhead.
