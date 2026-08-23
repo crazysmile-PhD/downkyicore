@@ -73,16 +73,49 @@ public sealed class TestRunnerPolicyArchitectureTests
         {
             var projectPath = project.GetProperty("project").GetString()
                 ?? throw new InvalidDataException("Runner policy project path cannot be null.");
-            var directInvocation = new Regex(
-                $"dotnet[ \\t]+test(?:[ \\t]+|\\r?\\n[ \\t]+)[\"']?(?:\\./)?{Regex.Escape(projectPath)}[\"']?",
-                RegexOptions.CultureInvariant);
 
             foreach (var workflowPath in workflowPaths)
             {
-                var workflow = File.ReadAllText(workflowPath).Replace('\\', '/');
-                Assert.DoesNotMatch(directInvocation, workflow);
+                var workflow = File.ReadAllText(workflowPath);
+                Assert.DoesNotContain(
+                    ExtractWorkflowRunScripts(workflow),
+                    runScript => ContainsDirectDotnetTestInvocation(runScript, projectPath));
             }
         }
+    }
+
+    [Theory]
+    [InlineData("steps:\n  - run: dotnet test ./tests/DownKyi.Tests/DownKyi.Tests.csproj --no-build")]
+    [InlineData("steps:\n  - run: dotnet test --no-build ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
+    [InlineData("steps:\n  - run: >\n      dotnet test\n      --no-build\n      ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
+    [InlineData("steps:\n  - run: |\n      dotnet test `\n        --no-build `\n        ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
+    [InlineData("steps:\n  - run: |\n      dotnet test \\\n        --no-build \\\n        ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
+    public void DirectTestInvocationDetectorRejectsRepresentativeOptionOrderings(string workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+        var runScript = Assert.Single(ExtractWorkflowRunScripts(workflow));
+
+        Assert.True(ContainsDirectDotnetTestInvocation(
+            runScript,
+            "tests/DownKyi.Tests/DownKyi.Tests.csproj"));
+    }
+
+    [Fact]
+    public void DirectTestInvocationDetectorAllowsTheSharedRunner()
+    {
+        const string workflow = """
+            steps:
+              - run: |
+                  . ./script/test-project-runner.ps1
+                  Invoke-DownKyiTestProject `
+                    -ProjectPath ./tests/DownKyi.Tests/DownKyi.Tests.csproj `
+                    -ClassNames DownKyi.Tests.Aria2TlsIntegrationTests
+            """;
+        var runScript = Assert.Single(ExtractWorkflowRunScripts(workflow));
+
+        Assert.False(ContainsDirectDotnetTestInvocation(
+            runScript,
+            "tests/DownKyi.Tests/DownKyi.Tests.csproj"));
     }
 
     [Fact]
@@ -105,6 +138,73 @@ public sealed class TestRunnerPolicyArchitectureTests
         return File.ReadAllText(Path.Combine(
             RepositoryRoot,
             relativePath.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
+    private static List<string> ExtractWorkflowRunScripts(string workflow)
+    {
+        var lines = workflow.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var scripts = new List<string>();
+        for (var index = 0; index < lines.Length; index++)
+        {
+            var match = Regex.Match(
+                lines[index],
+                @"^(?<indent>\s*)(?:-\s+)?run:\s*(?<value>.*)$",
+                RegexOptions.CultureInvariant);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var indentation = match.Groups["indent"].Value.Length;
+            var value = match.Groups["value"].Value.Trim();
+            if (!value.StartsWith('|') && !value.StartsWith('>'))
+            {
+                scripts.Add(value);
+                continue;
+            }
+
+            var blockLines = new List<string>();
+            while (++index < lines.Length)
+            {
+                var line = lines[index];
+                if (line.Length == 0)
+                {
+                    blockLines.Add(string.Empty);
+                    continue;
+                }
+
+                var contentIndentation = line.Length - line.TrimStart().Length;
+                if (contentIndentation <= indentation)
+                {
+                    index--;
+                    break;
+                }
+
+                blockLines.Add(line.TrimStart());
+            }
+
+            scripts.Add(value.StartsWith('>')
+                ? string.Join(' ', blockLines)
+                : string.Join('\n', blockLines));
+        }
+
+        return scripts;
+    }
+
+    private static bool ContainsDirectDotnetTestInvocation(string runScript, string projectPath)
+    {
+        var normalized = runScript
+            .Replace("\\\n", " ", StringComparison.Ordinal)
+            .Replace("`\n", " ", StringComparison.Ordinal)
+            .Replace('\\', '/');
+        var commands = Regex.Matches(
+            normalized,
+            @"(?im)(?:^|[;&|]\s*)dotnet\s+test\b(?<arguments>[^\r\n;&|]*)",
+            RegexOptions.CultureInvariant);
+
+        return commands.Any(command => command.Groups["arguments"].Value.Contains(
+            projectPath,
+            StringComparison.OrdinalIgnoreCase));
     }
 
     private static string FindRepositoryRoot()

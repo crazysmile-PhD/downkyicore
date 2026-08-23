@@ -3,6 +3,7 @@ using DownKyi.Application.Lifetime;
 using DownKyi.Core.Settings;
 using DownKyi.Desktop.Composition;
 using DownKyi.Platform;
+using DownKyi.Services.Download;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -11,6 +12,14 @@ namespace DownKyi.Tests;
 
 public sealed class AvaloniaApplicationLifecycleTests
 {
+    [Fact]
+    public void DownloadWorkerDeadlinePrecedesApplicationCleanupDeadline()
+    {
+        Assert.True(
+            DownloadOrchestrator.WorkerShutdownTimeout <
+            AvaloniaApplicationLifecycle.DefaultCleanupTimeout);
+    }
+
     [Fact]
     public async Task RequestShutdownIsIdempotentAndFlushesOwnedState()
     {
@@ -78,6 +87,41 @@ public sealed class AvaloniaApplicationLifecycleTests
         finally
         {
             hostedService.AllowStop.TrySetResult();
+            await settingsStore.DisposeAsync().ConfigureAwait(true);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RequestShutdownFailsClosedWhenHostedServiceDoesNotBecomeQuiescent()
+    {
+        var directory = CreateTemporaryDirectory();
+        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
+        var hostedService = new BlockingStopHostedService();
+        using var host = DownKyiHost.Create(services =>
+            services.AddSingleton<IHostedService>(hostedService));
+        var logService = new RecordingLogService();
+        var lifecycle = CreateLifecycle(
+            settingsStore,
+            logService,
+            new StubRestartLauncher(false),
+            TimeSpan.Zero);
+        lifecycle.AttachHost(host);
+
+        try
+        {
+            await lifecycle.StartHostAsync().ConfigureAwait(true);
+
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                lifecycle.RequestShutdownAsync(TestContext.Current.CancellationToken));
+
+            Assert.False(hostedService.IsQuiescent);
+            Assert.Equal(1, logService.FlushCount);
+        }
+        finally
+        {
+            hostedService.AllowStop.TrySetResult();
+            await host.StopAsync(CancellationToken.None).ConfigureAwait(true);
             await settingsStore.DisposeAsync().ConfigureAwait(true);
             Directory.Delete(directory, recursive: true);
         }
@@ -153,14 +197,23 @@ public sealed class AvaloniaApplicationLifecycleTests
     private static AvaloniaApplicationLifecycle CreateLifecycle(
         ISettingsStore settingsStore,
         IApplicationLogService logService,
-        IProcessRestartLauncher restartLauncher)
+        IProcessRestartLauncher restartLauncher,
+        TimeSpan? cleanupTimeout = null)
     {
-        return new AvaloniaApplicationLifecycle(
-            new AvaloniaDesktopContext(),
-            restartLauncher,
-            settingsStore,
-            logService,
-            NullLogger<AvaloniaApplicationLifecycle>.Instance);
+        return cleanupTimeout is { } timeout
+            ? new AvaloniaApplicationLifecycle(
+                new AvaloniaDesktopContext(),
+                restartLauncher,
+                settingsStore,
+                logService,
+                NullLogger<AvaloniaApplicationLifecycle>.Instance,
+                timeout)
+            : new AvaloniaApplicationLifecycle(
+                new AvaloniaDesktopContext(),
+                restartLauncher,
+                settingsStore,
+                logService,
+                NullLogger<AvaloniaApplicationLifecycle>.Instance);
     }
 
     private static string CreateTemporaryDirectory()

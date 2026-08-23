@@ -14,7 +14,7 @@ namespace DownKyi.Platform;
 
 internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
 {
-    private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan DefaultCleanupTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LogFlushTimeout = TimeSpan.FromSeconds(2);
     private readonly object _sync = new();
     private readonly AvaloniaDesktopContext _desktopContext;
@@ -22,6 +22,7 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
     private readonly ISettingsStore _settingsStore;
     private readonly IApplicationLogService _logService;
     private readonly ILogger<AvaloniaApplicationLifecycle> _logger;
+    private readonly TimeSpan _cleanupTimeout;
     private IHost? _host;
     private Task? _hostStartupTask;
     private Task? _shutdownTask;
@@ -32,12 +33,31 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         ISettingsStore settingsStore,
         IApplicationLogService logService,
         ILogger<AvaloniaApplicationLifecycle> logger)
+        : this(
+            desktopContext,
+            restartLauncher,
+            settingsStore,
+            logService,
+            logger,
+            DefaultCleanupTimeout)
+    {
+    }
+
+    internal AvaloniaApplicationLifecycle(
+        AvaloniaDesktopContext desktopContext,
+        IProcessRestartLauncher restartLauncher,
+        ISettingsStore settingsStore,
+        IApplicationLogService logService,
+        ILogger<AvaloniaApplicationLifecycle> logger,
+        TimeSpan cleanupTimeout)
     {
         _desktopContext = desktopContext ?? throw new ArgumentNullException(nameof(desktopContext));
         _restartLauncher = restartLauncher ?? throw new ArgumentNullException(nameof(restartLauncher));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _logService = logService ?? throw new ArgumentNullException(nameof(logService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentOutOfRangeException.ThrowIfLessThan(cleanupTimeout, TimeSpan.Zero);
+        _cleanupTimeout = cleanupTimeout;
     }
 
     public CancellationToken ShutdownToken => GetHost()
@@ -135,7 +155,8 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         }
 
         var cleanup = Task.WhenAll(cleanupTasks);
-        if (await Task.WhenAny(cleanup, Task.Delay(CleanupTimeout)).ConfigureAwait(false) == cleanup)
+        TimeoutException? cleanupTimeoutException = null;
+        if (await Task.WhenAny(cleanup, Task.Delay(_cleanupTimeout)).ConfigureAwait(false) == cleanup)
         {
             try
             {
@@ -165,6 +186,8 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted,
                 TaskScheduler.Default);
+            cleanupTimeoutException = new TimeoutException(
+                $"Application cleanup did not complete within {_cleanupTimeout}.");
         }
 
         using var flushCancellation = new CancellationTokenSource(LogFlushTimeout);
@@ -180,6 +203,11 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
             or InvalidOperationException)
         {
             _logger.LogErrorMessage("Application log flush failed during shutdown.", e);
+        }
+
+        if (cleanupTimeoutException != null)
+        {
+            throw cleanupTimeoutException;
         }
     }
 

@@ -282,6 +282,8 @@ public sealed class AssemblyLifecycleArchitectureTests
         var lifecycle = Read("script/test-assembly-lifecycle.ps1");
         var quality = Read(".github/workflows/quality.yml");
         var release = Read(".github/workflows/build.yml");
+        var activeReleaseContract = Read(
+            "docs/product-specs/v1.1.1-corrective-release-gate.md");
         var expectedProfiles = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["Local"] = 1,
@@ -300,6 +302,16 @@ public sealed class AssemblyLifecycleArchitectureTests
                 StringComparer.Ordinal);
 
         Assert.Equal(expectedProfiles, actualProfiles);
+        Assert.Contains(
+            "profiles execute 3, 5 and 100 iterations",
+            activeReleaseContract.Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace("\n  ", " ", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "profiles execute 3, 50 and 100 iterations",
+            activeReleaseContract.Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace("\n  ", " ", StringComparison.Ordinal),
+            StringComparison.Ordinal);
 
         Assert.Contains("assembly-lifecycle:", quality, StringComparison.Ordinal);
         Assert.Contains("pull_request:", quality, StringComparison.Ordinal);
