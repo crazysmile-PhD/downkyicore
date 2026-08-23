@@ -44,17 +44,49 @@ public sealed class DownloadBootstrapHostedServiceTests
     }
 
     [Fact]
+    public async Task StopAsyncWaitsForOwnedRuntimeToBecomeQuiescent()
+    {
+        using var runtime = new BlockingDownloadRuntime();
+        var clock = new FixedClock();
+        using var tasks = new DownloadTaskApplicationService(new EmptyDownloadTaskStore(), clock);
+        using var storage = new DownloadTaskProjectionStore(tasks, clock);
+        using var service = new DownloadBootstrapHostedService(
+            new DownloadListState(),
+            storage,
+            new DownloadTaskStateWriter(tasks),
+            new RecordingRuntimeFactory(runtime),
+            new DownloadTaskQueueGateway(),
+            new ImmediateUiDispatcher(),
+            NullLogger<DownloadBootstrapHostedService>.Instance);
+
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        var stopTask = service.StopAsync(TestContext.Current.CancellationToken);
+        await runtime.StopEntered.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(stopTask.IsCompleted);
+        Assert.False(runtime.IsQuiescent);
+
+        runtime.AllowStop.TrySetResult();
+        await stopTask.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.True(runtime.IsQuiescent);
+    }
+
+    [Fact]
     public async Task StartupQueuesPersistedAndInterruptedTasksWithoutUiPolling()
     {
         var directory = Path.Combine(
             Path.GetTempPath(),
             "downkyi-bootstrap-queue-tests",
             Guid.NewGuid().ToString("N"));
+        var databasePath = Path.Combine(directory, "download.db");
         Directory.CreateDirectory(directory);
         try
         {
             using var store = new SqliteDownloadTaskStore(
-                new SqliteDownloadTaskStoreOptions(Path.Combine(directory, "download.db")),
+                new SqliteDownloadTaskStoreOptions(databasePath),
                 new SystemClock());
             var clock = new SystemClock();
             using var tasks = new DownloadTaskApplicationService(store, clock);
@@ -94,7 +126,7 @@ public sealed class DownloadBootstrapHostedServiceTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
+            ClearOwnedSqlitePool(databasePath);
             Directory.Delete(directory, recursive: true);
         }
     }
@@ -142,6 +174,18 @@ public sealed class DownloadBootstrapHostedServiceTests
             new DownloadPlan([], [], 0),
             new DownloadOutput(id, null),
             DateTimeOffset.UnixEpoch);
+    }
+
+    private static void ClearOwnedSqlitePool(string databasePath)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = true,
+            DefaultTimeout = 5
+        }.ToString());
+        SqliteConnection.ClearPool(connection);
     }
 
     private sealed class RecordingRuntimeFactory(IDownloadRuntime runtime) : IDownloadRuntimeFactory
@@ -198,6 +242,47 @@ public sealed class DownloadBootstrapHostedServiceTests
         public void Dispose()
         {
             Disposed = true;
+        }
+    }
+
+    private sealed class BlockingDownloadRuntime : IDownloadRuntime
+    {
+        public TaskCompletionSource StopEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowStop { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool IsQuiescent { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public async Task StopAsync(CancellationToken cancellationToken = default)
+        {
+            StopEntered.TrySetResult();
+            await AllowStop.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            IsQuiescent = true;
+        }
+
+        public Task EnqueueAsync(
+            DownloadTaskId taskId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> CancelAsync(DownloadTaskId taskId)
+        {
+            return Task.FromResult(false);
+        }
+
+        public void Dispose()
+        {
         }
     }
 

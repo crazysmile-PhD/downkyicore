@@ -30,7 +30,7 @@ Assembly/process lifecycle is a separate quality dimension from test
 assertions. Run `script/audit-lifecycle-ownership.ps1` after changing any
 thread, Dispatcher, timer, Host, global event, fixture or external-process
 owner. Run `script/test-assembly-lifecycle.ps1` before release; its PR, main and
-rehearsal profiles execute 3, 50 and 100 iterations per test assembly. The
+rehearsal profiles execute 3, 5 and 100 iterations per test assembly. The
 contract, diagnostics and report schema are documented in
 `docs/testing/assembly-lifecycle-stability.md`.
 

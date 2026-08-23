@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -25,6 +26,60 @@ public sealed class AssemblyLifecycleArchitectureTests
             string.Concat("Process", "Exit"),
             fixture,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DesktopSmokeTestsClearOnlyTheirOwnedSqlitePools()
+    {
+        var source = Read("tests/DownKyi.Desktop.Tests/UiSmokeTests.cs");
+        var globalCleanupCall = string.Concat("SqliteConnection.", "ClearAllPools()");
+
+        Assert.DoesNotContain(
+            globalCleanupCall,
+            source,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            3,
+            Regex.Count(
+                source,
+                @"(?m)^\s+ClearOwnedSqlitePool\(databasePath\);$",
+                RegexOptions.CultureInvariant));
+        Assert.Contains(
+            "DataSource = databasePath",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Mode = SqliteOpenMode.ReadWriteCreate",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("Pooling = true", source, StringComparison.Ordinal);
+        Assert.Contains("DefaultTimeout = 5", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "SqliteConnection.ClearPool(connection)",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GlobalSqlitePoolCleanupRequiresExplicitProcessOwnership()
+    {
+        var globalCleanupCall = string.Concat("SqliteConnection.", "ClearAllPools()");
+        string[] allowedProcessOwners =
+        [
+            "benchmarks/DownKyi.SystemBenchmarks/Program.cs"
+        ];
+        var actualOwners = Directory
+            .EnumerateFiles(RepositoryRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(path => !IsGeneratedPath(path))
+            .Where(path => File.ReadAllText(path).Contains(
+                globalCleanupCall,
+                StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path)
+                .Replace('\\', '/'))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(allowedProcessOwners, actualOwners);
     }
 
     [Fact]
@@ -223,14 +278,42 @@ public sealed class AssemblyLifecycleArchitectureTests
     [Fact]
     public void LifecycleProfilesRemainConfiguredForNormalRelease()
     {
+        var lifecycle = Read("script/test-assembly-lifecycle.ps1");
         var quality = Read(".github/workflows/quality.yml");
         var release = Read(".github/workflows/build.yml");
+        var expectedProfiles = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["Local"] = 1,
+            ["PR"] = 3,
+            ["Main"] = 5,
+            ["Rehearsal"] = 100,
+            ["Flaky"] = 500
+        };
+        var actualProfiles = Regex.Matches(
+                lifecycle,
+                @"(?m)^\s+(Local|PR|Main|Rehearsal|Flaky) = ([0-9]+)\s*$",
+                RegexOptions.CultureInvariant)
+            .ToDictionary(
+                match => match.Groups[1].Value,
+                match => int.Parse(match.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture),
+                StringComparer.Ordinal);
+
+        Assert.Equal(expectedProfiles, actualProfiles);
 
         Assert.Contains("assembly-lifecycle:", quality, StringComparison.Ordinal);
-        Assert.Contains("\"PR\"", quality, StringComparison.Ordinal);
-        Assert.Contains("\"Main\"", quality, StringComparison.Ordinal);
+        Assert.Contains("pull_request:", quality, StringComparison.Ordinal);
+        Assert.Contains(
+            "branches:\n      - main",
+            quality.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$profile = if (\"${{ github.event_name }}\" -eq \"pull_request\") { \"PR\" } else { \"Main\" }",
+            quality,
+            StringComparison.Ordinal);
         Assert.Contains("-ValidateForensics", quality, StringComparison.Ordinal);
         Assert.Contains("dotnet-stack", quality, StringComparison.Ordinal);
+        Assert.DoesNotContain("-Profile Rehearsal", quality, StringComparison.Ordinal);
+        Assert.DoesNotContain("-Profile Flaky", quality, StringComparison.Ordinal);
 
         Assert.Contains("assembly-lifecycle-release:", release, StringComparison.Ordinal);
         Assert.Contains("-Profile Rehearsal", release, StringComparison.Ordinal);
@@ -349,6 +432,14 @@ public sealed class AssemblyLifecycleArchitectureTests
         return File.ReadAllText(Path.Combine(
             RepositoryRoot,
             relativePath.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
+    private static bool IsGeneratedPath(string path)
+    {
+        var relativePath = Path.GetRelativePath(RepositoryRoot, path);
+        return relativePath
+            .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(segment => segment is "bin" or "obj" or ".git");
     }
 
     private static string FindRepositoryRoot()

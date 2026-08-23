@@ -44,6 +44,46 @@ public sealed class AvaloniaApplicationLifecycleTests
     }
 
     [Fact]
+    public async Task RequestShutdownWaitsForHostedServiceQuiescence()
+    {
+        var directory = CreateTemporaryDirectory();
+        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
+        var hostedService = new BlockingStopHostedService();
+        using var host = DownKyiHost.Create(services =>
+            services.AddSingleton<IHostedService>(hostedService));
+        var lifecycle = CreateLifecycle(
+            settingsStore,
+            new RecordingLogService(),
+            new StubRestartLauncher(false));
+        lifecycle.AttachHost(host);
+
+        try
+        {
+            await lifecycle.StartHostAsync().ConfigureAwait(true);
+            var shutdownTask = lifecycle.RequestShutdownAsync(TestContext.Current.CancellationToken);
+            await hostedService.StopEntered.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+            Assert.False(shutdownTask.IsCompleted);
+            Assert.False(hostedService.IsQuiescent);
+
+            hostedService.AllowStop.TrySetResult();
+            await shutdownTask.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+            Assert.True(hostedService.IsQuiescent);
+        }
+        finally
+        {
+            hostedService.AllowStop.TrySetResult();
+            await settingsStore.DisposeAsync().ConfigureAwait(true);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RestartHelperFailureKeepsRunningApplicationAlive()
     {
         var directory = CreateTemporaryDirectory();
@@ -181,6 +221,29 @@ public sealed class AvaloniaApplicationLifecycleTests
         public Task StopAsync(CancellationToken cancellationToken)
         {
             return Task.FromException(new InvalidOperationException("stop failed"));
+        }
+    }
+
+    private sealed class BlockingStopHostedService : IHostedService
+    {
+        public TaskCompletionSource StopEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowStop { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool IsQuiescent { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public async Task StopAsync(CancellationToken cancellationToken)
+        {
+            StopEntered.TrySetResult();
+            await AllowStop.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            IsQuiescent = true;
         }
     }
 }

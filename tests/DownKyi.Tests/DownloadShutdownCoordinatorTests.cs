@@ -72,17 +72,51 @@ public sealed class DownloadShutdownCoordinatorTests
     }
 
     [Fact]
+    public async Task StopAsyncFailsClosedWhenOwnedWorkerMissesTimeout()
+    {
+        var workerCompletion = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeoutObserved = false;
+        var recoveryCount = 0;
+
+        try
+        {
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                DownloadShutdownCoordinator.StopAsync(
+                    null,
+                    [workerCompletion.Task],
+                    TimeSpan.Zero,
+                    _ => timeoutObserved = true,
+                    () =>
+                    {
+                        recoveryCount++;
+                        return Task.CompletedTask;
+                    }));
+
+            Assert.True(timeoutObserved);
+            Assert.Equal(1, recoveryCount);
+            Assert.False(workerCompletion.Task.IsCompleted);
+        }
+        finally
+        {
+            workerCompletion.TrySetResult();
+            await workerCompletion.Task.ConfigureAwait(true);
+        }
+    }
+
+    [Fact]
     public async Task ShutdownRecoveryQueuesActiveDomainTaskAndPreservesResumeData()
     {
         var directory = Path.Combine(
             Path.GetTempPath(),
             "downkyi-shutdown-recovery-tests",
             Guid.NewGuid().ToString("N"));
+        var databasePath = Path.Combine(directory, "download.db");
         Directory.CreateDirectory(directory);
         try
         {
             using var store = new SqliteDownloadTaskStore(
-                new SqliteDownloadTaskStoreOptions(Path.Combine(directory, "download.db")),
+                new SqliteDownloadTaskStoreOptions(databasePath),
                 new SystemClock());
             var clock = new SystemClock();
             using var tasks = new DownloadTaskApplicationService(store, clock);
@@ -131,8 +165,20 @@ public sealed class DownloadShutdownCoordinatorTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
+            ClearOwnedSqlitePool(databasePath);
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private static void ClearOwnedSqlitePool(string databasePath)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = true,
+            DefaultTimeout = 5
+        }.ToString());
+        SqliteConnection.ClearPool(connection);
     }
 }

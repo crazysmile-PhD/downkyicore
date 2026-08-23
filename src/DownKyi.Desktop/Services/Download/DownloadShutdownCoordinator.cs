@@ -61,6 +61,7 @@ internal static class DownloadShutdownCoordinator
         catch (TimeoutException e)
         {
             timeoutObserver(e);
+            throw;
         }
         catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
         {

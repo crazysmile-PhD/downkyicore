@@ -7,6 +7,13 @@
       "targetFramework": "net10.0",
       "parallel": "none",
       "reason": "Avoid xunit/xunit#3576 in the VSTest adapter while the independent assembly lifecycle gate continues to verify assembly-info and process exit."
+    },
+    {
+      "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Avoid xunit/xunit#3576 VSTest assembly-info stdout protocol corruption; assembly lifecycle behavior remains separately verified by the fail-closed lifecycle gate, so this routing does not suppress lifecycle failures."
     }
   ]
 }

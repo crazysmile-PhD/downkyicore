@@ -296,6 +296,7 @@ public sealed class UiSmokeTests
             AssertVideoPageSelectionBehavior();
 
             var testDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-host-smoke-{Guid.NewGuid():N}");
+            var databasePath = Path.Combine(testDirectory, "downkyi.db");
             var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
             var logProvider = new ApplicationLogProvider(
                 new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
@@ -308,7 +309,7 @@ public sealed class UiSmokeTests
                     services.AddDownKyiDesktop(loggerFactory, logProvider);
                     services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
                     services.Replace(ServiceDescriptor.Singleton(
-                        new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
+                        new SqliteDownloadTaskStoreOptions(databasePath)));
                 });
 
                 var window = host.Services.GetRequiredService<MainWindow>();
@@ -375,7 +376,7 @@ public sealed class UiSmokeTests
                 loggerFactory.Dispose();
                 await logProvider.DisposeAsync().ConfigureAwait(true);
                 await settingsStore.DisposeAsync().ConfigureAwait(true);
-                SqliteConnection.ClearAllPools();
+                ClearOwnedSqlitePool(databasePath);
                 if (Directory.Exists(testDirectory))
                 {
                     Directory.Delete(testDirectory, recursive: true);
@@ -390,6 +391,7 @@ public sealed class UiSmokeTests
         await AvaloniaTestDispatcher.RunAsync(async () =>
         {
             var testDirectory = Path.Combine(Path.GetTempPath(), $"downkyi-close-smoke-{Guid.NewGuid():N}");
+            var databasePath = Path.Combine(testDirectory, "downkyi.db");
             var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
             var logProvider = new ApplicationLogProvider(
                 new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
@@ -405,7 +407,7 @@ public sealed class UiSmokeTests
                     services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
                     services.Replace(ServiceDescriptor.Singleton<IApplicationLifecycle>(lifecycle));
                     services.Replace(ServiceDescriptor.Singleton(
-                        new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
+                        new SqliteDownloadTaskStoreOptions(databasePath)));
                 });
                 var window = host.Services.GetRequiredService<MainWindow>();
                 var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -430,7 +432,7 @@ public sealed class UiSmokeTests
                 loggerFactory.Dispose();
                 await logProvider.DisposeAsync().ConfigureAwait(true);
                 await settingsStore.DisposeAsync().ConfigureAwait(true);
-                SqliteConnection.ClearAllPools();
+                ClearOwnedSqlitePool(databasePath);
                 if (Directory.Exists(testDirectory))
                 {
                     Directory.Delete(testDirectory, recursive: true);
@@ -469,6 +471,7 @@ public sealed class UiSmokeTests
             var testDirectory = Path.Combine(
                 Path.GetTempPath(),
                 $"downkyi-host-lifecycle-{Guid.NewGuid():N}");
+            var databasePath = Path.Combine(testDirectory, "downkyi.db");
             var settingsStore = new SettingsStore(Path.Combine(testDirectory, "settings.json"));
             var logProvider = new ApplicationLogProvider(
                 new ApplicationLogOptions(Path.Combine(testDirectory, "logs")));
@@ -483,7 +486,7 @@ public sealed class UiSmokeTests
                     services.AddDownKyiDesktop(loggerFactory, logProvider);
                     services.Replace(ServiceDescriptor.Singleton<ISettingsStore>(settingsStore));
                     services.Replace(ServiceDescriptor.Singleton(
-                        new SqliteDownloadTaskStoreOptions(Path.Combine(testDirectory, "downkyi.db"))));
+                        new SqliteDownloadTaskStoreOptions(databasePath)));
                     services.Replace(ServiceDescriptor.Singleton<IDownloadRuntimeFactory>(
                         new LifecycleProbeDownloadRuntimeFactory(runtime)));
                 });
@@ -525,7 +528,7 @@ public sealed class UiSmokeTests
                 loggerFactory.Dispose();
                 await logProvider.DisposeAsync().ConfigureAwait(true);
                 await settingsStore.DisposeAsync().ConfigureAwait(true);
-                SqliteConnection.ClearAllPools();
+                ClearOwnedSqlitePool(databasePath);
                 if (Directory.Exists(testDirectory))
                 {
                     Directory.Delete(testDirectory, recursive: true);
@@ -593,6 +596,18 @@ public sealed class UiSmokeTests
         }
 
         host.Dispose();
+    }
+
+    private static void ClearOwnedSqlitePool(string databasePath)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = true,
+            DefaultTimeout = 5
+        }.ToString());
+        SqliteConnection.ClearPool(connection);
     }
 
     private static string[] GetUserDataPaths()

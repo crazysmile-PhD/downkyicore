@@ -401,7 +401,14 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(_directory, "download.db"),
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = true,
+            DefaultTimeout = 5
+        }.ToString());
+        SqliteConnection.ClearPool(connection);
         if (Directory.Exists(_directory))
         {
             Directory.Delete(_directory, recursive: true);
@@ -487,7 +494,8 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = Path.Combine(_directory, "download.db"),
-            Mode = SqliteOpenMode.ReadOnly
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
         }.ToString());
         await connection.OpenAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
         return connection;
@@ -567,7 +575,8 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = Path.Combine(_directory, "download.db"),
-            Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite
+            Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite,
+            Pooling = false
         }.ToString());
         await connection.OpenAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
         return connection;
@@ -579,7 +588,8 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = Path.Combine(_directory, "download.db"),
-            Mode = SqliteOpenMode.ReadWriteCreate
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
         }.ToString());
         await connection.OpenAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
         using var schema = connection.CreateCommand();
@@ -628,7 +638,8 @@ public sealed class SqliteDownloadTaskStoreTests : IDisposable
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = Path.Combine(_directory, "download.db"),
-            Mode = SqliteOpenMode.ReadWriteCreate
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
         }.ToString());
         await connection.OpenAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
         using var schema = connection.CreateCommand();
