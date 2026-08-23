@@ -72,7 +72,7 @@ jobs:
         shell: pwsh
         run: |
           $report = Join-Path $env:GITHUB_WORKSPACE "BenchmarkDotNet.Artifacts/system-$env:RUNNER_OS.json"
-          dotnet run --project $env:BENCHMARK_PROJECT -c Release --no-build -- --output $report
+          dotnet run --project ./benchmarks/DownKyi.SystemBenchmarks/DownKyi.SystemBenchmarks.csproj -c Release --no-build -- --output $report
       - name: Upload baseline report
         if: always()
         uses: actions/upload-artifact@v7

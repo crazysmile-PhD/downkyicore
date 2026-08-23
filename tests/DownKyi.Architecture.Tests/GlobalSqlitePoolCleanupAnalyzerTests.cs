@@ -44,6 +44,8 @@ public sealed class GlobalSqlitePoolCleanupAnalyzerTests
     [InlineData("using static Microsoft.Data.Sqlite.SqliteConnection; class C { void M() => ClearAllPools(); }")]
     [InlineData("using C = Microsoft.Data.Sqlite.SqliteConnection; class T { void M() => C.ClearAllPools(); }")]
     [InlineData("class C { void M() => Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); }")]
+    [InlineData("using System; using Microsoft.Data.Sqlite; class C { void M() { Action clear = SqliteConnection.ClearAllPools; clear(); } }")]
+    [InlineData("using Microsoft.Data.Sqlite; unsafe class C { void M() { delegate* managed<void> clear = &SqliteConnection.ClearAllPools; clear(); } }")]
     public async Task CompilerResolvedInvocationIsRejectedRegardlessOfSyntax(string source)
     {
         var diagnostics = await AnalyzeAsync(source, "Release").ConfigureAwait(true);
@@ -170,7 +172,9 @@ public sealed class GlobalSqlitePoolCleanupAnalyzerTests
             assemblyName,
             [syntaxTree],
             PlatformReferences,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                allowUnsafe: true));
         var analyzer = new GlobalSqlitePoolCleanupAnalyzer();
 
         return await compilation

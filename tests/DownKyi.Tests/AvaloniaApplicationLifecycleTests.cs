@@ -142,10 +142,10 @@ public sealed class AvaloniaApplicationLifecycleTests
             new RecordingLogService(),
             restartLauncher,
             TimeSpan.Zero,
-            () =>
+            afterHandoff =>
             {
                 desktopShutdownCount++;
-                return Task.CompletedTask;
+                return CompleteDesktopHandoff(afterHandoff);
             });
         lifecycle.AttachHost(host);
 
@@ -184,10 +184,10 @@ public sealed class AvaloniaApplicationLifecycleTests
             settingsStore,
             new RecordingLogService(),
             restartLauncher,
-            desktopShutdown: () =>
+            desktopShutdown: afterHandoff =>
             {
                 desktopShutdownCount++;
-                return Task.CompletedTask;
+                return CompleteDesktopHandoff(afterHandoff);
             });
         lifecycle.AttachHost(host);
 
@@ -223,8 +223,8 @@ public sealed class AvaloniaApplicationLifecycleTests
             settingsStore,
             new RecordingLogService(),
             restartLauncher,
-            desktopShutdown: () =>
-                Task.FromException(new InvalidOperationException("desktop shutdown failure")));
+            desktopShutdown: _ => FailDesktopHandoff(
+                new InvalidOperationException("desktop shutdown failure")));
         lifecycle.AttachHost(host);
 
         try
@@ -261,7 +261,13 @@ public sealed class AvaloniaApplicationLifecycleTests
             settingsStore,
             new RecordingLogService(),
             restartLauncher,
-            desktopShutdown: () => Task.CompletedTask);
+            desktopShutdown: afterHandoff =>
+            {
+                Assert.Equal(0, restartLauncher.CommitCount);
+                var result = CompleteDesktopHandoff(afterHandoff);
+                Assert.Equal(1, restartLauncher.CommitCount);
+                return result;
+            });
         lifecycle.AttachHost(host);
 
         try
@@ -291,8 +297,8 @@ public sealed class AvaloniaApplicationLifecycleTests
             settingsStore,
             new RecordingLogService(),
             restartLauncher,
-            desktopShutdown: () =>
-                Task.FromException(new InvalidOperationException("desktop shutdown failure")));
+            desktopShutdown: _ => FailDesktopHandoff(
+                new InvalidOperationException("desktop shutdown failure")));
         lifecycle.AttachHost(host);
 
         try
@@ -305,6 +311,75 @@ public sealed class AvaloniaApplicationLifecycleTests
             Assert.Equal("desktop shutdown failure", exception.Message);
             Assert.Equal(0, restartLauncher.CommitCount);
             Assert.Equal(1, restartLauncher.RevokeCount);
+        }
+        finally
+        {
+            await settingsStore.DisposeAsync().ConfigureAwait(true);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RestartFailsClosedWhenDesktopHandoffOmitsCommitBoundary()
+    {
+        var directory = CreateTemporaryDirectory();
+        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
+        using var host = DownKyiHost.Create();
+        var restartLauncher = new StubRestartLauncher(true);
+        var lifecycle = CreateLifecycle(
+            settingsStore,
+            new RecordingLogService(),
+            restartLauncher,
+            desktopShutdown: _ => Task.FromResult(new DesktopTerminationOutcome(
+                PostHandoffInvoked: false,
+                HandoffFailure: null,
+                PostHandoffFailure: null)));
+        lifecycle.AttachHost(host);
+
+        try
+        {
+            await lifecycle.StartHostAsync().ConfigureAwait(true);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
+
+            Assert.Contains("accepted restart handoff", exception.Message, StringComparison.Ordinal);
+            Assert.Equal(0, restartLauncher.CommitCount);
+            Assert.Equal(1, restartLauncher.RevokeCount);
+        }
+        finally
+        {
+            await settingsStore.DisposeAsync().ConfigureAwait(true);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RestartPreservesCommitFailureAfterAcceptedDesktopHandoff()
+    {
+        var directory = CreateTemporaryDirectory();
+        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
+        using var host = DownKyiHost.Create();
+        var restartLauncher = new StubRestartLauncher(
+            true,
+            commitFailure: new InvalidOperationException("helper commit failure"));
+        var lifecycle = CreateLifecycle(
+            settingsStore,
+            new RecordingLogService(),
+            restartLauncher,
+            desktopShutdown: CompleteDesktopHandoff);
+        lifecycle.AttachHost(host);
+
+        try
+        {
+            await lifecycle.StartHostAsync().ConfigureAwait(true);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
+
+            Assert.Equal("helper commit failure", exception.Message);
+            Assert.Equal(1, restartLauncher.CommitCount);
+            Assert.Equal(0, restartLauncher.RevokeCount);
         }
         finally
         {
@@ -327,8 +402,8 @@ public sealed class AvaloniaApplicationLifecycleTests
             settingsStore,
             new RecordingLogService(),
             restartLauncher,
-            desktopShutdown: () =>
-                Task.FromException(new InvalidOperationException("desktop shutdown failure")));
+            desktopShutdown: _ => FailDesktopHandoff(
+                new InvalidOperationException("desktop shutdown failure")));
         lifecycle.AttachHost(host);
 
         try
@@ -458,7 +533,7 @@ public sealed class AvaloniaApplicationLifecycleTests
         IApplicationLogService logService,
         IProcessRestartLauncher restartLauncher,
         TimeSpan? cleanupTimeout = null,
-        Func<Task>? desktopShutdown = null)
+        Func<Action?, Task<DesktopTerminationOutcome>>? desktopShutdown = null)
     {
         return cleanupTimeout != null || desktopShutdown != null
             ? new AvaloniaApplicationLifecycle(
@@ -484,6 +559,56 @@ public sealed class AvaloniaApplicationLifecycleTests
         return directory;
     }
 
+    private static async Task<DesktopTerminationOutcome> CompleteDesktopHandoff(
+        Action? afterHandoff)
+    {
+        if (afterHandoff == null)
+        {
+            return new DesktopTerminationOutcome(
+                PostHandoffInvoked: false,
+                HandoffFailure: null,
+                PostHandoffFailure: null);
+        }
+
+        var operation = CaptureHandoffOperation(afterHandoff);
+        await Task.WhenAny(operation).ConfigureAwait(false);
+        return new DesktopTerminationOutcome(
+            PostHandoffInvoked: true,
+            HandoffFailure: null,
+            PostHandoffFailure: GetTaskFailure(operation));
+    }
+
+    private static async Task CaptureHandoffOperation(Action operation)
+    {
+        operation();
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    private static Exception? GetTaskFailure(Task task)
+    {
+        if (task.IsCanceled)
+        {
+            return new TaskCanceledException(task);
+        }
+
+        if (!task.IsFaulted)
+        {
+            return null;
+        }
+
+        return task.Exception!.InnerExceptions.Count == 1
+            ? task.Exception.InnerExceptions[0]
+            : task.Exception;
+    }
+
+    private static Task<DesktopTerminationOutcome> FailDesktopHandoff(Exception failure)
+    {
+        return Task.FromResult(new DesktopTerminationOutcome(
+            PostHandoffInvoked: false,
+            HandoffFailure: failure,
+            PostHandoffFailure: null));
+    }
+
     private sealed class StubRestartLauncher(
         bool result,
         Exception? revokeFailure = null,
@@ -507,12 +632,13 @@ public sealed class AvaloniaApplicationLifecycleTests
 
         private sealed class Transaction(StubRestartLauncher owner) : IProcessRestartTransaction
         {
-            public Task CommitAsync()
+            public void Commit()
             {
                 owner.CommitCount++;
-                return owner._commitFailure == null
-                    ? Task.CompletedTask
-                    : Task.FromException(owner._commitFailure);
+                if (owner._commitFailure != null)
+                {
+                    throw owner._commitFailure;
+                }
             }
 
             public Task RevokeAsync()

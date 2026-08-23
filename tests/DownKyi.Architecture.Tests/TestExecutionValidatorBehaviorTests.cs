@@ -35,7 +35,7 @@ public sealed class TestExecutionValidatorBehaviorTests
         Assert.Contains("ExecutedExpected", result.Output, StringComparison.Ordinal);
     }
 
-    private static ProcessResult InvokeValidator(string scenario)
+    private static BoundedProcessResult InvokeValidator(string scenario)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"downkyi-trx-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -52,42 +52,35 @@ public sealed class TestExecutionValidatorBehaviorTests
                 File.WriteAllText(Path.Combine(directory, "unexpected.trx"), report!);
             }
 
-            using var process = new Process
+            var startInfo = new ProcessStartInfo
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "pwsh",
-                    WorkingDirectory = RepositoryRoot,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
             };
-            process.StartInfo.ArgumentList.Add("-NoProfile");
-            process.StartInfo.ArgumentList.Add("-NonInteractive");
-            process.StartInfo.ArgumentList.Add("-Command");
-            process.StartInfo.ArgumentList.Add("""
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add("""
                 . $env:DOWNKYI_TEST_RUNNER
                 Assert-DownKyiExpectedTestExecution `
                   -RunnerExitCode ([int]$env:DOWNKYI_RUNNER_EXIT) `
                   -TrxPath $env:DOWNKYI_TRX_PATH `
                   -ExpectedClassNames @($env:DOWNKYI_EXPECTED_CLASS)
                 """);
-            process.StartInfo.Environment["DOWNKYI_TEST_RUNNER"] =
+            startInfo.Environment["DOWNKYI_TEST_RUNNER"] =
                 Path.Combine(RepositoryRoot, "script", "test-project-runner.ps1");
-            process.StartInfo.Environment["DOWNKYI_TRX_PATH"] = reportPath;
-            process.StartInfo.Environment["DOWNKYI_EXPECTED_CLASS"] = ExpectedClass;
-            process.StartInfo.Environment["DOWNKYI_RUNNER_EXIT"] =
+            startInfo.Environment["DOWNKYI_TRX_PATH"] = reportPath;
+            startInfo.Environment["DOWNKYI_EXPECTED_CLASS"] = ExpectedClass;
+            startInfo.Environment["DOWNKYI_RUNNER_EXIT"] =
                 scenario == "runner-failure" ? "1" : "0";
 
-            process.Start();
-            var standardOutput = process.StandardOutput.ReadToEndAsync();
-            var standardError = process.StandardError.ReadToEndAsync();
-            process.WaitForExit();
-            return new ProcessResult(
-                process.ExitCode,
-                standardOutput.GetAwaiter().GetResult() + standardError.GetAwaiter().GetResult());
+            return BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -177,6 +170,4 @@ public sealed class TestExecutionValidatorBehaviorTests
         return directory?.FullName
                ?? throw new DirectoryNotFoundException("Could not locate the DownKyi repository root.");
     }
-
-    private sealed record ProcessResult(int ExitCode, string Output);
 }

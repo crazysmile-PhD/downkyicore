@@ -25,7 +25,7 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
     private readonly IApplicationLogService _logService;
     private readonly ILogger<AvaloniaApplicationLifecycle> _logger;
     private readonly TimeSpan _cleanupTimeout;
-    private readonly Func<Task> _desktopShutdown;
+    private readonly Func<Action?, Task<DesktopTerminationOutcome>> _desktopShutdown;
     private IHost? _host;
     private Task? _hostStartupTask;
     private Task? _shutdownTask;
@@ -53,7 +53,7 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
         IApplicationLogService logService,
         ILogger<AvaloniaApplicationLifecycle> logger,
         TimeSpan cleanupTimeout,
-        Func<Task>? desktopShutdown = null)
+        Func<Action?, Task<DesktopTerminationOutcome>>? desktopShutdown = null)
     {
         _desktopContext = desktopContext ?? throw new ArgumentNullException(nameof(desktopContext));
         _restartLauncher = restartLauncher ?? throw new ArgumentNullException(nameof(restartLauncher));
@@ -105,7 +105,10 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
     {
         cancellationToken.ThrowIfCancellationRequested();
         var outcome = await ExecuteShutdownAsync().ConfigureAwait(false);
-        ThrowFailures(outcome.CleanupFailure, outcome.DesktopHandoffFailure);
+        ThrowFailures(
+            outcome.CleanupFailure,
+            outcome.DesktopTermination.HandoffFailure,
+            outcome.DesktopTermination.PostHandoffFailure);
     }
 
     public async Task<bool> RestartAsync(CancellationToken cancellationToken = default)
@@ -117,13 +120,20 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
             return false;
         }
 
-        var outcome = await ExecuteShutdownAsync().ConfigureAwait(false);
+        var outcome = await ExecuteShutdownAsync(helper.Commit).ConfigureAwait(false);
         Exception? helperCompletionFailure;
-        if (outcome.DesktopHandoffFailure == null)
+        Exception? desktopProtocolFailure = null;
+        if (outcome.DesktopTermination.HandoffFailure == null &&
+            !outcome.DesktopTermination.PostHandoffInvoked)
         {
-            helperCompletionFailure = await ObserveFailureAsync(
-                    CaptureOperation(helper.CommitAsync))
-                .ConfigureAwait(false);
+            desktopProtocolFailure = new InvalidOperationException(
+                "Desktop termination did not execute the accepted restart handoff.");
+        }
+
+        if (outcome.DesktopTermination.HandoffFailure == null &&
+            desktopProtocolFailure == null)
+        {
+            helperCompletionFailure = null;
         }
         else
         {
@@ -137,21 +147,37 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
 
         ThrowFailures(
             outcome.CleanupFailure,
-            outcome.DesktopHandoffFailure,
+            outcome.DesktopTermination.HandoffFailure,
+            desktopProtocolFailure,
+            outcome.DesktopTermination.PostHandoffFailure,
             helperCompletionFailure,
             helperDisposalFailure);
         return true;
     }
 
-    private async Task<ShutdownOutcome> ExecuteShutdownAsync()
+    private async Task<ShutdownOutcome> ExecuteShutdownAsync(Action? afterHandoff = null)
     {
         var cleanupFailure = await ObserveFailureAsync(
                 CaptureOperation(() => RequestShutdownAsync(CancellationToken.None)))
             .ConfigureAwait(false);
-        var desktopHandoffFailure = await ObserveFailureAsync(
-                CaptureOperation(_desktopShutdown))
-            .ConfigureAwait(false);
-        return new ShutdownOutcome(cleanupFailure, desktopHandoffFailure);
+        var desktopOperation = CaptureDesktopTerminationOperation(
+            () => _desktopShutdown(afterHandoff));
+        await Task.WhenAny(desktopOperation).ConfigureAwait(false);
+        var desktopFailure = GetTaskFailure(desktopOperation);
+        var desktopTermination = desktopFailure == null
+            ? await desktopOperation.ConfigureAwait(false)
+            : new DesktopTerminationOutcome(
+                PostHandoffInvoked: false,
+                HandoffFailure: desktopFailure,
+                PostHandoffFailure: null);
+
+        return new ShutdownOutcome(cleanupFailure, desktopTermination);
+    }
+
+    private static async Task<DesktopTerminationOutcome> CaptureDesktopTerminationOperation(
+        Func<Task<DesktopTerminationOutcome>> operation)
+    {
+        return await operation().ConfigureAwait(false);
     }
 
     private async Task StartHostCoreAsync(IHost host)
@@ -307,5 +333,5 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
 
     private sealed record ShutdownOutcome(
         Exception? CleanupFailure,
-        Exception? DesktopHandoffFailure);
+        DesktopTerminationOutcome DesktopTermination);
 }

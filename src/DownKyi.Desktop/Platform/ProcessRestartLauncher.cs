@@ -19,7 +19,7 @@ internal interface IProcessRestartLauncher
 
 internal interface IProcessRestartTransaction : IAsyncDisposable
 {
-    Task CommitAsync();
+    void Commit();
 
     Task RevokeAsync();
 }
@@ -226,19 +226,17 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
             }
         }
 
-        public async Task CommitAsync()
+        public void Commit()
         {
             CompleteTransaction(1);
             try
             {
-                await _authorizationPipe
-                    .WriteAsync(new[] { CommitAuthorization }, CancellationToken.None)
-                    .ConfigureAwait(false);
-                await _authorizationPipe.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                _authorizationPipe.WriteByte(CommitAuthorization);
+                _authorizationPipe.Flush();
             }
             finally
             {
-                await _authorizationPipe.DisposeAsync().ConfigureAwait(false);
+                _authorizationPipe.Dispose();
                 _process.Dispose();
             }
         }

@@ -7,6 +7,17 @@ namespace DownKyi.Architecture.Tests;
 public sealed class TestRunnerPolicyArchitectureTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly string[] RepositoryTestProjectPaths = Directory.EnumerateFiles(
+            Path.Combine(RepositoryRoot, "tests"),
+            "*.Tests.csproj",
+            SearchOption.AllDirectories)
+        .Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
+        .Order(StringComparer.Ordinal)
+        .ToArray();
+    private static readonly string[] RepositoryTestAssemblyNames = RepositoryTestProjectPaths
+        .Select(path => Path.GetFileNameWithoutExtension(path)
+            ?? throw new InvalidOperationException($"Test project has no assembly name: {path}"))
+        .ToArray();
 
     [Fact]
     public void EveryRepositoryTestProjectUsesTheCentralInProcessRunner()
@@ -19,15 +30,7 @@ public sealed class TestRunnerPolicyArchitectureTests
                 entry => entry.GetProperty("project").GetString()!,
                 entry => entry,
                 StringComparer.Ordinal);
-        var testProjects = Directory.EnumerateFiles(
-                Path.Combine(RepositoryRoot, "tests"),
-                "*.Tests.csproj",
-                SearchOption.AllDirectories)
-            .Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Equal(testProjects, policyProjects.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(RepositoryTestProjectPaths, policyProjects.Keys.Order(StringComparer.Ordinal));
         foreach (var project in policyProjects.Values)
         {
             Assert.Equal("xunit-in-process", project.GetProperty("runner").GetString());
@@ -55,13 +58,14 @@ public sealed class TestRunnerPolicyArchitectureTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        foreach (var workflowPath in workflowPaths)
-        {
-            var workflow = File.ReadAllText(workflowPath);
-            Assert.DoesNotContain(
-                ExtractWorkflowRunScripts(workflow),
-                ContainsDirectTestEntrypoint);
-        }
+        var violations = workflowPaths
+            .SelectMany(workflowPath => ExtractWorkflowRunScripts(File.ReadAllText(workflowPath))
+                .Where(ContainsDirectTestEntrypoint)
+                .Select(script => $"{Path.GetFileName(workflowPath)}: {script}"))
+            .ToArray();
+        Assert.True(
+            violations.Length == 0,
+            $"Formal workflows contain direct test execution capabilities:{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
 
         AssertWorkflowUsesSharedRunner(
             ".github/workflows/quality.yml",
@@ -81,6 +85,10 @@ public sealed class TestRunnerPolicyArchitectureTests
     [InlineData("vstest.console.exe $unknownAssembly")]
     [InlineData("exec dotnet test $unknownTarget -p:DownKyiCentralTestRunner=true")]
     [InlineData("sudo dotnet vstest $unknownAssembly")]
+    [InlineData("dotnet $unknownAssembly")]
+    [InlineData("dotnet ./tests/DownKyi.Tests/bin/Release/net10.0/DownKyi.Tests.dll")]
+    [InlineData("./tests/DownKyi.Tests/bin/Release/net10.0/DownKyi.Tests")]
+    [InlineData("dotnet run --project ./tests/DownKyi.Tests/DownKyi.Tests.csproj")]
     public void WorkflowTestCapabilityIsRejectedWithoutInferringItsTarget(string runScript)
     {
         Assert.True(ContainsDirectTestEntrypoint(runScript));
@@ -94,6 +102,16 @@ public sealed class TestRunnerPolicyArchitectureTests
             Invoke-DownKyiTestProject -ProjectPath $unknownTarget
             """;
 
+        Assert.False(ContainsDirectTestEntrypoint(runScript));
+    }
+
+    [Theory]
+    [InlineData("dotnet restore ./DownKyi.sln")]
+    [InlineData("dotnet build ./DownKyi.sln -c Release")]
+    [InlineData("dotnet --info")]
+    [InlineData("dotnet run --project ./benchmarks/DownKyi.SystemBenchmarks/DownKyi.SystemBenchmarks.csproj")]
+    public void StaticallyProvenNonTestDotnetCapabilitiesRemainAllowed(string runScript)
+    {
         Assert.False(ContainsDirectTestEntrypoint(runScript));
     }
 
@@ -179,10 +197,74 @@ public sealed class TestRunnerPolicyArchitectureTests
 
     private static bool ContainsDirectTestEntrypoint(string runScript)
     {
-        return Regex.IsMatch(
-            runScript,
-            @"(?im)\bdotnet\s+(?:test|vstest)\b|\bdotnet\s+[^\r\n]*xunit[^\r\n]*\.dll\b|\b(?:vstest\.console|xunit\.console)(?:\.exe)?\b",
-            RegexOptions.CultureInvariant);
+        if (Regex.IsMatch(
+                runScript,
+                @"(?im)\b(?:vstest\.console|xunit\.console)(?:\.exe)?\b",
+                RegexOptions.CultureInvariant))
+        {
+            return true;
+        }
+
+        foreach (var assemblyName in RepositoryTestAssemblyNames)
+        {
+            if (Regex.IsMatch(
+                    runScript,
+                    $@"(?im)(?:^|[\s'\""=])(?:[^\r\n\s'\"";|]*[\\/]bin[\\/][^\r\n\s'\"";|]*[\\/]{Regex.Escape(assemblyName)}(?:\.dll|\.exe)?|[^\r\n\s'\"";|]*{Regex.Escape(assemblyName)}\.(?:dll|exe))(?=$|[\s'\"";|])",
+                    RegexOptions.CultureInvariant))
+            {
+                return true;
+            }
+        }
+
+        foreach (Match invocation in Regex.Matches(
+                     runScript,
+                     @"(?im)\bdotnet(?:\.exe)?\s+(?<command>[^\s\)]+)",
+                     RegexOptions.CultureInvariant))
+        {
+            var command = invocation.Groups["command"].Value.Trim('\'', '\"');
+            if (command is "restore" or "build" or "publish" or "format" or "tool" or
+                "package" or "pack" or "nuget" or "msbuild" or "sln" or "workload" or
+                "--info" or "--version")
+            {
+                continue;
+            }
+
+            if (command == "run" && IsStaticallyProvenNonTestRun(runScript, invocation.Index))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsStaticallyProvenNonTestRun(string runScript, int invocationIndex)
+    {
+        var lineEnd = runScript.IndexOfAny(['\r', '\n'], invocationIndex);
+        var invocationLine = lineEnd < 0
+            ? runScript[invocationIndex..]
+            : runScript[invocationIndex..lineEnd];
+        var projectMatch = Regex.Match(
+            invocationLine,
+            @"--project\s+(?<project>[^\s]+\.csproj)\b",
+            RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        if (!projectMatch.Success)
+        {
+            return false;
+        }
+
+        var relativePath = projectMatch.Groups["project"].Value
+            .Trim('\'', '\"')
+            .Replace('\\', '/')
+            .TrimStart('.', '/');
+        var fullPath = Path.GetFullPath(relativePath, RepositoryRoot);
+        return fullPath.StartsWith(
+                   RepositoryRoot + Path.DirectorySeparatorChar,
+                   StringComparison.OrdinalIgnoreCase) &&
+               File.Exists(fullPath) &&
+               !RepositoryTestProjectPaths.Contains(relativePath, StringComparer.OrdinalIgnoreCase);
     }
 
     private static List<string> ExtractWorkflowRunScripts(string workflow)
@@ -236,32 +318,25 @@ public sealed class TestRunnerPolicyArchitectureTests
         return scripts;
     }
 
-    private static ProcessResult RunDotnet(params string[] arguments)
+    private static BoundedProcessResult RunDotnet(params string[] arguments)
     {
-        using var process = new Process
+        var startInfo = new ProcessStartInfo
         {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                WorkingDirectory = RepositoryRoot,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
+            FileName = "dotnet",
+            WorkingDirectory = RepositoryRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
         };
         foreach (var argument in arguments)
         {
-            process.StartInfo.ArgumentList.Add(argument);
+            startInfo.ArgumentList.Add(argument);
         }
 
-        process.Start();
-        var standardOutput = process.StandardOutput.ReadToEndAsync();
-        var standardError = process.StandardError.ReadToEndAsync();
-        process.WaitForExit();
-        return new ProcessResult(
-            process.ExitCode,
-            standardOutput.GetAwaiter().GetResult() + standardError.GetAwaiter().GetResult());
+        return BoundedProcessRunner.Run(
+            startInfo,
+            TestContext.Current.CancellationToken);
     }
 
     private static string Read(string relativePath)
@@ -282,6 +357,4 @@ public sealed class TestRunnerPolicyArchitectureTests
         return directory?.FullName
                ?? throw new DirectoryNotFoundException("Could not locate the DownKyi repository root.");
     }
-
-    private sealed record ProcessResult(int ExitCode, string Output);
 }

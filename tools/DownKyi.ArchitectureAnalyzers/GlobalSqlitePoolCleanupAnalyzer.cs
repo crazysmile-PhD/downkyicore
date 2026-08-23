@@ -51,19 +51,24 @@ public sealed class GlobalSqlitePoolCleanupAnalyzer : DiagnosticAnalyzer
 
             compilationContext.RegisterOperationAction(operationContext =>
             {
-                var invocation = (IInvocationOperation)operationContext.Operation;
+                var targetMethod = operationContext.Operation switch
+                {
+                    IInvocationOperation invocation => invocation.TargetMethod,
+                    IMethodReferenceOperation methodReference => methodReference.Method,
+                    _ => null
+                };
                 if (SymbolEqualityComparer.Default.Equals(
-                        invocation.TargetMethod.OriginalDefinition,
+                        targetMethod?.OriginalDefinition,
                         clearAllPools.OriginalDefinition) &&
                     !IsAllowedProcessOwner(
                         operationContext.Compilation,
-                        invocation.Syntax.SyntaxTree.FilePath))
+                        operationContext.Operation.Syntax.SyntaxTree.FilePath))
                 {
                     operationContext.ReportDiagnostic(Diagnostic.Create(
                         Rule,
-                        invocation.Syntax.GetLocation()));
+                        operationContext.Operation.Syntax.GetLocation()));
                 }
-            }, OperationKind.Invocation);
+            }, OperationKind.Invocation, OperationKind.MethodReference);
         });
     }
 
