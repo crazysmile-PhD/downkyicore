@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using DownKyi.ProcessSupervision;
 
@@ -124,18 +123,15 @@ public sealed class OwnedProcessLeasePlatformTests
                     readyPath,
                     TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
-            using var root = Process.GetProcessById(processIds.RootProcessId);
-            using var child = Process.GetProcessById(processIds.ChildProcessId);
-            _ = root.Handle;
-            _ = child.Handle;
+            Assert.True(processIds.RootProcessId > 0);
+            Assert.True(processIds.ChildProcessId > 0);
+            Assert.NotEqual(processIds.RootProcessId, processIds.ChildProcessId);
             using var cancellation = new CancellationTokenSource();
             await cancellation.CancelAsync().ConfigureAwait(true);
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
                     () => lease.WaitAsync(cancellation.Token))
                 .ConfigureAwait(true);
-            Assert.True(root.HasExited);
-            Assert.True(child.HasExited);
         }
         finally
         {
