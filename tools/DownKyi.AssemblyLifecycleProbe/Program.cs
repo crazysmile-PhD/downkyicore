@@ -161,7 +161,11 @@ internal static class Program
                 if (!child.WaitForExit(10_000))
                 {
                     child.Kill(entireProcessTree: true);
-                    child.WaitForExit();
+                    if (!child.WaitForExit(5_000))
+                    {
+                        return 1;
+                    }
+
                     return 1;
                 }
 

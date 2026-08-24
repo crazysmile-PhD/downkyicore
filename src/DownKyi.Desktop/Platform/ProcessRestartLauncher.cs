@@ -29,8 +29,10 @@ internal interface IProcessRestartTransaction : IAsyncDisposable
 internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> logger) : IProcessRestartLauncher
 {
     internal const string WaitForParentArgument = "--restart-after-pid";
+    internal const string ParentStartedAtArgument = "--restart-parent-started-at-utc-ticks";
     internal const string AuthorizationPipeArgument = "--restart-authorization-pipe";
     internal static readonly TimeSpan RestartHelperTerminationTimeout = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan RestartParentExitTimeout = TimeSpan.FromSeconds(30);
 
     private const byte CommitAuthorization = 1;
 
@@ -105,10 +107,13 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(parentProcessId);
         try
         {
-            return new ProcessRestartTransaction(parentProcessId);
+            using var parent = Process.GetProcessById(parentProcessId);
+            var parentStartedAtUtcTicks = parent.StartTime.ToUniversalTime().Ticks;
+            return new ProcessRestartTransaction(parentProcessId, parentStartedAtUtcTicks);
         }
         catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception
-            or PlatformNotSupportedException or IOException or UnauthorizedAccessException)
+            or PlatformNotSupportedException or IOException or UnauthorizedAccessException
+            or ArgumentException)
         {
             _logger.LogErrorMessage("The restart helper could not be started.", e);
             return null;
@@ -120,29 +125,31 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (!TryParseRestartRequest(arguments, out var parentProcessId, out var pipeHandle))
+        if (!TryParseRestartRequest(
+                arguments,
+                out var parentProcessId,
+                out var parentStartedAtUtcTicks,
+                out var pipeHandle))
         {
             return false;
         }
 
-        using var parent = CaptureParentProcess(parentProcessId);
+        using var parent = CaptureParentProcess(parentProcessId, parentStartedAtUtcTicks);
         using var authorizationPipe = new AnonymousPipeClientStream(PipeDirection.In, pipeHandle);
         await ExecuteAuthorizedRestartAsync(
                 authorizationPipe,
-                async token =>
+                token => parent?.WaitForExitAsync(token) ?? Task.CompletedTask,
+                _ =>
                 {
-                    if (parent != null)
-                    {
-                        await parent.WaitForExitAsync(token).ConfigureAwait(false);
-                    }
-
-                    token.ThrowIfCancellationRequested();
                     using var process = Process.Start(CreateStartInfo(null));
                     if (process == null)
                     {
                         throw new InvalidOperationException("The application could not be relaunched.");
                     }
+
+                    return Task.CompletedTask;
                 },
+                RestartParentExitTimeout,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -151,11 +158,17 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
 
     internal static async Task<bool> ExecuteAuthorizedRestartAsync(
         Stream authorization,
+        Func<CancellationToken, Task> waitForParentExit,
         Func<CancellationToken, Task> restart,
+        TimeSpan parentExitTimeout,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(authorization);
+        ArgumentNullException.ThrowIfNull(waitForParentExit);
         ArgumentNullException.ThrowIfNull(restart);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
+            parentExitTimeout,
+            TimeSpan.Zero);
 
         var decision = new byte[1];
         var bytesRead = await authorization
@@ -166,25 +179,38 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
             return false;
         }
 
+        await waitForParentExit(cancellationToken)
+            .WaitAsync(parentExitTimeout, cancellationToken)
+            .ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         await restart(cancellationToken).ConfigureAwait(false);
         return true;
     }
 
-    internal static Process? CaptureParentProcess(int parentProcessId)
+    internal static Process? CaptureParentProcess(
+        int parentProcessId,
+        long parentStartedAtUtcTicks)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(parentProcessId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(parentStartedAtUtcTicks);
         try
         {
             var parent = Process.GetProcessById(parentProcessId);
             try
             {
                 _ = parent.Handle;
+                if (parent.StartTime.ToUniversalTime().Ticks != parentStartedAtUtcTicks)
+                {
+                    throw new InvalidOperationException(
+                        "The restart helper parent identity no longer matches its prepared owner.");
+                }
+
                 return parent;
             }
-            catch (InvalidOperationException)
+            catch
             {
                 parent.Dispose();
-                return null;
+                throw;
             }
         }
         catch (ArgumentException)
@@ -196,27 +222,39 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
     internal static bool TryParseRestartRequest(
         IReadOnlyList<string> arguments,
         out int parentProcessId,
+        out long parentStartedAtUtcTicks,
         out string pipeHandle)
     {
         parentProcessId = 0;
+        parentStartedAtUtcTicks = 0;
         pipeHandle = string.Empty;
-        return arguments.Count == 4
+        return arguments.Count == 6
                && string.Equals(arguments[0], WaitForParentArgument, StringComparison.Ordinal)
                && int.TryParse(
                    arguments[1],
                    NumberStyles.None,
                    CultureInfo.InvariantCulture,
-                   out parentProcessId)
+                    out parentProcessId)
                && parentProcessId > 0
-               && string.Equals(arguments[2], AuthorizationPipeArgument, StringComparison.Ordinal)
-               && !string.IsNullOrWhiteSpace(pipeHandle = arguments[3]);
+               && string.Equals(arguments[2], ParentStartedAtArgument, StringComparison.Ordinal)
+               && long.TryParse(
+                   arguments[3],
+                   NumberStyles.None,
+                   CultureInfo.InvariantCulture,
+                   out parentStartedAtUtcTicks)
+               && parentStartedAtUtcTicks > 0
+               && parentStartedAtUtcTicks <= DateTime.MaxValue.Ticks
+               && string.Equals(arguments[4], AuthorizationPipeArgument, StringComparison.Ordinal)
+               && !string.IsNullOrWhiteSpace(pipeHandle = arguments[5]);
     }
 
     internal static ProcessStartInfo CreateStartInfo(
         int? parentProcessId,
+        long? parentStartedAtUtcTicks = null,
         string? authorizationPipeHandle = null)
     {
-        if (parentProcessId.HasValue != !string.IsNullOrWhiteSpace(authorizationPipeHandle))
+        if (parentProcessId.HasValue != parentStartedAtUtcTicks.HasValue ||
+            parentProcessId.HasValue != !string.IsNullOrWhiteSpace(authorizationPipeHandle))
         {
             throw new ArgumentException(
                 "Restart helper process and authorization pipe arguments must be provided together.");
@@ -251,6 +289,9 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         {
             startInfo.ArgumentList.Add(WaitForParentArgument);
             startInfo.ArgumentList.Add(processId.ToString(CultureInfo.InvariantCulture));
+            startInfo.ArgumentList.Add(ParentStartedAtArgument);
+            startInfo.ArgumentList.Add(
+                parentStartedAtUtcTicks!.Value.ToString(CultureInfo.InvariantCulture));
             startInfo.ArgumentList.Add(AuthorizationPipeArgument);
             startInfo.ArgumentList.Add(authorizationPipeHandle!);
         }
@@ -264,7 +305,7 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         private readonly Process _process;
         private int _completionState;
 
-        public ProcessRestartTransaction(int parentProcessId)
+        public ProcessRestartTransaction(int parentProcessId, long parentStartedAtUtcTicks)
         {
             _authorizationPipe = new AnonymousPipeServerStream(
                 PipeDirection.Out,
@@ -273,6 +314,7 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
             {
                 _process = Process.Start(CreateStartInfo(
                     parentProcessId,
+                    parentStartedAtUtcTicks,
                     _authorizationPipe.GetClientHandleAsString()))
                     ?? throw new InvalidOperationException(
                         "The restart helper could not be started.");
