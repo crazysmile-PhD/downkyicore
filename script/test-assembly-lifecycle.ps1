@@ -1251,7 +1251,7 @@ function New-ObservedChildReleaseLease {
         [System.Diagnostics.ProcessStartInfo]$StartInfo
     )
 
-    $pipeName = "downkyi-lifecycle-$([Guid]::NewGuid().ToString('N'))"
+    $pipeName = "dkl-$([Guid]::NewGuid().ToString('N').Substring(0, 16))"
     $pipe = [IO.Pipes.NamedPipeServerStream]::new(
         $pipeName,
         [IO.Pipes.PipeDirection]::Out,

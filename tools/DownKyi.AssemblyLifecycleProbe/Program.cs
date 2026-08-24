@@ -94,10 +94,19 @@ internal static class Program
 
         var startInfo = new ProcessStartInfo
         {
-            FileName = processPath,
-            UseShellExecute = true,
+            FileName = OperatingSystem.IsWindows() ? processPath : "/bin/sh",
+            UseShellExecute = OperatingSystem.IsWindows(),
+            CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
         };
+        if (!OperatingSystem.IsWindows())
+        {
+            startInfo.ArgumentList.Add("-c");
+            startInfo.ArgumentList.Add(
+                "exec \"$0\" \"$@\" </dev/null >/dev/null 2>&1");
+            startInfo.ArgumentList.Add(processPath);
+        }
+
         startInfo.ArgumentList.Add(typeof(Program).Assembly.Location);
         startInfo.ArgumentList.Add("--child-hold-ms");
         startInfo.ArgumentList.Add(

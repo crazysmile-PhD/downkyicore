@@ -94,7 +94,7 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         byte releaseValue,
         int expectedExitCode)
     {
-        var pipeName = $"downkyi-lifecycle-test-{Guid.NewGuid():N}";
+        var pipeName = CreatePipeName();
         using var releaseOwner = new NamedPipeServerStream(
             pipeName,
             PipeDirection.Out,
@@ -104,16 +104,11 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         var connection = releaseOwner.WaitForConnectionAsync(
             TestContext.Current.CancellationToken);
         var startInfo = CreateProbeStartInfo();
-        startInfo.ArgumentList.Add("--spawn-residual-child-ms");
+        startInfo.ArgumentList.Add("--child-hold-ms");
         startInfo.ArgumentList.Add("5000");
         startInfo.Environment[ChildReleasePipeEnvironmentVariable] = pipeName;
-        var root = BoundedProcessRunner.Run(
-            startInfo,
-            TestContext.Current.CancellationToken);
-        Assert.Equal(0, root.ExitCode);
-        using var result = JsonDocument.Parse(root.Output);
-        var childId = result.RootElement.GetProperty("ChildProcessId").GetInt32();
-        using var child = Process.GetProcessById(childId);
+        using var child = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("The transient child did not start.");
         try
         {
             Assert.False(child.HasExited);
@@ -134,6 +129,66 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         finally
         {
             await TerminateIfRunningAsync(child).ConfigureAwait(true);
+        }
+    }
+
+    [Fact]
+    public async Task ResidualChildDoesNotRetainTheRootProbeOutputHandles()
+    {
+        var pipeName = CreatePipeName();
+        using var releaseOwner = new NamedPipeServerStream(
+            pipeName,
+            PipeDirection.Out,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous);
+        var connection = releaseOwner.WaitForConnectionAsync(
+            TestContext.Current.CancellationToken);
+        var startInfo = CreateProbeStartInfo();
+        startInfo.ArgumentList.Add("--spawn-residual-child-ms");
+        startInfo.ArgumentList.Add("5000");
+        startInfo.Environment[ChildReleasePipeEnvironmentVariable] = pipeName;
+        using var root = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("The residual-child probe did not start.");
+        var output = root.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var error = root.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        Process? child = null;
+        try
+        {
+            await WaitForExitAsync(root).ConfigureAwait(true);
+            var rootOutput = await output
+                .WaitAsync(ProbeTimeout, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.Equal(string.Empty, await error
+                .WaitAsync(ProbeTimeout, TestContext.Current.CancellationToken)
+                .ConfigureAwait(true));
+            Assert.Equal(0, root.ExitCode);
+
+            using var result = JsonDocument.Parse(rootOutput);
+            var childId = result.RootElement.GetProperty("ChildProcessId").GetInt32();
+            child = Process.GetProcessById(childId);
+            Assert.False(child.HasExited);
+            await connection.WaitAsync(
+                    ProbeTimeout,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await releaseOwner.WriteAsync(
+                    new[] { ChildReleaseCompleted },
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await releaseOwner.FlushAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await WaitForExitAsync(child).ConfigureAwait(true);
+        }
+        finally
+        {
+            if (child != null)
+            {
+                await TerminateIfRunningAsync(child).ConfigureAwait(true);
+                child.Dispose();
+            }
+
+            await TerminateIfRunningAsync(root).ConfigureAwait(true);
         }
     }
 
@@ -161,6 +216,11 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         };
         startInfo.ArgumentList.Add(GetProbePath());
         return startInfo;
+    }
+
+    private static string CreatePipeName()
+    {
+        return $"dkt-{Guid.NewGuid():N}"[..20];
     }
 
     private static async Task CompleteAsync(AnonymousPipeServerStream lease)
