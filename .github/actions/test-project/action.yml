@@ -1,0 +1,85 @@
+name: Run repository test project
+description: Executes one platform-owned test project through the central runner and result validator.
+
+inputs:
+  repository-root:
+    description: Repository root containing the central runner.
+    required: false
+    default: ''
+  project-path:
+    description: Test project path.
+    required: true
+  configuration:
+    description: Build configuration.
+    required: false
+    default: Release
+  no-restore:
+    description: Skip restore in the central runner.
+    required: false
+    default: 'false'
+  no-build:
+    description: Skip build in the central runner.
+    required: false
+    default: 'false'
+  results-directory:
+    description: Optional TRX output directory.
+    required: false
+    default: ''
+  trx-name:
+    description: Optional TRX filename.
+    required: false
+    default: ''
+  expected-class:
+    description: Optional class that must have a passing result.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Run central project test gate
+      shell: pwsh
+      env:
+        DOWNKYI_TEST_REPOSITORY_ROOT: ${{ inputs.repository-root }}
+        DOWNKYI_TEST_PROJECT_PATH: ${{ inputs.project-path }}
+        DOWNKYI_TEST_CONFIGURATION: ${{ inputs.configuration }}
+        DOWNKYI_TEST_NO_RESTORE: ${{ inputs.no-restore }}
+        DOWNKYI_TEST_NO_BUILD: ${{ inputs.no-build }}
+        DOWNKYI_TEST_RESULTS_DIRECTORY: ${{ inputs.results-directory }}
+        DOWNKYI_TEST_TRX_NAME: ${{ inputs.trx-name }}
+        DOWNKYI_TEST_EXPECTED_CLASS: ${{ inputs.expected-class }}
+      run: |
+        $actionRepositoryRoot = (Resolve-Path (Join-Path '${{ github.action_path }}' '../../..')).Path
+        $repositoryRoot = if ([string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_REPOSITORY_ROOT)) {
+          $actionRepositoryRoot
+        }
+        else {
+          (Resolve-Path $env:DOWNKYI_TEST_REPOSITORY_ROOT).Path
+        }
+        . (Join-Path $actionRepositoryRoot 'script/test-project-runner.ps1')
+        $arguments = @{
+          RepositoryRoot = $repositoryRoot
+          ProjectPath = $env:DOWNKYI_TEST_PROJECT_PATH
+          Configuration = $env:DOWNKYI_TEST_CONFIGURATION
+        }
+        if ($env:DOWNKYI_TEST_NO_RESTORE -eq 'true') { $arguments.NoRestore = $true }
+        if ($env:DOWNKYI_TEST_NO_BUILD -eq 'true') { $arguments.NoBuild = $true }
+        if (-not [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_RESULTS_DIRECTORY)) {
+          $arguments.ResultsDirectory = $env:DOWNKYI_TEST_RESULTS_DIRECTORY
+        }
+        if (-not [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_TRX_NAME)) {
+          $arguments.TrxName = $env:DOWNKYI_TEST_TRX_NAME
+        }
+        if (-not [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_EXPECTED_CLASS)) {
+          $arguments.ClassNames = @($env:DOWNKYI_TEST_EXPECTED_CLASS)
+        }
+        $result = Invoke-DownKyiTestProject @arguments
+        if ([string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_EXPECTED_CLASS)) {
+          if ($result.ExitCode -ne 0) { throw 'Repository test project failed.' }
+        }
+        else {
+          Assert-DownKyiExpectedTestExecution `
+            -RunnerExitCode $result.ExitCode `
+            -TrxPath $result.TrxPath `
+            -ExpectedClassNames @($env:DOWNKYI_TEST_EXPECTED_CLASS)
+        }

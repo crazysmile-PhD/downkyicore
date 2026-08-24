@@ -34,11 +34,16 @@ workflow 只委派 project 與 selection intent，不能自行選 test host。�
 也共用 runtime execution guard，中央 runner 若退化成 VSTest 會在 assembly load 時
 fail closed。MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
 guard，不是可由呼叫者提供 property 的 authorization credential。
-中央 runner 的 `Get-DownKyiTestRunnerTrustInputs` 同時擁有 recovery workflow 的
-runner trust closure；provider 失敗、空清單或遺失的 declared input 都必須中止 recovery。
+完整 repository suite 與 required project gate 的 workflow step 必須使用結構化的
+`.github/actions/test-solution` / `.github/actions/test-project` boundary；任意 `run:`
+command 或 expression 不能取代 accepted test gate。Action 只傳遞 project/selection
+intent；central runner 仍獨占 runtime authorization 與 result validation。Recovery 先將
+`script/test-project-runner.ps1` 固定為 bootstrap
+trust root，再由 `Get-DownKyiTestRunnerTrustInputs` 宣告 dependency closure；provider
+變更/失敗、空清單或遺失的 declared input 都必須中止 recovery。
 需要證明實際 selection 的 security gate 必須使用共享 TRX
-validator，透過 test definition/result 關係確認預期 class 確實有通過的 execution
-result。
+validator，透過 test definition/result 關係確認預期 class 確實有 passed result，且
+runner success 不得與 failed report outcome 矛盾。
 
 `DKYI1001` compiler analyzer 以 compilation-resolved method symbol 禁止非 process
 owner 呼叫 `SqliteConnection.ClearAllPools`。它分析並回報 generated code，且必須在

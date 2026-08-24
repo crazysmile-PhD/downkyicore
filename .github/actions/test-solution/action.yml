@@ -1,0 +1,26 @@
+name: Run repository test solution
+description: Executes every platform-owned repository test project through the central runner.
+
+inputs:
+  results-directory:
+    description: Optional directory for TRX reports.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Run central repository test gate
+      shell: pwsh
+      env:
+        DOWNKYI_TEST_RESULTS_DIRECTORY: ${{ inputs.results-directory }}
+      run: |
+        $arguments = @(
+          '-Configuration', 'Release',
+          '-NoRestore',
+          '-NoBuild'
+        )
+        if (-not [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_RESULTS_DIRECTORY)) {
+          $arguments += @('-ResultsDirectory', $env:DOWNKYI_TEST_RESULTS_DIRECTORY)
+        }
+        & "$env:GITHUB_WORKSPACE/script/test-solution.ps1" @arguments

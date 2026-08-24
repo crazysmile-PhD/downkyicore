@@ -38,6 +38,8 @@ public sealed class AgentEnvironmentArchitectureTests
             "DownKyi.sln",
             "version.txt",
             "Directory.Packages.props",
+            ".github/actions/test-project/action.yml",
+            ".github/actions/test-solution/action.yml",
             "script/test-solution.ps1",
             "script/test-project-runner.ps1",
             "docs/testing/test-runner-policy.json",
@@ -62,7 +64,6 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("Enforce architecture policy", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("./script/test-solution.ps1", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--deprecated", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("LogFileName=test-results-${{ matrix.os }}.trx", qualityWorkflow, StringComparison.Ordinal);

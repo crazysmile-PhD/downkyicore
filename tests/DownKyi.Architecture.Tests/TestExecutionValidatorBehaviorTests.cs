@@ -18,6 +18,7 @@ public sealed class TestExecutionValidatorBehaviorTests
     [InlineData("multiple-reports")]
     [InlineData("other-class-only")]
     [InlineData("expected-class-not-executed")]
+    [InlineData("expected-class-failed-with-success-exit")]
     [InlineData("runner-failure")]
     public void ValidatorRejectsFalseGreenReports(string scenario)
     {
@@ -124,6 +125,13 @@ public sealed class TestExecutionValidatorBehaviorTests
                 "NotExecuted",
                 total: "1",
                 passed: "0"),
+            "expected-class-failed-with-success-exit" => CreateTrx(
+                ExpectedClass,
+                true,
+                "1",
+                "Failed",
+                passed: "0",
+                failed: "1"),
             "runner-failure" => CreateTrx(ExpectedClass, true, "1", "Passed"),
             "valid" => CreateTrx(ExpectedClass, true, "1", "Passed"),
             _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null)
@@ -136,12 +144,13 @@ public sealed class TestExecutionValidatorBehaviorTests
         string executed,
         string outcome,
         string? total = null,
-        string? passed = null)
+        string? passed = null,
+        string failed = "0")
     {
         total ??= executed;
         passed ??= executed;
         var counters = includeCounters
-            ? $"<Counters total=\"{total}\" executed=\"{executed}\" passed=\"{passed}\" failed=\"0\" />"
+            ? $"<Counters total=\"{total}\" executed=\"{executed}\" passed=\"{passed}\" failed=\"{failed}\" />"
             : string.Empty;
         return $$"""
             <?xml version="1.0" encoding="utf-8"?>

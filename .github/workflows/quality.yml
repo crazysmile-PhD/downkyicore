@@ -71,18 +71,11 @@ jobs:
           -p:TreatWarningsAsErrors=true
           -p:UseSharedCompilation=false
       - name: Enforce architecture policy
-        shell: pwsh
-        run: |
-          . ./script/test-project-runner.ps1
-          $result = Invoke-DownKyiTestProject `
-            -RepositoryRoot (Get-Location).Path `
-            -ProjectPath ./tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj `
-            -Configuration Release `
-            -NoRestore `
-            -NoBuild
-          if ($result.ExitCode -ne 0) {
-            throw "Architecture policy tests failed."
-          }
+        uses: ./.github/actions/test-project
+        with:
+          project-path: ./tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj
+          no-restore: 'true'
+          no-build: 'true'
       - name: Run review invariant failure corpus
         shell: pwsh
         run: >
@@ -92,13 +85,9 @@ jobs:
           -NoBuild
           -ResultsDirectory ./TestResults/review-invariants
       - name: Test
-        shell: pwsh
-        run: >
-          ./script/test-solution.ps1
-          -Configuration Release
-          -NoRestore
-          -NoBuild
-          -ResultsDirectory ./TestResults
+        uses: ./.github/actions/test-solution
+        with:
+          results-directory: ./TestResults
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
@@ -178,26 +167,18 @@ jobs:
           -p:EnforceCodeStyleInBuild=true
           -p:UseSharedCompilation=false
       - name: Verify packaged aria2 TLS behavior
-        shell: pwsh
+        uses: ./.github/actions/test-project
         env:
           DOWNKYI_ARIA2_BINARY: ${{ github.workspace }}/${{ matrix.binary }}
           DOWNKYI_ARIA2_RID: ${{ matrix.rid }}
           DOWNKYI_ARIA2_TLS_REPORT: ${{ github.workspace }}/artifacts/aria2-tls/${{ matrix.rid }}.json
-        run: |
-          . ./script/test-project-runner.ps1
-          $result = Invoke-DownKyiTestProject `
-            -RepositoryRoot (Get-Location).Path `
-            -ProjectPath ./tests/DownKyi.Tests/DownKyi.Tests.csproj `
-            -Configuration Release `
-            -NoRestore `
-            -NoBuild `
-            -ResultsDirectory "./TestResults/aria2-tls/$env:DOWNKYI_ARIA2_RID" `
-            -TrxName "aria2-tls-$env:DOWNKYI_ARIA2_RID.trx" `
-            -ClassNames DownKyi.Tests.Aria2TlsIntegrationTests
-          Assert-DownKyiExpectedTestExecution `
-            -RunnerExitCode $result.ExitCode `
-            -TrxPath $result.TrxPath `
-            -ExpectedClassNames DownKyi.Tests.Aria2TlsIntegrationTests
+        with:
+          project-path: ./tests/DownKyi.Tests/DownKyi.Tests.csproj
+          no-restore: 'true'
+          no-build: 'true'
+          results-directory: ./TestResults/aria2-tls/${{ matrix.rid }}
+          trx-name: aria2-tls-${{ matrix.rid }}.trx
+          expected-class: DownKyi.Tests.Aria2TlsIntegrationTests
       - name: Upload sanitized aria2 TLS report
         if: always()
         uses: actions/upload-artifact@v7

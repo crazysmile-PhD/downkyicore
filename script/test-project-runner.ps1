@@ -157,12 +157,13 @@ function Get-DownKyiTestRunnerTrustInputs {
     param()
 
     return @(
+        ".github/actions/test-project/action.yml"
+        ".github/actions/test-solution/action.yml"
         "Directory.Build.props"
         "Directory.Build.targets"
         "Directory.Packages.props"
         "global.json"
         "docs/testing/test-runner-policy.json"
-        "script/test-project-runner.ps1"
         "tests/CentralTestExecutionGuard.cs"
     )
 }
@@ -403,6 +404,9 @@ function Assert-DownKyiTestExecutionReport {
             $ExpectedClassNames.Contains([string]$definitionsById[$testId]) -and
             $_.GetAttribute("outcome") -ne "NotExecuted"
         })
+    $passedExpectedTests = @($executedExpectedTests | Where-Object {
+            $_.GetAttribute("outcome") -eq "Passed"
+        })
     if ($ExpectedClassNames.Count -gt 0 -and $executedExpectedTests.Count -lt 1) {
         throw "The report contains no executed result for an expected test class."
     }
@@ -410,6 +414,8 @@ function Assert-DownKyiTestExecutionReport {
     return [pscustomobject]@{
         Executed = $executed
         ExecutedExpected = $executedExpectedTests.Count
+        PassedExpected = $passedExpectedTests.Count
+        Failed = [int]$counterValues.failed
         ReportPath = $report.FullName
     }
 }
@@ -434,10 +440,18 @@ function Assert-DownKyiExpectedTestExecution {
         throw "The test runner failed with exit code $RunnerExitCode."
     }
 
-    return Assert-DownKyiTestExecutionReport `
+    $report = Assert-DownKyiTestExecutionReport `
         -TrxPath $TrxPath `
         -ExpectedClassNames $ExpectedClassNames `
         -RequireUniqueReport
+    if ($report.Failed -gt 0) {
+        throw "A successful runner report cannot contain failed test results."
+    }
+    if ($report.PassedExpected -lt 1) {
+        throw "The report contains no passed result for an expected test class."
+    }
+
+    return $report
 }
 
 function Invoke-DownKyiTestProject {
@@ -552,9 +566,12 @@ function Invoke-DownKyiTestProject {
         $exitCode = Invoke-DownKyiAuthorizedTestAssembly `
             -RepositoryRoot $RepositoryRoot `
             -Arguments $arguments
-        $null = Assert-DownKyiTestExecutionReport `
+        $report = Assert-DownKyiTestExecutionReport `
             -TrxPath $validationTrxPath `
             -ExpectedClassNames $ClassNames
+        if ($exitCode -eq 0 -and $report.Failed -gt 0) {
+            throw "A successful runner report cannot contain failed test results."
+        }
         return [pscustomobject]@{
             ExitCode = $exitCode
             Runner = $runnerPolicy.runner

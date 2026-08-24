@@ -87,7 +87,6 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
         Assert.Contains("AdHocSigningExecutesUnderSystemBashNounsetWithoutTimestamp", macBehavior, StringComparison.Ordinal);
         Assert.Contains("DeveloperIdSigningIncludesTimestamp", macBehavior, StringComparison.Ordinal);
         Assert.Contains("macos-15", buildWorkflow, StringComparison.Ordinal);
-        Assert.Contains("./script/test-solution.ps1", buildWorkflow, StringComparison.Ordinal);
     }
 
     [Fact]
