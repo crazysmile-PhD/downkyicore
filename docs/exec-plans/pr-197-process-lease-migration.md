@@ -54,9 +54,25 @@ bug before the macOS fixture executed: `Process.StartTime` may be null for a
 instead of dereferencing null; lifecycle ownership and success policy are
 unchanged, and the child script output is retained by the behavioral assertion.
 
-Linux/macOS native process-group execution and GitHub-hosted Windows nested-Job
-execution remain required CI evidence for the exact review commit. No restart,
-lifecycle-phase, central-runner or forensics call site has migrated in Stage 1.
+Strict PR CI run `32712033910` supplied the platform-native evidence on commit
+`5506bc3c40a14e68a5be6e9234a42666276655be`: Windows, Linux and macOS build/test
+jobs all passed. This includes the hosted Windows nested-Job assertion, normal
+POSIX process-group execution and the launch-without-new-process-group mutation.
+The run also exposed and closed two portability gaps before that evidence was
+accepted: macOS named-pipe paths use bounded names, and the POSIX probe validates
+the expected supervisor-PID group rather than accepting an inherited outer
+group as ownership.
+
+The same run's lifecycle job remained red only for the already classified
+synthetic `Gate.ResidualChild/residual-child-self-test` fixture composition
+failure (`CommandNotFoundException`). All 144 formal lifecycle phases passed.
+Build, CodeQL and Protobuf workflows passed on the same commit. Automated Codex
+review was requested for that exact commit, but the connector returned a usage
+limit instead of a review; formal review therefore remains pending and the PR
+must remain open.
+
+No restart, lifecycle-phase, central-runner or forensics call site has migrated
+in Stage 1.
 
 ## Stage 2: Lifecycle Phase Ownership
 
