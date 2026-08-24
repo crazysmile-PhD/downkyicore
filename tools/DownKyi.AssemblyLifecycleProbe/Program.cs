@@ -14,6 +14,8 @@ internal static class Program
     private const string CapturePipeEnvironmentVariable = "DOWNKYI_FORENSICS_CAPTURE_PIPE";
     private const string ChildReleasePipeEnvironmentVariable =
         "DOWNKYI_TRANSIENT_CHILD_RELEASE_PIPE";
+    private const string ChildReleaseParentWaitEnvironmentVariable =
+        "DOWNKYI_TRANSIENT_CHILD_PARENT_WAIT";
     private const int CaptureCompleted = 0xA5;
     private const int ChildReleaseCompleted = 0xD7;
     private const int ChildReleaseAcknowledged = 0xA7;
@@ -100,6 +102,11 @@ internal static class Program
             return 1;
         }
 
+        var releaseOwnedByLifecycleHarness = string.Equals(
+            Environment.GetEnvironmentVariable(ChildReleaseParentWaitEnvironmentVariable),
+            "1",
+            StringComparison.Ordinal);
+
         var startInfo = new ProcessStartInfo
         {
             FileName = OperatingSystem.IsWindows() ? processPath : "/bin/sh",
@@ -129,6 +136,9 @@ internal static class Program
         finally
         {
             Environment.SetEnvironmentVariable(ChildReleasePipeEnvironmentVariable, null);
+            Environment.SetEnvironmentVariable(
+                ChildReleaseParentWaitEnvironmentVariable,
+                null);
         }
 
         using (child)
@@ -146,6 +156,18 @@ internal static class Program
             }
 
             WriteResult(new ProbeResult(true, null, null, true, null, child.Id));
+            if (releaseOwnedByLifecycleHarness)
+            {
+                if (!child.WaitForExit(10_000))
+                {
+                    child.Kill(entireProcessTree: true);
+                    child.WaitForExit();
+                    return 1;
+                }
+
+                return child.ExitCode;
+            }
+
             return 0;
         }
     }

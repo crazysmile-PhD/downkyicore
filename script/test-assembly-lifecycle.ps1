@@ -295,6 +295,85 @@ function Get-ProcessIdentityKey {
     return "{0}|{1}" -f $Process.processId, $Process.createdAtUtc
 }
 
+function Get-LiveObservedProcess {
+    param(
+        [Parameter(Mandatory)]
+        [object]$ObservedProcess
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ObservedProcess.createdAtUtc)) {
+        throw "Observed child identity is incomplete and cannot be revalidated."
+    }
+
+    $process = Get-Process `
+        -Id ([int]$ObservedProcess.processId) `
+        -ErrorAction SilentlyContinue
+    if ($null -eq $process) {
+        return $null
+    }
+
+    try {
+        $createdAtUtc = (
+            [DateTimeOffset]$process.StartTime.ToUniversalTime()
+        ).ToString("O")
+        if (-not [string]::Equals(
+                $createdAtUtc,
+                [string]$ObservedProcess.createdAtUtc,
+                [StringComparison]::Ordinal)) {
+            return $null
+        }
+
+        return $ObservedProcess
+    }
+    catch [System.InvalidOperationException] {
+        return $null
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
+function New-ProcessTreeObservationState {
+    return [pscustomobject]@{
+        observed = [System.Collections.Generic.Dictionary[string, object]]::new(
+            [StringComparer]::Ordinal)
+        sampleCount = 0
+        firstObservationHandled = $false
+        stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+}
+
+function Update-ProcessTreeObservation {
+    param(
+        [Parameter(Mandatory)]
+        [object]$State,
+        [Parameter(Mandatory)]
+        [int]$RootProcessId,
+        [Parameter(Mandatory)]
+        [DateTimeOffset]$NotBeforeUtc,
+        [scriptblock]$OnFirstChildObserved
+    )
+
+    $children = @(
+        Get-ProcessTree `
+            -RootProcessId $RootProcessId `
+            -NotBeforeUtc $NotBeforeUtc
+    )
+    $State.sampleCount++
+    foreach ($child in $children) {
+        $State.observed[(Get-ProcessIdentityKey -Process $child)] = $child
+    }
+    if (-not $State.firstObservationHandled -and $children.Count -gt 0) {
+        $State.firstObservationHandled = $true
+        if ($null -ne $OnFirstChildObserved) {
+            & $OnFirstChildObserved @($children)
+            $State.stopwatch.Restart()
+        }
+    }
+
+    return $children
+}
+
 function Wait-ResidualProcessTree {
     param(
         [Parameter(Mandatory)]
@@ -307,45 +386,52 @@ function Wait-ResidualProcessTree {
         [Parameter(Mandatory)]
         [ValidateRange(1, 1000)]
         [int]$PollMilliseconds,
-        [scriptblock]$OnFirstChildObserved
+        [scriptblock]$OnFirstChildObserved,
+        [object]$ObservationState
     )
 
-    $observed = [System.Collections.Generic.Dictionary[string, object]]::new(
-        [StringComparer]::Ordinal)
-    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $sampleCount = 0
-    $firstObservationHandled = $false
+    if ($null -eq $ObservationState) {
+        $ObservationState = New-ProcessTreeObservationState
+    }
+
     $children = @()
+    $postExitSampleCount = 0
     do {
         $children = @(
-            Get-ProcessTree `
+            Update-ProcessTreeObservation `
+                -State $ObservationState `
                 -RootProcessId $RootProcessId `
-                -NotBeforeUtc $NotBeforeUtc
+                -NotBeforeUtc $NotBeforeUtc `
+                -OnFirstChildObserved $OnFirstChildObserved
         )
-        $sampleCount++
-        foreach ($child in $children) {
-            $observed[(Get-ProcessIdentityKey -Process $child)] = $child
-        }
-        if (-not $firstObservationHandled -and $children.Count -gt 0) {
-            $firstObservationHandled = $true
-            if ($null -ne $OnFirstChildObserved) {
-                & $OnFirstChildObserved @($children)
-                $stopwatch.Restart()
+        $postExitSampleCount++
+
+        $knownLiveChildren = @(
+            foreach ($observedChild in $ObservationState.observed.Values) {
+                Get-LiveObservedProcess -ObservedProcess $observedChild
+            }
+        )
+        $childrenByIdentity = [System.Collections.Generic.Dictionary[string, object]]::new(
+            [StringComparer]::Ordinal)
+        foreach ($child in @($children) + @($knownLiveChildren)) {
+            if ($null -ne $child) {
+                $childrenByIdentity[(Get-ProcessIdentityKey -Process $child)] = $child
             }
         }
+        $children = @($childrenByIdentity.Values)
 
-        if ($children.Count -eq 0 -and $sampleCount -ge 2) {
+        if ($children.Count -eq 0 -and $postExitSampleCount -ge 2) {
             break
         }
 
-        if ($stopwatch.ElapsedMilliseconds -ge $QuiescenceMilliseconds) {
+        if ($ObservationState.stopwatch.ElapsedMilliseconds -ge $QuiescenceMilliseconds) {
             break
         }
 
         Start-Sleep -Milliseconds $PollMilliseconds
     }
     while ($true)
-    $stopwatch.Stop()
+    $ObservationState.stopwatch.Stop()
 
     $residualKeys = [System.Collections.Generic.HashSet[string]]::new(
         [StringComparer]::Ordinal)
@@ -353,7 +439,7 @@ function Wait-ResidualProcessTree {
         $null = $residualKeys.Add((Get-ProcessIdentityKey -Process $child))
     }
     $transientChildren = @(
-        foreach ($entry in $observed.GetEnumerator()) {
+        foreach ($entry in $ObservationState.observed.GetEnumerator()) {
             if (-not $residualKeys.Contains($entry.Key)) {
                 $entry.Value
             }
@@ -361,12 +447,12 @@ function Wait-ResidualProcessTree {
     )
 
     return [pscustomobject]@{
-        observedChildren = @($observed.Values)
+        observedChildren = @($ObservationState.observed.Values)
         transientChildren = $transientChildren
         residualChildren = $children
-        sampleCount = $sampleCount
+        sampleCount = $ObservationState.sampleCount
         elapsedMilliseconds = [Math]::Round(
-            $stopwatch.Elapsed.TotalMilliseconds,
+            $ObservationState.stopwatch.Elapsed.TotalMilliseconds,
             3)
     }
 }
@@ -839,6 +925,18 @@ function Invoke-IsolatedProcess {
     $residualChildEvidenceErrorType = $null
     $exitEvidenceCaptured = $false
     $teardownObservedAt = $null
+    $onFirstChildObserved = if ($null -ne $observedChildReleaseLease) {
+        ({ Complete-ObservedChildReleaseLease -Lease $observedChildReleaseLease }).GetNewClosure()
+    }
+    else {
+        $null
+    }
+    $childProcessObservationState = if ($null -ne $observedChildReleaseLease) {
+        New-ProcessTreeObservationState
+    }
+    else {
+        $null
+    }
     $evidenceCaptureThresholdSeconds = [Math]::Max(
         0,
         $EvidenceThresholdSeconds - ($slowEvidenceCaptureLeadMilliseconds / 1000))
@@ -871,6 +969,13 @@ function Invoke-IsolatedProcess {
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
         while (-not $process.WaitForExit(25)) {
+            if ($null -ne $childProcessObservationState) {
+                $null = Update-ProcessTreeObservation `
+                    -State $childProcessObservationState `
+                    -RootProcessId $processId `
+                    -NotBeforeUtc $processStartedAt `
+                    -OnFirstChildObserved $onFirstChildObserved
+            }
             if (-not $slowEvidenceAttempted -and
                 $stopwatch.Elapsed.TotalSeconds -ge $evidenceCaptureThresholdSeconds) {
                 $slowEvidenceTriggeredBeforeThreshold =
@@ -991,18 +1096,16 @@ function Invoke-IsolatedProcess {
             $stderrPath,
             $stderr,
             [System.Text.UTF8Encoding]::new($false))
-        $onFirstChildObserved = if ($null -ne $observedChildReleaseLease) {
-            ({ Complete-ObservedChildReleaseLease -Lease $observedChildReleaseLease }).GetNewClosure()
-        }
-        else {
-            $null
+        if ($null -ne $childProcessObservationState) {
+            $childProcessObservationState.stopwatch.Restart()
         }
         $childProcessObservation = Wait-ResidualProcessTree `
                 -RootProcessId $processId `
                 -NotBeforeUtc $processStartedAt `
                 -QuiescenceMilliseconds $residualChildQuiescenceMilliseconds `
                 -PollMilliseconds $residualChildPollMilliseconds `
-                -OnFirstChildObserved $onFirstChildObserved
+                -OnFirstChildObserved $onFirstChildObserved `
+                -ObservationState $childProcessObservationState
         $observedChildren = @($childProcessObservation.observedChildren)
         $transientChildren = @($childProcessObservation.transientChildren)
         $residualChildren = @($childProcessObservation.residualChildren)
@@ -1261,6 +1364,7 @@ function New-ObservedChildReleaseLease {
         [IO.Pipes.PipeOptions]::Asynchronous)
     $StartInfo.Environment["DOWNKYI_TRANSIENT_CHILD_RELEASE_PIPE"] =
         $pipeName
+    $StartInfo.Environment["DOWNKYI_TRANSIENT_CHILD_PARENT_WAIT"] = "1"
     return [pscustomobject]@{
         Pipe = $pipe
         ConnectionTask = $null
