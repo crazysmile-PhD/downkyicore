@@ -21,6 +21,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Verify documentation contract
+        shell: pwsh
+        run: |
+          ./script/verify-documentation.ps1 -SelfTest
+          ./script/verify-documentation.ps1 -Verify
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:

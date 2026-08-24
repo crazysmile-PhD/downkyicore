@@ -64,6 +64,9 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("macos-latest", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("Verify documentation contract", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("./script/verify-documentation.ps1 -SelfTest", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("./script/verify-documentation.ps1 -Verify", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("Enforce architecture policy", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--deprecated", qualityWorkflow, StringComparison.Ordinal);
@@ -105,105 +108,20 @@ public sealed class AgentEnvironmentArchitectureTests
         var agentGuide = Read("AGENTS.md");
         Assert.Contains("docs/ai-knowledge-graph.md", agentGuide, StringComparison.Ordinal);
         Assert.Contains("ARCHITECTURE.md", agentGuide, StringComparison.Ordinal);
-        Assert.Contains("docs/refactoring-live-plan.md", agentGuide, StringComparison.Ordinal);
         Assert.Contains("docs/operations/verification-and-rollback.md", agentGuide, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AgentEntryUsesProgressiveDisclosureAndLivePlanContainsNoMutableWorkState()
+    public void AgentEntryUsesProgressiveDisclosureAndCanonicalDocumentationOwners()
     {
         var agentGuide = Read("AGENTS.md");
-        var livePlan = Read("docs/refactoring-live-plan.md");
 
         Assert.Contains("Progressive Disclosure Map", agentGuide, StringComparison.Ordinal);
+        Assert.Contains("Documentation Policy", agentGuide, StringComparison.Ordinal);
         Assert.Contains("issues/137", agentGuide, StringComparison.Ordinal);
         Assert.DoesNotContain("## 強制閱讀順序", agentGuide, StringComparison.Ordinal);
-
-        string[] forbiddenLiveState =
-        [
-            "Status: active",
-            "Last updated:",
-            "Current work item:",
-            "Current working branch:",
-            "Current base:",
-            "## Current Item",
-            "## Next Items"
-        ];
-
-        foreach (var value in forbiddenLiveState)
-        {
-            Assert.DoesNotContain(value, livePlan, StringComparison.OrdinalIgnoreCase);
-        }
-
-        Assert.DoesNotMatch(
-            new System.Text.RegularExpressions.Regex(
-                @"(?m)^\s*-\s+\[[ xX]\]|\b[0-9a-fA-F]{40}\b",
-                System.Text.RegularExpressions.RegexOptions.CultureInvariant),
-            livePlan);
-        Assert.Contains("issues/137", livePlan, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void KnowledgeGraphLiteralPathReferencesResolve()
-    {
-        var lines = File.ReadAllLines(Path.Combine(RepositoryRoot, "docs", "ai-knowledge-graph.md"));
-        var inspectGraph = false;
-        var inPaths = false;
-        var pathsIndent = 0;
-        var missing = new List<string>();
-
-        foreach (var line in lines)
-        {
-            if (line.StartsWith("## System Graph", StringComparison.Ordinal))
-            {
-                inspectGraph = true;
-            }
-
-            if (!inspectGraph)
-            {
-                continue;
-            }
-
-            var trimmed = line.TrimStart();
-            var indent = line.Length - trimmed.Length;
-            if (string.Equals(trimmed, "paths:", StringComparison.Ordinal))
-            {
-                inPaths = true;
-                pathsIndent = indent;
-                continue;
-            }
-
-            if (!inPaths || string.IsNullOrWhiteSpace(trimmed))
-            {
-                continue;
-            }
-
-            if (indent <= pathsIndent)
-            {
-                inPaths = false;
-                continue;
-            }
-
-            if (!trimmed.StartsWith("- ", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var value = trimmed[2..].Trim().Trim('`');
-            if (!IsLiteralRepositoryPath(value))
-            {
-                continue;
-            }
-
-            if (!Path.Exists(Path.Combine(RepositoryRoot, PathFromRepository(value))))
-            {
-                missing.Add(value);
-            }
-        }
-
-        Assert.True(
-            missing.Count == 0,
-            $"Knowledge graph contains stale paths: {string.Join(", ", missing.Distinct(StringComparer.Ordinal))}");
+        Assert.Contains("docs/operations/verification-and-rollback.md", agentGuide, StringComparison.Ordinal);
+        Assert.DoesNotContain("docs/refactoring-live-plan.md", agentGuide, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -272,15 +190,6 @@ public sealed class AgentEnvironmentArchitectureTests
     private static string PathFromRepository(string path)
     {
         return path.Replace('/', Path.DirectorySeparatorChar);
-    }
-
-    private static bool IsLiteralRepositoryPath(string value)
-    {
-        return value.Contains('/', StringComparison.Ordinal) &&
-               !value.Contains('*', StringComparison.Ordinal) &&
-               !value.Contains(" + ", StringComparison.Ordinal) &&
-               !value.Contains(" and ", StringComparison.OrdinalIgnoreCase) &&
-               !value.Contains("://", StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

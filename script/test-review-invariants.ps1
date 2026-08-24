@@ -53,7 +53,6 @@ $testClasses = @(
     foreach ($invariant in $invariants) {
         if ([string]::IsNullOrWhiteSpace($invariant.id) -or
             [string]::IsNullOrWhiteSpace($invariant.guards) -or
-            @($invariant.historicalRoots).Count -eq 0 -or
             @($invariant.testClasses).Count -eq 0) {
             throw "Review invariant '$($invariant.id)' has an incomplete contract."
         }

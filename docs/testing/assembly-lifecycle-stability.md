@@ -4,559 +4,129 @@ Status: required quality and release gate
 
 ## Purpose
 
-A green test summary does not prove that a test executable loaded cleanly,
-preserved its runner protocol, disposed assembly fixtures, stopped foreground
-threads or exited deterministically. This gate treats each xUnit test assembly
-as a real process and measures all lifecycle boundaries separately.
+A green assertion summary does not prove that a test executable loaded cleanly,
+preserved its runner protocol, disposed fixtures, stopped owned work or exited
+deterministically. The lifecycle gate therefore runs each selected xUnit
+assembly behind the repository process owner and measures lifecycle boundaries
+separately.
 
-The first incident covered by this policy occurred when
-`TestDataIsolation.ProcessExit` ran synchronous recursive cleanup after xUnit
-had returned from its runner. xUnit's foreground-thread watchdog then wrote
-`Waiting 10 seconds for foreground threads to exit` after the valid
-`-assemblyInfo` JSON. The process returned exit code 0, but the Visual Studio
-adapter could no longer parse stdout as one JSON object.
+The central runner owns project selection, canonical xUnit invocation,
+one-shot test authorization and TRX semantics. The shared process lease owns
+child start, containment, wait, termination, reap, quiescence, streams and the
+single caller-created transition budget. Neither owner may duplicate the other.
 
-The permanent correction is:
+## Executable Owners
 
-- test data isolation is an xUnit assembly fixture implementing
-  `IAsyncDisposable`;
-- fixture cleanup emits a private lifecycle marker and does not register
-  `ModuleInitializer` or `ProcessExit`;
-- Desktop tests use `Avalonia.Headless.XUnit` per-assembly isolation instead of
-  a custom process-lifetime dispatcher thread;
-- `DesktopApplication.RunAsync` awaits `App.DisposeAsync` after the Avalonia
-  main loop, and application disposal requests Host shutdown before releasing
-  resources;
-- `SqliteDownloadTaskStore.Dispose` clears only its owned connection pool;
-- the system benchmark dispatcher uses a bounded join.
+- Dynamic probe and report schema:
+  [test-assembly-lifecycle.ps1](../../script/test-assembly-lifecycle.ps1).
+- Static lifecycle inventory:
+  [audit-lifecycle-ownership.ps1](../../script/audit-lifecycle-ownership.ps1).
+- Machine-readable start/stop/teardown declarations:
+  [assembly-lifecycle-owners.json](assembly-lifecycle-owners.json).
+- Probe child:
+  [DownKyi.AssemblyLifecycleProbe](../../tools/DownKyi.AssemblyLifecycleProbe/).
+- Process owner: [DownKyi.ProcessSupervision](../../tools/DownKyi.ProcessSupervision/).
+- CI/release profiles: [quality.yml](../../.github/workflows/quality.yml) and
+  [build.yml](../../.github/workflows/build.yml).
+- Human invocation: [verification-and-rollback.md](../operations/verification-and-rollback.md).
+- Design intent: [process-lifecycle-ownership.md](../design-docs/process-lifecycle-ownership.md).
 
-The regular solution and review-invariant gates additionally execute
-`DownKyi.Desktop.Tests` through the xUnit in-process executable declared in
-`test-runner-policy.json`. This avoids the VSTest adapter's hidden
-`-assemblyInfo` parse race tracked by `xunit/xunit#3576`; xUnit 4 prereleases
-cannot be used yet because `Avalonia.Headless.XUnit` 12.1.0 targets the xUnit 3
-discovery API. This is test-host routing only. The lifecycle gate below still
-executes and validates `-assemblyInfo`, discovery, execution, teardown and
-process exit as separate fail-closed phases.
+Profile counts, thresholds, capture lead, quiescence duration and report fields
+are owned by the script and generated machine report. Do not copy their current
+numeric values into downstream policy documents.
 
 ## Dynamic Phases
 
-`script/test-assembly-lifecycle.ps1` discovers every `*.Tests.csproj`, validates
-its explicit `Windows` / `Linux` / `macOS` ownership set, and probes only
-assemblies whose declaration includes the current OS. It runs each phase in an
-independent child process:
+Each phase has an independent child-process boundary:
 
-1. `load`: a collectible `AssemblyLoadContext` loads the assembly, runs its
-   module constructor, unloads it and proves the context is no longer rooted.
-2. `assembly-info`: the xUnit executable runs `-assemblyInfo`; stdout must be
-   exactly one JSON object.
-3. `discovery`: the xUnit executable lists tests in automated mode; stdout must
-   be exactly one JSON array.
-4. `execution`: the xUnit executable runs tests without inter-assembly process
-   reuse; every non-empty stdout line must be valid JSON.
-5. `assembly-teardown`: the xUnit assembly fixture must emit
-   `started -> disposing -> disposed`, and its process-specific data root must
-   be absent.
-6. `process-exit`: the process must exit within the configured post-teardown
-   deadline without residual children or runner-protocol pollution.
+1. `load`: load through a collectible `AssemblyLoadContext`, unload and prove
+   the context is no longer rooted.
+2. `assembly-info`: require exactly one valid xUnit metadata object.
+3. `discovery`: require exactly one valid test-discovery array.
+4. `execution`: require valid automated reporter output and a successful test
+   outcome.
+5. `assembly-teardown`: require the fixture lifecycle marker sequence and
+   removal of its process-specific data root.
+6. `process-exit`: require bounded exit and authoritative owned-tree
+   quiescence without protocol pollution.
 
-The lifecycle gate uses xUnit's synchronous automated reporting mode
-(`-automated sync`) for assembly-info, discovery and execution. This is not a
-diagnostic suppression: stdout remains machine-readable JSON, stderr is still
-captured, and the same timeout, slow-phase and process-exit checks remain
-active. The setting prevents the gate itself from creating xUnit's
-asynchronous `MessageBus` reporter foreground thread, so any future
-foreground-thread watchdog must come from the tested assembly or another
-explicit owner. Because xUnit's synchronous reporter normally waits for a
-carriage return after each report, every isolated child has redirected stdin
-closed immediately after launch. The reporter therefore observes deterministic
-EOF instead of depending on whether the gate was launched from an interactive
-terminal.
+xUnit automated reporting uses the single reporter mode enforced by the probe.
+The child stdin is redirected and closed so reporter completion observes
+deterministic EOF rather than an interactive terminal. A mutation self-test
+must prove unsupported reporter arguments are rejected by that same launch
+validator.
 
-The three xUnit phases share one guarded invocation path. It rejects any
-reporter arguments other than exactly one `-automated sync` pair before process
-launch. A runtime mutation self-test deliberately substitutes `async` and must
-be rejected by the same validator; the machine report records the result as
-`reporterContractSelfTestPassed`.
+## Measurement Semantics
 
-This is the verified engineering mitigation for the lifecycle gate. It does
-not claim that the final direct blocker in the historical intermittent
-specimen was captured or proven with complete forensic certainty.
+- Process-phase duration begins before process creation and ends at the process
+  owner's monotonic target-exit transition. Execution therefore includes test,
+  fixture and runner shutdown.
+- Assembly teardown is the fixture marker interval. Report serialization,
+  collector work and caller-side failure mapping are not child-lifetime time.
+- Slow classification and proactive evidence capture are distinct. Evidence
+  collection must begin before the classification boundary without silently
+  lowering it.
+- Diagnostic collection can perturb a live process. The report preserves
+  instrumented duration, collector duration and observer state separately.
+- Process-owner failure, forensics failure and cleanup failure remain distinct;
+  later evidence or cleanup cannot replace the first causal transition.
+- Execution, timeout and post-teardown evidence are separate; one phase cannot
+  inherit another phase's evidence.
+- Reports identify runtime, OS, architecture, exact commit, dirty state,
+  profile, iteration count and thresholds. Cross-machine timing comparisons are
+  invalid without compatible metadata and datasets.
 
-Every phase records its exit code, duration, timeout state, stdout/stderr
-protocol state, typed process ownership and diagnostic observations. Job active
-process state, Linux cgroup v2 membership or macOS libproc group membership is
-the residual-process truth. PID, parent PID, process name, creation time, tree
-depth and a redacted command line remain diagnostic snapshot fields only. The
-report aggregates P50, P95, P99 and maximum duration per assembly and phase.
-Schema 4 records `processFailureType` and `forensicsFailureType` separately in
-addition to the general `failureType` and `errorType`; slow, exit and residual
-evidence errors cannot overwrite the process owner's causal failure.
+## Ownership And Residual Work
 
-### Measurement Definitions
+The static audit detects process/thread/timer/dispatcher/Host/global-event and
+synchronous-wait mechanisms. Every match must resolve through the most specific
+entry in [assembly-lifecycle-owners.json](assembly-lifecycle-owners.json), with
+an explicit starter, stopper and teardown sequence. The machine inventory is an
+ownership policy, not a broad suppression list.
 
-- `load`, `assembly-info`, `discovery` and `execution` duration starts
-  immediately before child-process creation and stops when the OS reports that
-  child exited. `execution` therefore includes runner startup, test methods,
-  assembly fixture teardown and CLR/runner shutdown.
-- The process owner records that boundary as monotonic `TargetExitedAfter` and
-  exposes a read-only `TargetExitedToken`. The lifecycle policy links only its
-  observer call to that token. A collector which is already attaching when the
-  target exits is canceled and authoritatively reaped; it cannot extend the
-  reported phase duration. Collector cleanup, stream drain and report
-  serialization remain outside the child-lifetime measurement.
-- `assembly-teardown` is the fixture marker interval from `disposing` to
-  `disposed`. Marker timestamps use Unix milliseconds, so this metric has
-  millisecond resolution.
-- `process-exit` is the interval from the fixture `disposed` marker to the
-  child's OS `Process.ExitTime`. Report serialization, stdout/stderr copying and
-  process-tree inspection are not part of this metric.
-- The slow classification remains exactly
-  `duration >= slowPhaseThresholdSeconds`. To prevent runner scheduling from
-  crossing directly from just below the threshold to an already-exited child,
-  evidence capture is armed 3,000 ms early. This matches the existing
-  owner-assigned hosted collector startup allowance and reserves that interval
-  for caller dispatch, process launch and ownership establishment before a
-  five-second phase can qualify as slow. The report records this as
-  `slowEvidenceCaptureLeadMilliseconds` and per phase as
-  `slowEvidenceTriggeredBeforeThreshold`; it does not lower the slow threshold,
-  extend the 15-second capture window or change the phase timeout.
-  `slowEvidenceStatus` is `captured`, `capture-failed`, or
-  `process-exited-before-capture`; the latter two still fail a slow phase
-  instead of leaving an unexplained empty evidence array.
-- `-ValidateForensics` asks `OwnedProcessLease` for an evidence-hold sub-state to
-  prove the capture lead actually ran before a synthetic 4.25-second slow
-  threshold. The three-second lead leaves a positive 1.25-second arming delay;
-  the report records both the configured value and the actual post-lease
-  stopwatch time when capture armed. It rejects a zero-clamped,
-  integer-truncated or immediate-dispatch threshold.
-  The lease creates and owns the one-shot endpoint before target execution; the
-  observer only returns `Captured` or `Failed`, the actual held target must
-  acknowledge the handoff after the intermediary closes its copies, and no
-  replayable filesystem state remains.
-  A controlled delay proves the child remains live during capture, so
-  hosted-runner diagnostic latency cannot invalidate the proof. Capture arms at
-  1.25 seconds after the authoritative lease has been established instead of
-  charging supervisor startup to the observer. The capture result records the
-  actual arming delay and completion on the root `TransitionBudget` monotonic
-  origin, then fixes observer completion before releasing an evidence hold.
-  Completion must precede the lease's same-origin authoritative
-  `TargetExitedAfter`; UTC timestamps remain diagnostic only. The machine report exposes
-  `forensicsSelfTestCaptureLeadValidated` and
-  `forensicsSelfTestPositiveCaptureThresholdValidated` plus the observed
-  stopwatch time,
-  `forensicsSelfTestCaptureCompletedBeforeTargetExitValidated`, and
-  `forensicsSelfTestEvidenceHoldValidated`; the self-test fails unless the hold
-  reports requested, granted, captured, released, completion delivered and
-  target acknowledged. Neither an immutable process success nor failure outcome
-  is captured while an already-started completion transaction is still
-  publishing that acknowledgment. Owner failure performs terminate/reap first,
-  then bounds this synchronization by the cleanup portion of the same transition
-  budget; it is not a new observer deadline or cleanup authority.
-  Two executed mutations protect this ordering oracle. The slow-completion
-  fixture shifts only its reported UTC completion backward by 60 seconds while
-  leaving its monotonic completion after target exit; the gate requires the two
-  clocks to disagree and rejects the phase by the monotonic values. A separate
-  evidence-hold fixture releases and acknowledges the held target, waits for the
-  lease's authoritative target-exit token within the existing root budget, then
-  records completion. Its completion must be at or after `TargetExitedAfter` and
-  `slowEvidenceCaptureCompletedBeforeTargetExit` must be false. The report
-  exposes `forensicsSelfTestReleaseOrderingMutationValidated` and the typed
-  `forensicsSelfTestReleaseOrderingMutation` result. These are test-only input
-  mutations; they add no production owner, deadline, retry, sleep or capture
-  window.
-- The adversarial owned-tree self-test gives the same `OwnedProcessLease` a
-  bounded three-second operation window so hosted runtime startup can publish
-  its fixture before quiescence is tested. This is an owner-assigned test
-  budget, not an observer deadline or retry.
-- Managed-stack collection can pause or otherwise perturb the observed child.
-  `durationMs` remains the authoritative monotonic child lifetime through
-  target exit, while `diagnosticCaptureDurationMs` records collector wall time
-  separately. These lifecycle timings are diagnostic evidence, not performance
-  baselines.
-- `Invoke-IsolatedProcess`, which holds the existing transition budget,
-  allocates each observer capture a 15-second operation window and a five-second
-  collector-cleanup allowance through
-  `TransitionBudget.AllocateDiagnosticCollectorWindow`. The typed window uses
-  the same monotonic `TimeProvider` and exposes the shorter of its allowance and
-  the parent operation/cleanup remainder; PowerShell cannot start or renew a
-  second timeline. `OwnedDiagnosticCollector` exclusively owns collector start,
-  wait, terminate, authoritative reap and concurrent stdout/stderr drain, and
-  returns typed evidence or a causal primary failure plus an immutable cleanup
-  list. PowerShell receives no collector `Process` or cleanup target.
-  `-ValidateForensics` drives the real `dotnet-stack` path through this boundary
-  and requires capture-window, capture-lead, evidence-hold and remaining parent
-  budget proof through `forensicsCollectorCaptureWindowSelfTestPassed`. Shared
-  platform tests separately cover blocked collectors, cancellation, terminate,
-  reap and drain failures, large dual-stream output, descendant retention and a
-  mutation that consumes the parent budget. The lifecycle self-test records its
-  typed `OperationDeadlineExceeded` failure, collector evidence and cleanup
-  list in `forensicsCollectorCaptureWindowSelfTest`; a Boolean summary alone is
-  not accepted as proof.
-- Every collector result carries a bounded monotonic diagnostic timeline and a
-  separate low-volume owner journal. The startup inventory distinguishes
-  dispatch, `Process.Start()` return, containment prepare/establish, control
-  connection, status connection, ownership acknowledgment, launch
-  authorization and target-start acknowledgment. Runtime and cleanup retain
-  progress, first stack byte, exact deadline/observation, target exit,
-  termination, tree quiescence, reap, stream drain and typed return. Boundaries
-  inside an external tool remain explicitly `NotObservable`; absent
-  owner-visible events are `NotObserved`. The owner journal excludes stack and
-  stream payload, adds authoritative identities where available, and derives a
-  typed `LastKnownGood -> FirstMissingRequired` interval from transition state
-  rather than absolute elapsed thresholds.
-- The lifecycle row copies `collectorOwnerJournal` independently of
-  `collectorEvidence` and records `evidenceCaptured`, `evidencePersisted` plus
-  `diagnosticLocalization`. A deterministic mutation throws after capture but
-  before artifact persistence; the self-test requires
-  `EvidenceCaptured -> EvidencePersisted`, classification
-  `EvidencePersistenceFailure`, captured true and persisted false. A separate
-  primary-timeline blackout holds the supervisor before pipe connection and
-  requires the owner journal to retain
-  `ContainmentEstablished -> ControlPipeConnectionCompleted`, deadline and
-  cleanup state. Neither proof uses runner latency, CPU contention, retry or
-  sleep as the fault mechanism.
-- Target exit can cancel an already-started collector after `dotnet-stack` has
-  emitted useful stack rows. That capture is `captured`, rather than
-  `SlowEvidenceMissing`, only when typed evidence reports `CallerCancelled`, no
-  cleanup failure, started/exited/reaped/drained, no collector timeout, an
-  observed `StackOutputFirstByte`, and non-empty pinned-tool `Thread (0x...):`
-  output. The managed-stack file, `CallerCancelled` kind and complete typed
-  timeline are all retained. Empty cancellation output, any cleanup failure,
-  timeout or another primary failure kind remains `capture-failed`. The
-  structured interrupted-stack self-test proves the accepted case plus empty
-  output and unrelated-kind rejection; it does not weaken the slow threshold
-  or accept an observer miss as evidence.
-- PowerShell may receive collector failures through a PowerShell invocation
-  wrapper. `Get-DiagnosticCollectorExecutionFailure` walks that exception chain
-  only to recover `DiagnosticCollectorExecutionException`; lifecycle result
-  rows retain the collector failure kind, typed evidence and typed cleanup
-  stages for slow-phase and exit evidence. The helper does not classify target
-  ownership or create a second failure aggregate.
-- The slow-evidence ordering self-test records a same-root-budget transition
-  row for target start, atomic ready-file observation, collector arm, target
-  exit, collector completion, caller cleanup completion and the fault boundary
-  in each configured, one-second, immediate-dispatch and slow-completion
-  scenario. An exception record retains outer type/message/stack, every inner
-  type/message/stack and the first causal exception while keeping cleanup
-  failures separate from an optional primary failure. A missing optional test
-  authorization is not dispatched to its typed cleanup helper. Ready-file and
-  lease PIDs remain in a separate diagnostic object and do not decide readiness
-  correctness.
-- The supervisor copies target stdout and stderr to its owner-facing streams as
-  bytes arrive. Normal completion still awaits both copy tasks, while failure
-  cleanup retains output already published before the supervisor or target is
-  terminated.
-- The structured PowerShell gate scans both member invocation and command ASTs.
-  Raw `Process`/`ProcessStartInfo` construction and `Start-Process`,
-  `Stop-Process` or `Wait-Process` are forbidden in the transitive forensics
-  closure. The whole-budget mutation must execute the real blocked-collector
-  self-test; a source-only rejection is not behavioral proof.
-- Execution slow-phase, post-teardown slow-exit and timeout evidence have
-  separate arrays. A process-exit row cannot inherit unrelated execution
-  evidence.
-- Marker files are append-only fixture telemetry. The reader opens them with
-  read/write/delete sharing and bounded retries because it samples while the
-  fixture may be appending a state. Transient contention is counted; exhausted
-  reads return to the bounded monitor loop, while a missing final marker still
-  fails teardown and process-exit validation.
-- On Windows, only native sharing and lock violations (`32` and `33`) count as
-  contention. Other `IOException` values and `UnauthorizedAccessException` are
-  retried as marker read errors and reported through `markerReadErrorCount` and
-  `markerReadErrorType`; ACL or policy failures are never mislabeled as writer
-  contention.
+Residual truth comes from the platform ownership primitive: Windows Job Object
+active-process state, delegated Linux cgroup membership or anchored macOS
+libproc process-group membership. PID, PPID, process name, creation time and
+command line are diagnostic evidence only; they cannot authorize cleanup or
+convert a non-quiescent owned tree to success.
 
-Schema 1 reports used the collector observation timestamp for `process-exit`,
-so they include post-exit stdout/reporting overhead. In the
-`20260729T102215715Z` report, the historical values remain teardown maximum
-65 ms and process-exit maximum 170 ms. Schema 2 uses the OS exit timestamp and
-must not be compared directly with that old exit metric.
+Forensics is an observer, not a process owner. It may capture sanitized identity,
+thread, tree and managed-stack evidence, but it cannot kill, reap, extend child
+lifetime, create a deadline or override the lease verdict. Collector execution
+uses an attenuated window from the same transition budget and preserves primary
+and cleanup failures independently.
 
-## Static Ownership
+## Forensics Self-Defense
 
-`script/audit-lifecycle-ownership.ps1` scans production, test, benchmark and
-tool sources for:
+Formal profiles run the existing forensics self-tests through the same owner
+paths as real phases. They prove that:
 
-- module initializers and process-exit handlers;
-- static constructors and static field initialization;
-- external process creation;
-- explicit threads, `Task.Run`, dispatchers and timers;
-- global event registration;
-- Generic Host startup and shutdown;
-- synchronous waits, thread joins and synchronous file cleanup.
+- slow evidence is captured before classification and before authoritative
+  target exit;
+- an evidence hold is one-shot, lease-owned and acknowledged by the held
+  target rather than inferred from observer output;
+- collector start, terminate, reap and stream drain consume the caller's
+  existing monotonic budget without a replacement deadline;
+- a temporarily locked marker is retried and parsed after release, while
+  non-contention I/O and access errors retain a distinct classification;
+- a persistent descendant fails authoritative quiescence even when observation
+  misses it or the parent identity changes;
+- observer, persistence and cleanup failures remain visible beside the causal
+  process-owner failure;
+- private paths, URLs, cookies and command-line secrets are redacted;
+- inconsistent nominally-passed proof objects and intentional owner mutations
+  fail closed.
 
-`docs/testing/assembly-lifecycle-owners.json` is the machine-readable ownership
-policy. Each path must identify who starts the work, who stops it, and how
-teardown performs cancellation, wake-up, wait and bounded join. An unowned or
-unapproved mechanism fails the gate. The inventory is evidence, not a broad
-suppression list.
-
-## Profiles
-
-| Profile | Iterations per assembly | Required use |
-| --- | ---: | --- |
-| `Local` | 1 | Script development and focused validation |
-| `PR` | 3 | Every pull request on Windows |
-| `Main` | 5 | Every push to `main` |
-| `Rehearsal` | 100 | Release rehearsal and tag release gate |
-| `Flaky` | 500 | Focused investigation; override up to 10000 |
-
-Formal local Verification overrides the profile with `-Iterations 5` and runs
-`-ValidateForensics`. Normal main validation runs five complete iterations;
-tag release evidence uses the `Rehearsal` profile and deliberately runs 100.
-
-The release workflow owns `Rehearsal` as one required matrix cell per exact
-Windows-owned test assembly. Every cell still executes all 100 iterations and
-the complete `-ValidateForensics` self-test contract; sharding changes only
-scheduling, not lifecycle policy or sample count. `fail-fast: false` preserves
-evidence from sibling cells after a failure, while the aggregate matrix job
-must be successful before changelog or later release work can start. Each cell
-writes and uploads an assembly-qualified artifact directory, so reports from
-different assemblies cannot share or replace an output owner.
-
-Use `-AssemblyPattern` to isolate one or more suspect assemblies without
-weakening the normal PR or release profiles:
-
-```powershell
-pwsh ./script/test-assembly-lifecycle.ps1 `
-  -Configuration Release `
-  -Profile Flaky `
-  -AssemblyPattern DownKyi.Desktop.Tests `
-  -NoBuild `
-  -ValidateForensics
-```
-
-## Timeout Forensics
-
-On Windows, a slow phase or slow post-teardown exit automatically captures:
-
-- managed process/thread IDs;
-- `ThreadState`, wait reason and processor time;
-- a sanitized process tree containing PID, parent PID and process name;
-- `dotnet-stack report --process-id` output when the tool is available.
-
-Confirmed non-quiescent owned trees use a separate evidence path and are written
-to `residual-children.json`. The manifest records the lease failure, retained
-root/target diagnostic IDs and OS containment identity. Job Object active-tree
-state on Windows, delegated cgroup v2 membership on Linux and libproc anchored
-group membership on macOS decide correctness. PID/PPID process-tree snapshots
-remain observer evidence only. Reparenting or a changed PPID therefore cannot
-hide a descendant, and evidence capture never converts `ResidualChildProcess`
-to success.
-
-CI installs the pinned Microsoft `dotnet-stack` tool and runs
-`-ValidateForensics`. That self-test deliberately holds a marker-aware
-`execution` probe beyond the slow threshold. It fails unless the same code path
-used by test execution produces evidence and a non-empty managed stack.
-On Windows it also opens a valid marker with exclusive sharing and proves that
-the reader tolerates the temporary lock, then parses the marker after release.
-Schema 4 records the process-lease and evidence-hold contracts. The
-cross-platform process-supervision fixtures execute the platform
-primitive, including launch-without-ownership mutations, parent-exit/reparent
-behavior, inherited output handles and injected terminate/reap failures. Formal
-`-ValidateForensics` also launches a parent that exits while its descendant
-remains in the owned tree. The phase must be rejected as
-`ResidualChildProcess`, bounded cleanup must finish, and the detailed
-`processLeaseSelfTest` contract must pass. Timeout and slow-phase evidence are
-observer operations within the caller's `TransitionBudget`; the self-test
-injects observer failure and requires both that failure and the lease rejection
-to remain visible. Observer code does not own a second kill, reap,
-residual-child decision or deadline.
-
-Schema 4 retains the marker-reader proof as a fail-closed object:
-
-```json
-{
-  "markerReaderSelfTest": {
-    "required": true,
-    "executed": true,
-    "passed": true,
-    "contentionObserved": true,
-    "contentionCount": 2,
-    "recoveredAfterLockRelease": true,
-    "markerParsedAfterRecovery": true,
-    "errorType": null,
-    "contractChecks": {
-      "executed": true,
-      "passed": true,
-      "validProofAccepted": true,
-      "errorTypeRejected": true,
-      "zeroContentionRejected": true,
-      "incompleteProofRejected": true,
-      "errorClassificationPassed": true
-    }
-  }
-}
-```
-
-The top-level `markerReaderSelfTestPassed` field is only a summary. Windows PR,
-Main, Rehearsal and Flaky profiles require `-ValidateForensics`; missing,
-skipped, unknown, non-contending or failed self-tests block the gate.
-The self-test phase, top-level summary and final report use the same
-`markerReaderSelfTestComplete` result,
-including `contentionCount > 0` and `errorType == null`. Mutation checks prove
-that a nominal `passed = true` cannot override an error, zero contention or an
-incomplete proof.
-
-Raw stdout/stderr, JSON evidence, the machine report and Markdown summary are
-written below `artifacts/assembly-lifecycle/<run-id>/`. CI uploads the entire
-directory even when the gate fails.
-
-### Collector failure-report proof
-
-With `-ValidateForensics`, schema 4 also records two compiled-collector
-self-tests. The capture-window proof gives hosted supervisor/target startup a
-three-second owner-assigned fixture window. The target creates a non-completing
-blocking task before atomically publishing its ready record; only then can the
-self-test accept typed timeout, reap and stream-drain evidence without
-exhausting the parent operation budget. `collectorWindowOperationExhausted`
-requires the typed child operation remainder to be zero, while
-`parentBudgetPreserved` requires the parent remainder to stay strictly positive
-after typed completion and ready-artifact cleanup. It is not a 1,000 ms reserve
-or another hosted timing threshold. The report retains diagnostic-only
-`callerTiming`, raw milliseconds and `deadlineAuthority` values so task
-settlement, PowerShell failure mapping, attenuation and both remaining budgets
-can be distinguished without deciding correctness from their magnitudes.
-
-The proof also requires the ready process ID and pre-block stdout/stderr markers.
-The three seconds are a test fixture allowance, not a new production or global
-deadline. The fixture launches the already-built ProcessSupervision apphost
-directly instead of asking a second `dotnet` muxer process to resolve and launch
-the same assembly. This removes cold muxer startup from the fixture without
-changing the three-second window, compiled target behavior or sole
-`OwnedDiagnosticCollector`/lease owner. The report records `collectorHostName`
-so CI proves which fixture host ran. A standalone
-`forensics-collector-capture-window-self-test.json` is written before a failed
-self-test throws, so CI artifacts retain the exact predicate values even when
-formal lifecycle phases never start. Executable mutations prove that both a
-deadline exhausted before ready and ready published before the blocking task
-make the gate fail. The whole-parent mutation must preserve timeout, ready,
-reap, drain and empty cleanup while setting the parent remainder to zero; the
-Architecture profile must execute nine tests and fail only its owning typed-window
-test. Its failure output retains the structured child evidence, so a startup,
-build, missing-tool or cleanup failure cannot substitute for the deadline
-authority violation.
-
-The Windows lease supervisor now also starts through the same compiled apphost,
-rather than introducing another hosted `dotnet` runtime before its control and
-status pipes. Collector evidence distinguishes supervisor start return,
-containment preparation/establishment, pipe connection, ownership
-acknowledgment, launch authorization and target-start acknowledgment. A failed
-start retains the existing operation-deadline boundary separately from the
-owner's later deadline observation, followed by termination, tree-quiescence,
-supervisor-reap and stream-drain begin/settled evidence. Every timestamp comes
-from the existing `TransitionBudget` monotonic origin.
-
-A Windows platform regression permanently latches the supervisor immediately
-before pipe connection. It requires typed `OperationDeadlineExceeded`, no
-target-start/reap/drain claim, no cleanup failure, startup evidence through
-containment establishment, and owner cleanup evidence for supervisor
-termination, reap and drain. The matching review-corpus mutation changes only
-the direct-apphost invariant in memory and must execute the complete lifecycle
-Architecture class with exactly one failed test. Zero-test, build, platform or
-additional cleanup failures are not accepted as adversarial proof. Neither
-fixture uses a sleep, retry or runner-latency threshold.
-
-The cleanup-report proof sends a typed failure with a
-non-empty immutable cleanup list through the same PowerShell converter used by
-`Invoke-ForensicsObserverCapture`, JSON-round-trips the result and requires
-these exact stage/cause pairs:
-
-- `TerminateFailed` / `UnauthorizedAccessException`;
-- `ReapDeadlineExceeded` / `TimeoutException`.
-
-`forensicsCollectorCleanupReportSelfTestPassed` is a summary of the structured
-`forensicsCollectorCleanupReportSelfTest` object, not a substitute for it.
-Dropping or remapping either cleanup item makes the gate fail. The associated
-review-invariant mutation executes the real lifecycle script and accepts only
-the explicit cleanup-report self-test rejection; an unrelated child failure is
-not proof.
-
-The Windows-only `dotnet-stack-attach-stall-self-test.json` runs the pinned real
-tool against an exact diagnostics-pipe emulator which accepts the connection
-and then deliberately never answers. The proof requires connection acceptance,
-no `.nettrace`, no stdout/stderr progress, typed
-`OperationDeadlineExceeded`, authoritative reap, complete drain, an empty
-cleanup list and remaining parent budget. It uses the existing attenuated
-collector window and no sleep, retry or renewed deadline. This fixture
-classifies a pre-session attach stall; it is not a repository IPC endpoint or a
-replacement diagnostics implementation.
-
-The fake target's `ConnectedAfterMilliseconds` and the collector transition
-timeline have different monotonic origins, so they must never be subtracted or
-ordered against one another. The self-test instead records Unix milliseconds
-for collector request creation, diagnostics-pipe acceptance and typed return.
-Connection acceptance must fall within that request/return interval, while the
-outer request-to-typed-return UTC interval must consume at least 2,900 ms of the
-existing three-second caller-owned window. The collector's typed transition
-timeline starts only after the PowerShell wrapper has created the compiled
-request, so its elapsed value is not the caller-window origin and must not be
-used for this predicate. Tool startup and wrapper work are part of the same
-caller window; this oracle does not invent a new post-start allowance.
-
-The deterministic capture-window self-test runs before the pinned real-tool
-precondition because it does not use `dotnet-stack`. Its adversarial profile
-counts only the explicit capture-window rejection; a missing diagnostics tool
-or another child failure is not proof. A normal Windows `-ValidateForensics`
-run still requires the pinned real tool before the attach-stall self-test or any
-formal evidence capture begins.
-
-The platform-neutral `slow-evidence-ordering-self-test.json` passes bounded
-delayed-exit targets through the real `Invoke-IsolatedProcess` slow-evidence
-path four times. The configured eight-second target atomically publishes
-`DelayScheduled` ready evidence; a five-second synthetic observer-start delay
-with the three-second lead actually arms after two seconds and must complete
-evidence before authoritative target exit. The one-second lead mutation arms
-after four seconds; target exit cancels the same delay before capture, and the
-real phase result must be `SlowEvidenceMissing`. An immediate-dispatch mutation
-uses a zero calculated threshold and proves the recorded stopwatch value detects
-the first observation-loop iteration. A non-cooperative post-capture mutation
-writes evidence, remains within the same caller-allocated window, then returns
-after target exit; the monotonic completion value must reject it even though the
-file exists and the raw status is `captured`. The mutated phase must otherwise
-succeed, so a process, output or stream-drain failure cannot substitute for the
-intended ordering rejection.
-
-This ordering proof deliberately skips the managed-stack tool after the ordering
-boundary; the separate evidence-hold self-test continues to require a real
-non-empty managed stack. Every path requires authoritative target ownership,
-tree quiescence and empty cleanup failures. Ready-file deletion is attempted per
-existing file with terminating errors, and any deletion error or remaining file
-is preserved in the typed self-test result and fails the gate. The success path
-adds no observer sleep, retry, deadline renewal or process authority. Synthetic
-mutation delays consume the unchanged parent transition budget and never make a
-passing path wait longer to succeed.
-
-The target-exit cancellation platform fixture uses separate collector-ready and
-target-exit signal paths. It waits for an internal test-only observation set
-immediately after the collector owner records `ProcessStarted`, then verifies
-the blocking-ready record before signaling target exit. This proves cancellation
-of an already-started collector without a timing allowance. The unlinked
-mutation uses the same ordering and must instead consume the typed collector
-window.
-
-## Comparing Results
-
-Do not compare timing numbers collected on different machines. Every report
-records:
-
-- .NET runtime version;
-- operating system and architecture;
-- Commit SHA and whether the worktree was dirty;
-- profile and iteration count;
-- timeout and exit thresholds.
-
-Only compare reports with compatible runner metadata, datasets and test
-configuration. A faster rerun does not close a lifecycle failure; the owner and
-teardown path must be identified and corrected.
+The generated report is the authority for its schema, detailed predicates and
+current values. Do not copy example JSON, field inventories, run IDs or proof
+counts into this document.
 
 ## Completion And Rollback
 
-A lifecycle fix is complete only when the relevant owner has a deterministic
-teardown test, the focused flaky profile is stable, normal solution tests pass,
-and PR plus release gates produce clean reports.
+A lifecycle fix requires a deterministic owner/teardown regression, focused
+stability evidence, normal repository tests and the required CI/release
+profiles. A faster or green rerun does not replace causal ownership proof.
 
-To roll back a gate change, revert the probe, scripts, policy, tests, docs and
-workflow wiring together. Never retain workflow references to a removed
-measurement phase, and never replace a failed lifecycle gate with a blind
-rerun.
+Rollback the probe, process owner, scripts, machine policy, tests and workflow
+wiring as one coherent change. Never retain references to a removed phase or
+replace a failed lifecycle gate with retries, PID heuristics or suppression.

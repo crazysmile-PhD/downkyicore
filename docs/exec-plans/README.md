@@ -1,37 +1,25 @@
 # Execution Plans
 
-Owner 指派工作的短書籤與中斷 checkpoint 位於 GitHub Issue #137；
-`../refactoring-live-plan.md` 只保存穩定 release 與 verification policy，不保存
-branch、SHA、CI 或目前／下一項工作狀態。
-已完成的 v1.1.1 aria2 security Item 1 範圍、驗證與回滾位於
-`v1.1.1-security-patch.md`。
-目前 PR #120 的範圍收斂契約位於 `v1.1.1-pr-120-scope-cleanup.md`。
-下載 runtime P0/P1/P2 清單位於 `v1.1.1-runtime-hardening.md`。
-對話框 Issue #123 與啟動模態排序位於 `v1.1.1-dialog-and-startup.md`。
-Root-cause review remediation policy baseline 的獨立範圍與驗證位於
-`root-cause-review-policy-baseline.md`。
-v1.1.1 完成後的 Desktop feature-locality A-to-D migration、baseline、
-unknowns、驗收與回滾位於 `desktop-feature-locality.md`。
-延後的 high-risk control-flow gate、repository authority scanner spike 與
-platform-scoped invariant 分類分別位於 `high-risk-control-flow.md`、
-`repository-authority-scanner-spike.md` 與
-`platform-scoped-ci-invariants.md`。Unexpected download cancellation 的
-release-health 重驗契約位於 `unexpected-download-cancellation.md`。
-PR #197 的 OS-backed process lease、lifecycle、forensics、restart 與 runner
-migration 位於 `pr-197-process-lease-migration.md`。
-Stage 4A 的 restart successor、exact-parent watcher 與 cross-process deadline
-feasibility 位於 `pr-197-stage-4a-restart-handoff-feasibility.md`。
-PR #197 的獨立 Stage 5 Rehearsal capacity 量測、matrix scheduling contract、
-驗證與回滾位於 `pr-197-stage-5-rehearsal-capacity.md`；此 checkpoint 不屬於
-Stage 5 lifecycle remediation，也不開始 Stage 6。
+Execution plans preserve task-specific scope, unknowns, accepted design
+constraints, verification and rollback only when that information cannot be
+reconstructed from the final diff and tests.
 
-每個 work item 必須包含：
+Current owner-assigned work and interruption checkpoints live in GitHub Issue
+#137 and the linked PR. This index does not copy the current item, branch, SHA,
+CI state, completed-work history or a hand-maintained list of plan files.
 
-- 明確目標與 owner branch/PR。
-- 影響範圍與不可破壞契約。
-- 可執行驗證。
-- 完成條件。
-- 回滾方式。
+Each active plan states:
 
-設計背景保留在 `../design-docs/`；task plan 保存自己的範圍、驗證與回滾，
-不把 branch progress 或歷史完成清單塞回 live plan。
+- goal and explicit scope boundary;
+- affected owner and contracts that must not change;
+- executable validation and completion condition;
+- rollback or forward-repair procedure;
+- disposition when completed, superseded or abandoned.
+
+Design rationale belongs in [design-docs](../design-docs/). Stable architecture
+intent belongs in [ARCHITECTURE.md](../../ARCHITECTURE.md). Canonical
+verification and rollback commands belong in
+[verification-and-rollback.md](../operations/verification-and-rollback.md).
+
+Do not copy plan inventory into this file; query the directory and Git history
+on demand.

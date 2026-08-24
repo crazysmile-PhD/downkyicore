@@ -1,16 +1,22 @@
 # DownKyi Architecture
 
-本文件描述目前可執行的架構、已知邊界缺口與目標依賴方向。它不是理想化簡圖。若本文件、知識圖譜和程式碼不一致，以程式碼及可重現檢查結果為準，並在同一個 PR 修正文檔。
+本文件是 architecture intent、dependency invariant、compatibility
+commitment 與目標方向的 owner。實際 project/source topology 由 source、
+`*.csproj` 與 architecture tests 擁有；若 executable topology 與本文件的
+intent 不一致，先判斷是 implementation defect 或已核准的 architecture
+change，再修正唯一的錯誤 owner。
 
 ## 閱讀入口
 
-- 模組、呼叫關係與穩定契約：`docs/ai-knowledge-graph.md`
-- 目前尚未完成的工作：`docs/refactoring-live-plan.md`
+- topic-to-authority locator：`docs/ai-knowledge-graph.md`
 - 模組邊界審查：`docs/design-docs/module-boundary-naming-audit.md`
 - Process lifecycle ownership 與 OS supervision boundary：
   `docs/design-docs/process-lifecycle-ownership.md`
-- 建置、測試、發布與外部 binary：`docs/maintenance.md`
-- 驗證及回滾：`docs/operations/verification-and-rollback.md`
+- dependency 與 external binary 維護：`docs/maintenance.md`
+- 建置、測試、發布及回滾：`docs/operations/verification-and-rollback.md`
+
+目前工作、branch、PR 與 CI 狀態只在 GitHub/Git 查詢，不由 architecture
+文件保存。
 
 ## 目前拓樸
 

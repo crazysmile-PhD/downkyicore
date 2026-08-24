@@ -1,78 +1,91 @@
-# Verification And Rollback
+# Verification, Release And Rollback
 
-## 快速狀態
+This document is the single human procedure owner for formal local
+verification, release evidence and rollback. Current branch, PR, run and
+completed-work status belong in GitHub and Git, not here.
+
+## Evidence Identity
+
+Before a formal run, record:
 
 ```powershell
 git status --short --branch
 git rev-parse HEAD
-pwsh ./script/audit-module-boundaries.ps1 `
-  -OutputPath artifacts/architecture/module-boundary-audit.json
 ```
 
-Audit JSON 記錄 commit SHA、source metrics 與目前 boundary markers，供 Agent 或 reviewer 看到真實狀態。
+A result is valid only for its exact commit, dirty-worktree state, runtime, OS
+and architecture. Evidence does not transfer to a rebased or rebuilt commit,
+and timings from incompatible machines or datasets are not compared directly.
 
-## 嚴格驗證
+Run build and test phases sequentially in one worktree. Parallel worktrees may
+share NuGet caches, but they must not share `bin`, `obj`, test results or
+lifecycle artifact directories.
 
-依序執行，不要在同一工作樹平行跑 build/test：
+## Canonical Verification
 
 ```powershell
 dotnet restore ./DownKyi.sln
-
 pwsh ./script/validate-release-version.ps1
-
-dotnet build ./DownKyi.sln `
-  -c Release `
-  --no-restore `
-  --no-incremental `
-  -p:EnableNETAnalyzers=true `
-  -p:AnalysisMode=All `
-  -p:EnforceCodeStyleInBuild=true `
-  -p:TreatWarningsAsErrors=true `
-  -p:CodeAnalysisTreatWarningsAsErrors=true `
-  -p:UseSharedCompilation=false
-
+dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental `
+  -p:EnableNETAnalyzers=true -p:AnalysisMode=All `
+  -p:EnforceCodeStyleInBuild=true -p:TreatWarningsAsErrors=true `
+  -p:CodeAnalysisTreatWarningsAsErrors=true -p:UseSharedCompilation=false
+pwsh ./script/verify-documentation.ps1 -SelfTest
+pwsh ./script/verify-documentation.ps1 -Verify
 pwsh ./script/test-review-invariants.ps1 `
-  -Configuration Release `
-  -NoRestore `
-  -NoBuild
-pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
+  -Configuration Release -NoRestore -NoBuild
+pwsh ./script/test-solution.ps1 `
+  -Configuration Release -NoRestore -NoBuild
 pwsh ./script/audit-lifecycle-ownership.ps1 `
   -OutputDirectory ./artifacts/assembly-lifecycle/ownership
 pwsh ./script/test-assembly-lifecycle.ps1 `
-  -Configuration Release `
-  -Iterations 5 `
-  -NoBuild `
-  -ValidateForensics `
+  -Configuration Release -Iterations 5 -NoBuild -ValidateForensics `
   -ResultsDirectory ./artifacts/assembly-lifecycle/verification
-dotnet format ./DownKyi.sln --no-restore --verify-no-changes
+dotnet format ./DownKyi.sln --verify-no-changes --no-restore
 pwsh ./script/audit-module-boundaries.ps1 `
   -OutputPath ./artifacts/architecture/module-boundary-audit.json
 $workflowFiles = Get-ChildItem ./.github/workflows -Filter *.yml | `
   Select-Object -ExpandProperty FullName
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -- $workflowFiles
-git diff --check
 dotnet package list --project ./DownKyi.sln --vulnerable --include-transitive
 dotnet package list --project ./DownKyi.sln --deprecated --include-transitive
 pwsh ./script/scan-secrets.ps1
+git diff --check
 ```
 
-`scan-secrets.ps1` 使用 Gitleaks 掃描目前 tracked 與尚未追蹤、但未被 `.gitignore` 排除的候選提交檔。固定驗證版本為 Gitleaks `8.30.1`；Windows x64 release zip 必須先依官方 `gitleaks_8.30.1_checksums.txt` 驗證 SHA-256，再解壓到 `.tools/gitleaks/bin/`。`.gitleaks.toml` 只允許公開 WBI 測試 fixture 與精確的 Avalonia brush resource 行，不得加入整個目錄或一般測試檔的寬鬆排除。
+`test-solution.ps1` is the canonical test entry point. It discovers test
+projects, validates each `DownKyiTestPlatforms` declaration, selects projects
+owned by the current OS and applies
+[test-runner-policy.json](../testing/test-runner-policy.json). Do not replace it
+with direct solution-wide `dotnet test`.
 
-`test-review-invariants.ps1` 是 root-cause failure corpus gate。它必須證明
-每個 manifest class 實際執行，不得只用總測試數推測 coverage。Corpus 只
-記錄 target branch 已存在的契約；未合併 PR 的設計不能提前寫成 stable
-invariant。
+The review-invariant gate proves every machine-policy locator executes; total
+test count is not a coverage oracle. Lifecycle verification separately proves
+load, assembly-info, discovery, execution, fixture teardown and process exit.
 
-Lifecycle ownership audit 與 5 次全 test-assembly gate 是同一套嚴格
-Verification 的必要步驟，不是選用診斷工具。每個 assembly 必須通過
-load、assembly-info、discovery、execution、assembly teardown 與 process
-exit；報告必須保留 stdout/stderr 污染、退出碼、P50/P95/P99/max、殘留
-子程序與逾時取證。
+Use the smallest focused regression while iterating. Run the complete sequence
+when the change affects a formal owner, before publishing a final candidate, or
+when the governing test policy requires it. Do not rerun an expensive gate
+without a causal reason.
+
+## Release Policy
+
+- Publish only from one clean final commit after required quality, CodeQL,
+  lifecycle, rehearsal and package gates pass for that exact commit.
+- Recheck every downstream change after its prerequisite or base changes.
+- Existing tags are immutable. Do not move, reuse or silently replace a tag.
+- Do not change [version.txt](../../version.txt), create a tag or publish a
+  release while a required gate or release blocker remains unresolved.
+- Source and packages must not contain credentials, account data, local user
+  data directories or developer artifacts.
+- A migration that changes settings, SQLite, unfinished tasks, transfer
+  identity, partial files, completed keys or resume state requires explicit
+  compatibility and rollback evidence.
 
 ## Release Rehearsal
 
-正式 rehearsal 使用 `Rehearsal` profile，每個 test assembly 執行 100
-次，超過 50 次最低發布門檻：
+The release workflow owns its current matrix. The formal lifecycle rehearsal
+uses the repository `Rehearsal` profile:
 
 ```powershell
 pwsh ./script/test-assembly-lifecycle.ps1 `
@@ -83,92 +96,63 @@ pwsh ./script/test-assembly-lifecycle.ps1 `
   -ResultsDirectory ./artifacts/assembly-lifecycle/release
 ```
 
-`assembly-lifecycle-report.json`、ownership report、raw output 與 timeout
-evidence 必須保存為 workflow artifact。單次重跑成功不能取代失敗 owner
-的根因、teardown 修正與完整 rehearsal。
+Preserve the machine report, ownership report, raw protocol output and timeout
+evidence as workflow artifacts. A successful rerun does not close an
+intermittent lifecycle failure without causal owner and teardown evidence.
 
-## 外部 Binary 與跨 RID 發布
+Before a release tag:
 
-從儲存庫根目錄執行 Windows 資產腳本；腳本不可依賴目前 working
-directory：
+1. Run the canonical verification on the exact candidate.
+2. Dispatch the existing release workflow on that commit and require every
+   configured gate/package job to pass.
+3. Download and validate package manifests, checksums, required binaries,
+   version identity, runtime content and user-data exclusions.
+4. Confirm macOS trust claims against the exact final app/DMG mode validated by
+   the workflow. Ad-hoc signing must not be described as Developer ID,
+   notarization, stapling or Gatekeeper trust.
+5. Push `main`, then the immutable version tag only after the exact candidate is
+   accepted.
+6. Verify the release attachments and published checksums.
 
-```powershell
-pwsh ./script/aria2.ps1 x64
-pwsh ./script/ffmpeg.ps1 x64
-```
+External asset update details are owned by
+[maintenance.md](../maintenance.md#external-binaries). Package shape is guarded
+by [validate-publish-output.ps1](../../script/validate-publish-output.ps1), not a
+platform-local file-exists check.
 
-URL 與 SHA-256 只在 `script/assets/external-assets.json` 維護。更新前以
-publisher release API 交叉核對 immutable tag、asset name、size 與 digest；
-禁止改成 mutable `latest`、使用 `curl --insecure` 或略過 checksum。驗證
-`ffmpeg`、`ffprobe`、aria2 非空，並檢查目標平台需要的硬體 encoder。
+## Authorized Live Protocol Evidence
 
-交叉發布必須明確 restore 同一個目標 RID，再以 `--no-restore` publish。
-Core 只保存外部 binary catalog，不得選擇平台內容或設定 SDK
-`RuntimeIdentifier`。exe 專案必須從明確的 publish RID 建立 asset RID，
-沒有 publish RID 時才可依本機 host 提供開發 fallback，並直接把對應
-catalog 檔案加入 output/publish；自訂 RID 不得跨 ProjectReference。
-推 tag 前手動執行 `build.yml`，下載每個 artifact，重算 package
-sidecar，並檢查 manifest、版本、必要 binary、Fluent theme 與使用者
-資料排除。macOS artifact 另需確認 x64 與 arm64 final app 均已完成簽章並
-通過 `codesign --verify --deep --strict`；缺少 Apple credentials 時使用 ad-hoc
-簽章，Developer ID、notarization、stapling、Gatekeeper 與 signed-DMG 驗證會
-跳過，產物不得宣稱具備這些信任屬性。具備完整 Apple credentials 時才要求
-上述額外步驟全部通過。任何 final app bundle 完整性失敗仍必須 fail closed。
+Live Bilibili probes require explicit operator authorization. Use the existing
+anonymous or authenticated audit scripts only as described by
+[bilibili-api-audit.md](bilibili-api-audit.md). Credentials must enter through
+the documented environment boundary, and only sanitized allowlisted metadata
+may be persisted. Run the repository secret scan afterward.
 
-歷史 rehearsal `30431043860` 證明 v1.1.0 candidate 的三個 release
-gate、九個 package job、sidecar、manifest 與實際套件內容正確；它不是
-正式發布證據。後續 tag workflow 暴露偶發 Windows test-host 前台執行緒，
-因此 v1.1.0 draft 已撤回，標籤保持不可變。
+## Runtime Evidence
 
-修正後 main run `30450175286` 是 lifecycle 根因修正的 50 輪證據：
-七個 assembly 共 2,102 phase results，零失敗、零缺失 slow evidence、
-零 marker read error；teardown 最大 7 ms，OS process-exit 最大 187 ms。
-14 個超过五秒的 execution phase 均保存取证。v1.1.1 仍必须在最终版本
-commit 上完成 `Rehearsal` 100 轮与所有跨平台 package job，才能建立 tag。
+- Real Host/XAML: existing Desktop smoke tests.
+- Navigation history: typed navigation tests covering reuse and disposal.
+- Download/retry: deterministic fake or loopback transport tests.
+- Media output: existing ffprobe seek/decode integration.
+- Logs: isolated data roots covering redaction, flush, rotation and export.
+- System performance: metadata-complete benchmark artifacts; values from
+  different environments are not directly comparable.
 
-正式 tag 前及 workflow 中均執行：
+## Completion And Rollback
 
-```powershell
-pwsh ./script/validate-release-version.ps1 -GitRef refs/tags/v1.1.1
-```
+Implementation, focused regression, required formal gates, exact-head CI and
+review are separate completion stages. Do not report a later stage complete
+from evidence for an earlier one.
 
-這個檢查要求 tag 與 `version.txt` 完全一致；不得移動或重用既有 tag。
-
-登入態 API audit 只能由明確授權的 operator 執行：
-
-```powershell
-pwsh ./script/audit-bilibili-authenticated-api.ps1 `
-  -ConfirmAuthenticatedLive `
-  -OutputPath ./docs/operations/bilibili-authenticated-api-audit.json
-```
-
-腳本只從 `~/.codex/.env` 讀取 `BILIBILI_TEST_COOKIE`，不得把值放入命令列、檔案、log、fixture、commit 或 PR。`/x/web-interface/nav` 未同時滿足 code 0 與 `isLogin=true` 時，後續 probe 必須封鎖。
-
-## UI 與 runtime evidence
-
-- Real Host/XAML：`UiSmokeTests`。
-- Navigation history：typed navigation tests，必須驗證 instance reuse、dispose 與 history shrink。
-- Download/retry：loopback fake HTTP tests，不連正式 Bilibili。
-- Media output：ffprobe seek/decode integration tests。
-- Logs：使用測試指定隔離目錄，檢查 redaction、flush、rotation 與 export。
-- System performance：依 `performance-baseline.md` 記錄 runtime、OS、architecture、dataset、backend 與 SHA。
-
-## 回滾
-
-一般 PR 使用非破壞性 revert：
+Before merge, rollback means closing the draft and deleting only its feature
+branch after preserving any requested evidence. After merge, use a
+non-destructive revert of the complete change range:
 
 ```powershell
 git revert <commit-sha>
 ```
 
-不得用 `git reset --hard` 或覆蓋使用者工作樹。
-
-資料 migration PR 必須在合併前提供：
-
-1. 舊 schema fixture。
-2. migration 後 reopen 測試。
-3. 備份位置。
-4. rollback 或向前修復步驟。
-5. 未完成下載與 resume state 驗證。
-
-XAML/rename PR 回滾時應 revert 整個 rename commit，避免只還原 class 而留下 resource URI、DI 或 route references。
+Do not use `git reset --hard` or overwrite a user's worktree. Data migration
+changes require an old-schema fixture, backup location, reopen verification,
+rollback or forward-repair procedure, and explicit unfinished/resume-state
+coverage. XAML or rename rollback reverts the complete ownership change so
+resource URI, DI and route references remain coherent.

@@ -536,16 +536,12 @@ public sealed class AssemblyLifecycleArchitectureTests
     [Fact]
     public void FormalVerificationCannotOmitLifecycleOwnershipOrRepeatedProcessChecks()
     {
-        var livePlan = Read("docs/refactoring-live-plan.md");
         var operations = Read("docs/operations/verification-and-rollback.md");
         var releaseGate = Read("docs/product-specs/v1.1.1-corrective-release-gate.md");
 
-        Assert.Contains("audit-lifecycle-ownership.ps1", livePlan, StringComparison.Ordinal);
-        Assert.Contains("-Iterations 5", livePlan, StringComparison.Ordinal);
-        Assert.Contains("-ValidateForensics", livePlan, StringComparison.Ordinal);
-        Assert.Contains("Gate 10 is complete only", livePlan, StringComparison.Ordinal);
-
+        Assert.Contains("audit-lifecycle-ownership.ps1", operations, StringComparison.Ordinal);
         Assert.Contains("-Iterations 5", operations, StringComparison.Ordinal);
+        Assert.Contains("-ValidateForensics", operations, StringComparison.Ordinal);
         Assert.Contains("-Profile Rehearsal", operations, StringComparison.Ordinal);
         Assert.Contains(
             "-ResultsDirectory ./artifacts/assembly-lifecycle/release",

@@ -11,6 +11,8 @@
 - `restart-handoff-lifecycle.md`：ordinary owned child 與 committed restart
   successor 的 lifetime-domain 分界、native watcher 與 deadline feasibility。
 - 根層 `ARCHITECTURE.md`：目前與目標拓樸的權威入口。
-- `../ai-knowledge-graph.md`：細粒度節點、呼叫關係、契約與測試索引。
+- `../ai-knowledge-graph.md`：高價值 topic-to-authority locator。
 
-設計文件描述「為什麼」與責任歸屬；尚未完成的執行步驟只放在 `../refactoring-live-plan.md`。
+設計文件描述 repository 無法從 source 重建的「為什麼」、rejected
+alternative 與責任邊界。尚未完成的執行步驟留在 task-specific execution
+plan；目前工作狀態只在 GitHub Issue/PR。
