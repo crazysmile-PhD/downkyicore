@@ -10,8 +10,11 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
     private const string MutationEnvironmentVariable = "DOWNKYI_TEST_MUTATE_FORENSICS_LEASE";
     private const string ChildReleasePipeEnvironmentVariable =
         "DOWNKYI_TRANSIENT_CHILD_RELEASE_PIPE";
+    private const string ChildReleaseMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_OBSERVED_CHILD_RELEASE";
     private const byte CaptureCompleted = 0xA5;
     private const byte ChildReleaseCompleted = 0xD7;
+    private const byte ChildReleaseAcknowledged = 0xA7;
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan TerminationTimeout = TimeSpan.FromSeconds(5);
 
@@ -97,7 +100,7 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         var pipeName = CreatePipeName();
         using var releaseOwner = new NamedPipeServerStream(
             pipeName,
-            PipeDirection.Out,
+            PipeDirection.InOut,
             1,
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous);
@@ -122,6 +125,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
                 .ConfigureAwait(true);
             await releaseOwner.FlushAsync(TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
+            if (releaseValue == ChildReleaseCompleted)
+            {
+                Assert.Equal(ChildReleaseAcknowledged, releaseOwner.ReadByte());
+            }
             await WaitForExitAsync(child).ConfigureAwait(true);
 
             Assert.Equal(expectedExitCode, child.ExitCode);
@@ -138,7 +145,7 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         var pipeName = CreatePipeName();
         using var releaseOwner = new NamedPipeServerStream(
             pipeName,
-            PipeDirection.Out,
+            PipeDirection.InOut,
             1,
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous);
@@ -178,6 +185,7 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
                 .ConfigureAwait(true);
             await releaseOwner.FlushAsync(TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
+            Assert.Equal(ChildReleaseAcknowledged, releaseOwner.ReadByte());
             await WaitForExitAsync(child).ConfigureAwait(true);
         }
         finally
@@ -189,6 +197,66 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             }
 
             await TerminateIfRunningAsync(root).ConfigureAwait(true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 1)]
+    public void LifecycleScriptOwnsAndValidatesTheObservedChildRelease(
+        bool mutateRelease,
+        int expectedExitCode)
+    {
+        var resultsDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-lifecycle-release-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(resultsDirectory);
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = FindRepositoryRoot(),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-File");
+            startInfo.ArgumentList.Add(Path.Combine(
+                FindRepositoryRoot(),
+                "script",
+                "test-assembly-lifecycle.ps1"));
+            startInfo.ArgumentList.Add("-Profile");
+            startInfo.ArgumentList.Add("Local");
+            startInfo.ArgumentList.Add("-AssemblyPattern");
+            startInfo.ArgumentList.Add("DownKyi.Domain.Tests");
+            startInfo.ArgumentList.Add("-NoBuild");
+            startInfo.ArgumentList.Add("-ValidateObservedChildRelease");
+            startInfo.ArgumentList.Add("-ResultsDirectory");
+            startInfo.ArgumentList.Add(resultsDirectory);
+            if (mutateRelease)
+            {
+                startInfo.Environment[ChildReleaseMutationEnvironmentVariable] = "1";
+            }
+
+            var result = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken,
+                TimeSpan.FromSeconds(90));
+
+            Assert.Equal(expectedExitCode, result.ExitCode);
+            Assert.Equal(
+                !mutateRelease,
+                result.Output.Contains(
+                    "Observed-child release owner self-test passed.",
+                    StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(resultsDirectory, recursive: true);
         }
     }
 

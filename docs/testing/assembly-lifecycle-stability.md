@@ -223,11 +223,17 @@ CI installs the pinned Microsoft `dotnet-stack` tool and runs
 used by test execution produces evidence and a non-empty managed stack.
 On Windows it also opens a valid marker with exclusive sharing and proves that
 the reader tolerates the temporary lock, then parses the marker after release.
-It additionally launches one short-lived and one persistent `dotnet` child.
-The short-lived child waits on a parent-owned pipe until the real observer has
-recorded its identity; the owner then releases it and gives the drain transition
-the full quiescence window. It must drain through the same path used by real
-phases and leave the phase successful. The persistent child must
+The cross-platform architecture regression invokes
+`-ValidateObservedChildRelease` to launch a short-lived `dotnet` child through
+the lifecycle script without requiring the optional diagnostics tool. The
+formal Windows forensics self-test calls the same owner function. The child
+waits on a parent-owned duplex pipe until the real observer has
+recorded its identity; the owner then releases it, requires the child's
+acknowledgement, and gives the drain transition the full quiescence window. It
+must drain through the same path used by real phases and leave the phase
+successful. A mutation of that owner-controlled release must fail the same
+executable self-test. On Windows, the self-test also launches a persistent
+child, which must
 preserve its identity and evidence manifest, receive `ResidualChildProcess`
 classification, and be terminated by matching both PID and creation time. The
 same self-test proves that private paths, URLs, cookies and command-line secrets

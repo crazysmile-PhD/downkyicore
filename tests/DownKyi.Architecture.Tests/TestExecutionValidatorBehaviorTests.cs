@@ -5,6 +5,7 @@ namespace DownKyi.Architecture.Tests;
 public sealed class TestExecutionValidatorBehaviorTests
 {
     private const string ExpectedClass = "DownKyi.Tests.Aria2TlsIntegrationTests";
+    private const string SecondExpectedClass = "DownKyi.Tests.Aria2TlsPolicyTests";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Theory]
@@ -19,6 +20,7 @@ public sealed class TestExecutionValidatorBehaviorTests
     [InlineData("other-class-only")]
     [InlineData("expected-class-not-executed")]
     [InlineData("expected-class-failed-with-success-exit")]
+    [InlineData("second-expected-class-not-executed")]
     [InlineData("runner-failure")]
     public void ValidatorRejectsFalseGreenReports(string scenario)
     {
@@ -34,6 +36,15 @@ public sealed class TestExecutionValidatorBehaviorTests
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("ExecutedExpected", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidatorAcceptsOnlyWhenEveryExpectedClassExecutedAndPassed()
+    {
+        var result = InvokeValidator("valid-multiple-classes");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("ExecutedExpectedClasses", result.Output, StringComparison.Ordinal);
     }
 
     private static BoundedProcessResult InvokeValidator(string scenario)
@@ -70,12 +81,15 @@ public sealed class TestExecutionValidatorBehaviorTests
                 Assert-DownKyiExpectedTestExecution `
                   -RunnerExitCode ([int]$env:DOWNKYI_RUNNER_EXIT) `
                   -TrxPath $env:DOWNKYI_TRX_PATH `
-                  -ExpectedClassNames @($env:DOWNKYI_EXPECTED_CLASS)
+                  -ExpectedClassNames @($env:DOWNKYI_EXPECTED_CLASSES.Split(';'))
                 """);
             startInfo.Environment["DOWNKYI_TEST_RUNNER"] =
                 Path.Combine(RepositoryRoot, "script", "test-project-runner.ps1");
             startInfo.Environment["DOWNKYI_TRX_PATH"] = reportPath;
-            startInfo.Environment["DOWNKYI_EXPECTED_CLASS"] = ExpectedClass;
+            startInfo.Environment["DOWNKYI_EXPECTED_CLASSES"] =
+                scenario is "second-expected-class-not-executed" or "valid-multiple-classes"
+                    ? $"{ExpectedClass};{SecondExpectedClass}"
+                    : ExpectedClass;
             startInfo.Environment["DOWNKYI_RUNNER_EXIT"] =
                 scenario == "runner-failure" ? "1" : "0";
 
@@ -134,8 +148,38 @@ public sealed class TestExecutionValidatorBehaviorTests
                 failed: "1"),
             "runner-failure" => CreateTrx(ExpectedClass, true, "1", "Passed"),
             "valid" => CreateTrx(ExpectedClass, true, "1", "Passed"),
+            "second-expected-class-not-executed" => CreateTwoClassTrx(
+                secondClassExecuted: false),
+            "valid-multiple-classes" => CreateTwoClassTrx(secondClassExecuted: true),
             _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null)
         };
+    }
+
+    private static string CreateTwoClassTrx(bool secondClassExecuted)
+    {
+        var secondOutcome = secondClassExecuted ? "Passed" : "NotExecuted";
+        var executed = secondClassExecuted ? "2" : "1";
+        var passed = executed;
+        return $$"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+              <Results>
+                <UnitTestResult testId="test-1" executionId="execution-1" testName="ProbeOne" outcome="Passed" />
+                <UnitTestResult testId="test-2" executionId="execution-2" testName="ProbeTwo" outcome="{{secondOutcome}}" />
+              </Results>
+              <TestDefinitions>
+                <UnitTest id="test-1" name="ProbeOne">
+                  <TestMethod className="{{ExpectedClass}}" name="ProbeOne" />
+                </UnitTest>
+                <UnitTest id="test-2" name="ProbeTwo">
+                  <TestMethod className="{{SecondExpectedClass}}" name="ProbeTwo" />
+                </UnitTest>
+              </TestDefinitions>
+              <ResultSummary outcome="Completed">
+                <Counters total="2" executed="{{executed}}" passed="{{passed}}" failed="0" />
+              </ResultSummary>
+            </TestRun>
+            """;
     }
 
     private static string CreateTrx(

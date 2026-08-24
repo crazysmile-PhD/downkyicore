@@ -378,6 +378,49 @@ function Stop-DownKyiOwnedProcess {
     }
 }
 
+function Wait-DownKyiOwnedProcessExit {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Diagnostics.Process]$Process,
+
+        [Parameter(Mandatory)]
+        [bool]$Started,
+
+        [Parameter(Mandatory)]
+        [ValidateRange(1, 3600000)]
+        [int]$TimeoutMilliseconds,
+
+        [Threading.CancellationToken]$CancellationToken =
+            [Threading.CancellationToken]::None
+    )
+
+    if (-not $Started) {
+        throw "Cannot wait for a repository test process that did not start."
+    }
+
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    while (-not $Process.WaitForExit(50)) {
+        if ($CancellationToken.IsCancellationRequested) {
+            throw [OperationCanceledException]::new(
+                "Repository test process execution was canceled.",
+                $CancellationToken)
+        }
+        if ($stopwatch.ElapsedMilliseconds -ge $TimeoutMilliseconds) {
+            throw [TimeoutException]::new(
+                "Repository test process $($Process.Id) exceeded its " +
+                "$TimeoutMilliseconds ms execution deadline.")
+        }
+    }
+
+    if ($CancellationToken.IsCancellationRequested) {
+        throw [OperationCanceledException]::new(
+            "Repository test process execution was canceled.",
+            $CancellationToken)
+    }
+    return $Process.ExitCode
+}
+
 function Assert-DownKyiTestExecutionReport {
     [CmdletBinding()]
     param(
@@ -484,24 +527,42 @@ function Assert-DownKyiTestExecutionReport {
         throw "The expected test report counters do not match its execution results."
     }
 
-    $executedExpectedTests = @($results | Where-Object {
-            $testId = $_.GetAttribute("testId")
-            -not [string]::IsNullOrWhiteSpace($testId) -and
-            $definitionsById.ContainsKey($testId) -and
-            $ExpectedClassNames.Contains([string]$definitionsById[$testId]) -and
-            $_.GetAttribute("outcome") -ne "NotExecuted"
-        })
+    $expectedClassResults = [ordered]@{}
+    foreach ($expectedClassName in @($ExpectedClassNames | Sort-Object -Unique)) {
+        $classResults = @($results | Where-Object {
+                $testId = $_.GetAttribute("testId")
+                -not [string]::IsNullOrWhiteSpace($testId) -and
+                $definitionsById.ContainsKey($testId) -and
+                [string]$definitionsById[$testId] -eq $expectedClassName -and
+                $_.GetAttribute("outcome") -ne "NotExecuted"
+            })
+        if ($classResults.Count -lt 1) {
+            throw "The report contains no executed result for expected test class '$expectedClassName'."
+        }
+
+        $expectedClassResults.Add($expectedClassName, $classResults)
+    }
+
+    $executedExpectedTests = @(
+        foreach ($classResults in $expectedClassResults.Values) {
+            $classResults
+        }
+    )
     $passedExpectedTests = @($executedExpectedTests | Where-Object {
             $_.GetAttribute("outcome") -eq "Passed"
         })
-    if ($ExpectedClassNames.Count -gt 0 -and $executedExpectedTests.Count -lt 1) {
-        throw "The report contains no executed result for an expected test class."
-    }
+    $passedExpectedClasses = @($expectedClassResults.Keys | Where-Object {
+            @($expectedClassResults[$_] | Where-Object {
+                    $_.GetAttribute("outcome") -eq "Passed"
+                }).Count -gt 0
+        })
 
     return [pscustomobject]@{
         Executed = $executed
         ExecutedExpected = $executedExpectedTests.Count
+        ExecutedExpectedClasses = $expectedClassResults.Count
         PassedExpected = $passedExpectedTests.Count
+        PassedExpectedClasses = $passedExpectedClasses.Count
         Failed = [int]$counterValues.failed
         ReportPath = $report.FullName
     }
@@ -534,8 +595,9 @@ function Assert-DownKyiExpectedTestExecution {
     if ($report.Failed -gt 0) {
         throw "A successful runner report cannot contain failed test results."
     }
-    if ($report.PassedExpected -lt 1) {
-        throw "The report contains no passed result for an expected test class."
+    $expectedClassCount = @($ExpectedClassNames | Sort-Object -Unique).Count
+    if ($report.PassedExpectedClasses -ne $expectedClassCount) {
+        throw "Every expected test class must contain at least one passed result."
     }
 
     return $report
@@ -564,7 +626,13 @@ function Invoke-DownKyiTestProject {
 
         [string[]]$ClassNames = @(),
 
-        [string]$Filter
+        [string]$Filter,
+
+        [ValidateRange(1, 3600)]
+        [int]$ExecutionTimeoutSeconds = 300,
+
+        [Threading.CancellationToken]$CancellationToken =
+            [Threading.CancellationToken]::None
     )
 
     $project = Get-Item -LiteralPath $ProjectPath
@@ -678,8 +746,11 @@ function Invoke-DownKyiTestProject {
             $authorization.Item2.ChildProcessId = $process.Id
 
             Complete-DownKyiTestProcessAuthorization -Authorization $authorization
-            $process.WaitForExit()
-            $exitCode = $process.ExitCode
+            $exitCode = Wait-DownKyiOwnedProcessExit `
+                -Process $process `
+                -Started $started `
+                -TimeoutMilliseconds ($ExecutionTimeoutSeconds * 1000) `
+                -CancellationToken $CancellationToken
         }
         catch {
             $operationFailure = $_.Exception

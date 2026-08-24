@@ -120,36 +120,33 @@ public sealed class TestRunnerPolicyArchitectureTests
         {
             var startInfo = new ProcessStartInfo
             {
-                FileName = "pwsh",
+                FileName = "dotnet",
                 WorkingDirectory = RepositoryRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
-            startInfo.ArgumentList.Add("-NoProfile");
-            startInfo.ArgumentList.Add("-NonInteractive");
-            startInfo.ArgumentList.Add("-Command");
-            startInfo.ArgumentList.Add("""
-                & dotnet $env:DOWNKYI_ARCHITECTURE_ASSEMBLY `
-                    -noLogo `
-                    -noColor `
-                    -noAutoReporters `
-                    -reporter quiet `
-                    -parallel none `
-                    -class DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests `
-                    -trx $env:DOWNKYI_MUTATION_TRX
-                """);
-            startInfo.Environment["DOWNKYI_ARCHITECTURE_ASSEMBLY"] = Path.Combine(
+            startInfo.ArgumentList.Add(Path.Combine(
                 RepositoryRoot,
                 "tests",
                 "DownKyi.Architecture.Tests",
                 "bin",
                 "Release",
                 "net10.0",
-                "DownKyi.Architecture.Tests.dll");
-            startInfo.Environment["DOWNKYI_MUTATION_TRX"] =
-                Path.Combine(resultsDirectory, "mutation.trx");
+                "DownKyi.Architecture.Tests.dll"));
+            startInfo.ArgumentList.Add("-noLogo");
+            startInfo.ArgumentList.Add("-noColor");
+            startInfo.ArgumentList.Add("-noAutoReporters");
+            startInfo.ArgumentList.Add("-reporter");
+            startInfo.ArgumentList.Add("quiet");
+            startInfo.ArgumentList.Add("-parallel");
+            startInfo.ArgumentList.Add("none");
+            startInfo.ArgumentList.Add("-class");
+            startInfo.ArgumentList.Add(
+                "DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests");
+            startInfo.ArgumentList.Add("-trx");
+            startInfo.ArgumentList.Add(Path.Combine(resultsDirectory, "mutation.trx"));
 
             var mutation = BoundedProcessRunner.Run(
                 startInfo,
@@ -427,6 +424,114 @@ public sealed class TestRunnerPolicyArchitectureTests
         }
     }
 
+    [Theory]
+    [InlineData("timeout")]
+    [InlineData("cancellation")]
+    public void CentralOwnerBoundsExecutionAndTerminatesTheTestProcess(string failureMode)
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-bounded-runner-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add("""
+                . $env:DOWNKYI_TEST_RUNNER
+                $cancellation = [Threading.CancellationTokenSource]::new()
+                $completeAuthorization = ${function:Complete-DownKyiTestProcessAuthorization}
+                function Complete-DownKyiTestProcessAuthorization {
+                    param([object]$Authorization)
+                    & $completeAuthorization -Authorization $Authorization
+                    Set-Content `
+                        -LiteralPath $env:DOWNKYI_CHILD_PID `
+                        -Value $Authorization.Item2.ChildProcessId
+                    if ($env:DOWNKYI_FAILURE_MODE -eq 'cancellation') {
+                        $cancellation.Cancel()
+                    }
+                }
+                $parameters = @{
+                    RepositoryRoot = $env:DOWNKYI_REPOSITORY_ROOT
+                    ProjectPath = $env:DOWNKYI_ARCHITECTURE_PROJECT
+                    Configuration = 'Release'
+                    NoRestore = $true
+                    NoBuild = $true
+                    ResultsDirectory = $env:DOWNKYI_MUTATION_RESULTS
+                    TrxName = 'bounded.trx'
+                    ClassNames = @('DownKyi.Architecture.Tests.CentralRunnerBlockingFixture')
+                    ExecutionTimeoutSeconds = 30
+                }
+                try {
+                    if ($env:DOWNKYI_FAILURE_MODE -eq 'timeout') {
+                        $parameters.ExecutionTimeoutSeconds = 1
+                    }
+                    else {
+                        $parameters.CancellationToken = $cancellation.Token
+                    }
+
+                    Invoke-DownKyiTestProject @parameters
+                    throw 'The bounded runner unexpectedly completed.'
+                }
+                catch {
+                    $expectedType = if ($env:DOWNKYI_FAILURE_MODE -eq 'timeout') {
+                        [TimeoutException]
+                    }
+                    else {
+                        [OperationCanceledException]
+                    }
+                    if (-not ($_.Exception -is $expectedType)) {
+                        throw
+                    }
+                    $childId = [int](Get-Content -LiteralPath $env:DOWNKYI_CHILD_PID -Raw)
+                    if ($null -ne (Get-Process -Id $childId -ErrorAction SilentlyContinue)) {
+                        throw "Bounded test process $childId survived owner failure."
+                    }
+                    Write-Output "Bounded owner handled $($env:DOWNKYI_FAILURE_MODE)."
+                }
+                finally {
+                    $cancellation.Dispose()
+                }
+                """);
+            startInfo.Environment["DOWNKYI_TEST_RUNNER"] =
+                Path.Combine(RepositoryRoot, "script", "test-project-runner.ps1");
+            startInfo.Environment["DOWNKYI_REPOSITORY_ROOT"] = RepositoryRoot;
+            startInfo.Environment["DOWNKYI_ARCHITECTURE_PROJECT"] = Path.Combine(
+                RepositoryRoot,
+                "tests",
+                "DownKyi.Architecture.Tests",
+                "DownKyi.Architecture.Tests.csproj");
+            startInfo.Environment["DOWNKYI_MUTATION_RESULTS"] = directory;
+            startInfo.Environment["DOWNKYI_CHILD_PID"] = Path.Combine(directory, "child.pid");
+            startInfo.Environment["DOWNKYI_TEST_INJECT_RUNNER_HANG"] = "1";
+            startInfo.Environment["DOWNKYI_FAILURE_MODE"] = failureMode;
+
+            var mutation = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, mutation.ExitCode);
+            Assert.Contains(
+                $"Bounded owner handled {failureMode}.",
+                mutation.Output,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public void ReviewInvariantMutationsUseRunnerNeutralClassLocators()
     {
@@ -501,5 +606,25 @@ public sealed class TestRunnerPolicyArchitectureTests
 
         return directory?.FullName
                ?? throw new DirectoryNotFoundException("Could not locate the DownKyi repository root.");
+    }
+}
+
+public sealed class CentralRunnerBlockingFixture
+{
+    [Fact]
+    public void BlocksUntilTheCentralOwnerTerminatesTheProcess()
+    {
+        if (Environment.GetEnvironmentVariable("DOWNKYI_TEST_INJECT_RUNNER_HANG") != "1")
+        {
+            return;
+        }
+
+        var childPidPath = Environment.GetEnvironmentVariable("DOWNKYI_CHILD_PID")
+            ?? throw new InvalidOperationException("The blocking fixture requires a child PID path.");
+        File.WriteAllText(
+            childPidPath,
+            Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        using var neverReleased = new ManualResetEventSlim(initialState: false);
+        neverReleased.Wait(TestContext.Current.CancellationToken);
     }
 }

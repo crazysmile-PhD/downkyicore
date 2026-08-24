@@ -16,6 +16,7 @@ param(
     [string]$ResultsDirectory = "artifacts/assembly-lifecycle",
     [string]$DiagnosticsToolPath,
     [switch]$ValidateForensics,
+    [switch]$ValidateObservedChildRelease,
     [switch]$NoBuild
 )
 
@@ -1254,7 +1255,7 @@ function New-ObservedChildReleaseLease {
     $pipeName = "dkl-$([Guid]::NewGuid().ToString('N').Substring(0, 16))"
     $pipe = [IO.Pipes.NamedPipeServerStream]::new(
         $pipeName,
-        [IO.Pipes.PipeDirection]::Out,
+        [IO.Pipes.PipeDirection]::InOut,
         1,
         [IO.Pipes.PipeTransmissionMode]::Byte,
         [IO.Pipes.PipeOptions]::Asynchronous)
@@ -1296,8 +1297,26 @@ function Complete-ObservedChildReleaseLease {
         if (-not $Lease.ConnectionTask.Wait(5000)) {
             throw "Observed child did not connect to its release owner."
         }
-        $Lease.Pipe.WriteByte(0xD7)
+        $releaseValue = if (
+            [Environment]::GetEnvironmentVariable(
+                "DOWNKYI_TEST_MUTATE_OBSERVED_CHILD_RELEASE") -eq "1") {
+            0x00
+        }
+        else {
+            0xD7
+        }
+        $Lease.Pipe.WriteByte($releaseValue)
         $Lease.Pipe.Flush()
+        $acknowledgement = [byte[]]::new(1)
+        $acknowledgementTask = $Lease.Pipe.ReadAsync(
+            $acknowledgement,
+            0,
+            $acknowledgement.Length)
+        if (-not $acknowledgementTask.Wait(5000) -or
+            $acknowledgementTask.Result -ne 1 -or
+            $acknowledgement[0] -ne 0xA7) {
+            throw "Observed child did not acknowledge its owner-controlled release."
+        }
     }
     finally {
         $Lease.Closed = $true
@@ -1313,6 +1332,47 @@ function Close-ObservedChildReleaseLease {
     if ($null -ne $Lease -and -not $Lease.Closed) {
         $Lease.Closed = $true
         $Lease.Pipe.Dispose()
+    }
+}
+
+function Invoke-ObservedChildReleaseSelfTest {
+    $probe = Invoke-IsolatedProcess `
+        -AssemblyName "Gate.TransientChild" `
+        -Iteration 1 `
+        -Phase "transient-child-probe" `
+        -FileName "dotnet" `
+        -Arguments @(
+            $probeAssembly,
+            "--spawn-residual-child-ms",
+            "250"
+        ) `
+        -ReleaseObservedChildren
+    $phase = New-ProcessPhaseResult -ProcessResult $probe
+    $payload = $probe.stdout | ConvertFrom-Json -ErrorAction Stop
+    $expectedProcessId = [int]$payload.ChildProcessId
+    $matchingObservation = @(
+        $probe.observedChildren |
+            Where-Object processId -eq $expectedProcessId
+    )
+    $matchingDrain = @(
+        $probe.transientChildren |
+            Where-Object processId -eq $expectedProcessId
+    )
+    $matchingResidual = @(
+        $probe.residualChildren |
+            Where-Object processId -eq $expectedProcessId
+    )
+
+    return [pscustomobject]@{
+        probe = $probe
+        phase = $phase
+        observed = $matchingObservation.Count -eq 1
+        drained = $matchingDrain.Count -eq 1 -and
+            $matchingResidual.Count -eq 0
+        passed = $phase.success -and
+            $matchingObservation.Count -eq 1 -and
+            $matchingDrain.Count -eq 1 -and
+            $matchingResidual.Count -eq 0
     }
 }
 
@@ -1718,41 +1778,15 @@ if ($ValidateForensics) {
                 -not $residualProbePhase.success -and
                 $residualProbePhase.failureType -eq "ResidualChildProcess"
 
-            $transientProbe = Invoke-IsolatedProcess `
-                -AssemblyName "Gate.TransientChild" `
-                -Iteration 1 `
-                -Phase "transient-child-probe" `
-                -FileName "dotnet" `
-                -Arguments @(
-                    $probeAssembly,
-                    "--spawn-residual-child-ms",
-                    "250"
-                ) `
-                -ReleaseObservedChildren
-            $transientProbePhase = New-ProcessPhaseResult `
-                -ProcessResult $transientProbe
-            $transientPayload = $transientProbe.stdout |
-                ConvertFrom-Json -ErrorAction Stop
-            $expectedTransientProcessId = [int]$transientPayload.ChildProcessId
-            $matchingTransientObservation = @(
-                $transientProbe.observedChildren |
-                    Where-Object processId -eq $expectedTransientProcessId
-            )
-            $matchingTransientDrain = @(
-                $transientProbe.transientChildren |
-                    Where-Object processId -eq $expectedTransientProcessId
-            )
-            $matchingTransientResidual = @(
-                $transientProbe.residualChildren |
-                    Where-Object processId -eq $expectedTransientProcessId
-            )
+            $transientSelfTest = Invoke-ObservedChildReleaseSelfTest
+            $transientProbe = $transientSelfTest.probe
+            $transientProbePhase = $transientSelfTest.phase
             $residualChildSelfTest.transientChildObserved =
-                $matchingTransientObservation.Count -eq 1
+                $transientSelfTest.observed
             $residualChildSelfTest.transientChildDrained =
-                $matchingTransientDrain.Count -eq 1 -and
-                $matchingTransientResidual.Count -eq 0
+                $transientSelfTest.drained
             $residualChildSelfTest.transientPhasePassed =
-                $transientProbePhase.success
+                $transientSelfTest.passed
             $redactionSample = (
                 "$repositoryRoot https://example.invalid/private " +
                 "SESSDATA=example-cookie-value " +
@@ -2106,6 +2140,15 @@ if ($ValidateForensics) {
         $script:markerReadErrorCount = 0
         $script:markerReadErrorType = $null
     }
+}
+
+if ($ValidateObservedChildRelease -and -not ($IsWindows -and $ValidateForensics)) {
+    $observedChildReleaseSelfTest = Invoke-ObservedChildReleaseSelfTest
+    if (-not $observedChildReleaseSelfTest.passed) {
+        throw "Observed-child release owner self-test failed."
+    }
+
+    Write-Host "Observed-child release owner self-test passed."
 }
 
 foreach ($testProject in $testProjects) {

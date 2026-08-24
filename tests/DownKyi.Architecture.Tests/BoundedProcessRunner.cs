@@ -10,7 +10,8 @@ internal static class BoundedProcessRunner
 
     public static BoundedProcessResult Run(
         ProcessStartInfo startInfo,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? executionTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(startInfo);
 
@@ -21,7 +22,7 @@ internal static class BoundedProcessRunner
         try
         {
             process.WaitForExitAsync(cancellationToken)
-                .WaitAsync(ExecutionTimeout, cancellationToken)
+                .WaitAsync(executionTimeout ?? ExecutionTimeout, cancellationToken)
                 .GetAwaiter()
                 .GetResult();
         }

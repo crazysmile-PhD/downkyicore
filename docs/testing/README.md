@@ -35,8 +35,9 @@ workflow 只委派 project 與 selection intent，不能自行選 test host。�
 fail closed。Runner 的 project owner 會依 canonical selection 建立完整 argument contract，
 並由同一 owner 建立 `ProcessStartInfo`、啟動 process 與完成一次性 pipe handshake；中間沒有
 可重新簽發 subset contract 的 launcher owner。Assembly initializer 會比對實際 command
-line，不能把 full-suite authorization 重用於 class subset。任何 started child 在 setup、execution 或 capture
-失敗後都由同一 process owner bounded terminate，cleanup failure 與原 failure 一併保留。
+line，不能把 full-suite authorization 重用於 class subset。任何 started child 都由同一
+process owner 以有界、可取消的 wait 擁有；setup、execution、timeout、cancellation 或 capture
+失敗後皆 bounded terminate，cleanup failure 與原 failure 一併保留。
 MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
 guard，不是可由呼叫者提供 property 的 authorization credential。
 完整 repository suite 與 required project gate 的 workflow step 必須使用結構化的
@@ -49,8 +50,8 @@ Central runner 仍獨占 runtime authorization 與 result validation。Recovery 
 trust root，再由 `Get-DownKyiTestRunnerTrustInputs` 宣告 dependency closure；provider
 變更/失敗、空清單或遺失的 declared input 都必須中止 recovery。
 需要證明實際 selection 的 security gate 必須使用共享 TRX
-validator，透過 test definition/result 關係確認預期 class 確實有 passed result，且
-runner success 不得與 failed report outcome 矛盾。
+validator，透過 test definition/result 關係逐一確認每個預期 class 都有實際 executed
+與 passed result，且 runner success 不得與 failed report outcome 矛盾。
 
 `DKYI1001` compiler analyzer 以 compilation-resolved method symbol 禁止非 process
 owner 呼叫 `SqliteConnection.ClearAllPools`。它分析並回報 generated code，且必須在

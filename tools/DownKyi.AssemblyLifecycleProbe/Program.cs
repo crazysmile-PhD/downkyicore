@@ -16,6 +16,7 @@ internal static class Program
         "DOWNKYI_TRANSIENT_CHILD_RELEASE_PIPE";
     private const int CaptureCompleted = 0xA5;
     private const int ChildReleaseCompleted = 0xD7;
+    private const int ChildReleaseAcknowledged = 0xA7;
 
     public static int Main(string[] args)
     {
@@ -29,9 +30,16 @@ internal static class Program
                 using var releasePipe = new System.IO.Pipes.NamedPipeClientStream(
                     ".",
                     releasePipeHandle,
-                    System.IO.Pipes.PipeDirection.In);
+                    System.IO.Pipes.PipeDirection.InOut);
                 releasePipe.Connect(5_000);
-                return releasePipe.ReadByte() == ChildReleaseCompleted ? 0 : 1;
+                if (releasePipe.ReadByte() != ChildReleaseCompleted)
+                {
+                    return 1;
+                }
+
+                releasePipe.WriteByte(ChildReleaseAcknowledged);
+                releasePipe.Flush();
+                return 0;
             }
 
             Thread.Sleep(childHoldMilliseconds);
