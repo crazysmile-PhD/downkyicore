@@ -151,8 +151,9 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(budget);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var controlPipeName = $"downkyi-process-control-{Guid.NewGuid():N}";
-        var statusPipeName = $"downkyi-process-status-{Guid.NewGuid():N}";
+        // macOS implements named pipes with Unix-domain sockets whose full path is capped at 104 bytes.
+        var controlPipeName = $"dkc-{Guid.NewGuid():N}";
+        var statusPipeName = $"dks-{Guid.NewGuid():N}";
         using var control = new NamedPipeServerStream(
             controlPipeName,
             PipeDirection.Out,

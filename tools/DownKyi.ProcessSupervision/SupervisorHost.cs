@@ -96,7 +96,7 @@ internal static class SupervisorHost
             ?? throw new InvalidOperationException("The immutable launch specification is invalid.");
         var containmentId = OperatingSystem.IsWindows()
             ? jobName
-            : PosixNative.GetProcessGroup().ToString(CultureInfo.InvariantCulture);
+            : Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
         var startInfo = CreateTargetStartInfo(payload, containmentId);
         await status.WriteAsync(
                 new[] { ownershipEstablished ? OwnershipEstablished : OwnershipMutationActive },
