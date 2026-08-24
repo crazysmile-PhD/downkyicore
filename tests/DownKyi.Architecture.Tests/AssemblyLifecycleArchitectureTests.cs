@@ -145,18 +145,6 @@ public sealed class AssemblyLifecycleArchitectureTests
             "$forensicsSelfTestCaptureLeadValidated =",
             source,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "--hold-after-unload-signal",
-            source,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "-EvidenceCompletionSignalPath $selfTestEvidenceComplete",
-            source,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "--hold-after-unload-ms",
-            source,
-            StringComparison.Ordinal);
         AssertUsesSynchronousAutomatedReporting(source, "assembly-info");
         AssertUsesSynchronousAutomatedReporting(source, "discovery");
         AssertUsesSynchronousAutomatedReporting(source, "execution");

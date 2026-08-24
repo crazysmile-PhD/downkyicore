@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
@@ -28,8 +30,72 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
 {
     internal const string WaitForParentArgument = "--restart-after-pid";
     internal const string AuthorizationPipeArgument = "--restart-authorization-pipe";
+    internal static readonly TimeSpan RestartHelperTerminationTimeout = TimeSpan.FromSeconds(5);
 
     private const byte CommitAuthorization = 1;
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "The restart transaction owner must attempt every revocation stage and preserve every concurrent failure.")]
+    internal static async Task RevokeOwnedHelperAsync(
+        Func<ValueTask> closeAuthorization,
+        Func<bool> hasExited,
+        Action terminate,
+        Func<Task> waitForExit,
+        Action release,
+        TimeSpan timeout)
+    {
+        ArgumentNullException.ThrowIfNull(closeAuthorization);
+        ArgumentNullException.ThrowIfNull(hasExited);
+        ArgumentNullException.ThrowIfNull(terminate);
+        ArgumentNullException.ThrowIfNull(waitForExit);
+        ArgumentNullException.ThrowIfNull(release);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+
+        var failures = new List<Exception>();
+        try
+        {
+            await closeAuthorization().ConfigureAwait(false);
+        }
+        catch (Exception failure)
+        {
+            failures.Add(failure);
+        }
+
+        try
+        {
+            if (!hasExited())
+            {
+                terminate();
+                await waitForExit().WaitAsync(timeout).ConfigureAwait(false);
+            }
+        }
+        catch (Exception failure)
+        {
+            failures.Add(failure);
+        }
+
+        try
+        {
+            release();
+        }
+        catch (Exception failure)
+        {
+            failures.Add(failure);
+        }
+
+        if (failures.Count == 1)
+        {
+            ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+        if (failures.Count > 1)
+        {
+            throw new AggregateException(
+                "Restart helper revocation encountered multiple failures.",
+                failures);
+        }
+    }
 
     private readonly ILogger<ProcessRestartLauncher> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -214,14 +280,27 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
                 {
                     _authorizationPipe.DisposeLocalCopyOfClientHandle();
                 }
-                catch
+                catch (Exception initializationFailure)
                 {
                     try
                     {
                         if (!_process.HasExited)
                         {
                             _process.Kill(entireProcessTree: true);
+                            if (!_process.WaitForExit(
+                                    (int)RestartHelperTerminationTimeout.TotalMilliseconds))
+                            {
+                                throw new TimeoutException(
+                                    "The restart helper did not terminate within its owned deadline.");
+                            }
                         }
+                    }
+                    catch (Exception terminationFailure)
+                    {
+                        throw new AggregateException(
+                            "Restart helper initialization failed and its owned process did not terminate cleanly.",
+                            initializationFailure,
+                            terminationFailure);
                     }
                     finally
                     {
@@ -269,19 +348,14 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
 
         private async Task RevokeOwnedHelperAsync()
         {
-            await _authorizationPipe.DisposeAsync().ConfigureAwait(false);
-            try
-            {
-                if (!_process.HasExited)
-                {
-                    _process.Kill(entireProcessTree: true);
-                    await _process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-                }
-            }
-            finally
-            {
-                _process.Dispose();
-            }
+            await ProcessRestartLauncher.RevokeOwnedHelperAsync(
+                    () => _authorizationPipe.DisposeAsync(),
+                    () => _process.HasExited,
+                    () => _process.Kill(entireProcessTree: true),
+                    () => _process.WaitForExitAsync(CancellationToken.None),
+                    () => _process.Dispose(),
+                    RestartHelperTerminationTimeout)
+                .ConfigureAwait(false);
         }
 
         private void CompleteTransaction(int completionState)

@@ -125,14 +125,28 @@
     },
     {
       "id": "host-process-and-log-lifecycle",
-      "historicalRoots": ["PR #94", "PR #113", "PR #120", "PR #122"],
+      "historicalRoots": ["PR #94", "PR #113", "PR #120", "PR #122", "PR #197"],
       "guards": "Host, process and logging owners dispose, exit and persist deterministically; accepted work is not reported completed before durable flush.",
       "testClasses": [
         { "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj", "class": "DownKyi.Desktop.Tests.UiSmokeTests" },
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.ApplicationLogProviderTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests" },
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleProbeBehaviorTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.DialogViewModelLifecycleTests" },
         { "project": "tests/DownKyi.Tests/DownKyi.Tests.csproj", "class": "DownKyi.Tests.LegacyUpgradeViewModelTests" }
+      ],
+      "proofRequirements": [
+        "adversarial-mutation"
+      ],
+      "adversarialProofs": [
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.AssemblyLifecycleProbeBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_FORENSICS_LEASE",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        }
       ]
     }
   ],

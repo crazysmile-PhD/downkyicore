@@ -449,6 +449,7 @@ contracts:
   - Shutdown cancellation is requested once; Host stop, startup completion, and settings flush share one five-second budget before tracked aria2 fallback.
   - Repeated shutdown calls return the same Task and never synchronously wait.
   - Restart launches a non-shell helper before cleanup; helper failure keeps the current process alive, while success waits for the old process and its Mutex to exit before relaunch.
+  - Restart-helper authorization is transactional; revoke closes authorization, terminates the owned child within one owner deadline, releases resources, and preserves concurrent failures from every stage.
   - Framework-dependent execution preserves the managed entry assembly argument; packaged execution relaunches the current executable directly.
   - Single-instance identity is stable per absolute install directory and contains only a truncated SHA-256 path hash, not the personal path.
   - ViewModels cannot access `App.Current`, Avalonia lifetime objects, or `System.Diagnostics.Process` for lifecycle work.

@@ -94,13 +94,18 @@ jobs:
             echo "::error::Validated Build head $run_head is not an ancestor of recovery tooling $GITHUB_SHA."
             exit 1
           fi
+          runner_trust_input_lines="$(
+            pwsh -NoProfile -Command ". './tooling/script/test-project-runner.ps1'; Get-DownKyiTestRunnerTrustInputs"
+          )"
+          if [[ -z "$runner_trust_input_lines" ]]; then
+            echo "::error::The central test runner declared no release trust inputs."
+            exit 1
+          fi
+          mapfile -t runner_trust_inputs <<< "$runner_trust_input_lines"
           critical_paths=(
             .github/workflows/build.yml
             .github/workflows/release-v112-recovery.yml
-            Directory.Build.props
-            Directory.Build.targets
             docs/operations/v1.1.2-release-notes.md
-            script/test-project-runner.ps1
             script/resolve-v112-macos-trust.ps1
             script/render-v112-recovery-release-notes.ps1
             script/macos/codesign-common.sh
@@ -117,7 +122,12 @@ jobs:
             tools/DownKyi.ArchitectureAnalyzers/DownKyi.ArchitectureAnalyzers.csproj
             tools/DownKyi.ArchitectureAnalyzers/GlobalSqlitePoolCleanupAnalyzer.cs
           )
+          critical_paths+=("${runner_trust_inputs[@]}")
           for path in "${critical_paths[@]}"; do
+            if [[ ! -e "tooling/$path" ]]; then
+              echo "::error::Release-critical path is missing from recovery tooling: $path"
+              exit 1
+            fi
             if ! git -C tooling diff --quiet "$run_head" "$GITHUB_SHA" -- "$path"; then
               echo "::error::Release-critical path changed after validated Build run $run_head: $path"
               exit 1

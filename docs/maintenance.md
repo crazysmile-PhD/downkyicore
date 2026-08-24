@@ -52,8 +52,9 @@ observe a borderline process only after it has exited. Reports expose both the c
 lead and whether a phase was sampled before the classification boundary;
 `capture-failed` and `process-exited-before-capture` remain fail-closed for
 phases whose final duration reaches the threshold.
-The `-ValidateForensics` self-test holds its child through a bounded completion
-handshake until diagnostic capture finishes, and must also set
+The `-ValidateForensics` self-test holds its child through a one-shot inherited
+pipe owned by the capture transaction until diagnostic capture finishes. The
+lease leaves no filesystem state and has no competing child deadline. It must set
 `forensicsSelfTestCaptureLeadValidated=true`, proving this arm point executed
 rather than merely existing in source.
 

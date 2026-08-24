@@ -49,6 +49,7 @@ $script:markerReadRetriesExhaustedCount = 0
 $script:markerReadErrorCount = 0
 $script:markerReadErrorType = $null
 $slowEvidenceCaptureLeadMilliseconds = 1000
+$forensicsSelfTestCaptureDelayMilliseconds = 750
 $residualChildQuiescenceMilliseconds = 500
 $residualChildPollMilliseconds = 25
 $forensicsSelfTestCaptureLeadValidated = $false
@@ -401,11 +402,18 @@ function Save-ManagedStack {
         $timedOut = -not $stackProcess.WaitForExit(15000)
         if ($timedOut) {
             $stackProcess.Kill($true)
-            $stackProcess.WaitForExit()
+            if (-not $stackProcess.WaitForExit(5000)) {
+                throw "dotnet-stack did not terminate within its owned deadline."
+            }
         }
 
-        $stdout = $stdoutTask.GetAwaiter().GetResult()
-        $stderr = $stderrTask.GetAwaiter().GetResult()
+        $outputTasks = [Threading.Tasks.Task]::WhenAll($stdoutTask, $stderrTask)
+        if (-not $outputTasks.Wait(5000)) {
+            throw "dotnet-stack output did not drain within its owned deadline."
+        }
+
+        $stdout = $stdoutTask.Result
+        $stderr = $stderrTask.Result
         [System.IO.File]::WriteAllText(
             $Destination,
             $stdout + $stderr,
@@ -746,7 +754,9 @@ function Invoke-IsolatedProcess {
         [string[]]$Arguments,
         [hashtable]$Environment = @{},
         [string]$LifecycleMarkerPath,
-        [string]$EvidenceCompletionSignalPath,
+        [switch]$HoldForEvidenceCapture,
+        [ValidateRange(0, 5000)]
+        [int]$EvidenceCaptureDelayMilliseconds = 0,
         [switch]$AuthorizeRepositoryTestAssembly,
         [double]$EvidenceThresholdSeconds = $SlowPhaseThresholdSeconds
     )
@@ -770,6 +780,13 @@ function Invoke-IsolatedProcess {
     }
     foreach ($entry in $Environment.GetEnumerator()) {
         $startInfo.Environment[$entry.Key] = [string]$entry.Value
+    }
+
+    $evidenceCaptureLease = if ($HoldForEvidenceCapture) {
+        New-EvidenceCaptureLease -StartInfo $startInfo
+    }
+    else {
+        $null
     }
 
     $authorization = if ($AuthorizeRepositoryTestAssembly) {
@@ -808,6 +825,9 @@ function Invoke-IsolatedProcess {
         if (-not $process.Start()) {
             throw "Process did not start for $AssemblyName/$Phase."
         }
+        if ($null -ne $evidenceCaptureLease) {
+            Start-EvidenceCaptureLease -Lease $evidenceCaptureLease
+        }
         if ($null -ne $authorization) {
             Complete-DownKyiTestProcessAuthorization -Authorization $authorization
         }
@@ -825,6 +845,9 @@ function Invoke-IsolatedProcess {
                 $slowEvidenceAttempted = $true
                 $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
                 try {
+                    if ($EvidenceCaptureDelayMilliseconds -gt 0) {
+                        Start-Sleep -Milliseconds $EvidenceCaptureDelayMilliseconds
+                    }
                     $evidencePath = Save-ProcessEvidence `
                         -Process $process `
                         -AssemblyName $AssemblyName `
@@ -841,12 +864,21 @@ function Invoke-IsolatedProcess {
                     $slowEvidenceErrorType = $_.Exception.GetType().Name
                 }
                 finally {
-                    if (-not [string]::IsNullOrWhiteSpace(
-                            $EvidenceCompletionSignalPath)) {
-                        [System.IO.File]::WriteAllText(
-                            $EvidenceCompletionSignalPath,
-                            "complete",
-                            [System.Text.UTF8Encoding]::new($false))
+                    if ($null -ne $evidenceCaptureLease) {
+                        try {
+                            Complete-EvidenceCaptureLease -Lease $evidenceCaptureLease
+                        }
+                        catch {
+                            $completionErrorType = $_.Exception.GetType().Name
+                            $slowEvidenceErrorType = if (
+                                [string]::IsNullOrWhiteSpace($slowEvidenceErrorType)) {
+                                $completionErrorType
+                            }
+                            else {
+                                "$slowEvidenceErrorType;$completionErrorType"
+                            }
+                            $slowEvidenceStatus = "capture-failed"
+                        }
                     }
                     $captureStopwatch.Stop()
                     $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
@@ -994,6 +1026,7 @@ function Invoke-IsolatedProcess {
         }
     }
     finally {
+        Close-EvidenceCaptureLease -Lease $evidenceCaptureLease
         Close-DownKyiTestProcessAuthorization -Authorization $authorization
         $process.Dispose()
     }
@@ -1060,6 +1093,69 @@ function Invoke-XunitAutomatedPhase {
         -Environment $Environment `
         -LifecycleMarkerPath $LifecycleMarkerPath `
         -AuthorizeRepositoryTestAssembly
+}
+
+function New-EvidenceCaptureLease {
+    param(
+        [Parameter(Mandatory)]
+        [System.Diagnostics.ProcessStartInfo]$StartInfo
+    )
+
+    $pipe = [IO.Pipes.AnonymousPipeServerStream]::new(
+        [IO.Pipes.PipeDirection]::Out,
+        [IO.HandleInheritability]::Inheritable)
+    $StartInfo.Environment["DOWNKYI_FORENSICS_CAPTURE_PIPE"] =
+        $pipe.GetClientHandleAsString()
+    return [pscustomobject]@{
+        Pipe = $pipe
+        Started = $false
+        Closed = $false
+    }
+}
+
+function Start-EvidenceCaptureLease {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Lease
+    )
+
+    if ($Lease.Started -or $Lease.Closed) {
+        throw "Evidence capture lease is not startable."
+    }
+
+    $Lease.Pipe.DisposeLocalCopyOfClientHandle()
+    $Lease.Started = $true
+}
+
+function Complete-EvidenceCaptureLease {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Lease
+    )
+
+    if (-not $Lease.Started -or $Lease.Closed) {
+        throw "Evidence capture lease is not completable."
+    }
+
+    try {
+        $Lease.Pipe.WriteByte(0xA5)
+        $Lease.Pipe.Flush()
+    }
+    finally {
+        $Lease.Closed = $true
+        $Lease.Pipe.Dispose()
+    }
+}
+
+function Close-EvidenceCaptureLease {
+    param(
+        [object]$Lease
+    )
+
+    if ($null -ne $Lease -and -not $Lease.Closed) {
+        $Lease.Closed = $true
+        $Lease.Pipe.Dispose()
+    }
 }
 
 $reporterContractSelfTestPassed = Test-XunitReporterContractMutation
@@ -1345,8 +1441,6 @@ if ($ValidateForensics) {
     $selfTestAssembly = Join-Path $testProjects[0].DirectoryName (
         "bin/$Configuration/net10.0/$($testProjects[0].BaseName).dll")
     $selfTestMarker = Join-Path $rawRoot "Gate.Forensics/iteration-0001/execution.lifecycle"
-    $selfTestEvidenceComplete = Join-Path $rawRoot (
-        "Gate.Forensics/iteration-0001/evidence-complete.signal")
     $selfTest = Invoke-IsolatedProcess `
         -AssemblyName "Gate.Forensics" `
         -Iteration 1 `
@@ -1355,12 +1449,11 @@ if ($ValidateForensics) {
         -Arguments @(
             $probeAssembly,
             "--assembly",
-            $selfTestAssembly,
-            "--hold-after-unload-signal",
-            $selfTestEvidenceComplete
+            $selfTestAssembly
         ) `
         -LifecycleMarkerPath $selfTestMarker `
-        -EvidenceCompletionSignalPath $selfTestEvidenceComplete `
+        -HoldForEvidenceCapture `
+        -EvidenceCaptureDelayMilliseconds $forensicsSelfTestCaptureDelayMilliseconds `
         -EvidenceThresholdSeconds 1.25
     $selfTestPhase = New-ProcessPhaseResult -ProcessResult $selfTest
     $evidenceReports = @(
@@ -2090,6 +2183,8 @@ $report = [ordered]@{
     phaseTimeoutSeconds = $PhaseTimeoutSeconds
     slowPhaseThresholdSeconds = $SlowPhaseThresholdSeconds
     slowEvidenceCaptureLeadMilliseconds = $slowEvidenceCaptureLeadMilliseconds
+    forensicsSelfTestCaptureDelayMilliseconds =
+        $forensicsSelfTestCaptureDelayMilliseconds
     residualChildQuiescenceMilliseconds =
         $residualChildQuiescenceMilliseconds
     residualChildPollMilliseconds = $residualChildPollMilliseconds

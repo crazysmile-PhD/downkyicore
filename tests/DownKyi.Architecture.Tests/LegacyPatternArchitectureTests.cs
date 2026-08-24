@@ -135,12 +135,34 @@ public sealed class LegacyPatternArchitectureTests
                 RegexTimeout) == 1);
         }
 
+        var expectedSourceSuppressions = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["src/DownKyi.Desktop/Platform/ProcessRestartLauncher.cs"] = "CA1031"
+        };
+        var sourceSuppressions = sourceFiles
+            .Where(path =>
+            {
+                var source = File.ReadAllText(path);
+                return source.Contains("SuppressMessage", StringComparison.Ordinal);
+            })
+            .ToDictionary(Relative, File.ReadAllText, StringComparer.Ordinal);
+        Assert.Equal(expectedSourceSuppressions.Keys.Order(), sourceSuppressions.Keys.Order());
+        foreach (var expected in expectedSourceSuppressions)
+        {
+            var source = sourceSuppressions[expected.Key];
+            Assert.Equal(1, Regex.Count(
+                source,
+                @"\[SuppressMessage\(",
+                RegexOptions.CultureInvariant,
+                RegexTimeout));
+            Assert.Contains($"\"{expected.Value}:", source, StringComparison.Ordinal);
+        }
+
         var forbiddenSourceSuppressions = sourceFiles
             .Where(path =>
             {
                 var source = File.ReadAllText(path);
                 return source.Contains("#nullable disable", StringComparison.Ordinal)
-                       || source.Contains("SuppressMessage", StringComparison.Ordinal)
                        || string.Equals(Path.GetFileName(path), "GlobalSuppressions.cs", StringComparison.Ordinal);
             })
             .Select(Relative)

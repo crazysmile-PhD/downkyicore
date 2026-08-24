@@ -152,6 +152,21 @@ function Get-DownKyiTestRunnerPolicy {
     return $entry
 }
 
+function Get-DownKyiTestRunnerTrustInputs {
+    [CmdletBinding()]
+    param()
+
+    return @(
+        "Directory.Build.props"
+        "Directory.Build.targets"
+        "Directory.Packages.props"
+        "global.json"
+        "docs/testing/test-runner-policy.json"
+        "script/test-project-runner.ps1"
+        "tests/CentralTestExecutionGuard.cs"
+    )
+}
+
 function New-DownKyiTestProcessAuthorization {
     [CmdletBinding()]
     param(

@@ -18,6 +18,16 @@ public sealed class TestRunnerPolicyArchitectureTests
         .Select(path => Path.GetFileNameWithoutExtension(path)
             ?? throw new InvalidOperationException($"Test project has no assembly name: {path}"))
         .ToArray();
+    private static readonly string[] ExpectedRunnerTrustInputs =
+    [
+        "Directory.Build.props",
+        "Directory.Build.targets",
+        "Directory.Packages.props",
+        "global.json",
+        "docs/testing/test-runner-policy.json",
+        "script/test-project-runner.ps1",
+        "tests/CentralTestExecutionGuard.cs"
+    ];
 
     [Fact]
     public void EveryRepositoryTestProjectUsesTheCentralInProcessRunner()
@@ -146,6 +156,20 @@ public sealed class TestRunnerPolicyArchitectureTests
             "VSTest execution is disabled for repository test projects",
             forgedAuthorization.Output,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RunnerDeclaresItsCompleteReleaseTrustInputSet()
+    {
+        var result = RunPowerShell(
+            ". ./script/test-project-runner.ps1; " +
+            "@(Get-DownKyiTestRunnerTrustInputs) | ConvertTo-Json -Compress");
+        Assert.Equal(0, result.ExitCode);
+        var inputs = JsonSerializer.Deserialize<string[]>(result.Output.Trim());
+        Assert.Equal(ExpectedRunnerTrustInputs, inputs);
+
+        var recovery = Read(".github/workflows/release-v112-recovery.yml");
+        Assert.Contains("Get-DownKyiTestRunnerTrustInputs", recovery, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -410,6 +434,27 @@ public sealed class TestRunnerPolicyArchitectureTests
         {
             startInfo.ArgumentList.Add(argument);
         }
+
+        return BoundedProcessRunner.Run(
+            startInfo,
+            TestContext.Current.CancellationToken);
+    }
+
+    private static BoundedProcessResult RunPowerShell(string command)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "pwsh",
+            WorkingDirectory = RepositoryRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(command);
 
         return BoundedProcessRunner.Run(
             startInfo,

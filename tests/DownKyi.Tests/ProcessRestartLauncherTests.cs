@@ -107,4 +107,44 @@ public sealed class ProcessRestartLauncherTests
         Assert.True(committed);
         Assert.Equal(1, restartCount);
     }
+
+    [Fact]
+    public async Task OwnedRestartHelperTerminationFailsClosedAtItsDeadline()
+    {
+        var neverExits = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var terminated = false;
+        var released = false;
+
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            ProcessRestartLauncher.RevokeOwnedHelperAsync(
+                () => ValueTask.CompletedTask,
+                () => false,
+                () => terminated = true,
+                () => neverExits.Task,
+                () => released = true,
+                TimeSpan.FromMilliseconds(50)));
+
+        Assert.True(terminated);
+        Assert.True(released);
+    }
+
+    [Fact]
+    public async Task OwnedRestartHelperRevocationPreservesConcurrentFailures()
+    {
+        var closeFailure = new IOException("authorization close failed");
+        var terminationFailure = new InvalidOperationException("termination failed");
+        var releaseFailure = new ObjectDisposedException("process release failed");
+
+        var exception = await Assert.ThrowsAsync<AggregateException>(() =>
+            ProcessRestartLauncher.RevokeOwnedHelperAsync(
+                () => ValueTask.FromException(closeFailure),
+                () => false,
+                () => throw terminationFailure,
+                () => Task.CompletedTask,
+                () => throw releaseFailure,
+                TimeSpan.FromMilliseconds(50)));
+
+        Assert.Equal([closeFailure, terminationFailure, releaseFailure], exception.InnerExceptions);
+    }
 }

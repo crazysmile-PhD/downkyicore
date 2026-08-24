@@ -11,6 +11,8 @@ internal static class Program
 {
     private const string TestAssemblyLoadOwnerKey = "DownKyi.CentralTestAssemblyLoadOwner";
     private const string TestAssemblyLoadOwnerValue = "DownKyi.AssemblyLifecycleProbe";
+    private const string CapturePipeEnvironmentVariable = "DOWNKYI_FORENSICS_CAPTURE_PIPE";
+    private const int CaptureCompleted = 0xA5;
 
     public static int Main(string[] args)
     {
@@ -25,11 +27,7 @@ internal static class Program
             return RunResidualChildProbe(residualChildHoldMilliseconds);
         }
 
-        if (!TryReadArguments(
-                args,
-                out var assemblyPath,
-                out var holdAfterUnloadMilliseconds,
-                out var holdAfterUnloadSignalPath))
+        if (!TryReadArguments(args, out var assemblyPath))
         {
             WriteResult(new ProbeResult(false, null, null, false, "invalid_arguments", null));
             return 2;
@@ -38,13 +36,19 @@ internal static class Program
         var fullPath = Path.GetFullPath(assemblyPath);
         var loaded = LoadAndRequestUnload(fullPath);
         var unloaded = WaitForUnload(loaded.ContextReference);
-        if (holdAfterUnloadMilliseconds > 0)
+        var capturePipeHandle = Environment.GetEnvironmentVariable(CapturePipeEnvironmentVariable);
+        Environment.SetEnvironmentVariable(CapturePipeEnvironmentVariable, null);
+        if (!string.IsNullOrWhiteSpace(capturePipeHandle) &&
+            !WaitForCaptureCompletion(capturePipeHandle))
         {
-            Thread.Sleep(holdAfterUnloadMilliseconds);
-        }
-        else if (holdAfterUnloadSignalPath is not null)
-        {
-            WaitForSignal(holdAfterUnloadSignalPath);
+            WriteResult(new ProbeResult(
+                false,
+                loaded.AssemblyName,
+                loaded.AssemblyVersion,
+                unloaded,
+                "capture_owner_disconnected",
+                null));
+            return 1;
         }
 
         WriteResult(new ProbeResult(
@@ -101,16 +105,10 @@ internal static class Program
         return 0;
     }
 
-    private static bool TryReadArguments(
-        string[] args,
-        out string assemblyPath,
-        out int holdAfterUnloadMilliseconds,
-        out string? holdAfterUnloadSignalPath)
+    private static bool TryReadArguments(string[] args, out string assemblyPath)
     {
         assemblyPath = string.Empty;
-        holdAfterUnloadMilliseconds = 0;
-        holdAfterUnloadSignalPath = null;
-        if (args.Length is not (2 or 4) ||
+        if (args.Length != 2 ||
             !string.Equals(args[0], "--assembly", StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(args[1]))
         {
@@ -123,39 +121,15 @@ internal static class Program
             return false;
         }
 
-        if (args.Length == 2)
-        {
-            return true;
-        }
-
-        if (string.Equals(args[2], "--hold-after-unload-signal", StringComparison.Ordinal) &&
-            !string.IsNullOrWhiteSpace(args[3]))
-        {
-            holdAfterUnloadSignalPath = Path.GetFullPath(args[3]);
-            return true;
-        }
-
-        return string.Equals(args[2], "--hold-after-unload-ms", StringComparison.Ordinal) &&
-               int.TryParse(
-                   args[3],
-                   System.Globalization.NumberStyles.None,
-                   System.Globalization.CultureInfo.InvariantCulture,
-                   out holdAfterUnloadMilliseconds) &&
-               holdAfterUnloadMilliseconds is >= 0 and <= 30_000;
+        return true;
     }
 
-    private static void WaitForSignal(string signalPath)
+    private static bool WaitForCaptureCompletion(string pipeHandle)
     {
-        var deadline = Stopwatch.StartNew();
-        while (!File.Exists(signalPath))
-        {
-            if (deadline.Elapsed >= TimeSpan.FromSeconds(30))
-            {
-                throw new TimeoutException("Forensics capture completion signal was not received.");
-            }
-
-            Thread.Sleep(25);
-        }
+        using var pipe = new System.IO.Pipes.AnonymousPipeClientStream(
+            System.IO.Pipes.PipeDirection.In,
+            pipeHandle);
+        return pipe.ReadByte() == CaptureCompleted;
     }
 
     private static bool TryReadChildHoldArguments(

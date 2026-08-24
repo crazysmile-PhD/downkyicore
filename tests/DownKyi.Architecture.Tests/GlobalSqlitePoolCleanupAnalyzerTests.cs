@@ -97,6 +97,25 @@ public sealed class GlobalSqlitePoolCleanupAnalyzerTests
     }
 
     [Fact]
+    public async Task OwnershipDiagnosticCannotBeSuppressedByCallerSource()
+    {
+        const string source = """
+            using Microsoft.Data.Sqlite;
+            class C
+            {
+            #pragma warning disable DKYI1001
+                void M() => SqliteConnection.ClearAllPools();
+            #pragma warning restore DKYI1001
+            }
+            """;
+
+        var diagnostics = await AnalyzeAsync(source, "Release").ConfigureAwait(true);
+
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == GlobalSqlitePoolCleanupAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
     public async Task ExplicitProcessOwnerAssemblyIsAllowed()
     {
         const string source =

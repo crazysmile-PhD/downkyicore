@@ -22,7 +22,8 @@ public sealed class GlobalSqlitePoolCleanupAnalyzer : DiagnosticAnalyzer
         "Lifecycle",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Component and test owners must clear only pools they own.");
+        description: "Component and test owners must clear only pools they own.",
+        customTags: new[] { WellKnownDiagnosticTags.NotConfigurable });
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => [Rule];
 

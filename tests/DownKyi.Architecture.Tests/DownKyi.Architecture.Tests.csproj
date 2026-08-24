@@ -22,6 +22,9 @@
     <ProjectReference
       Update="..\..\tools\DownKyi.ArchitectureAnalyzers\DownKyi.ArchitectureAnalyzers.csproj"
       ReferenceOutputAssembly="true" />
+    <ProjectReference
+      Include="..\..\tools\DownKyi.AssemblyLifecycleProbe\DownKyi.AssemblyLifecycleProbe.csproj"
+      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

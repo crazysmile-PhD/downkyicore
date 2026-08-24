@@ -34,6 +34,8 @@ workflow 只委派 project 與 selection intent，不能自行選 test host。�
 也共用 runtime execution guard，中央 runner 若退化成 VSTest 會在 assembly load 時
 fail closed。MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
 guard，不是可由呼叫者提供 property 的 authorization credential。
+中央 runner 的 `Get-DownKyiTestRunnerTrustInputs` 同時擁有 recovery workflow 的
+runner trust closure；provider 失敗、空清單或遺失的 declared input 都必須中止 recovery。
 需要證明實際 selection 的 security gate 必須使用共享 TRX
 validator，透過 test definition/result 關係確認預期 class 確實有通過的 execution
 result。
@@ -41,7 +43,8 @@ result。
 `DKYI1001` compiler analyzer 以 compilation-resolved method symbol 禁止非 process
 owner 呼叫 `SqliteConnection.ClearAllPools`。它分析並回報 generated code，且必須在
 repository 支援的 Debug 與 Release compilation 都執行；語法、alias、global using
-與 preprocessor 形式不構成例外。唯一 process-level allowlist owner 是
+與 preprocessor 形式不構成例外，caller source 也不得 suppress 該 ownership error。
+唯一 process-level allowlist owner 是
 `DownKyi.SystemBenchmarks`。
 
 重要文件：
