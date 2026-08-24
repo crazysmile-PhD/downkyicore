@@ -74,6 +74,24 @@ must remain open.
 No restart, lifecycle-phase, central-runner or forensics call site has migrated
 in Stage 1.
 
+A subsequent adversarial review removed the lease's remaining
+`Kill(entireProcessTree: true)` fallback because it was a second process-tree
+correctness owner. Failed execution now uses the platform containment owner,
+reaps only the retained direct root, proves containment quiescence within the
+same cleanup budget and then completes bounded stream drain. A deterministic
+fixture starts both a root and a blocking descendant before cancellation; a
+clean cancellation outcome is possible only after the lease's OS-backed
+quiescence check succeeds. PID values in that fixture prove only that two
+processes were started and are not a post-cleanup correctness oracle.
+
+Strict PR CI run `32715016944` exercised this closure on commit
+`e28b72836e61a8317121e6e9233e09b3c535df8a`. Windows, Linux and macOS
+build/test jobs passed, as did Build, CodeQL, Protobuf, formatting, package
+audit and every aria2 TLS matrix job. The only failed check remained the same
+synthetic residual-child fixture (`CommandNotFoundException`); all 144 formal
+lifecycle phases passed. Codex review was requested for the exact commit and
+again returned a connector usage-limit response, so review remains pending.
+
 ## Stage 2: Lifecycle Phase Ownership
 
 Move `Invoke-IsolatedProcess` launch, wait, owned-tree containment, termination,
