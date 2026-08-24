@@ -248,9 +248,12 @@ function Get-ProcessTree {
                 $createdAtUtc = $null
                 if ($null -ne $observedProcess) {
                     try {
-                        $createdAtUtc = (
-                            [DateTimeOffset]$observedProcess.StartTime.ToUniversalTime()
-                        ).ToString("O")
+                        $startTime = $observedProcess.StartTime
+                        if ($null -ne $startTime) {
+                            $createdAtUtc = (
+                                [DateTimeOffset]$startTime.ToUniversalTime()
+                            ).ToString("O")
+                        }
                     }
                     catch [System.InvalidOperationException] {
                         $createdAtUtc = $null

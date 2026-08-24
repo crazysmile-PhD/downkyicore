@@ -48,6 +48,12 @@ Local Windows evidence at this checkpoint:
 - platform fixture: normal ownership, ownership mutation, immutable launch spec,
   target-start failure, caller cancellation cleanup and monotonic budget passed.
 
+The first hosted macOS run exposed a legacy diagnostic-observer data-contract
+bug before the macOS fixture executed: `Process.StartTime` may be null for a
+`ps` row. The observer now preserves the existing optional `createdAtUtc` value
+instead of dereferencing null; lifecycle ownership and success policy are
+unchanged, and the child script output is retained by the behavioral assertion.
+
 Linux/macOS native process-group execution and GitHub-hosted Windows nested-Job
 execution remain required CI evidence for the exact review commit. No restart,
 lifecycle-phase, central-runner or forensics call site has migrated in Stage 1.
