@@ -90,6 +90,7 @@ public sealed class TestRunnerPolicyArchitectureTests
 
     [Theory]
     [InlineData("dotnet test $unknownTarget")]
+    [InlineData("dotnet $unknownVerb $unknownTarget")]
     [InlineData("dotnet vstest $unknownAssembly")]
     [InlineData("dotnet ./tools/xunit.v3.runner.console.dll $unknownAssembly")]
     [InlineData("vstest.console.exe $unknownAssembly")]
