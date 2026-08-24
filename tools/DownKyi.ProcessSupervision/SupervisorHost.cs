@@ -10,6 +10,7 @@ internal static class SupervisorHost
     internal const string HostArgument = "--owned-process-host";
     internal const string OwnershipProbeArgument = "--ownership-probe";
     internal const string LaunchSpecProbeArgument = "--launch-spec-probe";
+    internal const string OwnedTreeProbeArgument = "--owned-tree-probe";
     internal const string BlockForeverArgument = "--block-forever";
 
     private const byte LaunchAuthorization = 0xC1;
@@ -29,6 +30,11 @@ internal static class SupervisorHost
             string.Equals(arguments[0], LaunchSpecProbeArgument, StringComparison.Ordinal))
         {
             return RunLaunchSpecProbe(arguments[1]);
+        }
+        if (arguments.Count == 2 &&
+            string.Equals(arguments[0], OwnedTreeProbeArgument, StringComparison.Ordinal))
+        {
+            return await RunOwnedTreeProbeAsync(arguments[1]).ConfigureAwait(false);
         }
         if (arguments.Count == 1 &&
             string.Equals(arguments[0], BlockForeverArgument, StringComparison.Ordinal))
@@ -171,6 +177,37 @@ internal static class SupervisorHost
         return 0;
     }
 
+    private static async Task<int> RunOwnedTreeProbeAsync(string readyPath)
+    {
+        var assemblyPath = typeof(SupervisorHost).Assembly.Location;
+        var childStartInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."),
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        childStartInfo.ArgumentList.Add(assemblyPath);
+        childStartInfo.ArgumentList.Add(BlockForeverArgument);
+        using var child = Process.Start(childStartInfo)
+            ?? throw new InvalidOperationException("The owned descendant probe did not start.");
+
+        var temporaryPath = $"{readyPath}.{Guid.NewGuid():N}.tmp";
+        await File.WriteAllTextAsync(
+                temporaryPath,
+                JsonSerializer.Serialize(new OwnedTreeProbeResult(
+                    Environment.ProcessId,
+                    child.Id)),
+                CancellationToken.None)
+            .ConfigureAwait(false);
+        File.Move(temporaryPath, readyPath);
+
+        await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
+            .ConfigureAwait(false);
+        return 0;
+    }
+
     private sealed record LaunchSpecPayload(
         string FileName,
         IReadOnlyList<string> Arguments,
@@ -184,4 +221,6 @@ internal static class SupervisorHost
         bool OwnershipEstablished);
 
     private sealed record LaunchSpecProbeResult(string Argument, string? EnvironmentValue);
+
+    private sealed record OwnedTreeProbeResult(int RootProcessId, int ChildProcessId);
 }

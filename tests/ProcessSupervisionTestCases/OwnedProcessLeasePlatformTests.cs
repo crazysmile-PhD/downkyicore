@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using DownKyi.ProcessSupervision;
 
@@ -99,9 +100,12 @@ public sealed class OwnedProcessLeasePlatformTests
     public async Task CallerCancellationStillCompletesOwnedCleanupBeforePropagating()
     {
         var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var readyPath = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-owned-tree-{Guid.NewGuid():N}.json");
         var launchSpec = new LaunchSpec(
             "dotnet",
-            new[] { assemblyPath, "--block-forever" },
+            new[] { assemblyPath, "--owned-tree-probe", readyPath },
             Path.GetDirectoryName(assemblyPath)
                 ?? throw new InvalidOperationException("The probe directory is unavailable."));
         var budget = TransitionBudget.Start(
@@ -114,12 +118,29 @@ public sealed class OwnedProcessLeasePlatformTests
                 TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
         await using var leaseScope = lease.ConfigureAwait(false);
-        using var cancellation = new CancellationTokenSource();
-        await cancellation.CancelAsync().ConfigureAwait(true);
+        try
+        {
+            var processIds = await WaitForOwnedTreeProbeAsync(
+                    readyPath,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            using var root = Process.GetProcessById(processIds.RootProcessId);
+            using var child = Process.GetProcessById(processIds.ChildProcessId);
+            _ = root.Handle;
+            _ = child.Handle;
+            using var cancellation = new CancellationTokenSource();
+            await cancellation.CancelAsync().ConfigureAwait(true);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                () => lease.WaitAsync(cancellation.Token))
-            .ConfigureAwait(true);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                    () => lease.WaitAsync(cancellation.Token))
+                .ConfigureAwait(true);
+            Assert.True(root.HasExited);
+            Assert.True(child.HasExited);
+        }
+        finally
+        {
+            File.Delete(readyPath);
+        }
     }
 
     private static async Task<OwnedProcessOutcome> RunProbeAsync(
@@ -166,6 +187,32 @@ public sealed class OwnedProcessLeasePlatformTests
             root.GetProperty("ContainmentId").GetString()
                 ?? throw new InvalidOperationException("The containment identity is missing."),
             root.GetProperty("OwnershipEstablished").GetBoolean());
+    }
+
+    private static async Task<(int RootProcessId, int ChildProcessId)> WaitForOwnedTreeProbeAsync(
+        string readyPath,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(readyPath)
+            ?? throw new InvalidOperationException("The owned-tree probe directory is unavailable.");
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var watcher = new FileSystemWatcher(directory, Path.GetFileName(readyPath));
+        FileSystemEventHandler created = (_, _) => completion.TrySetResult();
+        RenamedEventHandler renamed = (_, _) => completion.TrySetResult();
+        watcher.Created += created;
+        watcher.Renamed += renamed;
+        watcher.EnableRaisingEvents = true;
+        if (File.Exists(readyPath))
+        {
+            completion.TrySetResult();
+        }
+
+        await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(
+            await File.ReadAllTextAsync(readyPath, cancellationToken).ConfigureAwait(false));
+        return (
+            document.RootElement.GetProperty("RootProcessId").GetInt32(),
+            document.RootElement.GetProperty("ChildProcessId").GetInt32());
     }
 }
 

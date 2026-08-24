@@ -85,7 +85,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     "The owned process exceeded its operation deadline.",
                     cancellationToken)
                 .ConfigureAwait(false);
-            await WaitForTreeQuiescenceAsync(cancellationToken).ConfigureAwait(false);
+            await WaitForTreeQuiescenceAsync(
+                    useCleanupBudget: false,
+                    cancellationToken)
+                .ConfigureAwait(false);
             await WaitWithBudgetAsync(
                     Task.WhenAll(_standardOutput, _standardError),
                     _budget.RemainingOperation,
@@ -251,7 +254,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             {
                 if (started && !supervisor.HasExited)
                 {
-                    supervisor.Kill(entireProcessTree: true);
+                    supervisor.Kill();
                     await WaitWithBudgetAsync(
                             supervisor.WaitForExitAsync(CancellationToken.None),
                             budget.RemainingCleanup,
@@ -318,15 +321,21 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         return startInfo;
     }
 
-    private async Task WaitForTreeQuiescenceAsync(CancellationToken cancellationToken)
+    private async Task WaitForTreeQuiescenceAsync(
+        bool useCleanupBudget,
+        CancellationToken cancellationToken)
     {
         while (!_containment.IsTreeQuiescent())
         {
-            var remaining = _budget.RemainingOperation;
+            var remaining = useCleanupBudget
+                ? _budget.RemainingCleanup
+                : _budget.RemainingOperation;
             if (remaining <= TimeSpan.Zero)
             {
                 throw new TimeoutException(
-                    "The owned process tree did not become quiescent before the operation deadline.");
+                    useCleanupBudget
+                        ? "The owned process tree did not become quiescent before its hard deadline."
+                        : "The owned process tree did not become quiescent before the operation deadline.");
             }
 
             await Task.Delay(
@@ -345,6 +354,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     private async Task TerminateAndReapAsync()
     {
         var failures = new Collection<Exception>();
+        var directRootTerminationRequired = !Ownership.OwnershipEstablished;
         try
         {
             if (!_containment.IsTreeQuiescent())
@@ -355,18 +365,31 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         catch (Exception failure)
         {
             failures.Add(failure);
+            directRootTerminationRequired = true;
         }
 
         try
         {
-            if (!_supervisor.HasExited)
+            if (directRootTerminationRequired && !_supervisor.HasExited)
             {
-                _supervisor.Kill(entireProcessTree: true);
+                _supervisor.Kill();
             }
             await WaitWithBudgetAsync(
                     _supervisor.WaitForExitAsync(CancellationToken.None),
                     _budget.RemainingCleanup,
                     "The process supervisor did not reap before its hard deadline.",
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception failure)
+        {
+            failures.Add(failure);
+        }
+
+        try
+        {
+            await WaitForTreeQuiescenceAsync(
+                    useCleanupBudget: true,
                     CancellationToken.None)
                 .ConfigureAwait(false);
         }
