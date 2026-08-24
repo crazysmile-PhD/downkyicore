@@ -378,89 +378,6 @@ function Stop-DownKyiOwnedProcess {
     }
 }
 
-function Invoke-DownKyiAuthorizedTestAssembly {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$RepositoryRoot,
-
-        [Parameter(Mandatory)]
-        [string[]]$Arguments,
-
-        [Parameter(Mandatory)]
-        [object]$Authorization
-    )
-
-    $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = "dotnet"
-    $startInfo.WorkingDirectory = $RepositoryRoot
-    $startInfo.UseShellExecute = $false
-    $null = $startInfo.Environment.Remove("DOWNKYI_LIFECYCLE_MARKER")
-    foreach ($argument in $Arguments) {
-        $startInfo.ArgumentList.Add($argument)
-    }
-    $process = [Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
-    $started = $false
-    $operationFailure = $null
-    $cleanupFailures = [Collections.Generic.List[Exception]]::new()
-    $exitCode = $null
-    try {
-        Set-DownKyiTestProcessAuthorization `
-            -Authorization $Authorization `
-            -StartInfo $startInfo
-        if (-not $process.Start()) {
-            throw "The authorized repository test process did not start."
-        }
-        $started = $true
-        $Authorization.Item2.ChildProcessId = $process.Id
-
-        Complete-DownKyiTestProcessAuthorization -Authorization $Authorization
-        $process.WaitForExit()
-        $exitCode = $process.ExitCode
-    }
-    catch {
-        $operationFailure = $_.Exception
-    }
-    finally {
-        try {
-            Stop-DownKyiOwnedProcess -Process $process -Started $started
-        }
-        catch {
-            $cleanupFailures.Add($_.Exception)
-        }
-        try {
-            Close-DownKyiTestProcessAuthorization -Authorization $Authorization
-        }
-        catch {
-            $cleanupFailures.Add($_.Exception)
-        }
-        try {
-            $process.Dispose()
-        }
-        catch {
-            $cleanupFailures.Add($_.Exception)
-        }
-    }
-
-    if ($null -ne $operationFailure) {
-        if ($cleanupFailures.Count -gt 0) {
-            throw [AggregateException]::new(
-                "Repository test execution and child-process cleanup both failed.",
-                @($operationFailure) + $cleanupFailures.ToArray())
-        }
-
-        throw $operationFailure
-    }
-    if ($cleanupFailures.Count -gt 0) {
-        throw [AggregateException]::new(
-            "Repository test child-process cleanup failed.",
-            $cleanupFailures.ToArray())
-    }
-
-    return $exitCode
-}
-
 function Assert-DownKyiTestExecutionReport {
     [CmdletBinding()]
     param(
@@ -736,10 +653,73 @@ function Invoke-DownKyiTestProject {
         $authorization = New-DownKyiTestProcessAuthorization `
             -RepositoryRoot $RepositoryRoot `
             -Arguments $arguments
-        $exitCode = Invoke-DownKyiAuthorizedTestAssembly `
-            -RepositoryRoot $RepositoryRoot `
-            -Arguments $arguments `
-            -Authorization $authorization
+        $startInfo = [Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = "dotnet"
+        $startInfo.WorkingDirectory = $RepositoryRoot
+        $startInfo.UseShellExecute = $false
+        $null = $startInfo.Environment.Remove("DOWNKYI_LIFECYCLE_MARKER")
+        foreach ($argument in $arguments) {
+            $startInfo.ArgumentList.Add($argument)
+        }
+        $process = [Diagnostics.Process]::new()
+        $process.StartInfo = $startInfo
+        $started = $false
+        $operationFailure = $null
+        $cleanupFailures = [Collections.Generic.List[Exception]]::new()
+        $exitCode = $null
+        try {
+            Set-DownKyiTestProcessAuthorization `
+                -Authorization $authorization `
+                -StartInfo $startInfo
+            if (-not $process.Start()) {
+                throw "The authorized repository test process did not start."
+            }
+            $started = $true
+            $authorization.Item2.ChildProcessId = $process.Id
+
+            Complete-DownKyiTestProcessAuthorization -Authorization $authorization
+            $process.WaitForExit()
+            $exitCode = $process.ExitCode
+        }
+        catch {
+            $operationFailure = $_.Exception
+        }
+        finally {
+            try {
+                Stop-DownKyiOwnedProcess -Process $process -Started $started
+            }
+            catch {
+                $cleanupFailures.Add($_.Exception)
+            }
+            try {
+                Close-DownKyiTestProcessAuthorization -Authorization $authorization
+            }
+            catch {
+                $cleanupFailures.Add($_.Exception)
+            }
+            try {
+                $process.Dispose()
+            }
+            catch {
+                $cleanupFailures.Add($_.Exception)
+            }
+        }
+
+        if ($null -ne $operationFailure) {
+            if ($cleanupFailures.Count -gt 0) {
+                throw [AggregateException]::new(
+                    "Repository test execution and child-process cleanup both failed.",
+                    @($operationFailure) + $cleanupFailures.ToArray())
+            }
+
+            throw $operationFailure
+        }
+        if ($cleanupFailures.Count -gt 0) {
+            throw [AggregateException]::new(
+                "Repository test child-process cleanup failed.",
+                $cleanupFailures.ToArray())
+        }
+
         $report = Assert-DownKyiTestExecutionReport `
             -TrxPath $validationTrxPath `
             -ExpectedClassNames $ClassNames

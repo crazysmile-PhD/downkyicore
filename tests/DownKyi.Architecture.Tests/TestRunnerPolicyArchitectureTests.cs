@@ -110,7 +110,7 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
-    public void VstestRunnerMutationFailsTheRuntimeExecutionOwnershipGuard()
+    public void DirectAssemblyMutationFailsTheRuntimeExecutionOwnershipGuard()
     {
         var resultsDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -131,57 +131,35 @@ public sealed class TestRunnerPolicyArchitectureTests
             startInfo.ArgumentList.Add("-NonInteractive");
             startInfo.ArgumentList.Add("-Command");
             startInfo.ArgumentList.Add("""
-                . $env:DOWNKYI_TEST_RUNNER
-                function Invoke-DownKyiAuthorizedTestAssembly {
-                    param(
-                        [string]$RepositoryRoot,
-                        [string[]]$Arguments,
-                        [object]$Authorization)
-                    $assembly = $Arguments[0]
-                    $classIndex = [Array]::IndexOf($Arguments, '-class')
-                    $trxIndex = [Array]::IndexOf($Arguments, '-trx')
-                    $className = $Arguments[$classIndex + 1]
-                    $trxPath = $Arguments[$trxIndex + 1]
-                    & dotnet vstest $assembly `
-                        "--Tests:$className" `
-                        "--logger:trx;LogFileName=$([IO.Path]::GetFileName($trxPath))" `
-                        "--ResultsDirectory:$([IO.Path]::GetDirectoryName($trxPath))" |
-                        Out-Host
-                    return $LASTEXITCODE
-                }
-                try {
-                    Invoke-DownKyiTestProject `
-                        -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
-                        -ProjectPath $env:DOWNKYI_ARCHITECTURE_PROJECT `
-                        -Configuration Release `
-                        -NoRestore `
-                        -NoBuild `
-                        -ResultsDirectory $env:DOWNKYI_MUTATION_RESULTS `
-                        -TrxName mutation.trx `
-                        -ClassNames DownKyi.Architecture.Tests.TestRunnerPolicyArchitectureTests.EveryRepositoryTestProjectUsesTheCentralInProcessRunner
-                    exit 0
-                }
-                catch {
-                    Write-Error $_
-                    exit 73
-                }
+                & dotnet $env:DOWNKYI_ARCHITECTURE_ASSEMBLY `
+                    -noLogo `
+                    -noColor `
+                    -noAutoReporters `
+                    -reporter quiet `
+                    -parallel none `
+                    -class DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests `
+                    -trx $env:DOWNKYI_MUTATION_TRX
                 """);
-            startInfo.Environment["DOWNKYI_TEST_RUNNER"] =
-                Path.Combine(RepositoryRoot, "script", "test-project-runner.ps1");
-            startInfo.Environment["DOWNKYI_REPOSITORY_ROOT"] = RepositoryRoot;
-            startInfo.Environment["DOWNKYI_ARCHITECTURE_PROJECT"] = Path.Combine(
+            startInfo.Environment["DOWNKYI_ARCHITECTURE_ASSEMBLY"] = Path.Combine(
                 RepositoryRoot,
                 "tests",
                 "DownKyi.Architecture.Tests",
-                "DownKyi.Architecture.Tests.csproj");
-            startInfo.Environment["DOWNKYI_MUTATION_RESULTS"] = resultsDirectory;
+                "bin",
+                "Release",
+                "net10.0",
+                "DownKyi.Architecture.Tests.dll");
+            startInfo.Environment["DOWNKYI_MUTATION_TRX"] =
+                Path.Combine(resultsDirectory, "mutation.trx");
 
             var mutation = BoundedProcessRunner.Run(
                 startInfo,
                 TestContext.Current.CancellationToken);
 
             Assert.NotEqual(0, mutation.ExitCode);
-            Assert.Contains("expected test report", mutation.Output, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(
+                "must execute through the central in-process test runner",
+                mutation.Output,
+                StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
@@ -190,7 +168,7 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
-    public void AuthorizedSubsetMutationFailsTheCompleteInvocationContract()
+    public void ReplacementIssuerCannotChangeTheCanonicalOwnerInvocation()
     {
         var resultsDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -212,11 +190,9 @@ public sealed class TestRunnerPolicyArchitectureTests
             startInfo.ArgumentList.Add("-Command");
             startInfo.ArgumentList.Add("""
                 . $env:DOWNKYI_TEST_RUNNER
-                function Invoke-DownKyiAuthorizedTestAssembly {
-                    param(
-                        [string]$RepositoryRoot,
-                        [string[]]$Arguments,
-                        [object]$Authorization)
+                $issueAuthorization = ${function:New-DownKyiTestProcessAuthorization}
+                function New-DownKyiTestProcessAuthorization {
+                    param([string[]]$Arguments, [string]$RepositoryRoot)
                     $trxIndex = [Array]::IndexOf($Arguments, '-trx')
                     $subsetArguments = @(
                         $Arguments[0],
@@ -228,33 +204,9 @@ public sealed class TestRunnerPolicyArchitectureTests
                         '-class', 'DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests',
                         '-trx', $Arguments[$trxIndex + 1]
                     )
-                    $replacementContract = [Tuple]::Create(
-                        [Collections.ObjectModel.ReadOnlyCollection[string]]::new(
-                            [string[]]$subsetArguments),
-                        [Convert]::ToBase64String(
-                            (Get-DownKyiTestInvocationHash -Arguments $subsetArguments)),
-                        $Authorization.Item1.Item3)
-                    $rebindRejected = $false
-                    try {
-                        $Authorization.Item1 = $replacementContract
-                    }
-                    catch {
-                        $rebindRejected = $true
-                    }
-                    if (-not $rebindRejected) {
-                        throw 'The immutable invocation contract was rebound.'
-                    }
-                    $mutatedStartInfo = [Diagnostics.ProcessStartInfo]::new()
-                    $mutatedStartInfo.FileName = 'dotnet'
-                    $mutatedStartInfo.WorkingDirectory = $RepositoryRoot
-                    $mutatedStartInfo.UseShellExecute = $false
-                    foreach ($argument in $subsetArguments) {
-                        $mutatedStartInfo.ArgumentList.Add($argument)
-                    }
-                    Set-DownKyiTestProcessAuthorization `
-                        -Authorization $Authorization `
-                        -StartInfo $mutatedStartInfo
-                    throw 'The subset mutation unexpectedly received authorization.'
+                    return & $issueAuthorization `
+                        -RepositoryRoot $RepositoryRoot `
+                        -Arguments $subsetArguments
                 }
                 try {
                     Invoke-DownKyiTestProject `
@@ -338,12 +290,34 @@ public sealed class TestRunnerPolicyArchitectureTests
                 $authorization = New-DownKyiTestProcessAuthorization `
                     -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
                     -Arguments $arguments
-                $exitCode = Invoke-DownKyiAuthorizedTestAssembly `
-                    -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
-                    -Arguments $arguments `
-                    -Authorization $authorization
-                if ($exitCode -eq 0) {
-                    throw 'The child accepted a mutated invocation contract hash.'
+                $startInfo = [Diagnostics.ProcessStartInfo]::new()
+                $startInfo.FileName = 'dotnet'
+                $startInfo.WorkingDirectory = $env:DOWNKYI_REPOSITORY_ROOT
+                $startInfo.UseShellExecute = $false
+                foreach ($argument in $arguments) {
+                    $startInfo.ArgumentList.Add($argument)
+                }
+                Set-DownKyiTestProcessAuthorization `
+                    -Authorization $authorization `
+                    -StartInfo $startInfo
+                $process = [Diagnostics.Process]::new()
+                $process.StartInfo = $startInfo
+                $started = $false
+                try {
+                    if (-not $process.Start()) {
+                        throw 'The mutation child did not start.'
+                    }
+                    $started = $true
+                    Complete-DownKyiTestProcessAuthorization -Authorization $authorization
+                    $process.WaitForExit()
+                    if ($process.ExitCode -eq 0) {
+                        throw 'The child accepted a mutated invocation contract hash.'
+                    }
+                }
+                finally {
+                    Stop-DownKyiOwnedProcess -Process $process -Started $started
+                    Close-DownKyiTestProcessAuthorization -Authorization $authorization
+                    $process.Dispose()
                 }
                 Write-Output 'Child rejected mutated invocation hash.'
                 """);
@@ -409,24 +383,16 @@ public sealed class TestRunnerPolicyArchitectureTests
                         -Value $Authorization.Item2.ChildProcessId
                     throw 'Injected authorization setup failure.'
                 }
-                $arguments = @(
-                    $env:DOWNKYI_ARCHITECTURE_ASSEMBLY,
-                    '-noLogo',
-                    '-noColor',
-                    '-noAutoReporters',
-                    '-reporter', 'quiet',
-                    '-parallel', 'none',
-                    '-class', 'DownKyi.Architecture.Tests.CiTestActionBehaviorTests',
-                    '-trx', $env:DOWNKYI_MUTATION_TRX
-                )
-                $authorization = New-DownKyiTestProcessAuthorization `
-                    -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
-                    -Arguments $arguments
                 try {
-                    Invoke-DownKyiAuthorizedTestAssembly `
+                    Invoke-DownKyiTestProject `
                         -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
-                        -Arguments $arguments `
-                        -Authorization $authorization
+                        -ProjectPath $env:DOWNKYI_ARCHITECTURE_PROJECT `
+                        -Configuration Release `
+                        -NoRestore `
+                        -NoBuild `
+                        -ResultsDirectory $env:DOWNKYI_MUTATION_RESULTS `
+                        -TrxName mutation.trx `
+                        -ClassNames DownKyi.Architecture.Tests.CiTestActionBehaviorTests
                     throw 'The injected setup failure did not propagate.'
                 }
                 catch {
@@ -440,16 +406,12 @@ public sealed class TestRunnerPolicyArchitectureTests
             startInfo.Environment["DOWNKYI_TEST_RUNNER"] =
                 Path.Combine(RepositoryRoot, "script", "test-project-runner.ps1");
             startInfo.Environment["DOWNKYI_REPOSITORY_ROOT"] = RepositoryRoot;
-            startInfo.Environment["DOWNKYI_ARCHITECTURE_ASSEMBLY"] = Path.Combine(
+            startInfo.Environment["DOWNKYI_ARCHITECTURE_PROJECT"] = Path.Combine(
                 RepositoryRoot,
                 "tests",
                 "DownKyi.Architecture.Tests",
-                "bin",
-                "Release",
-                "net10.0",
-                "DownKyi.Architecture.Tests.dll");
-            startInfo.Environment["DOWNKYI_MUTATION_TRX"] =
-                Path.Combine(directory, "mutation.trx");
+                "DownKyi.Architecture.Tests.csproj");
+            startInfo.Environment["DOWNKYI_MUTATION_RESULTS"] = directory;
             startInfo.Environment["DOWNKYI_CHILD_PID"] = Path.Combine(directory, "child.pid");
 
             var mutation = BoundedProcessRunner.Run(

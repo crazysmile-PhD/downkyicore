@@ -39,7 +39,7 @@
         "tests/CentralTestExecutionGuard.cs"
       ],
       "owner": "Central repository test runner",
-      "start": "The module initializer authenticates the live central runner and the complete invocation contract before xUnit discovery begins.",
+      "start": "The project owner constructs the canonical invocation, immutable contract, ProcessStartInfo, and child process without delegating reissuance; the module initializer authenticates that live owner and complete contract before xUnit discovery begins.",
       "stop": "Authorization is consumed once during module initialization.",
       "teardown": "The initializer disposes its inherited authorization pipe before test discovery proceeds; the parent process owner bounded-terminates any child left by setup or execution failure.",
       "allowedMechanisms": [

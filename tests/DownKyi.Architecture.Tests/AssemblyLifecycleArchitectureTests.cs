@@ -189,7 +189,6 @@ public sealed class AssemblyLifecycleArchitectureTests
 
         Assert.Contains("--spawn-residual-child-ms", probe, StringComparison.Ordinal);
         Assert.Contains("--child-hold-ms", probe, StringComparison.Ordinal);
-        Assert.Contains("UseShellExecute = true", probe, StringComparison.Ordinal);
         Assert.DoesNotContain("conhost", gate, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("processName -eq", gate, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(

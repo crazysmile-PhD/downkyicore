@@ -32,9 +32,10 @@ platform routing 與 runner selection。這是 authoritative execution boundary�
 workflow 只委派 project 與 selection intent，不能自行選 test host。中央 runner
 對所有 test project 使用 in-process xUnit execution。所有宣告 test platform 的 assembly
 也共用 runtime execution guard，中央 runner 若退化成 VSTest 會在 assembly load 時
-fail closed。Runner 在 launcher 外建立完整 argument contract，並透過一次性 pipe 將
-contract hash 交給 child；assembly initializer 會比對實際 command line，不能把 full-suite
-authorization 重用於 class subset。任何 started child 在 setup、execution 或 capture
+fail closed。Runner 的 project owner 會依 canonical selection 建立完整 argument contract，
+並由同一 owner 建立 `ProcessStartInfo`、啟動 process 與完成一次性 pipe handshake；中間沒有
+可重新簽發 subset contract 的 launcher owner。Assembly initializer 會比對實際 command
+line，不能把 full-suite authorization 重用於 class subset。任何 started child 在 setup、execution 或 capture
 失敗後都由同一 process owner bounded terminate，cleanup failure 與原 failure 一併保留。
 MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
 guard，不是可由呼叫者提供 property 的 authorization credential。
