@@ -247,7 +247,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
                 TestContext.Current.CancellationToken,
                 TimeSpan.FromSeconds(90));
 
-            Assert.Equal(expectedExitCode, result.ExitCode);
+            Assert.True(
+                result.ExitCode == expectedExitCode,
+                $"Expected lifecycle exit code {expectedExitCode}, got {result.ExitCode}." +
+                $"{Environment.NewLine}{result.Output}");
             Assert.Equal(
                 !mutateRelease,
                 result.Output.Contains(
