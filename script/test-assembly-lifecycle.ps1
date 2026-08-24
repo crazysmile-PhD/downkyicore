@@ -852,7 +852,7 @@ function Invoke-IsolatedProcess {
         }
         $processStarted = $true
         if ($null -ne $authorization) {
-            $authorization.ChildProcessId = $process.Id
+            $authorization.Item2.ChildProcessId = $process.Id
         }
         if ($null -ne $evidenceCaptureLease) {
             Start-EvidenceCaptureLease -Lease $evidenceCaptureLease

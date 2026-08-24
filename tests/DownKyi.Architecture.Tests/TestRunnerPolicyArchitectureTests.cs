@@ -228,6 +228,22 @@ public sealed class TestRunnerPolicyArchitectureTests
                         '-class', 'DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests',
                         '-trx', $Arguments[$trxIndex + 1]
                     )
+                    $replacementContract = [Tuple]::Create(
+                        [Collections.ObjectModel.ReadOnlyCollection[string]]::new(
+                            [string[]]$subsetArguments),
+                        [Convert]::ToBase64String(
+                            (Get-DownKyiTestInvocationHash -Arguments $subsetArguments)),
+                        $Authorization.Item1.Item3)
+                    $rebindRejected = $false
+                    try {
+                        $Authorization.Item1 = $replacementContract
+                    }
+                    catch {
+                        $rebindRejected = $true
+                    }
+                    if (-not $rebindRejected) {
+                        throw 'The immutable invocation contract was rebound.'
+                    }
                     $mutatedStartInfo = [Diagnostics.ProcessStartInfo]::new()
                     $mutatedStartInfo.FileName = 'dotnet'
                     $mutatedStartInfo.WorkingDirectory = $RepositoryRoot
@@ -305,6 +321,10 @@ public sealed class TestRunnerPolicyArchitectureTests
             startInfo.ArgumentList.Add("-Command");
             startInfo.ArgumentList.Add("""
                 . $env:DOWNKYI_TEST_RUNNER
+                function Get-DownKyiTestInvocationHash {
+                    param([string[]]$Arguments)
+                    return [byte[]]::new(32)
+                }
                 $arguments = @(
                     $env:DOWNKYI_ARCHITECTURE_ASSEMBLY,
                     '-noLogo',
@@ -318,7 +338,6 @@ public sealed class TestRunnerPolicyArchitectureTests
                 $authorization = New-DownKyiTestProcessAuthorization `
                     -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
                     -Arguments $arguments
-                $authorization.InvocationHash = [byte[]]::new(32)
                 $exitCode = Invoke-DownKyiAuthorizedTestAssembly `
                     -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
                     -Arguments $arguments `
@@ -387,7 +406,7 @@ public sealed class TestRunnerPolicyArchitectureTests
                     & $completeAuthorization -Authorization $Authorization
                     Set-Content `
                         -LiteralPath $env:DOWNKYI_CHILD_PID `
-                        -Value $Authorization.ChildProcessId
+                        -Value $Authorization.Item2.ChildProcessId
                     throw 'Injected authorization setup failure.'
                 }
                 $arguments = @(

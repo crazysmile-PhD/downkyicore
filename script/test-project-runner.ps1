@@ -238,14 +238,19 @@ function New-DownKyiTestProcessAuthorization {
         [IO.Pipes.PipeDirection]::Out,
         [IO.HandleInheritability]::Inheritable)
     $token = [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
-    return [pscustomobject]@{
+    $expectedArguments = [Collections.ObjectModel.ReadOnlyCollection[string]]::new(
+        [string[]]@($Arguments))
+    $contract = [Tuple]::Create(
+        $expectedArguments,
+        [Convert]::ToBase64String(
+            (Get-DownKyiTestInvocationHash -Arguments $Arguments)),
+        [Convert]::ToBase64String($token))
+    $state = [pscustomobject]@{
         Pipe = $pipe
-        Token = $token
-        InvocationHash = Get-DownKyiTestInvocationHash -Arguments $Arguments
-        ExpectedArguments = @($Arguments)
         ChildProcessId = $null
         Completed = $false
     }
+    return [Tuple]::Create($contract, $state)
 }
 
 function Set-DownKyiTestProcessAuthorization {
@@ -259,13 +264,16 @@ function Set-DownKyiTestProcessAuthorization {
     )
 
     $executableName = [IO.Path]::GetFileName($StartInfo.FileName)
+    $contract = $Authorization.Item1
+    $state = $Authorization.Item2
+    $expectedArguments = $contract.Item1
     $actualArguments = @($StartInfo.ArgumentList | ForEach-Object { [string]$_ })
-    $argumentMismatch = $actualArguments.Count -ne $Authorization.ExpectedArguments.Count
+    $argumentMismatch = $actualArguments.Count -ne $expectedArguments.Count
     if (-not $argumentMismatch) {
         for ($index = 0; $index -lt $actualArguments.Count; $index++) {
             if (-not [string]::Equals(
                     $actualArguments[$index],
-                    $Authorization.ExpectedArguments[$index],
+                    $expectedArguments[$index],
                     [StringComparison]::Ordinal)) {
                 $argumentMismatch = $true
                 break
@@ -278,9 +286,9 @@ function Set-DownKyiTestProcessAuthorization {
     }
 
     $StartInfo.Environment["DOWNKYI_CENTRAL_TEST_PIPE"] =
-        $Authorization.Pipe.GetClientHandleAsString()
+        $state.Pipe.GetClientHandleAsString()
     $StartInfo.Environment["DOWNKYI_CENTRAL_TEST_TOKEN"] =
-        [Convert]::ToBase64String($Authorization.Token)
+        $contract.Item3
 }
 
 function Complete-DownKyiTestProcessAuthorization {
@@ -290,32 +298,36 @@ function Complete-DownKyiTestProcessAuthorization {
         [object]$Authorization
     )
 
-    if ($Authorization.Completed) {
+    $contract = $Authorization.Item1
+    $state = $Authorization.Item2
+    if ($state.Completed) {
         throw "Repository test process authorization was already completed."
     }
 
-    $Authorization.Pipe.DisposeLocalCopyOfClientHandle()
+    $token = [Convert]::FromBase64String($contract.Item3)
+    $invocationHash = [Convert]::FromBase64String($contract.Item2)
+    $state.Pipe.DisposeLocalCopyOfClientHandle()
     try {
         $payload = [byte[]]::new(
-            $Authorization.Token.Length + $Authorization.InvocationHash.Length)
+            $token.Length + $invocationHash.Length)
         [Array]::Copy(
-            $Authorization.Token,
+            $token,
             0,
             $payload,
             0,
-            $Authorization.Token.Length)
+            $token.Length)
         [Array]::Copy(
-            $Authorization.InvocationHash,
+            $invocationHash,
             0,
             $payload,
-            $Authorization.Token.Length,
-            $Authorization.InvocationHash.Length)
-        $Authorization.Pipe.Write($payload, 0, $payload.Length)
-        $Authorization.Pipe.Flush()
-        $Authorization.Completed = $true
+            $token.Length,
+            $invocationHash.Length)
+        $state.Pipe.Write($payload, 0, $payload.Length)
+        $state.Pipe.Flush()
+        $state.Completed = $true
     }
     finally {
-        $Authorization.Pipe.Dispose()
+        $state.Pipe.Dispose()
     }
 }
 
@@ -325,8 +337,8 @@ function Close-DownKyiTestProcessAuthorization {
         [object]$Authorization
     )
 
-    if ($null -ne $Authorization -and -not $Authorization.Completed) {
-        $Authorization.Pipe.Dispose()
+    if ($null -ne $Authorization -and -not $Authorization.Item2.Completed) {
+        $Authorization.Item2.Pipe.Dispose()
     }
 }
 
@@ -401,7 +413,7 @@ function Invoke-DownKyiAuthorizedTestAssembly {
             throw "The authorized repository test process did not start."
         }
         $started = $true
-        $Authorization.ChildProcessId = $process.Id
+        $Authorization.Item2.ChildProcessId = $process.Id
 
         Complete-DownKyiTestProcessAuthorization -Authorization $Authorization
         $process.WaitForExit()
