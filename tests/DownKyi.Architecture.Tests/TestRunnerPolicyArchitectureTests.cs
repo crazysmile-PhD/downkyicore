@@ -283,6 +283,82 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
+    public void ChildGuardRejectsAMutatedInvocationContractHash()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-contract-hash-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add("""
+                . $env:DOWNKYI_TEST_RUNNER
+                $arguments = @(
+                    $env:DOWNKYI_ARCHITECTURE_ASSEMBLY,
+                    '-noLogo',
+                    '-noColor',
+                    '-noAutoReporters',
+                    '-reporter', 'quiet',
+                    '-parallel', 'none',
+                    '-class', 'DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests',
+                    '-trx', $env:DOWNKYI_MUTATION_TRX
+                )
+                $authorization = New-DownKyiTestProcessAuthorization `
+                    -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
+                    -Arguments $arguments
+                $authorization.InvocationHash = [byte[]]::new(32)
+                $exitCode = Invoke-DownKyiAuthorizedTestAssembly `
+                    -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
+                    -Arguments $arguments `
+                    -Authorization $authorization
+                if ($exitCode -eq 0) {
+                    throw 'The child accepted a mutated invocation contract hash.'
+                }
+                Write-Output 'Child rejected mutated invocation hash.'
+                """);
+            startInfo.Environment["DOWNKYI_TEST_RUNNER"] =
+                Path.Combine(RepositoryRoot, "script", "test-project-runner.ps1");
+            startInfo.Environment["DOWNKYI_REPOSITORY_ROOT"] = RepositoryRoot;
+            startInfo.Environment["DOWNKYI_ARCHITECTURE_ASSEMBLY"] = Path.Combine(
+                RepositoryRoot,
+                "tests",
+                "DownKyi.Architecture.Tests",
+                "bin",
+                "Release",
+                "net10.0",
+                "DownKyi.Architecture.Tests.dll");
+            startInfo.Environment["DOWNKYI_MUTATION_TRX"] =
+                Path.Combine(directory, "mutation.trx");
+
+            var mutation = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, mutation.ExitCode);
+            Assert.Contains(
+                "Child rejected mutated invocation hash.",
+                mutation.Output,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void AuthorizationSetupFailureTerminatesTheStartedChildProcess()
     {
         var directory = Path.Combine(
