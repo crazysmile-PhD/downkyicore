@@ -14,13 +14,6 @@ runs:
       shell: pwsh
       env:
         DOWNKYI_TEST_RESULTS_DIRECTORY: ${{ inputs.results-directory }}
-      run: |
-        $arguments = @(
-          '-Configuration', 'Release',
-          '-NoRestore',
-          '-NoBuild'
-        )
-        if (-not [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_RESULTS_DIRECTORY)) {
-          $arguments += @('-ResultsDirectory', $env:DOWNKYI_TEST_RESULTS_DIRECTORY)
-        }
-        & "$env:GITHUB_WORKSPACE/script/test-solution.ps1" @arguments
+      run: >
+        & (Join-Path '${{ github.action_path }}' '../../../script/invoke-ci-test-action.ps1')
+        -Mode Solution

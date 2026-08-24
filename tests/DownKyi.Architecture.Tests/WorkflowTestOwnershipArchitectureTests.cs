@@ -6,9 +6,11 @@ public sealed class WorkflowTestOwnershipArchitectureTests
 {
     private const string TestSolutionAction = "./.github/actions/test-solution";
     private const string TestProjectAction = "./.github/actions/test-project";
+    private const string TestActionScript = "../../../script/invoke-ci-test-action.ps1";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
     private static readonly string[] ForbiddenWorkflowGateKeys = ["run", "if", "continue-on-error"];
     private static readonly string[] ForbiddenActionStepKeys = ["if", "continue-on-error"];
+    private static readonly string[] ForbiddenRequiredJobKeys = ["if", "continue-on-error"];
 
     [Theory]
     [InlineData(".github/workflows/quality.yml", "build-test")]
@@ -116,6 +118,22 @@ public sealed class WorkflowTestOwnershipArchitectureTests
     }
 
     [Fact]
+    public void RequiredSuiteOwnerJobCannotBeConditionallySkipped()
+    {
+        var workflow = LoadYaml(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "workflows",
+            "quality.yml"));
+        var jobs = RequireMapping(workflow, "jobs");
+        var job = RequireMapping(jobs, "build-test");
+        job.Add("if", "${{ false }}");
+
+        Assert.Throws<InvalidDataException>(() =>
+            AssertRequiredSuiteGate(workflow, "build-test"));
+    }
+
+    [Fact]
     public void StructuredTestActionDelegatesToTheCentralSolutionRunner()
     {
         var action = LoadYaml(Path.Combine(
@@ -124,17 +142,12 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             "actions",
             "test-solution",
             "action.yml"));
-        var runs = RequireMapping(action, "runs");
-        Assert.Equal("composite", RequireScalar(runs, "using"));
-        var steps = RequireSequence(runs, "steps");
-        var step = Assert.Single(steps.Children.Cast<YamlMappingNode>());
 
-        AssertNoBypassControls(step, ForbiddenActionStepKeys);
-        Assert.Equal("pwsh", RequireScalar(step, "shell"));
-        Assert.Contains(
-            "/script/test-solution.ps1",
-            RequireScalar(step, "run"),
-            StringComparison.Ordinal);
+        AssertStructuredActionWiring(action, "Solution");
+        AssertActionEnvironment(
+            action,
+            "DOWNKYI_TEST_RESULTS_DIRECTORY",
+            "${{ inputs.results-directory }}");
     }
 
     [Fact]
@@ -146,17 +159,99 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             "actions",
             "test-project",
             "action.yml"));
-        var runs = RequireMapping(action, "runs");
-        Assert.Equal("composite", RequireScalar(runs, "using"));
-        var steps = RequireSequence(runs, "steps");
-        var step = Assert.Single(steps.Children.Cast<YamlMappingNode>());
-        var run = RequireScalar(step, "run");
 
+        AssertStructuredActionWiring(action, "Project");
+        var expectedEnvironment = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["DOWNKYI_TEST_REPOSITORY_ROOT"] = "${{ inputs.repository-root }}",
+            ["DOWNKYI_TEST_PROJECT_PATH"] = "${{ inputs.project-path }}",
+            ["DOWNKYI_TEST_CONFIGURATION"] = "${{ inputs.configuration }}",
+            ["DOWNKYI_TEST_NO_RESTORE"] = "${{ inputs.no-restore }}",
+            ["DOWNKYI_TEST_NO_BUILD"] = "${{ inputs.no-build }}",
+            ["DOWNKYI_TEST_RESULTS_DIRECTORY"] = "${{ inputs.results-directory }}",
+            ["DOWNKYI_TEST_TRX_NAME"] = "${{ inputs.trx-name }}",
+            ["DOWNKYI_TEST_EXPECTED_CLASS"] = "${{ inputs.expected-class }}"
+        };
+        foreach (var pair in expectedEnvironment)
+        {
+            AssertActionEnvironment(action, pair.Key, pair.Value);
+        }
+    }
+
+    [Theory]
+    [InlineData("test-solution", "Solution")]
+    [InlineData("test-project", "Project")]
+    public void StructuredActionCannotAppendAFalseGreenCommand(string actionName, string mode)
+    {
+        var action = LoadYaml(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "actions",
+            actionName,
+            "action.yml"));
+        var step = GetOnlyActionStep(action);
+        step.Children[new YamlScalarNode("run")] = new YamlScalarNode(
+            RequireScalar(step, "run") + "; exit 0");
+
+        Assert.Throws<InvalidDataException>(() =>
+            AssertStructuredActionWiring(action, mode));
+    }
+
+    private static void AssertStructuredActionWiring(YamlMappingNode action, string mode)
+    {
+        var runs = RequireMapping(action, "runs");
+        if (!string.Equals(RequireScalar(runs, "using"), "composite", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The repository test action must remain composite.");
+        }
+
+        var step = GetOnlyActionStep(action);
         AssertNoBypassControls(step, ForbiddenActionStepKeys);
-        Assert.Equal("pwsh", RequireScalar(step, "shell"));
-        Assert.Contains("script/test-project-runner.ps1", run, StringComparison.Ordinal);
-        Assert.Contains("Invoke-DownKyiTestProject", run, StringComparison.Ordinal);
-        Assert.Contains("Assert-DownKyiExpectedTestExecution", run, StringComparison.Ordinal);
+        if (!string.Equals(RequireScalar(step, "shell"), "pwsh", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The repository test action must use PowerShell.");
+        }
+
+        var expected = NormalizeCommand(
+            $"& (Join-Path '${{{{ github.action_path }}}}' '{TestActionScript}') -Mode {mode}");
+        if (!string.Equals(
+                NormalizeCommand(RequireScalar(step, "run")),
+                expected,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"The repository test action must delegate exclusively to {mode} mode.");
+        }
+    }
+
+    private static void AssertActionEnvironment(
+        YamlMappingNode action,
+        string variableName,
+        string expectedValue)
+    {
+        var environment = RequireMapping(GetOnlyActionStep(action), "env");
+        if (!string.Equals(
+                RequireScalar(environment, variableName),
+                expectedValue,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"Action environment '{variableName}' is not wired to its declared input.");
+        }
+    }
+
+    private static YamlMappingNode GetOnlyActionStep(YamlMappingNode action)
+    {
+        var runs = RequireMapping(action, "runs");
+        var steps = RequireSequence(runs, "steps");
+        return steps.Children.OfType<YamlMappingNode>().Single();
+    }
+
+    private static string NormalizeCommand(string command)
+    {
+        return string.Join(
+            " ",
+            command.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 
     private static void AssertRequiredSuiteGate(YamlMappingNode workflow, string jobName)
@@ -228,11 +323,7 @@ public sealed class WorkflowTestOwnershipArchitectureTests
     {
         var jobs = RequireMapping(workflow, "jobs");
         var job = RequireMapping(jobs, jobName);
-        if (job.Children.ContainsKey(new YamlScalarNode("continue-on-error")))
-        {
-            throw new InvalidDataException(
-                $"Job '{jobName}' cannot continue after a required test gate fails.");
-        }
+        AssertNoBypassControls(job, ForbiddenRequiredJobKeys);
         var steps = RequireSequence(job, "steps");
         var matches = steps.Children
             .OfType<YamlMappingNode>()

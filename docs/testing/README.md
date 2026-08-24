@@ -32,12 +32,18 @@ platform routing 與 runner selection。這是 authoritative execution boundary�
 workflow 只委派 project 與 selection intent，不能自行選 test host。中央 runner
 對所有 test project 使用 in-process xUnit execution。所有宣告 test platform 的 assembly
 也共用 runtime execution guard，中央 runner 若退化成 VSTest 會在 assembly load 時
-fail closed。MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
+fail closed。Runner 在 launcher 外建立完整 argument contract，並透過一次性 pipe 將
+contract hash 交給 child；assembly initializer 會比對實際 command line，不能把 full-suite
+authorization 重用於 class subset。任何 started child 在 setup、execution 或 capture
+失敗後都由同一 process owner bounded terminate，cleanup failure 與原 failure 一併保留。
+MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
 guard，不是可由呼叫者提供 property 的 authorization credential。
 完整 repository suite 與 required project gate 的 workflow step 必須使用結構化的
 `.github/actions/test-solution` / `.github/actions/test-project` boundary；任意 `run:`
-command 或 expression 不能取代 accepted test gate。Action 只傳遞 project/selection
-intent；central runner 仍獨占 runtime authorization 與 result validation。Recovery 先將
+command 或 expression 不能取代 accepted test gate。Action 只能將 inputs 映射給
+`script/invoke-ci-test-action.ps1`；這個可執行 boundary 負責參數驗證、中央 runner
+委派與 result validation，並由跨平台 behavioral/mutation tests 防止 action 假綠。
+Central runner 仍獨占 runtime authorization 與 result validation。Recovery 先將
 `script/test-project-runner.ps1` 固定為 bootstrap
 trust root，再由 `Get-DownKyiTestRunnerTrustInputs` 宣告 dependency closure；provider
 變更/失敗、空清單或遺失的 declared input 都必須中止 recovery。

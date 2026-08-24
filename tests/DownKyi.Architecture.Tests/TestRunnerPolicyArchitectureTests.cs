@@ -17,6 +17,7 @@ public sealed class TestRunnerPolicyArchitectureTests
     [
         ".github/actions/test-project/action.yml",
         ".github/actions/test-solution/action.yml",
+        "script/invoke-ci-test-action.ps1",
         "Directory.Build.props",
         "Directory.Build.targets",
         "Directory.Packages.props",
@@ -132,7 +133,10 @@ public sealed class TestRunnerPolicyArchitectureTests
             startInfo.ArgumentList.Add("""
                 . $env:DOWNKYI_TEST_RUNNER
                 function Invoke-DownKyiAuthorizedTestAssembly {
-                    param([string]$RepositoryRoot, [string[]]$Arguments)
+                    param(
+                        [string]$RepositoryRoot,
+                        [string[]]$Arguments,
+                        [object]$Authorization)
                     $assembly = $Arguments[0]
                     $classIndex = [Array]::IndexOf($Arguments, '-class')
                     $trxIndex = [Array]::IndexOf($Arguments, '-trx')
@@ -182,6 +186,187 @@ public sealed class TestRunnerPolicyArchitectureTests
         finally
         {
             Directory.Delete(resultsDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AuthorizedSubsetMutationFailsTheCompleteInvocationContract()
+    {
+        var resultsDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-subset-mutation-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(resultsDirectory);
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add("""
+                . $env:DOWNKYI_TEST_RUNNER
+                function Invoke-DownKyiAuthorizedTestAssembly {
+                    param(
+                        [string]$RepositoryRoot,
+                        [string[]]$Arguments,
+                        [object]$Authorization)
+                    $trxIndex = [Array]::IndexOf($Arguments, '-trx')
+                    $subsetArguments = @(
+                        $Arguments[0],
+                        '-noLogo',
+                        '-noColor',
+                        '-noAutoReporters',
+                        '-reporter', 'quiet',
+                        '-parallel', 'none',
+                        '-class', 'DownKyi.Architecture.Tests.AgentEnvironmentArchitectureTests',
+                        '-trx', $Arguments[$trxIndex + 1]
+                    )
+                    $mutatedStartInfo = [Diagnostics.ProcessStartInfo]::new()
+                    $mutatedStartInfo.FileName = 'dotnet'
+                    $mutatedStartInfo.WorkingDirectory = $RepositoryRoot
+                    $mutatedStartInfo.UseShellExecute = $false
+                    foreach ($argument in $subsetArguments) {
+                        $mutatedStartInfo.ArgumentList.Add($argument)
+                    }
+                    Set-DownKyiTestProcessAuthorization `
+                        -Authorization $Authorization `
+                        -StartInfo $mutatedStartInfo
+                    throw 'The subset mutation unexpectedly received authorization.'
+                }
+                try {
+                    Invoke-DownKyiTestProject `
+                        -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
+                        -ProjectPath $env:DOWNKYI_ARCHITECTURE_PROJECT `
+                        -Configuration Release `
+                        -NoRestore `
+                        -NoBuild `
+                        -ResultsDirectory $env:DOWNKYI_MUTATION_RESULTS `
+                        -TrxName mutation.trx
+                    exit 0
+                }
+                catch {
+                    Write-Error $_
+                    exit 73
+                }
+                """);
+            startInfo.Environment["DOWNKYI_TEST_RUNNER"] =
+                Path.Combine(RepositoryRoot, "script", "test-project-runner.ps1");
+            startInfo.Environment["DOWNKYI_REPOSITORY_ROOT"] = RepositoryRoot;
+            startInfo.Environment["DOWNKYI_ARCHITECTURE_PROJECT"] = Path.Combine(
+                RepositoryRoot,
+                "tests",
+                "DownKyi.Architecture.Tests",
+                "DownKyi.Architecture.Tests.csproj");
+            startInfo.Environment["DOWNKYI_MUTATION_RESULTS"] = resultsDirectory;
+
+            var mutation = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken);
+
+            Assert.NotEqual(0, mutation.ExitCode);
+            Assert.Contains(
+                "complete invocation contract",
+                mutation.Output,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(resultsDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AuthorizationSetupFailureTerminatesTheStartedChildProcess()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-setup-failure-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add("""
+                . $env:DOWNKYI_TEST_RUNNER
+                $completeAuthorization = ${function:Complete-DownKyiTestProcessAuthorization}
+                function Complete-DownKyiTestProcessAuthorization {
+                    param([object]$Authorization)
+                    & $completeAuthorization -Authorization $Authorization
+                    Set-Content `
+                        -LiteralPath $env:DOWNKYI_CHILD_PID `
+                        -Value $Authorization.ChildProcessId
+                    throw 'Injected authorization setup failure.'
+                }
+                $arguments = @(
+                    $env:DOWNKYI_ARCHITECTURE_ASSEMBLY,
+                    '-noLogo',
+                    '-noColor',
+                    '-noAutoReporters',
+                    '-reporter', 'quiet',
+                    '-parallel', 'none',
+                    '-class', 'DownKyi.Architecture.Tests.CiTestActionBehaviorTests',
+                    '-trx', $env:DOWNKYI_MUTATION_TRX
+                )
+                $authorization = New-DownKyiTestProcessAuthorization `
+                    -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
+                    -Arguments $arguments
+                try {
+                    Invoke-DownKyiAuthorizedTestAssembly `
+                        -RepositoryRoot $env:DOWNKYI_REPOSITORY_ROOT `
+                        -Arguments $arguments `
+                        -Authorization $authorization
+                    throw 'The injected setup failure did not propagate.'
+                }
+                catch {
+                    $childId = [int](Get-Content -LiteralPath $env:DOWNKYI_CHILD_PID -Raw)
+                    if ($null -ne (Get-Process -Id $childId -ErrorAction SilentlyContinue)) {
+                        throw "Authorized child $childId survived its owner failure."
+                    }
+                    Write-Output 'Started child was terminated.'
+                }
+                """);
+            startInfo.Environment["DOWNKYI_TEST_RUNNER"] =
+                Path.Combine(RepositoryRoot, "script", "test-project-runner.ps1");
+            startInfo.Environment["DOWNKYI_REPOSITORY_ROOT"] = RepositoryRoot;
+            startInfo.Environment["DOWNKYI_ARCHITECTURE_ASSEMBLY"] = Path.Combine(
+                RepositoryRoot,
+                "tests",
+                "DownKyi.Architecture.Tests",
+                "bin",
+                "Release",
+                "net10.0",
+                "DownKyi.Architecture.Tests.dll");
+            startInfo.Environment["DOWNKYI_MUTATION_TRX"] =
+                Path.Combine(directory, "mutation.trx");
+            startInfo.Environment["DOWNKYI_CHILD_PID"] = Path.Combine(directory, "child.pid");
+
+            var mutation = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, mutation.ExitCode);
+            Assert.Contains("Started child was terminated.", mutation.Output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
         }
     }
 

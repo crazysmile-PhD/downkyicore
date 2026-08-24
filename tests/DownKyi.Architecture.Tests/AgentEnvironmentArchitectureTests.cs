@@ -40,6 +40,7 @@ public sealed class AgentEnvironmentArchitectureTests
             "Directory.Packages.props",
             ".github/actions/test-project/action.yml",
             ".github/actions/test-solution/action.yml",
+            "script/invoke-ci-test-action.ps1",
             "script/test-solution.ps1",
             "script/test-project-runner.ps1",
             "docs/testing/test-runner-policy.json",

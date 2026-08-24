@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Text.Json;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -7,7 +8,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
 {
     private const string CapturePipeEnvironmentVariable = "DOWNKYI_FORENSICS_CAPTURE_PIPE";
     private const string MutationEnvironmentVariable = "DOWNKYI_TEST_MUTATE_FORENSICS_LEASE";
+    private const string ChildReleasePipeEnvironmentVariable =
+        "DOWNKYI_TRANSIENT_CHILD_RELEASE_PIPE";
     private const byte CaptureCompleted = 0xA5;
+    private const byte ChildReleaseCompleted = 0xD7;
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan TerminationTimeout = TimeSpan.FromSeconds(5);
 
@@ -83,9 +87,69 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         }
     }
 
+    [Theory]
+    [InlineData(ChildReleaseCompleted, 0)]
+    [InlineData(0x00, 1)]
+    public async Task ObservedChildReleaseHandshakeControlsTransientCompletion(
+        byte releaseValue,
+        int expectedExitCode)
+    {
+        var pipeName = $"downkyi-lifecycle-test-{Guid.NewGuid():N}";
+        using var releaseOwner = new NamedPipeServerStream(
+            pipeName,
+            PipeDirection.Out,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous);
+        var connection = releaseOwner.WaitForConnectionAsync(
+            TestContext.Current.CancellationToken);
+        var startInfo = CreateProbeStartInfo();
+        startInfo.ArgumentList.Add("--spawn-residual-child-ms");
+        startInfo.ArgumentList.Add("5000");
+        startInfo.Environment[ChildReleasePipeEnvironmentVariable] = pipeName;
+        var root = BoundedProcessRunner.Run(
+            startInfo,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(0, root.ExitCode);
+        using var result = JsonDocument.Parse(root.Output);
+        var childId = result.RootElement.GetProperty("ChildProcessId").GetInt32();
+        using var child = Process.GetProcessById(childId);
+        try
+        {
+            Assert.False(child.HasExited);
+            await connection.WaitAsync(
+                    ProbeTimeout,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await releaseOwner.WriteAsync(
+                    new[] { releaseValue },
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await releaseOwner.FlushAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await WaitForExitAsync(child).ConfigureAwait(true);
+
+            Assert.Equal(expectedExitCode, child.ExitCode);
+        }
+        finally
+        {
+            await TerminateIfRunningAsync(child).ConfigureAwait(true);
+        }
+    }
+
     private static Process StartProbe(string capturePipeHandle)
     {
+        var startInfo = CreateProbeStartInfo();
         var probePath = GetProbePath();
+        startInfo.ArgumentList.Add("--assembly");
+        startInfo.ArgumentList.Add(probePath);
+        startInfo.Environment[CapturePipeEnvironmentVariable] = capturePipeHandle;
+        return Process.Start(startInfo)
+            ?? throw new InvalidOperationException("The lifecycle probe did not start.");
+    }
+
+    private static ProcessStartInfo CreateProbeStartInfo()
+    {
         var startInfo = new ProcessStartInfo
         {
             FileName = "dotnet",
@@ -95,12 +159,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        startInfo.ArgumentList.Add(probePath);
-        startInfo.ArgumentList.Add("--assembly");
-        startInfo.ArgumentList.Add(probePath);
-        startInfo.Environment[CapturePipeEnvironmentVariable] = capturePipeHandle;
-        return Process.Start(startInfo)
-            ?? throw new InvalidOperationException("The lifecycle probe did not start.");
+        startInfo.ArgumentList.Add(GetProbePath());
+        return startInfo;
     }
 
     private static async Task CompleteAsync(AnonymousPipeServerStream lease)

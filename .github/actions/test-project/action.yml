@@ -48,38 +48,6 @@ runs:
         DOWNKYI_TEST_RESULTS_DIRECTORY: ${{ inputs.results-directory }}
         DOWNKYI_TEST_TRX_NAME: ${{ inputs.trx-name }}
         DOWNKYI_TEST_EXPECTED_CLASS: ${{ inputs.expected-class }}
-      run: |
-        $actionRepositoryRoot = (Resolve-Path (Join-Path '${{ github.action_path }}' '../../..')).Path
-        $repositoryRoot = if ([string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_REPOSITORY_ROOT)) {
-          $actionRepositoryRoot
-        }
-        else {
-          (Resolve-Path $env:DOWNKYI_TEST_REPOSITORY_ROOT).Path
-        }
-        . (Join-Path $actionRepositoryRoot 'script/test-project-runner.ps1')
-        $arguments = @{
-          RepositoryRoot = $repositoryRoot
-          ProjectPath = $env:DOWNKYI_TEST_PROJECT_PATH
-          Configuration = $env:DOWNKYI_TEST_CONFIGURATION
-        }
-        if ($env:DOWNKYI_TEST_NO_RESTORE -eq 'true') { $arguments.NoRestore = $true }
-        if ($env:DOWNKYI_TEST_NO_BUILD -eq 'true') { $arguments.NoBuild = $true }
-        if (-not [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_RESULTS_DIRECTORY)) {
-          $arguments.ResultsDirectory = $env:DOWNKYI_TEST_RESULTS_DIRECTORY
-        }
-        if (-not [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_TRX_NAME)) {
-          $arguments.TrxName = $env:DOWNKYI_TEST_TRX_NAME
-        }
-        if (-not [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_EXPECTED_CLASS)) {
-          $arguments.ClassNames = @($env:DOWNKYI_TEST_EXPECTED_CLASS)
-        }
-        $result = Invoke-DownKyiTestProject @arguments
-        if ([string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_EXPECTED_CLASS)) {
-          if ($result.ExitCode -ne 0) { throw 'Repository test project failed.' }
-        }
-        else {
-          Assert-DownKyiExpectedTestExecution `
-            -RunnerExitCode $result.ExitCode `
-            -TrxPath $result.TrxPath `
-            -ExpectedClassNames @($env:DOWNKYI_TEST_EXPECTED_CLASS)
-        }
+      run: >
+        & (Join-Path '${{ github.action_path }}' '../../../script/invoke-ci-test-action.ps1')
+        -Mode Project

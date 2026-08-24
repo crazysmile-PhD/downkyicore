@@ -12,12 +12,28 @@ internal static class Program
     private const string TestAssemblyLoadOwnerKey = "DownKyi.CentralTestAssemblyLoadOwner";
     private const string TestAssemblyLoadOwnerValue = "DownKyi.AssemblyLifecycleProbe";
     private const string CapturePipeEnvironmentVariable = "DOWNKYI_FORENSICS_CAPTURE_PIPE";
+    private const string ChildReleasePipeEnvironmentVariable =
+        "DOWNKYI_TRANSIENT_CHILD_RELEASE_PIPE";
     private const int CaptureCompleted = 0xA5;
+    private const int ChildReleaseCompleted = 0xD7;
 
     public static int Main(string[] args)
     {
         if (TryReadChildHoldArguments(args, out var childHoldMilliseconds))
         {
+            var releasePipeHandle = Environment.GetEnvironmentVariable(
+                ChildReleasePipeEnvironmentVariable);
+            Environment.SetEnvironmentVariable(ChildReleasePipeEnvironmentVariable, null);
+            if (!string.IsNullOrWhiteSpace(releasePipeHandle))
+            {
+                using var releasePipe = new System.IO.Pipes.NamedPipeClientStream(
+                    ".",
+                    releasePipeHandle,
+                    System.IO.Pipes.PipeDirection.In);
+                releasePipe.Connect(5_000);
+                return releasePipe.ReadByte() == ChildReleaseCompleted ? 0 : 1;
+            }
+
             Thread.Sleep(childHoldMilliseconds);
             return 0;
         }
@@ -88,21 +104,33 @@ internal static class Program
             holdMilliseconds.ToString(
                 System.Globalization.CultureInfo.InvariantCulture));
 
-        using var child = Process.Start(startInfo);
-        if (child is null)
+        Process? child;
+        try
         {
-            WriteResult(new ProbeResult(
-                false,
-                null,
-                null,
-                false,
-                "residual_child_start_failed",
-                null));
-            return 1;
+            child = Process.Start(startInfo);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ChildReleasePipeEnvironmentVariable, null);
         }
 
-        WriteResult(new ProbeResult(true, null, null, true, null, child.Id));
-        return 0;
+        using (child)
+        {
+            if (child is null)
+            {
+                WriteResult(new ProbeResult(
+                    false,
+                    null,
+                    null,
+                    false,
+                    "residual_child_start_failed",
+                    null));
+                return 1;
+            }
+
+            WriteResult(new ProbeResult(true, null, null, true, null, child.Id));
+            return 0;
+        }
     }
 
     private static bool TryReadArguments(string[] args, out string assemblyPath)

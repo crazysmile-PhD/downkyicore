@@ -305,13 +305,15 @@ function Wait-ResidualProcessTree {
         [int]$QuiescenceMilliseconds,
         [Parameter(Mandatory)]
         [ValidateRange(1, 1000)]
-        [int]$PollMilliseconds
+        [int]$PollMilliseconds,
+        [scriptblock]$OnFirstChildObserved
     )
 
     $observed = [System.Collections.Generic.Dictionary[string, object]]::new(
         [StringComparer]::Ordinal)
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $sampleCount = 0
+    $firstObservationHandled = $false
     $children = @()
     do {
         $children = @(
@@ -322,6 +324,13 @@ function Wait-ResidualProcessTree {
         $sampleCount++
         foreach ($child in $children) {
             $observed[(Get-ProcessIdentityKey -Process $child)] = $child
+        }
+        if (-not $firstObservationHandled -and $children.Count -gt 0) {
+            $firstObservationHandled = $true
+            if ($null -ne $OnFirstChildObserved) {
+                & $OnFirstChildObserved @($children)
+                $stopwatch.Restart()
+            }
         }
 
         if ($children.Count -eq 0 -and $sampleCount -ge 2) {
@@ -758,6 +767,7 @@ function Invoke-IsolatedProcess {
         [ValidateRange(0, 5000)]
         [int]$EvidenceCaptureDelayMilliseconds = 0,
         [switch]$AuthorizeRepositoryTestAssembly,
+        [switch]$ReleaseObservedChildren,
         [double]$EvidenceThresholdSeconds = $SlowPhaseThresholdSeconds
     )
 
@@ -791,8 +801,15 @@ function Invoke-IsolatedProcess {
 
     $authorization = if ($AuthorizeRepositoryTestAssembly) {
         New-DownKyiTestProcessAuthorization `
-            -StartInfo $startInfo `
+            -Arguments $Arguments `
             -RepositoryRoot $repositoryRoot
+    }
+    else {
+        $null
+    }
+
+    $observedChildReleaseLease = if ($ReleaseObservedChildren) {
+        New-ObservedChildReleaseLease -StartInfo $startInfo
     }
     else {
         $null
@@ -800,6 +817,9 @@ function Invoke-IsolatedProcess {
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
+    $processStarted = $false
+    $operationResult = $null
+    $operationFailure = $null
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $timedOut = $false
     $evidence = @()
@@ -822,11 +842,23 @@ function Invoke-IsolatedProcess {
         0,
         $EvidenceThresholdSeconds - ($slowEvidenceCaptureLeadMilliseconds / 1000))
     try {
+        if ($null -ne $authorization) {
+            Set-DownKyiTestProcessAuthorization `
+                -Authorization $authorization `
+                -StartInfo $startInfo
+        }
         if (-not $process.Start()) {
             throw "Process did not start for $AssemblyName/$Phase."
         }
+        $processStarted = $true
+        if ($null -ne $authorization) {
+            $authorization.ChildProcessId = $process.Id
+        }
         if ($null -ne $evidenceCaptureLease) {
             Start-EvidenceCaptureLease -Lease $evidenceCaptureLease
+        }
+        if ($null -ne $observedChildReleaseLease) {
+            Start-ObservedChildReleaseLease -Lease $observedChildReleaseLease
         }
         if ($null -ne $authorization) {
             Complete-DownKyiTestProcessAuthorization -Authorization $authorization
@@ -931,8 +963,9 @@ function Invoke-IsolatedProcess {
                     $captureStopwatch.Stop()
                     $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
                 }
-                $process.Kill($true)
-                $process.WaitForExit()
+                Stop-DownKyiOwnedProcess `
+                    -Process $process `
+                    -Started $processStarted
                 break
             }
         }
@@ -957,11 +990,18 @@ function Invoke-IsolatedProcess {
             $stderrPath,
             $stderr,
             [System.Text.UTF8Encoding]::new($false))
+        $onFirstChildObserved = if ($null -ne $observedChildReleaseLease) {
+            ({ Complete-ObservedChildReleaseLease -Lease $observedChildReleaseLease }).GetNewClosure()
+        }
+        else {
+            $null
+        }
         $childProcessObservation = Wait-ResidualProcessTree `
                 -RootProcessId $processId `
                 -NotBeforeUtc $processStartedAt `
                 -QuiescenceMilliseconds $residualChildQuiescenceMilliseconds `
-                -PollMilliseconds $residualChildPollMilliseconds
+                -PollMilliseconds $residualChildPollMilliseconds `
+                -OnFirstChildObserved $onFirstChildObserved
         $observedChildren = @($childProcessObservation.observedChildren)
         $transientChildren = @($childProcessObservation.transientChildren)
         $residualChildren = @($childProcessObservation.residualChildren)
@@ -987,7 +1027,7 @@ function Invoke-IsolatedProcess {
                 $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
             }
         }
-        return [pscustomobject]@{
+        $operationResult = [pscustomobject]@{
             assembly = $AssemblyName
             iteration = $Iteration
             phase = $Phase
@@ -1025,11 +1065,58 @@ function Invoke-IsolatedProcess {
             observedAtUnixMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         }
     }
-    finally {
+    catch {
+        $operationFailure = $_.Exception
+    }
+
+    $cleanupFailures = [Collections.Generic.List[Exception]]::new()
+    try {
+        Stop-DownKyiOwnedProcess -Process $process -Started $processStarted
+    }
+    catch {
+        $cleanupFailures.Add($_.Exception)
+    }
+    try {
         Close-EvidenceCaptureLease -Lease $evidenceCaptureLease
+    }
+    catch {
+        $cleanupFailures.Add($_.Exception)
+    }
+    try {
+        Close-ObservedChildReleaseLease -Lease $observedChildReleaseLease
+    }
+    catch {
+        $cleanupFailures.Add($_.Exception)
+    }
+    try {
         Close-DownKyiTestProcessAuthorization -Authorization $authorization
+    }
+    catch {
+        $cleanupFailures.Add($_.Exception)
+    }
+    try {
         $process.Dispose()
     }
+    catch {
+        $cleanupFailures.Add($_.Exception)
+    }
+
+    if ($null -ne $operationFailure) {
+        if ($cleanupFailures.Count -gt 0) {
+            throw [AggregateException]::new(
+                "Lifecycle phase and owned child-process cleanup both failed.",
+                @($operationFailure) + $cleanupFailures.ToArray())
+        }
+
+        throw $operationFailure
+    }
+    if ($cleanupFailures.Count -gt 0) {
+        throw [AggregateException]::new(
+            "Lifecycle owned child-process cleanup failed.",
+            $cleanupFailures.ToArray())
+    }
+
+    return $operationResult
 }
 
 function Assert-XunitSynchronousAutomatedReporting {
@@ -1148,6 +1235,77 @@ function Complete-EvidenceCaptureLease {
 }
 
 function Close-EvidenceCaptureLease {
+    param(
+        [object]$Lease
+    )
+
+    if ($null -ne $Lease -and -not $Lease.Closed) {
+        $Lease.Closed = $true
+        $Lease.Pipe.Dispose()
+    }
+}
+
+function New-ObservedChildReleaseLease {
+    param(
+        [Parameter(Mandatory)]
+        [System.Diagnostics.ProcessStartInfo]$StartInfo
+    )
+
+    $pipeName = "downkyi-lifecycle-$([Guid]::NewGuid().ToString('N'))"
+    $pipe = [IO.Pipes.NamedPipeServerStream]::new(
+        $pipeName,
+        [IO.Pipes.PipeDirection]::Out,
+        1,
+        [IO.Pipes.PipeTransmissionMode]::Byte,
+        [IO.Pipes.PipeOptions]::Asynchronous)
+    $StartInfo.Environment["DOWNKYI_TRANSIENT_CHILD_RELEASE_PIPE"] =
+        $pipeName
+    return [pscustomobject]@{
+        Pipe = $pipe
+        ConnectionTask = $null
+        Started = $false
+        Closed = $false
+    }
+}
+
+function Start-ObservedChildReleaseLease {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Lease
+    )
+
+    if ($Lease.Started -or $Lease.Closed) {
+        throw "Observed-child release lease is not startable."
+    }
+
+    $Lease.ConnectionTask = $Lease.Pipe.WaitForConnectionAsync()
+    $Lease.Started = $true
+}
+
+function Complete-ObservedChildReleaseLease {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Lease
+    )
+
+    if (-not $Lease.Started -or $Lease.Closed) {
+        throw "Observed-child release lease is not completable."
+    }
+
+    try {
+        if (-not $Lease.ConnectionTask.Wait(5000)) {
+            throw "Observed child did not connect to its release owner."
+        }
+        $Lease.Pipe.WriteByte(0xD7)
+        $Lease.Pipe.Flush()
+    }
+    finally {
+        $Lease.Closed = $true
+        $Lease.Pipe.Dispose()
+    }
+}
+
+function Close-ObservedChildReleaseLease {
     param(
         [object]$Lease
     )
@@ -1569,7 +1727,8 @@ if ($ValidateForensics) {
                     $probeAssembly,
                     "--spawn-residual-child-ms",
                     "250"
-                )
+                ) `
+                -ReleaseObservedChildren
             $transientProbePhase = New-ProcessPhaseResult `
                 -ProcessResult $transientProbe
             $transientPayload = $transientProbe.stdout |

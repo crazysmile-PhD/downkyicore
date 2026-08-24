@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipes;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace DownKyi.TestInfrastructure;
 
@@ -45,12 +46,16 @@ internal static class CentralTestExecutionGuard
             return;
         }
 
-        var actualToken = new byte[expectedToken.Length];
+        const int invocationHashLength = 32;
+        var authorizationPayload = new byte[expectedToken.Length + invocationHashLength];
         using var pipe = new AnonymousPipeClientStream(PipeDirection.In, pipeHandle);
         var offset = 0;
-        while (offset < actualToken.Length)
+        while (offset < authorizationPayload.Length)
         {
-            var read = pipe.Read(actualToken, offset, actualToken.Length - offset);
+            var read = pipe.Read(
+                authorizationPayload,
+                offset,
+                authorizationPayload.Length - offset);
             if (read == 0)
             {
                 break;
@@ -59,12 +64,35 @@ internal static class CentralTestExecutionGuard
             offset += read;
         }
 
+        var actualInvocationHash = ComputeInvocationHash(Environment.GetCommandLineArgs());
         if (expectedToken.Length != 32 ||
-            offset != actualToken.Length ||
-            !CryptographicOperations.FixedTimeEquals(actualToken, expectedToken))
+            offset != authorizationPayload.Length ||
+            !CryptographicOperations.FixedTimeEquals(
+                authorizationPayload.AsSpan(0, expectedToken.Length),
+                expectedToken) ||
+            !CryptographicOperations.FixedTimeEquals(
+                authorizationPayload.AsSpan(expectedToken.Length, invocationHashLength),
+                actualInvocationHash))
         {
             ThrowUnauthorized();
         }
+    }
+
+    private static byte[] ComputeInvocationHash(string[] arguments)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new BinaryWriter(stream, new UTF8Encoding(false), leaveOpen: true))
+        {
+            writer.Write(arguments.Length);
+            foreach (var argument in arguments)
+            {
+                var bytes = Encoding.UTF8.GetBytes(argument);
+                writer.Write(bytes.Length);
+                writer.Write(bytes);
+            }
+        }
+
+        return SHA256.HashData(stream.ToArray());
     }
 
     [DoesNotReturn]

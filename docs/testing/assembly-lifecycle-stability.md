@@ -224,8 +224,10 @@ used by test execution produces evidence and a non-empty managed stack.
 On Windows it also opens a valid marker with exclusive sharing and proves that
 the reader tolerates the temporary lock, then parses the marker after release.
 It additionally launches one short-lived and one persistent `dotnet` child.
-The short-lived child must be observed, drain within the same quiescence path
-used by real phases and leave the phase successful. The persistent child must
+The short-lived child waits on a parent-owned pipe until the real observer has
+recorded its identity; the owner then releases it and gives the drain transition
+the full quiescence window. It must drain through the same path used by real
+phases and leave the phase successful. The persistent child must
 preserve its identity and evidence manifest, receive `ResidualChildProcess`
 classification, and be terminated by matching both PID and creation time. The
 same self-test proves that private paths, URLs, cookies and command-line secrets
