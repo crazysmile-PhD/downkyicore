@@ -44,6 +44,13 @@
       "reason": "Repository tests execute only through the central runner so project ownership, platform routing, and runner selection remain authoritative."
     },
     {
+      "project": "tests/DownKyi.Linux.Tests/DownKyi.Linux.Tests.csproj",
+      "runner": "xunit-in-process",
+      "targetFramework": "net10.0",
+      "parallel": "none",
+      "reason": "Linux-owned process-supervision behavior executes through the central runner on Linux only."
+    },
+    {
       "project": "tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj",
       "runner": "xunit-in-process",
       "targetFramework": "net10.0",

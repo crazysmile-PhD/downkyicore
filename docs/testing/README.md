@@ -10,6 +10,7 @@
 - `DownKyi.Tests`：目前 executable compatibility 與 end-to-end service tests。
 - `DownKyi.Architecture.Tests`：依賴方向、禁止模式、AI environment 與 debt ratchets。
 - `DownKyi.Windows.Tests`：Windows process、Job Object 與 native handle 行為。
+- `DownKyi.Linux.Tests`：Linux process group 與 native process ownership 行為。
 - `DownKyi.MacOS.Tests`：macOS system Bash、signing 與 packaging 行為。
 
 每個 `*.Tests.csproj` 必須以 `DownKyiTestPlatforms` 明確列出

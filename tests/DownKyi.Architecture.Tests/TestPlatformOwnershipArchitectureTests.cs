@@ -9,6 +9,7 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
     private static readonly string[] AllowedPlatforms =
         ["Windows", "Linux", "macOS"];
     private static readonly string[] MacOnlyPlatforms = ["macOS"];
+    private static readonly string[] LinuxOnlyPlatforms = ["Linux"];
     private static readonly string[] WindowsOnlyPlatforms = ["Windows"];
 
     [Fact]
@@ -48,6 +49,7 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
         Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", runner, StringComparison.Ordinal);
         Assert.Contains("cannot run on", runner, StringComparison.Ordinal);
         Assert.Contains("DownKyi.MacOS.Tests", selectorTests, StringComparison.Ordinal);
+        Assert.Contains("DownKyi.Linux.Tests", selectorTests, StringComparison.Ordinal);
         Assert.Contains("missing ownership", selectorTests, StringComparison.Ordinal);
         Assert.Contains("unknown platform", selectorTests, StringComparison.Ordinal);
         Assert.Contains("test-platform-selector.ps1", solutionRunner, StringComparison.Ordinal);
@@ -87,6 +89,36 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
         Assert.Contains("AdHocSigningExecutesUnderSystemBashNounsetWithoutTimestamp", macBehavior, StringComparison.Ordinal);
         Assert.Contains("DeveloperIdSigningIncludesTimestamp", macBehavior, StringComparison.Ordinal);
         Assert.Contains("macos-15", buildWorkflow, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProcessSupervisionBehaviorHasOneNativeProjectPerPlatform()
+    {
+        var windowsProject = Path.Combine(
+            RepositoryRoot,
+            "tests",
+            "DownKyi.Windows.Tests",
+            "DownKyi.Windows.Tests.csproj");
+        var linuxProject = Path.Combine(
+            RepositoryRoot,
+            "tests",
+            "DownKyi.Linux.Tests",
+            "DownKyi.Linux.Tests.csproj");
+        var macProject = Path.Combine(
+            RepositoryRoot,
+            "tests",
+            "DownKyi.MacOS.Tests",
+            "DownKyi.MacOS.Tests.csproj");
+
+        Assert.Equal(WindowsOnlyPlatforms, ReadDeclaredPlatforms(windowsProject));
+        Assert.Equal(LinuxOnlyPlatforms, ReadDeclaredPlatforms(linuxProject));
+        Assert.Equal(MacOnlyPlatforms, ReadDeclaredPlatforms(macProject));
+        Assert.All(
+            new[] { windowsProject, linuxProject, macProject },
+            project => Assert.Contains(
+                "ProcessSupervisionTestCases/OwnedProcessLeasePlatformTests.cs",
+                File.ReadAllText(project).Replace('\\', '/'),
+                StringComparison.Ordinal));
     }
 
     [Fact]

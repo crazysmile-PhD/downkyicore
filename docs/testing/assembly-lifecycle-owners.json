@@ -305,6 +305,20 @@
       ]
     },
     {
+      "id": "process-supervision-lease",
+      "paths": [
+        "tools/DownKyi.ProcessSupervision/**"
+      ],
+      "owner": "OwnedProcessLease",
+      "start": "The caller supplies one immutable LaunchSpec and TransitionBudget; the lease starts an inert supervisor and establishes OS-backed tree ownership before the supervisor can launch target code.",
+      "stop": "WaitAsync observes root completion and tree quiescence, while DisposeAsync begins bounded termination when the caller leaves before normal completion.",
+      "teardown": "The same lease consumes the caller's monotonic budget to terminate the owned Job or process group, reap the direct supervisor, drain stdout and stderr, and preserve concurrent failures.",
+      "allowedMechanisms": [
+        "external_process",
+        "host_lifecycle"
+      ]
+    },
+    {
       "id": "lifecycle-probe",
       "paths": [
         "tools/DownKyi.AssemblyLifecycleProbe/**"

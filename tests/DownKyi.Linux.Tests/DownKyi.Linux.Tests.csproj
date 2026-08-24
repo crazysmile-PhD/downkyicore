@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <DownKyiTestPlatforms>macOS</DownKyiTestPlatforms>
+    <DownKyiTestPlatforms>Linux</DownKyiTestPlatforms>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,10 +23,6 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Remove="Fixtures/**/*.cs" />
   </ItemGroup>
 
 </Project>

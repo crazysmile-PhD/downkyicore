@@ -38,6 +38,9 @@ change.
   `docs/testing/review-invariant-corpus.json`.
 - Thread, process, Host, Dispatcher or test-fixture teardown:
   `docs/testing/assembly-lifecycle-stability.md`.
+- Process identity, tree containment, restart lifetime and supervision design:
+  `docs/design-docs/process-lifecycle-ownership.md`; PR #197 migration stages:
+  `docs/exec-plans/pr-197-process-lease-migration.md`.
 - External binaries, dependencies and release maintenance:
   `docs/maintenance.md`.
 - Accepted target designs: `docs/design-docs/`; task-specific execution plans:

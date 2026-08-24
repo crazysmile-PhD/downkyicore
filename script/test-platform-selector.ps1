@@ -77,8 +77,14 @@ Assert-SelectorCondition `
     -Condition ($windowsProjects -contains "DownKyi.Windows.Tests") `
     -Message "Windows selector omitted the Windows-owned project."
 Assert-SelectorCondition `
+    -Condition ($windowsProjects -notcontains "DownKyi.Linux.Tests") `
+    -Message "Windows selector included the Linux-owned project."
+Assert-SelectorCondition `
     -Condition ($windowsProjects -notcontains "DownKyi.MacOS.Tests") `
     -Message "Windows selector included the macOS-owned project."
+Assert-SelectorCondition `
+    -Condition ($linuxProjects -contains "DownKyi.Linux.Tests") `
+    -Message "Linux selector omitted the Linux-owned project."
 Assert-SelectorCondition `
     -Condition ($linuxProjects -notcontains "DownKyi.Windows.Tests" -and
         $linuxProjects -notcontains "DownKyi.MacOS.Tests") `
@@ -89,6 +95,9 @@ Assert-SelectorCondition `
 Assert-SelectorCondition `
     -Condition ($macProjects -notcontains "DownKyi.Windows.Tests") `
     -Message "macOS selector included the Windows-owned project."
+Assert-SelectorCondition `
+    -Condition ($macProjects -notcontains "DownKyi.Linux.Tests") `
+    -Message "macOS selector included the Linux-owned project."
 
 $fixtureRoot = Join-Path (
     [System.IO.Path]::GetTempPath()) "downkyi-platform-selector-$([Guid]::NewGuid().ToString('N'))"

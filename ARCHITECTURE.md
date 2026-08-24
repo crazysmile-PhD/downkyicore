@@ -7,6 +7,8 @@
 - 模組、呼叫關係與穩定契約：`docs/ai-knowledge-graph.md`
 - 目前尚未完成的工作：`docs/refactoring-live-plan.md`
 - 模組邊界審查：`docs/design-docs/module-boundary-naming-audit.md`
+- Process lifecycle ownership 與 OS supervision boundary：
+  `docs/design-docs/process-lifecycle-ownership.md`
 - 建置、測試、發布與外部 binary：`docs/maintenance.md`
 - 驗證及回滾：`docs/operations/verification-and-rollback.md`
 

@@ -17,6 +17,8 @@ platform-scoped invariant 分類分別位於 `high-risk-control-flow.md`、
 `repository-authority-scanner-spike.md` 與
 `platform-scoped-ci-invariants.md`。Unexpected download cancellation 的
 release-health 重驗契約位於 `unexpected-download-cancellation.md`。
+PR #197 的 OS-backed process lease、lifecycle、forensics、restart 與 runner
+migration 位於 `pr-197-process-lease-migration.md`。
 
 每個 work item 必須包含：
 
