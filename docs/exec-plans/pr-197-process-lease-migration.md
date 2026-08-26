@@ -115,10 +115,13 @@ inherited-stream and synthetic residual-fixture findings are evidence for the
 existing lifecycle-phase migration, not evidence for a second owner or a
 PID/PPID fallback.
 
-`Invoke-IsolatedProcess` now creates one immutable `LaunchSpec`, one
+At reviewed implementation HEAD `6b1f9fdc9b1defb0fe7cc59040c4a1351911c72b`,
+`Invoke-IsolatedProcess` creates one immutable `LaunchSpec`, one
 `TransitionBudget` and one `OwnedProcessLease` before lifecycle target code can
 execute. The lease owns launch, root wait/reap, Job Object or process-group tree
-quiescence, bounded termination and concurrent stdout/stderr drain. Lifecycle
+quiescence probing, bounded termination and concurrent stdout/stderr drain. The
+review described below later proved that the POSIX probe was not an adequate
+quiescence authority. Lifecycle
 phase and process-exit success consume the typed lease outcome and fail closed
 when ownership, operation, cleanup or quiescence fails. Central test-process
 authorization remains a separate domain protocol and is completed against the
@@ -168,9 +171,118 @@ closed. The real parent-exit/descendant fixture and deterministic errno-decision
 tests cover this correction. No owner, truth source, fallback or deadline was
 added.
 
-Status: Stage 2 implementation and cross-platform validation are complete.
-Stage 3 has not started. Exact-HEAD review remains pending; any code change
-invalidates this evidence and requires the Stage 2 review cycle to restart.
+The exact-HEAD review completed and found that the POSIX backend still used one
+numeric process group as stable identity, containment/termination target and
+membership/quiescence oracle. A retained or zombie group leader prevents PGID
+reuse but makes signal-zero group existence permanently non-quiescent; reaping
+the leader restores the empty-group result but releases the numeric identity for
+reuse. This is new evidence that changes the POSIX authority model, so the stop
+rule applies. The Windows Job Object model and the higher-level supervision
+architecture remain valid.
+
+Status: Stage 2 is reopened at a design/feasibility checkpoint. The reviewed
+implementation and its CI evidence remain useful historical evidence but do not
+complete POSIX lifecycle ownership. Stage 3 has not started, and implementation
+must not resume until the following Stage 2A decision is closed.
+
+### Stage 2A: POSIX Identity And Membership Feasibility
+
+Exact reviewed implementation HEAD:
+`6b1f9fdc9b1defb0fe7cc59040c4a1351911c72b`.
+
+The revised authority model separates:
+
+| Contract | Windows | Linux candidate | macOS candidate |
+| --- | --- | --- | --- |
+| Stable anchor identity | retained process handle | pidfd plus retained direct child | retained direct child/wait state |
+| Containment/termination | Job Object | pre-exec process group; prefer `cgroup.kill` | pre-exec process group while anchor remains owned |
+| Membership/quiescence | Job active-process state | delegated cgroup v2 recursive `populated` | `proc_listpgrppids` snapshot excluding anchor |
+| Reap | retained direct-child handle | direct-child wait/reap after membership closure | direct-child wait/reap after membership closure |
+
+The supervisor-owned process-group anchor is accepted only as a stable identity
+guard for group-directed termination. It is not the membership oracle. An
+inherited owner-lifetime pipe remains useful for owner death and authorization
+EOF, but it is not an authoritative descendant lease because ordinary child
+launch APIs may close a descriptor that was not explicitly forwarded.
+
+Reference and isolated behavioral evidence:
+
+- Linux preserved process-group existence while the group leader was a zombie
+  and returned `ESRCH` only after the leader was reaped. This proves the anchor
+  closes PGID reuse only while it also defeats signal-zero quiescence.
+- A child that did not explicitly propagate an inherited lease descriptor
+  produced EOF while its grandchild was still alive. Explicit propagation was
+  the positive control and held EOF until grandchild exit.
+- In a delegated WSL cgroup v2 child, a live reparented descendant kept recursive
+  `populated=1` after the root exited; `cgroup.kill` converged to `populated=0`.
+  The same machine's top-level scope was not writable, confirming that
+  delegation is a capability to prove rather than assume.
+- Linux pidfd supplies stable task identity and, on newer kernels, stable
+  process-group signalling. It does not supply descendant membership.
+- macOS XNU can list group members, including `allproc` and `zombproc`, under a
+  kernel process-list lock. The public stability, buffer/error contract and
+  hosted-runner behavior of `proc_listpgrppids` are not yet proved.
+- kqueue fork tracking is rejected because `NOTE_TRACK`, `NOTE_TRACKERR` and
+  `NOTE_CHILD` are documented as unsupported on current macOS.
+
+Recorded isolated probe outcomes:
+
+```text
+group anchor:     { alive: true, state: Z, zombie: true, afterReapErrno: 3 }
+lease omitted:    { descendantAlive: true, childReady: true, leaseEof: true }
+lease forwarded:  { descendantAlive: true, earlyEof: false, lateEof: true }
+cgroup root exit: { rootExited: true, populated: 1, afterCgroupKill: 0 }
+```
+
+These probes establish the model boundary, not production platform acceptance.
+They were run outside the repository and did not modify implementation files.
+
+No implementation decision is authorized until native feasibility proves:
+
+1. Linux hosted lifecycle environments expose a delegated cgroup v2 subtree
+   that can be created before target authorization, reports reparented live
+   descendants through recursive `populated`, supports bounded `cgroup.kill`,
+   and can be deterministically removed. Direct-child zombie collection remains
+   a separate retained-handle/reap proof.
+2. macOS x64 and arm64 can use `proc_listpgrppids` to distinguish an intentionally
+   live anchor from live, zombie and reparented descendants, with bounded
+   retry/buffer behavior and fail-closed handling of unsupported or permission
+   errors.
+3. Anchor launch and containment establishment occur before target code, and a
+   mutation of either transition makes the formal gate fail.
+4. Owner-lifetime EOF cannot make membership quiescent while the platform
+   membership backend reports a descendant.
+5. Termination, membership convergence, anchor reap and stream drain consume one
+   `TransitionBudget` and preserve concurrent failure evidence.
+
+The isolated proof harness is intentionally outside the formal lifecycle
+implementation:
+
+- `script/process-supervision-feasibility/linux-cgroup-membership.py` requires
+  an unprivileged delegated cgroup v2 subtree and exercises parent exit,
+  reparent, live descendant membership, `cgroup.kill`, `populated=0` convergence
+  and an injected membership-query failure.
+- `script/process-supervision-feasibility/macos-group-membership.c` retains a
+  direct-child group anchor, reaps the workload parent, observes the reparented
+  live descendant through `proc_listpgrppids`, terminates the anchored group,
+  proves membership convergence before anchor reap and injects query failure.
+- `.github/workflows/process-membership-feasibility.yml` runs the Linux proof on
+  `ubuntu-24.04` and the macOS proof on both `macos-15-intel` and `macos-15`.
+
+These files are feasibility evidence only. They do not authorize the current
+POSIX production backend or provide a fallback path.
+
+If Linux cgroup delegation or the macOS membership primitive is unavailable,
+the formal lifecycle backend fails before authorization. PID, PPID, numeric PGID
+polling and inherited-lease EOF are not fallback correctness authorities. A new
+backend requires a design-doc update and behavioral proof before implementation.
+
+The other exact-HEAD Stage 2 review symptoms -- launch-payload writes that are
+not yet budget-owned, target-exit time captured after stream drain, owner
+lifetime not bound to the launch transaction, temporary fixture cleanup and the
+POSIX ownership-establishment race -- remain implementation defects to resolve
+inside this revised state machine after Stage 2A. They do not authorize Stage 3
+or a second owner/deadline/truth source.
 
 ## Stage 3: Forensics Observer
 
