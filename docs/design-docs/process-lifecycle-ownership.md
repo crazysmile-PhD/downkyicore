@@ -239,8 +239,10 @@ later failure cannot replace earlier causal evidence.
 
 ## Reference And Behavioral Feasibility
 
-The current design checkpoint is based on these primary contracts and isolated
-probes; it does not authorize a POSIX implementation yet.
+The current design checkpoint is based on these primary contracts, isolated
+probes and hosted native proof. It authorizes the platform membership backends
+described below for Stage 2 implementation, subject to their fail-closed
+capability preconditions. It does not claim that implementation is complete.
 
 - The .NET Unix process wait implementation reaps an exited direct child through
   `waitpid`. Retaining a managed `Process` object therefore does not retain a
@@ -257,9 +259,37 @@ probes; it does not authorize a POSIX implementation yet.
   a live descendant remained and was reparented; `cgroup.kill` then converged to
   `populated=0`.
 - XNU's process-list implementation can filter `allproc` and `zombproc` by
-  process group under the kernel process-list lock. Native macOS proof is still
-  required because the exposed libproc interface is private and subject to
-  change.
+  process group under the kernel process-list lock. The exposed libproc
+  interface is private and subject to change, so runtime availability and every
+  query result must remain fail closed.
+
+Hosted run [32980954766](https://github.com/crazysmile-PhD/downkyicore/actions/runs/32980954766)
+provides the native feasibility decision:
+
+- A GitHub Ubuntu 24.04 job starts in the root-owned
+  `hosted-compute-agent.service` cgroup and cannot create a child directly. The
+  preceding negative run failed closed with `EACCES`.
+- The same unprivileged runner can request `Delegate=yes` from its systemd user
+  manager. Inside that user scope it created and removed a child cgroup, retained
+  `populated=1` after workload-parent exit and descendant reparent, terminated
+  through `cgroup.kill`, converged to `populated=0`, and rejected an injected
+  membership-query failure.
+- Native `macos-15-intel` and `macos-15` jobs compiled against libproc. Both
+  retained a group anchor, reaped the workload parent, observed the live
+  reparented descendant through `proc_listpgrppids`, terminated the anchored
+  group, proved zero non-anchor membership before anchor reap, and rejected an
+  injected query failure.
+
+The Linux systemd user scope is capability bootstrap, not a process or
+membership truth owner. The backend must verify actual delegation and then use
+only cgroup state for membership correctness. It must never invoke privileged
+`sudo` setup. If the user manager, delegation, `cgroup.events` or `cgroup.kill`
+is unavailable, launch fails before target authorization.
+
+The macOS backend uses the retained direct-child anchor as stable group identity,
+the process group for containment/termination, and `proc_listpgrppids` for
+membership. A missing symbol, ambiguous zero/error result, exhausted buffer
+growth or query error is failure, not quiescence.
 
 References:
 

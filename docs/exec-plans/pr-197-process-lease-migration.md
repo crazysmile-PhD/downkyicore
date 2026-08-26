@@ -180,10 +180,9 @@ reuse. This is new evidence that changes the POSIX authority model, so the stop
 rule applies. The Windows Job Object model and the higher-level supervision
 architecture remain valid.
 
-Status: Stage 2 is reopened at a design/feasibility checkpoint. The reviewed
-implementation and its CI evidence remain useful historical evidence but do not
-complete POSIX lifecycle ownership. Stage 3 has not started, and implementation
-must not resume until the following Stage 2A decision is closed.
+Status: Stage 2 remains reopened. Stage 2A native backend feasibility is now
+complete; the reviewed implementation and its earlier CI evidence do not yet
+complete POSIX lifecycle ownership. Stage 3 has not started.
 
 ### Stage 2A: POSIX Identity And Membership Feasibility
 
@@ -237,7 +236,7 @@ cgroup root exit: { rootExited: true, populated: 1, afterCgroupKill: 0 }
 These probes establish the model boundary, not production platform acceptance.
 They were run outside the repository and did not modify implementation files.
 
-No implementation decision is authorized until native feasibility proves:
+Native feasibility must prove:
 
 1. Linux hosted lifecycle environments expose a delegated cgroup v2 subtree
    that can be created before target authorization, reports reparented live
@@ -269,8 +268,54 @@ implementation:
 - `.github/workflows/process-membership-feasibility.yml` runs the Linux proof on
   `ubuntu-24.04` and the macOS proof on both `macos-15-intel` and `macos-15`.
 
-These files are feasibility evidence only. They do not authorize the current
-POSIX production backend or provide a fallback path.
+These files are feasibility evidence only. They do not make the current POSIX
+production backend correct or provide a fallback path.
+
+#### Stage 2A Hosted Evidence And Decision
+
+Run [32980768700](https://github.com/crazysmile-PhD/downkyicore/actions/runs/32980768700)
+at proof HEAD `fb3aca98883ba0f2e9753b5fc96aa95f41dcf331` established the negative
+Linux boundary. The Ubuntu 24.04 runner was user `runner` in root-owned
+`/system.slice/hosted-compute-agent.service`; creating a child cgroup returned
+`EACCES` and the proof failed closed. Both macOS jobs passed on the same run.
+
+Run [32980954766](https://github.com/crazysmile-PhD/downkyicore/actions/runs/32980954766)
+at proof HEAD `53c22344316a839b3bd0f292372fecb1ed733537` then exercised the
+unprivileged systemd user-manager delegation boundary. All three jobs passed:
+
+- `ubuntu-24.04`: `systemd-run --user --scope -p Delegate=yes` supplied a
+  delegated user scope. The probe established parent exit/reparent while the
+  descendant remained live, authoritative `populated=1`, `cgroup.kill`, bounded
+  convergence to `populated=0`, deterministic subtree removal and injected
+  membership failure with exit 42.
+- `macos-15-intel`: native x64 compile, live reparented membership,
+  group termination, zero non-anchor membership, anchor reap and injected
+  failure all passed.
+- `macos-15`: the same native proof passed on arm64.
+
+Stage 2 implementation is therefore authorized only with these backend
+constraints:
+
+1. Linux formal lifecycle execution first acquires an unprivileged delegated
+   systemd user scope. The lease verifies delegation and creates its own child
+   cgroup before target authorization. `cgroup.events` is membership authority;
+   `cgroup.kill` is the preferred tree termination primitive. The user manager
+   grants capability but is not a second membership truth source.
+2. macOS retains the exact direct-child group anchor until all destructive group
+   operations and zero non-anchor `proc_listpgrppids` membership are complete.
+   The private libproc dependency is verified at runtime and any unavailable,
+   ambiguous or failed query fails closed.
+3. Process groups remain containment/termination primitives only. PID, PPID,
+   numeric PGID polling and inherited-lease EOF remain prohibited as correctness
+   fallback.
+4. The existing Stage 2 implementation acceptance criteria numbered 3 through
+   5 above remain mandatory behavioral/mutation proof during implementation;
+   backend feasibility does not satisfy them by itself.
+
+No formal lifecycle implementation changed in Stage 2A. The next Stage 2 commit
+may replace the provisional POSIX group-existence oracle with these backends and
+resolve the remaining implementation defects inside the existing
+`OwnedProcessLease` / `TransitionBudget` state machine. It must not start Stage 3.
 
 If Linux cgroup delegation or the macOS membership primitive is unavailable,
 the formal lifecycle backend fails before authorization. PID, PPID, numeric PGID
