@@ -269,6 +269,27 @@ public sealed class OwnedProcessLeasePlatformTests
             candidate => candidate.Message.Contains(expectedFailure, StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(0, 0, false)]
+    [InlineData(-1, 1, false)]
+    [InlineData(-1, 3, true)]
+    public void PosixProcessGroupProbeRequiresAbsenceBeforeReportingQuiescence(
+        int result,
+        int error,
+        bool expectedQuiescence)
+    {
+        Assert.Equal(
+            expectedQuiescence,
+            PosixProcessGroupContainmentLease.InterpretQuiescenceProbe(result, error));
+    }
+
+    [Fact]
+    public void UnknownPosixProcessGroupProbeFailureFailsClosed()
+    {
+        Assert.Throws<System.ComponentModel.Win32Exception>(
+            () => PosixProcessGroupContainmentLease.InterpretQuiescenceProbe(-1, 22));
+    }
+
     private static async Task<OwnedProcessOutcome> RunProbeAsync(
         ProcessOwnershipMutation mutation)
     {

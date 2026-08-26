@@ -337,6 +337,7 @@ internal sealed class PosixProcessGroupContainmentLease : IProcessContainmentLea
 {
     private const int NoSignal = 0;
     private const int KillSignal = 9;
+    private const int OperationNotPermitted = 1;
     private const int NoSuchProcess = 3;
 
     private readonly int _processGroupId;
@@ -375,15 +376,8 @@ internal sealed class PosixProcessGroupContainmentLease : IProcessContainmentLea
             return true;
         }
 
-        if (PosixNative.SignalProcessGroup(_processGroupId, NoSignal) == 0)
-        {
-            return false;
-        }
-
-        var error = Marshal.GetLastPInvokeError();
-        return error == NoSuchProcess
-            ? true
-            : throw new Win32Exception(error);
+        var result = PosixNative.SignalProcessGroup(_processGroupId, NoSignal);
+        return InterpretQuiescenceProbe(result, Marshal.GetLastPInvokeError());
     }
 
     public void Terminate()
@@ -402,6 +396,21 @@ internal sealed class PosixProcessGroupContainmentLease : IProcessContainmentLea
 
     public void Dispose()
     {
+    }
+
+    internal static bool InterpretQuiescenceProbe(int result, int error)
+    {
+        if (result == 0)
+        {
+            return false;
+        }
+
+        return error switch
+        {
+            NoSuchProcess => true,
+            OperationNotPermitted => false,
+            _ => throw new Win32Exception(error)
+        };
     }
 }
 
