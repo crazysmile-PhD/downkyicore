@@ -105,12 +105,65 @@ Required proof:
 - Windows phase correctness does not depend on WMI or PPID.
 - Inherited stdout/stderr handles cannot cause an unbounded wait.
 
+### Stage 2 Checkpoint
+
+The consistency audit started from clean HEAD
+`707746dd0b81fd5175c7614bf3b57f421693692c`. Current repository and hosted
+Stage 1 evidence did not change the target architecture, trusted-child threat
+model, restart Policy B or migration order. The parent-exit, Unix reparent,
+inherited-stream and synthetic residual-fixture findings are evidence for the
+existing lifecycle-phase migration, not evidence for a second owner or a
+PID/PPID fallback.
+
+`Invoke-IsolatedProcess` now creates one immutable `LaunchSpec`, one
+`TransitionBudget` and one `OwnedProcessLease` before lifecycle target code can
+execute. The lease owns launch, root wait/reap, Job Object or process-group tree
+quiescence, bounded termination and concurrent stdout/stderr drain. Lifecycle
+phase and process-exit success consume the typed lease outcome and fail closed
+when ownership, operation, cleanup or quiescence fails. Central test-process
+authorization remains a separate domain protocol and is completed against the
+lease-provided target diagnostic identity; runner selection and canonical
+arguments are unchanged.
+
+The old correctness mechanisms have been removed from the formal lifecycle
+path: `Get-ProcessTree`, `Get-ProcessIdentityKey`, `Get-LiveObservedProcess`,
+`Wait-ResidualProcessTree`, the observed-child-release lease and direct
+process-tree termination. WMI/`ps`, PID, PPID and start-time data remain only in
+`Get-DiagnosticProcessTreeSnapshot` and evidence manifests. They cannot choose
+a wait, kill or reap target, prove quiescence or convert failure to success.
+
+Deterministic platform fixtures now execute a parent that exits while a blocking
+descendant retains inherited streams, an ownership-establishment mutation, a
+one-shot false-quiescence mutation and terminate/reap failure injection. The
+same real lease path is exercised by formal `-ValidateForensics`; a non-quiescent
+tree must classify as `ResidualChildProcess`, preserve typed ownership evidence
+and complete bounded cleanup. Local Windows evidence before the Stage 2 commit:
+
+- strict Release solution build passed for 23 projects with zero warnings and
+  zero errors;
+- targeted process-supervision behavioral/mutation tests and full Architecture
+  tests passed through the central runner;
+- the review-invariant gate passed 11 invariants, 318 tests and two intentional
+  adversarial mutations;
+- the platform selector passed and all eight Windows-owned test projects passed;
+- lifecycle ownership found 607 matches and zero violations;
+- one-assembly formal lifecycle `Local` run with `-ValidateForensics` produced
+  nine successful phase results and zero failures;
+- PowerShell syntax, module-boundary audit, formatting and `git diff --check`
+  passed.
+
+Hosted Windows, Linux and macOS proof and exact-HEAD review remain required
+after the independently reviewable Stage 2 commit is pushed. The final Stage 2
+exact HEAD is recorded after commit creation because a commit cannot contain
+its own object ID.
+
 ## Stage 3: Forensics Observer
 
 Move forensics to an observer and a formal evidence-hold supervisor sub-state.
-On completion remove the PPID correctness oracle, synthetic
-`ReleaseObservedChildren` owner and observed-child-release truth source. Stages
-2 and 3 must not leave a permanent dual path.
+Stage 2 already removed the PPID correctness oracle, synthetic
+`ReleaseObservedChildren` owner and observed-child-release truth source.
+Stage 3 completes observer/evidence-hold migration without reintroducing a
+process owner, deadline owner or residual-process truth source.
 
 ## Stage 4: Restart Transaction
 

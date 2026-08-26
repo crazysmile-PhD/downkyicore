@@ -11,6 +11,7 @@ internal static class SupervisorHost
     internal const string OwnershipProbeArgument = "--ownership-probe";
     internal const string LaunchSpecProbeArgument = "--launch-spec-probe";
     internal const string OwnedTreeProbeArgument = "--owned-tree-probe";
+    internal const string ExitWithOwnedDescendantArgument = "--exit-with-owned-descendant";
     internal const string BlockForeverArgument = "--block-forever";
 
     private const byte LaunchAuthorization = 0xC1;
@@ -43,11 +44,21 @@ internal static class SupervisorHost
                 .ConfigureAwait(false);
             return 0;
         }
+        if (arguments.Count == 2 &&
+            string.Equals(arguments[0], ExitWithOwnedDescendantArgument, StringComparison.Ordinal))
+        {
+            return RunExitWithOwnedDescendantProbe(arguments[1]);
+        }
 
+        const ProcessOwnershipMutation supportedMutations =
+            ProcessOwnershipMutation.ResumeTargetBeforeOwnership |
+            ProcessOwnershipMutation.FailAfterContainmentTermination |
+            ProcessOwnershipMutation.FailAfterRootReap |
+            ProcessOwnershipMutation.ReportTreeQuiescentOnce;
         if (arguments.Count != 5 ||
             !string.Equals(arguments[0], HostArgument, StringComparison.Ordinal) ||
             !int.TryParse(arguments[4], NumberStyles.None, CultureInfo.InvariantCulture, out var mutationValue) ||
-            !Enum.IsDefined((ProcessOwnershipMutation)mutationValue))
+            (((ProcessOwnershipMutation)mutationValue) & ~supportedMutations) != 0)
         {
             return null;
         }
@@ -90,7 +101,8 @@ internal static class SupervisorHost
         var ownershipEstablished = PlatformProcessContainment.EstablishCurrentProcessOwnership(
             jobName,
             mutation);
-        if (!ownershipEstablished && mutation == ProcessOwnershipMutation.None)
+        if (!ownershipEstablished &&
+            !mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership))
         {
             await status.WriteAsync(new byte[] { 0 }, CancellationToken.None)
                 .ConfigureAwait(false);
@@ -104,20 +116,21 @@ internal static class SupervisorHost
             ? jobName
             : Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
         var startInfo = CreateTargetStartInfo(payload, containmentId);
-        await status.WriteAsync(
-                new[] { ownershipEstablished ? OwnershipEstablished : OwnershipMutationActive },
-                CancellationToken.None)
-            .ConfigureAwait(false);
-        await status.FlushAsync(CancellationToken.None).ConfigureAwait(false);
-        await status.DisposeAsync().ConfigureAwait(false);
-        await control.DisposeAsync().ConfigureAwait(false);
-
         using var target = Process.Start(startInfo)
             ?? throw new InvalidOperationException("The owned target process did not start.");
         if (payload.CloseStandardInput)
         {
             target.StandardInput.Close();
         }
+
+        using (var writer = new BinaryWriter(status, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(ownershipEstablished ? OwnershipEstablished : OwnershipMutationActive);
+            writer.Write(target.Id);
+            writer.Flush();
+        }
+        await status.DisposeAsync().ConfigureAwait(false);
+        await control.DisposeAsync().ConfigureAwait(false);
 
         await target.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
         return target.ExitCode;
@@ -205,6 +218,31 @@ internal static class SupervisorHost
 
         await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
             .ConfigureAwait(false);
+        return 0;
+    }
+
+    private static int RunExitWithOwnedDescendantProbe(string readyPath)
+    {
+        var assemblyPath = typeof(SupervisorHost).Assembly.Location;
+        var childStartInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."),
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        childStartInfo.ArgumentList.Add(assemblyPath);
+        childStartInfo.ArgumentList.Add(BlockForeverArgument);
+        using var child = Process.Start(childStartInfo)
+            ?? throw new InvalidOperationException("The inherited-stream descendant did not start.");
+        var temporaryPath = $"{readyPath}.{Guid.NewGuid():N}.tmp";
+        File.WriteAllText(
+            temporaryPath,
+            JsonSerializer.Serialize(new OwnedTreeProbeResult(
+                Environment.ProcessId,
+                child.Id)));
+        File.Move(temporaryPath, readyPath);
         return 0;
     }
 

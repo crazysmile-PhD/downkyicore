@@ -204,18 +204,13 @@ On Windows, a slow phase or slow post-teardown exit automatically captures:
 - a sanitized process tree containing PID, parent PID and process name;
 - `dotnet-stack report --process-id` output when the tool is available.
 
-Confirmed residual children use a separate evidence path and are written to
-`residual-children.json`. A still-live managed child receives the normal
-thread, process-tree and managed-stack capture; native descendants retain
-identity and thread/process evidence without waiting on an inapplicable
-managed collector. Transient child identity stays in the phase result without
-triggering expensive process forensics after the process has drained.
-The gate samples by PID plus creation time for up to 500 milliseconds. A child
-that drains during that bounded observation remains visible as `transient` in
-the machine report but is not a teardown leak. A child still alive at the
-boundary is a blocking `ResidualChildProcess`; evidence capture never converts
-it to success. This is a two-sample liveness definition, not a process-name
-allowlist, rerun exception or relaxation of the phase/exit thresholds.
+Confirmed non-quiescent owned trees use a separate evidence path and are written
+to `residual-children.json`. The manifest records the lease failure, retained
+root/target diagnostic IDs and OS containment identity. Job Object active-tree
+state on Windows and process-group liveness on Linux/macOS decide correctness;
+PID/PPID process-tree snapshots remain observer evidence only. Reparenting or a
+changed PPID therefore cannot hide a descendant, and evidence capture never
+converts `ResidualChildProcess` to success.
 
 CI installs the pinned Microsoft `dotnet-stack` tool and runs
 `-ValidateForensics`. That self-test deliberately holds a marker-aware
@@ -223,27 +218,18 @@ CI installs the pinned Microsoft `dotnet-stack` tool and runs
 used by test execution produces evidence and a non-empty managed stack.
 On Windows it also opens a valid marker with exclusive sharing and proves that
 the reader tolerates the temporary lock, then parses the marker after release.
-The cross-platform architecture regression invokes
-`-ValidateObservedChildRelease` to launch a short-lived `dotnet` child through
-the lifecycle script without requiring the optional diagnostics tool. The
-formal Windows forensics self-test calls the same owner function. The child
-waits on a parent-owned duplex pipe until the real observer has
-recorded its identity; the owner then releases it, requires the child's
-acknowledgement, and gives the drain transition the full quiescence window. It
-must drain through the same path used by real phases and leave the phase
-successful. A mutation of that owner-controlled release must fail the same
-executable self-test. On Windows, the self-test also launches a persistent
-child, which must
-preserve its identity and evidence manifest, receive `ResidualChildProcess`
-classification, and be terminated by matching both PID and creation time. The
-same self-test proves that private paths, URLs, cookies and command-line secrets
-are redacted. Schema 2 exposes the detailed
-`residualChildSelfTest` object and top-level `residualChildSelfTestPassed`
-summary. Missing execution, identity, evidence, failure classification or
-cleanup fails closed.
-Timeout evidence is saved before the process tree is terminated.
+Schema 3 replaces the synthetic observer-release proof with the process-lease
+contract. The cross-platform process-supervision fixtures execute the platform
+primitive, including launch-without-ownership mutations, parent-exit/reparent
+behavior, inherited output handles and injected terminate/reap failures. Formal
+`-ValidateForensics` also launches a parent that exits while its descendant
+remains in the owned tree. The phase must be rejected as
+`ResidualChildProcess`, bounded cleanup must finish, and the detailed
+`processLeaseSelfTest` contract must pass. Timeout and slow-phase evidence are
+observer operations within the caller's `TransitionBudget`; they do not own a
+second kill, reap or residual-child decision.
 
-Schema 2 records the marker-reader proof as a fail-closed object:
+Schema 3 retains the marker-reader proof as a fail-closed object:
 
 ```json
 {

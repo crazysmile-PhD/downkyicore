@@ -75,17 +75,15 @@ Only Windows sharing/lock error codes count as marker contention.
 `UnauthorizedAccessException` and other I/O errors remain separately visible
 as `markerReadErrorCount` and `markerReadErrorType`.
 
-Residual-child failures are independently fail-closed. Every failed phase must
-preserve a sanitized `residualChildren` identity list plus a
-`residual-children.json` manifest; live managed children also receive thread,
-tree and managed-stack evidence. `-ValidateForensics` must prove this path by
-observing both a short-lived child that drains inside the bounded quiescence
-window and a persistent child that remains blocking. The persistent path must
-write evidence, classify the phase as `ResidualChildProcess` and clean the
-synthetic tree by PID plus creation time. No process-name allowlist is permitted.
-The self-test must also prove path, URL, cookie and secret redaction.
-`residualChildSelfTestPassed` is only the summary;
-the detailed `residualChildSelfTest` fields are the contract.
+Residual-child failures are independently fail-closed. Formal lifecycle phases
+establish an `OwnedProcessLease` before target code executes; Job Object or
+POSIX process-group quiescence is the correctness oracle after the root exits.
+`residual-children.json` records that ownership failure and containment identity.
+PID, PPID, process-name and start-time observations are diagnostic evidence only
+and cannot select a kill target or convert a non-quiescent tree to success.
+`-ValidateForensics` runs the same lease path with a parent that exits while a
+descendant remains; `processLeaseSelfTestPassed` summarizes the detailed
+`processLeaseSelfTest` contract.
 
 PR #116 merged the final lifecycle proof consistency fix into `main` at
 `6a61247`. Strict PR CI `30450175286` and CodeQL `30450175415` passed. Its

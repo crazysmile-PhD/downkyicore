@@ -22,7 +22,9 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     private readonly Task<string> _standardOutput;
     private readonly Task<string> _standardError;
     private readonly TransitionBudget _budget;
+    private readonly ProcessOwnershipMutation _mutation;
     private int _completionState;
+    private int _reapFailureInjected;
 
     private OwnedProcessLease(
         Process supervisor,
@@ -30,6 +32,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         Task<string> standardOutput,
         Task<string> standardError,
         TransitionBudget budget,
+        ProcessOwnershipMutation mutation,
+        int targetProcessId,
         ProcessOwnershipMetadata ownership)
     {
         _supervisor = supervisor;
@@ -37,10 +41,16 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         _standardOutput = standardOutput;
         _standardError = standardError;
         _budget = budget;
+        _mutation = mutation;
+        TargetProcessId = targetProcessId;
         Ownership = ownership;
     }
 
     public ProcessOwnershipMetadata Ownership { get; }
+
+    public int SupervisorProcessId => _supervisor.Id;
+
+    public int TargetProcessId { get; }
 
     public static Task<OwnedProcessLease> StartAsync(
         LaunchSpec launchSpec,
@@ -77,18 +87,23 @@ public sealed class OwnedProcessLease : IAsyncDisposable
 
         OwnedProcessOutcome? outcome = null;
         Exception? operationFailure = null;
+        var pendingFailureKind = OwnedProcessFailureKind.ExecutionFailed;
+        var supervisorProcessId = SupervisorProcessId;
+        var treeQuiescenceProven = false;
         try
         {
-            await WaitWithBudgetAsync(
-                    _supervisor.WaitForExitAsync(cancellationToken),
-                    _budget.RemainingOperation,
-                    "The owned process exceeded its operation deadline.",
+            pendingFailureKind = OwnedProcessFailureKind.OperationDeadlineExceeded;
+            await WaitForSupervisorExitAsync(
+                    useCleanupBudget: false,
                     cancellationToken)
                 .ConfigureAwait(false);
+            pendingFailureKind = OwnedProcessFailureKind.OwnedTreeNotQuiescent;
             await WaitForTreeQuiescenceAsync(
                     useCleanupBudget: false,
                     cancellationToken)
                 .ConfigureAwait(false);
+            treeQuiescenceProven = true;
+            pendingFailureKind = OwnedProcessFailureKind.StreamDrainDeadlineExceeded;
             await WaitWithBudgetAsync(
                     Task.WhenAll(_standardOutput, _standardError),
                     _budget.RemainingOperation,
@@ -97,6 +112,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 .ConfigureAwait(false);
 
             outcome = new OwnedProcessOutcome(
+                supervisorProcessId,
+                TargetProcessId,
                 _supervisor.ExitCode,
                 await _standardOutput.ConfigureAwait(false),
                 await _standardError.ConfigureAwait(false),
@@ -106,21 +123,40 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         catch (Exception failure)
         {
             operationFailure = failure;
+            if (failure is OperationCanceledException)
+            {
+                pendingFailureKind = OwnedProcessFailureKind.CallerCancelled;
+            }
+            else if (failure is not TimeoutException)
+            {
+                pendingFailureKind = OwnedProcessFailureKind.ExecutionFailed;
+            }
         }
 
         if (operationFailure != null)
         {
             var cleanupFailure = await CaptureFailureAsync(TerminateAndReapAsync)
                 .ConfigureAwait(false);
-            if (cleanupFailure == null)
-            {
-                ExceptionDispatchInfo.Capture(operationFailure).Throw();
-            }
-
-            throw new AggregateException(
-                "Owned process execution and cleanup both failed.",
+            var cleanupFailures = cleanupFailure == null
+                ? Array.Empty<Exception>()
+                : FlattenFailures(cleanupFailure).ToArray();
+            var standardOutput = cleanupFailures.Length == 0
+                ? await _standardOutput.ConfigureAwait(false)
+                : ReadCompletedOutput(_standardOutput);
+            var standardError = cleanupFailures.Length == 0
+                ? await _standardError.ConfigureAwait(false)
+                : ReadCompletedOutput(_standardError);
+            throw new OwnedProcessExecutionException(
+                new OwnedProcessFailure(
+                    pendingFailureKind,
+                    supervisorProcessId,
+                    TargetProcessId,
+                    standardOutput,
+                    standardError,
+                    TreeQuiescent: treeQuiescenceProven,
+                    Ownership),
                 operationFailure,
-                cleanupFailure);
+                cleanupFailures);
         }
 
         ReleaseResources();
@@ -212,14 +248,12 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 writer.Flush();
             }
 
-            var decision = new byte[1];
-            var bytesRead = await WaitWithBudgetAsync(
-                    status.ReadAsync(decision, cancellationToken).AsTask(),
-                    budget.RemainingOperation,
-                    "The process supervisor did not establish ownership before the deadline.",
+            var decision = await ReadLaunchDecisionAsync(
+                    status,
+                    budget,
                     cancellationToken)
                 .ConfigureAwait(false);
-            if (bytesRead != 1 || decision[0] is not (
+            if (decision.Status is not (
                     OwnershipEstablished or OwnershipMutationActive))
             {
                 throw new InvalidOperationException(
@@ -228,7 +262,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
 
             var ownership = containment.Metadata with
             {
-                OwnershipEstablished = decision[0] == OwnershipEstablished
+                OwnershipEstablished = decision.Status == OwnershipEstablished
             };
             return new OwnedProcessLease(
                 supervisor,
@@ -236,6 +270,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 standardOutput,
                 standardError,
                 budget,
+                mutation,
+                decision.TargetProcessId,
                 ownership);
         }
         catch (Exception startFailure)
@@ -321,6 +357,62 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         return startInfo;
     }
 
+    private static async Task<LaunchDecision> ReadLaunchDecisionAsync(
+        Stream status,
+        TransitionBudget budget,
+        CancellationToken cancellationToken)
+    {
+        var payload = new byte[sizeof(byte) + sizeof(int)];
+        var offset = 0;
+        while (offset < payload.Length)
+        {
+            var read = await WaitWithBudgetAsync(
+                    status.ReadAsync(
+                            payload.AsMemory(offset, payload.Length - offset),
+                            cancellationToken)
+                        .AsTask(),
+                    budget.RemainingOperation,
+                    "The process supervisor did not establish ownership before the deadline.",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                throw new InvalidOperationException(
+                    "The process supervisor closed its ownership channel before target launch.");
+            }
+
+            offset += read;
+        }
+
+        var targetProcessId = BitConverter.ToInt32(payload, sizeof(byte));
+        if (targetProcessId <= 0)
+        {
+            throw new InvalidOperationException(
+                "The process supervisor returned an invalid target identity.");
+        }
+
+        return new LaunchDecision(payload[0], targetProcessId);
+    }
+
+    private async Task WaitForSupervisorExitAsync(
+        bool useCleanupBudget,
+        CancellationToken cancellationToken)
+    {
+        await WaitWithBudgetAsync(
+                _supervisor.WaitForExitAsync(cancellationToken),
+                useCleanupBudget ? _budget.RemainingCleanup : _budget.RemainingOperation,
+                useCleanupBudget
+                    ? "The process supervisor did not reap before its hard deadline."
+                    : "The owned process exceeded its operation deadline.",
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (_mutation.HasFlag(ProcessOwnershipMutation.FailAfterRootReap) &&
+            Interlocked.Exchange(ref _reapFailureInjected, 1) == 0)
+        {
+            throw new InvalidOperationException("Injected root reap failure.");
+        }
+    }
+
     private async Task WaitForTreeQuiescenceAsync(
         bool useCleanupBudget,
         CancellationToken cancellationToken)
@@ -374,10 +466,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             {
                 _supervisor.Kill();
             }
-            await WaitWithBudgetAsync(
-                    _supervisor.WaitForExitAsync(CancellationToken.None),
-                    _budget.RemainingCleanup,
-                    "The process supervisor did not reap before its hard deadline.",
+            await WaitForSupervisorExitAsync(
+                    useCleanupBudget: true,
                     CancellationToken.None)
                 .ConfigureAwait(false);
         }
@@ -523,6 +613,20 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
     }
 
+    private static string ReadCompletedOutput(Task<string> output)
+    {
+        return output.Status == TaskStatus.RanToCompletion
+            ? output.Result
+            : string.Empty;
+    }
+
+    private static IEnumerable<Exception> FlattenFailures(Exception failure)
+    {
+        return failure is AggregateException aggregate
+            ? aggregate.Flatten().InnerExceptions
+            : new[] { failure };
+    }
+
     private sealed record LaunchSpecPayload(
         string FileName,
         IReadOnlyList<string> Arguments,
@@ -540,4 +644,6 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 launchSpec.CloseStandardInput);
         }
     }
+
+    private sealed record LaunchDecision(byte Status, int TargetProcessId);
 }

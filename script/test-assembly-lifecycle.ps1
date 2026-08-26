@@ -16,7 +16,6 @@ param(
     [string]$ResultsDirectory = "artifacts/assembly-lifecycle",
     [string]$DiagnosticsToolPath,
     [switch]$ValidateForensics,
-    [switch]$ValidateObservedChildRelease,
     [switch]$NoBuild
 )
 
@@ -26,6 +25,9 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $solutionPath = Join-Path $repositoryRoot "DownKyi.sln"
 $probeProject = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj"
 $probeAssembly = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe/bin/$Configuration/net10.0/DownKyi.AssemblyLifecycleProbe.dll"
+$processSupervisionAssembly = Join-Path $repositoryRoot (
+    "tools/DownKyi.ProcessSupervision/bin/$Configuration/net10.0/" +
+    "DownKyi.ProcessSupervision.dll")
 $profileIterations = @{
     Local = 1
     PR = 3
@@ -51,27 +53,19 @@ $script:markerReadErrorCount = 0
 $script:markerReadErrorType = $null
 $slowEvidenceCaptureLeadMilliseconds = 1000
 $forensicsSelfTestCaptureDelayMilliseconds = 750
-$residualChildQuiescenceMilliseconds = 500
-$residualChildPollMilliseconds = 25
+$processCleanupGraceSeconds = 5
 $forensicsSelfTestCaptureLeadValidated = $false
 $markerReaderSelfTestRequired = $IsWindows -and
     @("PR", "Main", "Rehearsal", "Flaky").Contains($Profile)
 $markerReaderSelfTestComplete = $false
-$residualChildSelfTestComplete = $false
-$residualChildSelfTest = [ordered]@{
-    required = $IsWindows -and $ValidateForensics
+$processLeaseSelfTestComplete = $false
+$processLeaseSelfTest = [ordered]@{
+    required = [bool]$ValidateForensics
     executed = $false
     passed = $false
-    childObserved = $false
-    identityCaptured = $false
-    evidenceManifestWritten = $false
-    failureClassified = $false
-    transientChildObserved = $false
-    transientChildDrained = $false
-    transientPhasePassed = $false
+    parentExited = $false
+    ownedTreeRejected = $false
     cleanupCompleted = $false
-    redactionValidated = $false
-    observedChildCount = 0
     errorType = $null
 }
 $markerReaderSelfTest = [ordered]@{
@@ -178,7 +172,7 @@ function Protect-ProcessDiagnosticText {
     return $protected
 }
 
-function Get-ProcessTree {
+function Get-DiagnosticProcessTreeSnapshot {
     param(
         [Parameter(Mandatory)]
         [int]$RootProcessId,
@@ -287,177 +281,6 @@ function Get-ProcessTree {
     }
 
     return $result
-}
-
-function Get-ProcessIdentityKey {
-    param(
-        [Parameter(Mandatory)]
-        [object]$Process
-    )
-
-    return "{0}|{1}" -f $Process.processId, $Process.createdAtUtc
-}
-
-function Get-LiveObservedProcess {
-    param(
-        [Parameter(Mandatory)]
-        [object]$ObservedProcess
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$ObservedProcess.createdAtUtc)) {
-        throw "Observed child identity is incomplete and cannot be revalidated."
-    }
-
-    $process = Get-Process `
-        -Id ([int]$ObservedProcess.processId) `
-        -ErrorAction SilentlyContinue
-    if ($null -eq $process) {
-        return $null
-    }
-
-    try {
-        $createdAtUtc = (
-            [DateTimeOffset]$process.StartTime.ToUniversalTime()
-        ).ToString("O")
-        if (-not [string]::Equals(
-                $createdAtUtc,
-                [string]$ObservedProcess.createdAtUtc,
-                [StringComparison]::Ordinal)) {
-            return $null
-        }
-
-        return $ObservedProcess
-    }
-    catch [System.InvalidOperationException] {
-        return $null
-    }
-    finally {
-        $process.Dispose()
-    }
-}
-
-function New-ProcessTreeObservationState {
-    return [pscustomobject]@{
-        observed = [System.Collections.Generic.Dictionary[string, object]]::new(
-            [StringComparer]::Ordinal)
-        sampleCount = 0
-        firstObservationHandled = $false
-        stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    }
-}
-
-function Update-ProcessTreeObservation {
-    param(
-        [Parameter(Mandatory)]
-        [object]$State,
-        [Parameter(Mandatory)]
-        [int]$RootProcessId,
-        [Parameter(Mandatory)]
-        [DateTimeOffset]$NotBeforeUtc,
-        [scriptblock]$OnFirstChildObserved
-    )
-
-    $children = @(
-        Get-ProcessTree `
-            -RootProcessId $RootProcessId `
-            -NotBeforeUtc $NotBeforeUtc
-    )
-    $State.sampleCount++
-    foreach ($child in $children) {
-        $State.observed[(Get-ProcessIdentityKey -Process $child)] = $child
-    }
-    if (-not $State.firstObservationHandled -and $children.Count -gt 0) {
-        $State.firstObservationHandled = $true
-        if ($null -ne $OnFirstChildObserved) {
-            & $OnFirstChildObserved @($children)
-            $State.stopwatch.Restart()
-        }
-    }
-
-    return $children
-}
-
-function Wait-ResidualProcessTree {
-    param(
-        [Parameter(Mandatory)]
-        [int]$RootProcessId,
-        [Parameter(Mandatory)]
-        [DateTimeOffset]$NotBeforeUtc,
-        [Parameter(Mandatory)]
-        [ValidateRange(1, 5000)]
-        [int]$QuiescenceMilliseconds,
-        [Parameter(Mandatory)]
-        [ValidateRange(1, 1000)]
-        [int]$PollMilliseconds,
-        [scriptblock]$OnFirstChildObserved,
-        [object]$ObservationState
-    )
-
-    if ($null -eq $ObservationState) {
-        $ObservationState = New-ProcessTreeObservationState
-    }
-
-    $children = @()
-    $postExitSampleCount = 0
-    do {
-        $children = @(
-            Update-ProcessTreeObservation `
-                -State $ObservationState `
-                -RootProcessId $RootProcessId `
-                -NotBeforeUtc $NotBeforeUtc `
-                -OnFirstChildObserved $OnFirstChildObserved
-        )
-        $postExitSampleCount++
-
-        $knownLiveChildren = @(
-            foreach ($observedChild in $ObservationState.observed.Values) {
-                Get-LiveObservedProcess -ObservedProcess $observedChild
-            }
-        )
-        $childrenByIdentity = [System.Collections.Generic.Dictionary[string, object]]::new(
-            [StringComparer]::Ordinal)
-        foreach ($child in @($children) + @($knownLiveChildren)) {
-            if ($null -ne $child) {
-                $childrenByIdentity[(Get-ProcessIdentityKey -Process $child)] = $child
-            }
-        }
-        $children = @($childrenByIdentity.Values)
-
-        if ($children.Count -eq 0 -and $postExitSampleCount -ge 2) {
-            break
-        }
-
-        if ($ObservationState.stopwatch.ElapsedMilliseconds -ge $QuiescenceMilliseconds) {
-            break
-        }
-
-        Start-Sleep -Milliseconds $PollMilliseconds
-    }
-    while ($true)
-    $ObservationState.stopwatch.Stop()
-
-    $residualKeys = [System.Collections.Generic.HashSet[string]]::new(
-        [StringComparer]::Ordinal)
-    foreach ($child in $children) {
-        $null = $residualKeys.Add((Get-ProcessIdentityKey -Process $child))
-    }
-    $transientChildren = @(
-        foreach ($entry in $ObservationState.observed.GetEnumerator()) {
-            if (-not $residualKeys.Contains($entry.Key)) {
-                $entry.Value
-            }
-        }
-    )
-
-    return [pscustomobject]@{
-        observedChildren = @($ObservationState.observed.Values)
-        transientChildren = $transientChildren
-        residualChildren = $children
-        sampleCount = $ObservationState.sampleCount
-        elapsedMilliseconds = [Math]::Round(
-            $ObservationState.stopwatch.Elapsed.TotalMilliseconds,
-            3)
-    }
 }
 
 function Save-ManagedStack {
@@ -579,7 +402,8 @@ function Save-ProcessEvidence {
         }
     }
 
-    $processTree = @(Get-ProcessTree -RootProcessId $Process.Id)
+    $processTree = @(
+        Get-DiagnosticProcessTreeSnapshot -RootProcessId $Process.Id)
     $stackResult = if ($Process.HasExited -or $SkipManagedStack) {
         [pscustomobject]@{
             available = $false
@@ -610,10 +434,10 @@ function Save-ProcessEvidence {
         Replace([System.IO.Path]::DirectorySeparatorChar, '/')
 }
 
-function Save-ResidualChildEvidence {
+function Save-OwnedTreeEvidence {
     param(
         [Parameter(Mandatory)]
-        [object[]]$Children,
+        [object]$Failure,
         [Parameter(Mandatory)]
         [string]$AssemblyName,
         [Parameter(Mandatory)]
@@ -625,81 +449,14 @@ function Save-ResidualChildEvidence {
     $directory = Join-Path $evidenceRoot (
         "$AssemblyName/iteration-{0:D4}/{1}-residual-children" -f $Iteration, $Phase)
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
-    $childEvidence = @()
-    $captureErrors = @()
-    foreach ($child in $Children) {
-        $captureState = "exited-before-capture"
-        $processEvidencePath = $null
-        $captureErrorType = $null
-        $childProcess = $null
-        try {
-            $childProcess = Get-Process `
-                -Id $child.processId `
-                -ErrorAction SilentlyContinue
-            if ($null -eq $childProcess) {
-                $captureState = "exited-before-capture"
-            }
-            else {
-                $actualStart = [DateTimeOffset]$childProcess.StartTime.ToUniversalTime()
-                $expectedStart = if (
-                    [string]::IsNullOrWhiteSpace([string]$child.createdAtUtc)
-                ) {
-                    $actualStart
-                }
-                else {
-                    [DateTimeOffset]::Parse(
-                        $child.createdAtUtc,
-                        [System.Globalization.CultureInfo]::InvariantCulture)
-                }
-                if ([Math]::Abs(($actualStart - $expectedStart).TotalSeconds) -gt 1) {
-                    $captureState = "process-identity-changed"
-                    $captureErrorType = "ProcessIdentityChanged"
-                }
-                else {
-                    $processEvidencePath = Save-ProcessEvidence `
-                        -Process $childProcess `
-                        -AssemblyName $AssemblyName `
-                        -Iteration $Iteration `
-                        -Phase $Phase `
-                        -Reason "residual-child-$($child.processId)" `
-                        -SkipManagedStack:(
-                            [string]$child.name -notmatch
-                                '^(?:dotnet|pwsh|testhost|xunit|DownKyi).*\.exe$')
-                    $captureState = "captured"
-                }
-            }
-        }
-        catch [System.InvalidOperationException] {
-            $captureState = "exited-before-capture"
-        }
-        catch {
-            $captureState = "capture-failed"
-            $captureErrorType = $_.Exception.GetType().Name
-        }
-        finally {
-            if ($null -ne $childProcess) {
-                $childProcess.Dispose()
-            }
-        }
-
-        if ($null -ne $captureErrorType) {
-            $captureErrors += $captureErrorType
-        }
-        $childEvidence += [pscustomobject]@{
-            processId = $child.processId
-            createdAtUtc = $child.createdAtUtc
-            captureState = $captureState
-            processEvidencePath = $processEvidencePath
-            errorType = $captureErrorType
-        }
-    }
-
     $manifest = [ordered]@{
         capturedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
-        reason = "residual-child-process"
-        observedChildren = $Children
-        childEvidence = $childEvidence
-        captureErrors = @($captureErrors | Select-Object -Unique)
+        reason = "owned-process-tree-not-quiescent"
+        failureKind = $Failure.Kind.ToString()
+        supervisorProcessId = $Failure.SupervisorProcessId
+        targetProcessId = $Failure.TargetProcessId
+        treeQuiescent = $Failure.TreeQuiescent
+        ownership = $Failure.Ownership
     }
     $manifestPath = Join-Path $directory "residual-children.json"
     $manifest |
@@ -708,18 +465,7 @@ function Save-ResidualChildEvidence {
     return [pscustomobject]@{
         evidencePath = [System.IO.Path]::GetRelativePath($runRoot, $directory).
             Replace([System.IO.Path]::DirectorySeparatorChar, '/')
-        capturedChildCount = @(
-            $childEvidence | Where-Object captureState -eq "captured"
-        ).Count
-        exitedBeforeCaptureCount = @(
-            $childEvidence | Where-Object captureState -eq "exited-before-capture"
-        ).Count
-        errorType = if ($captureErrors.Count -eq 0) {
-            $null
-        }
-        else {
-            [string]$captureErrors[0]
-        }
+        errorType = $null
     }
 }
 
@@ -857,7 +603,8 @@ function Invoke-IsolatedProcess {
         [ValidateRange(0, 5000)]
         [int]$EvidenceCaptureDelayMilliseconds = 0,
         [switch]$AuthorizeRepositoryTestAssembly,
-        [switch]$ReleaseObservedChildren,
+        [ValidateRange(1, 3600)]
+        [int]$OperationTimeoutSeconds = $PhaseTimeoutSeconds,
         [double]$EvidenceThresholdSeconds = $SlowPhaseThresholdSeconds
     )
 
@@ -867,23 +614,14 @@ function Invoke-IsolatedProcess {
     $stdoutPath = Join-Path $phaseDirectory "$Phase.stdout.txt"
     $stderrPath = Join-Path $phaseDirectory "$Phase.stderr.txt"
 
-    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $FileName
-    $startInfo.WorkingDirectory = $repositoryRoot
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardInput = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    foreach ($argument in $Arguments) {
-        $startInfo.ArgumentList.Add($argument)
-    }
+    $launchEnvironment = [Collections.Generic.Dictionary[string, string]]::new(
+        [StringComparer]::Ordinal)
     foreach ($entry in $Environment.GetEnumerator()) {
-        $startInfo.Environment[$entry.Key] = [string]$entry.Value
+        $launchEnvironment[$entry.Key] = [string]$entry.Value
     }
 
     $evidenceCaptureLease = if ($HoldForEvidenceCapture) {
-        New-EvidenceCaptureLease -StartInfo $startInfo
+        New-EvidenceCaptureLease -Environment $launchEnvironment
     }
     else {
         $null
@@ -897,17 +635,31 @@ function Invoke-IsolatedProcess {
     else {
         $null
     }
-
-    $observedChildReleaseLease = if ($ReleaseObservedChildren) {
-        New-ObservedChildReleaseLease -StartInfo $startInfo
+    if ($null -ne $authorization) {
+        $authorizationStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+        $authorizationStartInfo.FileName = $FileName
+        foreach ($argument in $Arguments) {
+            $authorizationStartInfo.ArgumentList.Add($argument)
+        }
+        Set-DownKyiTestProcessAuthorization `
+            -Authorization $authorization `
+            -StartInfo $authorizationStartInfo
+        $launchEnvironment["DOWNKYI_CENTRAL_TEST_PIPE"] =
+            $authorizationStartInfo.Environment["DOWNKYI_CENTRAL_TEST_PIPE"]
+        $launchEnvironment["DOWNKYI_CENTRAL_TEST_TOKEN"] =
+            $authorizationStartInfo.Environment["DOWNKYI_CENTRAL_TEST_TOKEN"]
     }
-    else {
-        $null
-    }
 
-    $process = [System.Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
-    $processStarted = $false
+    $launchSpec = [DownKyi.ProcessSupervision.LaunchSpec]::new(
+        $FileName,
+        [string[]]$Arguments,
+        $repositoryRoot,
+        $launchEnvironment,
+        $true)
+    $budget = [DownKyi.ProcessSupervision.TransitionBudget]::Start(
+        [TimeSpan]::FromSeconds($OperationTimeoutSeconds),
+        [TimeSpan]::FromSeconds($processCleanupGraceSeconds))
+    $lease = $null
     $operationResult = $null
     $operationFailure = $null
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -928,83 +680,62 @@ function Invoke-IsolatedProcess {
     $residualChildEvidenceErrorType = $null
     $exitEvidenceCaptured = $false
     $teardownObservedAt = $null
-    $onFirstChildObserved = if ($null -ne $observedChildReleaseLease) {
-        ({ Complete-ObservedChildReleaseLease -Lease $observedChildReleaseLease }).GetNewClosure()
-    }
-    else {
-        $null
-    }
-    $childProcessObservationState = if ($null -ne $observedChildReleaseLease) {
-        New-ProcessTreeObservationState
-    }
-    else {
-        $null
-    }
     $evidenceCaptureThresholdSeconds = [Math]::Max(
         0,
         $EvidenceThresholdSeconds - ($slowEvidenceCaptureLeadMilliseconds / 1000))
     try {
+        $lease = [DownKyi.ProcessSupervision.OwnedProcessLease]::StartAsync(
+            $launchSpec,
+            $budget).GetAwaiter().GetResult()
         if ($null -ne $authorization) {
-            Set-DownKyiTestProcessAuthorization `
-                -Authorization $authorization `
-                -StartInfo $startInfo
-        }
-        if (-not $process.Start()) {
-            throw "Process did not start for $AssemblyName/$Phase."
-        }
-        $processStarted = $true
-        if ($null -ne $authorization) {
-            $authorization.Item2.ChildProcessId = $process.Id
+            $authorization.Item2.ChildProcessId = $lease.TargetProcessId
+            Complete-DownKyiTestProcessAuthorization -Authorization $authorization
         }
         if ($null -ne $evidenceCaptureLease) {
             Start-EvidenceCaptureLease -Lease $evidenceCaptureLease
         }
-        if ($null -ne $observedChildReleaseLease) {
-            Start-ObservedChildReleaseLease -Lease $observedChildReleaseLease
-        }
-        if ($null -ne $authorization) {
-            Complete-DownKyiTestProcessAuthorization -Authorization $authorization
-        }
 
-        $processId = $process.Id
-        $processStartedAt = [DateTimeOffset]$process.StartTime.ToUniversalTime()
-        $process.StandardInput.Close()
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-        while (-not $process.WaitForExit(25)) {
-            if ($null -ne $childProcessObservationState) {
-                $null = Update-ProcessTreeObservation `
-                    -State $childProcessObservationState `
-                    -RootProcessId $processId `
-                    -NotBeforeUtc $processStartedAt `
-                    -OnFirstChildObserved $onFirstChildObserved
-            }
+        $processId = $lease.TargetProcessId
+        $waitTask = $lease.WaitAsync()
+        while (-not $waitTask.IsCompleted) {
             if (-not $slowEvidenceAttempted -and
                 $stopwatch.Elapsed.TotalSeconds -ge $evidenceCaptureThresholdSeconds) {
                 $slowEvidenceTriggeredBeforeThreshold =
                     $stopwatch.Elapsed.TotalSeconds -lt $EvidenceThresholdSeconds
                 $slowEvidenceAttempted = $true
                 $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                $diagnosticProcess = $null
                 try {
                     if ($EvidenceCaptureDelayMilliseconds -gt 0) {
                         Start-Sleep -Milliseconds $EvidenceCaptureDelayMilliseconds
                     }
-                    $evidencePath = Save-ProcessEvidence `
-                        -Process $process `
-                        -AssemblyName $AssemblyName `
-                        -Iteration $Iteration `
-                        -Phase $Phase `
-                        -Reason "slow-phase"
-                    $evidence += $evidencePath
-                    $slowEvidence += $evidencePath
-                    $slowEvidenceCaptured = $true
-                    $slowEvidenceStatus = "captured"
+                    $diagnosticProcess = Get-Process `
+                        -Id $processId `
+                        -ErrorAction SilentlyContinue
+                    if ($null -eq $diagnosticProcess) {
+                        $slowEvidenceStatus = "process-exited-before-capture"
+                    }
+                    else {
+                        $evidencePath = Save-ProcessEvidence `
+                            -Process $diagnosticProcess `
+                            -AssemblyName $AssemblyName `
+                            -Iteration $Iteration `
+                            -Phase $Phase `
+                            -Reason "slow-phase"
+                        $evidence += $evidencePath
+                        $slowEvidence += $evidencePath
+                        $slowEvidenceCaptured = $true
+                        $slowEvidenceStatus = "captured"
+                    }
                 }
                 catch {
                     $slowEvidenceStatus = "capture-failed"
                     $slowEvidenceErrorType = $_.Exception.GetType().Name
                 }
                 finally {
+                    if ($null -ne $diagnosticProcess) {
+                        $diagnosticProcess.Dispose()
+                    }
                     if ($null -ne $evidenceCaptureLease) {
                         try {
                             Complete-EvidenceCaptureLease -Lease $evidenceCaptureLease
@@ -1037,17 +768,26 @@ function Invoke-IsolatedProcess {
                     ([DateTimeOffset]::UtcNow - $teardownObservedAt).TotalSeconds -ge
                         $ExitThresholdSeconds) {
                     $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                    $diagnosticProcess = $null
                     try {
-                        $evidencePath = Save-ProcessEvidence `
-                            -Process $process `
-                            -AssemblyName $AssemblyName `
-                            -Iteration $Iteration `
-                            -Phase $Phase `
-                            -Reason "slow-exit-after-teardown"
-                        $evidence += $evidencePath
-                        $exitEvidence += $evidencePath
+                        $diagnosticProcess = Get-Process `
+                            -Id $processId `
+                            -ErrorAction SilentlyContinue
+                        if ($null -ne $diagnosticProcess) {
+                            $evidencePath = Save-ProcessEvidence `
+                                -Process $diagnosticProcess `
+                                -AssemblyName $AssemblyName `
+                                -Iteration $Iteration `
+                                -Phase $Phase `
+                                -Reason "slow-exit-after-teardown"
+                            $evidence += $evidencePath
+                            $exitEvidence += $evidencePath
+                        }
                     }
                     finally {
+                        if ($null -ne $diagnosticProcess) {
+                            $diagnosticProcess.Dispose()
+                        }
                         $captureStopwatch.Stop()
                         $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
                     }
@@ -1055,28 +795,7 @@ function Invoke-IsolatedProcess {
                 }
             }
 
-            if ($stopwatch.Elapsed.TotalSeconds -ge $PhaseTimeoutSeconds) {
-                $timedOut = $true
-                $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-                try {
-                    $evidencePath = Save-ProcessEvidence `
-                        -Process $process `
-                        -AssemblyName $AssemblyName `
-                        -Iteration $Iteration `
-                        -Phase $Phase `
-                        -Reason "timeout"
-                    $evidence += $evidencePath
-                    $timeoutEvidence += $evidencePath
-                }
-                finally {
-                    $captureStopwatch.Stop()
-                    $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
-                }
-                Stop-DownKyiOwnedProcess `
-                    -Process $process `
-                    -Started $processStarted
-                break
-            }
+            Start-Sleep -Milliseconds 25
         }
 
         $stopwatch.Stop()
@@ -1087,10 +806,28 @@ function Invoke-IsolatedProcess {
             }
         }
 
-        $processExitedAtUnixMs = ([DateTimeOffset]$process.ExitTime.ToUniversalTime()).
-            ToUnixTimeMilliseconds()
-        $stdout = $stdoutTask.GetAwaiter().GetResult()
-        $stderr = $stderrTask.GetAwaiter().GetResult()
+        $outcome = $null
+        $ownedFailure = $null
+        try {
+            $outcome = $waitTask.GetAwaiter().GetResult()
+        }
+        catch [DownKyi.ProcessSupervision.OwnedProcessExecutionException] {
+            $ownedFailure = $_.Exception
+        }
+
+        $processExitedAtUnixMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        $stdout = if ($null -ne $outcome) {
+            $outcome.StandardOutput
+        }
+        else {
+            $ownedFailure.Failure.StandardOutput
+        }
+        $stderr = if ($null -ne $outcome) {
+            $outcome.StandardError
+        }
+        else {
+            $ownedFailure.Failure.StandardError
+        }
         [System.IO.File]::WriteAllText(
             $stdoutPath,
             $stdout,
@@ -1099,24 +836,40 @@ function Invoke-IsolatedProcess {
             $stderrPath,
             $stderr,
             [System.Text.UTF8Encoding]::new($false))
-        if ($null -ne $childProcessObservationState) {
-            $childProcessObservationState.stopwatch.Restart()
+        $ownedTreeQuiescent = if ($null -ne $outcome) {
+            $outcome.TreeQuiescent
         }
-        $childProcessObservation = Wait-ResidualProcessTree `
-                -RootProcessId $processId `
-                -NotBeforeUtc $processStartedAt `
-                -QuiescenceMilliseconds $residualChildQuiescenceMilliseconds `
-                -PollMilliseconds $residualChildPollMilliseconds `
-                -OnFirstChildObserved $onFirstChildObserved `
-                -ObservationState $childProcessObservationState
-        $observedChildren = @($childProcessObservation.observedChildren)
-        $transientChildren = @($childProcessObservation.transientChildren)
-        $residualChildren = @($childProcessObservation.residualChildren)
+        else {
+            $ownedFailure.Failure.TreeQuiescent
+        }
+        $ownedFailureKind = if ($null -eq $ownedFailure) {
+            $null
+        }
+        else {
+            $ownedFailure.Failure.Kind.ToString()
+        }
+        $timedOut = $ownedFailureKind -in @(
+            "OperationDeadlineExceeded",
+            "StreamDrainDeadlineExceeded")
+        $residualChildren = if (-not $ownedTreeQuiescent -and
+            $ownedFailureKind -eq "OwnedTreeNotQuiescent") {
+            @([pscustomobject]@{
+                processId = $null
+                parentProcessId = $null
+                name = "owned-process-tree"
+                createdAtUtc = $null
+                containmentId = $ownedFailure.Failure.Ownership.ContainmentId
+                containmentKind = $ownedFailure.Failure.Ownership.ContainmentKind.ToString()
+            })
+        }
+        else {
+            @()
+        }
         if ($residualChildren.Count -gt 0) {
             $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
             try {
-                $residualCapture = Save-ResidualChildEvidence `
-                    -Children $residualChildren `
+                $residualCapture = Save-OwnedTreeEvidence `
+                    -Failure $ownedFailure.Failure `
                     -AssemblyName $AssemblyName `
                     -Iteration $Iteration `
                     -Phase $Phase
@@ -1139,7 +892,7 @@ function Invoke-IsolatedProcess {
             iteration = $Iteration
             phase = $Phase
             processId = $processId
-            exitCode = $process.ExitCode
+            exitCode = if ($null -ne $outcome) { $outcome.ExitCode } else { 1 }
             durationMs = [Math]::Round($stopwatch.Elapsed.TotalMilliseconds, 3)
             timedOut = $timedOut
             stdout = $stdout
@@ -1148,13 +901,11 @@ function Invoke-IsolatedProcess {
                 Replace([System.IO.Path]::DirectorySeparatorChar, '/')
             stderrPath = [System.IO.Path]::GetRelativePath($runRoot, $stderrPath).
                 Replace([System.IO.Path]::DirectorySeparatorChar, '/')
-            observedChildren = $observedChildren
-            transientChildren = $transientChildren
+            observedChildren = @()
+            transientChildren = @()
             residualChildren = $residualChildren
-            childProcessObservationSampleCount =
-                $childProcessObservation.sampleCount
-            childProcessObservationDurationMs =
-                $childProcessObservation.elapsedMilliseconds
+            childProcessObservationSampleCount = 0
+            childProcessObservationDurationMs = 0.0
             residualChildEvidence = @($residualChildEvidence)
             residualChildEvidenceStatus = $residualChildEvidenceStatus
             residualChildEvidenceErrorType = $residualChildEvidenceErrorType
@@ -1168,6 +919,21 @@ function Invoke-IsolatedProcess {
             slowEvidenceErrorType = $slowEvidenceErrorType
             slowEvidenceTriggeredBeforeThreshold =
                 $slowEvidenceTriggeredBeforeThreshold
+            ownedTreeQuiescent = $ownedTreeQuiescent
+            ownedProcessFailureKind = $ownedFailureKind
+            ownedProcessCleanupFailures = @(
+                if ($null -ne $ownedFailure) {
+                    $ownedFailure.CleanupFailures | ForEach-Object {
+                        $_.GetType().Name
+                    }
+                }
+            )
+            processOwnership = if ($null -ne $outcome) {
+                $outcome.Ownership
+            }
+            else {
+                $ownedFailure.Failure.Ownership
+            }
             processExitedAtUnixMs = $processExitedAtUnixMs
             observedAtUnixMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         }
@@ -1178,7 +944,9 @@ function Invoke-IsolatedProcess {
 
     $cleanupFailures = [Collections.Generic.List[Exception]]::new()
     try {
-        Stop-DownKyiOwnedProcess -Process $process -Started $processStarted
+        if ($null -ne $lease) {
+            $lease.DisposeAsync().AsTask().GetAwaiter().GetResult()
+        }
     }
     catch {
         $cleanupFailures.Add($_.Exception)
@@ -1190,24 +958,11 @@ function Invoke-IsolatedProcess {
         $cleanupFailures.Add($_.Exception)
     }
     try {
-        Close-ObservedChildReleaseLease -Lease $observedChildReleaseLease
-    }
-    catch {
-        $cleanupFailures.Add($_.Exception)
-    }
-    try {
         Close-DownKyiTestProcessAuthorization -Authorization $authorization
     }
     catch {
         $cleanupFailures.Add($_.Exception)
     }
-    try {
-        $process.Dispose()
-    }
-    catch {
-        $cleanupFailures.Add($_.Exception)
-    }
-
     if ($null -ne $operationFailure) {
         if ($cleanupFailures.Count -gt 0) {
             throw [AggregateException]::new(
@@ -1292,13 +1047,13 @@ function Invoke-XunitAutomatedPhase {
 function New-EvidenceCaptureLease {
     param(
         [Parameter(Mandatory)]
-        [System.Diagnostics.ProcessStartInfo]$StartInfo
+        [System.Collections.IDictionary]$Environment
     )
 
     $pipe = [IO.Pipes.AnonymousPipeServerStream]::new(
         [IO.Pipes.PipeDirection]::Out,
         [IO.HandleInheritability]::Inheritable)
-    $StartInfo.Environment["DOWNKYI_FORENSICS_CAPTURE_PIPE"] =
+    $Environment["DOWNKYI_FORENSICS_CAPTURE_PIPE"] =
         $pipe.GetClientHandleAsString()
     return [pscustomobject]@{
         Pipe = $pipe
@@ -1352,137 +1107,6 @@ function Close-EvidenceCaptureLease {
     }
 }
 
-function New-ObservedChildReleaseLease {
-    param(
-        [Parameter(Mandatory)]
-        [System.Diagnostics.ProcessStartInfo]$StartInfo
-    )
-
-    $pipeName = "dkl-$([Guid]::NewGuid().ToString('N').Substring(0, 16))"
-    $pipe = [IO.Pipes.NamedPipeServerStream]::new(
-        $pipeName,
-        [IO.Pipes.PipeDirection]::InOut,
-        1,
-        [IO.Pipes.PipeTransmissionMode]::Byte,
-        [IO.Pipes.PipeOptions]::Asynchronous)
-    $StartInfo.Environment["DOWNKYI_TRANSIENT_CHILD_RELEASE_PIPE"] =
-        $pipeName
-    $StartInfo.Environment["DOWNKYI_TRANSIENT_CHILD_PARENT_WAIT"] = "1"
-    return [pscustomobject]@{
-        Pipe = $pipe
-        ConnectionTask = $null
-        Started = $false
-        Closed = $false
-    }
-}
-
-function Start-ObservedChildReleaseLease {
-    param(
-        [Parameter(Mandatory)]
-        [object]$Lease
-    )
-
-    if ($Lease.Started -or $Lease.Closed) {
-        throw "Observed-child release lease is not startable."
-    }
-
-    $Lease.ConnectionTask = $Lease.Pipe.WaitForConnectionAsync()
-    $Lease.Started = $true
-}
-
-function Complete-ObservedChildReleaseLease {
-    param(
-        [Parameter(Mandatory)]
-        [object]$Lease
-    )
-
-    if (-not $Lease.Started -or $Lease.Closed) {
-        throw "Observed-child release lease is not completable."
-    }
-
-    try {
-        if (-not $Lease.ConnectionTask.Wait(5000)) {
-            throw "Observed child did not connect to its release owner."
-        }
-        $releaseValue = if (
-            [Environment]::GetEnvironmentVariable(
-                "DOWNKYI_TEST_MUTATE_OBSERVED_CHILD_RELEASE") -eq "1") {
-            0x00
-        }
-        else {
-            0xD7
-        }
-        $Lease.Pipe.WriteByte($releaseValue)
-        $Lease.Pipe.Flush()
-        $acknowledgement = [byte[]]::new(1)
-        $acknowledgementTask = $Lease.Pipe.ReadAsync(
-            $acknowledgement,
-            0,
-            $acknowledgement.Length)
-        if (-not $acknowledgementTask.Wait(5000) -or
-            $acknowledgementTask.Result -ne 1 -or
-            $acknowledgement[0] -ne 0xA7) {
-            throw "Observed child did not acknowledge its owner-controlled release."
-        }
-    }
-    finally {
-        $Lease.Closed = $true
-        $Lease.Pipe.Dispose()
-    }
-}
-
-function Close-ObservedChildReleaseLease {
-    param(
-        [object]$Lease
-    )
-
-    if ($null -ne $Lease -and -not $Lease.Closed) {
-        $Lease.Closed = $true
-        $Lease.Pipe.Dispose()
-    }
-}
-
-function Invoke-ObservedChildReleaseSelfTest {
-    $probe = Invoke-IsolatedProcess `
-        -AssemblyName "Gate.TransientChild" `
-        -Iteration 1 `
-        -Phase "transient-child-probe" `
-        -FileName "dotnet" `
-        -Arguments @(
-            $probeAssembly,
-            "--spawn-residual-child-ms",
-            "250"
-        ) `
-        -ReleaseObservedChildren
-    $phase = New-ProcessPhaseResult -ProcessResult $probe
-    $payload = $probe.stdout | ConvertFrom-Json -ErrorAction Stop
-    $expectedProcessId = [int]$payload.ChildProcessId
-    $matchingObservation = @(
-        $probe.observedChildren |
-            Where-Object processId -eq $expectedProcessId
-    )
-    $matchingDrain = @(
-        $probe.transientChildren |
-            Where-Object processId -eq $expectedProcessId
-    )
-    $matchingResidual = @(
-        $probe.residualChildren |
-            Where-Object processId -eq $expectedProcessId
-    )
-
-    return [pscustomobject]@{
-        probe = $probe
-        phase = $phase
-        observed = $matchingObservation.Count -eq 1
-        drained = $matchingDrain.Count -eq 1 -and
-            $matchingResidual.Count -eq 0
-        passed = $phase.success -and
-            $matchingObservation.Count -eq 1 -and
-            $matchingDrain.Count -eq 1 -and
-            $matchingResidual.Count -eq 0
-    }
-}
-
 $reporterContractSelfTestPassed = Test-XunitReporterContractMutation
 if (-not $reporterContractSelfTestPassed) {
     throw "xUnit reporter contract mutation self-test did not fail closed."
@@ -1493,6 +1117,7 @@ function Test-JsonProtocol {
         [Parameter(Mandatory)]
         [string]$Phase,
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string]$Content
     )
 
@@ -1557,8 +1182,11 @@ function New-ProcessPhaseResult {
     $stderrClean = [string]::IsNullOrWhiteSpace($ProcessResult.stderr)
     $slowEvidenceComplete = -not $ProcessResult.slowThresholdExceeded -or
         $ProcessResult.slowEvidenceStatus -eq "captured"
+    $ownedCleanupComplete = $ProcessResult.ownedProcessCleanupFailures.Count -eq 0
     $success = $ProcessResult.exitCode -eq 0 -and
         -not $ProcessResult.timedOut -and
+        $ProcessResult.ownedTreeQuiescent -and
+        $ownedCleanupComplete -and
         $ProcessResult.residualChildren.Count -eq 0 -and
         $protocolValid -and
         $stderrClean -and
@@ -1569,6 +1197,9 @@ function New-ProcessPhaseResult {
     }
     elseif ($ProcessResult.timedOut) {
         "Timeout"
+    }
+    elseif (-not $ownedCleanupComplete) {
+        "ProcessCleanupFailed"
     }
     elseif (-not $slowEvidenceComplete) {
         "SlowEvidenceMissing"
@@ -1587,6 +1218,9 @@ function New-ProcessPhaseResult {
     }
     elseif ($failureType -eq "ResidualChildProcess") {
         $ProcessResult.residualChildEvidenceErrorType
+    }
+    elseif ($failureType -eq "ProcessCleanupFailed") {
+        [string]$ProcessResult.ownedProcessCleanupFailures[0]
     }
     else {
         $null
@@ -1630,6 +1264,10 @@ function New-ProcessPhaseResult {
         slowEvidenceErrorType = $ProcessResult.slowEvidenceErrorType
         slowEvidenceTriggeredBeforeThreshold =
             $ProcessResult.slowEvidenceTriggeredBeforeThreshold
+        ownedTreeQuiescent = $ProcessResult.ownedTreeQuiescent
+        ownedProcessFailureKind = $ProcessResult.ownedProcessFailureKind
+        ownedProcessCleanupFailures = @($ProcessResult.ownedProcessCleanupFailures)
+        processOwnership = $ProcessResult.processOwnership
     }
 }
 
@@ -1732,6 +1370,10 @@ if (-not $NoBuild) {
 if (-not (Test-Path -LiteralPath $probeAssembly -PathType Leaf)) {
     throw "Assembly lifecycle probe was not built: $probeAssembly"
 }
+if (-not (Test-Path -LiteralPath $processSupervisionAssembly -PathType Leaf)) {
+    throw "Process supervision assembly was not built: $processSupervisionAssembly"
+}
+[Reflection.Assembly]::LoadFrom($processSupervisionAssembly) | Out-Null
 
 $allTestProjects = @(
     Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "tests") `
@@ -1836,234 +1478,141 @@ if ($ValidateForensics) {
             $selfTest.slowEvidenceTriggeredBeforeThreshold
     }
 
+    $processLeaseSelfTestStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $processLeaseSelfTest.executed = $true
+    $processLeaseProbe = $null
+    $processLeaseProbePhase = $null
+    $processLeaseReadyPath = Join-Path $rawRoot "Gate.ProcessLease/parent-exit.json"
+    try {
+        New-Item -ItemType Directory -Force `
+            -Path ([System.IO.Path]::GetDirectoryName($processLeaseReadyPath)) |
+            Out-Null
+        $processLeaseProbe = Invoke-IsolatedProcess `
+            -AssemblyName "Gate.ProcessLease" `
+            -Iteration 1 `
+            -Phase "owned-tree-self-test" `
+            -FileName "dotnet" `
+            -Arguments @(
+                $processSupervisionAssembly,
+                "--exit-with-owned-descendant",
+                $processLeaseReadyPath
+            ) `
+            -OperationTimeoutSeconds 1 `
+            -EvidenceThresholdSeconds 60
+        $processLeaseProbePhase = New-ProcessPhaseResult `
+            -ProcessResult $processLeaseProbe
+        $processLeaseSelfTest.parentExited =
+            Test-Path -LiteralPath $processLeaseReadyPath -PathType Leaf
+        $processLeaseSelfTest.ownedTreeRejected =
+            -not $processLeaseProbePhase.success -and
+            $processLeaseProbePhase.failureType -eq "ResidualChildProcess" -and
+            $processLeaseProbe.ownedProcessFailureKind -eq "OwnedTreeNotQuiescent"
+        $processLeaseSelfTest.cleanupCompleted =
+            $processLeaseProbe.ownedProcessCleanupFailures.Count -eq 0
+    }
+    catch {
+        $processLeaseSelfTest.errorType = $_.Exception.GetType().Name
+    }
+    finally {
+        Remove-Item -LiteralPath $processLeaseReadyPath -Force -ErrorAction SilentlyContinue
+        $processLeaseSelfTestStopwatch.Stop()
+    }
+
+    $processLeaseSelfTest.passed =
+        $processLeaseSelfTest.parentExited -and
+        $processLeaseSelfTest.ownedTreeRejected -and
+        $processLeaseSelfTest.cleanupCompleted -and
+        $null -eq $processLeaseSelfTest.errorType
+    $processLeaseSelfTestComplete = $processLeaseSelfTest.passed
+    if (-not $processLeaseSelfTestComplete -and
+        $null -eq $processLeaseSelfTest.errorType) {
+        $processLeaseSelfTest.errorType = "ContractNotSatisfied"
+    }
+
+    $phaseResults += [pscustomobject]@{
+        assembly = "Gate.ProcessLease"
+        iteration = 1
+        phase = "owned-tree-self-test"
+        processId = if ($null -eq $processLeaseProbe) {
+            $PID
+        }
+        else {
+            $processLeaseProbe.processId
+        }
+        success = $processLeaseSelfTestComplete
+        failureType = if ($processLeaseSelfTestComplete) {
+            $null
+        }
+        else {
+            "ProcessLeaseSelfTestFailed"
+        }
+        errorType = $processLeaseSelfTest.errorType
+        exitCode = if ($processLeaseSelfTestComplete) { 0 } else { 1 }
+        durationMs = [Math]::Round(
+            $processLeaseSelfTestStopwatch.Elapsed.TotalMilliseconds,
+            3)
+        timedOut = $false
+        stdoutPolluted = $false
+        stderrPolluted = $false
+        unexpectedOutput = @()
+        observedChildCount = 0
+        observedChildren = @()
+        transientChildCount = 0
+        transientChildren = @()
+        residualChildCount = 0
+        residualChildren = @()
+        childProcessObservationSampleCount = 0
+        childProcessObservationDurationMs = 0.0
+        residualChildEvidence = @(
+            if ($null -ne $processLeaseProbe) {
+                $processLeaseProbe.residualChildEvidence
+            }
+        )
+        residualChildEvidenceStatus = if ($null -eq $processLeaseProbe) {
+            "not-triggered"
+        }
+        else {
+            $processLeaseProbe.residualChildEvidenceStatus
+        }
+        residualChildEvidenceErrorType = if ($null -eq $processLeaseProbe) {
+            $null
+        }
+        else {
+            $processLeaseProbe.residualChildEvidenceErrorType
+        }
+        stdoutPath = if ($null -eq $processLeaseProbe) {
+            $null
+        }
+        else {
+            $processLeaseProbe.stdoutPath
+        }
+        stderrPath = if ($null -eq $processLeaseProbe) {
+            $null
+        }
+        else {
+            $processLeaseProbe.stderrPath
+        }
+        evidence = @(
+            if ($null -ne $processLeaseProbe) {
+                $processLeaseProbe.evidence
+            }
+        )
+        slowEvidence = @()
+        exitEvidence = @()
+        timeoutEvidence = @()
+        diagnosticCaptureDurationMs = if ($null -eq $processLeaseProbe) {
+            0.0
+        }
+        else {
+            $processLeaseProbe.diagnosticCaptureDurationMs
+        }
+        slowThresholdExceeded = $false
+        slowEvidenceStatus = "not-applicable"
+        slowEvidenceErrorType = $null
+        slowEvidenceTriggeredBeforeThreshold = $false
+    }
+
     if ($IsWindows) {
-        $residualChildSelfTestStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-        $residualChildSelfTest.executed = $true
-        $residualProbe = $null
-        $residualProbePhase = $null
-        $transientProbe = $null
-        $transientProbePhase = $null
-        $observedResidualChildren = @()
-        try {
-            $residualProbe = Invoke-IsolatedProcess `
-                -AssemblyName "Gate.ResidualChild" `
-                -Iteration 1 `
-                -Phase "residual-child-probe" `
-                -FileName "dotnet" `
-                -Arguments @(
-                    $probeAssembly,
-                    "--spawn-residual-child-ms",
-                    "20000"
-                )
-            $residualProbePhase = New-ProcessPhaseResult -ProcessResult $residualProbe
-            $residualPayload = $residualProbe.stdout | ConvertFrom-Json -ErrorAction Stop
-            $expectedChildProcessId = [int]$residualPayload.ChildProcessId
-            $observedResidualChildren = @($residualProbe.residualChildren)
-            $matchingChild = @(
-                $observedResidualChildren |
-                    Where-Object processId -eq $expectedChildProcessId
-            )
-            $residualChildSelfTest.observedChildCount =
-                $observedResidualChildren.Count
-            $residualChildSelfTest.childObserved = $matchingChild.Count -eq 1
-            $residualChildSelfTest.identityCaptured =
-                $matchingChild.Count -eq 1 -and
-                -not [string]::IsNullOrWhiteSpace($matchingChild[0].name) -and
-                -not [string]::IsNullOrWhiteSpace($matchingChild[0].createdAtUtc)
-            $residualChildSelfTest.evidenceManifestWritten =
-                $residualProbe.residualChildEvidenceStatus -eq "captured" -and
-                @(
-                    foreach ($relativePath in $residualProbe.residualChildEvidence) {
-                        $manifestPath = Join-Path $runRoot $relativePath (
-                            "residual-children.json")
-                        if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-                            $manifestPath
-                        }
-                    }
-                ).Count -gt 0
-            $residualChildSelfTest.failureClassified =
-                -not $residualProbePhase.success -and
-                $residualProbePhase.failureType -eq "ResidualChildProcess"
-
-            $transientSelfTest = Invoke-ObservedChildReleaseSelfTest
-            $transientProbe = $transientSelfTest.probe
-            $transientProbePhase = $transientSelfTest.phase
-            $residualChildSelfTest.transientChildObserved =
-                $transientSelfTest.observed
-            $residualChildSelfTest.transientChildDrained =
-                $transientSelfTest.drained
-            $residualChildSelfTest.transientPhasePassed =
-                $transientSelfTest.passed
-            $redactionSample = (
-                "$repositoryRoot https://example.invalid/private " +
-                "SESSDATA=example-cookie-value " +
-                "--rpc-secret `"example secret value`"")
-            $redactedSample = Protect-ProcessDiagnosticText -Value $redactionSample
-            $residualChildSelfTest.redactionValidated =
-                $redactedSample.Contains(
-                    "<repository>",
-                    [StringComparison]::Ordinal) -and
-                $redactedSample.Contains("<url>", [StringComparison]::Ordinal) -and
-                $redactedSample.Contains(
-                    "SESSDATA=<redacted>",
-                    [StringComparison]::Ordinal) -and
-                $redactedSample.Contains(
-                    "--rpc-secret <redacted>",
-                    [StringComparison]::Ordinal) -and
-                -not $redactedSample.Contains(
-                    "example-cookie-value",
-                    [StringComparison]::Ordinal) -and
-                -not $redactedSample.Contains(
-                    "example secret value",
-                    [StringComparison]::Ordinal)
-        }
-        catch {
-            $residualChildSelfTest.errorType = $_.Exception.GetType().Name
-        }
-        finally {
-            $cleanupCompleted = $true
-            foreach ($child in $observedResidualChildren) {
-                $childProcess = $null
-                try {
-                    $childProcess = Get-Process `
-                        -Id $child.processId `
-                        -ErrorAction SilentlyContinue
-                    if ($null -eq $childProcess) {
-                        continue
-                    }
-
-                    $actualStart = [DateTimeOffset]$childProcess.StartTime.ToUniversalTime()
-                    $expectedStart = [DateTimeOffset]::Parse(
-                        $child.createdAtUtc,
-                        [System.Globalization.CultureInfo]::InvariantCulture)
-                    if ([Math]::Abs(($actualStart - $expectedStart).TotalSeconds) -gt 1) {
-                        $cleanupCompleted = $false
-                        continue
-                    }
-
-                    $childProcess.Kill($true)
-                    if (-not $childProcess.WaitForExit(5000)) {
-                        $cleanupCompleted = $false
-                    }
-                }
-                catch {
-                    $cleanupCompleted = $false
-                    if ($null -eq $residualChildSelfTest.errorType) {
-                        $residualChildSelfTest.errorType =
-                            $_.Exception.GetType().Name
-                    }
-                }
-                finally {
-                    if ($null -ne $childProcess) {
-                        $childProcess.Dispose()
-                    }
-                }
-            }
-
-            $residualChildSelfTest.cleanupCompleted = $cleanupCompleted
-            $residualChildSelfTestStopwatch.Stop()
-        }
-
-        $residualChildSelfTest.passed =
-            $residualChildSelfTest.childObserved -and
-            $residualChildSelfTest.identityCaptured -and
-            $residualChildSelfTest.evidenceManifestWritten -and
-            $residualChildSelfTest.failureClassified -and
-            $residualChildSelfTest.transientChildObserved -and
-            $residualChildSelfTest.transientChildDrained -and
-            $residualChildSelfTest.transientPhasePassed -and
-            $residualChildSelfTest.cleanupCompleted -and
-            $residualChildSelfTest.redactionValidated -and
-            $null -eq $residualChildSelfTest.errorType
-        $residualChildSelfTestComplete = $residualChildSelfTest.passed
-        if (-not $residualChildSelfTestComplete -and
-            $null -eq $residualChildSelfTest.errorType) {
-            $residualChildSelfTest.errorType = "ContractNotSatisfied"
-        }
-
-        $phaseResults += [pscustomobject]@{
-            assembly = "Gate.ResidualChild"
-            iteration = 1
-            phase = "residual-child-self-test"
-            processId = if ($null -eq $residualProbe) {
-                $PID
-            }
-            else {
-                $residualProbe.processId
-            }
-            success = $residualChildSelfTestComplete
-            failureType = if ($residualChildSelfTestComplete) {
-                $null
-            }
-            else {
-                "ResidualChildSelfTestFailed"
-            }
-            errorType = $residualChildSelfTest.errorType
-            exitCode = if ($residualChildSelfTestComplete) { 0 } else { 1 }
-            durationMs = [Math]::Round(
-                $residualChildSelfTestStopwatch.Elapsed.TotalMilliseconds,
-                3)
-            timedOut = $false
-            stdoutPolluted = $false
-            stderrPolluted = $false
-            unexpectedOutput = @()
-            observedChildCount = 0
-            observedChildren = @()
-            transientChildCount = 0
-            transientChildren = @()
-            residualChildCount = 0
-            residualChildren = @()
-            childProcessObservationSampleCount = 0
-            childProcessObservationDurationMs = 0.0
-            residualChildEvidence = @(
-                if ($null -ne $residualProbe) {
-                    $residualProbe.residualChildEvidence
-                }
-            )
-            residualChildEvidenceStatus = if ($null -eq $residualProbe) {
-                "not-triggered"
-            }
-            else {
-                $residualProbe.residualChildEvidenceStatus
-            }
-            residualChildEvidenceErrorType = if ($null -eq $residualProbe) {
-                $null
-            }
-            else {
-                $residualProbe.residualChildEvidenceErrorType
-            }
-            stdoutPath = if ($null -eq $residualProbe) {
-                $null
-            }
-            else {
-                $residualProbe.stdoutPath
-            }
-            stderrPath = if ($null -eq $residualProbe) {
-                $null
-            }
-            else {
-                $residualProbe.stderrPath
-            }
-            evidence = @(
-                if ($null -ne $residualProbe) {
-                    $residualProbe.evidence
-                }
-            )
-            slowEvidence = @()
-            exitEvidence = @()
-            timeoutEvidence = @()
-            diagnosticCaptureDurationMs = if ($null -eq $residualProbe) {
-                0.0
-            }
-            else {
-                $residualProbe.diagnosticCaptureDurationMs
-            }
-            slowThresholdExceeded = $false
-            slowEvidenceStatus = "not-applicable"
-            slowEvidenceErrorType = $null
-            slowEvidenceTriggeredBeforeThreshold = $false
-        }
-
         $markerReaderSelfTestStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         $markerReaderSelfTest.executed = $true
         $markerReaderTestPath = Join-Path $rawRoot "Gate.MarkerReader/read-race.lifecycle"
@@ -2249,15 +1798,6 @@ if ($ValidateForensics) {
     }
 }
 
-if ($ValidateObservedChildRelease -and -not ($IsWindows -and $ValidateForensics)) {
-    $observedChildReleaseSelfTest = Invoke-ObservedChildReleaseSelfTest
-    if (-not $observedChildReleaseSelfTest.passed) {
-        throw "Observed-child release owner self-test failed."
-    }
-
-    Write-Host "Observed-child release owner self-test passed."
-}
-
 foreach ($testProject in $testProjects) {
     $assemblyName = $testProject.BaseName
     $assemblyPath = Join-Path $testProject.DirectoryName (
@@ -2392,6 +1932,8 @@ foreach ($testProject in $testProjects) {
         }
         $exitSucceeded = $execution.exitCode -eq 0 -and
             -not $execution.timedOut -and
+            $execution.ownedTreeQuiescent -and
+            $execution.ownedProcessCleanupFailures.Count -eq 0 -and
             $execution.residualChildren.Count -eq 0 -and
             $exitDuration -le ($ExitThresholdSeconds * 1000)
         $phaseResults += [pscustomobject]@{
@@ -2466,9 +2008,9 @@ $residualChildEvidenceMissingCount =
 $markerReaderSelfTestContractPassed =
     -not $markerReaderSelfTest.required -or
     $markerReaderSelfTestComplete
-$residualChildSelfTestContractPassed =
-    -not $residualChildSelfTest.required -or
-    $residualChildSelfTestComplete
+$processLeaseSelfTestContractPassed =
+    -not $processLeaseSelfTest.required -or
+    $processLeaseSelfTestComplete
 $diagnosticCaptureTotalMs = [Math]::Round(
     [double](
         $phaseResults |
@@ -2479,7 +2021,7 @@ $runtime = (& dotnet --version).Trim()
 $commitSha = (& git -C $repositoryRoot rev-parse HEAD).Trim()
 $workingTreeDirty = @(& git -C $repositoryRoot status --porcelain).Count -gt 0
 $report = [ordered]@{
-    schemaVersion = 2
+    schemaVersion = 3
     generatedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
     profile = $Profile
     iterations = $resolvedIterations
@@ -2494,9 +2036,7 @@ $report = [ordered]@{
     slowEvidenceCaptureLeadMilliseconds = $slowEvidenceCaptureLeadMilliseconds
     forensicsSelfTestCaptureDelayMilliseconds =
         $forensicsSelfTestCaptureDelayMilliseconds
-    residualChildQuiescenceMilliseconds =
-        $residualChildQuiescenceMilliseconds
-    residualChildPollMilliseconds = $residualChildPollMilliseconds
+    processCleanupGraceSeconds = $processCleanupGraceSeconds
     forensicsSelfTestCaptureLeadValidated =
         $forensicsSelfTestCaptureLeadValidated
     reporterContractSelfTestPassed = $reporterContractSelfTestPassed
@@ -2512,7 +2052,7 @@ $report = [ordered]@{
     successful = $ownershipPassed -and
         $failedResults.Count -eq 0 -and
         $markerReaderSelfTestContractPassed -and
-        $residualChildSelfTestContractPassed
+        $processLeaseSelfTestContractPassed
     failedPhaseCount = $failedResults.Count
     slowPhaseCount = $slowResults.Count
     slowEvidenceCapturedCount = $slowEvidenceCapturedCount
@@ -2535,13 +2075,13 @@ $report = [ordered]@{
         $null
     }
     markerReaderSelfTest = $markerReaderSelfTest
-    residualChildSelfTestPassed = if ($residualChildSelfTest.executed) {
-        $residualChildSelfTestComplete
+    processLeaseSelfTestPassed = if ($processLeaseSelfTest.executed) {
+        $processLeaseSelfTestComplete
     }
     else {
         $null
     }
-    residualChildSelfTest = $residualChildSelfTest
+    processLeaseSelfTest = $processLeaseSelfTest
     statistics = $statistics
     results = $phaseResults
 }
@@ -2571,10 +2111,6 @@ $markdown.Add(
     "$($residualChildResults.Count) phase(s); " +
     "$residualChildEvidenceCapturedCount evidence manifest(s), " +
     "$residualChildEvidenceMissingCount missing")
-$markdown.Add(
-    "- Transient children: $transientChildObservedCount drained within " +
-    "$residualChildQuiescenceMilliseconds ms across " +
-    "$($transientChildResults.Count) phase(s)")
 $markdown.Add("- Diagnostic capture wall time: $diagnosticCaptureTotalMs ms")
 $markdown.Add(
     "- Forensics pre-threshold capture self-test: " +
@@ -2595,18 +2131,12 @@ $markdown.Add(
     "error=$($markerReaderSelfTest.errorType), " +
     "contractChecks=$($markerReaderSelfTest.contractChecks.passed)")
 $markdown.Add(
-    "- Residual child self-test: executed=$($residualChildSelfTest.executed), " +
-    "passed=$($residualChildSelfTest.passed), " +
-    "observed=$($residualChildSelfTest.childObserved), " +
-    "identity=$($residualChildSelfTest.identityCaptured), " +
-    "evidence=$($residualChildSelfTest.evidenceManifestWritten), " +
-    "classified=$($residualChildSelfTest.failureClassified), " +
-    "transientObserved=$($residualChildSelfTest.transientChildObserved), " +
-    "transientDrained=$($residualChildSelfTest.transientChildDrained), " +
-    "transientPassed=$($residualChildSelfTest.transientPhasePassed), " +
-    "cleanup=$($residualChildSelfTest.cleanupCompleted), " +
-    "redaction=$($residualChildSelfTest.redactionValidated), " +
-    "error=$($residualChildSelfTest.errorType)")
+    "- Process lease self-test: executed=$($processLeaseSelfTest.executed), " +
+    "passed=$($processLeaseSelfTest.passed), " +
+    "parentExited=$($processLeaseSelfTest.parentExited), " +
+    "ownedTreeRejected=$($processLeaseSelfTest.ownedTreeRejected), " +
+    "cleanup=$($processLeaseSelfTest.cleanupCompleted), " +
+    "error=$($processLeaseSelfTest.errorType)")
 $markdown.Add("")
 $markdown.Add("| Assembly | Phase | Pass / Runs | Slow / captured | Success | P50 ms | P95 ms | P99 ms | Max ms |")
 $markdown.Add("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")

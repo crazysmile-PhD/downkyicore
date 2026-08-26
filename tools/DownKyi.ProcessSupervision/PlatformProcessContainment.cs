@@ -22,16 +22,22 @@ internal static class PlatformProcessContainment
         ProcessOwnershipMutation mutation)
     {
         ArgumentNullException.ThrowIfNull(supervisor);
-        return OperatingSystem.IsWindows()
+        IProcessContainmentLease containment = OperatingSystem.IsWindows()
             ? WindowsJobContainmentLease.Create(supervisor, windowsJobName, mutation)
             : PosixProcessGroupContainmentLease.Create(supervisor, mutation);
+        containment = mutation.HasFlag(ProcessOwnershipMutation.FailAfterContainmentTermination)
+            ? new TerminationFailureMutationContainmentLease(containment)
+            : containment;
+        return mutation.HasFlag(ProcessOwnershipMutation.ReportTreeQuiescentOnce)
+            ? new TreeQuiescenceMutationContainmentLease(containment)
+            : containment;
     }
 
     public static bool EstablishCurrentProcessOwnership(
         string windowsJobName,
         ProcessOwnershipMutation mutation)
     {
-        if (mutation == ProcessOwnershipMutation.ResumeTargetBeforeOwnership)
+        if (mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership))
         {
             return false;
         }
@@ -119,7 +125,7 @@ internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLe
             }
 
             var ownershipEstablished =
-                mutation != ProcessOwnershipMutation.ResumeTargetBeforeOwnership &&
+                !mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership) &&
                 WindowsNative.AssignProcessToJobObject(job, supervisor.Handle);
             if (mutation == ProcessOwnershipMutation.None && !ownershipEstablished)
             {
@@ -358,7 +364,7 @@ internal sealed class PosixProcessGroupContainmentLease : IProcessContainmentLea
                 ProcessContainmentKind.PosixProcessGroup,
                 ProcessContainmentStrength.TrustedChildProcessGroup,
                 supervisor.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                mutation == ProcessOwnershipMutation.None,
+                !mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership),
                 OwnerWasAlreadyContained: false));
     }
 
@@ -396,6 +402,63 @@ internal sealed class PosixProcessGroupContainmentLease : IProcessContainmentLea
 
     public void Dispose()
     {
+    }
+}
+
+internal sealed class TerminationFailureMutationContainmentLease : IProcessContainmentLease
+{
+    private readonly IProcessContainmentLease _inner;
+
+    public TerminationFailureMutationContainmentLease(IProcessContainmentLease inner)
+    {
+        _inner = inner;
+    }
+
+    public ProcessOwnershipMetadata Metadata => _inner.Metadata;
+
+    public bool IsTreeQuiescent()
+    {
+        return _inner.IsTreeQuiescent();
+    }
+
+    public void Terminate()
+    {
+        _inner.Terminate();
+        throw new InvalidOperationException("Injected containment termination failure.");
+    }
+
+    public void Dispose()
+    {
+        _inner.Dispose();
+    }
+}
+
+internal sealed class TreeQuiescenceMutationContainmentLease : IProcessContainmentLease
+{
+    private readonly IProcessContainmentLease _inner;
+    private int _mutationApplied;
+
+    public TreeQuiescenceMutationContainmentLease(IProcessContainmentLease inner)
+    {
+        _inner = inner;
+    }
+
+    public ProcessOwnershipMetadata Metadata => _inner.Metadata;
+
+    public bool IsTreeQuiescent()
+    {
+        return Interlocked.Exchange(ref _mutationApplied, 1) == 0 ||
+               _inner.IsTreeQuiescent();
+    }
+
+    public void Terminate()
+    {
+        _inner.Terminate();
+    }
+
+    public void Dispose()
+    {
+        _inner.Dispose();
     }
 }
 

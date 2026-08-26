@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using DownKyi.ProcessSupervision;
 
@@ -80,19 +81,16 @@ public sealed class OwnedProcessLeasePlatformTests
     }
 
     [Fact]
-    public async Task TargetStartFailureRemainsFailedAndTreeQuiescent()
+    public async Task TargetStartFailureFailsBeforeReturningAUsableLease()
     {
         var launchSpec = new LaunchSpec(
             Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"),
             Array.Empty<string>(),
             Path.GetTempPath());
 
-        var outcome = await RunAsync(launchSpec, ProcessOwnershipMutation.None)
+        await Assert.ThrowsAnyAsync<Exception>(
+                () => RunAsync(launchSpec, ProcessOwnershipMutation.None))
             .ConfigureAwait(true);
-
-        Assert.NotEqual(0, outcome.ExitCode);
-        Assert.True(outcome.TreeQuiescent);
-        Assert.True(outcome.Ownership.OwnershipEstablished);
     }
 
     [Fact]
@@ -129,14 +127,146 @@ public sealed class OwnedProcessLeasePlatformTests
             using var cancellation = new CancellationTokenSource();
             await cancellation.CancelAsync().ConfigureAwait(true);
 
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
                     () => lease.WaitAsync(cancellation.Token))
                 .ConfigureAwait(true);
+            Assert.Equal(OwnedProcessFailureKind.CallerCancelled, failure.Failure.Kind);
+            Assert.IsAssignableFrom<OperationCanceledException>(failure.InnerException);
+            Assert.Empty(failure.CleanupFailures);
         }
         finally
         {
             File.Delete(readyPath);
         }
+    }
+
+    [Fact]
+    public async Task ParentExitAndInheritedStreamsRemainOwnedUntilTreeCleanupCompletes()
+    {
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var readyPath = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-parent-exit-{Guid.NewGuid():N}.json");
+        var launchSpec = new LaunchSpec(
+            "dotnet",
+            new[] { assemblyPath, "--exit-with-owned-descendant", readyPath },
+            Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."));
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromMilliseconds(750),
+            TimeSpan.FromSeconds(4));
+        var lease = await OwnedProcessLease.StartForTestingAsync(
+                launchSpec,
+                budget,
+                ProcessOwnershipMutation.None,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                    () => lease.WaitAsync(TestContext.Current.CancellationToken))
+                .ConfigureAwait(true);
+
+            stopwatch.Stop();
+            Assert.Equal(OwnedProcessFailureKind.OwnedTreeNotQuiescent, failure.Failure.Kind);
+            Assert.False(failure.Failure.TreeQuiescent);
+            Assert.Empty(failure.CleanupFailures);
+            var processIds = await WaitForOwnedTreeProbeAsync(
+                    readyPath,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.True(processIds.RootProcessId > 0);
+            Assert.True(processIds.ChildProcessId > 0);
+            Assert.NotEqual(processIds.RootProcessId, processIds.ChildProcessId);
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            File.Delete(readyPath);
+        }
+    }
+
+    [Fact]
+    public async Task InheritedOutputHandleCannotCreateAnUnboundedDrain()
+    {
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var readyPath = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-held-stream-{Guid.NewGuid():N}.json");
+        var launchSpec = new LaunchSpec(
+            "dotnet",
+            new[] { assemblyPath, "--exit-with-owned-descendant", readyPath },
+            Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."));
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromMilliseconds(750),
+            TimeSpan.FromSeconds(4));
+        var lease = await OwnedProcessLease.StartForTestingAsync(
+                launchSpec,
+                budget,
+                ProcessOwnershipMutation.ReportTreeQuiescentOnce,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                    () => lease.WaitAsync(TestContext.Current.CancellationToken))
+                .ConfigureAwait(true);
+
+            stopwatch.Stop();
+            Assert.Equal(
+                OwnedProcessFailureKind.StreamDrainDeadlineExceeded,
+                failure.Failure.Kind);
+            Assert.Empty(failure.CleanupFailures);
+            Assert.True(File.Exists(readyPath));
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            File.Delete(readyPath);
+        }
+    }
+
+    [Theory]
+    [InlineData((int)ProcessOwnershipMutation.FailAfterContainmentTermination,
+        "Injected containment termination failure.")]
+    [InlineData((int)ProcessOwnershipMutation.FailAfterRootReap,
+        "Injected root reap failure.")]
+    public async Task TerminateAndReapFailuresRemainVisibleAfterBoundedCleanup(
+        int mutationValue,
+        string expectedFailure)
+    {
+        var mutation = (ProcessOwnershipMutation)mutationValue;
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var launchSpec = new LaunchSpec(
+            "dotnet",
+            new[] { assemblyPath, "--block-forever" },
+            Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."));
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromSeconds(4));
+        var lease = await OwnedProcessLease.StartForTestingAsync(
+                launchSpec,
+                budget,
+                mutation,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+
+        var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                () => lease.WaitAsync(TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+
+        Assert.Equal(OwnedProcessFailureKind.OperationDeadlineExceeded, failure.Failure.Kind);
+        Assert.Contains(
+            failure.CleanupFailures,
+            candidate => candidate.Message.Contains(expectedFailure, StringComparison.Ordinal));
     }
 
     private static async Task<OwnedProcessOutcome> RunProbeAsync(
