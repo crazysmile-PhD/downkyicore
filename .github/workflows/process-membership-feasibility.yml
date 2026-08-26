@@ -32,13 +32,24 @@ jobs:
           ls -ld "/sys/fs/cgroup${current_path}"
       - name: Prove parent-exit membership and bounded termination
         shell: bash
-        run: python3 ./script/process-supervision-feasibility/linux-cgroup-membership.py
+        run: |
+          systemd-run \
+            --user \
+            --scope \
+            --quiet \
+            -p Delegate=yes \
+            python3 ./script/process-supervision-feasibility/linux-cgroup-membership.py
       - name: Prove membership failure is fail closed
         shell: bash
         run: |
           set +e
-          python3 ./script/process-supervision-feasibility/linux-cgroup-membership.py \
-            --inject-membership-failure
+          systemd-run \
+            --user \
+            --scope \
+            --quiet \
+            -p Delegate=yes \
+            python3 ./script/process-supervision-feasibility/linux-cgroup-membership.py \
+              --inject-membership-failure
           status=$?
           set -e
           if [ "$status" -ne 42 ]; then
