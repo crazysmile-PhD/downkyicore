@@ -152,10 +152,25 @@ and complete bounded cleanup. Local Windows evidence before the Stage 2 commit:
 - PowerShell syntax, module-boundary audit, formatting and `git diff --check`
   passed.
 
-Hosted Windows, Linux and macOS proof and exact-HEAD review remain required
-after the independently reviewable Stage 2 commit is pushed. The final Stage 2
-exact HEAD is recorded after commit creation because a commit cannot contain
-its own object ID.
+Stage 2 implementation exact HEAD is
+`b69758b336513d13d4deddf006ceb178d78860b3`. Strict PR CI run
+`32951764061` passed the Windows, Linux and macOS build/test jobs, the formal
+Assembly Lifecycle Stability gate, format, package audit and all six aria2 TLS
+jobs. Build, CodeQL and Protobuf checks also passed for this exact code HEAD.
+
+The first hosted macOS execution of the migration exposed one implementation
+defect inside the existing POSIX containment invariant: Darwin may return
+`EPERM` from a signal-zero process-group probe while an unsignalable group
+member still exists. The lease had treated that result as a terminal probe
+error. Quiescence now requires `ESRCH`; `EPERM` remains non-quiescent and keeps
+polling within the same `TransitionBudget`, while unknown errors still fail
+closed. The real parent-exit/descendant fixture and deterministic errno-decision
+tests cover this correction. No owner, truth source, fallback or deadline was
+added.
+
+Status: Stage 2 implementation and cross-platform validation are complete.
+Stage 3 has not started. Exact-HEAD review remains pending; any code change
+invalidates this evidence and requires the Stage 2 review cycle to restart.
 
 ## Stage 3: Forensics Observer
 
