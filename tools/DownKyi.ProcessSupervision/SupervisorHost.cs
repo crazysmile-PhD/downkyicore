@@ -64,7 +64,6 @@ internal static class SupervisorHost
             ProcessOwnershipMutation.ResumeTargetBeforeOwnership |
             ProcessOwnershipMutation.FailAfterContainmentTermination |
             ProcessOwnershipMutation.FailAfterRootReap |
-            ProcessOwnershipMutation.ReportTreeQuiescentOnce |
             ProcessOwnershipMutation.FailOwnershipEstablishment |
             ProcessOwnershipMutation.FailMembershipQuery |
             ProcessOwnershipMutation.StallLaunchPayloadRead |

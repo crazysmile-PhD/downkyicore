@@ -203,11 +203,10 @@ internal enum ProcessOwnershipMutation
     ResumeTargetBeforeOwnership = 1,
     FailAfterContainmentTermination = 2,
     FailAfterRootReap = 4,
-    ReportTreeQuiescentOnce = 8,
-    FailOwnershipEstablishment = 16,
-    FailMembershipQuery = 32,
-    StallLaunchPayloadRead = 64,
-    DelayAfterTargetExitReport = 128,
-    ReleaseAnchorBeforeMembership = 256,
-    FailFixturePublication = 512
+    FailOwnershipEstablishment = 8,
+    FailMembershipQuery = 16,
+    StallLaunchPayloadRead = 32,
+    DelayAfterTargetExitReport = 64,
+    ReleaseAnchorBeforeMembership = 128,
+    FailFixturePublication = 256
 }

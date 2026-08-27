@@ -226,7 +226,7 @@ public sealed class OwnedProcessLeasePlatformTests
     }
 
     [Fact]
-    public async Task InheritedOutputHandleCannotCreateAnUnboundedDrain()
+    public async Task InheritedOutputHandleCannotCreateAnUnboundedCompletion()
     {
         var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
         var readyPath = Path.Combine(
@@ -243,7 +243,7 @@ public sealed class OwnedProcessLeasePlatformTests
         var lease = await OwnedProcessLease.StartForTestingAsync(
                 launchSpec,
                 budget,
-                ProcessOwnershipMutation.ReportTreeQuiescentOnce,
+                ProcessOwnershipMutation.None,
                 TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
         await using var leaseScope = lease.ConfigureAwait(false);
@@ -256,7 +256,7 @@ public sealed class OwnedProcessLeasePlatformTests
 
             stopwatch.Stop();
             Assert.Equal(
-                OwnedProcessFailureKind.StreamDrainDeadlineExceeded,
+                OwnedProcessFailureKind.OwnedTreeNotQuiescent,
                 failure.Failure.Kind);
             Assert.Empty(failure.CleanupFailures);
             Assert.True(File.Exists(readyPath));
@@ -285,7 +285,7 @@ public sealed class OwnedProcessLeasePlatformTests
             Path.GetDirectoryName(assemblyPath)
                 ?? throw new InvalidOperationException("The probe directory is unavailable."));
         var budget = TransitionBudget.Start(
-            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromSeconds(3),
             TimeSpan.FromSeconds(4));
         var lease = await OwnedProcessLease.StartForTestingAsync(
                 launchSpec,

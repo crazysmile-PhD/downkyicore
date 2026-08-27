@@ -136,8 +136,8 @@ process-tree termination. WMI/`ps`, PID, PPID and start-time data remain only in
 a wait, kill or reap target, prove quiescence or convert failure to success.
 
 Deterministic platform fixtures now execute a parent that exits while a blocking
-descendant retains inherited streams, an ownership-establishment mutation, a
-one-shot false-quiescence mutation and terminate/reap failure injection. The
+descendant retains inherited streams, an ownership-establishment mutation,
+fail-closed membership-query mutation and terminate/reap failure injection. The
 same real lease path is exercised by formal `-ValidateForensics`; a non-quiescent
 tree must classify as `ResidualChildProcess`, preserve typed ownership evidence
 and complete bounded cleanup. Local Windows evidence before the Stage 2 commit:

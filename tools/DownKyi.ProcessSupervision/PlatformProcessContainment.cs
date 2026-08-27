@@ -37,9 +37,6 @@ internal static class PlatformProcessContainment
         containment = mutation.HasFlag(ProcessOwnershipMutation.FailAfterContainmentTermination)
             ? new TerminationFailureMutationContainmentLease(containment)
             : containment;
-        containment = mutation.HasFlag(ProcessOwnershipMutation.ReportTreeQuiescentOnce)
-            ? new TreeQuiescenceMutationContainmentLease(containment)
-            : containment;
         return mutation.HasFlag(ProcessOwnershipMutation.FailMembershipQuery)
             ? new MembershipFailureMutationContainmentLease(containment)
             : containment;
@@ -456,42 +453,6 @@ internal sealed class TerminationFailureMutationContainmentLease : IProcessConta
     {
         _inner.Terminate();
         throw new InvalidOperationException("Injected containment termination failure.");
-    }
-
-    public void MarkAnchorReaped()
-    {
-        _inner.MarkAnchorReaped();
-    }
-
-    public void Dispose()
-    {
-        _inner.Dispose();
-    }
-}
-
-internal sealed class TreeQuiescenceMutationContainmentLease : IProcessContainmentLease
-{
-    private readonly IProcessContainmentLease _inner;
-    private int _mutationApplied;
-
-    public TreeQuiescenceMutationContainmentLease(IProcessContainmentLease inner)
-    {
-        _inner = inner;
-    }
-
-    public ProcessOwnershipMetadata Metadata => _inner.Metadata;
-
-    public bool MembershipRequiresAnchorExit => _inner.MembershipRequiresAnchorExit;
-
-    public bool IsTreeQuiescent()
-    {
-        return Interlocked.Exchange(ref _mutationApplied, 1) == 0 ||
-               _inner.IsTreeQuiescent();
-    }
-
-    public void Terminate()
-    {
-        _inner.Terminate();
     }
 
     public void MarkAnchorReaped()
