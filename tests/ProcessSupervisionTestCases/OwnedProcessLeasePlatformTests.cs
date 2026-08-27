@@ -482,7 +482,7 @@ public sealed class OwnedProcessLeasePlatformTests
                 ?? throw new InvalidOperationException("The probe directory is unavailable."),
             environment);
         var budget = TransitionBudget.Start(
-            TimeSpan.FromMilliseconds(400),
+            TimeSpan.FromSeconds(3),
             TimeSpan.FromSeconds(5));
         var stopwatch = Stopwatch.StartNew();
 
@@ -631,6 +631,41 @@ public sealed class OwnedProcessLeasePlatformTests
         return (
             document.RootElement.GetProperty("RootProcessId").GetInt32(),
             document.RootElement.GetProperty("ChildProcessId").GetInt32());
+    }
+}
+
+public sealed class PosixProcessGroupTerminationTests
+{
+    [Theory]
+    [InlineData(0, 0, false)]
+    [InlineData(-1, 3, false)]
+    [InlineData(-1, 1, true)]
+    public void PosixTerminationDefersDarwinNoSignalableGroupToMembershipAuthority(
+        int result,
+        int error,
+        bool darwinMembershipAuthority)
+    {
+        PosixProcessGroupTermination.ValidateTerminationRequestResult(
+            result,
+            error,
+            darwinMembershipAuthority);
+    }
+
+    [Theory]
+    [InlineData(-1, 1, false)]
+    [InlineData(-1, 22, true)]
+    public void PosixTerminationRejectsResultsWithoutAuthoritativeConvergence(
+        int result,
+        int error,
+        bool darwinMembershipAuthority)
+    {
+        var failure = Assert.Throws<System.ComponentModel.Win32Exception>(
+            () => PosixProcessGroupTermination.ValidateTerminationRequestResult(
+                result,
+                error,
+                darwinMembershipAuthority));
+
+        Assert.Equal(error, failure.NativeErrorCode);
     }
 }
 

@@ -524,15 +524,37 @@ internal sealed class MembershipFailureMutationContainmentLease : IProcessContai
 internal static class PosixProcessGroupTermination
 {
     private const int KillSignal = 9;
+    private const int PermissionDenied = 1;
     private const int NoSuchProcess = 3;
 
     public static void Terminate(int processGroupId)
     {
-        if (PosixNative.SignalProcessGroup(processGroupId, KillSignal) != 0 &&
-            Marshal.GetLastPInvokeError() != NoSuchProcess)
+        var result = PosixNative.SignalProcessGroup(processGroupId, KillSignal);
+        var error = result == 0 ? 0 : Marshal.GetLastPInvokeError();
+        ValidateTerminationRequestResult(
+            result,
+            error,
+            OperatingSystem.IsMacOS());
+    }
+
+    internal static void ValidateTerminationRequestResult(
+        int result,
+        int error,
+        bool darwinMembershipAuthority)
+    {
+        if (result == 0 || error == NoSuchProcess)
         {
-            throw new Win32Exception(Marshal.GetLastPInvokeError());
+            return;
         }
+
+        // Darwin reports EPERM when an explicit group still exists but has no
+        // live signalable member. libproc convergence remains authoritative.
+        if (darwinMembershipAuthority && error == PermissionDenied)
+        {
+            return;
+        }
+
+        throw new Win32Exception(error);
     }
 }
 
