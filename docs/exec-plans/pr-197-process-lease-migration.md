@@ -315,7 +315,7 @@ constraints:
 ### Stage 2 Authoritative Backend Implementation Checkpoint
 
 Status: implementation is locally complete at exact implementation commit
-`54e2b6c6c7cb8d7d667fd947052e6997cc27c59d`; Stage 2 remains open pending
+`efa22aaa5e98f51842e1e63d7ec9ec83e0aee3bf`; Stage 2 remains open pending
 platform-native CI and exact-HEAD review. Stage 3 has not started.
 
 `OwnedProcessLease` now establishes and acknowledges containment plus membership
@@ -382,6 +382,18 @@ membership boundary and made bounded cleanup platform-dependent. Commit
 The real inherited-stream fixture now remains behind authoritative membership,
 fails as `OwnedTreeNotQuiescent`, and proves bounded terminate, reap and stream
 closure. Membership-query failure remains the fail-closed authority mutation.
+
+The next native run
+[33041707054](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33041707054)
+at checkpoint HEAD `0c1ef1324f1e4c533b78c2692520245c7f2160b1` passed the Linux
+repository tests and both macOS feasibility jobs. Its macOS repository test
+failed only because the retained-anchor mutation asserted one exception-message
+spelling instead of the typed lease outcome. Commit
+`efa22aaa5e98f51842e1e63d7ec9ec83e0aee3bf` makes that mutation macOS-specific
+and verifies failure kind, non-quiescence, authoritative target exit and
+preserved cleanup failures. It also removes the erroneous Linux dependency on
+anchor reap: the delegated cgroup path remains Linux membership authority until
+the lease disposes it, independently of process-group anchor state.
 
 If Linux delegation or the macOS membership primitive is unavailable or cannot
 prove membership, the backend fails before authorization or completion. No
