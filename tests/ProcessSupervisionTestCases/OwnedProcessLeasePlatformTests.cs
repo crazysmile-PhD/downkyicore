@@ -321,9 +321,9 @@ public sealed class OwnedProcessLeasePlatformTests
     }
 
     [Fact]
-    public async Task ReapingAnchorBeforeMembershipProofFailsClosed()
+    public async Task MacOSReapingAnchorBeforeMembershipProofFailsClosed()
     {
-        if (OperatingSystem.IsWindows())
+        if (!OperatingSystem.IsMacOS())
         {
             return;
         }
@@ -332,10 +332,11 @@ public sealed class OwnedProcessLeasePlatformTests
                 () => RunProbeAsync(ProcessOwnershipMutation.ReleaseAnchorBeforeMembership))
             .ConfigureAwait(true);
 
-        Assert.Contains(
-            "after anchor reap",
-            failure.InnerException?.ToString() ?? string.Empty,
-            StringComparison.Ordinal);
+        Assert.Equal(OwnedProcessFailureKind.ExecutionFailed, failure.Failure.Kind);
+        Assert.False(failure.Failure.TreeQuiescent);
+        Assert.NotNull(failure.Failure.TargetExitedAtUnixMilliseconds);
+        Assert.IsType<InvalidOperationException>(failure.InnerException);
+        Assert.NotEmpty(failure.CleanupFailures);
     }
 
     [Fact]

@@ -366,8 +366,9 @@ authoritative membership convergence after termination, membership-query
 failure, owner EOF both before and after target exit, authorization refusal when
 ownership establishment fails, a stalled 900 KB launch payload, inherited
 stdout/stderr, target-exit timestamp isolation and publication cleanup. Mutations
-break ownership establishment, membership authority, retained-anchor ordering,
-budget propagation and terminate/reap stages through the real lease path.
+break ownership establishment, membership authority, macOS retained-anchor
+ordering, budget propagation and terminate/reap stages through the real lease
+path.
 
 The first native implementation run
 [33040956098](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33040956098)

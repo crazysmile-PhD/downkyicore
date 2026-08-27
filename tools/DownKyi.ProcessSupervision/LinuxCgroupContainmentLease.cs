@@ -9,7 +9,6 @@ internal sealed class LinuxCgroupContainmentLease : IProcessContainmentLease
     private const string CgroupRoot = "/sys/fs/cgroup";
 
     private readonly string _directoryPath;
-    private bool _anchorReaped;
 
     private LinuxCgroupContainmentLease(
         string directoryPath,
@@ -110,12 +109,6 @@ internal sealed class LinuxCgroupContainmentLease : IProcessContainmentLease
 
     public bool IsTreeQuiescent()
     {
-        if (_anchorReaped)
-        {
-            throw new InvalidOperationException(
-                "The Linux cgroup membership authority was queried after anchor reap.");
-        }
-
         var eventsPath = Path.Combine(_directoryPath, "cgroup.events");
         string[] lines;
         try
@@ -148,18 +141,11 @@ internal sealed class LinuxCgroupContainmentLease : IProcessContainmentLease
 
     public void Terminate()
     {
-        if (_anchorReaped)
-        {
-            throw new InvalidOperationException(
-                "The Linux owned tree cannot be terminated after anchor reap.");
-        }
-
         File.WriteAllText(Path.Combine(_directoryPath, "cgroup.kill"), "1");
     }
 
     public void MarkAnchorReaped()
     {
-        _anchorReaped = true;
     }
 
     public void Dispose()
