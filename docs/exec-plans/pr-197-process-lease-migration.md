@@ -312,22 +312,68 @@ constraints:
    5 above remain mandatory behavioral/mutation proof during implementation;
    backend feasibility does not satisfy them by itself.
 
-No formal lifecycle implementation changed in Stage 2A. The next Stage 2 commit
-may replace the provisional POSIX group-existence oracle with these backends and
-resolve the remaining implementation defects inside the existing
-`OwnedProcessLease` / `TransitionBudget` state machine. It must not start Stage 3.
+### Stage 2 Authoritative Backend Implementation Checkpoint
 
-If Linux cgroup delegation or the macOS membership primitive is unavailable,
-the formal lifecycle backend fails before authorization. PID, PPID, numeric PGID
-polling and inherited-lease EOF are not fallback correctness authorities. A new
-backend requires a design-doc update and behavioral proof before implementation.
+Status: implementation is locally complete at exact implementation commit
+`332a76f1cdde776fd551009b2d17f6cfa1354554`; Stage 2 remains open pending
+platform-native CI and exact-HEAD review. Stage 3 has not started.
 
-The other exact-HEAD Stage 2 review symptoms -- launch-payload writes that are
-not yet budget-owned, target-exit time captured after stream drain, owner
-lifetime not bound to the launch transaction, temporary fixture cleanup and the
-POSIX ownership-establishment race -- remain implementation defects to resolve
-inside this revised state machine after Stage 2A. They do not authorize Stage 3
-or a second owner/deadline/truth source.
+`OwnedProcessLease` now establishes and acknowledges containment plus membership
+before accepting the immutable target launch payload. Linux creates a per-lease
+child in a delegated cgroup v2 scope, moves the inert supervisor into it before
+authorization, moves the still-live supervisor back to the delegated owner
+scope after target exit, and uses recursive `cgroup.events` `populated` state as
+the only membership/quiescence authority. macOS retains the direct-child group
+anchor and uses bounded `proc_listpgrppids` snapshots, excluding only that live
+anchor, as the membership authority. Process groups remain termination
+primitives. Windows keeps Job active-process state as its existing authority.
+
+The launch-spec write, ownership-ready handshake, target-exit report,
+finalization, membership convergence, termination, reap and stream drain all
+consume the caller's one `TransitionBudget`. The owner control channel remains
+open as a lifetime capability; EOF triggers platform termination. The target
+exit timestamp is emitted immediately from supervisor target-wait state before
+membership, cleanup, stream drain or forensics latency. Fixture publication now
+closes and flushes its staging handle before atomic rename and removes staging
+state on every failure path.
+
+Removed or downgraded correctness paths:
+
+- signal-zero numeric process-group existence no longer decides POSIX
+  quiescence;
+- PID, PPID, numeric PGID and inherited EOF remain diagnostics or lifetime
+  signals only and have no membership fallback role;
+- lifecycle process-exit timing no longer samples wall time after lease cleanup;
+- target launch cannot progress before the ownership-ready acknowledgement;
+- launch-pipe backpressure cannot outlive the caller's operation budget.
+
+Local evidence for this implementation tree:
+
+- strict Release solution build passed with zero warnings and zero errors;
+- all 17 Windows process-supervision behavioral/mutation cases passed;
+- Architecture tests passed through the central runner;
+- the platform selector passed and all 8 of 10 Windows-applicable test projects
+  passed; the packaged aria2 TLS test remained an expected local skip because no
+  packaged binary was supplied;
+- lifecycle ownership found 615 matches and zero violations;
+- a one-assembly formal lifecycle `Local` run with `-ValidateForensics` produced
+  9 successful phase results and zero failures;
+- PowerShell syntax, actionlint for all 11 workflows, formatting and
+  `git diff --check` passed.
+
+The behavioral suite covers target parent exit with a retained descendant,
+authoritative membership convergence after termination, membership-query
+failure, owner EOF both before and after target exit, authorization refusal when
+ownership establishment fails, a stalled 900 KB launch payload, inherited
+stdout/stderr, target-exit timestamp isolation and publication cleanup. Mutations
+break ownership establishment, membership authority, retained-anchor ordering,
+budget propagation and terminate/reap stages through the real lease path.
+
+If Linux delegation or the macOS membership primitive is unavailable or cannot
+prove membership, the backend fails before authorization or completion. No
+PID/PPID/PGID fallback is permitted. Remaining Stage 3 work is limited to the
+documented observer/evidence-hold migration; it must not gain process ownership,
+a membership truth source or a deadline authority.
 
 ## Stage 3: Forensics Observer
 
