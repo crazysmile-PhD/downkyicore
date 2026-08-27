@@ -41,6 +41,7 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
         var lifecycleRunner = Read("script/test-assembly-lifecycle.ps1");
         var reviewRunner = Read("script/test-review-invariants.ps1");
         var ciActionRunner = Read("script/invoke-ci-test-action.ps1");
+        var delegatedScope = Read("script/delegated-cgroup-scope.ps1");
 
         Assert.Contains("ValidateDownKyiTestPlatformOwnership", directoryProps, StringComparison.Ordinal);
         Assert.Contains("must declare DownKyiTestPlatforms", directoryProps, StringComparison.Ordinal);
@@ -59,8 +60,10 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
         Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", lifecycleRunner, StringComparison.Ordinal);
         Assert.Contains("test-project-runner.ps1", reviewRunner, StringComparison.Ordinal);
         Assert.Contains("Invoke-DownKyiTestProject", reviewRunner, StringComparison.Ordinal);
-        Assert.Contains("systemd-run", ciActionRunner, StringComparison.Ordinal);
-        Assert.Contains("Delegate=yes", ciActionRunner, StringComparison.Ordinal);
+        Assert.Contains("delegated-cgroup-scope.ps1", ciActionRunner, StringComparison.Ordinal);
+        Assert.Contains("delegated-cgroup-scope.ps1", lifecycleRunner, StringComparison.Ordinal);
+        Assert.Contains("systemd-run", delegatedScope, StringComparison.Ordinal);
+        Assert.Contains("Delegate=yes", delegatedScope, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot "delegated-cgroup-scope.ps1")
 
 function ConvertFrom-DownKyiActionBoolean {
     [CmdletBinding()]
@@ -31,26 +32,10 @@ function ConvertFrom-DownKyiActionBoolean {
 $actionRepositoryRoot = Split-Path -Parent $PSScriptRoot
 
 if ($Mode -eq "Solution") {
-    if ($IsLinux -and
-        -not [string]::Equals(
-            $env:DOWNKYI_DELEGATED_CGROUP_SCOPE,
-            "1",
-            [StringComparison]::Ordinal)) {
-        $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
-        & systemd-run `
-            --user `
-            --scope `
-            --quiet `
-            -p Delegate=yes `
-            --setenv=DOWNKYI_DELEGATED_CGROUP_SCOPE=1 `
-            $pwsh `
-            -NoProfile `
-            -File $PSCommandPath `
-            -Mode Solution
-        if ($LASTEXITCODE -ne 0) {
-            throw "The delegated Linux repository test scope failed."
-        }
-
+    if (Test-DownKyiDelegatedCgroupScopeRequired) {
+        Invoke-DownKyiDelegatedCgroupScope `
+            -ScriptPath $PSCommandPath `
+            -ArgumentList @("-Mode", "Solution")
         return
     }
 

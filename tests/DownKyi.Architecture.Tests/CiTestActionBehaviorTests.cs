@@ -67,6 +67,47 @@ public sealed class CiTestActionBehaviorTests
     }
 
     [Fact]
+    public void DelegatedScopePreservesBoundLifecycleParameters()
+    {
+        var helperPath = Path.Combine(
+            RepositoryRoot,
+            "script",
+            "delegated-cgroup-scope.ps1");
+        var command =
+            $". '{helperPath.Replace("'", "''", StringComparison.Ordinal)}'; " +
+            "$arguments = ConvertTo-DownKyiPowerShellArgumentList ([ordered]@{ " +
+            "Configuration = 'Release'; AssemblyPattern = @('One.Tests', 'Two.Tests'); " +
+            "ValidateForensics = [switch]::new($true); NoBuild = [switch]::new($false) }); " +
+            "$arguments | ConvertTo-Json -Compress";
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "pwsh",
+            WorkingDirectory = RepositoryRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(command);
+
+        var result = BoundedProcessRunner.Run(
+            startInfo,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal(
+            ["-Configuration", "Release", "-AssemblyPattern", "One.Tests", "Two.Tests", "-ValidateForensics"],
+            document.RootElement.EnumerateArray()
+                .Select(value => value.GetString()
+                    ?? throw new InvalidDataException("A delegated argument was null."))
+                .ToArray());
+    }
+
+    [Fact]
     public void MalformedBooleanInputFailsClosedBeforeProjectExecution()
     {
         var startInfo = CreateActionStartInfo(
@@ -157,6 +198,9 @@ public sealed class CiTestActionBehaviorTests
 
             var actionPath = Path.Combine(scriptDirectory, "invoke-ci-test-action.ps1");
             File.WriteAllText(actionPath, actionScript);
+            File.Copy(
+                Path.Combine(RepositoryRoot, "script", "delegated-cgroup-scope.ps1"),
+                Path.Combine(scriptDirectory, "delegated-cgroup-scope.ps1"));
             File.WriteAllText(
                 Path.Combine(scriptDirectory, "test-solution.ps1"),
                 """

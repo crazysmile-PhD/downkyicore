@@ -19,13 +19,11 @@ internal sealed partial class MacProcessGroupContainmentLease : IProcessContainm
             CultureInfo.InvariantCulture);
     }
 
-    public ProcessOwnershipMetadata Metadata { get; }
+    public ProcessOwnershipMetadata Metadata { get; private set; }
 
     public bool MembershipRequiresAnchorExit => false;
 
-    public static MacProcessGroupContainmentLease Create(
-        Process supervisor,
-        ProcessOwnershipMutation mutation)
+    public static MacProcessGroupContainmentLease Prepare(Process supervisor)
     {
         if (!OperatingSystem.IsMacOS())
         {
@@ -43,8 +41,18 @@ internal sealed partial class MacProcessGroupContainmentLease : IProcessContainm
                 identity,
                 identity,
                 RuntimeInformation.ProcessArchitecture.ToString(),
-                !mutation.HasFlag(ProcessOwnershipMutation.FailOwnershipEstablishment),
+                OwnershipEstablished: false,
                 OwnerWasAlreadyContained: false));
+    }
+
+    public void Establish(Process supervisor, ProcessOwnershipMutation mutation)
+    {
+        ArgumentNullException.ThrowIfNull(supervisor);
+        Metadata = Metadata with
+        {
+            OwnershipEstablished =
+                !mutation.HasFlag(ProcessOwnershipMutation.FailOwnershipEstablishment)
+        };
     }
 
     public static bool ContainsProcess(int processGroupId, int processId)

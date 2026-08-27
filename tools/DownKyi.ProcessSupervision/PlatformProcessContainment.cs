@@ -11,6 +11,8 @@ internal interface IProcessContainmentLease : IDisposable
 
     bool MembershipRequiresAnchorExit { get; }
 
+    void Establish(Process supervisor, ProcessOwnershipMutation mutation);
+
     bool IsTreeQuiescent();
 
     void Terminate();
@@ -20,20 +22,26 @@ internal interface IProcessContainmentLease : IDisposable
 
 internal static class PlatformProcessContainment
 {
-    public static IProcessContainmentLease Create(
+    public static IProcessContainmentLease Prepare(
         Process supervisor,
-        string windowsJobName,
-        ProcessOwnershipMutation mutation)
+        string windowsJobName)
     {
         ArgumentNullException.ThrowIfNull(supervisor);
-        IProcessContainmentLease containment = OperatingSystem.IsWindows()
-            ? WindowsJobContainmentLease.Create(supervisor, windowsJobName, mutation)
+        return OperatingSystem.IsWindows()
+            ? WindowsJobContainmentLease.Prepare(windowsJobName)
             : OperatingSystem.IsLinux()
-                ? LinuxCgroupContainmentLease.Create(supervisor, mutation)
+                ? LinuxCgroupContainmentLease.Prepare(supervisor)
                 : OperatingSystem.IsMacOS()
-                    ? MacProcessGroupContainmentLease.Create(supervisor, mutation)
+                    ? MacProcessGroupContainmentLease.Prepare(supervisor)
                     : throw new PlatformNotSupportedException(
                         "Owned process membership is supported only on Windows, Linux, and macOS.");
+    }
+
+    public static IProcessContainmentLease ApplyFailureMutations(
+        IProcessContainmentLease containment,
+        ProcessOwnershipMutation mutation)
+    {
+        ArgumentNullException.ThrowIfNull(containment);
         containment = mutation.HasFlag(ProcessOwnershipMutation.FailAfterContainmentTermination)
             ? new TerminationFailureMutationContainmentLease(containment)
             : containment;
@@ -164,14 +172,11 @@ internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLe
         Metadata = metadata;
     }
 
-    public ProcessOwnershipMetadata Metadata { get; }
+    public ProcessOwnershipMetadata Metadata { get; private set; }
 
     public bool MembershipRequiresAnchorExit => true;
 
-    public static WindowsJobContainmentLease Create(
-        Process supervisor,
-        string jobName,
-        ProcessOwnershipMutation mutation)
+    public static WindowsJobContainmentLease Prepare(string jobName)
     {
         using var currentProcess = Process.GetCurrentProcess();
         var ownerWasAlreadyContained = IsProcessInAnyJob(currentProcess);
@@ -200,16 +205,6 @@ internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLe
                 throw new Win32Exception(Marshal.GetLastPInvokeError());
             }
 
-            var ownershipEstablished =
-                !mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership) &&
-                WindowsNative.AssignProcessToJobObject(job, supervisor.Handle);
-            if (mutation == ProcessOwnershipMutation.None && !ownershipEstablished)
-            {
-                throw new Win32Exception(
-                    Marshal.GetLastPInvokeError(),
-                    "The supervisor could not join its owned Job Object.");
-            }
-
             var lease = new WindowsJobContainmentLease(
                 job,
                 new ProcessOwnershipMetadata(
@@ -221,7 +216,7 @@ internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLe
                     jobName,
                     jobName,
                     RuntimeInformation.ProcessArchitecture.ToString(),
-                    ownershipEstablished,
+                    OwnershipEstablished: false,
                     ownerWasAlreadyContained));
             job = null;
             return lease;
@@ -230,6 +225,22 @@ internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLe
         {
             job?.Dispose();
         }
+    }
+
+    public void Establish(Process supervisor, ProcessOwnershipMutation mutation)
+    {
+        ArgumentNullException.ThrowIfNull(supervisor);
+        var ownershipEstablished =
+            !mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership) &&
+            WindowsNative.AssignProcessToJobObject(_job, supervisor.Handle);
+        if (mutation == ProcessOwnershipMutation.None && !ownershipEstablished)
+        {
+            throw new Win32Exception(
+                Marshal.GetLastPInvokeError(),
+                "The supervisor could not join its owned Job Object.");
+        }
+
+        Metadata = Metadata with { OwnershipEstablished = ownershipEstablished };
     }
 
     public static bool IsCurrentProcessInJob(string jobName)
@@ -444,6 +455,11 @@ internal sealed class TerminationFailureMutationContainmentLease : IProcessConta
 
     public bool MembershipRequiresAnchorExit => _inner.MembershipRequiresAnchorExit;
 
+    public void Establish(Process supervisor, ProcessOwnershipMutation mutation)
+    {
+        _inner.Establish(supervisor, mutation);
+    }
+
     public bool IsTreeQuiescent()
     {
         return _inner.IsTreeQuiescent();
@@ -478,6 +494,11 @@ internal sealed class MembershipFailureMutationContainmentLease : IProcessContai
     public ProcessOwnershipMetadata Metadata => _inner.Metadata;
 
     public bool MembershipRequiresAnchorExit => _inner.MembershipRequiresAnchorExit;
+
+    public void Establish(Process supervisor, ProcessOwnershipMutation mutation)
+    {
+        _inner.Establish(supervisor, mutation);
+    }
 
     public bool IsTreeQuiescent()
     {

@@ -208,5 +208,6 @@ internal enum ProcessOwnershipMutation
     StallLaunchPayloadRead = 32,
     DelayAfterTargetExitReport = 64,
     ReleaseAnchorBeforeMembership = 128,
-    FailFixturePublication = 256
+    FailFixturePublication = 256,
+    FailAfterMembershipAttachment = 512
 }

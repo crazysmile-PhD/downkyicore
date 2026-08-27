@@ -289,7 +289,11 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             started = true;
             standardOutput = supervisor.StandardOutput.ReadToEndAsync(CancellationToken.None);
             standardError = supervisor.StandardError.ReadToEndAsync(CancellationToken.None);
-            containment = PlatformProcessContainment.Create(supervisor, jobName, mutation);
+            containment = PlatformProcessContainment.Prepare(supervisor, jobName);
+            containment.Establish(supervisor, mutation);
+            containment = PlatformProcessContainment.ApplyFailureMutations(
+                containment,
+                mutation);
             await WaitWithBudgetAsync(
                     Task.WhenAll(
                         control.WaitForConnectionAsync(cancellationToken),

@@ -80,6 +80,44 @@ public sealed class OwnedProcessLeasePlatformTests
     }
 
     [Fact]
+    public void LinuxDelegatedHierarchyRootIsAValidMembershipAuthority()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        Assert.Equal(
+            Path.GetFullPath("/sys/fs/cgroup"),
+            LinuxCgroupContainmentLease.ResolveMembershipDirectory("/"));
+    }
+
+    [Fact]
+    public async Task LinuxFailedMembershipAttachmentReapsAndRemovesTheStagedCgroup()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var parentDirectory = LinuxCgroupContainmentLease.ResolveCurrentMembershipDirectory();
+        var before = Directory.GetDirectories(parentDirectory, "downkyi-lease-*")
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        await Assert.ThrowsAnyAsync<Exception>(
+                () => RunProbeAsync(ProcessOwnershipMutation.FailAfterMembershipAttachment))
+            .ConfigureAwait(true);
+
+        var after = Directory.GetDirectories(parentDirectory, "downkyi-lease-*")
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
     public async Task LaunchSpecSnapshotsCallerOwnedArgumentsAndEnvironment()
     {
         var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;

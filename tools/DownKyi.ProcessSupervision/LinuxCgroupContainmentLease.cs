@@ -18,14 +18,13 @@ internal sealed class LinuxCgroupContainmentLease : IProcessContainmentLease
         Metadata = metadata;
     }
 
-    public ProcessOwnershipMetadata Metadata { get; }
+    public ProcessOwnershipMetadata Metadata { get; private set; }
 
     public bool MembershipRequiresAnchorExit => false;
 
-    public static LinuxCgroupContainmentLease Create(
-        Process supervisor,
-        ProcessOwnershipMutation mutation)
+    public static LinuxCgroupContainmentLease Prepare(Process supervisor)
     {
+        ArgumentNullException.ThrowIfNull(supervisor);
         if (!OperatingSystem.IsLinux())
         {
             throw new PlatformNotSupportedException("The cgroup backend requires Linux.");
@@ -40,24 +39,6 @@ internal sealed class LinuxCgroupContainmentLease : IProcessContainmentLease
         try
         {
             ValidateDelegatedFiles(leaseDirectory);
-            var membershipId = CombineMembershipId(parentMembershipId, leaseName);
-            var ownershipEstablished =
-                !mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership) &&
-                !mutation.HasFlag(ProcessOwnershipMutation.FailOwnershipEstablishment);
-            if (ownershipEstablished)
-            {
-                File.WriteAllText(
-                    Path.Combine(leaseDirectory, "cgroup.procs"),
-                    supervisor.Id.ToString(CultureInfo.InvariantCulture));
-                var actualMembership = ReadUnifiedMembershipId(
-                    $"/proc/{supervisor.Id.ToString(CultureInfo.InvariantCulture)}/cgroup");
-                if (!string.Equals(actualMembership, membershipId, StringComparison.Ordinal))
-                {
-                    throw new InvalidOperationException(
-                        "The inert process supervisor did not enter its delegated cgroup.");
-                }
-            }
-
             return new LinuxCgroupContainmentLease(
                 leaseDirectory,
                 new ProcessOwnershipMetadata(
@@ -66,17 +47,60 @@ internal sealed class LinuxCgroupContainmentLease : IProcessContainmentLease
                     ProcessContainmentStrength.DelegatedCgroupTree,
                     supervisor.Id.ToString(CultureInfo.InvariantCulture),
                     ProcessMembershipAuthority.LinuxCgroupV2,
-                    membershipId,
+                    CombineMembershipId(parentMembershipId, leaseName),
                     parentMembershipId,
                     RuntimeInformation.ProcessArchitecture.ToString(),
-                    ownershipEstablished,
+                    OwnershipEstablished: false,
                     OwnerWasAlreadyContained: false));
         }
-        catch
+        catch (Exception failure)
         {
-            TryDeleteEmptyDirectory(leaseDirectory);
+            try
+            {
+                Directory.Delete(leaseDirectory);
+            }
+            catch (Exception cleanupFailure) when (
+                cleanupFailure is IOException or UnauthorizedAccessException)
+            {
+                throw new AggregateException(
+                    "Delegated cgroup preparation and rollback both failed.",
+                    failure,
+                    cleanupFailure);
+            }
+
             throw;
         }
+    }
+
+    public void Establish(Process supervisor, ProcessOwnershipMutation mutation)
+    {
+        ArgumentNullException.ThrowIfNull(supervisor);
+        var ownershipEstablished =
+            !mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership) &&
+            !mutation.HasFlag(ProcessOwnershipMutation.FailOwnershipEstablishment);
+        if (!ownershipEstablished)
+        {
+            return;
+        }
+
+        File.WriteAllText(
+            Path.Combine(_directoryPath, "cgroup.procs"),
+            supervisor.Id.ToString(CultureInfo.InvariantCulture));
+        if (mutation.HasFlag(ProcessOwnershipMutation.FailAfterMembershipAttachment))
+        {
+            throw new InvalidOperationException(
+                "Injected failure after delegated cgroup membership attachment.");
+        }
+
+        var actualMembership = ReadUnifiedMembershipId(
+            $"/proc/{supervisor.Id.ToString(CultureInfo.InvariantCulture)}/cgroup");
+        if (!string.Equals(actualMembership, Metadata.MembershipId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "The inert process supervisor did not enter its delegated cgroup.");
+        }
+
+        Metadata = Metadata with { OwnershipEstablished = true };
     }
 
     public static bool IsCurrentProcessInCgroup(string membershipId)
@@ -180,7 +204,7 @@ internal sealed class LinuxCgroupContainmentLease : IProcessContainmentLease
             : $"{parentMembershipId.TrimEnd('/')}/{childName}";
     }
 
-    private static string ResolveMembershipDirectory(string membershipId)
+    internal static string ResolveMembershipDirectory(string membershipId)
     {
         if (string.IsNullOrWhiteSpace(membershipId) ||
             !membershipId.StartsWith('/') ||
@@ -191,8 +215,10 @@ internal sealed class LinuxCgroupContainmentLease : IProcessContainmentLease
 
         var fullPath = Path.GetFullPath(
             Path.Combine(CgroupRoot, membershipId.TrimStart('/')));
-        var root = Path.GetFullPath(CgroupRoot) + Path.DirectorySeparatorChar;
-        if (!fullPath.StartsWith(root, StringComparison.Ordinal))
+        var authorityRoot = Path.GetFullPath(CgroupRoot);
+        var rootPrefix = authorityRoot + Path.DirectorySeparatorChar;
+        if (!string.Equals(fullPath, authorityRoot, StringComparison.Ordinal) &&
+            !fullPath.StartsWith(rootPrefix, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("The cgroup membership identity escaped its authority root.");
         }
@@ -212,20 +238,8 @@ internal sealed class LinuxCgroupContainmentLease : IProcessContainmentLease
         }
     }
 
-    private static void TryDeleteEmptyDirectory(string directory)
+    internal static string ResolveCurrentMembershipDirectory()
     {
-        try
-        {
-            if (Directory.Exists(directory))
-            {
-                Directory.Delete(directory);
-            }
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        return ResolveMembershipDirectory(ReadUnifiedMembershipId("/proc/self/cgroup"));
     }
 }
