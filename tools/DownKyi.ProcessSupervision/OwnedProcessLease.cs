@@ -28,6 +28,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     private readonly Task<string> _standardOutput;
     private readonly Task<string> _standardError;
     private readonly Task<TargetExitReport?> _targetExitReport;
+    private readonly EvidenceHoldCoordinator? _evidenceHold;
     private readonly TransitionBudget _budget;
     private readonly ProcessOwnershipMutation _mutation;
     private int _completionState;
@@ -42,6 +43,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         Task<string> standardOutput,
         Task<string> standardError,
         Task<TargetExitReport?> targetExitReport,
+        EvidenceHoldCoordinator? evidenceHold,
         TransitionBudget budget,
         ProcessOwnershipMutation mutation,
         int targetProcessId,
@@ -54,6 +56,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         _standardOutput = standardOutput;
         _standardError = standardError;
         _targetExitReport = targetExitReport;
+        _evidenceHold = evidenceHold;
         _budget = budget;
         _mutation = mutation;
         TargetProcessId = targetProcessId;
@@ -66,6 +69,9 @@ public sealed class OwnedProcessLease : IAsyncDisposable
 
     public int TargetProcessId { get; }
 
+    public EvidenceHoldOutcome EvidenceHold =>
+        _evidenceHold?.Snapshot ?? EvidenceHoldOutcome.CreateNotRequested();
+
     public static Task<OwnedProcessLease> StartAsync(
         LaunchSpec launchSpec,
         TransitionBudget budget,
@@ -74,6 +80,22 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         return StartCoreAsync(
             launchSpec,
             budget,
+            evidenceHoldRequest: null,
+            ProcessOwnershipMutation.None,
+            cancellationToken);
+    }
+
+    public static Task<OwnedProcessLease> StartAsync(
+        LaunchSpec launchSpec,
+        TransitionBudget budget,
+        EvidenceHoldRequest evidenceHoldRequest,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(evidenceHoldRequest);
+        return StartCoreAsync(
+            launchSpec,
+            budget,
+            evidenceHoldRequest,
             ProcessOwnershipMutation.None,
             cancellationToken);
     }
@@ -84,7 +106,28 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         ProcessOwnershipMutation mutation,
         CancellationToken cancellationToken = default)
     {
-        return StartCoreAsync(launchSpec, budget, mutation, cancellationToken);
+        return StartCoreAsync(
+            launchSpec,
+            budget,
+            evidenceHoldRequest: null,
+            mutation,
+            cancellationToken);
+    }
+
+    internal static Task<OwnedProcessLease> StartForTestingAsync(
+        LaunchSpec launchSpec,
+        TransitionBudget budget,
+        EvidenceHoldRequest evidenceHoldRequest,
+        ProcessOwnershipMutation mutation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(evidenceHoldRequest);
+        return StartCoreAsync(
+            launchSpec,
+            budget,
+            evidenceHoldRequest,
+            mutation,
+            cancellationToken);
     }
 
     internal void CloseOwnerLifetimeForTesting()
@@ -97,6 +140,27 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         var report = await _targetExitReport.ConfigureAwait(false);
         return report?.ExitedAtUnixMilliseconds
             ?? throw new InvalidOperationException("The target exited without an authoritative report.");
+    }
+
+    public Task CompleteEvidenceHoldAsync(
+        EvidenceCaptureCompletion completion,
+        CancellationToken cancellationToken = default)
+    {
+        if (_evidenceHold == null)
+        {
+            throw new InvalidOperationException("This owned process lease has no evidence hold.");
+        }
+        if (completion == EvidenceCaptureCompletion.Pending)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(completion),
+                "Evidence capture must complete as captured or failed.");
+        }
+
+        return _evidenceHold.CompleteAsync(
+            completion,
+            _budget.RemainingOperation,
+            cancellationToken);
     }
 
     [SuppressMessage(
@@ -180,7 +244,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 await _standardError.ConfigureAwait(false),
                 targetExit.ExitedAtUnixMilliseconds,
                 TreeQuiescent: true,
-                Ownership);
+                Ownership,
+                EvidenceHold);
         }
         catch (Exception failure)
         {
@@ -217,7 +282,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     standardError,
                     targetExit?.ExitedAtUnixMilliseconds,
                     TreeQuiescent: treeQuiescenceProven,
-                    Ownership),
+                    Ownership,
+                    EvidenceHold),
                 operationFailure,
                 cleanupFailures);
         }
@@ -246,12 +312,20 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     private static async Task<OwnedProcessLease> StartCoreAsync(
         LaunchSpec launchSpec,
         TransitionBudget budget,
+        EvidenceHoldRequest? evidenceHoldRequest,
         ProcessOwnershipMutation mutation,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(launchSpec);
         ArgumentNullException.ThrowIfNull(budget);
         cancellationToken.ThrowIfCancellationRequested();
+        if (evidenceHoldRequest != null &&
+            launchSpec.Environment.ContainsKey(evidenceHoldRequest.TargetEnvironmentVariable))
+        {
+            throw new ArgumentException(
+                "The launch specification cannot provide the supervisor-owned evidence-hold variable.",
+                nameof(launchSpec));
+        }
 
         var controlPipeName = $"dkc-{Guid.NewGuid():N}";
         var statusPipeName = $"dks-{Guid.NewGuid():N}";
@@ -268,6 +342,9 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         var jobName = $"Local\\DownKyi.ProcessLease.{Guid.NewGuid():N}";
+        var evidenceHold = evidenceHoldRequest == null
+            ? null
+            : new EvidenceHoldCoordinator(evidenceHoldRequest);
         var startInfo = CreateSupervisorStartInfo(
             controlPipeName,
             statusPipeName,
@@ -287,6 +364,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
 
             started = true;
+            evidenceHold?.ReleaseLocalClientHandle();
             standardOutput = supervisor.StandardOutput.ReadToEndAsync(CancellationToken.None);
             standardError = supervisor.StandardError.ReadToEndAsync(CancellationToken.None);
             containment = PlatformProcessContainment.Prepare(supervisor, jobName);
@@ -333,7 +411,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 containment.Metadata.OwnershipEstablished;
 
             var payload = JsonSerializer.SerializeToUtf8Bytes(
-                LaunchSpecPayload.FromLaunchSpec(launchSpec));
+                LaunchSpecPayload.FromLaunchSpec(launchSpec, evidenceHold));
             if (payload.Length > MaximumLaunchPayloadBytes)
             {
                 throw new InvalidOperationException("The immutable launch specification is too large.");
@@ -353,6 +431,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     budget,
                     cancellationToken)
                 .ConfigureAwait(false);
+            evidenceHold?.Grant();
             var targetExitReport = ReadTargetExitReportAsync(status);
             var ownership = containment.Metadata with
             {
@@ -367,6 +446,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 standardOutput,
                 standardError,
                 targetExitReport,
+                evidenceHold,
                 budget,
                 mutation,
                 targetProcessId,
@@ -450,7 +530,14 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 failures.Add(cleanupFailure);
             }
 
-            foreach (var resource in new IDisposable?[] { containment, control, status, supervisor })
+            foreach (var resource in new IDisposable?[]
+                     {
+                         evidenceHold,
+                         containment,
+                         control,
+                         status,
+                         supervisor
+                     })
             {
                 try
                 {
@@ -735,11 +822,17 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     {
         var failures = new Collection<Exception>();
         CloseOwnerLifetime(failures);
-        foreach (var resource in new IDisposable[] { _status, _containment, _supervisor })
+        foreach (var resource in new IDisposable?[]
+                 {
+                     _evidenceHold,
+                     _status,
+                     _containment,
+                     _supervisor
+                 })
         {
             try
             {
-                resource.Dispose();
+                resource?.Dispose();
             }
             catch (Exception failure)
             {
@@ -1014,14 +1107,148 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         IReadOnlyDictionary<string, string?> Environment,
         bool CloseStandardInput)
     {
-        public static LaunchSpecPayload FromLaunchSpec(LaunchSpec launchSpec)
+        public static LaunchSpecPayload FromLaunchSpec(
+            LaunchSpec launchSpec,
+            EvidenceHoldCoordinator? evidenceHold)
         {
+            var environment = new Dictionary<string, string?>(
+                launchSpec.Environment,
+                StringComparer.Ordinal);
+            if (evidenceHold != null)
+            {
+                environment[evidenceHold.TargetEnvironmentVariable] =
+                    evidenceHold.ClientHandle;
+            }
+
             return new LaunchSpecPayload(
                 launchSpec.FileName,
                 launchSpec.Arguments,
                 launchSpec.WorkingDirectory,
-                launchSpec.Environment,
+                environment,
                 launchSpec.CloseStandardInput);
+        }
+    }
+
+    private sealed class EvidenceHoldCoordinator : IDisposable
+    {
+        private readonly object _sync = new();
+        private readonly AnonymousPipeServerStream _pipe;
+        private readonly byte _completionSignal;
+        private EvidenceCaptureCompletion _captureCompletion;
+        private bool _granted;
+        private bool _completionStarted;
+        private bool _released;
+        private bool _completionSignalDelivered;
+        private bool _localClientHandleReleased;
+
+        public EvidenceHoldCoordinator(EvidenceHoldRequest request)
+        {
+            TargetEnvironmentVariable = request.TargetEnvironmentVariable;
+            _completionSignal = request.CompletionSignal;
+            _pipe = new AnonymousPipeServerStream(
+                PipeDirection.Out,
+                HandleInheritability.Inheritable);
+            ClientHandle = _pipe.GetClientHandleAsString();
+        }
+
+        public string TargetEnvironmentVariable { get; }
+
+        public string ClientHandle { get; }
+
+        public EvidenceHoldOutcome Snapshot
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return new EvidenceHoldOutcome(
+                        Requested: true,
+                        Granted: _granted,
+                        CaptureCompletion: _captureCompletion,
+                        Released: _released,
+                        CompletionSignalDelivered: _completionSignalDelivered);
+                }
+            }
+        }
+
+        public void ReleaseLocalClientHandle()
+        {
+            lock (_sync)
+            {
+                if (_localClientHandleReleased)
+                {
+                    return;
+                }
+
+                _pipe.DisposeLocalCopyOfClientHandle();
+                _localClientHandleReleased = true;
+            }
+        }
+
+        public void Grant()
+        {
+            lock (_sync)
+            {
+                if (_released)
+                {
+                    throw new InvalidOperationException(
+                        "The evidence hold was released before target launch completed.");
+                }
+
+                _granted = true;
+            }
+        }
+
+        public async Task CompleteAsync(
+            EvidenceCaptureCompletion completion,
+            TimeSpan remaining,
+            CancellationToken cancellationToken)
+        {
+            lock (_sync)
+            {
+                if (!_granted || _completionStarted || _released)
+                {
+                    throw new InvalidOperationException(
+                        "The evidence hold is not awaiting capture completion.");
+                }
+
+                _completionStarted = true;
+                _captureCompletion = completion;
+            }
+
+            try
+            {
+                await WriteWithBudgetAsync(
+                        _pipe,
+                        new[] { _completionSignal },
+                        remaining,
+                        "The evidence-capture completion handoff exceeded the operation deadline.",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                lock (_sync)
+                {
+                    _completionSignalDelivered = true;
+                }
+            }
+            finally
+            {
+                Dispose();
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (_sync)
+            {
+                if (_released)
+                {
+                    return;
+                }
+
+                _released = true;
+            }
+
+            _pipe.Dispose();
         }
     }
 

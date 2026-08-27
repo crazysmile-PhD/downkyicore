@@ -7,6 +7,9 @@ namespace DownKyi.ProcessSupervision.Tests;
 public sealed class OwnedProcessLeasePlatformTests
 {
     private static readonly char[] LineSeparators = ['\r', '\n'];
+    private const string EvidenceHoldEnvironmentVariable =
+        "DOWNKYI_FORENSICS_CAPTURE_PIPE";
+    private const byte EvidenceCaptureCompleted = 0xA5;
 
     [Fact]
     public async Task TargetExecutesOnlyAfterPlatformOwnershipIsEstablished()
@@ -164,6 +167,139 @@ public sealed class OwnedProcessLeasePlatformTests
         await Assert.ThrowsAnyAsync<Exception>(
                 () => RunAsync(launchSpec, ProcessOwnershipMutation.None))
             .ConfigureAwait(true);
+    }
+
+    [Fact]
+    public async Task EvidenceHoldIsALeaseOwnedCaptureSubstate()
+    {
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(4));
+        var lease = await StartEvidenceHoldProbeAsync(
+                SupervisorHost.EvidenceHoldProbeArgument,
+                budget)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        var waitTask = lease.WaitAsync(TestContext.Current.CancellationToken);
+
+        await Task.Delay(250, TestContext.Current.CancellationToken).ConfigureAwait(true);
+        Assert.False(waitTask.IsCompleted);
+        Assert.True(lease.EvidenceHold.Requested);
+        Assert.True(lease.EvidenceHold.Granted);
+        Assert.False(lease.EvidenceHold.Released);
+
+        await lease.CompleteEvidenceHoldAsync(
+                EvidenceCaptureCompletion.Captured,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        var outcome = await waitTask.ConfigureAwait(true);
+
+        Assert.Equal(0, outcome.ExitCode);
+        Assert.True(outcome.TreeQuiescent);
+        Assert.Equal(
+            EvidenceCaptureCompletion.Captured,
+            outcome.EvidenceHold.CaptureCompletion);
+        Assert.True(outcome.EvidenceHold.Released);
+        Assert.True(outcome.EvidenceHold.CompletionSignalDelivered);
+    }
+
+    [Fact]
+    public async Task CapturedEvidenceCannotSubstituteForOwnedTreeQuiescence()
+    {
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(4));
+        var lease = await StartEvidenceHoldProbeAsync(
+                SupervisorHost.EvidenceHoldWithOwnedDescendantArgument,
+                budget)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        using var diagnosticRoot = Process.GetProcessById(lease.TargetProcessId);
+        var waitTask = lease.WaitAsync(TestContext.Current.CancellationToken);
+
+        await lease.CompleteEvidenceHoldAsync(
+                EvidenceCaptureCompletion.Captured,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        _ = await lease.WaitForTargetExitForTestingAsync()
+            .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await diagnosticRoot.WaitForExitAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        Assert.True(diagnosticRoot.HasExited);
+
+        var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                () => waitTask)
+            .ConfigureAwait(true);
+        Assert.Equal(OwnedProcessFailureKind.OwnedTreeNotQuiescent, failure.Failure.Kind);
+        Assert.False(failure.Failure.TreeQuiescent);
+        Assert.Equal(
+            EvidenceCaptureCompletion.Captured,
+            failure.Failure.EvidenceHold.CaptureCompletion);
+        Assert.Empty(failure.CleanupFailures);
+    }
+
+    [Fact]
+    public async Task ObserverFailureCannotTakeTerminateOrReapAuthority()
+    {
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(4));
+        var lease = await StartEvidenceHoldProbeAsync(
+                SupervisorHost.EvidenceHoldWithOwnedDescendantArgument,
+                budget)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        var waitTask = lease.WaitAsync(TestContext.Current.CancellationToken);
+
+        await lease.CompleteEvidenceHoldAsync(
+                EvidenceCaptureCompletion.Failed,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                () => waitTask)
+            .ConfigureAwait(true);
+
+        Assert.Equal(OwnedProcessFailureKind.OwnedTreeNotQuiescent, failure.Failure.Kind);
+        Assert.Equal(
+            EvidenceCaptureCompletion.Failed,
+            failure.Failure.EvidenceHold.CaptureCompletion);
+        Assert.True(failure.Failure.EvidenceHold.Released);
+        Assert.True(failure.Failure.EvidenceHold.CompletionSignalDelivered);
+        Assert.Empty(failure.CleanupFailures);
+    }
+
+    [Fact]
+    public async Task EvidenceCaptureDelayCannotExtendTheLeaseTransitionBudget()
+    {
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(4));
+        var lease = await StartEvidenceHoldProbeAsync(
+                SupervisorHost.EvidenceHoldProbeArgument,
+                budget)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        var stopwatch = Stopwatch.StartNew();
+        var waitTask = lease.WaitAsync(TestContext.Current.CancellationToken);
+
+        await Task.Delay(TimeSpan.FromSeconds(2.25), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await Assert.ThrowsAnyAsync<Exception>(
+                () => lease.CompleteEvidenceHoldAsync(
+                    EvidenceCaptureCompletion.Captured,
+                    TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+        var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                () => waitTask)
+            .ConfigureAwait(true);
+        stopwatch.Stop();
+
+        Assert.Equal(OwnedProcessFailureKind.OperationDeadlineExceeded, failure.Failure.Kind);
+        Assert.True(failure.Failure.EvidenceHold.Released);
+        Assert.Empty(failure.CleanupFailures);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(8));
     }
 
     [Fact]
@@ -565,6 +701,28 @@ public sealed class OwnedProcessLeasePlatformTests
                 ?? throw new InvalidOperationException("The probe directory is unavailable."),
             closeStandardInput: true);
         return await RunAsync(launchSpec, mutation).ConfigureAwait(true);
+    }
+
+    private static async Task<OwnedProcessLease> StartEvidenceHoldProbeAsync(
+        string probeArgument,
+        TransitionBudget budget)
+    {
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var launchSpec = new LaunchSpec(
+            "dotnet",
+            new[] { assemblyPath, probeArgument },
+            Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."));
+        var evidenceHold = new EvidenceHoldRequest(
+            EvidenceHoldEnvironmentVariable,
+            EvidenceCaptureCompleted);
+        return await OwnedProcessLease.StartForTestingAsync(
+                launchSpec,
+                budget,
+                evidenceHold,
+                ProcessOwnershipMutation.None,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
     }
 
     private static async Task<OwnedProcessOutcome> RunAsync(

@@ -123,6 +123,60 @@ public sealed record ProcessOwnershipMetadata(
     bool OwnershipEstablished,
     bool OwnerWasAlreadyContained);
 
+public sealed class EvidenceHoldRequest
+{
+    public EvidenceHoldRequest(
+        string targetEnvironmentVariable,
+        byte completionSignal)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetEnvironmentVariable);
+        if (targetEnvironmentVariable.Contains('=', StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "The evidence-hold environment variable name cannot contain '='.",
+                nameof(targetEnvironmentVariable));
+        }
+        if (completionSignal == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(completionSignal),
+                "The evidence-hold completion signal cannot be zero.");
+        }
+
+        TargetEnvironmentVariable = targetEnvironmentVariable;
+        CompletionSignal = completionSignal;
+    }
+
+    public string TargetEnvironmentVariable { get; }
+
+    public byte CompletionSignal { get; }
+}
+
+public enum EvidenceCaptureCompletion
+{
+    Pending,
+    Captured,
+    Failed
+}
+
+public sealed record EvidenceHoldOutcome(
+    bool Requested,
+    bool Granted,
+    EvidenceCaptureCompletion CaptureCompletion,
+    bool Released,
+    bool CompletionSignalDelivered)
+{
+    internal static EvidenceHoldOutcome CreateNotRequested()
+    {
+        return new EvidenceHoldOutcome(
+            Requested: false,
+            Granted: false,
+            EvidenceCaptureCompletion.Pending,
+            Released: false,
+            CompletionSignalDelivered: false);
+    }
+}
+
 public sealed record OwnedProcessOutcome(
     int SupervisorProcessId,
     int? TargetProcessId,
@@ -131,7 +185,8 @@ public sealed record OwnedProcessOutcome(
     string StandardError,
     long TargetExitedAtUnixMilliseconds,
     bool TreeQuiescent,
-    ProcessOwnershipMetadata Ownership);
+    ProcessOwnershipMetadata Ownership,
+    EvidenceHoldOutcome EvidenceHold);
 
 public enum OwnedProcessFailureKind
 {
@@ -150,7 +205,8 @@ public sealed record OwnedProcessFailure(
     string StandardError,
     long? TargetExitedAtUnixMilliseconds,
     bool TreeQuiescent,
-    ProcessOwnershipMetadata Ownership);
+    ProcessOwnershipMetadata Ownership,
+    EvidenceHoldOutcome EvidenceHold);
 
 [SuppressMessage(
     "Design",

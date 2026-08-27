@@ -15,6 +15,13 @@ internal static class SupervisorHost
     internal const string OwnedTreeProbeArgument = "--owned-tree-probe";
     internal const string ExitWithOwnedDescendantArgument = "--exit-with-owned-descendant";
     internal const string BlockForeverArgument = "--block-forever";
+    internal const string EvidenceHoldProbeArgument = "--evidence-hold-probe";
+    internal const string EvidenceHoldWithOwnedDescendantArgument =
+        "--evidence-hold-with-owned-descendant";
+
+    private const string EvidenceHoldEnvironmentVariable =
+        "DOWNKYI_FORENSICS_CAPTURE_PIPE";
+    private const byte EvidenceCaptureCompleted = 0xA5;
 
     private const byte OwnershipAttachment = 0xB1;
     private const byte LaunchAuthorization = 0xC1;
@@ -53,6 +60,21 @@ internal static class SupervisorHost
             await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
                 .ConfigureAwait(false);
             return 0;
+        }
+        if (arguments.Count == 1 &&
+            string.Equals(arguments[0], EvidenceHoldProbeArgument, StringComparison.Ordinal))
+        {
+            return await RunEvidenceHoldProbeAsync(withOwnedDescendant: false)
+                .ConfigureAwait(false);
+        }
+        if (arguments.Count == 1 &&
+            string.Equals(
+                arguments[0],
+                EvidenceHoldWithOwnedDescendantArgument,
+                StringComparison.Ordinal))
+        {
+            return await RunEvidenceHoldProbeAsync(withOwnedDescendant: true)
+                .ConfigureAwait(false);
         }
         if (arguments.Count == 2 &&
             string.Equals(arguments[0], ExitWithOwnedDescendantArgument, StringComparison.Ordinal))
@@ -280,6 +302,44 @@ internal static class SupervisorHost
                 IsMutationActive(ProcessOwnershipMutation.FailFixturePublication))
             .ConfigureAwait(false);
         return 0;
+    }
+
+    private static async Task<int> RunEvidenceHoldProbeAsync(bool withOwnedDescendant)
+    {
+        var capturePipeHandle = Environment.GetEnvironmentVariable(
+            EvidenceHoldEnvironmentVariable);
+        Environment.SetEnvironmentVariable(EvidenceHoldEnvironmentVariable, null);
+        if (string.IsNullOrWhiteSpace(capturePipeHandle))
+        {
+            return 207;
+        }
+
+        Process? descendant = null;
+        try
+        {
+            if (withOwnedDescendant)
+            {
+                var assemblyPath = typeof(SupervisorHost).Assembly.Location;
+                descendant = Process.Start(
+                    CreateProbeStartInfo(assemblyPath, BlockForeverArgument))
+                    ?? throw new InvalidOperationException(
+                        "The evidence-hold descendant did not start.");
+            }
+
+            using var capturePipe = new AnonymousPipeClientStream(
+                PipeDirection.In,
+                capturePipeHandle);
+            var completion = new byte[1];
+            var read = await capturePipe.ReadAsync(completion, CancellationToken.None)
+                .ConfigureAwait(false);
+            return read == completion.Length && completion[0] == EvidenceCaptureCompleted
+                ? 0
+                : 208;
+        }
+        finally
+        {
+            descendant?.Dispose();
+        }
     }
 
     private static ProcessStartInfo CreateProbeStartInfo(

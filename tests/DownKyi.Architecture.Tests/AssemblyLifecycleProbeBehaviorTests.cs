@@ -1,161 +1,98 @@
-using System.Diagnostics;
-using System.IO.Pipes;
-
 namespace DownKyi.Architecture.Tests;
 
 public sealed class AssemblyLifecycleProbeBehaviorTests
 {
-    private const string CapturePipeEnvironmentVariable = "DOWNKYI_FORENSICS_CAPTURE_PIPE";
-    private const string MutationEnvironmentVariable = "DOWNKYI_TEST_MUTATE_FORENSICS_LEASE";
-    private const byte CaptureCompleted = 0xA5;
-    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan TerminationTimeout = TimeSpan.FromSeconds(5);
+    private const string MutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_FORENSICS_LEASE";
+    private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
-    public async Task CaptureOwnerExclusivelyControlsProbeCompletion()
+    public void LifecycleForensicsIsAnObserverRatherThanASecondProcessOwner()
     {
-        var lease = new AnonymousPipeServerStream(
-            PipeDirection.Out,
-            HandleInheritability.Inheritable);
-        using var process = StartProbe(lease.GetClientHandleAsString());
-        var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
-        var error = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
-        lease.DisposeLocalCopyOfClientHandle();
-        var completed = false;
-        try
+        var source = ReadLifecycleGate();
+        var observer = ReadFunction(source, "Invoke-ForensicsObserverCapture");
+        string[] forbiddenObserverAuthorities =
+        [
+            "ownedTreeQuiescent",
+            "residualChildren",
+            "OwnedProcessLease",
+            "CompleteEvidenceHoldAsync",
+            "TransitionBudget]::Start",
+            ".WaitAsync(",
+            ".Kill(",
+            ".Terminate("
+        ];
+
+        foreach (var authority in forbiddenObserverAuthorities)
         {
-            if (Environment.GetEnvironmentVariable(MutationEnvironmentVariable) == "1")
-            {
-                await CompleteAsync(lease).ConfigureAwait(true);
-                completed = true;
-                await WaitForExitAsync(process).ConfigureAwait(true);
-            }
-            else
-            {
-                await Task.Delay(750, TestContext.Current.CancellationToken).ConfigureAwait(true);
-            }
-
-            Assert.False(
-                process.HasExited,
-                "The probe exited before its capture owner completed the evidence transaction.");
-
-            await CompleteAsync(lease).ConfigureAwait(true);
-            completed = true;
-            await WaitForExitAsync(process).ConfigureAwait(true);
-            Assert.Equal(0, process.ExitCode);
-            Assert.Contains("\"Success\":true", await output.ConfigureAwait(true), StringComparison.Ordinal);
-            Assert.Equal(string.Empty, await error.ConfigureAwait(true));
-        }
-        finally
-        {
-            if (!completed)
-            {
-                await lease.DisposeAsync().ConfigureAwait(true);
-            }
-
-            await TerminateIfRunningAsync(process).ConfigureAwait(true);
-        }
-    }
-
-    [Fact]
-    public async Task CaptureOwnerDisconnectFailsClosedWithoutLeavingTheProbeAlive()
-    {
-        var lease = new AnonymousPipeServerStream(
-            PipeDirection.Out,
-            HandleInheritability.Inheritable);
-        using var process = StartProbe(lease.GetClientHandleAsString());
-        var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
-        lease.DisposeLocalCopyOfClientHandle();
-        await lease.DisposeAsync().ConfigureAwait(true);
-        try
-        {
-            await WaitForExitAsync(process).ConfigureAwait(true);
-
-            Assert.NotEqual(0, process.ExitCode);
-            Assert.Contains(
-                "capture_owner_disconnected",
-                await output.ConfigureAwait(true),
-                StringComparison.Ordinal);
-        }
-        finally
-        {
-            await TerminateIfRunningAsync(process).ConfigureAwait(true);
-        }
-    }
-
-    private static Process StartProbe(string capturePipeHandle)
-    {
-        var startInfo = CreateProbeStartInfo();
-        var probePath = GetProbePath();
-        startInfo.ArgumentList.Add("--assembly");
-        startInfo.ArgumentList.Add(probePath);
-        startInfo.Environment[CapturePipeEnvironmentVariable] = capturePipeHandle;
-        return Process.Start(startInfo)
-            ?? throw new InvalidOperationException("The lifecycle probe did not start.");
-    }
-
-    private static ProcessStartInfo CreateProbeStartInfo()
-    {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "dotnet",
-            WorkingDirectory = FindRepositoryRoot(),
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-        startInfo.ArgumentList.Add(GetProbePath());
-        return startInfo;
-    }
-
-    private static async Task CompleteAsync(AnonymousPipeServerStream lease)
-    {
-        await lease.WriteAsync(
-                new[] { CaptureCompleted },
-                TestContext.Current.CancellationToken)
-            .ConfigureAwait(true);
-        await lease.FlushAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
-        await lease.DisposeAsync().ConfigureAwait(true);
-    }
-
-    private static async Task WaitForExitAsync(Process process)
-    {
-        await process.WaitForExitAsync(TestContext.Current.CancellationToken)
-            .WaitAsync(ProbeTimeout, TestContext.Current.CancellationToken)
-            .ConfigureAwait(true);
-    }
-
-    private static async Task TerminateIfRunningAsync(Process process)
-    {
-        if (process.HasExited)
-        {
-            return;
+            Assert.DoesNotContain(authority, observer, StringComparison.Ordinal);
         }
 
-        process.Kill(entireProcessTree: true);
-        await process.WaitForExitAsync(CancellationToken.None)
-            .WaitAsync(TerminationTimeout)
-            .ConfigureAwait(true);
-    }
+        Assert.Contains("EvidenceHoldRequest", source, StringComparison.Ordinal);
+        Assert.Contains("CompleteEvidenceHoldAsync", source, StringComparison.Ordinal);
+        Assert.Contains("EvidenceCaptureCompletion", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("function New-EvidenceCaptureLease", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("function Start-EvidenceCaptureLease", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("function Complete-EvidenceCaptureLease", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("function Close-EvidenceCaptureLease", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("ObservedChildReleaseLease", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Wait-ResidualProcessTree", source, StringComparison.Ordinal);
 
-    private static string GetProbePath()
-    {
-#if DEBUG
-        const string configuration = "Debug";
-#else
-        const string configuration = "Release";
-#endif
-        var path = Path.Combine(
-            FindRepositoryRoot(),
+        var probe = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
             "tools",
             "DownKyi.AssemblyLifecycleProbe",
-            "bin",
-            configuration,
-            "net10.0",
-            "DownKyi.AssemblyLifecycleProbe.dll");
-        Assert.True(File.Exists(path), $"The lifecycle probe was not built: {path}");
-        return path;
+            "Program.cs"));
+        Assert.DoesNotContain("DOWNKYI_TRANSIENT_CHILD", probe, StringComparison.Ordinal);
+        Assert.DoesNotContain("Kill(entireProcessTree", probe, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ObserverTruthMutationCannotSatisfyTheProcessOwnerGate()
+    {
+        var source = ReadLifecycleGate();
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(MutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            source = source.Replace(
+                "-not $ProcessResult.ownedTreeQuiescent -or",
+                "(-not $ProcessResult.ownedTreeQuiescent -and " +
+                "-not $ProcessResult.observerTreeQuiescent) -or",
+                StringComparison.Ordinal);
+        }
+
+        var classifier = ReadFunction(source, "New-ProcessPhaseResult");
+        Assert.Contains(
+            "-not $ProcessResult.ownedTreeQuiescent -or",
+            classifier,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "$ProcessResult.observerTreeQuiescent",
+            classifier,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "$ProcessResult.diagnosticTreeQuiescent",
+            classifier,
+            StringComparison.Ordinal);
+    }
+
+    private static string ReadFunction(string source, string functionName)
+    {
+        var startToken = $"function {functionName} {{";
+        var start = source.IndexOf(startToken, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"Lifecycle function was not found: {functionName}");
+        var next = source.IndexOf("\nfunction ", start + startToken.Length, StringComparison.Ordinal);
+        return next < 0 ? source[start..] : source[start..next];
+    }
+
+    private static string ReadLifecycleGate()
+    {
+        return File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "script",
+            "test-assembly-lifecycle.ps1"));
     }
 
     private static string FindRepositoryRoot()

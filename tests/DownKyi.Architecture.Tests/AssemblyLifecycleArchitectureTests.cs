@@ -77,6 +77,12 @@ public sealed class AssemblyLifecycleArchitectureTests
             "TransitionBudget]::Start",
             "ownedTreeQuiescent",
             "ownedProcessCleanupFailures",
+            "EvidenceHoldRequest",
+            "CompleteEvidenceHoldAsync",
+            "EvidenceCaptureCompletion",
+            "Invoke-ForensicsObserverCapture",
+            "processFailureType",
+            "forensicsFailureType",
             "dotnet-stack",
             "managed-stack.txt",
             "DOWNKYI_LIFECYCLE_MARKER",
@@ -101,6 +107,7 @@ public sealed class AssemblyLifecycleArchitectureTests
             "slowEvidenceCaptureLeadMilliseconds",
             "slowEvidenceTriggeredBeforeThreshold",
             "forensicsSelfTestCaptureLeadValidated",
+            "forensicsSelfTestEvidenceHoldValidated",
             "diagnosticCaptureDurationMs",
             "processExitedAtUnixMs",
             "TargetExitedAtUnixMilliseconds",
@@ -176,6 +183,10 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.DoesNotContain("Stop-DownKyiOwnedProcess", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("ReleaseObservedChildren", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("ObservedChildReleaseLease", gate, StringComparison.Ordinal);
+        Assert.DoesNotContain("function New-EvidenceCaptureLease", gate, StringComparison.Ordinal);
+        Assert.DoesNotContain("function Start-EvidenceCaptureLease", gate, StringComparison.Ordinal);
+        Assert.DoesNotContain("function Complete-EvidenceCaptureLease", gate, StringComparison.Ordinal);
+        Assert.DoesNotContain("function Close-EvidenceCaptureLease", gate, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "$processExitedAtUnixMs = [DateTimeOffset]::UtcNow",
             gate,
