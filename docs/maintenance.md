@@ -40,11 +40,12 @@ per test assembly with `-ValidateForensics`. The release workflow uses the
 `artifacts/assembly-lifecycle/release`; neither step may be replaced by a
 successful one-off rerun.
 
-Lifecycle report schema 2 uses the child OS `Process.ExitTime` for post-fixture
-exit, captures marker-aware execution at the unchanged slow threshold, records
-diagnostic collection wall time, and fails a slow phase whose evidence is
-missing. Schema 1 exit values include collector overhead and are historical
-only; do not compare them directly with schema 2.
+Lifecycle report schema 4 uses the supervisor's target-exit report for
+post-fixture exit, captures marker-aware execution at the unchanged slow
+threshold, records diagnostic collection wall time, and fails a slow phase
+whose evidence is missing. It also separates process-owner and forensics
+failure fields and records the lease-owned evidence-hold outcome. Older schema
+1 exit values include collector overhead and must not be compared directly.
 
 The slow classification threshold remains five seconds. Evidence collection
 is armed 1,000 ms before that boundary so hosted-runner scheduling cannot
@@ -52,14 +53,15 @@ observe a borderline process only after it has exited. Reports expose both the c
 lead and whether a phase was sampled before the classification boundary;
 `capture-failed` and `process-exited-before-capture` remain fail-closed for
 phases whose final duration reaches the threshold.
-The `-ValidateForensics` self-test holds its child through a one-shot inherited
-pipe owned by the capture transaction until diagnostic capture finishes. The
-lease leaves no filesystem state and has no competing child deadline. It must set
-`forensicsSelfTestCaptureLeadValidated=true`, proving this arm point executed
-rather than merely existing in source.
+The `-ValidateForensics` self-test requests a one-shot evidence hold from
+`OwnedProcessLease`; the observer only supplies the capture completion result.
+The hold leaves no filesystem state and consumes the lease's existing
+`TransitionBudget`. It must set both
+`forensicsSelfTestCaptureLeadValidated=true` and
+`forensicsSelfTestEvidenceHoldValidated=true`.
 
 Formal Windows PR, Main, Rehearsal and Flaky lifecycle profiles require
-`-ValidateForensics`. Their schema 2 report must show a detailed
+`-ValidateForensics`. Their schema 4 report must show a detailed
 `markerReaderSelfTest` with `executed`, `passed`, `contentionObserved`,
 `contentionCount > 0`, `recoveredAfterLockRelease` and
 `markerParsedAfterRecovery` all true, plus `errorType == null`. Its contract
@@ -68,8 +70,9 @@ fail closed; the top-level
 `markerReaderSelfTestPassed` value is only a summary.
 The marker self-test phase, summary and final formal contract must consume the
 single `markerReaderSelfTestComplete` result; do not re-expand the predicate.
-General lifecycle failures belong in phase `failureType` / `errorType`, while
-`slowEvidenceErrorType` is only for slow-evidence collection.
+General lifecycle failures belong in phase `failureType` / `errorType`.
+`processFailureType` retains lease truth, while `forensicsFailureType` and the
+specific evidence error fields retain observer failure without replacing it.
 
 Only Windows sharing/lock error codes count as marker contention.
 `UnauthorizedAccessException` and other I/O errors remain separately visible
@@ -77,13 +80,14 @@ as `markerReadErrorCount` and `markerReadErrorType`.
 
 Residual-child failures are independently fail-closed. Formal lifecycle phases
 establish an `OwnedProcessLease` before target code executes; Job Object or
-POSIX process-group quiescence is the correctness oracle after the root exits.
+delegated cgroup/libproc membership is the correctness oracle after the root
+exits.
 `residual-children.json` records that ownership failure and containment identity.
 PID, PPID, process-name and start-time observations are diagnostic evidence only
 and cannot select a kill target or convert a non-quiescent tree to success.
 `-ValidateForensics` runs the same lease path with a parent that exits while a
-descendant remains; `processLeaseSelfTestPassed` summarizes the detailed
-`processLeaseSelfTest` contract.
+descendant remains, injects observer failure, and still requires lease-owned
+bounded cleanup. `processLeaseSelfTestPassed` summarizes that detailed contract.
 
 PR #116 merged the final lifecycle proof consistency fix into `main` at
 `6a61247`. Strict PR CI `30450175286` and CodeQL `30450175415` passed. Its

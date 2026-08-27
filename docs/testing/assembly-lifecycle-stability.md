@@ -84,16 +84,14 @@ not claim that the final direct blocker in the historical intermittent
 specimen was captured or proven with complete forensic certainty.
 
 Every phase records its exit code, duration, timeout state, stdout/stderr
-protocol state and child-process observations. A child observed immediately
-after the parent exits is `transient` when it drains inside the bounded
-500-millisecond quiescence window and `residual` only when the same process
-identity remains alive at the boundary. Identity includes PID, parent PID,
-process name, creation time, tree depth and a command line with repository,
-user-profile, temporary, URL and credential values redacted. The report
-aggregates P50, P95, P99 and maximum duration per assembly and phase.
-Every phase result also has general `failureType` and `errorType` fields.
-`slowEvidenceErrorType` is reserved for failures inside slow-evidence capture
-and must not carry unrelated self-test or lifecycle contract failures.
+protocol state, typed process ownership and diagnostic observations. Job active
+process state, Linux cgroup v2 membership or macOS libproc group membership is
+the residual-process truth. PID, parent PID, process name, creation time, tree
+depth and a redacted command line remain diagnostic snapshot fields only. The
+report aggregates P50, P95, P99 and maximum duration per assembly and phase.
+Schema 4 records `processFailureType` and `forensicsFailureType` separately in
+addition to the general `failureType` and `errorType`; slow, exit and residual
+evidence errors cannot overwrite the process owner's causal failure.
 
 ### Measurement Definitions
 
@@ -116,16 +114,17 @@ and must not carry unrelated self-test or lifecycle contract failures.
   threshold. `slowEvidenceStatus` is `captured`, `capture-failed`, or
   `process-exited-before-capture`; the latter two still fail a slow phase
   instead of leaving an unexplained empty evidence array.
-- `-ValidateForensics` uses a child held by an inherited anonymous-pipe lease to
+- `-ValidateForensics` asks `OwnedProcessLease` for an evidence-hold sub-state to
   prove the capture lead actually ran before a synthetic 1.25-second threshold.
-  The capture owner releases that one-shot lease only after the evidence attempt
-  completes; parent death closes it, and no replayable filesystem state remains.
+  The lease creates and owns the one-shot endpoint before target execution; the
+  observer only returns `Captured` or `Failed`, and no replayable filesystem
+  state remains.
   A controlled delay proves the child remains live during capture, so hosted-runner
   diagnostic latency cannot invalidate the proof. The one-second lead therefore
   arms at 0.25 seconds instead of relying on a zero-clamped threshold. The
-  machine report exposes `forensicsSelfTestCaptureLeadValidated`; the forensics
-  self-test fails when that value is false, even if a later stack capture would
-  otherwise exist.
+  machine report exposes `forensicsSelfTestCaptureLeadValidated` and
+  `forensicsSelfTestEvidenceHoldValidated`; the self-test fails unless the hold
+  reports requested, granted, captured, released and completion delivered.
 - Managed-stack collection can pause or otherwise perturb the observed child.
   `durationMs` remains the honest instrumented wall-clock value, while
   `diagnosticCaptureDurationMs` records collector wall time separately. These
@@ -207,10 +206,11 @@ On Windows, a slow phase or slow post-teardown exit automatically captures:
 Confirmed non-quiescent owned trees use a separate evidence path and are written
 to `residual-children.json`. The manifest records the lease failure, retained
 root/target diagnostic IDs and OS containment identity. Job Object active-tree
-state on Windows and process-group liveness on Linux/macOS decide correctness;
-PID/PPID process-tree snapshots remain observer evidence only. Reparenting or a
-changed PPID therefore cannot hide a descendant, and evidence capture never
-converts `ResidualChildProcess` to success.
+state on Windows, delegated cgroup v2 membership on Linux and libproc anchored
+group membership on macOS decide correctness. PID/PPID process-tree snapshots
+remain observer evidence only. Reparenting or a changed PPID therefore cannot
+hide a descendant, and evidence capture never converts `ResidualChildProcess`
+to success.
 
 CI installs the pinned Microsoft `dotnet-stack` tool and runs
 `-ValidateForensics`. That self-test deliberately holds a marker-aware
@@ -218,18 +218,20 @@ CI installs the pinned Microsoft `dotnet-stack` tool and runs
 used by test execution produces evidence and a non-empty managed stack.
 On Windows it also opens a valid marker with exclusive sharing and proves that
 the reader tolerates the temporary lock, then parses the marker after release.
-Schema 3 replaces the synthetic observer-release proof with the process-lease
-contract. The cross-platform process-supervision fixtures execute the platform
+Schema 4 records the process-lease and evidence-hold contracts. The
+cross-platform process-supervision fixtures execute the platform
 primitive, including launch-without-ownership mutations, parent-exit/reparent
 behavior, inherited output handles and injected terminate/reap failures. Formal
 `-ValidateForensics` also launches a parent that exits while its descendant
 remains in the owned tree. The phase must be rejected as
 `ResidualChildProcess`, bounded cleanup must finish, and the detailed
 `processLeaseSelfTest` contract must pass. Timeout and slow-phase evidence are
-observer operations within the caller's `TransitionBudget`; they do not own a
-second kill, reap or residual-child decision.
+observer operations within the caller's `TransitionBudget`; the self-test
+injects observer failure and requires both that failure and the lease rejection
+to remain visible. Observer code does not own a second kill, reap,
+residual-child decision or deadline.
 
-Schema 3 retains the marker-reader proof as a fail-closed object:
+Schema 4 retains the marker-reader proof as a fail-closed object:
 
 ```json
 {

@@ -532,6 +532,64 @@ Stage 2 already removed the PPID correctness oracle, synthetic
 Stage 3 completes observer/evidence-hold migration without reintroducing a
 process owner, deadline owner or residual-process truth source.
 
+### Stage 3 Implementation Checkpoint
+
+Implementation commit:
+`0d91f8f71d8567427f384ce39dc14ae52c60622b`.
+
+The consistency audit found one remaining correctness owner in the forensics
+path: `test-assembly-lifecycle.ps1` created and released an inherited capture
+pipe directly, and its behavioral test asserted that this capture owner
+controlled probe completion. The assembly probe also retained an unused
+PID/creation-time residual-child release path with its own tree kill and wait.
+Neither path supplied diagnostic value that required process ownership.
+
+Stage 3 moves the optional evidence hold into `OwnedProcessLease`. The same
+lease that established launch-time containment now creates the hold endpoint,
+injects it through the immutable launch payload, records
+`Requested -> Granted -> Captured | Failed -> Released`, and consumes the
+existing `TransitionBudget` for the completion handoff. The PowerShell
+`Invoke-ForensicsObserverCapture` function receives only a diagnostic target ID
+and that existing budget. It cannot query authoritative membership, decide
+quiescence, terminate, reap, release the hold or create a deadline. The unused
+legacy residual-child release/kill implementation was removed from the probe.
+
+Lifecycle report schema 4 preserves process and observer evidence separately.
+`processFailureType` comes from the typed lease result;
+`forensicsFailureType` and the capture-specific error fields remain concurrent
+diagnostic evidence. A capture failure may fail the phase, but cannot replace a
+lease failure or turn it into success. Observer-created `dotnet-stack` or `ps`
+collector processes are bounded by the lease's original operation/cleanup
+timeline and can terminate only their own collector process.
+
+Local Windows evidence for the implementation content was collected before the
+commit. The lifecycle machine report therefore records starting HEAD
+`3ff37563dcb84c3f7e21fc5ea500339cb4ff2840` with
+`workingTreeDirty=true`; the committed implementation is the same staged diff:
+
+- strict Release solution build passed 23 projects with zero warnings and zero
+  errors;
+- focused Architecture tests passed 11/11 and focused Windows
+  process-supervision tests passed 24/24;
+- the review-invariant gate passed 11 invariants, 318 tests and two intentional
+  adversarial mutations; re-enabling observer truth failed 1 of 2 mutation
+  tests as required;
+- the central Windows runner selected and passed all eight Windows-owned test
+  projects: 1,080 passed, zero failed and one declared aria2 integration skip;
+- lifecycle ownership reported 613 matches and zero violations;
+- one-assembly `Local -ValidateForensics` reported schema 4, nine successful
+  phase results and zero failures. It recorded capture-lead and evidence-hold
+  validation true, an observer-missed descendant still rejected, injected
+  observer failure preserved, and lease cleanup complete;
+- PowerShell syntax, module-boundary audit, formatting and `git diff --check`
+  passed.
+
+Status: Stage 3 native Windows/Linux/macOS CI, Assembly Lifecycle and exact-head
+Codex review are pending for the documentation checkpoint that records this
+implementation. Stage 3 remains open. Stage 4 and Stage 5 findings remain
+deferred, and no workflow, restart, central-runner, release or tag change is
+included.
+
 ## Stage 4: Restart Transaction
 
 Retain prepare, authorize, commit and revoke. Keep product Policy B. The helper

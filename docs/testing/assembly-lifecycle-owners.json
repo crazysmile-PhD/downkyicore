@@ -310,9 +310,9 @@
         "tools/DownKyi.ProcessSupervision/**"
       ],
       "owner": "OwnedProcessLease",
-      "start": "The caller supplies one immutable LaunchSpec and TransitionBudget; the lease starts an inert supervisor and establishes Job, delegated cgroup, or retained-anchor ownership before target authorization.",
-      "stop": "WaitAsync consumes the authoritative target-exit report and platform membership state, while DisposeAsync or owner-lifetime EOF begins bounded termination.",
-      "teardown": "The same lease consumes the caller's budget to terminate owned membership, prove quiescence, reap the supervisor, drain streams, remove lease-created cgroup or fixture staging state, and preserve concurrent failures.",
+      "start": "The caller supplies one immutable LaunchSpec and TransitionBudget; the lease starts an inert supervisor and establishes Job, delegated cgroup, or retained-anchor ownership before target authorization. An optional evidence hold is established by this same lease, never by the observer.",
+      "stop": "WaitAsync consumes the authoritative target-exit report and platform membership state, while DisposeAsync or owner-lifetime EOF begins bounded termination. Evidence capture completion is only a lease-owned release handoff and cannot decide process state.",
+      "teardown": "The same lease consumes the caller's budget to terminate owned membership, prove quiescence, reap the supervisor, drain streams, release any evidence hold, remove lease-created cgroup or fixture staging state, and preserve concurrent process and capture failures.",
       "allowedMechanisms": [
         "external_process",
         "host_lifecycle",
@@ -325,12 +325,11 @@
         "tools/DownKyi.AssemblyLifecycleProbe/**"
       ],
       "owner": "Assembly lifecycle gate child process",
-      "start": "The probe creates one collectible AssemblyLoadContext or, only for the forensics self-test, one bounded residual child.",
-      "stop": "The probe unloads the context; the lifecycle gate identifies and stops the synthetic residual tree.",
-      "teardown": "A retained context fails the load phase. Residual-child self-test cleanup matches PID and creation time, kills the synthetic tree and performs a bounded wait.",
+      "start": "The probe creates one collectible AssemblyLoadContext. In the forensics fixture it receives only the evidence-hold endpoint established by OwnedProcessLease before target execution.",
+      "stop": "The probe unloads the context and reports its result after the lease-owned evidence-capture completion handoff.",
+      "teardown": "A retained context fails the load phase. Owner death or an exhausted transition budget is handled by OwnedProcessLease containment; the probe has no child-process kill, reap or deadline authority.",
       "allowedMechanisms": [
         "static_initialization",
-        "external_process",
         "bounded_sleep"
       ]
     }
