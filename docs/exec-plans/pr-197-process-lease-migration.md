@@ -314,9 +314,11 @@ constraints:
 
 ### Stage 2 Authoritative Backend Implementation Checkpoint
 
-Status: Stage 2 is complete. The implementation commit is
-`3d72fa62db67c409d5316fa1487073613c15eb9c`; the exact reviewed and CI-validated
-head is `d955fb54b9cd7cbea0608277397124d56b5a89ad`. Stage 3 has not started.
+Status: Stage 2 implementation commit
+`af2c02440e253273a7add923c5ca815083d43d98` closes the macOS termination-result
+defect described below. The last fully reviewed and CI-validated head remains
+`d955fb54b9cd7cbea0608277397124d56b5a89ad`; native CI and exact-head review for
+the correction are still pending. Stage 3 has not started.
 
 `OwnedProcessLease` now establishes and acknowledges containment plus membership
 before accepting the immutable target launch payload. Linux creates a per-lease
@@ -434,6 +436,44 @@ Exact-head closure evidence:
 - the Codex exact-head review at
   [d955fb54b9cd](https://github.com/crazysmile-PhD/downkyicore/pull/197#issuecomment-5437591194)
   found no major issue.
+
+The following documentation-only head triggered Strict PR CI run
+[33062685229](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33062685229).
+Its macOS job exposed a Stage 2 termination-result defect in
+`OwnerLifetimeClosureTriggersBoundedOwnedTreeCleanup`: after owner EOF had
+already caused the supervisor to signal its process group, the retained group
+could contain only zombies and no live signalable member. Darwin returned
+`EPERM`, and the parent cleanup incorrectly retained that syscall result as a
+termination failure even though libproc membership remained the authoritative
+quiescence decision.
+
+The current correction maps Darwin's no-signalable-member `EPERM` to a completed
+termination request only for the libproc-backed macOS path. It does not report
+tree success: `OwnedProcessLease` must still obtain authoritative libproc
+convergence, and unknown errors or unavailable/ambiguous membership continue to
+fail closed. Executable decision regressions accept success and `ESRCH`, defer
+only Darwin `EPERM`, reject the same result without Darwin authority and reject
+unknown errors. The existing native owner-EOF behavioral test and membership
+failure mutation remain the production-boundary proof. Stage 2 stays open until
+the corrected exact head passes native CI and review.
+
+The local Windows aggregate runner exposed a separate Stage 2 test-oracle
+constraint while validating this correction: the launch-payload budget mutation
+used a 400 ms operation budget, which could expire during supervisor startup
+before reaching the intended bounded pipe-write boundary. The fixture now uses
+a three-second operation budget while retaining the exact launch-specification
+failure oracle and the single shared `TransitionBudget`. This does not add a
+retry, sleep, second deadline or production behavior; it keeps the mutation
+bounded while requiring it to fail at the intended production boundary.
+
+Local validation for implementation commit
+`af2c02440e253273a7add923c5ca815083d43d98` passed strict Release builds of the
+Windows and macOS platform test projects, 24/24 Windows process-supervision
+tests (including the five termination-result decisions), 308/308 Architecture
+tests, the platform-selector regression, and all eight Windows-owned projects
+through `test-solution.ps1`. PowerShell syntax, formatting verification and
+`git diff --check` also passed. Native Darwin behavior still requires the next
+exact-head macOS CI run.
 
 ### Unresolved Review Thread Ownership
 
