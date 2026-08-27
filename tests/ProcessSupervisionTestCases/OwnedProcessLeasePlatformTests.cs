@@ -20,6 +20,8 @@ public sealed class OwnedProcessLeasePlatformTests
         Assert.True(probe.OwnershipEstablished);
         Assert.Equal(outcome.Ownership.ContainmentKind.ToString(), probe.ContainmentKind);
         Assert.Equal(outcome.Ownership.ContainmentId, probe.ContainmentId);
+        Assert.Equal(outcome.Ownership.MembershipId, probe.MembershipId);
+        Assert.False(string.IsNullOrWhiteSpace(outcome.Ownership.BackendArchitecture));
 
         if (OperatingSystem.IsWindows() &&
             string.Equals(
@@ -42,6 +44,39 @@ public sealed class OwnedProcessLeasePlatformTests
         Assert.Equal(42, outcome.ExitCode);
         Assert.False(outcome.Ownership.OwnershipEstablished);
         Assert.False(probe.OwnershipEstablished);
+    }
+
+    [Fact]
+    public async Task OwnershipEstablishmentFailureCannotAuthorizeTargetExecution()
+    {
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var readyPath = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-unowned-target-{Guid.NewGuid():N}.json");
+        var launchSpec = new LaunchSpec(
+            "dotnet",
+            new[] { assemblyPath, "--owned-tree-probe", readyPath },
+            Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."));
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(4));
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<Exception>(
+                    () => OwnedProcessLease.StartForTestingAsync(
+                        launchSpec,
+                        budget,
+                        ProcessOwnershipMutation.FailOwnershipEstablishment,
+                        TestContext.Current.CancellationToken))
+                .ConfigureAwait(true);
+            Assert.False(File.Exists(readyPath));
+        }
+        finally
+        {
+            File.Delete(readyPath);
+        }
     }
 
     [Fact]
@@ -153,7 +188,7 @@ public sealed class OwnedProcessLeasePlatformTests
             Path.GetDirectoryName(assemblyPath)
                 ?? throw new InvalidOperationException("The probe directory is unavailable."));
         var budget = TransitionBudget.Start(
-            TimeSpan.FromMilliseconds(750),
+            TimeSpan.FromSeconds(2),
             TimeSpan.FromSeconds(4));
         var lease = await OwnedProcessLease.StartForTestingAsync(
                 launchSpec,
@@ -173,6 +208,7 @@ public sealed class OwnedProcessLeasePlatformTests
             stopwatch.Stop();
             Assert.Equal(OwnedProcessFailureKind.OwnedTreeNotQuiescent, failure.Failure.Kind);
             Assert.False(failure.Failure.TreeQuiescent);
+            Assert.NotNull(failure.Failure.TargetExitedAtUnixMilliseconds);
             Assert.Empty(failure.CleanupFailures);
             var processIds = await WaitForOwnedTreeProbeAsync(
                     readyPath,
@@ -202,7 +238,7 @@ public sealed class OwnedProcessLeasePlatformTests
             Path.GetDirectoryName(assemblyPath)
                 ?? throw new InvalidOperationException("The probe directory is unavailable."));
         var budget = TransitionBudget.Start(
-            TimeSpan.FromMilliseconds(750),
+            TimeSpan.FromSeconds(2),
             TimeSpan.FromSeconds(4));
         var lease = await OwnedProcessLease.StartForTestingAsync(
                 launchSpec,
@@ -269,25 +305,214 @@ public sealed class OwnedProcessLeasePlatformTests
             candidate => candidate.Message.Contains(expectedFailure, StringComparison.Ordinal));
     }
 
-    [Theory]
-    [InlineData(0, 0, false)]
-    [InlineData(-1, 1, false)]
-    [InlineData(-1, 3, true)]
-    public void PosixProcessGroupProbeRequiresAbsenceBeforeReportingQuiescence(
-        int result,
-        int error,
-        bool expectedQuiescence)
+    [Fact]
+    public async Task MembershipAuthorityFailureCannotReportACompletedLease()
     {
-        Assert.Equal(
-            expectedQuiescence,
-            PosixProcessGroupContainmentLease.InterpretQuiescenceProbe(result, error));
+        var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                () => RunProbeAsync(ProcessOwnershipMutation.FailMembershipQuery))
+            .ConfigureAwait(true);
+
+        Assert.Equal(OwnedProcessFailureKind.ExecutionFailed, failure.Failure.Kind);
+        Assert.Contains(
+            new[] { failure.InnerException! }.Concat(failure.CleanupFailures),
+            candidate => candidate.ToString().Contains(
+                "authoritative membership-query failure",
+                StringComparison.Ordinal));
     }
 
     [Fact]
-    public void UnknownPosixProcessGroupProbeFailureFailsClosed()
+    public async Task ReapingAnchorBeforeMembershipProofFailsClosed()
     {
-        Assert.Throws<System.ComponentModel.Win32Exception>(
-            () => PosixProcessGroupContainmentLease.InterpretQuiescenceProbe(-1, 22));
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                () => RunProbeAsync(ProcessOwnershipMutation.ReleaseAnchorBeforeMembership))
+            .ConfigureAwait(true);
+
+        Assert.Contains(
+            "after anchor reap",
+            failure.InnerException?.ToString() ?? string.Empty,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OwnerLifetimeClosureTriggersBoundedOwnedTreeCleanup()
+    {
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var readyPath = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-owner-death-{Guid.NewGuid():N}.json");
+        var launchSpec = new LaunchSpec(
+            "dotnet",
+            new[] { assemblyPath, "--owned-tree-probe", readyPath },
+            Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."));
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(5));
+        var lease = await OwnedProcessLease.StartForTestingAsync(
+                launchSpec,
+                budget,
+                ProcessOwnershipMutation.None,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            _ = await WaitForOwnedTreeProbeAsync(
+                    readyPath,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            lease.CloseOwnerLifetimeForTesting();
+
+            var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                    () => lease.WaitAsync(TestContext.Current.CancellationToken))
+                .ConfigureAwait(true);
+            stopwatch.Stop();
+
+            Assert.Equal(OwnedProcessFailureKind.ExecutionFailed, failure.Failure.Kind);
+            Assert.Empty(failure.CleanupFailures);
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            File.Delete(readyPath);
+        }
+    }
+
+    [Fact]
+    public async Task OwnerDeathAfterTargetExitStillTerminatesRetainedDescendants()
+    {
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var readyPath = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-owner-death-after-exit-{Guid.NewGuid():N}.json");
+        var launchSpec = new LaunchSpec(
+            "dotnet",
+            new[] { assemblyPath, "--exit-with-owned-descendant", readyPath },
+            Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."));
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(5));
+        var lease = await OwnedProcessLease.StartForTestingAsync(
+                launchSpec,
+                budget,
+                ProcessOwnershipMutation.None,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        try
+        {
+            _ = await WaitForOwnedTreeProbeAsync(
+                    readyPath,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            _ = await lease.WaitForTargetExitForTestingAsync()
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            lease.CloseOwnerLifetimeForTesting();
+
+            var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                    () => lease.WaitAsync(TestContext.Current.CancellationToken))
+                .ConfigureAwait(true);
+            Assert.Empty(failure.CleanupFailures);
+        }
+        finally
+        {
+            File.Delete(readyPath);
+        }
+    }
+
+    [Fact]
+    public async Task StalledLargeLaunchPayloadConsumesTheCallerBudget()
+    {
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var environment = new Dictionary<string, string?>
+        {
+            ["DOWNKYI_LARGE_LAUNCH_PAYLOAD"] = new string('x', 900_000)
+        };
+        var launchSpec = new LaunchSpec(
+            "dotnet",
+            new[] { assemblyPath, "--ownership-probe" },
+            Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."),
+            environment);
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromMilliseconds(400),
+            TimeSpan.FromSeconds(5));
+        var stopwatch = Stopwatch.StartNew();
+
+        var failure = await Assert.ThrowsAnyAsync<Exception>(
+                () => OwnedProcessLease.StartForTestingAsync(
+                    launchSpec,
+                    budget,
+                    ProcessOwnershipMutation.StallLaunchPayloadRead,
+                    TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+        stopwatch.Stop();
+
+        Assert.Contains("launch specification", failure.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task TargetExitTimestampPrecedesPostExitSupervisorLatency()
+    {
+        var before = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var outcome = await RunProbeAsync(ProcessOwnershipMutation.DelayAfterTargetExitReport)
+            .ConfigureAwait(true);
+        var after = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        Assert.InRange(outcome.TargetExitedAtUnixMilliseconds, before, after);
+        Assert.True(after - outcome.TargetExitedAtUnixMilliseconds >= 200);
+    }
+
+    [Fact]
+    public async Task FailedFixturePublicationRemovesItsTemporaryFile()
+    {
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var readyPath = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-publication-failure-{Guid.NewGuid():N}.json");
+        var launchSpec = new LaunchSpec(
+            "dotnet",
+            new[] { assemblyPath, "--exit-with-owned-descendant", readyPath },
+            Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."));
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(5));
+        try
+        {
+            var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                    () => RunAsync(
+                        launchSpec,
+                        ProcessOwnershipMutation.FailFixturePublication,
+                        budget))
+                .ConfigureAwait(true);
+
+            Assert.NotNull(failure);
+            Assert.NotNull(failure.Failure.TargetExitedAtUnixMilliseconds);
+            Assert.False(File.Exists(readyPath));
+            Assert.Empty(Directory.GetFiles(
+                Path.GetDirectoryName(readyPath)!,
+                $"{Path.GetFileName(readyPath)}.*.tmp"));
+        }
+        finally
+        {
+            File.Delete(readyPath);
+            foreach (var temporaryPath in Directory.GetFiles(
+                         Path.GetDirectoryName(readyPath)!,
+                         $"{Path.GetFileName(readyPath)}.*.tmp"))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
     }
 
     private static async Task<OwnedProcessOutcome> RunProbeAsync(
@@ -305,9 +530,10 @@ public sealed class OwnedProcessLeasePlatformTests
 
     private static async Task<OwnedProcessOutcome> RunAsync(
         LaunchSpec launchSpec,
-        ProcessOwnershipMutation mutation)
+        ProcessOwnershipMutation mutation,
+        TransitionBudget? budget = null)
     {
-        var budget = TransitionBudget.Start(
+        budget ??= TransitionBudget.Start(
             TimeSpan.FromSeconds(15),
             TimeSpan.FromSeconds(5));
         var lease = await OwnedProcessLease.StartForTestingAsync(
@@ -320,7 +546,11 @@ public sealed class OwnedProcessLeasePlatformTests
         return await lease.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
     }
 
-    private static (string ContainmentKind, string ContainmentId, bool OwnershipEstablished) ReadProbe(
+    private static (
+        string ContainmentKind,
+        string ContainmentId,
+        string MembershipId,
+        bool OwnershipEstablished) ReadProbe(
         string standardOutput)
     {
         var line = standardOutput
@@ -333,6 +563,8 @@ public sealed class OwnedProcessLeasePlatformTests
                 ?? throw new InvalidOperationException("The containment kind is missing."),
             root.GetProperty("ContainmentId").GetString()
                 ?? throw new InvalidOperationException("The containment identity is missing."),
+            root.GetProperty("MembershipId").GetString()
+                ?? throw new InvalidOperationException("The membership identity is missing."),
             root.GetProperty("OwnershipEstablished").GetBoolean());
     }
 

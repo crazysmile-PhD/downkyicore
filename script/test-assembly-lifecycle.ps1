@@ -815,7 +815,12 @@ function Invoke-IsolatedProcess {
             $ownedFailure = $_.Exception
         }
 
-        $processExitedAtUnixMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        $processExitedAtUnixMs = if ($null -ne $outcome) {
+            $outcome.TargetExitedAtUnixMilliseconds
+        }
+        else {
+            $ownedFailure.Failure.TargetExitedAtUnixMilliseconds
+        }
         $stdout = if ($null -ne $outcome) {
             $outcome.StandardOutput
         }
@@ -1874,7 +1879,7 @@ foreach ($testProject in $testProjects) {
         $testRootRemoved = $false
         $teardownDuration = 0.0
         $exitDuration = [double]$execution.durationMs
-        if ($markerValid) {
+        if ($markerValid -and $null -ne $execution.processExitedAtUnixMs) {
             $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
                 "downkyi-tests/$assemblyName/$($marker.started.processId)")
             $testRootRemoved = -not (Test-Path -LiteralPath $testRoot)
@@ -1930,7 +1935,8 @@ foreach ($testProject in $testProjects) {
             slowEvidenceErrorType = $null
             slowEvidenceTriggeredBeforeThreshold = $false
         }
-        $exitSucceeded = $execution.exitCode -eq 0 -and
+        $exitSucceeded = $null -ne $execution.processExitedAtUnixMs -and
+            $execution.exitCode -eq 0 -and
             -not $execution.timedOut -and
             $execution.ownedTreeQuiescent -and
             $execution.ownedProcessCleanupFailures.Count -eq 0 -and

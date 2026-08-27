@@ -31,6 +31,29 @@ function ConvertFrom-DownKyiActionBoolean {
 $actionRepositoryRoot = Split-Path -Parent $PSScriptRoot
 
 if ($Mode -eq "Solution") {
+    if ($IsLinux -and
+        -not [string]::Equals(
+            $env:DOWNKYI_DELEGATED_CGROUP_SCOPE,
+            "1",
+            [StringComparison]::Ordinal)) {
+        $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
+        & systemd-run `
+            --user `
+            --scope `
+            --quiet `
+            -p Delegate=yes `
+            --setenv=DOWNKYI_DELEGATED_CGROUP_SCOPE=1 `
+            $pwsh `
+            -NoProfile `
+            -File $PSCommandPath `
+            -Mode Solution
+        if ($LASTEXITCODE -ne 0) {
+            throw "The delegated Linux repository test scope failed."
+        }
+
+        return
+    }
+
     $solutionParameters = @{
         Configuration = "Release"
         NoRestore = $true

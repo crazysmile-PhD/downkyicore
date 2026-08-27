@@ -135,7 +135,7 @@ diagnostic evidence only.
 - Establish a process group before target `exec`, with a supervisor-owned anchor
   that remains alive through all destructive group operations. The group is a
   containment/termination primitive only.
-- A delegated cgroup v2 child is the current preferred membership candidate.
+- A delegated cgroup v2 child is the Stage 2 membership authority.
   Recursive
   `cgroup.events` `populated` state proves that no live process remains, and
   `cgroup.kill` provides atomic tree termination against concurrent forks and
@@ -145,6 +145,11 @@ diagnostic evidence only.
   execution. A machine without that capability is unsupported for the formal
   lifecycle gate until another stable membership backend is designed and
   behaviorally proved.
+- The supervisor initially joins the workload cgroup so target descendants
+  inherit membership before authorization. After target exit is recorded, the
+  still-live group anchor moves back to the delegated owner scope. The workload
+  cgroup then contains descendants only, so `populated=0` can be proved without
+  releasing the process-group identity or owner-lifetime channel.
 - A minimal native shim or interoperability layer is allowed when public .NET
   APIs cannot establish this boundary. Implementation difficulty never
   authorizes a PID/PPID/PGID polling fallback.
@@ -158,12 +163,15 @@ diagnostic evidence only.
 - A process group provides trusted-child descendant containment and termination
   while the anchor identity is retained. Numeric PGID probing is not a
   membership/quiescence authority.
-- `proc_listpgrppids` is the current candidate for an atomic kernel membership
+- `proc_listpgrppids` is the Stage 2 authority for an atomic kernel membership
   snapshot of the anchored group. It must exclude the intentionally live anchor
   and prove zero remaining members before the anchor is reaped. The API is a
-  private libproc interface and remains provisional until native x64 and arm64
-  behavioral tests prove its availability, zombie semantics, buffer/error
-  contract and reparent behavior.
+  private libproc interface. Native x64 and arm64 behavioral proof authorizes
+  its use only with fail-closed runtime availability, buffer and error checks.
+- The live anchor remains in the process group while the lease queries
+  non-anchor membership. It exits only after the owner sends the finalization
+  signal following a zero-membership proof; owner EOF instead terminates the
+  anchored group.
 - `kqueue` `EVFILT_PROC` / `NOTE_EXIT` observes selected processes but does not
   supply group membership. Historical `NOTE_TRACK` fork tracking is unsupported
   and is not a candidate authority.
@@ -183,7 +191,10 @@ The POSIX group anchor separates stable group identity from the workload root:
 4. all destructive group operations are issued only while that stable anchor
    identity remains owned;
 5. the membership backend, not group existence, decides quiescence;
-6. the anchor is reaped only after that decision; bounded stream closure then
+6. the owner finalizes the still-live anchor only after that decision, except
+   on Windows where kill-on-close Job ownership permits the anchor to exit
+   before the Job active-process query;
+7. the anchor is reaped only after that decision; bounded stream closure then
    completes against the now-quiescent owned set.
 
 Keeping the leader as a zombie prevents PGID reuse, but it also keeps a
@@ -217,8 +228,10 @@ Prepared
   -> Authorized
   -> Running
   -> TargetExitRecorded
+  -> AnchorExcludedFromMembershipSet
   -> MembershipQuiescent
-  -> AnchorFinalizedAndReaped
+  -> AnchorFinalized
+  -> AnchorReaped
   -> StreamsDrained
   -> Completed
 
@@ -236,6 +249,13 @@ Any state
 Unknown or unavailable membership state is failure, not quiescence. Cleanup
 preserves every operation, termination, membership, reap and drain failure; a
 later failure cannot replace earlier causal evidence.
+
+The owner-to-supervisor control pipe is retained through target exit. Closing
+it at any point is owner death and triggers platform termination. A normal
+finalization signal is accepted only after target exit and, on POSIX, after the
+lease has proved authoritative membership quiescence. This closes the race in
+which an anchor could exit after authorization while its owner died before
+descendant cleanup.
 
 ## Reference And Behavioral Feasibility
 
@@ -325,6 +345,9 @@ clock. Nested operations may read remaining time but cannot extend the deadline
 or create a substitute deadline.
 
 Wait, evidence capture, termination, reap and stream drain consume that budget.
+Ownership attachment, immutable launch-payload writes and supervisor
+finalization also consume the same remaining budget; pipe backpressure cannot
+create an unbounded pre-launch transition.
 The budget may reserve bounded cleanup time after the operation cutoff, but the
 operation and hard-cleanup deadlines are established together by the same owner
 on one monotonic timeline. Cleanup must not introduce a second clock owner.

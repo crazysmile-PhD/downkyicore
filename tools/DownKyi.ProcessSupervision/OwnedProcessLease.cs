@@ -1,9 +1,9 @@
+using System.Buffers.Binary;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipes;
 using System.Runtime.ExceptionServices;
-using System.Text;
 using System.Text.Json;
 
 namespace DownKyi.ProcessSupervision;
@@ -12,25 +12,36 @@ namespace DownKyi.ProcessSupervision;
 
 public sealed class OwnedProcessLease : IAsyncDisposable
 {
+    private const byte OwnershipAttachment = 0xB1;
     private const byte LaunchAuthorization = 0xC1;
     private const byte OwnershipEstablished = 0xA1;
     private const byte OwnershipMutationActive = 0xA2;
+    private const byte TargetStarted = 0xA3;
+    private const byte TargetExited = 0xA4;
+    private const byte FinalizeSupervisor = 0xD1;
     private const int MaximumLaunchPayloadBytes = 1024 * 1024;
 
     private readonly Process _supervisor;
     private readonly IProcessContainmentLease _containment;
+    private readonly NamedPipeServerStream _control;
+    private readonly NamedPipeServerStream _status;
     private readonly Task<string> _standardOutput;
     private readonly Task<string> _standardError;
+    private readonly Task<TargetExitReport?> _targetExitReport;
     private readonly TransitionBudget _budget;
     private readonly ProcessOwnershipMutation _mutation;
     private int _completionState;
+    private int _ownerLifetimeClosed;
     private int _reapFailureInjected;
 
     private OwnedProcessLease(
         Process supervisor,
         IProcessContainmentLease containment,
+        NamedPipeServerStream control,
+        NamedPipeServerStream status,
         Task<string> standardOutput,
         Task<string> standardError,
+        Task<TargetExitReport?> targetExitReport,
         TransitionBudget budget,
         ProcessOwnershipMutation mutation,
         int targetProcessId,
@@ -38,8 +49,11 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     {
         _supervisor = supervisor;
         _containment = containment;
+        _control = control;
+        _status = status;
         _standardOutput = standardOutput;
         _standardError = standardError;
+        _targetExitReport = targetExitReport;
         _budget = budget;
         _mutation = mutation;
         TargetProcessId = targetProcessId;
@@ -73,6 +87,18 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         return StartCoreAsync(launchSpec, budget, mutation, cancellationToken);
     }
 
+    internal void CloseOwnerLifetimeForTesting()
+    {
+        CloseOwnerLifetime();
+    }
+
+    internal async Task<long> WaitForTargetExitForTestingAsync()
+    {
+        var report = await _targetExitReport.ConfigureAwait(false);
+        return report?.ExitedAtUnixMilliseconds
+            ?? throw new InvalidOperationException("The target exited without an authoritative report.");
+    }
+
     [SuppressMessage(
         "Design",
         "CA1031:Do not catch general exception types",
@@ -90,19 +116,54 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         var pendingFailureKind = OwnedProcessFailureKind.ExecutionFailed;
         var supervisorProcessId = SupervisorProcessId;
         var treeQuiescenceProven = false;
+        TargetExitReport? targetExit = null;
         try
         {
             pendingFailureKind = OwnedProcessFailureKind.OperationDeadlineExceeded;
-            await WaitForSupervisorExitAsync(
-                    useCleanupBudget: false,
+            targetExit = await WaitWithBudgetAsync(
+                    _targetExitReport,
+                    _budget.RemainingOperation,
+                    "The owned target did not exit before the operation deadline.",
                     cancellationToken)
-                .ConfigureAwait(false);
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    "The process supervisor exited without an authoritative target-exit report.");
+
+            if (_containment.MembershipRequiresAnchorExit)
+            {
+                await FinalizeSupervisorAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (_mutation.HasFlag(ProcessOwnershipMutation.ReleaseAnchorBeforeMembership))
+            {
+                if (!_containment.MembershipRequiresAnchorExit)
+                {
+                    await FinalizeSupervisorAsync(cancellationToken).ConfigureAwait(false);
+                }
+                await WaitForSupervisorExitAsync(
+                        useCleanupBudget: false,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             pendingFailureKind = OwnedProcessFailureKind.OwnedTreeNotQuiescent;
             await WaitForTreeQuiescenceAsync(
                     useCleanupBudget: false,
                     cancellationToken)
                 .ConfigureAwait(false);
             treeQuiescenceProven = true;
+
+            if (!_containment.MembershipRequiresAnchorExit)
+            {
+                await FinalizeSupervisorAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            pendingFailureKind = OwnedProcessFailureKind.OperationDeadlineExceeded;
+            await WaitForSupervisorExitAsync(
+                    useCleanupBudget: false,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
             pendingFailureKind = OwnedProcessFailureKind.StreamDrainDeadlineExceeded;
             await WaitWithBudgetAsync(
                     Task.WhenAll(_standardOutput, _standardError),
@@ -114,9 +175,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             outcome = new OwnedProcessOutcome(
                 supervisorProcessId,
                 TargetProcessId,
-                _supervisor.ExitCode,
+                targetExit.ExitCode,
                 await _standardOutput.ConfigureAwait(false),
                 await _standardError.ConfigureAwait(false),
+                targetExit.ExitedAtUnixMilliseconds,
                 TreeQuiescent: true,
                 Ownership);
         }
@@ -153,6 +215,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     TargetProcessId,
                     standardOutput,
                     standardError,
+                    targetExit?.ExitedAtUnixMilliseconds,
                     TreeQuiescent: treeQuiescenceProven,
                     Ownership),
                 operationFailure,
@@ -179,7 +242,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     [SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",
-        Justification = "Successful launch transfers both disposable owners to the returned lease; every failed launch disposes both before propagating.")]
+        Justification = "Successful launch transfers every disposable owner to the lease; failed launch releases them before propagating.")]
     private static async Task<OwnedProcessLease> StartCoreAsync(
         LaunchSpec launchSpec,
         TransitionBudget budget,
@@ -190,16 +253,15 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(budget);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // macOS implements named pipes with Unix-domain sockets whose full path is capped at 104 bytes.
         var controlPipeName = $"dkc-{Guid.NewGuid():N}";
         var statusPipeName = $"dks-{Guid.NewGuid():N}";
-        using var control = new NamedPipeServerStream(
+        var control = new NamedPipeServerStream(
             controlPipeName,
             PipeDirection.Out,
             1,
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-        using var status = new NamedPipeServerStream(
+        var status = new NamedPipeServerStream(
             statusPipeName,
             PipeDirection.In,
             1,
@@ -213,7 +275,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             mutation);
         var supervisor = new Process { StartInfo = startInfo };
         IProcessContainmentLease? containment = null;
+        Task<string>? standardOutput = null;
+        Task<string>? standardError = null;
         var started = false;
+        var processOwnershipEstablished = false;
         try
         {
             if (!supervisor.Start())
@@ -222,8 +287,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
 
             started = true;
-            var standardOutput = supervisor.StandardOutput.ReadToEndAsync(CancellationToken.None);
-            var standardError = supervisor.StandardError.ReadToEndAsync(CancellationToken.None);
+            standardOutput = supervisor.StandardOutput.ReadToEndAsync(CancellationToken.None);
+            standardError = supervisor.StandardError.ReadToEndAsync(CancellationToken.None);
             containment = PlatformProcessContainment.Create(supervisor, jobName, mutation);
             await WaitWithBudgetAsync(
                     Task.WhenAll(
@@ -233,6 +298,36 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     "The process supervisor did not connect its control channels before the deadline.",
                     cancellationToken)
                 .ConfigureAwait(false);
+
+            var attachment = JsonSerializer.SerializeToUtf8Bytes(
+                new OwnershipAttachmentPayload(
+                    containment.Metadata.ContainmentId,
+                    containment.Metadata.MembershipId,
+                    containment.Metadata.OwnerLifetimeId));
+            await WriteFrameWithBudgetAsync(
+                    control,
+                    OwnershipAttachment,
+                    attachment,
+                    budget.RemainingOperation,
+                    "The ownership attachment did not reach the inert supervisor before the deadline.",
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var ownershipStatus = await ReadByteWithBudgetAsync(
+                    status,
+                    budget,
+                    "The supervisor did not acknowledge ownership before the deadline.",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (ownershipStatus is not (OwnershipEstablished or OwnershipMutationActive))
+            {
+                throw new InvalidOperationException(
+                    "The process supervisor refused target authorization without established ownership.");
+            }
+            processOwnershipEstablished =
+                ownershipStatus == OwnershipEstablished &&
+                containment.Metadata.OwnershipEstablished;
+
             var payload = JsonSerializer.SerializeToUtf8Bytes(
                 LaunchSpecPayload.FromLaunchSpec(launchSpec));
             if (payload.Length > MaximumLaunchPayloadBytes)
@@ -240,63 +335,93 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 throw new InvalidOperationException("The immutable launch specification is too large.");
             }
 
-            using (var writer = new BinaryWriter(control, Encoding.UTF8, leaveOpen: true))
-            {
-                writer.Write(LaunchAuthorization);
-                writer.Write(payload.Length);
-                writer.Write(payload);
-                writer.Flush();
-            }
+            await WriteFrameWithBudgetAsync(
+                    control,
+                    LaunchAuthorization,
+                    payload,
+                    budget.RemainingOperation,
+                    "The immutable launch specification did not reach the supervisor before the deadline.",
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-            var decision = await ReadLaunchDecisionAsync(
+            var targetProcessId = await ReadTargetStartedAsync(
                     status,
                     budget,
                     cancellationToken)
                 .ConfigureAwait(false);
-            if (decision.Status is not (
-                    OwnershipEstablished or OwnershipMutationActive))
-            {
-                throw new InvalidOperationException(
-                    "The process supervisor refused to launch without established ownership.");
-            }
-
+            var targetExitReport = ReadTargetExitReportAsync(status);
             var ownership = containment.Metadata with
             {
-                OwnershipEstablished = decision.Status == OwnershipEstablished
+                OwnershipEstablished =
+                    processOwnershipEstablished
             };
             return new OwnedProcessLease(
                 supervisor,
                 containment,
+                control,
+                status,
                 standardOutput,
                 standardError,
+                targetExitReport,
                 budget,
                 mutation,
-                decision.TargetProcessId,
+                targetProcessId,
                 ownership);
         }
         catch (Exception startFailure)
         {
             var failures = new Collection<Exception> { startFailure };
-            try
+            if (containment != null && processOwnershipEstablished)
             {
-                containment?.Terminate();
+                try
+                {
+                    containment.Terminate();
+                }
+                catch (Exception cleanupFailure)
+                {
+                    failures.Add(cleanupFailure);
+                }
+
+                try
+                {
+                    await WaitForTreeQuiescenceAsync(
+                            containment,
+                            budget,
+                            useCleanupBudget: true,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception cleanupFailure)
+                {
+                    failures.Add(cleanupFailure);
+                }
             }
-            catch (Exception cleanupFailure)
+            else if (started)
             {
-                failures.Add(cleanupFailure);
+                try
+                {
+                    supervisor.Kill();
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                catch (Exception cleanupFailure)
+                {
+                    failures.Add(cleanupFailure);
+                }
             }
 
             try
             {
-                if (started && !supervisor.HasExited)
+                if (started)
                 {
-                    supervisor.Kill();
                     await WaitWithBudgetAsync(
                             supervisor.WaitForExitAsync(CancellationToken.None),
                             budget.RemainingCleanup,
                             "The failed process supervisor did not terminate before its hard deadline.",
                             CancellationToken.None)
                         .ConfigureAwait(false);
+                    containment?.MarkAnchorReaped();
                 }
             }
             catch (Exception cleanupFailure)
@@ -306,20 +431,33 @@ public sealed class OwnedProcessLease : IAsyncDisposable
 
             try
             {
-                containment?.Dispose();
+                if (standardOutput != null && standardError != null)
+                {
+                    await WaitWithBudgetAsync(
+                            Task.WhenAll(standardOutput, standardError),
+                            budget.RemainingCleanup,
+                            "Failed-launch process streams did not drain before the hard deadline.",
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
             }
             catch (Exception cleanupFailure)
             {
                 failures.Add(cleanupFailure);
             }
-            try
+
+            foreach (var resource in new IDisposable?[] { containment, control, status, supervisor })
             {
-                supervisor.Dispose();
+                try
+                {
+                    resource?.Dispose();
+                }
+                catch (Exception cleanupFailure)
+                {
+                    failures.Add(cleanupFailure);
+                }
             }
-            catch (Exception cleanupFailure)
-            {
-                failures.Add(cleanupFailure);
-            }
+
             if (failures.Count == 1)
             {
                 ExceptionDispatchInfo.Capture(startFailure).Throw();
@@ -357,41 +495,57 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         return startInfo;
     }
 
-    private static async Task<LaunchDecision> ReadLaunchDecisionAsync(
+    private static async Task<int> ReadTargetStartedAsync(
         Stream status,
         TransitionBudget budget,
         CancellationToken cancellationToken)
     {
-        var payload = new byte[sizeof(byte) + sizeof(int)];
-        var offset = 0;
-        while (offset < payload.Length)
+        var payload = await ReadExactWithBudgetAsync(
+                status,
+                sizeof(byte) + sizeof(int),
+                budget.RemainingOperation,
+                "The supervisor did not report target launch before the deadline.",
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (payload[0] != TargetStarted)
         {
-            var read = await WaitWithBudgetAsync(
-                    status.ReadAsync(
-                            payload.AsMemory(offset, payload.Length - offset),
-                            cancellationToken)
-                        .AsTask(),
-                    budget.RemainingOperation,
-                    "The process supervisor did not establish ownership before the deadline.",
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (read == 0)
-            {
-                throw new InvalidOperationException(
-                    "The process supervisor closed its ownership channel before target launch.");
-            }
-
-            offset += read;
+            throw new InvalidOperationException("The process supervisor returned an invalid launch state.");
         }
 
-        var targetProcessId = BitConverter.ToInt32(payload, sizeof(byte));
+        var targetProcessId = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(sizeof(byte)));
         if (targetProcessId <= 0)
         {
-            throw new InvalidOperationException(
-                "The process supervisor returned an invalid target identity.");
+            throw new InvalidOperationException("The process supervisor returned an invalid target identity.");
         }
 
-        return new LaunchDecision(payload[0], targetProcessId);
+        return targetProcessId;
+    }
+
+    private static async Task<TargetExitReport?> ReadTargetExitReportAsync(Stream status)
+    {
+        var payload = await ReadExactOrEofAsync(
+                status,
+                sizeof(byte) + sizeof(int) + sizeof(long),
+                CancellationToken.None)
+            .ConfigureAwait(false);
+        if (payload == null)
+        {
+            return null;
+        }
+        if (payload[0] != TargetExited)
+        {
+            throw new InvalidOperationException("The process supervisor returned an invalid target-exit state.");
+        }
+
+        var exitCode = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(sizeof(byte)));
+        var exitedAt = BinaryPrimitives.ReadInt64LittleEndian(
+            payload.AsSpan(sizeof(byte) + sizeof(int)));
+        if (exitedAt <= 0)
+        {
+            throw new InvalidOperationException("The target-exit timestamp is invalid.");
+        }
+
+        return new TargetExitReport(exitCode, exitedAt);
     }
 
     private async Task WaitForSupervisorExitAsync(
@@ -403,9 +557,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 useCleanupBudget ? _budget.RemainingCleanup : _budget.RemainingOperation,
                 useCleanupBudget
                     ? "The process supervisor did not reap before its hard deadline."
-                    : "The owned process exceeded its operation deadline.",
+                    : "The process supervisor did not exit before the operation deadline.",
                 cancellationToken)
             .ConfigureAwait(false);
+        _containment.MarkAnchorReaped();
         if (_mutation.HasFlag(ProcessOwnershipMutation.FailAfterRootReap) &&
             Interlocked.Exchange(ref _reapFailureInjected, 1) == 0)
         {
@@ -413,15 +568,28 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
     }
 
-    private async Task WaitForTreeQuiescenceAsync(
+    private Task WaitForTreeQuiescenceAsync(
         bool useCleanupBudget,
         CancellationToken cancellationToken)
     {
-        while (!_containment.IsTreeQuiescent())
+        return WaitForTreeQuiescenceAsync(
+            _containment,
+            _budget,
+            useCleanupBudget,
+            cancellationToken);
+    }
+
+    private static async Task WaitForTreeQuiescenceAsync(
+        IProcessContainmentLease containment,
+        TransitionBudget budget,
+        bool useCleanupBudget,
+        CancellationToken cancellationToken)
+    {
+        while (!containment.IsTreeQuiescent())
         {
             var remaining = useCleanupBudget
-                ? _budget.RemainingCleanup
-                : _budget.RemainingOperation;
+                ? budget.RemainingCleanup
+                : budget.RemainingOperation;
             if (remaining <= TimeSpan.Zero)
             {
                 throw new TimeoutException(
@@ -446,39 +614,60 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     private async Task TerminateAndReapAsync()
     {
         var failures = new Collection<Exception>();
-        var directRootTerminationRequired = !Ownership.OwnershipEstablished;
-        try
+        var ownershipEstablished = Ownership.OwnershipEstablished;
+        if (ownershipEstablished)
         {
-            if (!_containment.IsTreeQuiescent())
+            try
             {
-                _containment.Terminate();
+                if (!_containment.IsTreeQuiescent())
+                {
+                    _containment.Terminate();
+                }
+            }
+            catch (Exception failure)
+            {
+                failures.Add(failure);
+                try
+                {
+                    _containment.Terminate();
+                }
+                catch (Exception terminationFailure)
+                {
+                    failures.Add(terminationFailure);
+                }
+            }
+
+            try
+            {
+                await WaitForTreeQuiescenceAsync(
+                        useCleanupBudget: true,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception failure)
+            {
+                failures.Add(failure);
             }
         }
-        catch (Exception failure)
+        else
         {
-            failures.Add(failure);
-            directRootTerminationRequired = true;
-        }
-
-        try
-        {
-            if (directRootTerminationRequired && !_supervisor.HasExited)
+            try
             {
                 _supervisor.Kill();
             }
-            await WaitForSupervisorExitAsync(
-                    useCleanupBudget: true,
-                    CancellationToken.None)
-                .ConfigureAwait(false);
-        }
-        catch (Exception failure)
-        {
-            failures.Add(failure);
+            catch (InvalidOperationException)
+            {
+            }
+            catch (Exception failure)
+            {
+                failures.Add(failure);
+            }
         }
 
         try
         {
-            await WaitForTreeQuiescenceAsync(
+            CloseOwnerLifetime(failures);
+            await WaitForSupervisorExitAsync(
                     useCleanupBudget: true,
                     CancellationToken.None)
                 .ConfigureAwait(false);
@@ -494,6 +683,20 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     Task.WhenAll(_standardOutput, _standardError),
                     _budget.RemainingCleanup,
                     "Owned process streams did not drain before the hard deadline.",
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception failure)
+        {
+            failures.Add(failure);
+        }
+
+        try
+        {
+            await WaitWithBudgetAsync(
+                    _targetExitReport,
+                    _budget.RemainingCleanup,
+                    "The target-exit protocol did not close before the hard deadline.",
                     CancellationToken.None)
                 .ConfigureAwait(false);
         }
@@ -523,25 +726,21 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     [SuppressMessage(
         "Design",
         "CA1031:Do not catch general exception types",
-        Justification = "The lease must attempt both containment and process-handle disposal and preserve both failures.")]
+        Justification = "The lease must attempt every resource release and preserve all failures.")]
     private void ReleaseResources()
     {
         var failures = new Collection<Exception>();
-        try
+        CloseOwnerLifetime(failures);
+        foreach (var resource in new IDisposable[] { _status, _containment, _supervisor })
         {
-            _containment.Dispose();
-        }
-        catch (Exception failure)
-        {
-            failures.Add(failure);
-        }
-        try
-        {
-            _supervisor.Dispose();
-        }
-        catch (Exception failure)
-        {
-            failures.Add(failure);
+            try
+            {
+                resource.Dispose();
+            }
+            catch (Exception failure)
+            {
+                failures.Add(failure);
+            }
         }
 
         if (failures.Count == 1)
@@ -554,6 +753,169 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
     }
 
+    private void CloseOwnerLifetime(Collection<Exception>? failures = null)
+    {
+        if (Interlocked.Exchange(ref _ownerLifetimeClosed, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _control.Dispose();
+        }
+        catch (Exception failure) when (failures != null)
+        {
+            failures.Add(failure);
+        }
+    }
+
+    private Task FinalizeSupervisorAsync(CancellationToken cancellationToken)
+    {
+        return WriteWithBudgetAsync(
+            _control,
+            new[] { FinalizeSupervisor },
+            _budget.RemainingOperation,
+            "The supervisor finalization handoff exceeded the operation deadline.",
+            cancellationToken);
+    }
+
+    private static async Task WriteFrameWithBudgetAsync(
+        Stream stream,
+        byte messageType,
+        byte[] payload,
+        TimeSpan remaining,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        if (remaining <= TimeSpan.Zero)
+        {
+            throw new TimeoutException(timeoutMessage);
+        }
+
+        var frame = new byte[checked(sizeof(byte) + sizeof(int) + payload.Length)];
+        frame[0] = messageType;
+        BinaryPrimitives.WriteInt32LittleEndian(frame.AsSpan(sizeof(byte)), payload.Length);
+        payload.CopyTo(frame.AsSpan(sizeof(byte) + sizeof(int)));
+        await WriteWithBudgetAsync(
+                stream,
+                frame,
+                remaining,
+                timeoutMessage,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task WriteWithBudgetAsync(
+        Stream stream,
+        byte[] payload,
+        TimeSpan remaining,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        if (remaining <= TimeSpan.Zero)
+        {
+            throw new TimeoutException(timeoutMessage);
+        }
+
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(remaining);
+        try
+        {
+            await stream.WriteAsync(payload, deadline.Token).ConfigureAwait(false);
+            await stream.FlushAsync(deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException failure) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException(timeoutMessage, failure);
+        }
+    }
+
+    private static async Task<byte> ReadByteWithBudgetAsync(
+        Stream stream,
+        TransitionBudget budget,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        var payload = await ReadExactWithBudgetAsync(
+                stream,
+                sizeof(byte),
+                budget.RemainingOperation,
+                timeoutMessage,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return payload[0];
+    }
+
+    private static Task<byte[]> ReadExactWithBudgetAsync(
+        Stream stream,
+        int length,
+        TimeSpan remaining,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        return WaitWithBudgetAsync(
+            ReadExactAsync(stream, length, cancellationToken),
+            remaining,
+            timeoutMessage,
+            cancellationToken);
+    }
+
+    private static async Task<byte[]> ReadExactAsync(
+        Stream stream,
+        int length,
+        CancellationToken cancellationToken)
+    {
+        var payload = new byte[length];
+        var offset = 0;
+        while (offset < payload.Length)
+        {
+            var read = await stream.ReadAsync(
+                    payload.AsMemory(offset, payload.Length - offset),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                throw new EndOfStreamException(
+                    "The process supervisor closed its status channel before completing the protocol.");
+            }
+
+            offset += read;
+        }
+
+        return payload;
+    }
+
+    private static async Task<byte[]?> ReadExactOrEofAsync(
+        Stream stream,
+        int length,
+        CancellationToken cancellationToken)
+    {
+        var payload = new byte[length];
+        var offset = 0;
+        while (offset < payload.Length)
+        {
+            var read = await stream.ReadAsync(
+                    payload.AsMemory(offset, payload.Length - offset),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                if (offset == 0)
+                {
+                    return null;
+                }
+
+                throw new EndOfStreamException(
+                    "The process supervisor closed a partial target-exit report.");
+            }
+
+            offset += read;
+        }
+
+        return payload;
+    }
+
     private static async Task<T> WaitWithBudgetAsync<T>(
         Task<T> operation,
         TimeSpan remaining,
@@ -562,6 +924,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     {
         if (remaining <= TimeSpan.Zero)
         {
+            if (operation.IsCompleted)
+            {
+                return await operation.ConfigureAwait(false);
+            }
             throw new TimeoutException(timeoutMessage);
         }
 
@@ -583,6 +949,11 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     {
         if (remaining <= TimeSpan.Zero)
         {
+            if (operation.IsCompleted)
+            {
+                await operation.ConfigureAwait(false);
+                return;
+            }
             throw new TimeoutException(timeoutMessage);
         }
 
@@ -599,7 +970,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     [SuppressMessage(
         "Design",
         "CA1031:Do not catch general exception types",
-        Justification = "This helper returns any cleanup failure so the caller can preserve it with the causal execution failure.")]
+        Justification = "This helper returns cleanup failure so the caller can preserve it with the causal execution failure.")]
     private static async Task<Exception?> CaptureFailureAsync(Func<Task> operation)
     {
         try
@@ -627,6 +998,11 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             : new[] { failure };
     }
 
+    private sealed record OwnershipAttachmentPayload(
+        string ContainmentId,
+        string MembershipId,
+        string OwnerLifetimeId);
+
     private sealed record LaunchSpecPayload(
         string FileName,
         IReadOnlyList<string> Arguments,
@@ -645,5 +1021,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
     }
 
-    private sealed record LaunchDecision(byte Status, int TargetProcessId);
+    private sealed record TargetExitReport(
+        int ExitCode,
+        long ExitedAtUnixMilliseconds);
 }

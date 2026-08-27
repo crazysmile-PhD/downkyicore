@@ -9,9 +9,13 @@ internal interface IProcessContainmentLease : IDisposable
 {
     ProcessOwnershipMetadata Metadata { get; }
 
+    bool MembershipRequiresAnchorExit { get; }
+
     bool IsTreeQuiescent();
 
     void Terminate();
+
+    void MarkAnchorReaped();
 }
 
 internal static class PlatformProcessContainment
@@ -24,27 +28,37 @@ internal static class PlatformProcessContainment
         ArgumentNullException.ThrowIfNull(supervisor);
         IProcessContainmentLease containment = OperatingSystem.IsWindows()
             ? WindowsJobContainmentLease.Create(supervisor, windowsJobName, mutation)
-            : PosixProcessGroupContainmentLease.Create(supervisor, mutation);
+            : OperatingSystem.IsLinux()
+                ? LinuxCgroupContainmentLease.Create(supervisor, mutation)
+                : OperatingSystem.IsMacOS()
+                    ? MacProcessGroupContainmentLease.Create(supervisor, mutation)
+                    : throw new PlatformNotSupportedException(
+                        "Owned process membership is supported only on Windows, Linux, and macOS.");
         containment = mutation.HasFlag(ProcessOwnershipMutation.FailAfterContainmentTermination)
             ? new TerminationFailureMutationContainmentLease(containment)
             : containment;
-        return mutation.HasFlag(ProcessOwnershipMutation.ReportTreeQuiescentOnce)
+        containment = mutation.HasFlag(ProcessOwnershipMutation.ReportTreeQuiescentOnce)
             ? new TreeQuiescenceMutationContainmentLease(containment)
+            : containment;
+        return mutation.HasFlag(ProcessOwnershipMutation.FailMembershipQuery)
+            ? new MembershipFailureMutationContainmentLease(containment)
             : containment;
     }
 
     public static bool EstablishCurrentProcessOwnership(
-        string windowsJobName,
+        string containmentId,
+        string membershipId,
         ProcessOwnershipMutation mutation)
     {
-        if (mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership))
+        if (mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership) ||
+            mutation.HasFlag(ProcessOwnershipMutation.FailOwnershipEstablishment))
         {
             return false;
         }
 
         if (OperatingSystem.IsWindows())
         {
-            return WindowsJobContainmentLease.IsCurrentProcessInJob(windowsJobName);
+            return WindowsJobContainmentLease.IsCurrentProcessInJob(containmentId);
         }
 
         if (PosixNative.SetProcessGroup(0, 0) != 0)
@@ -54,28 +68,91 @@ internal static class PlatformProcessContainment
                 "The supervisor could not establish its POSIX process group.");
         }
 
-        return PosixNative.GetProcessGroup() == Environment.ProcessId;
+        if (PosixNative.GetProcessGroup() != Environment.ProcessId)
+        {
+            return false;
+        }
+
+        return OperatingSystem.IsLinux()
+            ? LinuxCgroupContainmentLease.IsCurrentProcessInCgroup(membershipId)
+            : OperatingSystem.IsMacOS() &&
+              MacProcessGroupContainmentLease.ContainsProcess(
+                  Environment.ProcessId,
+                  Environment.ProcessId);
     }
 
-    public static bool IsCurrentTargetOwned(string containmentId)
+    public static bool IsCurrentTargetOwned(
+        string containmentId,
+        string membershipId)
     {
         if (OperatingSystem.IsWindows())
         {
             return WindowsJobContainmentLease.IsCurrentProcessInJob(containmentId);
         }
 
-        return int.TryParse(
-                   containmentId,
-                   System.Globalization.NumberStyles.None,
-                   System.Globalization.CultureInfo.InvariantCulture,
-                   out var processGroupId) &&
-               PosixNative.GetProcessGroup() == processGroupId;
+        if (!int.TryParse(
+                containmentId,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var processGroupId) ||
+            PosixNative.GetProcessGroup() != processGroupId)
+        {
+            return false;
+        }
+
+        return OperatingSystem.IsLinux()
+            ? LinuxCgroupContainmentLease.IsCurrentProcessInCgroup(membershipId)
+            : OperatingSystem.IsMacOS() &&
+              MacProcessGroupContainmentLease.ContainsProcess(
+                  processGroupId,
+                  Environment.ProcessId);
+    }
+
+    public static void TerminateCurrentOwnership(
+        string containmentId,
+        string membershipId)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsJobContainmentLease.TerminateNamedJob(containmentId);
+            return;
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            LinuxCgroupContainmentLease.TerminateCgroup(membershipId);
+            return;
+        }
+
+        if (OperatingSystem.IsMacOS() &&
+            int.TryParse(
+                containmentId,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var processGroupId))
+        {
+            PosixProcessGroupTermination.Terminate(processGroupId);
+            return;
+        }
+
+        throw new PlatformNotSupportedException(
+            "The current platform does not provide an owned-process termination backend.");
+    }
+
+    public static void PrepareCurrentProcessForMembershipObservation(
+        string ownerLifetimeId)
+    {
+        if (OperatingSystem.IsLinux())
+        {
+            LinuxCgroupContainmentLease.MoveCurrentProcessToCgroup(ownerLifetimeId);
+        }
     }
 }
 
 internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLease
 {
     private const uint JobObjectQuery = 0x0004;
+    private const uint JobObjectTerminate = 0x0008;
     private const uint JobObjectLimitKillOnJobClose = 0x00002000;
     private const int JobObjectBasicAccountingInformationClass = 1;
     private const int JobObjectExtendedLimitInformationClass = 9;
@@ -91,6 +168,8 @@ internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLe
     }
 
     public ProcessOwnershipMetadata Metadata { get; }
+
+    public bool MembershipRequiresAnchorExit => true;
 
     public static WindowsJobContainmentLease Create(
         Process supervisor,
@@ -141,6 +220,10 @@ internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLe
                     ProcessContainmentKind.WindowsJobObject,
                     ProcessContainmentStrength.KernelJobTree,
                     jobName,
+                    ProcessMembershipAuthority.WindowsJobObject,
+                    jobName,
+                    jobName,
+                    RuntimeInformation.ProcessArchitecture.ToString(),
                     ownershipEstablished,
                     ownerWasAlreadyContained));
             job = null;
@@ -171,6 +254,20 @@ internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLe
                inJob;
     }
 
+    public static void TerminateNamedJob(string jobName)
+    {
+        using var job = WindowsNative.OpenJobObject(
+            JobObjectTerminate,
+            inheritHandle: false,
+            jobName);
+        if (job.IsInvalid || !WindowsNative.TerminateJobObject(job, 1))
+        {
+            throw new Win32Exception(
+                Marshal.GetLastPInvokeError(),
+                "The owner-lifetime channel could not terminate its Windows Job Object.");
+        }
+    }
+
     public bool IsTreeQuiescent()
     {
         if (!WindowsNative.QueryInformationJobObject(
@@ -192,6 +289,10 @@ internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLe
         {
             throw new Win32Exception(Marshal.GetLastPInvokeError());
         }
+    }
+
+    public void MarkAnchorReaped()
+    {
     }
 
     public void Dispose()
@@ -333,87 +434,6 @@ internal sealed partial class WindowsJobContainmentLease : IProcessContainmentLe
     }
 }
 
-internal sealed class PosixProcessGroupContainmentLease : IProcessContainmentLease
-{
-    private const int NoSignal = 0;
-    private const int KillSignal = 9;
-    private const int OperationNotPermitted = 1;
-    private const int NoSuchProcess = 3;
-
-    private readonly int _processGroupId;
-    private readonly bool _ownershipEstablished;
-
-    private PosixProcessGroupContainmentLease(ProcessOwnershipMetadata metadata)
-    {
-        Metadata = metadata;
-        _processGroupId = int.Parse(
-            metadata.ContainmentId,
-            System.Globalization.NumberStyles.None,
-            System.Globalization.CultureInfo.InvariantCulture);
-        _ownershipEstablished = metadata.OwnershipEstablished;
-    }
-
-    public ProcessOwnershipMetadata Metadata { get; }
-
-    public static PosixProcessGroupContainmentLease Create(
-        Process supervisor,
-        ProcessOwnershipMutation mutation)
-    {
-        return new PosixProcessGroupContainmentLease(
-            new ProcessOwnershipMetadata(
-                ProcessIdentityAuthority.DirectChildWait,
-                ProcessContainmentKind.PosixProcessGroup,
-                ProcessContainmentStrength.TrustedChildProcessGroup,
-                supervisor.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                !mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership),
-                OwnerWasAlreadyContained: false));
-    }
-
-    public bool IsTreeQuiescent()
-    {
-        if (!_ownershipEstablished)
-        {
-            return true;
-        }
-
-        var result = PosixNative.SignalProcessGroup(_processGroupId, NoSignal);
-        return InterpretQuiescenceProbe(result, Marshal.GetLastPInvokeError());
-    }
-
-    public void Terminate()
-    {
-        if (!_ownershipEstablished)
-        {
-            return;
-        }
-
-        if (PosixNative.SignalProcessGroup(_processGroupId, KillSignal) != 0 &&
-            Marshal.GetLastPInvokeError() != NoSuchProcess)
-        {
-            throw new Win32Exception(Marshal.GetLastPInvokeError());
-        }
-    }
-
-    public void Dispose()
-    {
-    }
-
-    internal static bool InterpretQuiescenceProbe(int result, int error)
-    {
-        if (result == 0)
-        {
-            return false;
-        }
-
-        return error switch
-        {
-            NoSuchProcess => true,
-            OperationNotPermitted => false,
-            _ => throw new Win32Exception(error)
-        };
-    }
-}
-
 internal sealed class TerminationFailureMutationContainmentLease : IProcessContainmentLease
 {
     private readonly IProcessContainmentLease _inner;
@@ -425,6 +445,8 @@ internal sealed class TerminationFailureMutationContainmentLease : IProcessConta
 
     public ProcessOwnershipMetadata Metadata => _inner.Metadata;
 
+    public bool MembershipRequiresAnchorExit => _inner.MembershipRequiresAnchorExit;
+
     public bool IsTreeQuiescent()
     {
         return _inner.IsTreeQuiescent();
@@ -434,6 +456,11 @@ internal sealed class TerminationFailureMutationContainmentLease : IProcessConta
     {
         _inner.Terminate();
         throw new InvalidOperationException("Injected containment termination failure.");
+    }
+
+    public void MarkAnchorReaped()
+    {
+        _inner.MarkAnchorReaped();
     }
 
     public void Dispose()
@@ -454,6 +481,8 @@ internal sealed class TreeQuiescenceMutationContainmentLease : IProcessContainme
 
     public ProcessOwnershipMetadata Metadata => _inner.Metadata;
 
+    public bool MembershipRequiresAnchorExit => _inner.MembershipRequiresAnchorExit;
+
     public bool IsTreeQuiescent()
     {
         return Interlocked.Exchange(ref _mutationApplied, 1) == 0 ||
@@ -465,9 +494,63 @@ internal sealed class TreeQuiescenceMutationContainmentLease : IProcessContainme
         _inner.Terminate();
     }
 
+    public void MarkAnchorReaped()
+    {
+        _inner.MarkAnchorReaped();
+    }
+
     public void Dispose()
     {
         _inner.Dispose();
+    }
+}
+
+internal sealed class MembershipFailureMutationContainmentLease : IProcessContainmentLease
+{
+    private readonly IProcessContainmentLease _inner;
+
+    public MembershipFailureMutationContainmentLease(IProcessContainmentLease inner)
+    {
+        _inner = inner;
+    }
+
+    public ProcessOwnershipMetadata Metadata => _inner.Metadata;
+
+    public bool MembershipRequiresAnchorExit => _inner.MembershipRequiresAnchorExit;
+
+    public bool IsTreeQuiescent()
+    {
+        throw new InvalidOperationException("Injected authoritative membership-query failure.");
+    }
+
+    public void Terminate()
+    {
+        _inner.Terminate();
+    }
+
+    public void MarkAnchorReaped()
+    {
+        _inner.MarkAnchorReaped();
+    }
+
+    public void Dispose()
+    {
+        _inner.Dispose();
+    }
+}
+
+internal static class PosixProcessGroupTermination
+{
+    private const int KillSignal = 9;
+    private const int NoSuchProcess = 3;
+
+    public static void Terminate(int processGroupId)
+    {
+        if (PosixNative.SignalProcessGroup(processGroupId, KillSignal) != 0 &&
+            Marshal.GetLastPInvokeError() != NoSuchProcess)
+        {
+            throw new Win32Exception(Marshal.GetLastPInvokeError());
+        }
     }
 }
 
@@ -480,10 +563,6 @@ internal static partial class PosixNative
     [LibraryImport("libc", EntryPoint = "getpgrp", SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
     public static partial int GetProcessGroup();
-
-    [LibraryImport("libc", EntryPoint = "getpgid", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
-    public static partial int GetProcessGroup(int processId);
 
     [LibraryImport("libc", EntryPoint = "kill", SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]

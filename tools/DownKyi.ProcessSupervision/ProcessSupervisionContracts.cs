@@ -100,7 +100,15 @@ public enum ProcessContainmentKind
 public enum ProcessContainmentStrength
 {
     KernelJobTree,
-    TrustedChildProcessGroup
+    TrustedChildProcessGroup,
+    DelegatedCgroupTree
+}
+
+public enum ProcessMembershipAuthority
+{
+    WindowsJobObject,
+    LinuxCgroupV2,
+    MacOSLibprocProcessGroup
 }
 
 public sealed record ProcessOwnershipMetadata(
@@ -108,6 +116,10 @@ public sealed record ProcessOwnershipMetadata(
     ProcessContainmentKind ContainmentKind,
     ProcessContainmentStrength ContainmentStrength,
     string ContainmentId,
+    ProcessMembershipAuthority MembershipAuthority,
+    string MembershipId,
+    string OwnerLifetimeId,
+    string BackendArchitecture,
     bool OwnershipEstablished,
     bool OwnerWasAlreadyContained);
 
@@ -117,6 +129,7 @@ public sealed record OwnedProcessOutcome(
     int ExitCode,
     string StandardOutput,
     string StandardError,
+    long TargetExitedAtUnixMilliseconds,
     bool TreeQuiescent,
     ProcessOwnershipMetadata Ownership);
 
@@ -135,6 +148,7 @@ public sealed record OwnedProcessFailure(
     int? TargetProcessId,
     string StandardOutput,
     string StandardError,
+    long? TargetExitedAtUnixMilliseconds,
     bool TreeQuiescent,
     ProcessOwnershipMetadata Ownership);
 
@@ -189,5 +203,11 @@ internal enum ProcessOwnershipMutation
     ResumeTargetBeforeOwnership = 1,
     FailAfterContainmentTermination = 2,
     FailAfterRootReap = 4,
-    ReportTreeQuiescentOnce = 8
+    ReportTreeQuiescentOnce = 8,
+    FailOwnershipEstablishment = 16,
+    FailMembershipQuery = 32,
+    StallLaunchPayloadRead = 64,
+    DelayAfterTargetExitReport = 128,
+    ReleaseAnchorBeforeMembership = 256,
+    FailFixturePublication = 512
 }

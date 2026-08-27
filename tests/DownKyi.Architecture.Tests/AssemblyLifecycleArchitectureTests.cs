@@ -103,6 +103,7 @@ public sealed class AssemblyLifecycleArchitectureTests
             "forensicsSelfTestCaptureLeadValidated",
             "diagnosticCaptureDurationMs",
             "processExitedAtUnixMs",
+            "TargetExitedAtUnixMilliseconds",
             "markerReadContentionCount",
             "markerReadRetriesExhaustedCount",
             "markerReadErrorCount",
@@ -175,6 +176,10 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.DoesNotContain("Stop-DownKyiOwnedProcess", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("ReleaseObservedChildren", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("ObservedChildReleaseLease", gate, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "$processExitedAtUnixMs = [DateTimeOffset]::UtcNow",
+            gate,
+            StringComparison.Ordinal);
     }
 
     [Fact]
