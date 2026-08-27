@@ -314,9 +314,9 @@ constraints:
 
 ### Stage 2 Authoritative Backend Implementation Checkpoint
 
-Status: implementation is locally complete at exact implementation commit
-`3d72fa62db67c409d5316fa1487073613c15eb9c`; Stage 2 remains open pending
-platform-native CI and exact-HEAD review. Stage 3 has not started.
+Status: Stage 2 is complete. The implementation commit is
+`3d72fa62db67c409d5316fa1487073613c15eb9c`; the exact reviewed and CI-validated
+head is `d955fb54b9cd7cbea0608277397124d56b5a89ad`. Stage 3 has not started.
 
 `OwnedProcessLease` now establishes and acknowledges containment plus membership
 before accepting the immutable target launch payload. Linux creates a per-lease
@@ -416,8 +416,24 @@ validation passed the strict solution build with zero warnings/errors, 19
 process-supervision cases, 6 delegated-scope behavior cases, all 308 Architecture
 tests, all 8 Windows-selected projects and a one-assembly lifecycle run with 9
 phase results and zero failures. PowerShell syntax, actionlint, formatting and
-`git diff --check` also passed. Native Linux cgroup cleanup and direct-scope
-behavior remain pending the new exact-HEAD CI run.
+`git diff --check` also passed.
+
+Exact-head closure evidence:
+
+- Strict PR CI run
+  [33061861548](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33061861548)
+  passed Windows, Linux and macOS build/test, all six packaged aria2 TLS jobs,
+  Architecture/format/package checks and the 6 minute 36 second Assembly
+  Lifecycle gate;
+- Process Membership Feasibility run
+  [33061861443](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33061861443)
+  passed delegated Linux cgroup v2 and native macOS x64/arm64 membership proof;
+- CodeQL run
+  [33061861417](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33061861417)
+  passed;
+- the Codex exact-head review at
+  [d955fb54b9cd](https://github.com/crazysmile-PhD/downkyicore/pull/197#issuecomment-5437591194)
+  found no major issue.
 
 ### Unresolved Review Thread Ownership
 
@@ -425,7 +441,8 @@ GitHub thread state is not Stage 2 authority. At implementation commit
 `3d72fa62db67c409d5316fa1487073613c15eb9c`, the 15 unresolved review threads
 classify as follows:
 
-Stage 2 blocking until native CI and exact-HEAD review prove the implementation:
+Stage 2 findings closed by native CI and exact-HEAD review, although the GitHub
+threads remain unresolved review history:
 
 - direct Linux lifecycle execution must acquire delegated cgroup scope;
 - cgroup namespace membership `/` must resolve to the delegated authority root;
