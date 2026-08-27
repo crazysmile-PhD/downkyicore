@@ -315,7 +315,7 @@ constraints:
 ### Stage 2 Authoritative Backend Implementation Checkpoint
 
 Status: implementation is locally complete at exact implementation commit
-`efa22aaa5e98f51842e1e63d7ec9ec83e0aee3bf`; Stage 2 remains open pending
+`3d72fa62db67c409d5316fa1487073613c15eb9c`; Stage 2 remains open pending
 platform-native CI and exact-HEAD review. Stage 3 has not started.
 
 `OwnedProcessLease` now establishes and acknowledges containment plus membership
@@ -394,6 +394,72 @@ and verifies failure kind, non-quiescence, authoritative target exit and
 preserved cleanup failures. It also removes the erroneous Linux dependency on
 anchor reap: the delegated cgroup path remains Linux membership authority until
 the lease disposes it, independently of process-group anchor state.
+
+Exact-HEAD review then exposed three Stage 2 implementation gaps within the
+existing lease and cleanup invariants. Commit
+`3d72fa62db67c409d5316fa1487073613c15eb9c` closes them without adding a
+membership owner or deadline authority:
+
+- lifecycle and solution entrypoints now use one delegated-cgroup scope helper,
+  so direct Linux lifecycle execution acquires the same `Delegate=yes`
+  capability before creating a lease;
+- containment preparation returns a staged resource owner before membership
+  attachment. A post-attachment failure therefore kills and reaps the inert
+  supervisor, then disposes the same cgroup owner; rollback and directory
+  cleanup failures remain visible;
+- the valid cgroup namespace root `/` resolves to the authority root while path
+  escape remains rejected.
+
+Deterministic regressions execute delegated argument forwarding, cgroup-root
+resolution and post-membership-attachment failure cleanup. Local Windows
+validation passed the strict solution build with zero warnings/errors, 19
+process-supervision cases, 6 delegated-scope behavior cases, all 308 Architecture
+tests, all 8 Windows-selected projects and a one-assembly lifecycle run with 9
+phase results and zero failures. PowerShell syntax, actionlint, formatting and
+`git diff --check` also passed. Native Linux cgroup cleanup and direct-scope
+behavior remain pending the new exact-HEAD CI run.
+
+### Unresolved Review Thread Ownership
+
+GitHub thread state is not Stage 2 authority. At implementation commit
+`3d72fa62db67c409d5316fa1487073613c15eb9c`, the 15 unresolved review threads
+classify as follows:
+
+Stage 2 blocking until native CI and exact-HEAD review prove the implementation:
+
+- direct Linux lifecycle execution must acquire delegated cgroup scope;
+- cgroup namespace membership `/` must resolve to the delegated authority root;
+- failed cgroup membership attachment must preserve cleanup evidence and remove
+  the staged directory after bounded supervisor reap.
+
+Already superseded by current Stage 2 implementation, with the thread retained
+only as historical review state:
+
+- POSIX quiescence no longer uses numeric group identity after anchor reap;
+- failed fixture publication removes its staging file;
+- launch-specification writes consume `TransitionBudget` asynchronously;
+- the POSIX owner-lifetime channel remains open after launch and EOF terminates
+  the owned workload;
+- target exit time comes from the supervisor target-wait state before cleanup;
+- ownership readiness is acknowledged before target authorization or launch
+  payload progress.
+
+Deferred by design and not part of Stage 2 closure:
+
+- workflow dependency skipping and required-OS matrix closure belong to central
+  workflow/test execution ownership in Stage 5;
+- retaining descendants from `test-project-runner.ps1` belongs to the Stage 5
+  central runner migration;
+- restart-helper termination/reap ordering belongs to Stage 4 Restart
+  Transaction;
+- exact SQLite analyzer allowlist paths belong to the SQLite ownership policy,
+  outside this process-lease migration;
+- recovery workflow process-supervision input closure belongs to release trust,
+  outside this migration.
+
+No deferred thread may be pulled into Stage 2 merely because GitHub still marks
+it unresolved. Conversely, an already-superseded thread is accepted only when
+the current-head behavior and mutation proof remain green.
 
 If Linux delegation or the macOS membership primitive is unavailable or cannot
 prove membership, the backend fails before authorization or completion. No
