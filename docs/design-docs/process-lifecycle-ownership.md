@@ -396,14 +396,19 @@ cleanup target. The compiled collector has no authority over the observed
 target or owned tree.
 
 This independent boundary is implemented by
-`6fc71e406ba80b2ccfbff49e05023f76f72458b6` and exact-head review-fix commit
-`c3a3a33f67daa20ac450212433c69774385fb679`, based on the fixed Stage 3 closure
-`531399c375700d2bd188fe8723878fad008b7058`. The fix preserves the first causal
-collector failure, streams already-produced target evidence through the
-supervisor before cleanup, carries typed collector failure/evidence/cleanup
-fields into the lifecycle report and behaviorally rejects whole-budget and
-command-based PowerShell ownership mutations. Native exact-head CI and a clean
-same-head review remain pending; Stage 4 and Stage 5 remain deferred.
+`6fc71e406ba80b2ccfbff49e05023f76f72458b6` and exact-head review-fix commits
+`c3a3a33f67daa20ac450212433c69774385fb679` and
+`e98c8a6c27cb22a44ffc63099af53a447139c6ee`, based on the fixed Stage 3 closure
+`531399c375700d2bd188fe8723878fad008b7058`. The fixes preserve the first causal
+collector failure, stream already-produced target evidence through the
+supervisor before cleanup, carry typed collector failure/evidence/cleanup
+fields into the lifecycle report and behaviorally reject whole-budget and
+command-based PowerShell ownership mutations. Command ownership detection also
+normalizes module-qualified PowerShell command names, while a shared
+failure-to-report converter and JSON round-trip fixture prove that non-empty
+cleanup stages and cause types survive the PowerShell boundary. Native
+exact-head CI and a clean same-head review must converge after the latest fix;
+Stage 4 and Stage 5 remain deferred.
 
 ## Legacy Mechanism Disposition
 

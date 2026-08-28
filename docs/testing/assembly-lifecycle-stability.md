@@ -316,6 +316,26 @@ Raw stdout/stderr, JSON evidence, the machine report and Markdown summary are
 written below `artifacts/assembly-lifecycle/<run-id>/`. CI uploads the entire
 directory even when the gate fails.
 
+### Collector failure-report proof
+
+With `-ValidateForensics`, schema 4 also records two compiled-collector
+self-tests. The capture-window proof launches a blocked collector and requires
+typed timeout, reap and stream-drain evidence without consuming the parent
+operation budget. The cleanup-report proof sends a typed failure with a
+non-empty immutable cleanup list through the same PowerShell converter used by
+`Invoke-ForensicsObserverCapture`, JSON-round-trips the result and requires
+these exact stage/cause pairs:
+
+- `TerminateFailed` / `UnauthorizedAccessException`;
+- `ReapDeadlineExceeded` / `TimeoutException`.
+
+`forensicsCollectorCleanupReportSelfTestPassed` is a summary of the structured
+`forensicsCollectorCleanupReportSelfTest` object, not a substitute for it.
+Dropping or remapping either cleanup item makes the gate fail. The associated
+review-invariant mutation executes the real lifecycle script and accepts only
+the explicit cleanup-report self-test rejection; an unrelated child failure is
+not proof.
+
 ## Comparing Results
 
 Do not compare timing numbers collected on different machines. Every report

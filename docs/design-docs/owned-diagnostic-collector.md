@@ -407,6 +407,23 @@ The deterministic collector self-test publishes its typed timeout evidence in
 the lifecycle report. Shared platform tests also prove failure-output relay and
 causal start-failure classification.
 
+Codex review `5048688459` then inspected exact head
+`0322d1c63f41d64a3d940d7792ba8f00d08a1259`. Its two in-scope findings are
+closed by `e98c8a6c27cb22a44ffc63099af53a447139c6ee`:
+
+- the structured `CommandAst` guard normalizes module-qualified commands to
+  their leaf names before rejecting `New-Object`, `Start-Process`,
+  `Stop-Process` and `Wait-Process`; its mutation uses the qualified forms;
+- the observer and lifecycle self-test share one typed failure-to-report
+  converter. A PowerShell fixture serializes a real typed failure with
+  `TerminateFailed/UnauthorizedAccessException` and
+  `ReapDeadlineExceeded/TimeoutException`, and a fifth adversarial mutation
+  proves that discarding the non-empty cleanup list fails closed.
+
+The previous exact head passed 20 native/shared CI checks with nine
+release-only jobs skipped, but the review findings prevent treating it as the
+closure head. Native CI and a clean review must converge again after this fix.
+
 ## Non-Goals
 
 This checkpoint excludes:

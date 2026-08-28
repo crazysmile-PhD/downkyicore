@@ -269,6 +269,51 @@ Required native exact-head CI and a new clean same-head Codex review remain the
 closure boundary. Review `5048306320` itself is not acceptance evidence because
 it contains the findings fixed above.
 
+## Second Exact-Head Review Fix
+
+Exact head `0322d1c63f41d64a3d940d7792ba8f00d08a1259` passed 20 native/shared
+CI checks; nine release-only jobs were skipped as designed and no check failed.
+Codex review `5048688459` then reported two additional in-scope gaps, so that
+head is evidence but not closure. Implementation commit
+`e98c8a6c27cb22a44ffc63099af53a447139c6ee` makes the bounded follow-up:
+
+1. The PowerShell `CommandAst` guard extracts the leaf command name before
+   matching. Module-qualified `Microsoft.PowerShell.Management\New-Object`,
+   `Start-Process`, `Stop-Process` and `Wait-Process` forms are rejected, and
+   the executable helper-authority mutation now injects those exact forms.
+2. `Invoke-ForensicsObserverCapture` and the lifecycle self-test use one typed
+   failure-to-report converter. The PowerShell fixture JSON-round-trips a
+   non-empty cleanup list and asserts both stage and cause type. A dedicated
+   mutation that discards the list fails only the typed-report invariant.
+
+Local proof for this follow-up produced:
+
+- focused Architecture class: six passed, zero failed;
+- module-qualified command mutation: six executed with only the AST ownership
+  test failing;
+- cleanup-report mutation: six executed with only the typed-report test
+  failing;
+- full Architecture project: 312 passed, zero failed;
+- review-invariant corpus: 11 invariants, seven projects, 322 tests and five
+  effective adversarial proofs;
+- one-assembly Local `-ValidateForensics`: nine phase results, zero failures
+  and ownership 619/0. The report retained `ExecutionFailed` plus
+  `TerminateFailed/UnauthorizedAccessException` and
+  `ReapDeadlineExceeded/TimeoutException`;
+- PowerShell parsing, 22 tracked valid JSON files,
+  `dotnet format --verify-no-changes` and `git diff --check`: pass.
+
+The first Windows routed run reached the final project after the preceding
+seven projects passed, then one unchanged process-lease test hit a transient
+sharing violation while opening an atomically published temporary JSON probe.
+The complete owning test class subsequently passed 27/27. The full routed run
+was not repeated to turn that diagnostic into a green result; exact-head
+Windows CI remains the authoritative closure gate.
+
+Required native CI and a new clean Codex review must now converge on the final
+documentation head. Review `5048688459` is not acceptance evidence because it
+contains the two findings above.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates
