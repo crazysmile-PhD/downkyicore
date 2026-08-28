@@ -233,6 +233,9 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         var collector = ReadFunction(source, "Invoke-OwnedDiagnosticCollector");
         var delay = ReadFunction(source, "Wait-ForensicsObserverDelay");
         var snapshot = ReadFunction(source, "Get-DiagnosticProcessTreeSnapshot");
+        var captureWindowSelfTest = ReadFunction(
+            source,
+            "Test-OwnedDiagnosticCollectorCaptureWindow");
         var attachStall = ReadFunction(source, "Test-DotnetStackAttachStall");
 
         Assert.Contains(
@@ -273,6 +276,15 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             source,
             StringComparison.Ordinal);
         Assert.Contains("--collector-block-with-ready", source, StringComparison.Ordinal);
+        Assert.Contains("$collectorHostPath", captureWindowSelfTest, StringComparison.Ordinal);
+        Assert.Contains(
+            "-FileName $collectorHostPath",
+            captureWindowSelfTest,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "-FileName \"dotnet\"",
+            captureWindowSelfTest,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
             "-Arguments @($ProcessSupervisionAssembly, \"--block-forever\")",
             source,

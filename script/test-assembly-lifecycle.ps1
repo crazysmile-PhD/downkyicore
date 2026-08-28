@@ -523,6 +523,14 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
     else {
         "--collector-block-with-ready"
     }
+    $collectorHostName = [System.IO.Path]::GetFileNameWithoutExtension(
+        $ProcessSupervisionAssembly) + $(if ($IsWindows) { ".exe" } else { "" })
+    $collectorHostPath = Join-Path `
+        ([System.IO.Path]::GetDirectoryName($ProcessSupervisionAssembly)) `
+        $collectorHostName
+    if (-not (Test-Path -LiteralPath $collectorHostPath -PathType Leaf)) {
+        throw "Compiled collector fixture host was not built: $collectorHostPath"
+    }
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $failure = $null
     $unexpectedFailureType = $null
@@ -530,8 +538,8 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
     $readyEvidenceErrorType = $null
     try {
         $null = Invoke-OwnedDiagnosticCollector `
-            -FileName "dotnet" `
-            -Arguments @($ProcessSupervisionAssembly, $probeArgument, $readyPath) `
+            -FileName $collectorHostPath `
+            -Arguments @($probeArgument, $readyPath) `
             -CaptureWindow $captureWindow
     }
     catch {
@@ -589,6 +597,7 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
     $passed = -not ($contractChecks.Values -contains $false)
     return [pscustomobject]@{
         passed = $passed
+        collectorHostName = $collectorHostName
         probeArgument = $probeArgument
         operationAllowanceMilliseconds = [Math]::Round(
             $operationAllowance.TotalMilliseconds,
