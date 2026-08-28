@@ -8,6 +8,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_FORENSICS_LEASE";
     private const string HelperAuthorityMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_HELPER_AUTHORITY";
+    private const string CaptureBudgetMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
@@ -100,7 +102,92 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.True(
             cleanup.IndexOf("$Collector.Kill($true)", StringComparison.Ordinal) <
             cleanup.IndexOf("$Collector.WaitForExitAsync", StringComparison.Ordinal));
-        Assert.Contains("$failures.Add($_.Exception)", cleanup, StringComparison.Ordinal);
+        Assert.Contains("$Failures.Add($_.Exception)", cleanup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ForensicsCollectorConsumesAnOwnerAllocatedCaptureWindow()
+    {
+        var source = ReadLifecycleGate();
+        var isolatedProcess = ReadFunction(source, "Invoke-IsolatedProcess");
+        var allocator = ReadFunction(source, "New-OwnerAllocatedForensicsCaptureWindow");
+        var collector = ReadFunction(source, "Invoke-BoundedForensicsCollector");
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(CaptureBudgetMutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            collector = collector.Replace(
+                "Get-ForensicsCaptureWaitMilliseconds",
+                "Get-TransitionBudgetWaitMilliseconds",
+                StringComparison.Ordinal);
+        }
+
+        var captureWait = ReadFunction(source, "Get-ForensicsCaptureWaitMilliseconds");
+        var observerClosure = ReadFunctionClosure(source, "Invoke-ForensicsObserverCapture");
+
+        Assert.Contains(
+            "$forensicsCaptureWindowMilliseconds = 15000",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$forensicsCaptureCleanupWindowMilliseconds = $processCleanupGraceSeconds * 1000",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "New-OwnerAllocatedForensicsCaptureWindow",
+            isolatedProcess,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            3,
+            Regex.Count(source, "New-OwnerAllocatedForensicsCaptureWindow"));
+        Assert.DoesNotContain(
+            "New-OwnerAllocatedForensicsCaptureWindow",
+            observerClosure.Keys);
+        Assert.DoesNotContain("OwnedProcessLease", allocator, StringComparison.Ordinal);
+        Assert.DoesNotContain("TransitionBudget]::Start", allocator, StringComparison.Ordinal);
+
+        Assert.Contains("[object]$CaptureWindow", collector, StringComparison.Ordinal);
+        Assert.Contains(
+            "Get-ForensicsCaptureWaitMilliseconds",
+            collector,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Get-TransitionBudgetWaitMilliseconds",
+            collector,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Test-ForensicsTimeoutException -Exception $_.Exception",
+            collector,
+            StringComparison.Ordinal);
+
+        Assert.Contains("$Budget.RemainingOperation", captureWait, StringComparison.Ordinal);
+        Assert.Contains("$Budget.RemainingCleanup", captureWait, StringComparison.Ordinal);
+        Assert.Contains(
+            "$CaptureWindow.operationDeadlineUtc",
+            captureWait,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$CaptureWindow.cleanupDeadlineUtc",
+            captureWait,
+            StringComparison.Ordinal);
+        foreach (var function in observerClosure)
+        {
+            Assert.DoesNotContain(".AddMilliseconds(", function.Value, StringComparison.Ordinal);
+        }
+
+        Assert.Contains(
+            "Test-ForensicsCollectorCaptureWindow",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "--block-forever",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "forensicsCollectorCaptureWindowSelfTestPassed",
+            source,
+            StringComparison.Ordinal);
     }
 
     [Fact]

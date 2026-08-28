@@ -61,8 +61,11 @@ $script:markerReadErrorType = $null
 $slowEvidenceCaptureLeadMilliseconds = 1000
 $forensicsSelfTestCaptureDelayMilliseconds = 750
 $processCleanupGraceSeconds = 5
+$forensicsCaptureWindowMilliseconds = 15000
+$forensicsCaptureCleanupWindowMilliseconds = $processCleanupGraceSeconds * 1000
 $forensicsSelfTestCaptureLeadValidated = $false
 $forensicsSelfTestEvidenceHoldValidated = $false
+$forensicsCollectorCaptureWindowSelfTestPassed = $false
 $markerReaderSelfTestRequired = $IsWindows -and
     @("PR", "Main", "Rehearsal", "Flaky").Contains($Profile)
 $markerReaderSelfTestComplete = $false
@@ -207,6 +210,83 @@ function Get-TransitionBudgetWaitMilliseconds {
             [Math]::Floor($remaining.TotalMilliseconds)))
 }
 
+function New-OwnerAllocatedForensicsCaptureWindow {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Budget
+    )
+
+    if ($Budget.RemainingOperation -le [TimeSpan]::Zero) {
+        throw [TimeoutException]::new(
+            "The process owner cannot allocate a forensics capture window after its operation deadline.")
+    }
+
+    $allocatedAtUtc = [DateTimeOffset]::UtcNow
+    $operationDeadlineUtc = $allocatedAtUtc.AddMilliseconds(
+        $forensicsCaptureWindowMilliseconds)
+    return [pscustomobject]@{
+        allocatedAtUtc = $allocatedAtUtc
+        operationDeadlineUtc = $operationDeadlineUtc
+        cleanupDeadlineUtc = $operationDeadlineUtc.AddMilliseconds(
+            $forensicsCaptureCleanupWindowMilliseconds)
+    }
+}
+
+function Get-ForensicsCaptureWaitMilliseconds {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Budget,
+        [Parameter(Mandatory)]
+        [object]$CaptureWindow,
+        [switch]$Cleanup
+    )
+
+    $ownerRemaining = if ($Cleanup) {
+        $Budget.RemainingCleanup
+    }
+    else {
+        $Budget.RemainingOperation
+    }
+    $windowDeadlineUtc = if ($Cleanup) {
+        $CaptureWindow.cleanupDeadlineUtc
+    }
+    else {
+        $CaptureWindow.operationDeadlineUtc
+    }
+    $windowRemaining = $windowDeadlineUtc - [DateTimeOffset]::UtcNow
+    $remainingMilliseconds = [Math]::Min(
+        $ownerRemaining.TotalMilliseconds,
+        $windowRemaining.TotalMilliseconds)
+    if ($remainingMilliseconds -le 0) {
+        throw [TimeoutException]::new(
+            "Forensics observer exhausted its owner-allocated capture window.")
+    }
+
+    return [Math]::Max(
+        1,
+        [Math]::Min(
+            [int]::MaxValue,
+            [Math]::Floor($remainingMilliseconds)))
+}
+
+function Test-ForensicsTimeoutException {
+    param(
+        [Parameter(Mandatory)]
+        [System.Exception]$Exception
+    )
+
+    $candidate = $Exception
+    while ($null -ne $candidate) {
+        if ($candidate -is [TimeoutException]) {
+            return $true
+        }
+
+        $candidate = $candidate.InnerException
+    }
+
+    return $false
+}
+
 function Invoke-BoundedForensicsCollector {
     param(
         [Parameter(Mandatory)]
@@ -215,6 +295,8 @@ function Invoke-BoundedForensicsCollector {
         [string[]]$Arguments,
         [Parameter(Mandatory)]
         [object]$Budget,
+        [Parameter(Mandatory)]
+        [object]$CaptureWindow,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
@@ -244,7 +326,9 @@ function Invoke-BoundedForensicsCollector {
 
         $stdoutTask = $collector.StandardOutput.ReadToEndAsync()
         $stderrTask = $collector.StandardError.ReadToEndAsync()
-        $waitMilliseconds = Get-TransitionBudgetWaitMilliseconds -Budget $Budget
+        $waitMilliseconds = Get-ForensicsCaptureWaitMilliseconds `
+            -Budget $Budget `
+            -CaptureWindow $CaptureWindow
         try {
             $collector.WaitForExitAsync($CancellationToken).
                 WaitAsync(
@@ -252,20 +336,27 @@ function Invoke-BoundedForensicsCollector {
                     $CancellationToken).
                 GetAwaiter().GetResult()
         }
-        catch [TimeoutException] {
-            $timedOut = $true
+        catch {
+            if (Test-ForensicsTimeoutException -Exception $_.Exception) {
+                $timedOut = $true
+            }
+            else {
+                throw
+            }
         }
         if ($timedOut) {
-            foreach ($cleanupFailure in @(
-                Stop-BoundedForensicsCollector -Collector $collector -Budget $Budget)) {
-                $cleanupFailures.Add($cleanupFailure)
-            }
+            Stop-BoundedForensicsCollector `
+                -Collector $collector `
+                -Budget $Budget `
+                -CaptureWindow $CaptureWindow `
+                -Failures $cleanupFailures
         }
 
         if ($cleanupFailures.Count -eq 0) {
             $outputTasks = [Threading.Tasks.Task]::WhenAll($stdoutTask, $stderrTask)
-            $drainMilliseconds = Get-TransitionBudgetWaitMilliseconds `
+            $drainMilliseconds = Get-ForensicsCaptureWaitMilliseconds `
                 -Budget $Budget `
+                -CaptureWindow $CaptureWindow `
                 -Cleanup
             $outputTasks.WaitAsync(
                     [TimeSpan]::FromMilliseconds($drainMilliseconds),
@@ -293,10 +384,11 @@ function Invoke-BoundedForensicsCollector {
                 $cleanupFailures.Add($_.Exception)
             }
             if ($collectorRunning) {
-                foreach ($cleanupFailure in @(
-                    Stop-BoundedForensicsCollector -Collector $collector -Budget $Budget)) {
-                    $cleanupFailures.Add($cleanupFailure)
-                }
+                Stop-BoundedForensicsCollector `
+                    -Collector $collector `
+                    -Budget $Budget `
+                    -CaptureWindow $CaptureWindow `
+                    -Failures $cleanupFailures
             }
         }
         $collector.Dispose()
@@ -326,22 +418,27 @@ function Stop-BoundedForensicsCollector {
         [Parameter(Mandatory)]
         [System.Diagnostics.Process]$Collector,
         [Parameter(Mandatory)]
-        [object]$Budget
+        [object]$Budget,
+        [Parameter(Mandatory)]
+        [object]$CaptureWindow,
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.List[Exception]]$Failures
     )
 
-    $failures = [Collections.Generic.List[Exception]]::new()
     try {
         if (-not $Collector.HasExited) {
             $Collector.Kill($true)
         }
     }
     catch {
-        $failures.Add($_.Exception)
+        $Failures.Add($_.Exception)
     }
 
     try {
-        $cleanupMilliseconds = Get-TransitionBudgetWaitMilliseconds `
+        $cleanupMilliseconds = Get-ForensicsCaptureWaitMilliseconds `
             -Budget $Budget `
+            -CaptureWindow $CaptureWindow `
             -Cleanup
         $Collector.WaitForExitAsync([Threading.CancellationToken]::None).
             WaitAsync(
@@ -350,10 +447,40 @@ function Stop-BoundedForensicsCollector {
             GetAwaiter().GetResult()
     }
     catch {
-        $failures.Add($_.Exception)
+        $Failures.Add($_.Exception)
+    }
+}
+
+function Test-ForensicsCollectorCaptureWindow {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProcessSupervisionAssembly
+    )
+
+    $budget = [DownKyi.ProcessSupervision.TransitionBudget]::Start(
+        [TimeSpan]::FromSeconds(5),
+        [TimeSpan]::FromSeconds(2))
+    $allocatedAtUtc = [DateTimeOffset]::UtcNow
+    $captureWindow = [pscustomobject]@{
+        allocatedAtUtc = $allocatedAtUtc
+        operationDeadlineUtc = $allocatedAtUtc.AddMilliseconds(1000)
+        cleanupDeadlineUtc = $allocatedAtUtc.AddMilliseconds(3000)
+    }
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $result = Invoke-BoundedForensicsCollector `
+            -FileName "dotnet" `
+            -Arguments @($ProcessSupervisionAssembly, "--block-forever") `
+            -Budget $budget `
+            -CaptureWindow $captureWindow
+    }
+    finally {
+        $stopwatch.Stop()
     }
 
-    return [Exception[]]$failures.ToArray()
+    return $result.timedOut -and
+        $stopwatch.Elapsed -lt [TimeSpan]::FromSeconds(4) -and
+        $budget.RemainingOperation -gt [TimeSpan]::FromSeconds(1)
 }
 
 function Wait-ForensicsObserverDelay {
@@ -362,6 +489,8 @@ function Wait-ForensicsObserverDelay {
         [int]$Milliseconds,
         [Parameter(Mandatory)]
         [object]$Budget,
+        [Parameter(Mandatory)]
+        [object]$CaptureWindow,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
@@ -371,7 +500,9 @@ function Wait-ForensicsObserverDelay {
     }
 
     $delay = [Threading.Tasks.Task]::Delay($Milliseconds, $CancellationToken)
-    $waitMilliseconds = Get-TransitionBudgetWaitMilliseconds -Budget $Budget
+    $waitMilliseconds = Get-ForensicsCaptureWaitMilliseconds `
+        -Budget $Budget `
+        -CaptureWindow $CaptureWindow
     $delay.WaitAsync(
             [TimeSpan]::FromMilliseconds($waitMilliseconds),
             $CancellationToken).
@@ -385,6 +516,8 @@ function Get-DiagnosticProcessTreeSnapshot {
         [DateTimeOffset]$NotBeforeUtc = [DateTimeOffset]::MinValue,
         [Parameter(Mandatory)]
         [object]$Budget,
+        [Parameter(Mandatory)]
+        [object]$CaptureWindow,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
@@ -403,14 +536,16 @@ function Get-DiagnosticProcessTreeSnapshot {
                 continue
             }
 
-            $remaining = $Budget.RemainingOperation
-            if ($remaining -lt [TimeSpan]::FromSeconds(1)) {
+            $remainingMilliseconds = Get-ForensicsCaptureWaitMilliseconds `
+                -Budget $Budget `
+                -CaptureWindow $CaptureWindow
+            if ($remainingMilliseconds -lt 1000) {
                 throw [TimeoutException]::new(
-                    "The diagnostic process snapshot exceeded the process owner's operation deadline.")
+                    "The diagnostic process snapshot exhausted its owner-allocated capture window.")
             }
             $operationTimeoutSeconds = [Math]::Max(
                 1,
-                [Math]::Floor([Math]::Min(5, $remaining.TotalSeconds)))
+                [Math]::Floor([Math]::Min(5, $remainingMilliseconds / 1000)))
             $children = @(
                 Get-CimInstance `
                     -ClassName Win32_Process `
@@ -455,6 +590,7 @@ function Get-DiagnosticProcessTreeSnapshot {
         -FileName "ps" `
         -Arguments @("-eo", "pid=,ppid=,comm=") `
         -Budget $Budget `
+        -CaptureWindow $CaptureWindow `
         -CancellationToken $CancellationToken
     if ($collector.timedOut -or $collector.exitCode -ne 0) {
         throw "Diagnostic process snapshot collector failed."
@@ -518,6 +654,8 @@ function Save-ManagedStack {
         [string]$Destination,
         [Parameter(Mandatory)]
         [object]$Budget,
+        [Parameter(Mandatory)]
+        [object]$CaptureWindow,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
@@ -541,6 +679,7 @@ function Save-ManagedStack {
             $TargetProcessId.ToString(
                 [System.Globalization.CultureInfo]::InvariantCulture)) `
         -Budget $Budget `
+        -CaptureWindow $CaptureWindow `
         -CancellationToken $CancellationToken
     [System.IO.File]::WriteAllText(
         $Destination,
@@ -570,6 +709,8 @@ function Save-ProcessEvidence {
         [string]$Reason,
         [Parameter(Mandatory)]
         [object]$Budget,
+        [Parameter(Mandatory)]
+        [object]$CaptureWindow,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None,
         [switch]$SkipManagedStack
@@ -612,6 +753,7 @@ function Save-ProcessEvidence {
         Get-DiagnosticProcessTreeSnapshot `
             -RootProcessId $Process.Id `
             -Budget $Budget `
+            -CaptureWindow $CaptureWindow `
             -CancellationToken $CancellationToken)
     $stackResult = if ($Process.HasExited -or $SkipManagedStack) {
         [pscustomobject]@{
@@ -626,6 +768,7 @@ function Save-ProcessEvidence {
             -TargetProcessId $Process.Id `
             -Destination (Join-Path $directory "managed-stack.txt") `
             -Budget $Budget `
+            -CaptureWindow $CaptureWindow `
             -CancellationToken $CancellationToken
     }
     $evidence = [ordered]@{
@@ -659,6 +802,8 @@ function Invoke-ForensicsObserverCapture {
         [string]$Reason,
         [Parameter(Mandatory)]
         [object]$Budget,
+        [Parameter(Mandatory)]
+        [object]$CaptureWindow,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None,
         [ValidateRange(0, 5000)]
@@ -678,6 +823,7 @@ function Invoke-ForensicsObserverCapture {
     Wait-ForensicsObserverDelay `
         -Milliseconds $CaptureDelayMilliseconds `
         -Budget $Budget `
+        -CaptureWindow $CaptureWindow `
         -CancellationToken $CancellationToken
     $diagnosticProcess = Get-Process `
         -Id $TargetProcessId `
@@ -698,6 +844,7 @@ function Invoke-ForensicsObserverCapture {
                 -Phase $Phase `
                 -Reason $Reason `
                 -Budget $Budget `
+                -CaptureWindow $CaptureWindow `
                 -CancellationToken $CancellationToken `
                 -SkipManagedStack:$SkipManagedStack
         return [pscustomobject]@{
@@ -1015,6 +1162,8 @@ function Invoke-IsolatedProcess {
                 $slowEvidenceAttempted = $true
                 $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
                 try {
+                    $captureWindow = New-OwnerAllocatedForensicsCaptureWindow `
+                        -Budget $budget
                     $capture = Invoke-ForensicsObserverCapture `
                         -TargetProcessId $processId `
                         -AssemblyName $AssemblyName `
@@ -1022,6 +1171,7 @@ function Invoke-IsolatedProcess {
                         -Phase $Phase `
                         -Reason "slow-phase" `
                         -Budget $budget `
+                        -CaptureWindow $captureWindow `
                         -CancellationToken $CancellationToken `
                         -CaptureDelayMilliseconds $EvidenceCaptureDelayMilliseconds `
                         -InjectFailure:$InjectForensicsObserverFailure
@@ -1080,6 +1230,8 @@ function Invoke-IsolatedProcess {
                         $ExitThresholdSeconds) {
                     $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
                     try {
+                        $captureWindow = New-OwnerAllocatedForensicsCaptureWindow `
+                            -Budget $budget
                         $capture = Invoke-ForensicsObserverCapture `
                             -TargetProcessId $processId `
                             -AssemblyName $AssemblyName `
@@ -1087,6 +1239,7 @@ function Invoke-IsolatedProcess {
                             -Phase $Phase `
                             -Reason "slow-exit-after-teardown" `
                             -Budget $budget `
+                            -CaptureWindow $captureWindow `
                             -CancellationToken $CancellationToken `
                             -InjectFailure:$InjectForensicsObserverFailure
                         $exitEvidenceStatus = $capture.status
@@ -1672,6 +1825,14 @@ if (-not (Test-Path -LiteralPath $processSupervisionAssembly -PathType Leaf)) {
     throw "Process supervision assembly was not built: $processSupervisionAssembly"
 }
 [Reflection.Assembly]::LoadFrom($processSupervisionAssembly) | Out-Null
+if ($ValidateForensics) {
+    $forensicsCollectorCaptureWindowSelfTestPassed =
+        Test-ForensicsCollectorCaptureWindow `
+            -ProcessSupervisionAssembly $processSupervisionAssembly
+    if (-not $forensicsCollectorCaptureWindowSelfTestPassed) {
+        throw "Forensics collector capture-window self-test did not fail closed."
+    }
+}
 
 $allTestProjects = @(
     Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "tests") `
@@ -2371,12 +2532,18 @@ $report = [ordered]@{
     slowEvidenceCaptureLeadMilliseconds = $slowEvidenceCaptureLeadMilliseconds
     forensicsSelfTestCaptureDelayMilliseconds =
         $forensicsSelfTestCaptureDelayMilliseconds
+    forensicsCaptureWindowMilliseconds = $forensicsCaptureWindowMilliseconds
+    forensicsCaptureCleanupWindowMilliseconds =
+        $forensicsCaptureCleanupWindowMilliseconds
     processCleanupGraceSeconds = $processCleanupGraceSeconds
     forensicsSelfTestCaptureLeadValidated =
         $forensicsSelfTestCaptureLeadValidated
     forensicsSelfTestEvidenceHoldValidated =
         $forensicsSelfTestEvidenceHoldValidated
     reporterContractSelfTestPassed = $reporterContractSelfTestPassed
+    forensicsCollectorCaptureWindowSelfTestRequired = [bool]$ValidateForensics
+    forensicsCollectorCaptureWindowSelfTestPassed =
+        $forensicsCollectorCaptureWindowSelfTestPassed
     exitThresholdSeconds = $ExitThresholdSeconds
     diagnosticsTool = if ($null -eq $script:diagnosticsTool) {
         "unavailable"
