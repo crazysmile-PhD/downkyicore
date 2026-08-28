@@ -143,16 +143,20 @@ evidence errors cannot overwrite the process owner's causal failure.
   lifecycle timings are diagnostic evidence, not performance baselines.
 - `Invoke-IsolatedProcess`, which holds the existing transition budget,
   allocates each observer capture a 15-second operation window and a five-second
-  collector-cleanup window on a monotonic `Stopwatch`. Every collector, snapshot
-  and delay wait consumes the shorter of that caller-started window and the
-  owner's monotonic transition budget; the observer cannot start, create or
-  renew either timeline. Collector termination and bounded reap are attempted
-  independently. If cleanup also fails, the causal collector timeout and every
-  cleanup exception remain in one aggregate; that cleanup authority applies only
-  to the observer-created collector. `-ValidateForensics` launches a deliberately
-  blocked collector, injects cleanup failure, and requires both failure types,
-  bounded kill/reap and remaining owner operation budget to be observed through
-  `forensicsCollectorCaptureWindowSelfTestPassed`.
+  collector-cleanup allowance through
+  `TransitionBudget.AllocateDiagnosticCollectorWindow`. The typed window uses
+  the same monotonic `TimeProvider` and exposes the shorter of its allowance and
+  the parent operation/cleanup remainder; PowerShell cannot start or renew a
+  second timeline. `OwnedDiagnosticCollector` exclusively owns collector start,
+  wait, terminate, authoritative reap and concurrent stdout/stderr drain, and
+  returns typed evidence or a causal primary failure plus an immutable cleanup
+  list. PowerShell receives no collector `Process` or cleanup target.
+  `-ValidateForensics` drives the real `dotnet-stack` path through this boundary
+  and requires capture-window, capture-lead, evidence-hold and remaining parent
+  budget proof through `forensicsCollectorCaptureWindowSelfTestPassed`. Shared
+  platform tests separately cover blocked collectors, cancellation, terminate,
+  reap and drain failures, large dual-stream output, descendant retention and a
+  mutation that consumes the parent budget.
 - Execution slow-phase, post-teardown slow-exit and timeout evidence have
   separate arrays. A process-exit row cannot inherit unrelated execution
   evidence.

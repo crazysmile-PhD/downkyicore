@@ -2,20 +2,24 @@
 
 ## Objective And Current Facts
 
-This plan defines an independent PowerShell-boundary follow-up to the completed
-PR #197 Stage 3 work. It does not report implementation or CI completion.
+This plan tracks an independent PowerShell-boundary follow-up to the completed
+PR #197 Stage 3 work. Local implementation and validation are complete; native
+exact-head CI and same-head review are not yet complete.
 
 - PR: [#197](https://github.com/crazysmile-PhD/downkyicore/pull/197)
 - Owner branch: `fix/pr196-review-followup`
 - Exact planning HEAD: `531399c375700d2bd188fe8723878fad008b7058`
+- Planning commit: `27ac6da102855fdbc647335aaf91133c1bacab1e`
+- Implementation commit: `6fc71e406ba80b2ccfbff49e05023f76f72458b6`
 - Stage 3 implementation: `1298bf5cb4bcb69c2a5cb69ce07204ba782f51e8`
 - Design authority: [Owned Diagnostic Collector](../design-docs/owned-diagnostic-collector.md)
 - Parent process design: [Process Lifecycle Ownership](../design-docs/process-lifecycle-ownership.md)
 - Parent migration plan: [PR #197 Process-Lease Migration](pr-197-process-lease-migration.md)
 
-At the planning HEAD, local, origin and PR HEAD are equal; the worktree is clean;
-Stage 3 is closed; and PR #197 remains open, unmerged and unreleased. These are
-planning-baseline facts, not evidence for a future implementation HEAD.
+At the planning HEAD, local, origin and PR HEAD were equal and the worktree was
+clean. Stage 3 remains closed. PR #197 remains open, unmerged and unreleased.
+The implementation and documentation checkpoints must still be pushed and
+proved on one later exact HEAD.
 
 The checkpoint moves only the lifecycle of diagnostic collector children into
 a compiled owner. `OwnedProcessLease` remains the sole target-process owner.
@@ -23,9 +27,10 @@ Stage 4, Stage 5, workflow, release and tag work remain deferred.
 
 ## Exact Source Inventory
 
-The current closure begins in
+The migrated closure began in
 [`test-assembly-lifecycle.ps1`](../../script/test-assembly-lifecycle.ps1).
-Functions are split by owner boundary rather than moved as one file-wide rewrite.
+The inventory below records the boundary used for the completed local
+migration; it is not a second live implementation.
 
 ### Move To C# And Delete After Caller Migration
 
@@ -178,6 +183,47 @@ stream behavior.
 
 Tests must assert typed enums, evidence fields and list contents. Exception
 message substrings may assist diagnostics but cannot be the pass/fail contract.
+
+## Local Implementation Checkpoint
+
+Implementation commit `6fc71e406ba80b2ccfbff49e05023f76f72458b6`
+establishes the local review boundary:
+
+- `TransitionBudget` allocates an attenuated `DiagnosticCollectorWindow` on the
+  same `TimeProvider` and parent operation/cleanup timeline;
+- `OwnedDiagnosticCollector` composes the existing process lease internally and
+  exposes only collector-specific outcome, evidence, primary-failure and
+  immutable cleanup-failure contracts;
+- the compiled supervisor explicitly drains and relays target stdout/stderr, so
+  the real `dotnet-stack` collector and the large dual-stream fixture use the
+  same bounded owner path;
+- lifecycle PowerShell allocates capture policy and consumes typed results. The
+  seven replaced start/wait/kill/reap/deadline/exception helpers are deleted;
+- Windows, Linux and macOS projects compile the same shared collector behavior
+  corpus; structured Architecture mutations reject observer authority,
+  restored raw PowerShell ownership and a renewed collector deadline.
+
+Local validation during the implementation and documentation follow-up
+produced:
+
+- strict Release solution build: 23 projects, zero warnings and zero errors;
+- focused collector-window and existing process-lease classes: pass through the
+  central in-process runner;
+- full Architecture project: 311 passed, zero failed;
+- review invariant corpus: 11 invariants, seven projects, 321 tests and four
+  effective adversarial proofs;
+- one-assembly `Local -ValidateForensics`: nine phase results, zero failures,
+  lifecycle ownership 619/0, with collector-window, capture-lead,
+  evidence-hold, process-lease and reporter self-tests all passing;
+- routed Windows solution tests: 1,102 passed, zero failed and one existing
+  packaged-aria2 TLS test skipped because `DOWNKYI_ARIA2_BINARY` was absent;
+- PowerShell parsing, platform-selector regression and `git diff --check`:
+  pass.
+
+This is local evidence, not native exact-head closure. Windows/Linux/macOS CI,
+Assembly Lifecycle CI, Strict PR CI and same-head Codex review remain pending.
+No stop rule was triggered locally; Stage 4, Stage 5, workflow, release, merge
+and tag work remain deferred.
 
 ## Native CI Matrix
 

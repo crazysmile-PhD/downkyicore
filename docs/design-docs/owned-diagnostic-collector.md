@@ -2,8 +2,9 @@
 
 ## Status And Authority
 
-This document is a proposed design. It does not report an implemented collector
-or completed validation.
+This design is implemented locally by implementation commit
+`6fc71e406ba80b2ccfbff49e05023f76f72458b6`. Native exact-head CI and
+same-head review remain required before this independent checkpoint is closed.
 
 - Parent design: [Process Lifecycle Ownership](process-lifecycle-ownership.md)
 - Parent migration: [PR #197 Process-Lease Migration](../exec-plans/pr-197-process-lease-migration.md)
@@ -14,13 +15,13 @@ or completed validation.
 Stage 3 is closed. This checkpoint is an independent PowerShell-boundary
 follow-up. It does not reopen or redesign Stage 3 target-process ownership.
 
-## Current Problem And Boundary
+## Implemented Boundary
 
 The Stage 3 implementation moved evidence-hold state and target-process truth to
-`OwnedProcessLease`, but the lifecycle script still owns the child process used
-to run a diagnostic collector. The current collector closure in
-[`test-assembly-lifecycle.ps1`](../../script/test-assembly-lifecycle.ps1)
-performs:
+`OwnedProcessLease`. This follow-up moves the child-process lifecycle used to
+run a diagnostic collector from
+[`test-assembly-lifecycle.ps1`](../../script/test-assembly-lifecycle.ps1) to
+`OwnedDiagnosticCollector`. The compiled boundary performs:
 
 - collector process start;
 - bounded wait and caller cancellation;
@@ -30,9 +31,10 @@ performs:
 - preservation of a primary failure beside cleanup failures.
 
 Those operations are process-lifecycle correctness even though the process is a
-diagnostic tool. They belong in a compiled owner so that PowerShell no longer
-depends on pipeline result shape, native-process state, exception-message
-inspection or manually coordinated cleanup.
+diagnostic tool. PowerShell now allocates capture policy, passes the typed
+window and consumes typed evidence; it no longer depends on pipeline result
+shape, raw collector-process state, exception-message inspection or manually
+coordinated collector cleanup.
 
 The ownership split is exact:
 
@@ -110,7 +112,7 @@ The collector consumes a caller-allocated window. It must not create its own
 PowerShell stopwatch unchanged into C# would merely move a second deadline owner
 between languages and is forbidden.
 
-## Proposed C# Contract
+## C# Contract
 
 The following API is a design sketch, not committed source. Names may be refined
 during implementation, but the ownership and result shape are required.
@@ -164,7 +166,9 @@ public enum DiagnosticCollectorFailureKind
 public enum DiagnosticCollectorCleanupFailureKind
 {
     TerminateFailed,
+    CollectorTreeNotQuiescent,
     ReapDeadlineExceeded,
+    ReapFailed,
     StreamDrainDeadlineExceeded,
     DisposeFailed
 }
@@ -277,7 +281,9 @@ terminate failure.
 If the collector cannot be authoritatively reaped within cleanup allowance, the
 cleanup list records `ReapDeadlineExceeded`. The process ID is diagnostic only;
 PID/PPID lookup cannot declare the collector reaped or select another process as
-the cleanup target.
+the cleanup target. A non-timeout root-reap failure is `ReapFailed`; a failed
+owned-set quiescence check is `CollectorTreeNotQuiescent`. Neither can be
+converted to success by a diagnostic process observation.
 
 ### Stream-Drain Timeout
 
@@ -369,12 +375,13 @@ fails closed without PID/PPID fallback.
 is a repository-wide architecture policy gate. It is not owned by the Stage 5
 central-runner migration and must not be silently coupled to it.
 
-Replacing that gate belongs to an independent Architecture Policy checkpoint or
-a deliberately scoped Stage 6 replacement. The existing gate remains required
-until a structured PowerShell-AST, Roslyn or executable behavioral replacement
-has passed its own mutation proof. The new gate must reject a reintroduced raw
-collector process owner or independent deadline, but source-text inspection
-alone cannot prove collector runtime behavior.
+Replacing that repository-wide gate belongs to an independent Architecture
+Policy checkpoint or a deliberately scoped Stage 6 replacement. It remains
+required. This collector checkpoint adds a narrower structured PowerShell-AST
+guard over the transitive forensics closure; mutations that restore raw
+collector process authority or an independent deadline make that guard fail.
+The AST guard supplements the native collector behavior tests and does not
+claim to prove runtime behavior by source inspection alone.
 
 ## Non-Goals
 
