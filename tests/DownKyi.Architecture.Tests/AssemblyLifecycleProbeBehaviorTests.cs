@@ -483,7 +483,21 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         }
         finally
         {
+            TryDeleteLifecycleMutationResults(resultsDirectory);
+        }
+    }
+
+    private static void TryDeleteLifecycleMutationResults(string resultsDirectory)
+    {
+        try
+        {
             Directory.Delete(resultsDirectory, recursive: true);
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            TestContext.Current.SendDiagnosticMessage(
+                "Lifecycle mutation artifact cleanup did not replace the executable result: {0}",
+                failure.GetType().Name);
         }
     }
 

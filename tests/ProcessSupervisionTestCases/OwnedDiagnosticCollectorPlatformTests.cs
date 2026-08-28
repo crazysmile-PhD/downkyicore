@@ -247,7 +247,7 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     {
         var result = await RunTargetExitCancellationCaseAsync(
                 useTargetExitCancellation: false,
-                TimeSpan.FromMilliseconds(600))
+                TimeSpan.FromSeconds(3))
             .ConfigureAwait(true);
 
         Assert.Equal(
@@ -255,6 +255,12 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             result.CollectorFailure.Kind);
         Assert.True(result.CollectorFailure.Evidence.TimedOut);
         Assert.Equal(0, result.TargetOutcome.ExitCode);
+        Assert.True(result.TargetOutcome.TargetExitedAfter < TimeSpan.FromSeconds(3));
+        Assert.True(
+            GetTransition(
+                result.CollectorFailure.Evidence,
+                DiagnosticCollectorTransition.TypedOutcomeReturned)
+            .ElapsedMilliseconds >= 2500);
     }
 
     [Fact]
