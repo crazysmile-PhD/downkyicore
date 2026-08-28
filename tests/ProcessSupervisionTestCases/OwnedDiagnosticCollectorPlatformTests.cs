@@ -555,7 +555,8 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             TimeSpan collectorOperationAllowance)
     {
         var targetReadyPath = CreateReadyPath("target-exit-ready");
-        var collectorReadyPath = CreateReadyPath("target-exit-signal");
+        var collectorReadyPath = CreateReadyPath("collector-block-ready");
+        var targetExitSignalPath = CreateReadyPath("target-exit-signal");
         var assemblyPath = typeof(OwnedDiagnosticCollector).Assembly.Location;
         var targetBudget = TransitionBudget.Start(
             TimeSpan.FromSeconds(5),
@@ -571,7 +572,7 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
                             assemblyPath,
                             SupervisorHost.ExitOnFileSignalWithReadyArgument,
                             targetReadyPath,
-                            collectorReadyPath
+                            targetExitSignalPath
                         },
                         Path.GetDirectoryName(assemblyPath)
                             ?? throw new InvalidOperationException(
@@ -588,17 +589,33 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             var cancellationToken = useTargetExitCancellation
                 ? targetLease.TargetExitedToken
                 : CancellationToken.None;
-            var collectorException = await Assert.ThrowsAsync<
-                    DiagnosticCollectorExecutionException>(
-                    () => OwnedDiagnosticCollector.CollectAsync(
-                        CreateRequest(
-                            SupervisorHost.CollectorBlockWithReadyArgument,
-                            collectorOperationAllowance,
-                            TimeSpan.FromSeconds(1),
-                            collectorReadyPath),
-                        cancellationToken))
+            var collectorStarted = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var collection = OwnedDiagnosticCollector
+                .CollectWithStartedObservationForTestingAsync(
+                    CreateRequest(
+                        SupervisorHost.CollectorBlockWithReadyArgument,
+                        collectorOperationAllowance,
+                        TimeSpan.FromSeconds(1),
+                        collectorReadyPath),
+                    collectorStarted,
+                    cancellationToken);
+            await collectorStarted.Task.WaitAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await WaitForReadyPathAsync(
+                    collectorReadyPath,
+                    TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             AssertBlockingTaskEstablished(collectorReadyPath);
+            await File.WriteAllTextAsync(
+                    targetExitSignalPath,
+                    "exit",
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            var collectorException = await Assert.ThrowsAsync<
+                    DiagnosticCollectorExecutionException>(
+                    () => collection)
+                .ConfigureAwait(true);
             var targetOutcome = await targetLease.WaitAsync(
                     TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
@@ -615,6 +632,7 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             }
             File.Delete(targetReadyPath);
             File.Delete(collectorReadyPath);
+            File.Delete(targetExitSignalPath);
         }
     }
 

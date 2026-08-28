@@ -15,6 +15,7 @@ public static class OwnedDiagnosticCollector
             request,
             DiagnosticCollectorMutation.None,
             startFailureObservedForTesting: null,
+            collectorStartedForTesting: null,
             cancellationToken);
     }
 
@@ -27,6 +28,7 @@ public static class OwnedDiagnosticCollector
             request,
             mutation,
             startFailureObservedForTesting: null,
+            collectorStartedForTesting: null,
             cancellationToken);
     }
 
@@ -41,6 +43,21 @@ public static class OwnedDiagnosticCollector
             request,
             mutation,
             startFailureObservedForTesting,
+            collectorStartedForTesting: null,
+            cancellationToken);
+    }
+
+    internal static Task<DiagnosticCollectorOutcome> CollectWithStartedObservationForTestingAsync(
+        DiagnosticCollectorRequest request,
+        TaskCompletionSource collectorStartedForTesting,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(collectorStartedForTesting);
+        return CollectCoreAsync(
+            request,
+            DiagnosticCollectorMutation.None,
+            startFailureObservedForTesting: null,
+            collectorStartedForTesting,
             cancellationToken);
     }
 
@@ -52,6 +69,7 @@ public static class OwnedDiagnosticCollector
         DiagnosticCollectorRequest request,
         DiagnosticCollectorMutation mutation,
         Action? startFailureObservedForTesting,
+        TaskCompletionSource? collectorStartedForTesting,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -105,6 +123,7 @@ public static class OwnedDiagnosticCollector
                         cancellationToken)
                     .ConfigureAwait(false);
             timeline.Mark(DiagnosticCollectorTransition.ProcessStarted);
+            collectorStartedForTesting?.TrySetResult();
         }
         catch (Exception failure)
         {
