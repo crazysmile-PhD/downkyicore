@@ -696,6 +696,57 @@ Lifecycle and a clean exact-head Codex review for the documentation checkpoint
 that records this implementation. Stage 4, Stage 5, workflow, release and tag
 work remain deferred.
 
+### Stage 3 Collector Budget Follow-up
+
+The documentation checkpoint
+`c43c00a32ce583cb48ba9a630af6fd5f97d9efff` passed every applicable exact-head
+check except Assembly Lifecycle, including Windows/Linux/macOS tests, native
+Linux/macOS membership, Build guards, CodeQL and Protobuf. Strict PR CI run
+`33130433725`, Assembly lifecycle job `98718424813`, retained one Stage 3
+failure. Its artifact recorded
+`DownKyi.Core.Tests` execution exit 0, `ownedTreeQuiescent=true`, no process
+failure, no cleanup failure and every lease/forensics ownership self-test true,
+but the single diagnostic collector consumed 175,877 ms before reporting a
+wrapped timeout as `MethodException`. The phase therefore failed closed as
+`SlowEvidenceMissing`. This proves an observer capture-budget gap; it does not
+invalidate the Stage 2 membership, quiescence, terminate or reap contract.
+
+Collector-budget implementation commit:
+`9bb9cdc537f642f62c5289b4c753c5f719b08da3`.
+
+`Invoke-IsolatedProcess`, the caller that holds the existing
+`TransitionBudget`, now allocates a 15-second capture window plus a five-second
+collector-only cleanup window. Diagnostic delays, Windows snapshots, `ps`,
+`dotnet-stack`, collector exit and stream drain consume the shorter of that
+allocation and the original owner budget. Observer helpers can consume but
+cannot create or renew the allocation. PowerShell timeout classification walks
+the wrapped exception chain, while collector kill and reap append independently
+to the same failure list. A behavioral self-test launches a permanently blocked
+collector and requires bounded timeout, collector-only cleanup and remaining
+owner operation budget. The review-invariant corpus includes a fourth mutation
+that restores direct whole-budget collector waits and must fail the Architecture
+gate.
+
+Local validation for this implementation passed:
+
+- the focused Architecture lifecycle classes passed through the central
+  in-process runner after a Release build with zero warnings and zero errors;
+- the capture-budget mutation produced the required failed Architecture test;
+- the review-invariant gate passed 11 root-cause invariants, seven test
+  projects, 321 tests and all four intentional adversarial proofs;
+- one-assembly `Local -ValidateForensics` reported nine phase results, zero
+  failures and lifecycle ownership 613/0. The blocked-collector self-test,
+  capture lead, evidence hold, observer-missed descendant, concurrent observer
+  failure and lease cleanup all passed; normal managed-stack capture completed
+  in 5,668 ms;
+- PowerShell syntax, JSON parsing, formatting verification and
+  `git diff --check` passed.
+
+Status: Stage 3 remains open pending the documentation checkpoint, exact-head
+push, all required native/Strict PR and Assembly Lifecycle checks, and a clean
+same-head Codex review. Stage 4, Stage 5, workflow, release, merge and tag work
+remain deferred.
+
 ## Stage 4: Restart Transaction
 
 Retain prepare, authorize, commit and revoke. Keep product Policy B. The helper

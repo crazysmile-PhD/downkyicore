@@ -137,10 +137,16 @@ evidence errors cannot overwrite the process owner's causal failure.
   `durationMs` remains the honest instrumented wall-clock value, while
   `diagnosticCaptureDurationMs` records collector wall time separately. These
   lifecycle timings are diagnostic evidence, not performance baselines.
-- Collector exit and stream-drain waits accept cancellation and consume the
-  existing transition budget. Collector termination and bounded reap are
-  attempted independently so both failures remain observable; that cleanup
-  authority applies only to the observer-created collector.
+- `Invoke-IsolatedProcess`, which holds the existing transition budget,
+  allocates each observer capture a 15-second operation window and a five-second
+  collector-cleanup window. Every collector, snapshot and delay wait consumes
+  the shorter of that window and the owner budget; the observer cannot create or
+  renew either deadline. Collector termination and bounded reap are attempted
+  independently so both failures remain observable; that cleanup authority
+  applies only to the observer-created collector. `-ValidateForensics` also
+  launches a deliberately blocked collector and requires timeout, kill/reap and
+  remaining owner operation budget to be observed through
+  `forensicsCollectorCaptureWindowSelfTestPassed`.
 - Execution slow-phase, post-teardown slow-exit and timeout evidence have
   separate arrays. A process-exit row cannot inherit unrelated execution
   evidence.
