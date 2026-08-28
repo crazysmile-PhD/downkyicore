@@ -110,9 +110,13 @@ public sealed class AssemblyLifecycleArchitectureTests
             "slowEvidenceMissingCount",
             "slowEvidenceCaptureLeadMilliseconds",
             "slowEvidenceTriggeredBeforeThreshold",
+            "slowEvidenceCaptureArmedAfterMilliseconds",
+            "slowEvidenceCaptureCompletedAtUnixMilliseconds",
+            "slowEvidenceCaptureCompletedBeforeTargetExit",
             "forensicsSelfTestCaptureLeadValidated",
             "forensicsSelfTestPositiveCaptureThresholdValidated",
             "forensicsSelfTestObservedCaptureThresholdSeconds",
+            "forensicsSelfTestCaptureCompletedBeforeTargetExitValidated",
             "forensicsSelfTestEvidenceHoldValidated",
             "slowEvidenceOrderingSelfTestRequired",
             "slowEvidenceOrderingSelfTestPassed",
@@ -190,6 +194,27 @@ public sealed class AssemblyLifecycleArchitectureTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
+            "-EvidenceCaptureLeadMilliseconds 5000",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$immediateDispatchMutation.slowEvidenceCaptureArmedAfterMilliseconds -lt 500",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "-InjectedPostCaptureDelayMilliseconds",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$slowCompletionMutation.slowEvidenceCaptureCompletedAtUnixMilliseconds -ge",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Remove-Item -LiteralPath $readyPath -Force -ErrorAction Stop",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("readyFilesCleaned =", source, StringComparison.Ordinal);
+        Assert.Contains(
             "$mutationPhase.failureType -eq \"SlowEvidenceMissing\"",
             source,
             StringComparison.Ordinal);
@@ -198,6 +223,14 @@ public sealed class AssemblyLifecycleArchitectureTests
             source,
             StringComparison.Ordinal);
         Assert.Contains("[Math]::Abs(", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "$selfTest.slowEvidenceCaptureArmedAfterMilliseconds / 1000",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotMatch(
+            @"\$forensicsSelfTestObservedCaptureThresholdSeconds\s*=\s*" +
+            @"\$selfTest\.evidenceCaptureThresholdSeconds",
+            source);
         AssertUsesSynchronousAutomatedReporting(source, "assembly-info");
         AssertUsesSynchronousAutomatedReporting(source, "discovery");
         AssertUsesSynchronousAutomatedReporting(source, "execution");
