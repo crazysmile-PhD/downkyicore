@@ -55,8 +55,10 @@ lead and whether a phase was sampled before the classification boundary;
 phases whose final duration reaches the threshold.
 The `-ValidateForensics` self-test requests a one-shot evidence hold from
 `OwnedProcessLease`; the observer only supplies the capture completion result.
+The capture-lead clock starts only after that authoritative lease is established.
 The hold leaves no filesystem state and consumes the lease's existing
-`TransitionBudget`. It must set both
+`TransitionBudget`; its adversarial owned-tree fixture receives a bounded
+three-second owner operation window, not an observer deadline. It must set both
 `forensicsSelfTestCaptureLeadValidated=true` and
 `forensicsSelfTestEvidenceHoldValidated=true`; the nested hold outcome must also
 report `TargetAcknowledged=true` from the actual held child.

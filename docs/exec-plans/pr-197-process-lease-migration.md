@@ -639,6 +639,63 @@ Status: Stage 3 remains open pending native CI, Assembly Lifecycle and a clean
 same-head Codex review for the checkpoint that records this follow-up. Stage 4,
 Stage 5, workflow, release and tag work remain deferred.
 
+### Stage 3 Native CI Follow-up
+
+The follow-up documentation checkpoint
+`91cf5b582ef80978f3bb97004c7517b80abb6a1b` passed native Linux/macOS
+membership, Linux/macOS Strict PR CI, Build guards, CodeQL, Protobuf and the
+remaining applicable checks. Its original Strict PR CI run retained two
+Stage 3 failures: Windows process-supervision expected only a timeout when an
+uncooperative held target did not acknowledge completion, although the same
+bounded owner transition may first observe acknowledgment-channel EOF after
+deadline cleanup terminates that target; the lifecycle forensics self-test
+started its capture-lead clock before lease establishment, so hosted-runner
+startup could consume the synthetic 1.25-second threshold even though capture,
+release and target acknowledgment all succeeded. Neither failure invalidated
+the Stage 2 ownership contract.
+
+Native-CI follow-up implementation commit:
+`62cd3cdd9dec16571b03f14f0098010ac173ad98`.
+
+The non-acknowledging-target regression now accepts only the two bounded,
+fail-closed outcomes, `TimeoutException` or `EndOfStreamException`, and still
+requires the lease outcome to report `OperationDeadlineExceeded`, completion
+delivered, target not acknowledged and cleanup complete. The lifecycle gate
+starts the capture-lead observation clock only after `OwnedProcessLease` has
+established the target and returned the authoritative lease. The separate
+adversarial owned-tree self-test now allocates a three-second operation window
+to the same lease owner so runtime startup does not consume its fixture window;
+the window remains bounded and the observer acquires no clock or cleanup
+authority.
+
+Local validation for this follow-up implementation passed:
+
+- the focused Architecture forensics class and Windows owned-process-lease
+  class passed through the central in-process runner after Release builds with
+  zero warnings and zero errors;
+- the exact-checkpoint review-invariant gate passed 11 root-cause invariants,
+  seven test projects, 320 tests and all three intentional adversarial proofs;
+- the one-assembly `PR -ValidateForensics` gate reported nine phase results,
+  zero failures and lifecycle ownership 613/0, with capture lead, evidence
+  hold, target acknowledgment, observer miss, concurrent observer failure and
+  lease cleanup all validated;
+- PowerShell syntax, formatting verification and `git diff --check` passed.
+
+One exact-checkpoint Windows class run immediately after the invariant-heavy
+gate exhausted the unchanged Stage 2 fixture-publication test's five-second
+window before an authoritative target-exit timestamp was available. The same
+25-test class then passed 25/25 in the bounded classification run, and that
+unchanged test had passed in the original `91cf5b5` CI run whose sole Windows
+failure was the Stage 3 acknowledgment oracle. No Stage 2 implementation or
+test budget was changed. This is retained as load-sensitive local validation
+evidence, not treated as a green retry or Stage 2 contract invalidation; the
+new exact-head native and Strict PR gates remain required acceptance evidence.
+
+Status: Stage 3 remains open pending required native/Strict PR CI, Assembly
+Lifecycle and a clean exact-head Codex review for the documentation checkpoint
+that records this implementation. Stage 4, Stage 5, workflow, release and tag
+work remain deferred.
+
 ## Stage 4: Restart Transaction
 
 Retain prepare, authorize, commit and revoke. Keep product Policy B. The helper

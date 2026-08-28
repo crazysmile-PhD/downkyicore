@@ -122,11 +122,17 @@ evidence errors cannot overwrite the process owner's causal failure.
   replayable filesystem state remains.
   A controlled delay proves the child remains live during capture, so hosted-runner
   diagnostic latency cannot invalidate the proof. The one-second lead therefore
-  arms at 0.25 seconds instead of relying on a zero-clamped threshold. The
-  machine report exposes `forensicsSelfTestCaptureLeadValidated` and
+  arms at 0.25 seconds after the authoritative lease has been established,
+  instead of charging supervisor startup to the observer or relying on a
+  zero-clamped threshold. The machine report exposes
+  `forensicsSelfTestCaptureLeadValidated` and
   `forensicsSelfTestEvidenceHoldValidated`; the self-test fails unless the hold
   reports requested, granted, captured, released, completion delivered and
   target acknowledged.
+- The adversarial owned-tree self-test gives the same `OwnedProcessLease` a
+  bounded three-second operation window so hosted runtime startup can publish
+  its fixture before quiescence is tested. This is an owner-assigned test
+  budget, not an observer deadline or retry.
 - Managed-stack collection can pause or otherwise perturb the observed child.
   `durationMs` remains the honest instrumented wall-clock value, while
   `diagnosticCaptureDurationMs` records collector wall time separately. These
