@@ -795,6 +795,54 @@ push, all required native/Strict PR and Assembly Lifecycle checks, review-thread
 closure and a clean same-head Codex review. Stage 4, Stage 5, workflow, release,
 merge and tag work remain deferred.
 
+### Stage 3 Evidence Outcome Review Follow-up
+
+Documentation checkpoint `2602a8cecc8f06fcaf4733aa8f57c6f53d21076c`
+passed all 29 exact-head checks: 20 applicable jobs succeeded and nine
+release-only jobs were skipped. This included Windows/Linux/macOS tests,
+Assembly Lifecycle, native Linux/macOS membership, CodeQL, Build, Protobuf,
+format and package audit. Exact-head Codex review `5047334281` then identified
+two Stage 3 blockers: the capture-budget mutation test failed whether the real
+self-test rejected or accepted the broken helper, and `WaitAsync` could freeze
+an evidence-hold outcome before an already-started acknowledgment publication
+completed. Both behaviors came from Stage 3 observer/evidence-hold work and did
+not invalidate the Stage 2 ownership contract.
+
+Evidence-outcome follow-up implementation commit:
+`8f9c70becac64c3b15458255893ab46b7c3a55cf`.
+
+The adversarial outer test now expects only a successful child exit. A correct
+lifecycle self-test therefore makes the mutation proof red by rejecting the
+broken whole-budget helper, while an incorrect acceptance would let the outer
+test pass and make the review-invariant gate itself fail. `OwnedProcessLease`
+now freezes late hold completion atomically and, when completion already
+started, waits within its existing `TransitionBudget` for that transaction to
+settle before constructing the immutable outcome. A deterministic native test
+holds acknowledgment publication after target exit and proves `WaitAsync`
+cannot complete until publication is released. This changes no Stage 2 launch,
+containment, membership, quiescence, terminate, reap or stream-drain contract.
+
+Local evidence for the implementation:
+
+- focused Architecture behavior tests passed through the central runner;
+- Windows `OwnedProcessLeasePlatformTests` passed 26/26, including the
+  deterministic acknowledgment-publication race;
+- the whole-budget behavioral mutation produced one intended failure among
+  five Architecture tests because the real self-test returned exit 1; no
+  blocked collector remained afterward;
+- the full review-invariant gate passed 11 invariants, seven projects, 321 tests
+  and all four adversarial proofs;
+- one-assembly `Local -ValidateForensics` reported nine phase results, zero
+  failures and lifecycle ownership 614/0. Capture-window, capture-lead,
+  evidence-hold, observer miss/failure and lease cleanup self-tests passed;
+- PowerShell syntax, JSON parsing, formatting verification and
+  `git diff --check` passed.
+
+Status: Stage 3 remains open pending exact-head push, required native/Strict PR
+CI, Assembly Lifecycle, closure of the two fixed review threads and a clean
+same-head Codex review. Stage 4, Stage 5, workflow, release, merge and tag work
+remain deferred.
+
 ## Stage 4: Restart Transaction
 
 Retain prepare, authorize, commit and revoke. Keep product Policy B. The helper

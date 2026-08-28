@@ -61,7 +61,10 @@ The hold leaves no filesystem state and consumes the lease's existing
 three-second owner operation window, not an observer deadline. It must set both
 `forensicsSelfTestCaptureLeadValidated=true` and
 `forensicsSelfTestEvidenceHoldValidated=true`; the nested hold outcome must also
-report `TargetAcknowledged=true` from the actual held child.
+report `TargetAcknowledged=true` from the actual held child. If completion has
+started, the lease waits within its existing transition budget for that
+transaction to settle before freezing the immutable outcome; observer timing
+cannot publish an earlier acknowledgment snapshot.
 The lifecycle owner allocates each observer capture at most 15 seconds plus a
 five-second collector-only cleanup window on a caller-started monotonic
 `Stopwatch`, both intersected with the existing monotonic transition budget. The

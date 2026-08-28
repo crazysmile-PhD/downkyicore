@@ -128,7 +128,10 @@ evidence errors cannot overwrite the process owner's causal failure.
   `forensicsSelfTestCaptureLeadValidated` and
   `forensicsSelfTestEvidenceHoldValidated`; the self-test fails unless the hold
   reports requested, granted, captured, released, completion delivered and
-  target acknowledged.
+  target acknowledged. The immutable process outcome is not captured while an
+  already-started completion transaction is still publishing that
+  acknowledgment. This synchronization consumes the same owner transition
+  budget; it is not a new observer deadline.
 - The adversarial owned-tree self-test gives the same `OwnedProcessLease` a
   bounded three-second operation window so hosted runtime startup can publish
   its fixture before quiescence is tested. This is an owner-assigned test
