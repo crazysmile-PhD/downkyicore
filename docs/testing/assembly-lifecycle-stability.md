@@ -127,8 +127,9 @@ evidence errors cannot overwrite the process owner's causal failure.
 - `-ValidateForensics` asks `OwnedProcessLease` for an evidence-hold sub-state to
   prove the capture lead actually ran before a synthetic 4.25-second slow
   threshold. The three-second lead leaves a positive 1.25-second arming delay;
-  the report records both the configured and observed values and rejects a
-  zero-clamped or integer-truncated threshold.
+  the report records both the configured value and the actual post-lease
+  stopwatch time when capture armed. It rejects a zero-clamped,
+  integer-truncated or immediate-dispatch threshold.
   The lease creates and owns the one-shot endpoint before target execution; the
   observer only returns `Captured` or `Failed`, the actual held target must
   acknowledge the handoff after the intermediary closes its copies, and no
@@ -136,10 +137,13 @@ evidence errors cannot overwrite the process owner's causal failure.
   A controlled delay proves the child remains live during capture, so
   hosted-runner diagnostic latency cannot invalidate the proof. Capture arms at
   1.25 seconds after the authoritative lease has been established instead of
-  charging supervisor startup to the observer. The machine report exposes
+  charging supervisor startup to the observer. The capture result also records
+  actual arming and completion timestamps and requires completion before the
+  target's authoritative exit timestamp. The machine report exposes
   `forensicsSelfTestCaptureLeadValidated` and
   `forensicsSelfTestPositiveCaptureThresholdValidated` plus the observed
-  threshold, and also exposes
+  stopwatch time,
+  `forensicsSelfTestCaptureCompletedBeforeTargetExitValidated`, and
   `forensicsSelfTestEvidenceHoldValidated`; the self-test fails unless the hold
   reports requested, granted, captured, released, completion delivered and
   target acknowledged. Neither an immutable process success nor failure outcome
@@ -407,20 +411,29 @@ or another child failure is not proof. A normal Windows `-ValidateForensics`
 run still requires the pinned real tool before the attach-stall self-test or any
 formal evidence capture begins.
 
-The platform-neutral `slow-evidence-ordering-self-test.json` passes a bounded
-delayed-exit target through the real `Invoke-IsolatedProcess` slow-evidence
-path twice. The target schedules an eight-second asynchronous fixture workload
-and atomically publishes `DelayScheduled` ready evidence. A five-second
-synthetic observer-start delay with the configured three-second lead arms at
-two seconds and completes evidence before target exit. The one-second mutation
-arms at four seconds; target exit cancels the same delay before capture, and
-the real phase result must be `SlowEvidenceMissing`. This proof deliberately
-skips the managed-stack tool after the ordering boundary; the separate
-evidence-hold self-test continues to require a real non-empty managed stack.
-Both ordering paths require authoritative target ownership, tree quiescence and
-empty cleanup failures. The fixture adds no observer sleep, retry, deadline
-renewal or process authority; its target-owned asynchronous workload is bounded
-by the unchanged parent transition budget.
+The platform-neutral `slow-evidence-ordering-self-test.json` passes bounded
+delayed-exit targets through the real `Invoke-IsolatedProcess` slow-evidence
+path four times. The configured eight-second target atomically publishes
+`DelayScheduled` ready evidence; a five-second synthetic observer-start delay
+with the three-second lead actually arms after two seconds and must complete
+evidence before authoritative target exit. The one-second lead mutation arms
+after four seconds; target exit cancels the same delay before capture, and the
+real phase result must be `SlowEvidenceMissing`. An immediate-dispatch mutation
+uses a zero calculated threshold and proves the recorded stopwatch value detects
+the first observation-loop iteration. A non-cooperative post-capture mutation
+writes evidence, remains within the same caller-allocated window, then returns
+after target exit; the completion timestamp must reject it even though the file
+exists and the raw status is `captured`.
+
+This ordering proof deliberately skips the managed-stack tool after the ordering
+boundary; the separate evidence-hold self-test continues to require a real
+non-empty managed stack. Every path requires authoritative target ownership,
+tree quiescence and empty cleanup failures. Ready-file deletion is attempted per
+existing file with terminating errors, and any deletion error or remaining file
+is preserved in the typed self-test result and fails the gate. The success path
+adds no observer sleep, retry, deadline renewal or process authority. Synthetic
+mutation delays consume the unchanged parent transition budget and never make a
+passing path wait longer to succeed.
 
 The target-exit cancellation platform fixture uses separate collector-ready and
 target-exit signal paths. It waits for an internal test-only observation set

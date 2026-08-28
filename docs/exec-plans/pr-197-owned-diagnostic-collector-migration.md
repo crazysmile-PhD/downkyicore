@@ -874,6 +874,68 @@ evidence and will not be rerun. Stage 4A remains completed and closed;
 production Stage 4, Stage 5, merge, release and tag movement remain out of
 scope.
 
+### Eighth Exact-Head Review And Timing-Truth Remediation
+
+Final head `9d8918fa978cf7a0c6676b1aeda039002b1934b0` naturally triggered
+Strict PR run
+[33188756674](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33188756674),
+which passed all 12 jobs. Build
+[33188756943](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33188756943),
+CodeQL
+[33188756669](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33188756669),
+Process Membership
+[33188756698](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33188756698)
+and Protobuf
+[33188756659](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33188756659)
+also passed on that PR head. Lifecycle artifact `9693131352` records eight
+assemblies, 147 phases, zero failures, eight slow phases, eight captured
+bundles, zero missing bundles, ownership 634/0, lead 3,000 ms and the unchanged
+15,000 ms capture window. Its checkout SHA is GitHub's synthetic pull-request
+merge SHA `6016615627cce5e7de402ace062aa2b3dab17b2c`; the workflow and PR
+head remained `9d8918fa978cf7a0c6676b1aeda039002b1934b0`.
+
+Same-head Codex review
+[5053024025](https://github.com/crazysmile-PhD/downkyicore/pull/197#pullrequestreview-5053024025)
+reported three relevant proof gaps:
+
+1. ready-file cleanup hid deletion failures;
+2. the value labelled observed arming time was the calculated threshold rather
+   than the real post-lease stopwatch value, with no immediate-dispatch
+   mutation;
+3. configured evidence did not prove capture completion preceded authoritative
+   target exit, and no post-capture mutation crossed that boundary.
+
+Implementation `d5defeafa593f9f85ea5a8eea2174ae1ed042f49` closes those
+gaps without changing collector production code or policy. Every slow-evidence
+attempt now reports actual arming and completion elapsed times plus UTC
+timestamps. The formal proof compares completion against the lease's typed
+target-exit timestamp. Its immediate-dispatch mutation exercises the first
+observation-loop iteration, while a bounded non-cooperative post-capture
+mutation writes evidence and returns after target exit so the timestamp oracle
+must reject it. The latter consumes the same caller-allocated diagnostic window
+and parent transition budget; it does not create a deadline. Ready files are
+deleted individually with terminating errors, and deletion failures or
+remaining files are typed gate failures.
+
+On clean exact implementation HEAD, one-assembly Local `-ValidateForensics`
+recorded one assembly, nine phases, zero failures, ownership 634/0, lead 3,000
+ms and capture window 15,000 ms. The real managed-stack proof armed after 1.258
+seconds and completed before target exit. The configured behavior armed after
+2,007.266 ms, completed after 7,497.488 ms and preceded target exit at 8,295.056
+ms. The one-second mutation armed after 4,029.308 ms and returned typed
+`SlowEvidenceMissing`; the immediate mutation armed after 0.014 ms. The
+post-capture mutation completed after 6,327.744 ms, later than target exit at
+5,527.14 ms, and the oracle rejected that ordering. All ready cleanup counts
+were zero. Focused collector tests passed 18/18, affected Architecture 9/9,
+full Architecture 316/316, Windows 74/74 and the review-invariant gate 325
+tests plus seven adversarial proofs. PowerShell parse, C# format and diff checks
+passed.
+
+Status: pending this documentation commit, exact-head push, naturally triggered
+CI and a new same-head review. No old run will be rerun. Stage 4A remains
+completed and closed; production Stage 4, Stage 5, merge, release and tag
+movement remain out of scope.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates
