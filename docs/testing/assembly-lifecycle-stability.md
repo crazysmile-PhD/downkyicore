@@ -319,9 +319,18 @@ directory even when the gate fails.
 ### Collector failure-report proof
 
 With `-ValidateForensics`, schema 4 also records two compiled-collector
-self-tests. The capture-window proof launches a blocked collector and requires
-typed timeout, reap and stream-drain evidence without consuming the parent
-operation budget. The cleanup-report proof sends a typed failure with a
+self-tests. The capture-window proof gives hosted supervisor/target startup a
+three-second owner-assigned fixture window. The target creates a non-completing
+blocking task before atomically publishing its ready record; only then can the
+self-test accept typed timeout, reap and stream-drain evidence without
+consuming the parent operation budget. It also requires the ready process ID
+and pre-block stdout/stderr markers. This is a test fixture allowance, not a
+new production or global deadline. A standalone
+`forensics-collector-capture-window-self-test.json` is written before a failed
+self-test throws, so CI artifacts retain the exact predicate values even when
+formal lifecycle phases never start. Executable mutations prove that both a
+deadline exhausted before ready and ready published before the blocking task
+make the gate fail. The cleanup-report proof sends a typed failure with a
 non-empty immutable cleanup list through the same PowerShell converter used by
 `Invoke-ForensicsObserverCapture`, JSON-round-trips the result and requires
 these exact stage/cause pairs:

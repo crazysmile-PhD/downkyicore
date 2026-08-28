@@ -4,9 +4,11 @@
 
 This design is implemented by implementation commit
 `6fc71e406ba80b2ccfbff49e05023f76f72458b6` plus exact-head review-fix commit
-`c3a3a33f67daa20ac450212433c69774385fb679`. Native exact-head CI and a clean
-same-head review of the later documentation checkpoint remain required before
-this independent checkpoint is closed.
+`c3a3a33f67daa20ac450212433c69774385fb679`, follow-up commit
+`e98c8a6c27cb22a44ffc63099af53a447139c6ee` and final-head capture-fixture
+correction `d698f855afec7e2731b29d1643f473b201096207`. Native exact-head CI and a
+clean same-head review of the later documentation checkpoint remain required
+before this independent checkpoint is closed.
 
 - Parent design: [Process Lifecycle Ownership](process-lifecycle-ownership.md)
 - Parent migration: [PR #197 Process-Lease Migration](../exec-plans/pr-197-process-lease-migration.md)
@@ -423,6 +425,34 @@ closed by `e98c8a6c27cb22a44ffc63099af53a447139c6ee`:
 The previous exact head passed 20 native/shared CI checks with nine
 release-only jobs skipped, but the review findings prevent treating it as the
 closure head. Native CI and a clean review must converge again after this fix.
+
+## Final-Head Capture-Window Fixture Correction
+
+The capture-window self-test formerly allocated a one-second absolute child
+window before supervisor launch, containment, named-pipe connection, ownership
+acknowledgment and target start. It then launched `--block-forever`, which had
+no target-side ready publication. A slower hosted start could therefore consume
+the child window before `TargetStarted`; the collector correctly returned typed
+`OperationDeadlineExceeded` with `Started=false`, while the self-test rejected
+that state because it was intended to prove post-start timeout and cleanup.
+This was a fixture/startup-publication race, not an
+`OwnedDiagnosticCollector` deadline or cleanup defect.
+
+The corrected fixture creates and verifies its non-completing blocking task
+before atomically publishing a ready record. The lifecycle self-test uses a
+three-second owner-assigned fixture window, requires that ready record and the
+pre-block stdout/stderr markers, and still requires the causal timeout,
+authoritative reap, complete stream drain, an empty cleanup list, bounded
+elapsed time and preserved parent budget. The three seconds are local test
+policy for hosted startup; no production or global deadline changed.
+
+Before any phase-level throw, the structured self-test result is written to
+`forensics-collector-capture-window-self-test.json` and emitted in compact form
+to the job log. A one-millisecond startup-window mutation deterministically
+restores pre-ready deadline exhaustion. A second mutation publishes ready
+before creating the blocking task. The same behavioral lifecycle gate rejects
+both mutations, so source shape or an arbitrary exception cannot satisfy the
+proof.
 
 ## Non-Goals
 

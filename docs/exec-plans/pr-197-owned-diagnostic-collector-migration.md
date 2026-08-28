@@ -314,6 +314,72 @@ Required native CI and a new clean Codex review must now converge on the final
 documentation head. Review `5048688459` is not acceptance evidence because it
 contains the two findings above.
 
+## Final-Head Assembly Lifecycle Blocker
+
+The documentation checkpoint at `dd77ebe2e1f19b2a2e3c41ffa56d578f427cf26b`
+had one required failure before formal lifecycle phases: the capture-window
+self-test reported only `did not fail closed`. Its failed artifact retained the
+ownership audit but not the structured self-test result. The preceding green
+implementation head and this documentation head had identical runtime trees;
+the intervening four files were Markdown only, and both GitHub merge commits
+used the same base and runner image.
+
+State-machine inspection and executable reproduction classify the failure as a
+self-test/hosted-startup publication race. The one-second absolute child window
+started before supervisor launch, containment, pipe handshakes and target
+start, while `--block-forever` published no proof that target code had reached
+the intended blocking transition. Exhausting the window before
+`TargetStarted` is a legal collector result:
+`OperationDeadlineExceeded` with `Started=false`. It must not satisfy a proof
+that is specifically about post-start timeout, terminate, reap and drain. The
+old failed artifact cannot identify which derived Boolean was false because the
+generic throw preceded report writing; the one-millisecond executable mutation
+reproduces the same pre-ready state and rejection deterministically.
+
+Implementation commit `d698f855afec7e2731b29d1643f473b201096207`
+corrects only the fixture, behavioral oracle and failure observability:
+
+1. The fixture establishes its non-completing blocking task before publishing
+   a typed ready record.
+2. Post-start timeout tests share that fixture and use a three-second
+   owner-assigned startup window. Production collector, lease, cleanup and
+   global deadlines are unchanged.
+3. The PowerShell oracle requires ready PID, blocking-task state, stdout/stderr
+   markers, `OperationDeadlineExceeded`, `Started`, reap, drain, empty cleanup,
+   bounded elapsed time and remaining parent budget.
+4. The structured capture self-test is written to a standalone JSON artifact
+   and job output before the phase-level throw.
+5. Executable startup-window and early-ready mutations each fail only their
+   owning Architecture proof and are registered in the review-invariant
+   corpus.
+
+Local proof for the implementation commit produced:
+
+- the startup-window mutation: expected rejection with
+  `OperationDeadlineExceeded`, `Started=false` and no ready record;
+- the early-ready mutation: expected rejection with typed timeout,
+  reap/drain complete and `BlockingTaskEstablished=false`;
+- focused collector platform tests: 16 passed, zero failed;
+- focused lifecycle Architecture tests: eight passed, zero failed; each new
+  mutation executed eight tests and failed only its owning assertion;
+- one-assembly Local `-ValidateForensics`: one assembly, nine phase results,
+  zero failures, typed timeout, ready/blocking proof, reap/drain complete and
+  zero cleanup failures;
+- review-invariant corpus: 11 invariants, seven projects, 324 tests and seven
+  executable adversarial proofs;
+- full Architecture project: 315 passed, zero failed;
+- Windows routed suite: an earlier implementation run passed 72/72. The final
+  run passed 71/72 and hit the existing atomically-published probe sharing
+  violation in unchanged
+  `CallerCancellationStillCompletesOwnedCleanupBeforePropagating`; the owning
+  lease class then passed 27/27 and the full suite was not retried merely to
+  obtain green output;
+- `git diff --check` and `dotnet format --verify-no-changes`: pass.
+
+Exact-head native CI, Assembly Lifecycle and a clean same-head Codex review
+remain required. This correction does not reopen Stage 3 collector semantics,
+Stage 4A feasibility or any production restart work.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates
