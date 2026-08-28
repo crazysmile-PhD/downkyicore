@@ -26,6 +26,10 @@ internal static class SupervisorHost
     internal const string EvidenceHoldWithOwnedDescendantArgument =
         "--evidence-hold-with-owned-descendant";
     internal const string IgnoreEvidenceHoldArgument = "--ignore-evidence-hold";
+    internal const string DiagnosticIpcStallWithReadyArgument =
+        "--diagnostic-ipc-stall-with-ready";
+    internal const string ExitOnFileSignalWithReadyArgument =
+        "--exit-on-file-signal-with-ready";
 
     private const string EvidenceHoldEnvironmentVariable =
         "DOWNKYI_FORENSICS_CAPTURE_PIPE";
@@ -133,6 +137,24 @@ internal static class SupervisorHost
             string.Equals(arguments[0], ExitWithOwnedDescendantArgument, StringComparison.Ordinal))
         {
             return await RunExitWithOwnedDescendantProbeAsync(arguments[1]).ConfigureAwait(false);
+        }
+        if (arguments.Count == 3 &&
+            string.Equals(
+                arguments[0],
+                DiagnosticIpcStallWithReadyArgument,
+                StringComparison.Ordinal))
+        {
+            return await RunDiagnosticIpcStallProbeAsync(arguments[1], arguments[2])
+                .ConfigureAwait(false);
+        }
+        if (arguments.Count == 3 &&
+            string.Equals(
+                arguments[0],
+                ExitOnFileSignalWithReadyArgument,
+                StringComparison.Ordinal))
+        {
+            return await RunExitOnFileSignalProbeAsync(arguments[1], arguments[2])
+                .ConfigureAwait(false);
         }
 
         const ProcessOwnershipMutation supportedMutations =
@@ -535,6 +557,85 @@ internal static class SupervisorHost
         return 0;
     }
 
+    private static async Task<int> RunDiagnosticIpcStallProbeAsync(
+        string readyPath,
+        string connectedPath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return 209;
+        }
+
+        var endpoint = IpcEndpointName.CreateDotnetDiagnosticsEmulationForTesting(
+            Environment.ProcessId);
+        using var server = new NamedPipeServerStream(
+            endpoint.PhysicalIdentifier,
+            PipeDirection.InOut,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        var stopwatch = Stopwatch.StartNew();
+        await PublishProbeAsync(
+                readyPath,
+                new DiagnosticIpcProbeResult(
+                    Environment.ProcessId,
+                    endpoint.PhysicalIdentifier,
+                    Listening: true,
+                    ConnectedAfterMilliseconds: null),
+                injectFailure: false)
+            .ConfigureAwait(false);
+        await server.WaitForConnectionAsync(CancellationToken.None).ConfigureAwait(false);
+        await PublishProbeAsync(
+                connectedPath,
+                new DiagnosticIpcProbeResult(
+                    Environment.ProcessId,
+                    endpoint.PhysicalIdentifier,
+                    Listening: true,
+                    stopwatch.Elapsed.TotalMilliseconds),
+                injectFailure: false)
+            .ConfigureAwait(false);
+        await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
+            .ConfigureAwait(false);
+        return 0;
+    }
+
+    private static async Task<int> RunExitOnFileSignalProbeAsync(
+        string readyPath,
+        string signalPath)
+    {
+        var signalDirectory = Path.GetDirectoryName(signalPath)
+            ?? throw new InvalidOperationException("The signal directory is unavailable.");
+        var signalFileName = Path.GetFileName(signalPath);
+        var signaled = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var watcher = new FileSystemWatcher(signalDirectory, signalFileName)
+        {
+            NotifyFilter = NotifyFilters.FileName,
+            EnableRaisingEvents = true
+        };
+        FileSystemEventHandler onChanged = (_, _) => signaled.TrySetResult(true);
+        RenamedEventHandler onRenamed = (_, _) => signaled.TrySetResult(true);
+        watcher.Created += onChanged;
+        watcher.Renamed += onRenamed;
+        if (File.Exists(signalPath))
+        {
+            signaled.TrySetResult(true);
+        }
+
+        await PublishProbeAsync(
+                readyPath,
+                new FileSignalProbeResult(Environment.ProcessId, WatcherArmed: true),
+                injectFailure: false)
+            .ConfigureAwait(false);
+        if (File.Exists(signalPath))
+        {
+            signaled.TrySetResult(true);
+        }
+
+        await signaled.Task.ConfigureAwait(false);
+        return 0;
+    }
+
     private static async Task WriteCollectorChunksAsync(
         TextWriter writer,
         string chunk,
@@ -728,4 +829,14 @@ internal static class SupervisorHost
     private sealed record CollectorReadyProbeResult(
         int ProcessId,
         bool BlockingTaskEstablished);
+
+    private sealed record DiagnosticIpcProbeResult(
+        int ProcessId,
+        string PipeName,
+        bool Listening,
+        double? ConnectedAfterMilliseconds);
+
+    private sealed record FileSignalProbeResult(
+        int ProcessId,
+        bool WatcherArmed);
 }

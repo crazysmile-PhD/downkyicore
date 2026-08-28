@@ -69,6 +69,9 @@ $forensicsCollectorCaptureWindowSelfTestPassed = $false
 $forensicsCollectorCaptureWindowSelfTest = $null
 $forensicsCollectorCleanupReportSelfTestPassed = $false
 $forensicsCollectorCleanupReportSelfTest = $null
+$dotnetStackAttachStallSelfTestRequired = [bool]($ValidateForensics -and $IsWindows)
+$dotnetStackAttachStallSelfTestPassed = $false
+$dotnetStackAttachStallSelfTest = $null
 $markerReaderSelfTestRequired = $IsWindows -and
     @("PR", "Main", "Rehearsal", "Flaky").Contains($Profile)
 $markerReaderSelfTestComplete = $false
@@ -221,15 +224,21 @@ function Invoke-OwnedDiagnosticCollector {
         [string[]]$Arguments,
         [Parameter(Mandatory)]
         [object]$CaptureWindow,
+        [hashtable]$Environment = @{},
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
 
+    $launchEnvironment = [Collections.Generic.Dictionary[string, string]]::new(
+        [StringComparer]::Ordinal)
+    foreach ($entry in $Environment.GetEnumerator()) {
+        $launchEnvironment[$entry.Key] = [string]$entry.Value
+    }
     $launchSpec = [DownKyi.ProcessSupervision.LaunchSpec]::new(
         $FileName,
         [string[]]$Arguments,
         $repositoryRoot,
-        $null,
+        $launchEnvironment,
         $false)
     $request = [DownKyi.ProcessSupervision.DiagnosticCollectorRequest]::new(
         $launchSpec,
@@ -297,6 +306,8 @@ function ConvertTo-DiagnosticCollectorFailureReport {
 }
 
 function New-DiagnosticCollectorCleanupFailureFixture {
+    $timeline = [DownKyi.ProcessSupervision.DiagnosticCollectorTimeline]::new(
+        [DownKyi.ProcessSupervision.DiagnosticCollectorTransitionEvidence[]]@())
     $evidence = [DownKyi.ProcessSupervision.DiagnosticCollectorEvidence]::new(
         $true,
         $false,
@@ -305,7 +316,8 @@ function New-DiagnosticCollectorCleanupFailureFixture {
         $true,
         $null,
         "fixture stdout",
-        "fixture stderr")
+        "fixture stderr",
+        $timeline)
     $primaryFailure = [DownKyi.ProcessSupervision.DiagnosticCollectorFailure]::new(
         [DownKyi.ProcessSupervision.DiagnosticCollectorFailureKind]::ExecutionFailed,
         $evidence,
@@ -489,6 +501,253 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
         parentRemainingOperationMilliseconds = [Math]::Round(
             $budget.RemainingOperation.TotalMilliseconds,
             3)
+    }
+}
+
+function Wait-DiagnosticFixturePublication {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [object]$Budget
+    )
+
+    $directory = Split-Path -Parent $Path
+    $watcher = [System.IO.FileSystemWatcher]::new(
+        $directory,
+        [System.IO.Path]::GetFileName($Path))
+    $watcher.NotifyFilter = [System.IO.NotifyFilters]::FileName
+    $watcher.EnableRaisingEvents = $true
+    try {
+        while (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            $waitMilliseconds = Get-TransitionBudgetWaitMilliseconds -Budget $Budget
+            $change = $watcher.WaitForChanged(
+                [System.IO.WatcherChangeTypes]::All,
+                $waitMilliseconds)
+            if ($change.TimedOut) {
+                throw [TimeoutException]::new(
+                    "The diagnostic fixture did not publish before the owner deadline.")
+            }
+        }
+
+        return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    }
+    finally {
+        $watcher.Dispose()
+    }
+}
+
+function Get-DiagnosticCollectorTransition {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Evidence,
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    return @(
+        $Evidence.Timeline.Transitions |
+            Where-Object { $_.Transition.ToString() -eq $Name }
+    ) | Select-Object -First 1
+}
+
+function Test-DotnetStackAttachStall {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProcessSupervisionAssembly,
+        [Parameter(Mandatory)]
+        [string]$DiagnosticsTool
+    )
+
+    $fixtureDirectory = Join-Path $rawRoot "Gate.DotnetStackAttach"
+    New-Item -ItemType Directory -Force -Path $fixtureDirectory | Out-Null
+    $readyPath = Join-Path $fixtureDirectory "diagnostics-ready.json"
+    $connectedPath = Join-Path $fixtureDirectory "diagnostics-connected.json"
+    $budget = [DownKyi.ProcessSupervision.TransitionBudget]::Start(
+        [TimeSpan]::FromSeconds(10),
+        [TimeSpan]::FromSeconds(2))
+    $targetEnvironment = [Collections.Generic.Dictionary[string, string]]::new(
+        [StringComparer]::Ordinal)
+    $targetEnvironment["DOTNET_EnableDiagnostics"] = "0"
+    $targetLaunch = [DownKyi.ProcessSupervision.LaunchSpec]::new(
+        "dotnet",
+        [string[]]@(
+            $ProcessSupervisionAssembly,
+            "--diagnostic-ipc-stall-with-ready",
+            $readyPath,
+            $connectedPath),
+        $repositoryRoot,
+        $targetEnvironment,
+        $true)
+    $targetLease = $null
+    $failure = $null
+    $unexpectedFailureType = $null
+    $targetCleanupErrorType = $null
+    $ready = $null
+    $connected = $null
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $targetLease = [DownKyi.ProcessSupervision.OwnedProcessLease]::StartAsync(
+                $targetLaunch,
+                $budget).
+            GetAwaiter().GetResult()
+        $ready = Wait-DiagnosticFixturePublication -Path $readyPath -Budget $budget
+        $captureWindow = $budget.AllocateDiagnosticCollectorWindow(
+            [TimeSpan]::FromSeconds(3),
+            [TimeSpan]::FromSeconds(1))
+        try {
+            $null = Invoke-OwnedDiagnosticCollector `
+                -FileName $DiagnosticsTool `
+                -Arguments @(
+                    "report",
+                    "--process-id",
+                    $targetLease.TargetProcessId.ToString(
+                        [System.Globalization.CultureInfo]::InvariantCulture)) `
+                -CaptureWindow $captureWindow `
+                -Environment @{
+                    TEMP = $fixtureDirectory
+                    TMP = $fixtureDirectory
+                }
+        }
+        catch {
+            $failure = Get-DiagnosticCollectorExecutionFailure `
+                -Exception $_.Exception
+            if ($null -eq $failure) {
+                $unexpectedFailureType = $_.Exception.GetType().Name
+            }
+        }
+        $connected = Wait-DiagnosticFixturePublication `
+            -Path $connectedPath `
+            -Budget $budget
+    }
+    catch {
+        if ($null -eq $unexpectedFailureType) {
+            $unexpectedFailureType = $_.Exception.GetType().Name
+        }
+    }
+    finally {
+        $stopwatch.Stop()
+        if ($null -ne $targetLease) {
+            try {
+                $null = $targetLease.DisposeAsync().AsTask().GetAwaiter().GetResult()
+            }
+            catch {
+                $targetCleanupErrorType = $_.Exception.GetType().Name
+            }
+        }
+    }
+
+    $evidence = if ($null -eq $failure) {
+        $null
+    }
+    else {
+        $failure.Failure.Evidence
+    }
+    $processStarted = if ($null -eq $evidence) {
+        $null
+    }
+    else {
+        Get-DiagnosticCollectorTransition -Evidence $evidence -Name "ProcessStarted"
+    }
+    $targetAttach = if ($null -eq $evidence) {
+        $null
+    }
+    else {
+        Get-DiagnosticCollectorTransition -Evidence $evidence -Name "TargetAttachBegan"
+    }
+    $firstProgress = if ($null -eq $evidence) {
+        $null
+    }
+    else {
+        Get-DiagnosticCollectorTransition -Evidence $evidence -Name "FirstObservableProgress"
+    }
+    $stackCapture = if ($null -eq $evidence) {
+        $null
+    }
+    else {
+        Get-DiagnosticCollectorTransition -Evidence $evidence -Name "StackCaptureBegan"
+    }
+    $stackOutput = if ($null -eq $evidence) {
+        $null
+    }
+    else {
+        Get-DiagnosticCollectorTransition -Evidence $evidence -Name "StackOutputFirstByte"
+    }
+    $typedOutcome = if ($null -eq $evidence) {
+        $null
+    }
+    else {
+        Get-DiagnosticCollectorTransition -Evidence $evidence -Name "TypedOutcomeReturned"
+    }
+    $traceFiles = @(Get-ChildItem -LiteralPath $fixtureDirectory -Filter "*.nettrace" -File)
+    $targetProcessId = if ($null -eq $targetLease) {
+        $null
+    }
+    else {
+        $targetLease.TargetProcessId
+    }
+    $failureKind = if ($null -eq $failure) {
+        $null
+    }
+    else {
+        $failure.Failure.Kind.ToString()
+    }
+    $contractChecks = [ordered]@{
+        targetListening = $null -ne $ready -and $ready.Listening -eq $true
+        diagnosticsConnectionAccepted = $null -ne $connected -and
+            $connected.ProcessId -eq $targetProcessId -and
+            $connected.ConnectedAfterMilliseconds -ge 0
+        typedDeadline = $null -ne $failure -and
+            $failure.Failure.Kind.ToString() -eq "OperationDeadlineExceeded"
+        collectorStarted = $null -ne $evidence -and $evidence.Started
+        collectorReaped = $null -ne $evidence -and $evidence.Reaped
+        streamsDrained = $null -ne $evidence -and $evidence.StreamsDrained
+        cleanupSucceeded = $null -ne $failure -and $failure.CleanupFailures.Count -eq 0
+        attachOwnerBoundaryRecorded = $null -ne $targetAttach -and
+            $targetAttach.State.ToString() -eq "NotObservable"
+        connectionPrecededDeadline = $null -ne $connected -and
+            $null -ne $typedOutcome -and
+            $connected.ConnectedAfterMilliseconds -lt $typedOutcome.ElapsedMilliseconds
+        sessionDidNotStart = $traceFiles.Count -eq 0 -and
+            $null -ne $stackCapture -and
+            $stackCapture.State.ToString() -eq "NotObservable"
+        noToolProgress = $null -ne $firstProgress -and
+            $firstProgress.State.ToString() -eq "NotObserved"
+        noStackOutput = $null -ne $stackOutput -and
+            $stackOutput.State.ToString() -eq "NotObserved"
+        windowConsumedAfterStart = $null -ne $processStarted -and
+            $null -ne $typedOutcome -and
+            ($typedOutcome.ElapsedMilliseconds -
+                $processStarted.ElapsedMilliseconds) -ge 2500
+        parentBudgetPreserved = $budget.RemainingOperation -gt [TimeSpan]::FromSeconds(4)
+        bounded = $stopwatch.Elapsed -lt [TimeSpan]::FromSeconds(5)
+        targetCleanupSucceeded = $null -eq $targetCleanupErrorType
+    }
+    return [pscustomobject]@{
+        passed = -not ($contractChecks.Values -contains $false) -and
+            $null -eq $unexpectedFailureType
+        tool = [System.IO.Path]::GetFileName($DiagnosticsTool)
+        invocation = @(
+            "report",
+            "--process-id",
+            $targetProcessId)
+        elapsedMilliseconds = [Math]::Round($stopwatch.Elapsed.TotalMilliseconds, 3)
+        ready = $ready
+        connected = $connected
+        failureKind = $failureKind
+        evidence = $evidence
+        cleanupFailures = @(
+            if ($null -ne $failure) {
+                $failure.CleanupFailures
+            }
+        )
+        traceFiles = @($traceFiles | ForEach-Object Name)
+        parentRemainingOperationMilliseconds = [Math]::Round(
+            $budget.RemainingOperation.TotalMilliseconds,
+            3)
+        unexpectedFailureType = $unexpectedFailureType
+        targetCleanupErrorType = $targetCleanupErrorType
+        contractChecks = [pscustomobject]$contractChecks
     }
 }
 
@@ -1112,6 +1371,7 @@ function Invoke-IsolatedProcess {
         [TimeSpan]::FromSeconds($OperationTimeoutSeconds),
         [TimeSpan]::FromSeconds($processCleanupGraceSeconds))
     $lease = $null
+    $observerCancellation = $null
     $operationResult = $null
     $operationFailure = $null
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -1162,6 +1422,9 @@ function Invoke-IsolatedProcess {
             Complete-DownKyiTestProcessAuthorization -Authorization $authorization
         }
         $processId = $lease.TargetProcessId
+        $observerCancellation = [Threading.CancellationTokenSource]::CreateLinkedTokenSource(
+                $CancellationToken,
+                $lease.TargetExitedToken)
         $waitTask = $lease.WaitAsync($CancellationToken)
         $evidenceObservationStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         while (-not $waitTask.IsCompleted) {
@@ -1186,7 +1449,7 @@ function Invoke-IsolatedProcess {
                         -Phase $Phase `
                         -Reason "slow-phase" `
                         -CaptureWindow $captureWindow `
-                        -CancellationToken $CancellationToken `
+                        -CancellationToken $observerCancellation.Token `
                         -CaptureDelayMilliseconds $EvidenceCaptureDelayMilliseconds `
                         -InjectFailure:$InjectForensicsObserverFailure
                     $slowEvidenceStatus = $capture.status
@@ -1260,7 +1523,7 @@ function Invoke-IsolatedProcess {
                             -Phase $Phase `
                             -Reason "slow-exit-after-teardown" `
                             -CaptureWindow $captureWindow `
-                            -CancellationToken $CancellationToken `
+                            -CancellationToken $observerCancellation.Token `
                             -InjectFailure:$InjectForensicsObserverFailure
                         $exitEvidenceStatus = $capture.status
                         $exitEvidenceErrorType = $capture.errorType
@@ -1289,13 +1552,6 @@ function Invoke-IsolatedProcess {
         }
 
         $stopwatch.Stop()
-        if ($stopwatch.Elapsed.TotalSeconds -ge $EvidenceThresholdSeconds) {
-            $slowThresholdExceeded = $true
-            if (-not $slowEvidenceAttempted) {
-                $slowEvidenceStatus = "process-exited-before-capture"
-            }
-        }
-
         $outcome = $null
         $ownedFailure = $null
         try {
@@ -1310,6 +1566,24 @@ function Invoke-IsolatedProcess {
         }
         else {
             $ownedFailure.Failure.TargetExitedAtUnixMilliseconds
+        }
+        $targetExitedAfter = if ($null -ne $outcome) {
+            $outcome.TargetExitedAfter
+        }
+        else {
+            $ownedFailure.Failure.TargetExitedAfter
+        }
+        $phaseDurationMs = if ($null -ne $targetExitedAfter) {
+            $targetExitedAfter.TotalMilliseconds
+        }
+        else {
+            $stopwatch.Elapsed.TotalMilliseconds
+        }
+        if ($phaseDurationMs -ge ($EvidenceThresholdSeconds * 1000)) {
+            $slowThresholdExceeded = $true
+            if (-not $slowEvidenceAttempted) {
+                $slowEvidenceStatus = "process-exited-before-capture"
+            }
         }
         $stdout = if ($null -ne $outcome) {
             $outcome.StandardOutput
@@ -1390,7 +1664,7 @@ function Invoke-IsolatedProcess {
             phase = $Phase
             processId = $processId
             exitCode = if ($null -ne $outcome) { $outcome.ExitCode } else { 1 }
-            durationMs = [Math]::Round($stopwatch.Elapsed.TotalMilliseconds, 3)
+            durationMs = [Math]::Round($phaseDurationMs, 3)
             timedOut = $timedOut
             stdout = $stdout
             stderr = $stderr
@@ -1448,6 +1722,12 @@ function Invoke-IsolatedProcess {
                 $ownedFailure.Failure.EvidenceHold
             }
             processExitedAtUnixMs = $processExitedAtUnixMs
+            targetExitedAfterMilliseconds = if ($null -eq $targetExitedAfter) {
+                $null
+            }
+            else {
+                [Math]::Round($targetExitedAfter.TotalMilliseconds, 3)
+            }
             observedAtUnixMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         }
     }
@@ -1457,8 +1737,16 @@ function Invoke-IsolatedProcess {
 
     $cleanupFailures = [Collections.Generic.List[Exception]]::new()
     try {
+        if ($null -ne $observerCancellation) {
+            $observerCancellation.Dispose()
+        }
+    }
+    catch {
+        $cleanupFailures.Add($_.Exception)
+    }
+    try {
         if ($null -ne $lease) {
-            $lease.DisposeAsync().AsTask().GetAwaiter().GetResult()
+            $null = $lease.DisposeAsync().AsTask().GetAwaiter().GetResult()
         }
     }
     catch {
@@ -1761,6 +2049,9 @@ function New-ProcessPhaseResult {
         ownedProcessCleanupFailures = @($ProcessResult.ownedProcessCleanupFailures)
         processOwnership = $ProcessResult.processOwnership
         evidenceHold = $ProcessResult.evidenceHold
+        processExitedAtUnixMs = $ProcessResult.processExitedAtUnixMs
+        targetExitedAfterMilliseconds =
+            $ProcessResult.targetExitedAfterMilliseconds
     }
 }
 
@@ -1868,6 +2159,10 @@ if (-not (Test-Path -LiteralPath $processSupervisionAssembly -PathType Leaf)) {
 }
 [Reflection.Assembly]::LoadFrom($processSupervisionAssembly) | Out-Null
 if ($ValidateForensics) {
+    if ($dotnetStackAttachStallSelfTestRequired -and
+        [string]::IsNullOrWhiteSpace($script:diagnosticsTool)) {
+        throw "Forensics validation requires dotnet-stack."
+    }
     $forensicsCollectorCleanupReportSelfTest =
         Test-DiagnosticCollectorCleanupFailureReport
     $forensicsCollectorCleanupReportSelfTestPassed =
@@ -1891,6 +2186,25 @@ if ($ValidateForensics) {
             ($forensicsCollectorCaptureWindowSelfTest |
                 ConvertTo-Json -Depth 8 -Compress))
         throw "Forensics collector capture-window self-test did not fail closed."
+    }
+    if ($dotnetStackAttachStallSelfTestRequired) {
+        $dotnetStackAttachStallSelfTest = Test-DotnetStackAttachStall `
+            -ProcessSupervisionAssembly $processSupervisionAssembly `
+            -DiagnosticsTool $script:diagnosticsTool
+        $dotnetStackAttachStallSelfTestPassed =
+            $dotnetStackAttachStallSelfTest.passed
+        $dotnetStackAttachStallSelfTest |
+            ConvertTo-Json -Depth 12 |
+            Set-Content -LiteralPath (
+                Join-Path $runRoot "dotnet-stack-attach-stall-self-test.json") `
+                -Encoding utf8
+        if (-not $dotnetStackAttachStallSelfTestPassed) {
+            Write-Host (
+                "dotnet-stack attach-stall self-test evidence: {0}" -f
+                ($dotnetStackAttachStallSelfTest |
+                    ConvertTo-Json -Depth 12 -Compress))
+            throw "dotnet-stack attach-stall self-test did not preserve transition evidence."
+        }
     }
 }
 
@@ -2613,6 +2927,16 @@ $report = [ordered]@{
         $forensicsCollectorCleanupReportSelfTestPassed
     forensicsCollectorCleanupReportSelfTest =
         $forensicsCollectorCleanupReportSelfTest
+    dotnetStackAttachStallSelfTestRequired =
+        $dotnetStackAttachStallSelfTestRequired
+    dotnetStackAttachStallSelfTestPassed = if (
+        $dotnetStackAttachStallSelfTestRequired) {
+        $dotnetStackAttachStallSelfTestPassed
+    }
+    else {
+        $null
+    }
+    dotnetStackAttachStallSelfTest = $dotnetStackAttachStallSelfTest
     exitThresholdSeconds = $ExitThresholdSeconds
     diagnosticsTool = if ($null -eq $script:diagnosticsTool) {
         "unavailable"
@@ -2691,6 +3015,10 @@ $markdown.Add(
 $markdown.Add(
     "- Supervisor-owned evidence-hold self-test: " +
     "$forensicsSelfTestEvidenceHoldValidated")
+$markdown.Add(
+    "- dotnet-stack attach-stall self-test: required=" +
+    "$dotnetStackAttachStallSelfTestRequired, " +
+    "passed=$dotnetStackAttachStallSelfTestPassed")
 $markdown.Add("- Reporter contract mutation self-test: $reporterContractSelfTestPassed")
 $markdown.Add("- Marker read contentions: $script:markerReadContentionCount")
 $markdown.Add("- Marker read retry exhaustion: $script:markerReadRetriesExhaustedCount")

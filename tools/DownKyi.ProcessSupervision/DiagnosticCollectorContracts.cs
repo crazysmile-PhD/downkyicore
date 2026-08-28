@@ -67,12 +67,51 @@ public sealed class DiagnosticCollectorRequest
     {
         Launch = launch ?? throw new ArgumentNullException(nameof(launch));
         Window = window ?? throw new ArgumentNullException(nameof(window));
+        CreatedAfterWindowStart = window.Budget.Elapsed;
     }
 
     public LaunchSpec Launch { get; }
 
     public DiagnosticCollectorWindow Window { get; }
+
+    internal TimeSpan CreatedAfterWindowStart { get; }
 }
+
+public enum DiagnosticCollectorTransition
+{
+    RequestCreated,
+    ProcessStartRequested,
+    ProcessStarted,
+    TargetAttachBegan,
+    FirstObservableProgress,
+    StackCaptureBegan,
+    StackOutputFirstByte,
+    ProcessExitObserved,
+    ReapCompleted,
+    StreamsDrained,
+    TypedOutcomeReturned
+}
+
+public enum DiagnosticCollectorTransitionState
+{
+    Observed,
+    NotObserved,
+    NotObservable
+}
+
+public sealed record DiagnosticCollectorTransitionEvidence(
+    DiagnosticCollectorTransition Transition,
+    DiagnosticCollectorTransitionState State,
+    double? ElapsedMilliseconds,
+    string? Detail)
+{
+    public string TransitionName => Transition.ToString();
+
+    public string StateName => State.ToString();
+}
+
+public sealed record DiagnosticCollectorTimeline(
+    IReadOnlyList<DiagnosticCollectorTransitionEvidence> Transitions);
 
 public sealed record DiagnosticCollectorEvidence(
     bool Started,
@@ -82,7 +121,8 @@ public sealed record DiagnosticCollectorEvidence(
     bool TimedOut,
     int? ExitCode,
     string StandardOutput,
-    string StandardError);
+    string StandardError,
+    DiagnosticCollectorTimeline Timeline);
 
 public sealed record DiagnosticCollectorOutcome(DiagnosticCollectorEvidence Evidence);
 

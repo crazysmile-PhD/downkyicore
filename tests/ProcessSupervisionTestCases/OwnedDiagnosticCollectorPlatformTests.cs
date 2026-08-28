@@ -28,6 +28,29 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         Assert.Equal(0, outcome.Evidence.ExitCode);
         Assert.Equal("collector-stdout", outcome.Evidence.StandardOutput);
         Assert.Equal("collector-stderr", outcome.Evidence.StandardError);
+        Assert.Equal(11, outcome.Evidence.Timeline.Transitions.Count);
+        Assert.Equal(
+            DiagnosticCollectorTransitionState.NotObservable,
+            GetTransition(outcome.Evidence, DiagnosticCollectorTransition.TargetAttachBegan).State);
+        Assert.Equal(
+            DiagnosticCollectorTransitionState.NotObservable,
+            GetTransition(outcome.Evidence, DiagnosticCollectorTransition.StackCaptureBegan).State);
+        Assert.All(
+            new[]
+            {
+                DiagnosticCollectorTransition.RequestCreated,
+                DiagnosticCollectorTransition.ProcessStartRequested,
+                DiagnosticCollectorTransition.ProcessStarted,
+                DiagnosticCollectorTransition.FirstObservableProgress,
+                DiagnosticCollectorTransition.StackOutputFirstByte,
+                DiagnosticCollectorTransition.ProcessExitObserved,
+                DiagnosticCollectorTransition.ReapCompleted,
+                DiagnosticCollectorTransition.StreamsDrained,
+                DiagnosticCollectorTransition.TypedOutcomeReturned
+            },
+            transition => Assert.Equal(
+                DiagnosticCollectorTransitionState.Observed,
+                GetTransition(outcome.Evidence, transition).State));
     }
 
     [Fact]
@@ -196,6 +219,42 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         Assert.True(failure.Failure.Evidence.Reaped);
         Assert.True(failure.Failure.Evidence.StreamsDrained);
         Assert.Empty(failure.CleanupFailures);
+        Assert.Equal(
+            DiagnosticCollectorTransitionState.Observed,
+            GetTransition(
+                failure.Failure.Evidence,
+                DiagnosticCollectorTransition.FirstObservableProgress).State);
+    }
+
+    [Fact]
+    public async Task TargetExitCancellationStopsAnAlreadyStartedCollector()
+    {
+        var result = await RunTargetExitCancellationCaseAsync(
+                useTargetExitCancellation: true,
+                TimeSpan.FromSeconds(3))
+            .ConfigureAwait(true);
+
+        Assert.Equal(DiagnosticCollectorFailureKind.CallerCancelled, result.CollectorFailure.Kind);
+        Assert.True(result.CollectorFailure.Evidence.Started);
+        Assert.True(result.CollectorFailure.Evidence.Reaped);
+        Assert.True(result.CollectorFailure.Evidence.StreamsDrained);
+        Assert.Empty(result.CleanupFailures);
+        Assert.True(result.TargetOutcome.TargetExitedAfter < TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public async Task UnlinkedTargetExitMutationConsumesTheCollectorWindow()
+    {
+        var result = await RunTargetExitCancellationCaseAsync(
+                useTargetExitCancellation: false,
+                TimeSpan.FromMilliseconds(600))
+            .ConfigureAwait(true);
+
+        Assert.Equal(
+            DiagnosticCollectorFailureKind.OperationDeadlineExceeded,
+            result.CollectorFailure.Kind);
+        Assert.True(result.CollectorFailure.Evidence.TimedOut);
+        Assert.Equal(0, result.TargetOutcome.ExitCode);
     }
 
     [Fact]
@@ -475,6 +534,84 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         Assert.True(ready.RootElement.GetProperty("BlockingTaskEstablished").GetBoolean());
     }
 
+    private static DiagnosticCollectorTransitionEvidence GetTransition(
+        DiagnosticCollectorEvidence evidence,
+        DiagnosticCollectorTransition transition)
+    {
+        return Assert.Single(
+            evidence.Timeline.Transitions,
+            item => item.Transition == transition);
+    }
+
+    private static async Task<TargetExitCancellationCaseResult>
+        RunTargetExitCancellationCaseAsync(
+            bool useTargetExitCancellation,
+            TimeSpan collectorOperationAllowance)
+    {
+        var targetReadyPath = CreateReadyPath("target-exit-ready");
+        var collectorReadyPath = CreateReadyPath("target-exit-signal");
+        var assemblyPath = typeof(OwnedDiagnosticCollector).Assembly.Location;
+        var targetBudget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(2));
+        OwnedProcessLease? targetLease = null;
+        try
+        {
+            targetLease = await OwnedProcessLease.StartAsync(
+                    new LaunchSpec(
+                        "dotnet",
+                        new[]
+                        {
+                            assemblyPath,
+                            SupervisorHost.ExitOnFileSignalWithReadyArgument,
+                            targetReadyPath,
+                            collectorReadyPath
+                        },
+                        Path.GetDirectoryName(assemblyPath)
+                            ?? throw new InvalidOperationException(
+                                "The target-exit fixture directory is unavailable."),
+                        closeStandardInput: true),
+                    targetBudget,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await WaitForReadyPathAsync(
+                    targetReadyPath,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+
+            var cancellationToken = useTargetExitCancellation
+                ? targetLease.TargetExitedToken
+                : CancellationToken.None;
+            var collectorException = await Assert.ThrowsAsync<
+                    DiagnosticCollectorExecutionException>(
+                    () => OwnedDiagnosticCollector.CollectAsync(
+                        CreateRequest(
+                            SupervisorHost.CollectorBlockWithReadyArgument,
+                            collectorOperationAllowance,
+                            TimeSpan.FromSeconds(1),
+                            collectorReadyPath),
+                        cancellationToken))
+                .ConfigureAwait(true);
+            AssertBlockingTaskEstablished(collectorReadyPath);
+            var targetOutcome = await targetLease.WaitAsync(
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            return new TargetExitCancellationCaseResult(
+                collectorException.Failure,
+                collectorException.CleanupFailures,
+                targetOutcome);
+        }
+        finally
+        {
+            if (targetLease != null)
+            {
+                await targetLease.DisposeAsync().ConfigureAwait(true);
+            }
+            File.Delete(targetReadyPath);
+            File.Delete(collectorReadyPath);
+        }
+    }
+
     private static DiagnosticCollectorRequest CreateRequest(
         string probeArgument,
         TimeSpan operationAllowance,
@@ -545,6 +682,11 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
 
         await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private sealed record TargetExitCancellationCaseResult(
+        DiagnosticCollectorFailure CollectorFailure,
+        IReadOnlyList<DiagnosticCollectorCleanupFailure> CleanupFailures,
+        OwnedProcessOutcome TargetOutcome);
 }
 
 public sealed class DiagnosticCollectorWindowTests

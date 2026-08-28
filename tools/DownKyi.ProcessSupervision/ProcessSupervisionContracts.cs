@@ -83,6 +83,10 @@ public sealed class TransitionBudget
         _hardDuration,
         _parent?.RemainingCleanup);
 
+    internal TimeSpan Elapsed => _timeProvider.GetElapsedTime(
+        _startedAt,
+        _timeProvider.GetTimestamp());
+
     public DiagnosticCollectorWindow AllocateDiagnosticCollectorWindow(
         TimeSpan operationAllowance,
         TimeSpan cleanupAllowance)
@@ -235,6 +239,7 @@ public sealed record OwnedProcessOutcome(
     string StandardOutput,
     string StandardError,
     long TargetExitedAtUnixMilliseconds,
+    TimeSpan TargetExitedAfter,
     bool TreeQuiescent,
     ProcessOwnershipMetadata Ownership,
     EvidenceHoldOutcome EvidenceHold);
@@ -255,6 +260,7 @@ public sealed record OwnedProcessFailure(
     string StandardOutput,
     string StandardError,
     long? TargetExitedAtUnixMilliseconds,
+    TimeSpan? TargetExitedAfter,
     bool TreeQuiescent,
     ProcessOwnershipMetadata Ownership,
     EvidenceHoldOutcome EvidenceHold);

@@ -219,7 +219,7 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "$forensicsCaptureCleanupWindowMilliseconds = $processCleanupGraceSeconds * 1000",
             source,
             StringComparison.Ordinal);
-        Assert.Equal(3, Regex.Count(source, "AllocateDiagnosticCollectorWindow"));
+        Assert.Equal(4, Regex.Count(source, "AllocateDiagnosticCollectorWindow"));
         Assert.Contains("AllocateDiagnosticCollectorWindow", isolatedProcess, StringComparison.Ordinal);
         foreach (var function in observerClosure.Values)
         {
@@ -336,6 +336,34 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.DoesNotContain(
             "$stopwatch.Elapsed.TotalSeconds -ge $evidenceCaptureThresholdSeconds",
             isolatedProcess,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TargetExitCancelsOnlyTheObserverAndOwnsPhaseDuration()
+    {
+        var isolatedProcess = ReadFunction(ReadLifecycleGate(), "Invoke-IsolatedProcess");
+
+        Assert.Contains("$lease.TargetExitedToken", isolatedProcess, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            Regex.Count(isolatedProcess, @"-CancellationToken\s+\$observerCancellation\.Token"));
+        Assert.Contains("$outcome.TargetExitedAfter", isolatedProcess, StringComparison.Ordinal);
+        Assert.Contains(
+            "$ownedFailure.Failure.TargetExitedAfter",
+            isolatedProcess,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "durationMs = [Math]::Round($phaseDurationMs, 3)",
+            isolatedProcess,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "durationMs = [Math]::Round($stopwatch.Elapsed.TotalMilliseconds, 3)",
+            isolatedProcess,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "targetExitedAfterMilliseconds",
+            ReadFunction(ReadLifecycleGate(), "New-ProcessPhaseResult"),
             StringComparison.Ordinal);
     }
 

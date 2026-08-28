@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipes;
 using System.Runtime.ExceptionServices;
+using System.Text;
 using System.Text.Json;
 
 namespace DownKyi.ProcessSupervision;
@@ -27,13 +28,17 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     private readonly NamedPipeServerStream _status;
     private readonly Task<string> _standardOutput;
     private readonly Task<string> _standardError;
+    private readonly ProcessStreamObservation _standardOutputObservation;
+    private readonly ProcessStreamObservation _standardErrorObservation;
     private readonly Task<TargetExitReport?> _targetExitReport;
+    private readonly CancellationTokenSource _targetExited;
     private readonly EvidenceHoldCoordinator? _evidenceHold;
     private readonly TransitionBudget _budget;
     private readonly ProcessOwnershipMutation _mutation;
     private int _completionState;
     private int _ownerLifetimeClosed;
     private int _reapFailureInjected;
+    private TimeSpan? _reapedAfter;
 
     private OwnedProcessLease(
         Process supervisor,
@@ -42,7 +47,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         NamedPipeServerStream status,
         Task<string> standardOutput,
         Task<string> standardError,
+        ProcessStreamObservation standardOutputObservation,
+        ProcessStreamObservation standardErrorObservation,
         Task<TargetExitReport?> targetExitReport,
+        CancellationTokenSource targetExited,
         EvidenceHoldCoordinator? evidenceHold,
         TransitionBudget budget,
         ProcessOwnershipMutation mutation,
@@ -55,7 +63,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         _status = status;
         _standardOutput = standardOutput;
         _standardError = standardError;
+        _standardOutputObservation = standardOutputObservation;
+        _standardErrorObservation = standardErrorObservation;
         _targetExitReport = targetExitReport;
+        _targetExited = targetExited;
         _evidenceHold = evidenceHold;
         _budget = budget;
         _mutation = mutation;
@@ -68,6 +79,27 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     public int SupervisorProcessId => _supervisor.Id;
 
     public int TargetProcessId { get; }
+
+    public CancellationToken TargetExitedToken => _targetExited.Token;
+
+    internal TimeSpan? StandardOutputFirstObservedAfter =>
+        _standardOutputObservation.FirstObservedAfter;
+
+    internal TimeSpan? StandardErrorFirstObservedAfter =>
+        _standardErrorObservation.FirstObservedAfter;
+
+    internal TimeSpan? StandardOutputDrainedAfter =>
+        _standardOutputObservation.DrainedAfter;
+
+    internal TimeSpan? StandardErrorDrainedAfter =>
+        _standardErrorObservation.DrainedAfter;
+
+    internal TimeSpan? ReapedAfter => _reapedAfter;
+
+    internal TimeSpan? ObservedTargetExitedAfter =>
+        _targetExitReport.IsCompletedSuccessfully
+            ? _targetExitReport.Result?.ExitedAfter
+            : null;
 
     public EvidenceHoldOutcome EvidenceHold =>
         _evidenceHold?.Snapshot ?? EvidenceHoldOutcome.CreateNotRequested();
@@ -305,6 +337,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 await _standardOutput.ConfigureAwait(false),
                 await _standardError.ConfigureAwait(false),
                 targetExit.ExitedAtUnixMilliseconds,
+                targetExit.ExitedAfter,
                 TreeQuiescent: true,
                 Ownership,
                 evidenceHold);
@@ -364,6 +397,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     standardOutput,
                     standardError,
                     targetExit?.ExitedAtUnixMilliseconds,
+                    targetExit?.ExitedAfter,
                     TreeQuiescent: treeQuiescenceProven,
                     Ownership,
                     evidenceHold),
@@ -432,6 +466,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             : new EvidenceHoldCoordinator(
                 evidenceHoldRequest,
                 acknowledgmentPublicationGateForTesting);
+        var targetExited = new CancellationTokenSource();
         var startInfo = CreateSupervisorStartInfo(
             controlPipeName.PhysicalIdentifier,
             statusPipeName.PhysicalIdentifier,
@@ -441,6 +476,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         IProcessContainmentLease? containment = null;
         Task<string>? standardOutput = null;
         Task<string>? standardError = null;
+        var standardOutputObservation = new ProcessStreamObservation(budget);
+        var standardErrorObservation = new ProcessStreamObservation(budget);
         var started = false;
         var processOwnershipEstablished = false;
         try
@@ -452,8 +489,12 @@ public sealed class OwnedProcessLease : IAsyncDisposable
 
             started = true;
             evidenceHold?.ReleaseLocalClientHandles();
-            standardOutput = supervisor.StandardOutput.ReadToEndAsync(CancellationToken.None);
-            standardError = supervisor.StandardError.ReadToEndAsync(CancellationToken.None);
+            standardOutput = ReadToEndObservedAsync(
+                supervisor.StandardOutput,
+                standardOutputObservation);
+            standardError = ReadToEndObservedAsync(
+                supervisor.StandardError,
+                standardErrorObservation);
             if (mutation.HasFlag(ProcessOwnershipMutation.StallStreamDrain))
             {
                 standardOutput = new TaskCompletionSource<string>(
@@ -526,7 +567,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     cancellationToken)
                 .ConfigureAwait(false);
             evidenceHold?.Grant();
-            var targetExitReport = ReadTargetExitReportAsync(status);
+            var targetExitReport = ReadTargetExitReportAsync(
+                status,
+                budget,
+                targetExited);
             var ownership = containment.Metadata with
             {
                 OwnershipEstablished =
@@ -539,7 +583,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 status,
                 standardOutput,
                 standardError,
+                standardOutputObservation,
+                standardErrorObservation,
                 targetExitReport,
+                targetExited,
                 evidenceHold,
                 budget,
                 mutation,
@@ -643,6 +690,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             foreach (var resource in new IDisposable?[]
                      {
                          evidenceHold,
+                         targetExited,
                          containment,
                          control,
                          status,
@@ -725,7 +773,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         return targetProcessId;
     }
 
-    private static async Task<TargetExitReport?> ReadTargetExitReportAsync(Stream status)
+    private static async Task<TargetExitReport?> ReadTargetExitReportAsync(
+        Stream status,
+        TransitionBudget budget,
+        CancellationTokenSource targetExited)
     {
         var payload = await ReadExactOrEofAsync(
                 status,
@@ -749,7 +800,9 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             throw new InvalidOperationException("The target-exit timestamp is invalid.");
         }
 
-        return new TargetExitReport(exitCode, exitedAt);
+        var exitedAfter = budget.Elapsed;
+        await targetExited.CancelAsync().ConfigureAwait(false);
+        return new TargetExitReport(exitCode, exitedAt, exitedAfter);
     }
 
     private async Task WaitForSupervisorExitAsync(
@@ -776,6 +829,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 cancellationToken)
             .ConfigureAwait(false);
         _containment.MarkAnchorReaped();
+        _reapedAfter = _budget.Elapsed;
         if (_mutation.HasFlag(ProcessOwnershipMutation.FailAfterRootReap) &&
             Interlocked.Exchange(ref _reapFailureInjected, 1) == 0)
         {
@@ -973,6 +1027,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         foreach (var resource in new IDisposable?[]
                  {
                      _evidenceHold,
+                     _targetExited,
                      _status,
                      _containment,
                      _supervisor
@@ -1240,6 +1295,27 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         return output.Status == TaskStatus.RanToCompletion
             ? output.Result
             : string.Empty;
+    }
+
+    private static async Task<string> ReadToEndObservedAsync(
+        StreamReader reader,
+        ProcessStreamObservation observation)
+    {
+        var buffer = new char[4096];
+        var output = new StringBuilder();
+        while (true)
+        {
+            var read = await reader.ReadAsync(buffer, CancellationToken.None)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                observation.MarkDrained();
+                return output.ToString();
+            }
+
+            observation.MarkFirstObserved();
+            output.Append(buffer, 0, read);
+        }
     }
 
     private static IEnumerable<Exception> FlattenFailures(Exception failure)
@@ -1512,5 +1588,51 @@ public sealed class OwnedProcessLease : IAsyncDisposable
 
     private sealed record TargetExitReport(
         int ExitCode,
-        long ExitedAtUnixMilliseconds);
+        long ExitedAtUnixMilliseconds,
+        TimeSpan ExitedAfter);
+
+    private sealed class ProcessStreamObservation(TransitionBudget budget)
+    {
+        private readonly object _gate = new();
+        private TimeSpan? _firstObservedAfter;
+        private TimeSpan? _drainedAfter;
+
+        public TimeSpan? FirstObservedAfter
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _firstObservedAfter;
+                }
+            }
+        }
+
+        public TimeSpan? DrainedAfter
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _drainedAfter;
+                }
+            }
+        }
+
+        public void MarkFirstObserved()
+        {
+            lock (_gate)
+            {
+                _firstObservedAfter ??= budget.Elapsed;
+            }
+        }
+
+        public void MarkDrained()
+        {
+            lock (_gate)
+            {
+                _drainedAfter ??= budget.Elapsed;
+            }
+        }
+    }
 }

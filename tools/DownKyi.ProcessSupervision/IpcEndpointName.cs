@@ -46,6 +46,21 @@ internal sealed record IpcEndpointName
         return new IpcEndpointName(logicalLabel, physicalIdentifier);
     }
 
+    internal static IpcEndpointName CreateDotnetDiagnosticsEmulationForTesting(
+        int processId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processId);
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException(
+                "The fixed dotnet diagnostics named-pipe fixture is Windows-only.");
+        }
+
+        return new IpcEndpointName(
+            "dotnet diagnostics attach-stall fixture",
+            $"dotnet-diagnostic-{processId}");
+    }
+
     public override string ToString()
     {
         return $"{LogicalLabel} [{PhysicalIdentifier}]";
