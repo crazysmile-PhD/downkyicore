@@ -114,10 +114,14 @@ evidence errors cannot overwrite the process owner's causal failure.
 - The slow classification remains exactly
   `duration >= slowPhaseThresholdSeconds`. To prevent runner scheduling from
   crossing directly from just below the threshold to an already-exited child,
-  evidence capture is armed 1,000 ms early. The report records this as
+  evidence capture is armed 3,000 ms early. This matches the existing
+  owner-assigned hosted collector startup allowance and reserves that interval
+  for caller dispatch, process launch and ownership establishment before a
+  five-second phase can qualify as slow. The report records this as
   `slowEvidenceCaptureLeadMilliseconds` and per phase as
-  `slowEvidenceTriggeredBeforeThreshold`; it does not lower the slow
-  threshold. `slowEvidenceStatus` is `captured`, `capture-failed`, or
+  `slowEvidenceTriggeredBeforeThreshold`; it does not lower the slow threshold,
+  extend the 15-second capture window or change the phase timeout.
+  `slowEvidenceStatus` is `captured`, `capture-failed`, or
   `process-exited-before-capture`; the latter two still fail a slow phase
   instead of leaving an unexplained empty evidence array.
 - `-ValidateForensics` asks `OwnedProcessLease` for an evidence-hold sub-state to

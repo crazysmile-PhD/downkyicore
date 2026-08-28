@@ -740,6 +740,70 @@ failed exact-head runs remain diagnostic evidence and will not be rerun. Stage
 4A remains completed and closed; production Stage 4, Stage 5, merge, release
 and tag movement remain out of scope.
 
+### Sixth Exact-Head CI And Slow-Evidence Startup Ordering
+
+Documentation head `b83f321b6d71a2343aa234257bcfc641dea6595b` triggered Strict PR
+run
+[33180214921](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33180214921).
+Eleven of twelve Strict jobs passed, including the complete Windows job
+[98879255851](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33180214921/job/98879255851).
+The separately triggered Build, CodeQL, Process Membership and Protobuf
+workflows also passed. The run was allowed to finish and was not rerun.
+
+Assembly Lifecycle job
+[98879255304](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33180214921/job/98879255304)
+failed one of 147 phases. Artifact `9689688869` records eight assemblies, 12
+slow phases, 11 captured evidence bundles, one missing bundle, ownership 634/0
+and passing attach-stall, interrupted-stack and capture-window proofs. The only
+failed row was `DownKyi.Infrastructure.Tests`, iteration 3, `execution`:
+
+- the authoritative target exited successfully and quiescently at 5,374.329
+  ms; no process or cleanup failure occurred;
+- the slow-evidence attempt occupied 1,248.416 ms and returned typed
+  `CallerCancelled`, not `OperationDeadlineExceeded`;
+- request creation and process-start request were observed at 0 and 0.010 ms,
+  but `ProcessStarted`, attach, progress, stack output, exit, reap and drain were
+  all not observed; typed return was 1,199.008 ms and both streams were empty;
+- the configured one-second lead armed the request before the five-second
+  threshold, but hosted launch and ownership establishment had not completed
+  when target exit cancelled the observer.
+
+This classifies the residual failure as hosted collector-startup ordering, not
+stack enumeration, publication, stream drain or exhaustion of the 15-second
+capture window. The fail-closed `SlowEvidenceMissing` result was correct because
+there was no stack to salvage. Accepting pre-start cancellation as evidence
+would weaken the existing slow-phase invariant.
+
+Test-policy implementation
+`63d53cbea6731bf1f0896bf66a4d9b02aa0c5d4c` uses the already-established
+three-second hosted collector startup allowance as the slow-evidence lead. It
+therefore issues the request two seconds into a five-second phase instead of
+four seconds in, while leaving the five-second slow threshold, 15-second
+capture window, five-second cleanup allowance, 180-second phase timeout,
+parent `TransitionBudget`, collector implementation and owner semantics
+unchanged. No retry, sleep, new deadline owner or empty-evidence acceptance was
+added.
+
+The executable ordering proof models a 1,500 ms hosted collector startup and a
+5,100 ms qualifying target: the configured lead reaches collector start before
+target exit, while the former one-second lead does not. Mutating the shared
+allowance back to 1,000 ms executed ten affected Architecture tests and failed
+exactly that proof (9 passed, 1 failed). On clean implementation HEAD, focused
+collector tests passed 18/18, affected Architecture passed 10/10, full
+Architecture passed 317/317, Windows passed 74/74 and the review-invariant gate
+passed 326 tests plus seven adversarial proofs. One-assembly Local
+`-ValidateForensics` recorded the exact implementation SHA, clean worktree, one
+assembly, nine phases, zero failures, ownership 634/0, lead 3,000 ms and capture
+window 15,000 ms; capture-window, interrupted-stack, attach-stall and
+pre-threshold proofs all passed. That local execution produced no naturally
+slow formal phase, so the hosted artifact remains the direct reproduction of
+the startup race.
+
+Status: pending documentation commit, exact-head push, naturally triggered CI
+and same-head review. The six failed exact-head runs remain diagnostic evidence
+and will not be rerun. Stage 4A remains completed and closed; production Stage
+4, Stage 5, merge, release and tag movement remain out of scope.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates
