@@ -139,13 +139,15 @@ evidence errors cannot overwrite the process owner's causal failure.
   lifecycle timings are diagnostic evidence, not performance baselines.
 - `Invoke-IsolatedProcess`, which holds the existing transition budget,
   allocates each observer capture a 15-second operation window and a five-second
-  collector-cleanup window. Every collector, snapshot and delay wait consumes
-  the shorter of that window and the owner budget; the observer cannot create or
-  renew either deadline. Collector termination and bounded reap are attempted
-  independently so both failures remain observable; that cleanup authority
-  applies only to the observer-created collector. `-ValidateForensics` also
-  launches a deliberately blocked collector and requires timeout, kill/reap and
-  remaining owner operation budget to be observed through
+  collector-cleanup window on a monotonic `Stopwatch`. Every collector, snapshot
+  and delay wait consumes the shorter of that caller-started window and the
+  owner's monotonic transition budget; the observer cannot start, create or
+  renew either timeline. Collector termination and bounded reap are attempted
+  independently. If cleanup also fails, the causal collector timeout and every
+  cleanup exception remain in one aggregate; that cleanup authority applies only
+  to the observer-created collector. `-ValidateForensics` launches a deliberately
+  blocked collector, injects cleanup failure, and requires both failure types,
+  bounded kill/reap and remaining owner operation budget to be observed through
   `forensicsCollectorCaptureWindowSelfTestPassed`.
 - Execution slow-phase, post-teardown slow-exit and timeout evidence have
   separate arrays. A process-exit row cannot inherit unrelated execution

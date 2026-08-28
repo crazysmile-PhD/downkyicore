@@ -747,6 +747,54 @@ push, all required native/Strict PR and Assembly Lifecycle checks, and a clean
 same-head Codex review. Stage 4, Stage 5, workflow, release, merge and tag work
 remain deferred.
 
+### Stage 3 Collector Exact-Head Review Follow-up
+
+Documentation checkpoint `8b112eb673333837675a6895578a4188597286ac`
+passed all 29 exact-head checks: 20 applicable jobs succeeded and nine
+release-only jobs were skipped. This included Windows/Linux/macOS tests,
+Assembly Lifecycle, native Linux/macOS membership, CodeQL, Build, Protobuf,
+format and package audit. Exact-head Codex review `5047152038` then identified
+three Stage 3 blockers: the capture subwindow used a rollback-sensitive wall
+clock; the capture-budget mutation changed only a C# source string instead of
+executing the broken helper; and a collector timeout was omitted when cleanup
+also failed. None invalidated the Stage 2 ownership contract.
+
+Exact-head review follow-up implementation commit:
+`467c3cbc15c9512e1c89ef4e44e8235524f47af4`.
+
+The owner-allocated subwindow now uses a caller-started monotonic `Stopwatch` and
+durations, always intersected with the existing monotonic `TransitionBudget`.
+Observer helpers read that allocation but cannot start or renew it. The corpus
+mutation now changes the executed PowerShell wait helper to consume the whole
+owner budget, launches the real lifecycle script, and is rejected by the
+blocked-collector behavioral self-test. PowerShell `VoidTaskResult` values from
+waits are suppressed so they cannot turn a false self-test into a truthy output
+array. When timeout and collector cleanup failure coincide, the timeout and
+every cleanup exception are retained in the same aggregate; the self-test
+injects that conjunction while still requiring bounded collector reap and
+remaining owner budget.
+
+Local validation for this implementation passed:
+
+- focused Architecture lifecycle classes passed through the central in-process
+  runner after a Release build with zero warnings and zero errors;
+- the behavioral whole-budget mutation executed the real lifecycle helper and
+  produced the required failed Architecture test after the child self-test
+  failed closed;
+- the review-invariant gate passed 11 root-cause invariants, seven test
+  projects, 321 tests and all four adversarial proofs;
+- one-assembly `Local -ValidateForensics` reported nine phase results, zero
+  failures and lifecycle ownership 614/0. Monotonic collector-window,
+  timeout-plus-cleanup aggregation, capture lead, evidence hold, observer miss,
+  concurrent observer failure and lease cleanup self-tests passed; normal
+  managed-stack capture completed in 5,658 ms;
+- PowerShell syntax, formatting verification and `git diff --check` passed.
+
+Status: Stage 3 remains open pending the documentation checkpoint, exact-head
+push, all required native/Strict PR and Assembly Lifecycle checks, review-thread
+closure and a clean same-head Codex review. Stage 4, Stage 5, workflow, release,
+merge and tag work remain deferred.
+
 ## Stage 4: Restart Transaction
 
 Retain prepare, authorize, commit and revoke. Keep product Policy B. The helper

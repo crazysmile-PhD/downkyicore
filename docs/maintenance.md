@@ -63,11 +63,13 @@ three-second owner operation window, not an observer deadline. It must set both
 `forensicsSelfTestEvidenceHoldValidated=true`; the nested hold outcome must also
 report `TargetAcknowledged=true` from the actual held child.
 The lifecycle owner allocates each observer capture at most 15 seconds plus a
-five-second collector-only cleanup window, both intersected with the existing
-transition budget. The observer cannot renew these windows or use them as
-process truth. `-ValidateForensics` must also report
+five-second collector-only cleanup window on a caller-started monotonic
+`Stopwatch`, both intersected with the existing monotonic transition budget. The
+observer cannot start or renew these windows or use them as process truth.
+`-ValidateForensics` must also report
 `forensicsCollectorCaptureWindowSelfTestPassed=true` after a deliberately
-blocked collector times out and is reaped while owner operation budget remains.
+blocked collector times out, injected cleanup failure remains aggregated with
+that timeout, and the collector is reaped while owner operation budget remains.
 
 Formal Windows PR, Main, Rehearsal and Flaky lifecycle profiles require
 `-ValidateForensics`. Their schema 4 report must show a detailed
