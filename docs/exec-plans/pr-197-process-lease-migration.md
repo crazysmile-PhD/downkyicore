@@ -940,6 +940,18 @@ output. It changes no process-lease production contract, timeout, retry,
 ownership boundary or Stage 4A status. Exact timing, CI and validation evidence
 is authoritative in `pr-197-owned-diagnostic-collector-migration.md`.
 
+Third exact-head run `33174514303` proved the attach-stall oracle and target-exit
+duration correction but exposed a downstream classification defect. Two genuine
+slow phases returned typed `CallerCancelled` after `StackOutputFirstByte` and
+complete collector reap/drain, with 7,866 and 15,008 stack characters already
+present; lifecycle policy nevertheless discarded the stack and reported
+`SlowEvidenceMissing`. Script-only follow-up
+`07b076a7ef69e75e831c84ef9b5b12f8d066fb8f` retains that evidence under a
+strict typed predicate and keeps empty cancellation or unrelated failure kinds
+fail closed. It changes no lease, deadline, ownership, production or Stage 4A
+contract. Exact artifact and validation evidence is authoritative in
+`pr-197-owned-diagnostic-collector-migration.md`.
+
 ## Stage 4A: Restart Handoff Feasibility
 
 The original composition assumption is invalidated. An ordinary

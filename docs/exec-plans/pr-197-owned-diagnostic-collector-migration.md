@@ -574,6 +574,72 @@ retained as diagnostic evidence and will not be rerun. Stage 4A remains
 completed and closed; Stage 4 production, Stage 5, merge, release and tag work
 remain out of scope.
 
+### Third Exact-Head CI And Interrupted-Stack Retention
+
+Documentation head `9aabab02c713a2ff3bd7b6c469a19e6298e4a48c`
+triggered Strict PR run
+[33174514303](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33174514303).
+Ten jobs passed and two failed. The run was allowed to finish and was not
+rerun:
+
+- Windows job
+  [98859549607](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33174514303/job/98859549607)
+  again stopped on the capture-budget adversarial profile with nine executed
+  and zero failed tests. The uploaded TRX proved that the owning test passed,
+  but the reporter omits passing test output. Test-output diagnostics therefore
+  did not make the nested child outcome observable.
+- Assembly Lifecycle job
+  [98859549606](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33174514303/job/98859549606)
+  completed all eight assemblies and 147 phase results. The corrected
+  attach-stall self-test passed: connection acceptance occurred inside the
+  request/return interval, typed timeout was 3,000.436 ms, no tool progress or
+  trace appeared, reap/drain completed, cleanup was empty and 6,717.574 ms of
+  parent operation budget remained. Ten of 12 slow phases captured evidence.
+  The two remaining rows were genuine slow targets, not observer-inflated
+  duration:
+  - `DownKyi.Core.Tests` iteration 1 exited at 6,153.404 ms. Its collector was
+    canceled after 2,008.061 ms with 7,866 stack characters, first stack output
+    at 980.976 ms, typed return at 1,944.391 ms, reap/drain complete and no
+    cleanup failure.
+  - `DownKyi.Tests` iteration 1 exited at 5,210.819 ms. Its collector was
+    canceled after 1,054.423 ms with 15,008 stack characters, first stack
+    output at 998.821 ms, typed return at 1,004.106 ms, reap/drain complete and
+    no cleanup failure.
+
+Both rows were mislabeled `SlowEvidenceMissing` even though their typed
+`CallerCancelled` evidence contained concrete `Thread (0x...):` stack output.
+The lifecycle failure path discarded those already-drained bytes solely because
+target exit canceled the observer after output began.
+
+Implementation follow-up `07b076a7ef69e75e831c84ef9b5b12f8d066fb8f`
+retains that interrupted stack through the existing evidence directory and
+marks the capture complete only under a narrow typed predicate:
+`CallerCancelled`, no cleanup failure, collector started/exited/reaped/drained,
+not timed out, observed `StackOutputFirstByte`, and pinned-tool thread output.
+It preserves the failure kind, timeline and cleanup list in the phase report.
+Empty cancellation output and unrelated failure kinds remain rejected by the
+new structured self-test. The mutation wrapper now uses xUnit warnings only
+for unexpected child results or host/cleanup failures, so that passing-test
+diagnostics are embedded in TRX without making an unrelated failure count as
+the owning adversarial proof.
+
+Local validation passed one-assembly lifecycle with nine phases, zero failures,
+one slow phase captured, zero missing evidence, lifecycle ownership 633/0, a
+passing attach-stall self-test and all three interrupted-stack predicates. The
+normal lifecycle Architecture class passed 9/9; the capture-budget mutation
+executed nine tests and failed exactly its one owning test; full Architecture
+passed 316/316; the review corpus passed 325 tests and seven adversarial proofs;
+PowerShell parse, format and diff checks passed. The unchanged collector and
+Windows platform classes were not rerun after this script-only follow-up; their
+latest direct results remain 19/19 and 74/74 from the preceding implementation
+checkpoint.
+
+Status: pending this documentation checkpoint, exact-head push, required CI and
+same-head review. No timeout, slow threshold, retry, sleep, collector owner,
+target lease, production path, workflow or central-runner policy changed.
+Stage 4A remains completed and closed; Stage 4 production, Stage 5, merge,
+release and tag movement remain out of scope.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates

@@ -174,6 +174,17 @@ evidence errors cannot overwrite the process owner's causal failure.
   external tool are explicitly `NotObservable`; absent owner-visible events are
   `NotObserved`. These timestamps describe evidence only and never decide
   ownership, success or deadline renewal.
+- Target exit can cancel an already-started collector after `dotnet-stack` has
+  emitted useful stack rows. That capture is `captured`, rather than
+  `SlowEvidenceMissing`, only when typed evidence reports `CallerCancelled`, no
+  cleanup failure, started/exited/reaped/drained, no collector timeout, an
+  observed `StackOutputFirstByte`, and non-empty pinned-tool `Thread (0x...):`
+  output. The managed-stack file, `CallerCancelled` kind and complete typed
+  timeline are all retained. Empty cancellation output, any cleanup failure,
+  timeout or another primary failure kind remains `capture-failed`. The
+  structured interrupted-stack self-test proves the accepted case plus empty
+  output and unrelated-kind rejection; it does not weaken the slow threshold
+  or accept an observer miss as evidence.
 - PowerShell may receive collector failures through a PowerShell invocation
   wrapper. `Get-DiagnosticCollectorExecutionFailure` walks that exception chain
   only to recover `DiagnosticCollectorExecutionException`; lifecycle result
