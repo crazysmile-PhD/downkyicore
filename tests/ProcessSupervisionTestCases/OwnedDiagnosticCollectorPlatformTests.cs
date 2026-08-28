@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Text.Json;
 using DownKyi.ProcessSupervision;
 
 namespace DownKyi.ProcessSupervision.Tests;
@@ -181,11 +182,10 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     [Fact]
     public async Task OperationDeadlineRemainsPrimaryAfterCleanCleanup()
     {
-        var failure = await CollectFailureAsync(
-                CreateRequest(
-                    SupervisorHost.BlockForeverArgument,
-                    TimeSpan.FromMilliseconds(350),
-                    TimeSpan.FromSeconds(2)),
+        var failure = await CollectBlockedFailureAsync(
+                "operation-deadline",
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(2),
                 DiagnosticCollectorMutation.None)
             .ConfigureAwait(true);
 
@@ -199,13 +199,43 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     }
 
     [Fact]
+    public async Task DeadlineBeforeTargetStartDoesNotInventBlockedCollectorEvidence()
+    {
+        var readyPath = CreateReadyPath("deadline-before-start");
+        try
+        {
+            var failure = await CollectFailureAsync(
+                    CreateRequest(
+                        SupervisorHost.CollectorBlockWithReadyArgument,
+                        TimeSpan.FromTicks(1),
+                        TimeSpan.FromSeconds(1),
+                        readyPath),
+                    DiagnosticCollectorMutation.None)
+                .ConfigureAwait(true);
+
+            Assert.Equal(
+                DiagnosticCollectorFailureKind.OperationDeadlineExceeded,
+                failure.Failure.Kind);
+            Assert.True(failure.Failure.Evidence.TimedOut);
+            Assert.False(failure.Failure.Evidence.Started);
+            Assert.False(failure.Failure.Evidence.Reaped);
+            Assert.False(failure.Failure.Evidence.StreamsDrained);
+            Assert.False(File.Exists(readyPath));
+            Assert.Empty(failure.CleanupFailures);
+        }
+        finally
+        {
+            File.Delete(readyPath);
+        }
+    }
+
+    [Fact]
     public async Task TerminateFailureDoesNotSkipReapOrDrain()
     {
-        var failure = await CollectFailureAsync(
-                CreateRequest(
-                    SupervisorHost.BlockForeverArgument,
-                    TimeSpan.FromMilliseconds(350),
-                    TimeSpan.FromSeconds(2)),
+        var failure = await CollectBlockedFailureAsync(
+                "terminate-failure",
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(2),
                 DiagnosticCollectorMutation.FailAfterTerminate)
             .ConfigureAwait(true);
 
@@ -222,11 +252,10 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     [Fact]
     public async Task ReapTimeoutIsTypedAndCannotBecomeSuccess()
     {
-        var failure = await CollectFailureAsync(
-                CreateRequest(
-                    SupervisorHost.BlockForeverArgument,
-                    TimeSpan.FromMilliseconds(350),
-                    TimeSpan.FromMilliseconds(500)),
+        var failure = await CollectBlockedFailureAsync(
+                "reap-timeout",
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromMilliseconds(500),
                 DiagnosticCollectorMutation.StallReap)
             .ConfigureAwait(true);
 
@@ -246,7 +275,7 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         var failure = await CollectFailureAsync(
                 CreateRequest(
                     SupervisorHost.CollectorOutputArgument,
-                    TimeSpan.FromMilliseconds(500),
+                    TimeSpan.FromSeconds(3),
                     TimeSpan.FromMilliseconds(500)),
                 DiagnosticCollectorMutation.StallStreamDrain)
             .ConfigureAwait(true);
@@ -266,11 +295,10 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     [Fact]
     public async Task TimeoutAndCleanupFailuresPreserveCausalOrder()
     {
-        var failure = await CollectFailureAsync(
-                CreateRequest(
-                    SupervisorHost.BlockForeverArgument,
-                    TimeSpan.FromMilliseconds(350),
-                    TimeSpan.FromSeconds(2)),
+        var failure = await CollectBlockedFailureAsync(
+                "causal-order",
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(2),
                 DiagnosticCollectorMutation.FailAfterTerminate)
             .ConfigureAwait(true);
 
@@ -312,7 +340,7 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             var failure = await CollectFailureAsync(
                     CreateRequest(
                         SupervisorHost.ExitWithOwnedDescendantArgument,
-                        TimeSpan.FromSeconds(2),
+                        TimeSpan.FromSeconds(3),
                         TimeSpan.FromSeconds(2),
                         readyPath),
                     DiagnosticCollectorMutation.None)
@@ -337,17 +365,14 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     public async Task CollectorWindowCannotConsumeTheParentsRemainingOperationBudget()
     {
         var parent = TransitionBudget.Start(
-            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(5),
             TimeSpan.FromSeconds(1));
-        var request = CreateRequest(
+        var failure = await CollectBlockedFailureAsync(
             parent,
-            SupervisorHost.BlockForeverArgument,
-            TimeSpan.FromMilliseconds(300),
-            TimeSpan.FromMilliseconds(500));
-
-        var failure = await CollectFailureAsync(
-                request,
-                DiagnosticCollectorMutation.None)
+            "parent-budget",
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromMilliseconds(500),
+            DiagnosticCollectorMutation.None)
             .ConfigureAwait(true);
 
         Assert.Equal(
@@ -360,17 +385,14 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     public async Task IgnoringTheCallerAllocatedWindowFailsTheBehavioralProof()
     {
         var parent = TransitionBudget.Start(
-            TimeSpan.FromMilliseconds(1200),
-            TimeSpan.FromMilliseconds(500));
-        var request = CreateRequest(
+            TimeSpan.FromSeconds(4),
+            TimeSpan.FromSeconds(1));
+        var failure = await CollectBlockedFailureAsync(
             parent,
-            SupervisorHost.BlockForeverArgument,
-            TimeSpan.FromMilliseconds(150),
-            TimeSpan.FromMilliseconds(250));
-
-        var failure = await CollectFailureAsync(
-                request,
-                DiagnosticCollectorMutation.IgnoreAllocatedWindow)
+            "ignored-window",
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromMilliseconds(500),
+            DiagnosticCollectorMutation.IgnoreAllocatedWindow)
             .ConfigureAwait(true);
 
         Assert.Equal(
@@ -389,6 +411,68 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
                     mutation,
                     TestContext.Current.CancellationToken))
             .ConfigureAwait(true);
+    }
+
+    private static async Task<DiagnosticCollectorExecutionException> CollectBlockedFailureAsync(
+        string name,
+        TimeSpan operationAllowance,
+        TimeSpan cleanupAllowance,
+        DiagnosticCollectorMutation mutation)
+    {
+        var readyPath = CreateReadyPath(name);
+        try
+        {
+            var failure = await CollectFailureAsync(
+                    CreateRequest(
+                        SupervisorHost.CollectorBlockWithReadyArgument,
+                        operationAllowance,
+                        cleanupAllowance,
+                        readyPath),
+                    mutation)
+                .ConfigureAwait(true);
+            AssertBlockingTaskEstablished(readyPath);
+            return failure;
+        }
+        finally
+        {
+            File.Delete(readyPath);
+        }
+    }
+
+    private static async Task<DiagnosticCollectorExecutionException> CollectBlockedFailureAsync(
+        TransitionBudget parent,
+        string name,
+        TimeSpan operationAllowance,
+        TimeSpan cleanupAllowance,
+        DiagnosticCollectorMutation mutation)
+    {
+        var readyPath = CreateReadyPath(name);
+        try
+        {
+            var failure = await CollectFailureAsync(
+                    CreateRequest(
+                        parent,
+                        SupervisorHost.CollectorBlockWithReadyArgument,
+                        operationAllowance,
+                        cleanupAllowance,
+                        readyPath),
+                    mutation)
+                .ConfigureAwait(true);
+            AssertBlockingTaskEstablished(readyPath);
+            return failure;
+        }
+        finally
+        {
+            File.Delete(readyPath);
+        }
+    }
+
+    private static void AssertBlockingTaskEstablished(string readyPath)
+    {
+        Assert.True(File.Exists(readyPath));
+        using var ready = JsonDocument.Parse(File.ReadAllText(readyPath));
+        Assert.True(ready.RootElement.GetProperty("ProcessId").GetInt32() > 0);
+        Assert.True(ready.RootElement.GetProperty("BlockingTaskEstablished").GetBoolean());
     }
 
     private static DiagnosticCollectorRequest CreateRequest(

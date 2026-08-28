@@ -17,6 +17,8 @@ internal static class SupervisorHost
     internal const string BlockForeverArgument = "--block-forever";
     internal const string CollectorBlockWithReadyArgument =
         "--collector-block-with-ready";
+    internal const string CollectorPublishBeforeBlockArgument =
+        "--collector-publish-before-block";
     internal const string CollectorOutputArgument = "--collector-output";
     internal const string CollectorNonzeroArgument = "--collector-nonzero";
     internal const string CollectorLargeOutputArgument = "--collector-large-output";
@@ -69,25 +71,22 @@ internal static class SupervisorHost
             return 0;
         }
         if (arguments.Count == 2 &&
-            string.Equals(
-                arguments[0],
-                CollectorBlockWithReadyArgument,
-                StringComparison.Ordinal))
+            (string.Equals(
+                    arguments[0],
+                    CollectorBlockWithReadyArgument,
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    arguments[0],
+                    CollectorPublishBeforeBlockArgument,
+                    StringComparison.Ordinal)))
         {
-            await Console.Out.WriteAsync("collector-before-block-stdout")
-                .ConfigureAwait(false);
-            await Console.Error.WriteAsync("collector-before-block-stderr")
-                .ConfigureAwait(false);
-            await Task.WhenAll(Console.Out.FlushAsync(), Console.Error.FlushAsync())
-                .ConfigureAwait(false);
-            await PublishProbeAsync(
+            return await RunCollectorBlockProbeAsync(
                     arguments[1],
-                    new CollectorReadyProbeResult(Environment.ProcessId),
-                    injectFailure: false)
+                    publishBeforeBlock: string.Equals(
+                        arguments[0],
+                        CollectorPublishBeforeBlockArgument,
+                        StringComparison.Ordinal))
                 .ConfigureAwait(false);
-            await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
-                .ConfigureAwait(false);
-            return 0;
         }
         if (arguments.Count == 1 &&
             string.Equals(arguments[0], CollectorOutputArgument, StringComparison.Ordinal))
@@ -492,6 +491,50 @@ internal static class SupervisorHost
         return exitCode;
     }
 
+    private static async Task<int> RunCollectorBlockProbeAsync(
+        string readyPath,
+        bool publishBeforeBlock)
+    {
+        await Console.Out.WriteAsync("collector-before-block-stdout")
+            .ConfigureAwait(false);
+        await Console.Error.WriteAsync("collector-before-block-stderr")
+            .ConfigureAwait(false);
+        await Task.WhenAll(Console.Out.FlushAsync(), Console.Error.FlushAsync())
+            .ConfigureAwait(false);
+
+        if (publishBeforeBlock)
+        {
+            await PublishProbeAsync(
+                    readyPath,
+                    new CollectorReadyProbeResult(
+                        Environment.ProcessId,
+                        BlockingTaskEstablished: false),
+                    injectFailure: false)
+                .ConfigureAwait(false);
+        }
+
+        var blockingTask = Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None);
+        if (blockingTask.IsCompleted)
+        {
+            throw new InvalidOperationException(
+                "The collector blocking task completed before publication.");
+        }
+
+        if (!publishBeforeBlock)
+        {
+            await PublishProbeAsync(
+                    readyPath,
+                    new CollectorReadyProbeResult(
+                        Environment.ProcessId,
+                        BlockingTaskEstablished: true),
+                    injectFailure: false)
+                .ConfigureAwait(false);
+        }
+
+        await blockingTask.ConfigureAwait(false);
+        return 0;
+    }
+
     private static async Task WriteCollectorChunksAsync(
         TextWriter writer,
         string chunk,
@@ -682,5 +725,7 @@ internal static class SupervisorHost
 
     private sealed record OwnedTreeProbeResult(int RootProcessId, int ChildProcessId);
 
-    private sealed record CollectorReadyProbeResult(int ProcessId);
+    private sealed record CollectorReadyProbeResult(
+        int ProcessId,
+        bool BlockingTaskEstablished);
 }

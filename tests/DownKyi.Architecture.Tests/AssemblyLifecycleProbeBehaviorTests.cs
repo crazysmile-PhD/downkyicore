@@ -11,6 +11,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_FORENSICS_HELPER_AUTHORITY";
     private const string CaptureBudgetMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET";
+    private const string StartupWindowMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_FORENSICS_STARTUP_WINDOW";
+    private const string EarlyReadyMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_FORENSICS_EARLY_READY";
     private const string CleanupReportMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_CLEANUP_REPORT";
     private const string CaptureBudgetSelfTestRejection =
@@ -232,13 +236,84 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "Test-OwnedDiagnosticCollectorCaptureWindow",
             source,
             StringComparison.Ordinal);
-        Assert.Contains("--block-forever", source, StringComparison.Ordinal);
+        Assert.Contains("--collector-block-with-ready", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "-Arguments @($ProcessSupervisionAssembly, \"--block-forever\")",
+            source,
+            StringComparison.Ordinal);
         Assert.Contains(
             CaptureBudgetMutationEnvironmentVariable,
             source,
             StringComparison.Ordinal);
         Assert.DoesNotContain("New-OwnerAllocatedForensicsCaptureWindow", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Get-ForensicsCaptureWaitMilliseconds", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CaptureWindowSelfTestRejectsDeadlineBeforeFixtureReady()
+    {
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(StartupWindowMutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            var mutation = TryExecuteLifecycleMutation(
+                StartupWindowMutationEnvironmentVariable,
+                "startup-window");
+            if (mutation is null)
+            {
+                return;
+            }
+
+            Assert.False(
+                IsExpectedLifecycleMutationRejection(
+                    mutation,
+                    CaptureBudgetSelfTestRejection),
+                "The real lifecycle self-test rejected a deadline before fixture ready.");
+            return;
+        }
+
+        var source = ReadFunction(
+            ReadLifecycleGate(),
+            "Test-OwnedDiagnosticCollectorCaptureWindow");
+        Assert.Contains(StartupWindowMutationEnvironmentVariable, source, StringComparison.Ordinal);
+        Assert.Contains("[TimeSpan]::FromMilliseconds(1)", source, StringComparison.Ordinal);
+        Assert.Contains("blockingTaskEstablished", source, StringComparison.Ordinal);
+        Assert.Contains("collectorStarted", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CaptureWindowSelfTestRejectsReadyPublishedBeforeBlockingTask()
+    {
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(EarlyReadyMutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            var mutation = TryExecuteLifecycleMutation(
+                EarlyReadyMutationEnvironmentVariable,
+                "early-ready");
+            if (mutation is null)
+            {
+                return;
+            }
+
+            Assert.False(
+                IsExpectedLifecycleMutationRejection(
+                    mutation,
+                    CaptureBudgetSelfTestRejection),
+                "The real lifecycle self-test rejected ready publication before blocking.");
+            return;
+        }
+
+        var source = ReadFunction(
+            ReadLifecycleGate(),
+            "Test-OwnedDiagnosticCollectorCaptureWindow");
+        Assert.Contains(EarlyReadyMutationEnvironmentVariable, source, StringComparison.Ordinal);
+        Assert.Contains("--collector-publish-before-block", source, StringComparison.Ordinal);
+        Assert.Contains("readyProcessIdValid", source, StringComparison.Ordinal);
+        Assert.Contains("stdoutMarkerPreserved", source, StringComparison.Ordinal);
+        Assert.Contains("stderrMarkerPreserved", source, StringComparison.Ordinal);
     }
 
     [Fact]

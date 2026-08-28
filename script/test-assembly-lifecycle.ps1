@@ -376,19 +376,33 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
         $env:DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET -eq "1") {
         $budget.RemainingOperation
     }
+    elseif ($env:DOWNKYI_TEST_MUTATE_FORENSICS_STARTUP_WINDOW -eq "1") {
+        [TimeSpan]::FromMilliseconds(1)
+    }
     else {
-        [TimeSpan]::FromSeconds(1)
+        [TimeSpan]::FromSeconds(3)
     }
     $captureWindow = $budget.AllocateDiagnosticCollectorWindow(
         $operationAllowance,
         [TimeSpan]::FromSeconds(1))
+    $readyPath = Join-Path ([System.IO.Path]::GetTempPath()) (
+        "downkyi-collector-ready-{0}.json" -f [Guid]::NewGuid().ToString("N"))
+    $probeArgument = if (
+        $env:DOWNKYI_TEST_MUTATE_FORENSICS_EARLY_READY -eq "1") {
+        "--collector-publish-before-block"
+    }
+    else {
+        "--collector-block-with-ready"
+    }
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $failure = $null
     $unexpectedFailureType = $null
+    $readyEvidence = $null
+    $readyEvidenceErrorType = $null
     try {
         $null = Invoke-OwnedDiagnosticCollector `
             -FileName "dotnet" `
-            -Arguments @($ProcessSupervisionAssembly, "--block-forever") `
+            -Arguments @($ProcessSupervisionAssembly, $probeArgument, $readyPath) `
             -CaptureWindow $captureWindow
     }
     catch {
@@ -402,18 +416,54 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
         $stopwatch.Stop()
     }
 
+    try {
+        if (Test-Path -LiteralPath $readyPath -PathType Leaf) {
+            $readyEvidence = Get-Content -LiteralPath $readyPath -Raw |
+                ConvertFrom-Json
+        }
+    }
+    catch {
+        $readyEvidenceErrorType = $_.Exception.GetType().Name
+    }
+    finally {
+        Remove-Item -LiteralPath $readyPath -Force -ErrorAction SilentlyContinue
+    }
+
     $operationDeadlineKind =
         [DownKyi.ProcessSupervision.DiagnosticCollectorFailureKind]::OperationDeadlineExceeded
-    $passed = $null -ne $failure -and
-        $failure.Failure.Kind -eq $operationDeadlineKind -and
-        $failure.Failure.Evidence.Started -and
-        $failure.Failure.Evidence.Reaped -and
-        $failure.Failure.Evidence.StreamsDrained -and
-        $failure.CleanupFailures.Count -eq 0 -and
-        $stopwatch.Elapsed -lt [TimeSpan]::FromSeconds(4) -and
-        $budget.RemainingOperation -gt [TimeSpan]::FromSeconds(1)
+    $contractChecks = [ordered]@{
+        typedFailureObserved = $null -ne $failure
+        operationDeadlinePreserved = $null -ne $failure -and
+            $failure.Failure.Kind -eq $operationDeadlineKind
+        collectorStarted = $null -ne $failure -and
+            $failure.Failure.Evidence.Started
+        blockingTaskEstablished = $null -ne $readyEvidence -and
+            $readyEvidence.BlockingTaskEstablished -eq $true
+        readyProcessIdValid = $null -ne $readyEvidence -and
+            $readyEvidence.ProcessId -gt 0
+        stdoutMarkerPreserved = $null -ne $failure -and
+            $failure.Failure.Evidence.StandardOutput.Contains(
+                "collector-before-block-stdout")
+        stderrMarkerPreserved = $null -ne $failure -and
+            $failure.Failure.Evidence.StandardError.Contains(
+                "collector-before-block-stderr")
+        authoritativeReapCompleted = $null -ne $failure -and
+            $failure.Failure.Evidence.Reaped
+        streamsDrained = $null -ne $failure -and
+            $failure.Failure.Evidence.StreamsDrained
+        cleanupSucceeded = $null -ne $failure -and
+            $failure.CleanupFailures.Count -eq 0
+        elapsedBounded = $stopwatch.Elapsed -lt [TimeSpan]::FromSeconds(4)
+        parentBudgetPreserved =
+            $budget.RemainingOperation -gt [TimeSpan]::FromSeconds(1)
+    }
+    $passed = -not ($contractChecks.Values -contains $false)
     return [pscustomobject]@{
         passed = $passed
+        probeArgument = $probeArgument
+        operationAllowanceMilliseconds = [Math]::Round(
+            $operationAllowance.TotalMilliseconds,
+            3)
         failureKind = if ($null -eq $failure) {
             $null
         }
@@ -432,6 +482,9 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
             }
         )
         unexpectedFailureType = $unexpectedFailureType
+        readyEvidence = $readyEvidence
+        readyEvidenceErrorType = $readyEvidenceErrorType
+        contractChecks = [pscustomobject]$contractChecks
         elapsedMilliseconds = [Math]::Round($stopwatch.Elapsed.TotalMilliseconds, 3)
         parentRemainingOperationMilliseconds = [Math]::Round(
             $budget.RemainingOperation.TotalMilliseconds,
@@ -1827,7 +1880,16 @@ if ($ValidateForensics) {
         -ProcessSupervisionAssembly $processSupervisionAssembly
     $forensicsCollectorCaptureWindowSelfTestPassed =
         $forensicsCollectorCaptureWindowSelfTest.passed
+    $forensicsCollectorCaptureWindowSelfTest |
+        ConvertTo-Json -Depth 8 |
+        Set-Content -LiteralPath (
+            Join-Path $runRoot "forensics-collector-capture-window-self-test.json") `
+            -Encoding utf8
     if (-not $forensicsCollectorCaptureWindowSelfTestPassed) {
+        Write-Host (
+            "Forensics collector capture-window self-test evidence: {0}" -f
+            ($forensicsCollectorCaptureWindowSelfTest |
+                ConvertTo-Json -Depth 8 -Compress))
         throw "Forensics collector capture-window self-test did not fail closed."
     }
 }

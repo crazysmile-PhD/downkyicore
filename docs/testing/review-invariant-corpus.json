@@ -167,6 +167,22 @@
           "kind": "adversarial-mutation",
           "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
           "class": "DownKyi.Architecture.Tests.AssemblyLifecycleProbeBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_FORENSICS_STARTUP_WINDOW",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.AssemblyLifecycleProbeBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_FORENSICS_EARLY_READY",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.AssemblyLifecycleProbeBehaviorTests",
           "environmentVariable": "DOWNKYI_TEST_MUTATE_FORENSICS_CLEANUP_REPORT",
           "environmentValue": "1",
           "expectedOutcome": "test-failure"
