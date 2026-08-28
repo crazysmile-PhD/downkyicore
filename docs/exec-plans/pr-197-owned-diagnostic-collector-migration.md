@@ -435,7 +435,7 @@ monotonic exit offset. Lifecycle policy links target exit to observer
 cancellation, so an already-started diagnostic child returns typed
 `CallerCancelled` and completes bounded cleanup when its target is gone. Phase
 duration uses the owner's target-exit offset instead of observer wall time. The
-unlinked mutation consumes the full 600 ms collector allowance and returns
+unlinked mutation consumes the full three-second collector allowance and returns
 `OperationDeadlineExceeded`. The 15-second capture window, five-second cleanup
 allowance, parent `TransitionBudget`, collector ownership/reap/drain semantics
 and absence of retry/sleep are unchanged.
@@ -466,6 +466,56 @@ and Strict PR CI, Assembly Lifecycle and a clean same-head Codex review. Stage
 release and tag movement remain out of scope. No stop rule was triggered and no
 closed Stage 3 single-deadline, authoritative reap or drain contract was
 reopened.
+
+### First Exact-Head CI And Proof-Fixture Follow-up
+
+Documentation head `0c888fa76fcbd7c160c2fb4405f990430b125b2e`
+triggered Strict PR run
+[33171141030](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33171141030)
+without rerunning the earlier failure. Eighteen checks passed, nine release-only
+checks skipped and two checks failed. The artifacts proved the production
+diagnostic correction itself:
+
+- Assembly Lifecycle ran eight assemblies and 147 phase results. All 12 slow
+  phases captured evidence, `SlowEvidenceMissing` was zero, the real attach-stall
+  self-test passed and lifecycle ownership remained 633/0.
+- Its only execution failure was the new unlinked-cancellation mutation in
+  `DownKyi.Windows.Tests`. The 600 ms test allowance expired before hosted
+  process startup published the blocking-ready record, so the mutation failed
+  its own synchronization precondition rather than the target-exit contract.
+- The Windows review-invariant job passed the first two lifecycle adversarial
+  profiles. The capture-budget profile then reached the outer wrapper without
+  the exact rejection. The old wrapper returned `null` for a host-execution or
+  temporary-directory cleanup exception without retaining its type. Source
+  inspection showed that `Directory.Delete` in `finally` could replace an
+  already-captured child result, while local Windows validation in this
+  checkpoint had already exposed transient sharing violations. The corpus
+  correctly failed closed with zero owning failures instead of accepting an
+  unrelated exception as proof.
+
+Test-only implementation follow-up
+`63cbd5d2e310ebc28330999f153cadf27a334552` preserves the proof boundaries:
+
+1. The unlinked target-exit mutation uses the already-established three-second
+   hosted-start fixture allowance, waits on the published blocking transition,
+   proves target exit occurs before the allowance and then proves the collector
+   consumes at least 2.5 seconds before typed timeout.
+2. Mutation report cleanup remains best effort. A sharing or access failure is
+   emitted as xUnit diagnostic output and cannot replace the already-captured
+   child exit/output. Only the exact lifecycle self-test rejection makes the
+   adversarial profile red.
+
+No retry, sleep, deadline increase, policy change, collector production change
+or ownership change was added. Local follow-up validation passed the focused
+collector/window classes 19/19, the normal lifecycle Architecture class 9/9,
+the capture-budget mutation with exactly one owning failure among nine tests,
+the full Architecture project 316/316, the review corpus with 325 tests and all
+seven adversarial proofs, and the routed Windows project 74/74. Format and diff
+checks remained clean.
+
+Status: pending this follow-up documentation checkpoint, a new exact-head push,
+required CI and same-head review. The first exact-head run is diagnostic
+evidence, not a run to rerun or relabel green.
 
 ## Native CI Matrix
 

@@ -916,6 +916,18 @@ Status: Stage 3 remains open pending the documentation checkpoint, exact-head
 CI and same-head review. Stage 4A remains completed and is not reopened;
 production Stage 4 and all later stages remain deferred.
 
+First exact-head run `33171141030` proved the formal correction: all 12 slow
+phases captured evidence, `SlowEvidenceMissing` was zero and the attach-stall
+self-test passed. Its two failures were proof-fixture defects: the unlinked
+mutation's 600 ms allowance did not reach ready on hosted Windows, and temporary
+mutation-report cleanup could replace a child result without preserving its
+exception type. Test-only follow-up
+`63cbd5d2e310ebc28330999f153cadf27a334552` reuses the existing three-second
+hosted-start allowance and makes best-effort report cleanup diagnostic-only.
+It changes no lease, observer, collector, timeout or Stage 4A contract. Exact
+evidence and follow-up validation remain in
+`pr-197-owned-diagnostic-collector-migration.md`.
+
 ## Stage 4A: Restart Handoff Feasibility
 
 The original composition assumption is invalidated. An ordinary
