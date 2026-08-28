@@ -369,6 +369,16 @@ collector window and no sleep, retry or renewed deadline. This fixture
 classifies a pre-session attach stall; it is not a repository IPC endpoint or a
 replacement diagnostics implementation.
 
+The fake target's `ConnectedAfterMilliseconds` and the collector transition
+timeline have different monotonic origins, so they must never be subtracted or
+ordered against one another. The self-test instead records Unix milliseconds
+for collector request creation, diagnostics-pipe acceptance and typed return.
+Connection acceptance must fall within that request/return interval, while the
+typed `OperationDeadlineExceeded` transition must consume at least 2,900 ms of
+the existing three-second caller-owned window from request creation. Tool
+startup is part of that same caller window; this oracle does not invent a new
+post-start allowance.
+
 ## Comparing Results
 
 Do not compare timing numbers collected on different machines. Every report

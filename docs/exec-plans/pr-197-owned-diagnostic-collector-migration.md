@@ -517,6 +517,63 @@ Status: pending this follow-up documentation checkpoint, a new exact-head push,
 required CI and same-head review. The first exact-head run is diagnostic
 evidence, not a run to rerun or relabel green.
 
+### Second Exact-Head CI And Attach-Oracle Correction
+
+Documentation head `1fd49889ffdbd11d3534e36fcd9e8c15e1e4e4b2`
+triggered Strict PR run
+[33173057693](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33173057693).
+Eighteen checks passed, nine release-only checks skipped and two checks failed.
+Neither failure invalidated the formal-phase diagnosis or the target-exit fix:
+
+- Assembly Lifecycle job
+  [98854688529](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33173057693/job/98854688529)
+  failed before formal phases in the attach-stall self-test. The exact fake
+  diagnostics target accepted the connection, the collector returned typed
+  `OperationDeadlineExceeded` at 2,999.099 ms with empty output and no trace,
+  reap completed at 2,992.910 ms, drain completed at 2,994.918 ms, cleanup was
+  empty and 6,661.646 ms of parent budget remained. Only
+  `windowConsumedAfterStart` was false because it incorrectly required 2.5
+  seconds after the external tool's `ProcessStarted` transition. The
+  caller-owned three-second window already includes tool startup.
+- Windows review job
+  [98854689514](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33173057693/job/98854689514)
+  again failed closed when the capture-budget adversarial profile produced no
+  exact owning failure. The wrapper's passing path did not retain the caught
+  host or cleanup exception type in CI output, so this remains a proof-host
+  observability issue rather than accepted mutation evidence.
+
+Test-only implementation follow-up
+`13207a0d4e546068367279bea8932aea8c292ac7` corrects only those proof oracles.
+The diagnostics-pipe fixture now publishes a connection UTC timestamp, and the
+lifecycle self-test records collector request/typed-return UTC timestamps. It
+requires pipe acceptance inside that interval and at least 2,900 ms from
+request to typed timeout; it no longer compares monotonic durations from two
+different processes. The mutation wrapper emits the exact caught exception
+type to xUnit test output without changing pass/fail classification. No
+production code, timeout, retry, sleep, lease, collector owner, cleanup policy
+or Stage 4A boundary changed.
+
+Exact local attach proof recorded request `1787922077742`, connection
+`1787922078276` and typed return `1787922080754` Unix milliseconds. Collector
+process start was 287.756 ms and typed return was 2,992.776 ms on the collector
+timeline; pipe acceptance was inside the request/return interval, no progress
+appeared, reap/drain completed and 6,302.324 ms of parent operation budget
+remained. The one-assembly lifecycle gate then reported nine phases, zero
+failures, zero missing slow evidence and a passing attach-stall self-test.
+
+Local final validation for this implementation head passed focused collector
+tests 19/19, the normal lifecycle Architecture class 9/9, the capture-budget
+mutation with eight passes and exactly one owning failure among nine executed
+tests, full Architecture 316/316, Windows 74/74, and the review corpus with 325
+tests plus all seven adversarial proofs. Process-supervision build, PowerShell
+parse, format verification and diff checks also passed.
+
+Status: pending this documentation checkpoint, exact-head push, required native
+and Strict PR CI, and a same-head Codex review. The failed exact-head run is
+retained as diagnostic evidence and will not be rerun. Stage 4A remains
+completed and closed; Stage 4 production, Stage 5, merge, release and tag work
+remain out of scope.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates

@@ -928,6 +928,18 @@ It changes no lease, observer, collector, timeout or Stage 4A contract. Exact
 evidence and follow-up validation remain in
 `pr-197-owned-diagnostic-collector-migration.md`.
 
+Second exact-head run `33173057693` preserved the typed attach-stall evidence
+but exposed an invalid proof comparison: the fake target's connection duration
+and the collector's transition duration came from different monotonic origins,
+and the oracle incorrectly demanded 2.5 seconds after tool process start even
+though startup belongs to the caller-owned three-second window. Test-only
+follow-up `13207a0d4e546068367279bea8932aea8c292ac7` aligns request, pipe
+acceptance and typed return with cross-process UTC timestamps, measures window
+consumption from request creation, and retains wrapper exception types in xUnit
+output. It changes no process-lease production contract, timeout, retry,
+ownership boundary or Stage 4A status. Exact timing, CI and validation evidence
+is authoritative in `pr-197-owned-diagnostic-collector-migration.md`.
+
 ## Stage 4A: Restart Handoff Feasibility
 
 The original composition assumption is invalidated. An ordinary
