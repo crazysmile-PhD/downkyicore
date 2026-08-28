@@ -399,6 +399,14 @@ or another child failure is not proof. A normal Windows `-ValidateForensics`
 run still requires the pinned real tool before the attach-stall self-test or any
 formal evidence capture begins.
 
+The target-exit cancellation platform fixture uses separate collector-ready and
+target-exit signal paths. It waits for an internal test-only observation set
+immediately after the collector owner records `ProcessStarted`, then verifies
+the blocking-ready record before signaling target exit. This proves cancellation
+of an already-started collector without a timing allowance. The unlinked
+mutation uses the same ordering and must instead consume the typed collector
+window.
+
 ## Comparing Results
 
 Do not compare timing numbers collected on different machines. Every report

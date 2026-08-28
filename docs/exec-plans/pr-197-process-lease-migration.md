@@ -966,6 +966,20 @@ capture. No process-lease contract, timeout, ownership, workflow, production or
 Stage 4A boundary changed. Exact CI and local evidence is authoritative in
 `pr-197-owned-diagnostic-collector-migration.md`.
 
+Fifth exact-head run `33178177118` proved the formal correction across all eight
+assemblies and 147 phases: all six slow phases captured evidence, missing
+evidence was zero, attach-stall passed and ownership remained 633/0. Its only
+failed job was a Windows fixture ordering gap after Architecture and review
+invariants had passed. The child could publish its blocking-ready file and make
+the target exit before the collector owner recorded `ProcessStarted`, producing
+typed `CallerCancelled` with `Evidence.Started=false`. Test-only follow-up
+`f38cd23bf2f8acc3978d11adcedbace3d236e2e8` separates the ready and target-exit
+signals and exposes a nonthrowing internal completion source only after owner
+start observation. It changes no public collector API, process-lease contract,
+timeout, ownership, workflow, production or Stage 4A boundary. Exact CI and
+local validation evidence is authoritative in
+`pr-197-owned-diagnostic-collector-migration.md`.
+
 ## Stage 4A: Restart Handoff Feasibility
 
 The original composition assumption is invalidated. An ordinary

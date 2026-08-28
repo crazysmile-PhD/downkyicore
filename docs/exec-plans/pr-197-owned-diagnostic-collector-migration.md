@@ -692,6 +692,54 @@ failed exact-head runs remain diagnostic evidence and will not be rerun. Stage
 4A remains completed and closed; production Stage 4, Stage 5, merge, release
 and tag movement remain out of scope.
 
+### Fifth Exact-Head CI And Started-Collector Fixture
+
+Documentation head `e7842f5a155afb5101cb42ef545204d2976c528d` triggered Strict PR
+run
+[33178177118](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33178177118).
+All other exact-head workflows passed, and 11 of 12 Strict jobs passed. The run
+was allowed to finish and was not rerun:
+
+- Assembly Lifecycle job
+  [98872168523](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33178177118/job/98872168523)
+  passed all eight assemblies and 147 phases. Artifact `9688857106` records six
+  slow phases, six captured evidence bundles, zero missing evidence, ownership
+  633/0 and passing interrupted-stack and attach-stall self-tests. The attach
+  caller interval was 3,020 ms, with accepted diagnostics connection, typed
+  deadline, empty tool output/trace, authoritative reap/drain and no cleanup
+  failure.
+- Windows job
+  [98872168535](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33178177118/job/98872168535)
+  passed Architecture and the complete review corpus, including the exact
+  capture-budget mutation, then failed one of 74 full-project tests. Artifact
+  `9688787788` identifies only
+  `TargetExitCancellationStopsAnAlreadyStartedCollector`: its result was typed
+  `CallerCancelled`, but `Evidence.Started` was false.
+
+The failure was a deterministic-fixture ordering gap. The target watched the
+same file that the collector child published after establishing its blocking
+task. The child could publish and make the target exit before the collector
+owner returned from lease acquisition and recorded `ProcessStarted`; therefore
+the test name's already-started precondition was not established. Fixture
+follow-up `f38cd23bf2f8acc3978d11adcedbace3d236e2e8` separates collector-ready
+from target-exit signaling and adds a nonthrowing internal test-only completion
+source set immediately after the owner records `ProcessStarted`. The test waits
+for both that observation and the blocking-ready record before signaling target
+exit. The unlinked mutation keeps the same order and still expects typed
+`OperationDeadlineExceeded`.
+
+Exact implementation-head local validation passed the collector platform class
+18/18 and the full Windows project 74/74. Full Architecture passed 316/316 and
+the review corpus passed 325 tests plus seven adversarial proofs on the same
+fixture behavior; format and diff checks passed after the final completion-source
+narrowing. The public collector API, lifecycle caller, timeout, retry, sleep,
+owner, lease, cleanup, production workflow and Stage 4A state are unchanged.
+
+Status: pending exact-head push, required CI and same-head review. The five
+failed exact-head runs remain diagnostic evidence and will not be rerun. Stage
+4A remains completed and closed; production Stage 4, Stage 5, merge, release
+and tag movement remain out of scope.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates
