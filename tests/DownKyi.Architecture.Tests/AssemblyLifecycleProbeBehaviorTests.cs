@@ -104,6 +104,29 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
     }
 
     [Fact]
+    public void EvidenceCaptureLeadStartsAfterTheOwnedLeaseIsEstablished()
+    {
+        var isolatedProcess = ReadFunction(ReadLifecycleGate(), "Invoke-IsolatedProcess");
+        var leaseReadyIndex = isolatedProcess.IndexOf(
+            "$processId = $lease.TargetProcessId",
+            StringComparison.Ordinal);
+        var observationClockIndex = isolatedProcess.IndexOf(
+            "$evidenceObservationStopwatch = [System.Diagnostics.Stopwatch]::StartNew()",
+            StringComparison.Ordinal);
+
+        Assert.True(leaseReadyIndex >= 0);
+        Assert.True(observationClockIndex > leaseReadyIndex);
+        Assert.Contains(
+            "$evidenceObservationStopwatch.Elapsed.TotalSeconds",
+            isolatedProcess,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "$stopwatch.Elapsed.TotalSeconds -ge $evidenceCaptureThresholdSeconds",
+            isolatedProcess,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ObserverTruthMutationCannotSatisfyTheProcessOwnerGate()
     {
         var source = ReadLifecycleGate();

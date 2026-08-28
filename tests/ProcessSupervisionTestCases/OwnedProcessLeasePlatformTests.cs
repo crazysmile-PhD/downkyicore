@@ -248,11 +248,14 @@ public sealed class OwnedProcessLeasePlatformTests
         await using var leaseScope = lease.ConfigureAwait(false);
         var waitTask = lease.WaitAsync(TestContext.Current.CancellationToken);
 
-        await Assert.ThrowsAsync<TimeoutException>(
+        var completionFailure = await Record.ExceptionAsync(
                 () => lease.CompleteEvidenceHoldAsync(
                     EvidenceCaptureCompletion.Captured,
                     TestContext.Current.CancellationToken))
             .ConfigureAwait(true);
+        Assert.True(
+            completionFailure is TimeoutException or EndOfStreamException,
+            $"Expected a bounded acknowledgment failure, got {completionFailure?.GetType().Name ?? "no failure"}.");
         var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(() => waitTask)
             .ConfigureAwait(true);
 

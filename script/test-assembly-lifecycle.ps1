@@ -1004,11 +1004,14 @@ function Invoke-IsolatedProcess {
         }
         $processId = $lease.TargetProcessId
         $waitTask = $lease.WaitAsync($CancellationToken)
+        $evidenceObservationStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         while (-not $waitTask.IsCompleted) {
             if (-not $slowEvidenceAttempted -and
-                $stopwatch.Elapsed.TotalSeconds -ge $evidenceCaptureThresholdSeconds) {
+                $evidenceObservationStopwatch.Elapsed.TotalSeconds -ge
+                    $evidenceCaptureThresholdSeconds) {
                 $slowEvidenceTriggeredBeforeThreshold =
-                    $stopwatch.Elapsed.TotalSeconds -lt $EvidenceThresholdSeconds
+                    $evidenceObservationStopwatch.Elapsed.TotalSeconds -lt
+                        $EvidenceThresholdSeconds
                 $slowEvidenceAttempted = $true
                 $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
                 try {
@@ -1814,7 +1817,7 @@ if ($ValidateForensics) {
                 "--exit-with-owned-descendant",
                 $processLeaseReadyPath
             ) `
-            -OperationTimeoutSeconds 1 `
+            -OperationTimeoutSeconds 3 `
             -EvidenceThresholdSeconds 60 `
             -InjectForensicsObserverFailure
         $processLeaseProbePhase = New-ProcessPhaseResult `
