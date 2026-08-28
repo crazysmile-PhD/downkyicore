@@ -20,8 +20,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\DownKyi.Core\DownKyi.Core.csproj" />
     <ProjectReference Include="..\..\tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj" />
+    <ProjectReference Include="..\..\tools\DownKyi.RestartHandoff.FeasibilityFixture\DownKyi.RestartHandoff.FeasibilityFixture.csproj" />
     <Compile Include="..\ProcessSupervisionTestCases\OwnedDiagnosticCollectorPlatformTests.cs" Link="OwnedDiagnosticCollectorPlatformTests.cs" />
     <Compile Include="..\ProcessSupervisionTestCases\OwnedProcessLeasePlatformTests.cs" Link="OwnedProcessLeasePlatformTests.cs" />
+    <Compile Include="..\ProcessSupervisionTestCases\RestartHandoffFeasibilityTests.cs" Link="RestartHandoffFeasibilityTests.cs" />
   </ItemGroup>
 
   <ItemGroup>
