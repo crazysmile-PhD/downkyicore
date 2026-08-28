@@ -11,8 +11,12 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_FORENSICS_HELPER_AUTHORITY";
     private const string CaptureBudgetMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET";
+    private const string CleanupReportMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_FORENSICS_CLEANUP_REPORT";
     private const string CaptureBudgetSelfTestRejection =
         "Forensics collector capture-window self-test did not fail closed.";
+    private const string CleanupReportSelfTestRejection =
+        "Forensics collector cleanup-report self-test did not preserve evidence.";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
@@ -26,11 +30,14 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         {
             source = source.Replace(
                 "    $launchSpec = [DownKyi.ProcessSupervision.LaunchSpec]::new(",
-                "    $startInfo = New-Object -TypeName System.Diagnostics.ProcessStartInfo\n" +
-                "    $collector = New-Object -TypeName System.Diagnostics.Process\n" +
-                "    $null = Start-Process -FilePath 'pwsh' -PassThru\n" +
-                "    Stop-Process -Id 1\n" +
-                "    Wait-Process -Id 1\n" +
+                "    $startInfo = Microsoft.PowerShell.Management\\New-Object " +
+                "-TypeName System.Diagnostics.ProcessStartInfo\n" +
+                "    $collector = Microsoft.PowerShell.Management\\New-Object " +
+                "-TypeName System.Diagnostics.Process\n" +
+                "    $null = Microsoft.PowerShell.Management\\Start-Process " +
+                "-FilePath 'pwsh' -PassThru\n" +
+                "    Microsoft.PowerShell.Management\\Stop-Process -Id 1\n" +
+                "    Microsoft.PowerShell.Management\\Wait-Process -Id 1\n" +
                 "    $launchSpec = [DownKyi.ProcessSupervision.LaunchSpec]::new(",
                 StringComparison.Ordinal);
         }
@@ -97,6 +104,27 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
     [Fact]
     public void PowerShellReportPreservesTypedCollectorFailureEvidence()
     {
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(CleanupReportMutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            var mutation = TryExecuteLifecycleMutation(
+                CleanupReportMutationEnvironmentVariable,
+                "cleanup-report");
+            if (mutation is null)
+            {
+                return;
+            }
+
+            Assert.False(
+                IsExpectedLifecycleMutationRejection(
+                    mutation,
+                    CleanupReportSelfTestRejection),
+                "The real lifecycle self-test rejected lost collector cleanup evidence.");
+            return;
+        }
+
         var source = ReadLifecycleGate();
         var observer = ReadFunction(source, "Invoke-ForensicsObserverCapture");
         var isolatedProcess = ReadFunction(source, "Invoke-IsolatedProcess");
@@ -113,6 +141,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.Contains("collectorFailureKind", observer, StringComparison.Ordinal);
         Assert.Contains("collectorEvidence", observer, StringComparison.Ordinal);
         Assert.Contains("collectorCleanupFailures", observer, StringComparison.Ordinal);
+        Assert.Contains(
+            "ConvertTo-DiagnosticCollectorFailureReport",
+            observer,
+            StringComparison.Ordinal);
         Assert.Contains(
             "slowEvidenceCollectorFailureKind",
             isolatedProcess,
@@ -133,6 +165,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "forensicsCollectorCaptureWindowSelfTest =",
             source,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "forensicsCollectorCleanupReportSelfTest =",
+            source,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -150,36 +186,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
                 "1",
                 StringComparison.Ordinal))
         {
-            BoundedProcessResult mutation;
-            try
-            {
-                mutation = ExecuteCaptureBudgetMutation();
-            }
-            catch (System.ComponentModel.Win32Exception)
-            {
-                return;
-            }
-            catch (AggregateException)
-            {
-                return;
-            }
-            catch (IOException)
-            {
-                return;
-            }
-            catch (InvalidOperationException)
-            {
-                return;
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (TimeoutException)
-            {
-                return;
-            }
-            catch (UnauthorizedAccessException)
+            var mutation = TryExecuteLifecycleMutation(
+                CaptureBudgetMutationEnvironmentVariable,
+                "capture-budget");
+            if (mutation is null)
             {
                 return;
             }
@@ -288,16 +298,48 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
     private static bool IsExpectedCaptureBudgetMutationRejection(
         BoundedProcessResult mutation)
     {
+        return IsExpectedLifecycleMutationRejection(
+            mutation,
+            CaptureBudgetSelfTestRejection);
+    }
+
+    private static bool IsExpectedLifecycleMutationRejection(
+        BoundedProcessResult mutation,
+        string expectedMessage)
+    {
         return mutation.ExitCode != 0 && mutation.Output.Contains(
-            CaptureBudgetSelfTestRejection,
+            expectedMessage,
             StringComparison.Ordinal);
     }
 
-    private static BoundedProcessResult ExecuteCaptureBudgetMutation()
+    private static BoundedProcessResult? TryExecuteLifecycleMutation(
+        string environmentVariable,
+        string resultPrefix)
+    {
+        try
+        {
+            return ExecuteLifecycleMutation(environmentVariable, resultPrefix);
+        }
+        catch (Exception failure) when (failure is
+            System.ComponentModel.Win32Exception or
+            AggregateException or
+            IOException or
+            InvalidOperationException or
+            OperationCanceledException or
+            TimeoutException or
+            UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static BoundedProcessResult ExecuteLifecycleMutation(
+        string environmentVariable,
+        string resultPrefix)
     {
         var resultsDirectory = Path.Combine(
             Path.GetTempPath(),
-            $"downkyi-forensics-capture-mutation-{Guid.NewGuid():N}");
+            $"downkyi-forensics-{resultPrefix}-mutation-{Guid.NewGuid():N}");
         Directory.CreateDirectory(resultsDirectory);
         try
         {
@@ -329,7 +371,7 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             startInfo.ArgumentList.Add(resultsDirectory);
             startInfo.ArgumentList.Add("-ValidateForensics");
             startInfo.ArgumentList.Add("-NoBuild");
-            startInfo.Environment[CaptureBudgetMutationEnvironmentVariable] = "1";
+            startInfo.Environment[environmentVariable] = "1";
 
             return BoundedProcessRunner.Run(
                 startInfo,
@@ -389,8 +431,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
                 "$ast.FindAll({param($n) $n -is " +
                 "[System.Management.Automation.Language.CommandAst]},$true) | " +
                 "ForEach-Object {$name=$_.GetCommandName(); $text=$_.Extent.Text; " +
-                "if($name -match '(?i)^(Start|Stop|Wait)-Process$' -or " +
-                "($name -match '(?i)^New-Object$' -and " +
+                "$leafName=if([string]::IsNullOrWhiteSpace($name)){$null}" +
+                "else{($name -split '\\\\')[-1]}; " +
+                "if($leafName -match '(?i)^(Start|Stop|Wait)-Process$' -or " +
+                "($leafName -match '(?i)^New-Object$' -and " +
                 "$text -match '(?i)(System\\.)?Diagnostics\\." +
                 "(ProcessStartInfo|Process)')){$violations.Add($text)}}; " +
                 "if($violations.Count -gt 0){$violations; exit 9}; exit 0");

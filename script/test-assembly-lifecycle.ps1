@@ -67,6 +67,8 @@ $forensicsSelfTestCaptureLeadValidated = $false
 $forensicsSelfTestEvidenceHoldValidated = $false
 $forensicsCollectorCaptureWindowSelfTestPassed = $false
 $forensicsCollectorCaptureWindowSelfTest = $null
+$forensicsCollectorCleanupReportSelfTestPassed = $false
+$forensicsCollectorCleanupReportSelfTest = $null
 $markerReaderSelfTestRequired = $IsWindows -and
     @("PR", "Main", "Rehearsal", "Flaky").Contains($Profile)
 $markerReaderSelfTestComplete = $false
@@ -264,6 +266,101 @@ function Get-DiagnosticCollectorExecutionFailure {
     }
 
     return $null
+}
+
+function ConvertTo-DiagnosticCollectorFailureReport {
+    param(
+        [Parameter(Mandatory)]
+        [DownKyi.ProcessSupervision.DiagnosticCollectorExecutionException]$Exception
+    )
+
+    $cleanupFailures = @(
+        $Exception.CleanupFailures | ForEach-Object {
+            [pscustomobject]@{
+                kind = $_.Kind.ToString()
+                causeType = $_.Cause.GetType().Name
+            }
+        }
+    )
+    if ($env:DOWNKYI_TEST_MUTATE_FORENSICS_CLEANUP_REPORT -eq "1") {
+        $cleanupFailures = @()
+    }
+
+    return [pscustomobject]@{
+        status = "capture-failed"
+        evidencePath = $null
+        errorType = $Exception.GetType().Name
+        collectorFailureKind = $Exception.Failure.Kind.ToString()
+        collectorEvidence = $Exception.Failure.Evidence
+        collectorCleanupFailures = $cleanupFailures
+    }
+}
+
+function New-DiagnosticCollectorCleanupFailureFixture {
+    $evidence = [DownKyi.ProcessSupervision.DiagnosticCollectorEvidence]::new(
+        $true,
+        $false,
+        $false,
+        $true,
+        $true,
+        $null,
+        "fixture stdout",
+        "fixture stderr")
+    $primaryFailure = [DownKyi.ProcessSupervision.DiagnosticCollectorFailure]::new(
+        [DownKyi.ProcessSupervision.DiagnosticCollectorFailureKind]::ExecutionFailed,
+        $evidence,
+        [InvalidOperationException]::new("fixture execution failure"))
+    $cleanupFailures = [Collections.Generic.List[
+        DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailure]]::new()
+    $cleanupFailures.Add(
+        [DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailure]::new(
+            [DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailureKind]::TerminateFailed,
+            [UnauthorizedAccessException]::new("fixture terminate failure")))
+    $cleanupFailures.Add(
+        [DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailure]::new(
+            [DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailureKind]::ReapDeadlineExceeded,
+            [TimeoutException]::new("fixture reap deadline")))
+
+    $bindingFlags = [Reflection.BindingFlags]::Instance -bor
+        [Reflection.BindingFlags]::NonPublic
+    $constructor = @(
+        [DownKyi.ProcessSupervision.DiagnosticCollectorExecutionException].
+            GetConstructors($bindingFlags) |
+            Where-Object { $_.GetParameters().Count -eq 2 }
+    ) | Select-Object -First 1
+    if ($null -eq $constructor) {
+        throw "Diagnostic collector execution exception constructor was not found."
+    }
+
+    $arguments = [object[]]::new(2)
+    $arguments[0] = $primaryFailure
+    $arguments[1] = $cleanupFailures
+    return $constructor.Invoke($arguments)
+}
+
+function Test-DiagnosticCollectorCleanupFailureReport {
+    $fixture = New-DiagnosticCollectorCleanupFailureFixture
+    $report = ConvertTo-DiagnosticCollectorFailureReport -Exception $fixture
+    $serialized = $report |
+        ConvertTo-Json -Depth 8 -Compress |
+        ConvertFrom-Json
+    $cleanupFailures = @($serialized.collectorCleanupFailures)
+    $passed = $serialized.errorType -eq
+            "DiagnosticCollectorExecutionException" -and
+        $serialized.collectorFailureKind -eq "ExecutionFailed" -and
+        $serialized.collectorEvidence.StandardOutput -eq "fixture stdout" -and
+        $serialized.collectorEvidence.StandardError -eq "fixture stderr" -and
+        $cleanupFailures.Count -eq 2 -and
+        $cleanupFailures[0].kind -eq "TerminateFailed" -and
+        $cleanupFailures[0].causeType -eq "UnauthorizedAccessException" -and
+        $cleanupFailures[1].kind -eq "ReapDeadlineExceeded" -and
+        $cleanupFailures[1].causeType -eq "TimeoutException"
+    return [pscustomobject]@{
+        passed = $passed
+        failureKind = $serialized.collectorFailureKind
+        evidence = $serialized.collectorEvidence
+        cleanupFailures = $cleanupFailures
+    }
 }
 
 function Test-OwnedDiagnosticCollectorCaptureWindow {
@@ -703,21 +800,8 @@ function Invoke-ForensicsObserverCapture {
         $collectorFailure = Get-DiagnosticCollectorExecutionFailure `
             -Exception $_.Exception
         if ($null -ne $collectorFailure) {
-            return [pscustomobject]@{
-                status = "capture-failed"
-                evidencePath = $null
-                errorType = $collectorFailure.GetType().Name
-                collectorFailureKind = $collectorFailure.Failure.Kind.ToString()
-                collectorEvidence = $collectorFailure.Failure.Evidence
-                collectorCleanupFailures = @(
-                    $collectorFailure.CleanupFailures | ForEach-Object {
-                        [pscustomobject]@{
-                            kind = $_.Kind.ToString()
-                            causeType = $_.Cause.GetType().Name
-                        }
-                    }
-                )
-            }
+            return ConvertTo-DiagnosticCollectorFailureReport `
+                -Exception $collectorFailure
         }
 
         return [pscustomobject]@{
@@ -1731,6 +1815,13 @@ if (-not (Test-Path -LiteralPath $processSupervisionAssembly -PathType Leaf)) {
 }
 [Reflection.Assembly]::LoadFrom($processSupervisionAssembly) | Out-Null
 if ($ValidateForensics) {
+    $forensicsCollectorCleanupReportSelfTest =
+        Test-DiagnosticCollectorCleanupFailureReport
+    $forensicsCollectorCleanupReportSelfTestPassed =
+        $forensicsCollectorCleanupReportSelfTest.passed
+    if (-not $forensicsCollectorCleanupReportSelfTestPassed) {
+        throw "Forensics collector cleanup-report self-test did not preserve evidence."
+    }
     $forensicsCollectorCaptureWindowSelfTest =
         Test-OwnedDiagnosticCollectorCaptureWindow `
         -ProcessSupervisionAssembly $processSupervisionAssembly
@@ -2455,6 +2546,11 @@ $report = [ordered]@{
         $forensicsCollectorCaptureWindowSelfTestPassed
     forensicsCollectorCaptureWindowSelfTest =
         $forensicsCollectorCaptureWindowSelfTest
+    forensicsCollectorCleanupReportSelfTestRequired = [bool]$ValidateForensics
+    forensicsCollectorCleanupReportSelfTestPassed =
+        $forensicsCollectorCleanupReportSelfTestPassed
+    forensicsCollectorCleanupReportSelfTest =
+        $forensicsCollectorCleanupReportSelfTest
     exitThresholdSeconds = $ExitThresholdSeconds
     diagnosticsTool = if ($null -eq $script:diagnosticsTool) {
         "unavailable"

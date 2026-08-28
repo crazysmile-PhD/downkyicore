@@ -162,6 +162,14 @@
           "environmentVariable": "DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET",
           "environmentValue": "1",
           "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.AssemblyLifecycleProbeBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_FORENSICS_CLEANUP_REPORT",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
         }
       ]
     }
