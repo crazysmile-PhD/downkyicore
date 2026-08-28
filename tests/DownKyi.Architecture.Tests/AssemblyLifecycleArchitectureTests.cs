@@ -144,9 +144,13 @@ public sealed class AssemblyLifecycleArchitectureTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "$slowEvidenceCaptureLeadMilliseconds = 1000",
+            "$hostedCollectorStartupAllowanceMilliseconds =",
             source,
             StringComparison.Ordinal);
+        Assert.Matches(
+            @"\$slowEvidenceCaptureLeadMilliseconds\s*=\s*" +
+            @"\$hostedCollectorStartupAllowanceMilliseconds",
+            source);
         Assert.Contains(
             "$EvidenceThresholdSeconds - ($slowEvidenceCaptureLeadMilliseconds / 1000)",
             source,
@@ -166,6 +170,39 @@ public sealed class AssemblyLifecycleArchitectureTests
         AssertUsesSynchronousAutomatedReporting(source, "assembly-info");
         AssertUsesSynchronousAutomatedReporting(source, "discovery");
         AssertUsesSynchronousAutomatedReporting(source, "execution");
+    }
+
+    [Fact]
+    public void SlowEvidenceLeadCoversHostedCollectorStartupBeforeTheThreshold()
+    {
+        var source = Read("script/test-assembly-lifecycle.ps1")
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
+        var allowanceMatch = Regex.Match(
+            source,
+            @"(?m)^\$hostedCollectorStartupAllowanceMilliseconds = ([0-9]+)$",
+            RegexOptions.CultureInvariant);
+
+        Assert.True(allowanceMatch.Success, "Hosted collector startup allowance was not found.");
+        var configuredLeadMilliseconds = int.Parse(
+            allowanceMatch.Groups[1].Value,
+            System.Globalization.CultureInfo.InvariantCulture);
+        const int slowThresholdMilliseconds = 5_000;
+        const int syntheticHostedStartupMilliseconds = 1_500;
+        const int syntheticSlowTargetExitMilliseconds = 5_100;
+
+        var configuredCollectorStartedAt =
+            slowThresholdMilliseconds - configuredLeadMilliseconds +
+            syntheticHostedStartupMilliseconds;
+        var legacyCollectorStartedAt =
+            slowThresholdMilliseconds - 1_000 + syntheticHostedStartupMilliseconds;
+
+        Assert.True(configuredCollectorStartedAt < syntheticSlowTargetExitMilliseconds);
+        Assert.False(legacyCollectorStartedAt < syntheticSlowTargetExitMilliseconds);
+        Assert.Equal(3_000, configuredLeadMilliseconds);
+        Assert.Contains(
+            "$forensicsCaptureWindowMilliseconds = 15000",
+            source,
+            StringComparison.Ordinal);
     }
 
     [Fact]

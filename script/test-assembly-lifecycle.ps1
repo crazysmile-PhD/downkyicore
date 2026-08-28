@@ -58,7 +58,9 @@ $script:markerReadContentionCount = 0
 $script:markerReadRetriesExhaustedCount = 0
 $script:markerReadErrorCount = 0
 $script:markerReadErrorType = $null
-$slowEvidenceCaptureLeadMilliseconds = 1000
+$hostedCollectorStartupAllowanceMilliseconds = 3000
+$slowEvidenceCaptureLeadMilliseconds =
+    $hostedCollectorStartupAllowanceMilliseconds
 $forensicsSelfTestCaptureDelayMilliseconds = 750
 $processCleanupGraceSeconds = 5
 $forensicsCaptureWindowMilliseconds = 15000
@@ -495,7 +497,8 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
         [TimeSpan]::FromMilliseconds(1)
     }
     else {
-        [TimeSpan]::FromSeconds(3)
+        [TimeSpan]::FromMilliseconds(
+            $hostedCollectorStartupAllowanceMilliseconds)
     }
     $captureWindow = $budget.AllocateDiagnosticCollectorWindow(
         $operationAllowance,
@@ -698,7 +701,8 @@ function Test-DotnetStackAttachStall {
             GetAwaiter().GetResult()
         $ready = Wait-DiagnosticFixturePublication -Path $readyPath -Budget $budget
         $captureWindow = $budget.AllocateDiagnosticCollectorWindow(
-            [TimeSpan]::FromSeconds(3),
+            [TimeSpan]::FromMilliseconds(
+                $hostedCollectorStartupAllowanceMilliseconds),
             [TimeSpan]::FromSeconds(1))
         $collectorRequestCreatedAtUnixMilliseconds =
             [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
