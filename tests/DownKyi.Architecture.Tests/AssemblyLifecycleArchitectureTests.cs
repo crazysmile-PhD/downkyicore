@@ -206,7 +206,23 @@ public sealed class AssemblyLifecycleArchitectureTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "$slowCompletionMutation.slowEvidenceCaptureCompletedAtUnixMilliseconds -ge",
+            "$slowCompletionMutation.slowEvidenceCaptureCompletedAfterMilliseconds -ge",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$slowCompletionMutationPhase.success",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "($OperationTimeoutSeconds * 1000.0) -",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$budget.RemainingOperation.TotalMilliseconds",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$selfTest.slowEvidenceCaptureCompletedAfterMilliseconds -lt",
             source,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -231,6 +247,15 @@ public sealed class AssemblyLifecycleArchitectureTests
             @"\$forensicsSelfTestObservedCaptureThresholdSeconds\s*=\s*" +
             @"\$selfTest\.evidenceCaptureThresholdSeconds",
             source);
+        var captureCompletionIndex = source.IndexOf(
+            "$slowEvidenceCaptureCompletedAfterMilliseconds = [Math]::Round(",
+            StringComparison.Ordinal);
+        var evidenceHoldReleaseIndex = source.IndexOf(
+            "$lease.CompleteEvidenceHoldAsync(",
+            captureCompletionIndex,
+            StringComparison.Ordinal);
+        Assert.True(captureCompletionIndex >= 0);
+        Assert.True(evidenceHoldReleaseIndex > captureCompletionIndex);
         AssertUsesSynchronousAutomatedReporting(source, "assembly-info");
         AssertUsesSynchronousAutomatedReporting(source, "discovery");
         AssertUsesSynchronousAutomatedReporting(source, "execution");

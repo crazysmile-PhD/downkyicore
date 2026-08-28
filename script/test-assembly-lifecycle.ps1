@@ -1665,6 +1665,14 @@ function Invoke-IsolatedProcess {
                             $InjectedPostCaptureDelayMilliseconds `
                         -SkipManagedStack:$SkipSlowEvidenceManagedStack `
                         -InjectFailure:$InjectForensicsObserverFailure
+                    $slowEvidenceCaptureCompletedAfterMilliseconds = [Math]::Round(
+                        [Math]::Max(
+                            0.0,
+                            ($OperationTimeoutSeconds * 1000.0) -
+                                $budget.RemainingOperation.TotalMilliseconds),
+                        3)
+                    $slowEvidenceCaptureCompletedAtUnixMilliseconds =
+                        [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
                     $slowEvidenceStatus = $capture.status
                     $slowEvidenceErrorType = $capture.errorType
                     $slowEvidenceCollectorFailureKind = $capture.collectorFailureKind
@@ -1678,6 +1686,14 @@ function Invoke-IsolatedProcess {
                     }
                 }
                 catch {
+                    $slowEvidenceCaptureCompletedAfterMilliseconds = [Math]::Round(
+                        [Math]::Max(
+                            0.0,
+                            ($OperationTimeoutSeconds * 1000.0) -
+                                $budget.RemainingOperation.TotalMilliseconds),
+                        3)
+                    $slowEvidenceCaptureCompletedAtUnixMilliseconds =
+                        [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
                     $slowEvidenceStatus = "capture-failed"
                     $slowEvidenceErrorType = $_.Exception.GetType().Name
                 }
@@ -1709,11 +1725,6 @@ function Invoke-IsolatedProcess {
                     }
                     $captureStopwatch.Stop()
                     $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
-                    $slowEvidenceCaptureCompletedAfterMilliseconds = [Math]::Round(
-                        $evidenceObservationStopwatch.Elapsed.TotalMilliseconds,
-                        3)
-                    $slowEvidenceCaptureCompletedAtUnixMilliseconds =
-                        [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
                 }
             }
 
@@ -1785,16 +1796,17 @@ function Invoke-IsolatedProcess {
         else {
             $ownedFailure.Failure.TargetExitedAtUnixMilliseconds
         }
-        $slowEvidenceCaptureCompletedBeforeTargetExit =
-            $null -ne $slowEvidenceCaptureCompletedAtUnixMilliseconds -and
-            $null -ne $processExitedAtUnixMs -and
-            $slowEvidenceCaptureCompletedAtUnixMilliseconds -lt $processExitedAtUnixMs
         $targetExitedAfter = if ($null -ne $outcome) {
             $outcome.TargetExitedAfter
         }
         else {
             $ownedFailure.Failure.TargetExitedAfter
         }
+        $slowEvidenceCaptureCompletedBeforeTargetExit =
+            $null -ne $slowEvidenceCaptureCompletedAfterMilliseconds -and
+            $null -ne $targetExitedAfter -and
+            $slowEvidenceCaptureCompletedAfterMilliseconds -lt
+                $targetExitedAfter.TotalMilliseconds
         $phaseDurationMs = if ($null -ne $targetExitedAfter) {
             $targetExitedAfter.TotalMilliseconds
         }
@@ -2500,8 +2512,8 @@ function Test-SlowEvidenceCaptureOrdering {
         configuredCaptureCompletedBeforeTargetExit =
             $null -ne $configured -and
             $configured.slowEvidenceCaptureCompletedBeforeTargetExit -and
-            $configured.slowEvidenceCaptureCompletedAtUnixMilliseconds -lt
-                $configured.processExitedAtUnixMs
+            $configured.slowEvidenceCaptureCompletedAfterMilliseconds -lt
+                $configured.targetExitedAfterMilliseconds
         mutationUsedRealLifecyclePath = $null -ne $mutationPhase -and
             -not $mutationPhase.success -and
             $mutationPhase.failureType -eq "SlowEvidenceMissing" -and
@@ -2527,12 +2539,13 @@ function Test-SlowEvidenceCaptureOrdering {
         slowCompletionMutationDetected =
             $null -ne $slowCompletionMutation -and
             $null -ne $slowCompletionMutationPhase -and
+            $slowCompletionMutationPhase.success -and
             $slowCompletionMutation.slowThresholdExceeded -and
             $slowCompletionMutation.slowEvidenceStatus -eq "captured" -and
             $slowCompletionMutation.slowEvidence.Count -gt 0 -and
             -not $slowCompletionMutation.slowEvidenceCaptureCompletedBeforeTargetExit -and
-            $slowCompletionMutation.slowEvidenceCaptureCompletedAtUnixMilliseconds -ge
-                $slowCompletionMutation.processExitedAtUnixMs
+            $slowCompletionMutation.slowEvidenceCaptureCompletedAfterMilliseconds -ge
+                $slowCompletionMutation.targetExitedAfterMilliseconds
         mutationTargetsReady =
             $null -ne $immediateDispatchReady -and
             $immediateDispatchReady.ProcessId -eq
@@ -2843,8 +2856,8 @@ if ($ValidateForensics) {
             $forensicsSelfTestEvidenceThresholdSeconds
     $forensicsSelfTestCaptureCompletedBeforeTargetExitValidated =
         $selfTest.slowEvidenceCaptureCompletedBeforeTargetExit -and
-        $selfTest.slowEvidenceCaptureCompletedAtUnixMilliseconds -lt
-            $selfTest.processExitedAtUnixMs
+        $selfTest.slowEvidenceCaptureCompletedAfterMilliseconds -lt
+            $selfTest.targetExitedAfterMilliseconds
     $forensicsValid = $selfTestPhase.success -and
         $evidenceReports.Count -gt 0 -and
         @($evidenceReports | Where-Object { $_.managedStack.captured -eq $true }).Count -gt 0 -and
