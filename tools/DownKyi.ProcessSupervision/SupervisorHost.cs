@@ -74,6 +74,12 @@ internal static class SupervisorHost
                 CollectorBlockWithReadyArgument,
                 StringComparison.Ordinal))
         {
+            await Console.Out.WriteAsync("collector-before-block-stdout")
+                .ConfigureAwait(false);
+            await Console.Error.WriteAsync("collector-before-block-stderr")
+                .ConfigureAwait(false);
+            await Task.WhenAll(Console.Out.FlushAsync(), Console.Error.FlushAsync())
+                .ConfigureAwait(false);
             await PublishProbeAsync(
                     arguments[1],
                     new CollectorReadyProbeResult(Environment.ProcessId),
@@ -210,9 +216,13 @@ internal static class SupervisorHost
         evidenceHoldHandles?.ApplyTo(startInfo);
         using var target = Process.Start(startInfo)
             ?? throw new InvalidOperationException("The owned target process did not start.");
-        var targetStandardOutput = target.StandardOutput.ReadToEndAsync(
+        using var supervisorStandardOutput = Console.OpenStandardOutput();
+        using var supervisorStandardError = Console.OpenStandardError();
+        var targetStandardOutput = target.StandardOutput.BaseStream.CopyToAsync(
+            supervisorStandardOutput,
             CancellationToken.None);
-        var targetStandardError = target.StandardError.ReadToEndAsync(
+        var targetStandardError = target.StandardError.BaseStream.CopyToAsync(
+            supervisorStandardError,
             CancellationToken.None);
         evidenceHoldHandles?.ReleaseSupervisorCopies();
         if (payload.CloseStandardInput)
@@ -264,10 +274,7 @@ internal static class SupervisorHost
             return 206;
         }
 
-        await Console.Out.WriteAsync(await targetStandardOutput.ConfigureAwait(false))
-            .ConfigureAwait(false);
-        await Console.Error.WriteAsync(await targetStandardError.ConfigureAwait(false))
-            .ConfigureAwait(false);
+        await Task.WhenAll(targetStandardOutput, targetStandardError).ConfigureAwait(false);
 
         return target.ExitCode;
     }

@@ -66,6 +66,7 @@ $forensicsCaptureCleanupWindowMilliseconds = $processCleanupGraceSeconds * 1000
 $forensicsSelfTestCaptureLeadValidated = $false
 $forensicsSelfTestEvidenceHoldValidated = $false
 $forensicsCollectorCaptureWindowSelfTestPassed = $false
+$forensicsCollectorCaptureWindowSelfTest = $null
 $markerReaderSelfTestRequired = $IsWindows -and
     @("PR", "Main", "Rehearsal", "Flaky").Contains($Profile)
 $markerReaderSelfTestComplete = $false
@@ -235,6 +236,110 @@ function Invoke-OwnedDiagnosticCollector {
             $request,
             $CancellationToken).
         GetAwaiter().GetResult()
+}
+
+function Get-DiagnosticCollectorExecutionFailure {
+    param(
+        [Parameter(Mandatory)]
+        [System.Exception]$Exception
+    )
+
+    $pending = [Collections.Generic.Queue[Exception]]::new()
+    $pending.Enqueue($Exception)
+    while ($pending.Count -gt 0) {
+        $candidate = $pending.Dequeue()
+        if ($candidate -is
+            [DownKyi.ProcessSupervision.DiagnosticCollectorExecutionException]) {
+            return $candidate
+        }
+
+        if ($candidate -is [AggregateException]) {
+            foreach ($innerFailure in $candidate.InnerExceptions) {
+                $pending.Enqueue($innerFailure)
+            }
+        }
+        elseif ($null -ne $candidate.InnerException) {
+            $pending.Enqueue($candidate.InnerException)
+        }
+    }
+
+    return $null
+}
+
+function Test-OwnedDiagnosticCollectorCaptureWindow {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProcessSupervisionAssembly
+    )
+
+    $budget = [DownKyi.ProcessSupervision.TransitionBudget]::Start(
+        [TimeSpan]::FromSeconds(5),
+        [TimeSpan]::FromSeconds(2))
+    $operationAllowance = if (
+        $env:DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET -eq "1") {
+        $budget.RemainingOperation
+    }
+    else {
+        [TimeSpan]::FromSeconds(1)
+    }
+    $captureWindow = $budget.AllocateDiagnosticCollectorWindow(
+        $operationAllowance,
+        [TimeSpan]::FromSeconds(1))
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $failure = $null
+    $unexpectedFailureType = $null
+    try {
+        $null = Invoke-OwnedDiagnosticCollector `
+            -FileName "dotnet" `
+            -Arguments @($ProcessSupervisionAssembly, "--block-forever") `
+            -CaptureWindow $captureWindow
+    }
+    catch {
+        $failure = Get-DiagnosticCollectorExecutionFailure `
+            -Exception $_.Exception
+        if ($null -eq $failure) {
+            $unexpectedFailureType = $_.Exception.GetType().Name
+        }
+    }
+    finally {
+        $stopwatch.Stop()
+    }
+
+    $operationDeadlineKind =
+        [DownKyi.ProcessSupervision.DiagnosticCollectorFailureKind]::OperationDeadlineExceeded
+    $passed = $null -ne $failure -and
+        $failure.Failure.Kind -eq $operationDeadlineKind -and
+        $failure.Failure.Evidence.Started -and
+        $failure.Failure.Evidence.Reaped -and
+        $failure.Failure.Evidence.StreamsDrained -and
+        $failure.CleanupFailures.Count -eq 0 -and
+        $stopwatch.Elapsed -lt [TimeSpan]::FromSeconds(4) -and
+        $budget.RemainingOperation -gt [TimeSpan]::FromSeconds(1)
+    return [pscustomobject]@{
+        passed = $passed
+        failureKind = if ($null -eq $failure) {
+            $null
+        }
+        else {
+            $failure.Failure.Kind.ToString()
+        }
+        evidence = if ($null -eq $failure) { $null } else { $failure.Failure.Evidence }
+        cleanupFailures = @(
+            if ($null -ne $failure) {
+                $failure.CleanupFailures | ForEach-Object {
+                    [pscustomobject]@{
+                        kind = $_.Kind.ToString()
+                        causeType = $_.Cause.GetType().Name
+                    }
+                }
+            }
+        )
+        unexpectedFailureType = $unexpectedFailureType
+        elapsedMilliseconds = [Math]::Round($stopwatch.Elapsed.TotalMilliseconds, 3)
+        parentRemainingOperationMilliseconds = [Math]::Round(
+            $budget.RemainingOperation.TotalMilliseconds,
+            3)
+    }
 }
 
 function Wait-ForensicsObserverDelay {
@@ -551,6 +656,9 @@ function Invoke-ForensicsObserverCapture {
             status = "capture-failed"
             evidencePath = $null
             errorType = "InjectedForensicsObserverFailure"
+            collectorFailureKind = $null
+            collectorEvidence = $null
+            collectorCleanupFailures = @()
         }
     }
 
@@ -566,6 +674,9 @@ function Invoke-ForensicsObserverCapture {
             status = "process-exited-before-capture"
             evidencePath = $null
             errorType = $null
+            collectorFailureKind = $null
+            collectorEvidence = $null
+            collectorCleanupFailures = @()
         }
     }
 
@@ -583,13 +694,39 @@ function Invoke-ForensicsObserverCapture {
             status = "captured"
             evidencePath = $evidencePath
             errorType = $null
+            collectorFailureKind = $null
+            collectorEvidence = $null
+            collectorCleanupFailures = @()
         }
     }
     catch {
+        $collectorFailure = Get-DiagnosticCollectorExecutionFailure `
+            -Exception $_.Exception
+        if ($null -ne $collectorFailure) {
+            return [pscustomobject]@{
+                status = "capture-failed"
+                evidencePath = $null
+                errorType = $collectorFailure.GetType().Name
+                collectorFailureKind = $collectorFailure.Failure.Kind.ToString()
+                collectorEvidence = $collectorFailure.Failure.Evidence
+                collectorCleanupFailures = @(
+                    $collectorFailure.CleanupFailures | ForEach-Object {
+                        [pscustomobject]@{
+                            kind = $_.Kind.ToString()
+                            causeType = $_.Cause.GetType().Name
+                        }
+                    }
+                )
+            }
+        }
+
         return [pscustomobject]@{
             status = "capture-failed"
             evidencePath = $null
             errorType = $_.Exception.GetType().Name
+            collectorFailureKind = $null
+            collectorEvidence = $null
+            collectorCleanupFailures = @()
         }
     }
     finally {
@@ -853,11 +990,17 @@ function Invoke-IsolatedProcess {
     $slowEvidenceCaptured = $false
     $slowEvidenceStatus = "not-triggered"
     $slowEvidenceErrorType = $null
+    $slowEvidenceCollectorFailureKind = $null
+    $slowEvidenceCollectorEvidence = $null
+    $slowEvidenceCollectorCleanupFailures = @()
     $slowEvidenceTriggeredBeforeThreshold = $false
     $residualChildEvidenceStatus = "not-triggered"
     $residualChildEvidenceErrorType = $null
     $exitEvidenceStatus = "not-triggered"
     $exitEvidenceErrorType = $null
+    $exitEvidenceCollectorFailureKind = $null
+    $exitEvidenceCollectorEvidence = $null
+    $exitEvidenceCollectorCleanupFailures = @()
     $exitEvidenceCaptured = $false
     $teardownObservedAt = $null
     $evidenceCaptureThresholdSeconds = [Math]::Max(
@@ -911,6 +1054,10 @@ function Invoke-IsolatedProcess {
                         -InjectFailure:$InjectForensicsObserverFailure
                     $slowEvidenceStatus = $capture.status
                     $slowEvidenceErrorType = $capture.errorType
+                    $slowEvidenceCollectorFailureKind = $capture.collectorFailureKind
+                    $slowEvidenceCollectorEvidence = $capture.collectorEvidence
+                    $slowEvidenceCollectorCleanupFailures = @(
+                        $capture.collectorCleanupFailures)
                     if (-not [string]::IsNullOrWhiteSpace($capture.evidencePath)) {
                         $evidence += $capture.evidencePath
                         $slowEvidence += $capture.evidencePath
@@ -980,6 +1127,10 @@ function Invoke-IsolatedProcess {
                             -InjectFailure:$InjectForensicsObserverFailure
                         $exitEvidenceStatus = $capture.status
                         $exitEvidenceErrorType = $capture.errorType
+                        $exitEvidenceCollectorFailureKind = $capture.collectorFailureKind
+                        $exitEvidenceCollectorEvidence = $capture.collectorEvidence
+                        $exitEvidenceCollectorCleanupFailures = @(
+                            $capture.collectorCleanupFailures)
                         if (-not [string]::IsNullOrWhiteSpace($capture.evidencePath)) {
                             $evidence += $capture.evidencePath
                             $exitEvidence += $capture.evidencePath
@@ -1123,11 +1274,19 @@ function Invoke-IsolatedProcess {
             exitEvidence = $exitEvidence
             exitEvidenceStatus = $exitEvidenceStatus
             exitEvidenceErrorType = $exitEvidenceErrorType
+            exitEvidenceCollectorFailureKind = $exitEvidenceCollectorFailureKind
+            exitEvidenceCollectorEvidence = $exitEvidenceCollectorEvidence
+            exitEvidenceCollectorCleanupFailures = @(
+                $exitEvidenceCollectorCleanupFailures)
             timeoutEvidence = $timeoutEvidence
             diagnosticCaptureDurationMs = [Math]::Round($diagnosticCaptureDurationMs, 3)
             slowThresholdExceeded = $slowThresholdExceeded
             slowEvidenceStatus = $slowEvidenceStatus
             slowEvidenceErrorType = $slowEvidenceErrorType
+            slowEvidenceCollectorFailureKind = $slowEvidenceCollectorFailureKind
+            slowEvidenceCollectorEvidence = $slowEvidenceCollectorEvidence
+            slowEvidenceCollectorCleanupFailures = @(
+                $slowEvidenceCollectorCleanupFailures)
             slowEvidenceTriggeredBeforeThreshold =
                 $slowEvidenceTriggeredBeforeThreshold
             ownedTreeQuiescent = $ownedTreeQuiescent
@@ -1443,11 +1602,21 @@ function New-ProcessPhaseResult {
         exitEvidence = $ProcessResult.exitEvidence
         exitEvidenceStatus = $ProcessResult.exitEvidenceStatus
         exitEvidenceErrorType = $ProcessResult.exitEvidenceErrorType
+        exitEvidenceCollectorFailureKind =
+            $ProcessResult.exitEvidenceCollectorFailureKind
+        exitEvidenceCollectorEvidence = $ProcessResult.exitEvidenceCollectorEvidence
+        exitEvidenceCollectorCleanupFailures = @(
+            $ProcessResult.exitEvidenceCollectorCleanupFailures)
         timeoutEvidence = $ProcessResult.timeoutEvidence
         diagnosticCaptureDurationMs = $ProcessResult.diagnosticCaptureDurationMs
         slowThresholdExceeded = $ProcessResult.slowThresholdExceeded
         slowEvidenceStatus = $ProcessResult.slowEvidenceStatus
         slowEvidenceErrorType = $ProcessResult.slowEvidenceErrorType
+        slowEvidenceCollectorFailureKind =
+            $ProcessResult.slowEvidenceCollectorFailureKind
+        slowEvidenceCollectorEvidence = $ProcessResult.slowEvidenceCollectorEvidence
+        slowEvidenceCollectorCleanupFailures = @(
+            $ProcessResult.slowEvidenceCollectorCleanupFailures)
         slowEvidenceTriggeredBeforeThreshold =
             $ProcessResult.slowEvidenceTriggeredBeforeThreshold
         ownedTreeQuiescent = $ProcessResult.ownedTreeQuiescent
@@ -1561,6 +1730,16 @@ if (-not (Test-Path -LiteralPath $processSupervisionAssembly -PathType Leaf)) {
     throw "Process supervision assembly was not built: $processSupervisionAssembly"
 }
 [Reflection.Assembly]::LoadFrom($processSupervisionAssembly) | Out-Null
+if ($ValidateForensics) {
+    $forensicsCollectorCaptureWindowSelfTest =
+        Test-OwnedDiagnosticCollectorCaptureWindow `
+        -ProcessSupervisionAssembly $processSupervisionAssembly
+    $forensicsCollectorCaptureWindowSelfTestPassed =
+        $forensicsCollectorCaptureWindowSelfTest.passed
+    if (-not $forensicsCollectorCaptureWindowSelfTestPassed) {
+        throw "Forensics collector capture-window self-test did not fail closed."
+    }
+}
 
 $allTestProjects = @(
     Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "tests") `
@@ -1628,7 +1807,8 @@ if ($ValidateForensics) {
         $selfTest.evidenceHold.Released -and
         $selfTest.evidenceHold.CompletionSignalDelivered -and
         $selfTest.evidenceHold.TargetAcknowledged
-    $forensicsCollectorCaptureWindowSelfTestPassed = $forensicsValid
+    $forensicsCollectorCaptureWindowSelfTestPassed =
+        $forensicsCollectorCaptureWindowSelfTestPassed -and $forensicsValid
     $forensicsSelfTestCaptureLeadValidated =
         $selfTest.slowEvidenceTriggeredBeforeThreshold
     $forensicsSelfTestEvidenceHoldValidated =
@@ -2273,6 +2453,8 @@ $report = [ordered]@{
     forensicsCollectorCaptureWindowSelfTestRequired = [bool]$ValidateForensics
     forensicsCollectorCaptureWindowSelfTestPassed =
         $forensicsCollectorCaptureWindowSelfTestPassed
+    forensicsCollectorCaptureWindowSelfTest =
+        $forensicsCollectorCaptureWindowSelfTest
     exitThresholdSeconds = $ExitThresholdSeconds
     diagnosticsTool = if ($null -eq $script:diagnosticsTool) {
         "unavailable"

@@ -14,6 +14,7 @@ public static class OwnedDiagnosticCollector
         return CollectCoreAsync(
             request,
             DiagnosticCollectorMutation.None,
+            startFailureObservedForTesting: null,
             cancellationToken);
     }
 
@@ -22,7 +23,25 @@ public static class OwnedDiagnosticCollector
         DiagnosticCollectorMutation mutation,
         CancellationToken cancellationToken = default)
     {
-        return CollectCoreAsync(request, mutation, cancellationToken);
+        return CollectCoreAsync(
+            request,
+            mutation,
+            startFailureObservedForTesting: null,
+            cancellationToken);
+    }
+
+    internal static Task<DiagnosticCollectorOutcome> CollectForTestingAsync(
+        DiagnosticCollectorRequest request,
+        DiagnosticCollectorMutation mutation,
+        Action startFailureObservedForTesting,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(startFailureObservedForTesting);
+        return CollectCoreAsync(
+            request,
+            mutation,
+            startFailureObservedForTesting,
+            cancellationToken);
     }
 
     [SuppressMessage(
@@ -32,6 +51,7 @@ public static class OwnedDiagnosticCollector
     private static async Task<DiagnosticCollectorOutcome> CollectCoreAsync(
         DiagnosticCollectorRequest request,
         DiagnosticCollectorMutation mutation,
+        Action? startFailureObservedForTesting,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -60,7 +80,15 @@ public static class OwnedDiagnosticCollector
         OwnedProcessLease lease;
         try
         {
-            lease = processMutation == ProcessOwnershipMutation.None
+            lease = startFailureObservedForTesting != null
+                ? await OwnedProcessLease.StartForTestingAsync(
+                        request.Launch,
+                        budget,
+                        processMutation,
+                        startFailureObservedForTesting,
+                        cancellationToken)
+                    .ConfigureAwait(false)
+                : processMutation == ProcessOwnershipMutation.None
                 ? await OwnedProcessLease.StartAsync(
                         request.Launch,
                         budget,
@@ -76,11 +104,9 @@ public static class OwnedDiagnosticCollector
         catch (Exception failure)
         {
             var (primary, cleanupFailures) = SplitStartFailure(failure);
-            var kind = cancellationToken.IsCancellationRequested ||
-                       primary is OperationCanceledException
+            var kind = primary is OperationCanceledException
                 ? DiagnosticCollectorFailureKind.CallerCancelled
-                : primary is TimeoutException ||
-                  request.Window.RemainingOperation <= TimeSpan.Zero
+                : primary is TimeoutException
                     ? DiagnosticCollectorFailureKind.OperationDeadlineExceeded
                     : DiagnosticCollectorFailureKind.StartFailed;
             throw CreateFailure(

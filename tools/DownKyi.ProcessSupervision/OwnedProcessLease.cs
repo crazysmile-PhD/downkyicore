@@ -83,6 +83,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest: null,
             ProcessOwnershipMutation.None,
             acknowledgmentPublicationGateForTesting: null,
+            startFailureObservedForTesting: null,
             cancellationToken);
     }
 
@@ -99,6 +100,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest,
             ProcessOwnershipMutation.None,
             acknowledgmentPublicationGateForTesting: null,
+            startFailureObservedForTesting: null,
             cancellationToken);
     }
 
@@ -114,6 +116,25 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest: null,
             mutation,
             acknowledgmentPublicationGateForTesting: null,
+            startFailureObservedForTesting: null,
+            cancellationToken);
+    }
+
+    internal static Task<OwnedProcessLease> StartForTestingAsync(
+        LaunchSpec launchSpec,
+        TransitionBudget budget,
+        ProcessOwnershipMutation mutation,
+        Action startFailureObservedForTesting,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(startFailureObservedForTesting);
+        return StartCoreAsync(
+            launchSpec,
+            budget,
+            evidenceHoldRequest: null,
+            mutation,
+            acknowledgmentPublicationGateForTesting: null,
+            startFailureObservedForTesting,
             cancellationToken);
     }
 
@@ -131,6 +152,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest,
             mutation,
             acknowledgmentPublicationGateForTesting: null,
+            startFailureObservedForTesting: null,
             cancellationToken);
     }
 
@@ -150,6 +172,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest,
             mutation,
             acknowledgmentPublicationGateForTesting,
+            startFailureObservedForTesting: null,
             cancellationToken);
     }
 
@@ -375,6 +398,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         EvidenceHoldRequest? evidenceHoldRequest,
         ProcessOwnershipMutation mutation,
         Task? acknowledgmentPublicationGateForTesting,
+        Action? startFailureObservedForTesting,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(launchSpec);
@@ -525,6 +549,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         catch (Exception startFailure)
         {
             var failures = new Collection<Exception> { startFailure };
+            startFailureObservedForTesting?.Invoke();
             if (containment != null && processOwnershipEstablished)
             {
                 try

@@ -11,6 +11,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_FORENSICS_HELPER_AUTHORITY";
     private const string CaptureBudgetMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET";
+    private const string CaptureBudgetSelfTestRejection =
+        "Forensics collector capture-window self-test did not fail closed.";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
@@ -24,12 +26,11 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         {
             source = source.Replace(
                 "    $launchSpec = [DownKyi.ProcessSupervision.LaunchSpec]::new(",
-                "    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()\n" +
-                "    $collector = [System.Diagnostics.Process]::new()\n" +
-                "    $collector.StartInfo = $startInfo\n" +
-                "    $null = $collector.Start()\n" +
-                "    $collector.Kill($true)\n" +
-                "    $null = $collector.WaitForExitAsync().GetAwaiter().GetResult()\n" +
+                "    $startInfo = New-Object -TypeName System.Diagnostics.ProcessStartInfo\n" +
+                "    $collector = New-Object -TypeName System.Diagnostics.Process\n" +
+                "    $null = Start-Process -FilePath 'pwsh' -PassThru\n" +
+                "    Stop-Process -Id 1\n" +
+                "    Wait-Process -Id 1\n" +
                 "    $launchSpec = [DownKyi.ProcessSupervision.LaunchSpec]::new(",
                 StringComparison.Ordinal);
         }
@@ -94,18 +95,100 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
     }
 
     [Fact]
+    public void PowerShellReportPreservesTypedCollectorFailureEvidence()
+    {
+        var source = ReadLifecycleGate();
+        var observer = ReadFunction(source, "Invoke-ForensicsObserverCapture");
+        var isolatedProcess = ReadFunction(source, "Invoke-IsolatedProcess");
+        var phaseResult = ReadFunction(source, "New-ProcessPhaseResult");
+
+        Assert.Contains(
+            "Get-DiagnosticCollectorExecutionFailure",
+            observer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "DiagnosticCollectorExecutionException",
+            ReadFunction(source, "Get-DiagnosticCollectorExecutionFailure"),
+            StringComparison.Ordinal);
+        Assert.Contains("collectorFailureKind", observer, StringComparison.Ordinal);
+        Assert.Contains("collectorEvidence", observer, StringComparison.Ordinal);
+        Assert.Contains("collectorCleanupFailures", observer, StringComparison.Ordinal);
+        Assert.Contains(
+            "slowEvidenceCollectorFailureKind",
+            isolatedProcess,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "exitEvidenceCollectorFailureKind",
+            isolatedProcess,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "slowEvidenceCollectorCleanupFailures",
+            phaseResult,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "exitEvidenceCollectorCleanupFailures",
+            phaseResult,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "forensicsCollectorCaptureWindowSelfTest =",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ForensicsCollectorsConsumeCallerAllocatedTypedWindows()
     {
         var source = ReadLifecycleGate();
+        Assert.True(IsExpectedCaptureBudgetMutationRejection(
+            new BoundedProcessResult(1, CaptureBudgetSelfTestRejection)));
+        Assert.False(IsExpectedCaptureBudgetMutationRejection(
+            new BoundedProcessResult(1, "Unrelated lifecycle failure.")));
+        Assert.False(IsExpectedCaptureBudgetMutationRejection(
+            new BoundedProcessResult(0, CaptureBudgetSelfTestRejection)));
         if (string.Equals(
                 Environment.GetEnvironmentVariable(CaptureBudgetMutationEnvironmentVariable),
                 "1",
                 StringComparison.Ordinal))
         {
-            source = source.Replace(
-                "$budget.AllocateDiagnosticCollectorWindow(",
-                "[DownKyi.ProcessSupervision.TransitionBudget]::Start(",
-                StringComparison.Ordinal);
+            BoundedProcessResult mutation;
+            try
+            {
+                mutation = ExecuteCaptureBudgetMutation();
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                return;
+            }
+            catch (AggregateException)
+            {
+                return;
+            }
+            catch (IOException)
+            {
+                return;
+            }
+            catch (InvalidOperationException)
+            {
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (TimeoutException)
+            {
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return;
+            }
+
+            var expectedRejection = IsExpectedCaptureBudgetMutationRejection(mutation);
+            Assert.False(
+                expectedRejection,
+                "The real lifecycle self-test rejected the broken whole-budget collector window.");
+            return;
         }
 
         var isolatedProcess = ReadFunction(source, "Invoke-IsolatedProcess");
@@ -122,7 +205,7 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "$forensicsCaptureCleanupWindowMilliseconds = $processCleanupGraceSeconds * 1000",
             source,
             StringComparison.Ordinal);
-        Assert.Equal(2, Regex.Count(source, "AllocateDiagnosticCollectorWindow"));
+        Assert.Equal(3, Regex.Count(source, "AllocateDiagnosticCollectorWindow"));
         Assert.Contains("AllocateDiagnosticCollectorWindow", isolatedProcess, StringComparison.Ordinal);
         foreach (var function in observerClosure.Values)
         {
@@ -135,6 +218,15 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.Contains("[object]$CaptureWindow", collector, StringComparison.Ordinal);
         Assert.Contains("$CaptureWindow.DelayAsync", delay, StringComparison.Ordinal);
         Assert.Contains("$CaptureWindow.RemainingOperation", snapshot, StringComparison.Ordinal);
+        Assert.Contains(
+            "Test-OwnedDiagnosticCollectorCaptureWindow",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("--block-forever", source, StringComparison.Ordinal);
+        Assert.Contains(
+            CaptureBudgetMutationEnvironmentVariable,
+            source,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("New-OwnerAllocatedForensicsCaptureWindow", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Get-ForensicsCaptureWaitMilliseconds", source, StringComparison.Ordinal);
     }
@@ -193,6 +285,63 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             StringComparison.Ordinal);
     }
 
+    private static bool IsExpectedCaptureBudgetMutationRejection(
+        BoundedProcessResult mutation)
+    {
+        return mutation.ExitCode != 0 && mutation.Output.Contains(
+            CaptureBudgetSelfTestRejection,
+            StringComparison.Ordinal);
+    }
+
+    private static BoundedProcessResult ExecuteCaptureBudgetMutation()
+    {
+        var resultsDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-forensics-capture-mutation-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(resultsDirectory);
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-File");
+            startInfo.ArgumentList.Add(Path.Combine(
+                RepositoryRoot,
+                "script",
+                "test-assembly-lifecycle.ps1"));
+            startInfo.ArgumentList.Add("-Configuration");
+            startInfo.ArgumentList.Add("Release");
+            startInfo.ArgumentList.Add("-Profile");
+            startInfo.ArgumentList.Add("Local");
+            startInfo.ArgumentList.Add("-Iterations");
+            startInfo.ArgumentList.Add("1");
+            startInfo.ArgumentList.Add("-AssemblyPattern");
+            startInfo.ArgumentList.Add("DownKyi.Core.Tests");
+            startInfo.ArgumentList.Add("-ResultsDirectory");
+            startInfo.ArgumentList.Add(resultsDirectory);
+            startInfo.ArgumentList.Add("-ValidateForensics");
+            startInfo.ArgumentList.Add("-NoBuild");
+            startInfo.Environment[CaptureBudgetMutationEnvironmentVariable] = "1";
+
+            return BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken,
+                TimeSpan.FromSeconds(30));
+        }
+        finally
+        {
+            Directory.Delete(resultsDirectory, recursive: true);
+        }
+    }
+
     private static void AssertCollectorClosureAstIsClean(
         IReadOnlyDictionary<string, string> closure)
     {
@@ -237,6 +386,13 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
                 "$text -match '(?i)CancellationTokenSource\\]\\s*::' -or " +
                 "$text -match '(?i)AggregateException\\]\\s*::\\s*new')" +
                 "{$violations.Add($text)}}; " +
+                "$ast.FindAll({param($n) $n -is " +
+                "[System.Management.Automation.Language.CommandAst]},$true) | " +
+                "ForEach-Object {$name=$_.GetCommandName(); $text=$_.Extent.Text; " +
+                "if($name -match '(?i)^(Start|Stop|Wait)-Process$' -or " +
+                "($name -match '(?i)^New-Object$' -and " +
+                "$text -match '(?i)(System\\.)?Diagnostics\\." +
+                "(ProcessStartInfo|Process)')){$violations.Add($text)}}; " +
                 "if($violations.Count -gt 0){$violations; exit 9}; exit 0");
             startInfo.Environment["DOWNKYI_COLLECTOR_AST_PATH"] = temporaryPath;
 

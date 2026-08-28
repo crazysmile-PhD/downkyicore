@@ -76,6 +76,39 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     }
 
     [Fact]
+    public async Task CancellationAfterStartFailureDoesNotReplaceTheCausalFailure()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var parent = TransitionBudget.Start(
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromMilliseconds(500));
+        var request = new DiagnosticCollectorRequest(
+            new LaunchSpec(
+                Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"),
+                Array.Empty<string>(),
+                Path.GetTempPath()),
+            parent.AllocateDiagnosticCollectorWindow(
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromMilliseconds(300)));
+
+        var failure = await Assert.ThrowsAsync<DiagnosticCollectorExecutionException>(
+                () => OwnedDiagnosticCollector.CollectForTestingAsync(
+                    request,
+                    DiagnosticCollectorMutation.StallStreamDrain,
+                    cancellation.Cancel,
+                    cancellation.Token))
+            .ConfigureAwait(true);
+
+        Assert.True(cancellation.IsCancellationRequested);
+        Assert.Equal(DiagnosticCollectorFailureKind.StartFailed, failure.Failure.Kind);
+        Assert.IsNotType<OperationCanceledException>(failure.Failure.Cause);
+        Assert.Contains(
+            failure.CleanupFailures,
+            item => item.Kind ==
+                DiagnosticCollectorCleanupFailureKind.StreamDrainDeadlineExceeded);
+    }
+
+    [Fact]
     public async Task CancellationBeforeStartNeverLaunchesTheCollector()
     {
         var readyPath = CreateReadyPath("cancel-before-start");
@@ -129,6 +162,14 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             Assert.True(failure.Failure.Evidence.Started);
             Assert.True(failure.Failure.Evidence.Reaped);
             Assert.True(failure.Failure.Evidence.StreamsDrained);
+            Assert.Contains(
+                "collector-before-block-stdout",
+                failure.Failure.Evidence.StandardOutput,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "collector-before-block-stderr",
+                failure.Failure.Evidence.StandardError,
+                StringComparison.Ordinal);
             Assert.Empty(failure.CleanupFailures);
         }
         finally
@@ -271,7 +312,7 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             var failure = await CollectFailureAsync(
                     CreateRequest(
                         SupervisorHost.ExitWithOwnedDescendantArgument,
-                        TimeSpan.FromMilliseconds(500),
+                        TimeSpan.FromSeconds(2),
                         TimeSpan.FromSeconds(2),
                         readyPath),
                     DiagnosticCollectorMutation.None)
