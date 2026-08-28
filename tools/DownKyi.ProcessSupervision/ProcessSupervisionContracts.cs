@@ -127,7 +127,8 @@ public sealed class EvidenceHoldRequest
 {
     public EvidenceHoldRequest(
         string targetEnvironmentVariable,
-        byte completionSignal)
+        byte completionSignal,
+        byte acknowledgmentSignal)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(targetEnvironmentVariable);
         if (targetEnvironmentVariable.Contains('=', StringComparison.Ordinal))
@@ -142,14 +143,23 @@ public sealed class EvidenceHoldRequest
                 nameof(completionSignal),
                 "The evidence-hold completion signal cannot be zero.");
         }
+        if (acknowledgmentSignal == 0 || acknowledgmentSignal == completionSignal)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(acknowledgmentSignal),
+                "The evidence-hold acknowledgment signal must be non-zero and distinct.");
+        }
 
         TargetEnvironmentVariable = targetEnvironmentVariable;
         CompletionSignal = completionSignal;
+        AcknowledgmentSignal = acknowledgmentSignal;
     }
 
     public string TargetEnvironmentVariable { get; }
 
     public byte CompletionSignal { get; }
+
+    public byte AcknowledgmentSignal { get; }
 }
 
 public enum EvidenceCaptureCompletion
@@ -164,7 +174,8 @@ public sealed record EvidenceHoldOutcome(
     bool Granted,
     EvidenceCaptureCompletion CaptureCompletion,
     bool Released,
-    bool CompletionSignalDelivered)
+    bool CompletionSignalDelivered,
+    bool TargetAcknowledged)
 {
     internal static EvidenceHoldOutcome CreateNotRequested()
     {
@@ -173,7 +184,8 @@ public sealed record EvidenceHoldOutcome(
             Granted: false,
             EvidenceCaptureCompletion.Pending,
             Released: false,
-            CompletionSignalDelivered: false);
+            CompletionSignalDelivered: false,
+            TargetAcknowledged: false);
     }
 }
 

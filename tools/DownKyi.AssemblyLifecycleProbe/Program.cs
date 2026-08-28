@@ -12,6 +12,7 @@ internal static class Program
     private const string TestAssemblyLoadOwnerValue = "DownKyi.AssemblyLifecycleProbe";
     private const string CapturePipeEnvironmentVariable = "DOWNKYI_FORENSICS_CAPTURE_PIPE";
     private const int CaptureCompleted = 0xA5;
+    private const byte CaptureAcknowledged = 0x5A;
 
     public static int Main(string[] args)
     {
@@ -24,10 +25,10 @@ internal static class Program
         var fullPath = Path.GetFullPath(assemblyPath);
         var loaded = LoadAndRequestUnload(fullPath);
         var unloaded = WaitForUnload(loaded.ContextReference);
-        var capturePipeHandle = Environment.GetEnvironmentVariable(CapturePipeEnvironmentVariable);
+        var capturePipeTransport = Environment.GetEnvironmentVariable(CapturePipeEnvironmentVariable);
         Environment.SetEnvironmentVariable(CapturePipeEnvironmentVariable, null);
-        if (!string.IsNullOrWhiteSpace(capturePipeHandle) &&
-            !WaitForCaptureCompletion(capturePipeHandle))
+        if (!string.IsNullOrWhiteSpace(capturePipeTransport) &&
+            !WaitForCaptureCompletion(capturePipeTransport))
         {
             WriteResult(new ProbeResult(
                 false,
@@ -68,12 +69,30 @@ internal static class Program
         return true;
     }
 
-    private static bool WaitForCaptureCompletion(string pipeHandle)
+    private static bool WaitForCaptureCompletion(string pipeTransport)
     {
-        using var pipe = new System.IO.Pipes.AnonymousPipeClientStream(
+        var handles = pipeTransport.Split('|', StringSplitOptions.None);
+        if (handles.Length != 2 ||
+            string.IsNullOrWhiteSpace(handles[0]) ||
+            string.IsNullOrWhiteSpace(handles[1]))
+        {
+            return false;
+        }
+
+        using var completionPipe = new System.IO.Pipes.AnonymousPipeClientStream(
             System.IO.Pipes.PipeDirection.In,
-            pipeHandle);
-        return pipe.ReadByte() == CaptureCompleted;
+            handles[0]);
+        using var acknowledgmentPipe = new System.IO.Pipes.AnonymousPipeClientStream(
+            System.IO.Pipes.PipeDirection.Out,
+            handles[1]);
+        if (completionPipe.ReadByte() != CaptureCompleted)
+        {
+            return false;
+        }
+
+        acknowledgmentPipe.WriteByte(CaptureAcknowledged);
+        acknowledgmentPipe.Flush();
+        return true;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

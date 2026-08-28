@@ -1,16 +1,32 @@
+using System.Text.RegularExpressions;
+
 namespace DownKyi.Architecture.Tests;
 
 public sealed class AssemblyLifecycleProbeBehaviorTests
 {
     private const string MutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_LEASE";
+    private const string HelperAuthorityMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_FORENSICS_HELPER_AUTHORITY";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
     public void LifecycleForensicsIsAnObserverRatherThanASecondProcessOwner()
     {
         var source = ReadLifecycleGate();
-        var observer = ReadFunction(source, "Invoke-ForensicsObserverCapture");
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(HelperAuthorityMutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            source = source.Replace(
+                "$safeReason = $Reason -replace '[^A-Za-z0-9_.-]', '-'",
+                "$Process.Kill($true)\n    " +
+                "$safeReason = $Reason -replace '[^A-Za-z0-9_.-]', '-'",
+                StringComparison.Ordinal);
+        }
+
+        var observerClosure = ReadFunctionClosure(source, "Invoke-ForensicsObserverCapture");
         string[] forbiddenObserverAuthorities =
         [
             "ownedTreeQuiescent",
@@ -18,15 +34,32 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "OwnedProcessLease",
             "CompleteEvidenceHoldAsync",
             "TransitionBudget]::Start",
-            ".WaitAsync(",
-            ".Kill(",
             ".Terminate("
         ];
 
-        foreach (var authority in forbiddenObserverAuthorities)
+        foreach (var function in observerClosure)
         {
-            Assert.DoesNotContain(authority, observer, StringComparison.Ordinal);
+            foreach (var authority in forbiddenObserverAuthorities)
+            {
+                Assert.DoesNotContain(authority, function.Value, StringComparison.Ordinal);
+            }
+
+            if (!string.Equals(
+                    function.Key,
+                    "Stop-BoundedForensicsCollector",
+                    StringComparison.Ordinal))
+            {
+                Assert.DoesNotContain(".Kill(", function.Value, StringComparison.Ordinal);
+            }
         }
+
+        Assert.Contains("Save-ProcessEvidence", observerClosure.Keys);
+        Assert.Contains("Get-DiagnosticProcessTreeSnapshot", observerClosure.Keys);
+        Assert.Contains("Invoke-BoundedForensicsCollector", observerClosure.Keys);
+        var collectorCleanup = observerClosure["Stop-BoundedForensicsCollector"];
+        Assert.Contains("$Collector.Kill($true)", collectorCleanup, StringComparison.Ordinal);
+        Assert.DoesNotContain("TargetProcessId", collectorCleanup, StringComparison.Ordinal);
+        Assert.DoesNotContain("$Process.", collectorCleanup, StringComparison.Ordinal);
 
         Assert.Contains("EvidenceHoldRequest", source, StringComparison.Ordinal);
         Assert.Contains("CompleteEvidenceHoldAsync", source, StringComparison.Ordinal);
@@ -45,6 +78,29 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "Program.cs"));
         Assert.DoesNotContain("DOWNKYI_TRANSIENT_CHILD", probe, StringComparison.Ordinal);
         Assert.DoesNotContain("Kill(entireProcessTree", probe, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ForensicsCollectorWaitsAreCancellationAwareAndCleanupAlwaysAttemptsReap()
+    {
+        var source = ReadLifecycleGate();
+        var collector = ReadFunction(source, "Invoke-BoundedForensicsCollector");
+        var cleanup = ReadFunction(source, "Stop-BoundedForensicsCollector");
+
+        Assert.DoesNotContain(".WaitForExit(", collector, StringComparison.Ordinal);
+        Assert.DoesNotContain(".WaitForExit(", cleanup, StringComparison.Ordinal);
+        Assert.Contains("WaitForExitAsync($CancellationToken)", collector, StringComparison.Ordinal);
+        Assert.Contains("$outputTasks.WaitAsync(", collector, StringComparison.Ordinal);
+        Assert.Contains("$CancellationToken", collector, StringComparison.Ordinal);
+        Assert.Contains("$Collector.Kill($true)", cleanup, StringComparison.Ordinal);
+        Assert.Contains(
+            "$Collector.WaitForExitAsync([Threading.CancellationToken]::None)",
+            cleanup,
+            StringComparison.Ordinal);
+        Assert.True(
+            cleanup.IndexOf("$Collector.Kill($true)", StringComparison.Ordinal) <
+            cleanup.IndexOf("$Collector.WaitForExitAsync", StringComparison.Ordinal));
+        Assert.Contains("$failures.Add($_.Exception)", cleanup, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -85,6 +141,44 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.True(start >= 0, $"Lifecycle function was not found: {functionName}");
         var next = source.IndexOf("\nfunction ", start + startToken.Length, StringComparison.Ordinal);
         return next < 0 ? source[start..] : source[start..next];
+    }
+
+    private static Dictionary<string, string> ReadFunctionClosure(
+        string source,
+        string rootFunction)
+    {
+        var functionNames = Regex.Matches(
+                source,
+                @"(?m)^function\s+(?<name>[A-Za-z0-9-]+)\s*\{")
+            .Select(match => match.Groups["name"].Value)
+            .ToArray();
+        var closure = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pending = new Queue<string>();
+        pending.Enqueue(rootFunction);
+
+        while (pending.Count > 0)
+        {
+            var functionName = pending.Dequeue();
+            if (closure.ContainsKey(functionName))
+            {
+                continue;
+            }
+
+            var body = ReadFunction(source, functionName);
+            closure.Add(functionName, body);
+            foreach (var candidate in functionNames)
+            {
+                if (!closure.ContainsKey(candidate) &&
+                    Regex.IsMatch(
+                        body,
+                        $@"(?<![A-Za-z0-9-]){Regex.Escape(candidate)}(?![A-Za-z0-9-])"))
+                {
+                    pending.Enqueue(candidate);
+                }
+            }
+        }
+
+        return closure;
     }
 
     private static string ReadLifecycleGate()

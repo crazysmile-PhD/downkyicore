@@ -10,6 +10,7 @@ public sealed class OwnedProcessLeasePlatformTests
     private const string EvidenceHoldEnvironmentVariable =
         "DOWNKYI_FORENSICS_CAPTURE_PIPE";
     private const byte EvidenceCaptureCompleted = 0xA5;
+    private const byte EvidenceCaptureAcknowledged = 0x5A;
 
     [Fact]
     public async Task TargetExecutesOnlyAfterPlatformOwnershipIsEstablished()
@@ -201,6 +202,68 @@ public sealed class OwnedProcessLeasePlatformTests
             outcome.EvidenceHold.CaptureCompletion);
         Assert.True(outcome.EvidenceHold.Released);
         Assert.True(outcome.EvidenceHold.CompletionSignalDelivered);
+        Assert.True(outcome.EvidenceHold.TargetAcknowledged);
+    }
+
+    [Fact]
+    public async Task EvidenceHoldRejectsUndefinedCaptureCompletion()
+    {
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(4));
+        var lease = await StartEvidenceHoldProbeAsync(
+                SupervisorHost.EvidenceHoldProbeArgument,
+                budget)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        var waitTask = lease.WaitAsync(TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+                () => lease.CompleteEvidenceHoldAsync(
+                    (EvidenceCaptureCompletion)42,
+                    TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+        Assert.Equal(EvidenceCaptureCompletion.Pending, lease.EvidenceHold.CaptureCompletion);
+        Assert.False(lease.EvidenceHold.Released);
+
+        await lease.CompleteEvidenceHoldAsync(
+                EvidenceCaptureCompletion.Failed,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        var outcome = await waitTask.ConfigureAwait(true);
+        Assert.Equal(EvidenceCaptureCompletion.Failed, outcome.EvidenceHold.CaptureCompletion);
+        Assert.True(outcome.EvidenceHold.TargetAcknowledged);
+    }
+
+    [Fact]
+    public async Task EvidenceHoldRequiresAcknowledgmentFromTheHeldTarget()
+    {
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromMilliseconds(750),
+            TimeSpan.FromSeconds(4));
+        var lease = await StartEvidenceHoldProbeAsync(
+                SupervisorHost.IgnoreEvidenceHoldArgument,
+                budget)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        var waitTask = lease.WaitAsync(TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<TimeoutException>(
+                () => lease.CompleteEvidenceHoldAsync(
+                    EvidenceCaptureCompletion.Captured,
+                    TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+        var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(() => waitTask)
+            .ConfigureAwait(true);
+
+        Assert.Equal(OwnedProcessFailureKind.OperationDeadlineExceeded, failure.Failure.Kind);
+        Assert.Equal(
+            EvidenceCaptureCompletion.Captured,
+            failure.Failure.EvidenceHold.CaptureCompletion);
+        Assert.True(failure.Failure.EvidenceHold.Released);
+        Assert.True(failure.Failure.EvidenceHold.CompletionSignalDelivered);
+        Assert.False(failure.Failure.EvidenceHold.TargetAcknowledged);
+        Assert.Empty(failure.CleanupFailures);
     }
 
     [Fact]
@@ -267,6 +330,7 @@ public sealed class OwnedProcessLeasePlatformTests
             failure.Failure.EvidenceHold.CaptureCompletion);
         Assert.True(failure.Failure.EvidenceHold.Released);
         Assert.True(failure.Failure.EvidenceHold.CompletionSignalDelivered);
+        Assert.True(failure.Failure.EvidenceHold.TargetAcknowledged);
         Assert.Empty(failure.CleanupFailures);
     }
 
@@ -298,6 +362,7 @@ public sealed class OwnedProcessLeasePlatformTests
 
         Assert.Equal(OwnedProcessFailureKind.OperationDeadlineExceeded, failure.Failure.Kind);
         Assert.True(failure.Failure.EvidenceHold.Released);
+        Assert.False(failure.Failure.EvidenceHold.TargetAcknowledged);
         Assert.Empty(failure.CleanupFailures);
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(8));
     }
@@ -715,7 +780,8 @@ public sealed class OwnedProcessLeasePlatformTests
                 ?? throw new InvalidOperationException("The probe directory is unavailable."));
         var evidenceHold = new EvidenceHoldRequest(
             EvidenceHoldEnvironmentVariable,
-            EvidenceCaptureCompleted);
+            EvidenceCaptureCompleted,
+            EvidenceCaptureAcknowledged);
         return await OwnedProcessLease.StartForTestingAsync(
                 launchSpec,
                 budget,

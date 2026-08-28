@@ -150,7 +150,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         {
             throw new InvalidOperationException("This owned process lease has no evidence hold.");
         }
-        if (completion == EvidenceCaptureCompletion.Pending)
+        if (completion is not (EvidenceCaptureCompletion.Captured or
+            EvidenceCaptureCompletion.Failed))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(completion),
@@ -159,7 +160,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
 
         return _evidenceHold.CompleteAsync(
             completion,
-            _budget.RemainingOperation,
+            _budget,
             cancellationToken);
     }
 
@@ -364,7 +365,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
 
             started = true;
-            evidenceHold?.ReleaseLocalClientHandle();
+            evidenceHold?.ReleaseLocalClientHandles();
             standardOutput = supervisor.StandardOutput.ReadToEndAsync(CancellationToken.None);
             standardError = supervisor.StandardError.ReadToEndAsync(CancellationToken.None);
             containment = PlatformProcessContainment.Prepare(supervisor, jobName);
@@ -1105,7 +1106,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         IReadOnlyList<string> Arguments,
         string WorkingDirectory,
         IReadOnlyDictionary<string, string?> Environment,
-        bool CloseStandardInput)
+        bool CloseStandardInput,
+        EvidenceHoldTransport? EvidenceHold)
     {
         public static LaunchSpecPayload FromLaunchSpec(
             LaunchSpec launchSpec,
@@ -1114,46 +1116,56 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             var environment = new Dictionary<string, string?>(
                 launchSpec.Environment,
                 StringComparer.Ordinal);
-            if (evidenceHold != null)
-            {
-                environment[evidenceHold.TargetEnvironmentVariable] =
-                    evidenceHold.ClientHandle;
-            }
-
             return new LaunchSpecPayload(
                 launchSpec.FileName,
                 launchSpec.Arguments,
                 launchSpec.WorkingDirectory,
                 environment,
-                launchSpec.CloseStandardInput);
+                launchSpec.CloseStandardInput,
+                evidenceHold?.Transport);
         }
     }
+
+    private sealed record EvidenceHoldTransport(
+        string TargetEnvironmentVariable,
+        string CompletionClientHandle,
+        string AcknowledgmentClientHandle);
 
     private sealed class EvidenceHoldCoordinator : IDisposable
     {
         private readonly object _sync = new();
-        private readonly AnonymousPipeServerStream _pipe;
+        private readonly AnonymousPipeServerStream _completionPipe;
+        private readonly AnonymousPipeServerStream _acknowledgmentPipe;
         private readonly byte _completionSignal;
+        private readonly byte _acknowledgmentSignal;
         private EvidenceCaptureCompletion _captureCompletion;
         private bool _granted;
         private bool _completionStarted;
         private bool _released;
         private bool _completionSignalDelivered;
-        private bool _localClientHandleReleased;
+        private bool _targetAcknowledged;
+        private bool _localClientHandlesReleased;
 
         public EvidenceHoldCoordinator(EvidenceHoldRequest request)
         {
             TargetEnvironmentVariable = request.TargetEnvironmentVariable;
             _completionSignal = request.CompletionSignal;
-            _pipe = new AnonymousPipeServerStream(
+            _acknowledgmentSignal = request.AcknowledgmentSignal;
+            _completionPipe = new AnonymousPipeServerStream(
                 PipeDirection.Out,
                 HandleInheritability.Inheritable);
-            ClientHandle = _pipe.GetClientHandleAsString();
+            _acknowledgmentPipe = new AnonymousPipeServerStream(
+                PipeDirection.In,
+                HandleInheritability.Inheritable);
+            Transport = new EvidenceHoldTransport(
+                TargetEnvironmentVariable,
+                _completionPipe.GetClientHandleAsString(),
+                _acknowledgmentPipe.GetClientHandleAsString());
         }
 
         public string TargetEnvironmentVariable { get; }
 
-        public string ClientHandle { get; }
+        public EvidenceHoldTransport Transport { get; }
 
         public EvidenceHoldOutcome Snapshot
         {
@@ -1166,22 +1178,24 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                         Granted: _granted,
                         CaptureCompletion: _captureCompletion,
                         Released: _released,
-                        CompletionSignalDelivered: _completionSignalDelivered);
+                        CompletionSignalDelivered: _completionSignalDelivered,
+                        TargetAcknowledged: _targetAcknowledged);
                 }
             }
         }
 
-        public void ReleaseLocalClientHandle()
+        public void ReleaseLocalClientHandles()
         {
             lock (_sync)
             {
-                if (_localClientHandleReleased)
+                if (_localClientHandlesReleased)
                 {
                     return;
                 }
 
-                _pipe.DisposeLocalCopyOfClientHandle();
-                _localClientHandleReleased = true;
+                _completionPipe.DisposeLocalCopyOfClientHandle();
+                _acknowledgmentPipe.DisposeLocalCopyOfClientHandle();
+                _localClientHandlesReleased = true;
             }
         }
 
@@ -1201,7 +1215,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
 
         public async Task CompleteAsync(
             EvidenceCaptureCompletion completion,
-            TimeSpan remaining,
+            TransitionBudget budget,
             CancellationToken cancellationToken)
         {
             lock (_sync)
@@ -1219,15 +1233,32 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             try
             {
                 await WriteWithBudgetAsync(
-                        _pipe,
+                        _completionPipe,
                         new[] { _completionSignal },
-                        remaining,
+                        budget.RemainingOperation,
                         "The evidence-capture completion handoff exceeded the operation deadline.",
                         cancellationToken)
                     .ConfigureAwait(false);
                 lock (_sync)
                 {
                     _completionSignalDelivered = true;
+                }
+
+                var acknowledgment = await ReadExactWithBudgetAsync(
+                        _acknowledgmentPipe,
+                        sizeof(byte),
+                        budget.RemainingOperation,
+                        "The held target did not acknowledge capture completion before the operation deadline.",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (acknowledgment[0] != _acknowledgmentSignal)
+                {
+                    throw new InvalidDataException(
+                        "The held target returned an invalid capture-completion acknowledgment.");
+                }
+                lock (_sync)
+                {
+                    _targetAcknowledged = true;
                 }
             }
             finally
@@ -1248,7 +1279,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 _released = true;
             }
 
-            _pipe.Dispose();
+            _completionPipe.Dispose();
+            _acknowledgmentPipe.Dispose();
         }
     }
 

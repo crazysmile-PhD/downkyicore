@@ -146,6 +146,14 @@
           "environmentVariable": "DOWNKYI_TEST_MUTATE_FORENSICS_LEASE",
           "environmentValue": "1",
           "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.AssemblyLifecycleProbeBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_FORENSICS_HELPER_AUTHORITY",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
         }
       ]
     }

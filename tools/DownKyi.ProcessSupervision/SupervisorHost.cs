@@ -18,10 +18,12 @@ internal static class SupervisorHost
     internal const string EvidenceHoldProbeArgument = "--evidence-hold-probe";
     internal const string EvidenceHoldWithOwnedDescendantArgument =
         "--evidence-hold-with-owned-descendant";
+    internal const string IgnoreEvidenceHoldArgument = "--ignore-evidence-hold";
 
     private const string EvidenceHoldEnvironmentVariable =
         "DOWNKYI_FORENSICS_CAPTURE_PIPE";
     private const byte EvidenceCaptureCompleted = 0xA5;
+    private const byte EvidenceCaptureAcknowledged = 0x5A;
 
     private const byte OwnershipAttachment = 0xB1;
     private const byte LaunchAuthorization = 0xC1;
@@ -66,6 +68,14 @@ internal static class SupervisorHost
         {
             return await RunEvidenceHoldProbeAsync(withOwnedDescendant: false)
                 .ConfigureAwait(false);
+        }
+        if (arguments.Count == 1 &&
+            string.Equals(arguments[0], IgnoreEvidenceHoldArgument, StringComparison.Ordinal))
+        {
+            Environment.SetEnvironmentVariable(EvidenceHoldEnvironmentVariable, null);
+            await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
+                .ConfigureAwait(false);
+            return 0;
         }
         if (arguments.Count == 1 &&
             string.Equals(
@@ -153,9 +163,14 @@ internal static class SupervisorHost
             .ConfigureAwait(false);
         var payload = JsonSerializer.Deserialize<LaunchSpecPayload>(payloadBytes)
             ?? throw new InvalidOperationException("The immutable launch specification is invalid.");
+        using var evidenceHoldHandles = payload.EvidenceHold == null
+            ? null
+            : new EvidenceHoldClientHandleScope(payload.EvidenceHold);
         var startInfo = CreateTargetStartInfo(payload, attachment, mutation);
+        evidenceHoldHandles?.ApplyTo(startInfo);
         using var target = Process.Start(startInfo)
             ?? throw new InvalidOperationException("The owned target process did not start.");
+        evidenceHoldHandles?.ReleaseSupervisorCopies();
         if (payload.CloseStandardInput)
         {
             target.StandardInput.Close();
@@ -306,10 +321,13 @@ internal static class SupervisorHost
 
     private static async Task<int> RunEvidenceHoldProbeAsync(bool withOwnedDescendant)
     {
-        var capturePipeHandle = Environment.GetEnvironmentVariable(
+        var capturePipeTransport = Environment.GetEnvironmentVariable(
             EvidenceHoldEnvironmentVariable);
         Environment.SetEnvironmentVariable(EvidenceHoldEnvironmentVariable, null);
-        if (string.IsNullOrWhiteSpace(capturePipeHandle))
+        if (!TryParseEvidenceHoldTransport(
+                capturePipeTransport,
+                out var completionPipeHandle,
+                out var acknowledgmentPipeHandle))
         {
             return 207;
         }
@@ -328,18 +346,54 @@ internal static class SupervisorHost
 
             using var capturePipe = new AnonymousPipeClientStream(
                 PipeDirection.In,
-                capturePipeHandle);
+                completionPipeHandle);
+            using var acknowledgmentPipe = new AnonymousPipeClientStream(
+                PipeDirection.Out,
+                acknowledgmentPipeHandle);
             var completion = new byte[1];
             var read = await capturePipe.ReadAsync(completion, CancellationToken.None)
                 .ConfigureAwait(false);
-            return read == completion.Length && completion[0] == EvidenceCaptureCompleted
-                ? 0
-                : 208;
+            if (read != completion.Length || completion[0] != EvidenceCaptureCompleted)
+            {
+                return 208;
+            }
+
+            await acknowledgmentPipe.WriteAsync(
+                    new[] { EvidenceCaptureAcknowledged },
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            await acknowledgmentPipe.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            return 0;
         }
         finally
         {
             descendant?.Dispose();
         }
+    }
+
+    private static bool TryParseEvidenceHoldTransport(
+        string? transport,
+        out string completionPipeHandle,
+        out string acknowledgmentPipeHandle)
+    {
+        completionPipeHandle = string.Empty;
+        acknowledgmentPipeHandle = string.Empty;
+        if (string.IsNullOrWhiteSpace(transport))
+        {
+            return false;
+        }
+
+        var handles = transport.Split('|', StringSplitOptions.None);
+        if (handles.Length != 2 ||
+            string.IsNullOrWhiteSpace(handles[0]) ||
+            string.IsNullOrWhiteSpace(handles[1]))
+        {
+            return false;
+        }
+
+        completionPipeHandle = handles[0];
+        acknowledgmentPipeHandle = handles[1];
+        return true;
     }
 
     private static ProcessStartInfo CreateProbeStartInfo(
@@ -476,7 +530,57 @@ internal static class SupervisorHost
         IReadOnlyList<string> Arguments,
         string WorkingDirectory,
         IReadOnlyDictionary<string, string?> Environment,
-        bool CloseStandardInput);
+        bool CloseStandardInput,
+        EvidenceHoldTransport? EvidenceHold);
+
+    private sealed record EvidenceHoldTransport(
+        string TargetEnvironmentVariable,
+        string CompletionClientHandle,
+        string AcknowledgmentClientHandle);
+
+    private sealed class EvidenceHoldClientHandleScope : IDisposable
+    {
+        private readonly EvidenceHoldTransport _transport;
+        private readonly AnonymousPipeClientStream _completionPipe;
+        private readonly AnonymousPipeClientStream _acknowledgmentPipe;
+        private bool _released;
+
+        public EvidenceHoldClientHandleScope(EvidenceHoldTransport transport)
+        {
+            _transport = transport;
+            _completionPipe = new AnonymousPipeClientStream(
+                PipeDirection.In,
+                transport.CompletionClientHandle);
+            _acknowledgmentPipe = new AnonymousPipeClientStream(
+                PipeDirection.Out,
+                transport.AcknowledgmentClientHandle);
+        }
+
+        public void ApplyTo(ProcessStartInfo startInfo)
+        {
+            startInfo.Environment[_transport.TargetEnvironmentVariable] = string.Join(
+                '|',
+                _transport.CompletionClientHandle,
+                _transport.AcknowledgmentClientHandle);
+        }
+
+        public void ReleaseSupervisorCopies()
+        {
+            if (_released)
+            {
+                return;
+            }
+
+            _completionPipe.Dispose();
+            _acknowledgmentPipe.Dispose();
+            _released = true;
+        }
+
+        public void Dispose()
+        {
+            ReleaseSupervisorCopies();
+        }
+    }
 
     private sealed record OwnershipProbeResult(
         string ContainmentKind,
