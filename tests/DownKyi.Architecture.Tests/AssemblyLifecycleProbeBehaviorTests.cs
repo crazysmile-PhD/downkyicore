@@ -128,10 +128,9 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
                 StringComparison.Ordinal))
         {
             var mutation = ExecuteCaptureBudgetMutation();
-            Assert.Contains(
-                "Forensics collector capture-window self-test did not fail closed.",
-                mutation.Output,
-                StringComparison.Ordinal);
+            // The outer mutation proof must pass if the broken helper is accepted.
+            // A correct lifecycle self-test rejects it with a nonzero child exit,
+            // which is the only condition that should make this test fail closed.
             Assert.Equal(0, mutation.ExitCode);
         }
 

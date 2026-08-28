@@ -206,6 +206,45 @@ public sealed class OwnedProcessLeasePlatformTests
     }
 
     [Fact]
+    public async Task EvidenceHoldOutcomeWaitsForStartedAcknowledgmentPublication()
+    {
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(4));
+        var acknowledgmentPublication = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var lease = await StartEvidenceHoldProbeAsync(
+                SupervisorHost.EvidenceHoldProbeArgument,
+                budget,
+                acknowledgmentPublication.Task)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        var waitTask = lease.WaitAsync(TestContext.Current.CancellationToken);
+        var completionTask = lease.CompleteEvidenceHoldAsync(
+            EvidenceCaptureCompletion.Captured,
+            TestContext.Current.CancellationToken);
+
+        _ = await lease.WaitForTargetExitForTestingAsync()
+            .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        Assert.False(completionTask.IsCompleted);
+        Assert.False(waitTask.IsCompleted);
+
+        acknowledgmentPublication.SetResult(true);
+        await completionTask.ConfigureAwait(true);
+        var outcome = await waitTask.ConfigureAwait(true);
+
+        Assert.Equal(0, outcome.ExitCode);
+        Assert.True(outcome.TreeQuiescent);
+        Assert.Equal(
+            EvidenceCaptureCompletion.Captured,
+            outcome.EvidenceHold.CaptureCompletion);
+        Assert.True(outcome.EvidenceHold.Released);
+        Assert.True(outcome.EvidenceHold.CompletionSignalDelivered);
+        Assert.True(outcome.EvidenceHold.TargetAcknowledged);
+    }
+
+    [Fact]
     public async Task EvidenceHoldRejectsUndefinedCaptureCompletion()
     {
         var budget = TransitionBudget.Start(
@@ -773,7 +812,8 @@ public sealed class OwnedProcessLeasePlatformTests
 
     private static async Task<OwnedProcessLease> StartEvidenceHoldProbeAsync(
         string probeArgument,
-        TransitionBudget budget)
+        TransitionBudget budget,
+        Task? acknowledgmentPublicationGateForTesting = null)
     {
         var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
         var launchSpec = new LaunchSpec(
@@ -785,12 +825,21 @@ public sealed class OwnedProcessLeasePlatformTests
             EvidenceHoldEnvironmentVariable,
             EvidenceCaptureCompleted,
             EvidenceCaptureAcknowledged);
-        return await OwnedProcessLease.StartForTestingAsync(
+        var startTask = acknowledgmentPublicationGateForTesting == null
+            ? OwnedProcessLease.StartForTestingAsync(
                 launchSpec,
                 budget,
                 evidenceHold,
                 ProcessOwnershipMutation.None,
                 TestContext.Current.CancellationToken)
+            : OwnedProcessLease.StartForTestingAsync(
+                launchSpec,
+                budget,
+                evidenceHold,
+                ProcessOwnershipMutation.None,
+                acknowledgmentPublicationGateForTesting,
+                TestContext.Current.CancellationToken);
+        return await startTask
             .ConfigureAwait(true);
     }
 

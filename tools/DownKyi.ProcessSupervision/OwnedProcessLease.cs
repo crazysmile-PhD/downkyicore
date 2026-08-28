@@ -82,6 +82,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             budget,
             evidenceHoldRequest: null,
             ProcessOwnershipMutation.None,
+            acknowledgmentPublicationGateForTesting: null,
             cancellationToken);
     }
 
@@ -97,6 +98,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             budget,
             evidenceHoldRequest,
             ProcessOwnershipMutation.None,
+            acknowledgmentPublicationGateForTesting: null,
             cancellationToken);
     }
 
@@ -111,6 +113,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             budget,
             evidenceHoldRequest: null,
             mutation,
+            acknowledgmentPublicationGateForTesting: null,
             cancellationToken);
     }
 
@@ -127,6 +130,26 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             budget,
             evidenceHoldRequest,
             mutation,
+            acknowledgmentPublicationGateForTesting: null,
+            cancellationToken);
+    }
+
+    internal static Task<OwnedProcessLease> StartForTestingAsync(
+        LaunchSpec launchSpec,
+        TransitionBudget budget,
+        EvidenceHoldRequest evidenceHoldRequest,
+        ProcessOwnershipMutation mutation,
+        Task acknowledgmentPublicationGateForTesting,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(evidenceHoldRequest);
+        ArgumentNullException.ThrowIfNull(acknowledgmentPublicationGateForTesting);
+        return StartCoreAsync(
+            launchSpec,
+            budget,
+            evidenceHoldRequest,
+            mutation,
+            acknowledgmentPublicationGateForTesting,
             cancellationToken);
     }
 
@@ -237,6 +260,13 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     cancellationToken)
                 .ConfigureAwait(false);
 
+            var evidenceHold = _evidenceHold == null
+                ? EvidenceHoldOutcome.CreateNotRequested()
+                : await _evidenceHold.SnapshotForOutcomeAsync(
+                        _budget,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
             outcome = new OwnedProcessOutcome(
                 supervisorProcessId,
                 TargetProcessId,
@@ -246,7 +276,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 targetExit.ExitedAtUnixMilliseconds,
                 TreeQuiescent: true,
                 Ownership,
-                EvidenceHold);
+                evidenceHold);
         }
         catch (Exception failure)
         {
@@ -315,6 +345,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         TransitionBudget budget,
         EvidenceHoldRequest? evidenceHoldRequest,
         ProcessOwnershipMutation mutation,
+        Task? acknowledgmentPublicationGateForTesting,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(launchSpec);
@@ -345,7 +376,9 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         var jobName = $"Local\\DownKyi.ProcessLease.{Guid.NewGuid():N}";
         var evidenceHold = evidenceHoldRequest == null
             ? null
-            : new EvidenceHoldCoordinator(evidenceHoldRequest);
+            : new EvidenceHoldCoordinator(
+                evidenceHoldRequest,
+                acknowledgmentPublicationGateForTesting);
         var startInfo = CreateSupervisorStartInfo(
             controlPipeName,
             statusPipeName,
@@ -1138,19 +1171,27 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         private readonly AnonymousPipeServerStream _acknowledgmentPipe;
         private readonly byte _completionSignal;
         private readonly byte _acknowledgmentSignal;
+        private readonly Task? _acknowledgmentPublicationGateForTesting;
+        private readonly TaskCompletionSource<bool> _completionFinished = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         private EvidenceCaptureCompletion _captureCompletion;
         private bool _granted;
         private bool _completionStarted;
+        private bool _outcomeSnapshotStarted;
         private bool _released;
         private bool _completionSignalDelivered;
         private bool _targetAcknowledged;
         private bool _localClientHandlesReleased;
 
-        public EvidenceHoldCoordinator(EvidenceHoldRequest request)
+        public EvidenceHoldCoordinator(
+            EvidenceHoldRequest request,
+            Task? acknowledgmentPublicationGateForTesting)
         {
             TargetEnvironmentVariable = request.TargetEnvironmentVariable;
             _completionSignal = request.CompletionSignal;
             _acknowledgmentSignal = request.AcknowledgmentSignal;
+            _acknowledgmentPublicationGateForTesting =
+                acknowledgmentPublicationGateForTesting;
             _completionPipe = new AnonymousPipeServerStream(
                 PipeDirection.Out,
                 HandleInheritability.Inheritable);
@@ -1182,6 +1223,33 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                         TargetAcknowledged: _targetAcknowledged);
                 }
             }
+        }
+
+        public async Task<EvidenceHoldOutcome> SnapshotForOutcomeAsync(
+            TransitionBudget budget,
+            CancellationToken cancellationToken)
+        {
+            Task? completion = null;
+            lock (_sync)
+            {
+                _outcomeSnapshotStarted = true;
+                if (_completionStarted)
+                {
+                    completion = _completionFinished.Task;
+                }
+            }
+
+            if (completion != null)
+            {
+                await WaitWithBudgetAsync(
+                        completion,
+                        budget.RemainingOperation,
+                        "The evidence-hold completion transaction did not settle before the operation deadline.",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return Snapshot;
         }
 
         public void ReleaseLocalClientHandles()
@@ -1220,7 +1288,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         {
             lock (_sync)
             {
-                if (!_granted || _completionStarted || _released)
+                if (!_granted || _completionStarted || _outcomeSnapshotStarted || _released)
                 {
                     throw new InvalidOperationException(
                         "The evidence hold is not awaiting capture completion.");
@@ -1256,6 +1324,15 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     throw new InvalidDataException(
                         "The held target returned an invalid capture-completion acknowledgment.");
                 }
+                if (_acknowledgmentPublicationGateForTesting != null)
+                {
+                    await WaitWithBudgetAsync(
+                            _acknowledgmentPublicationGateForTesting,
+                            budget.RemainingOperation,
+                            "The evidence-hold acknowledgment publication test gate exceeded the operation deadline.",
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
                 lock (_sync)
                 {
                     _targetAcknowledged = true;
@@ -1263,7 +1340,14 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
             finally
             {
-                Dispose();
+                try
+                {
+                    Dispose();
+                }
+                finally
+                {
+                    _completionFinished.TrySetResult(true);
+                }
             }
         }
 
