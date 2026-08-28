@@ -936,6 +936,64 @@ CI and a new same-head review. No old run will be rerun. Stage 4A remains
 completed and closed; production Stage 4, Stage 5, merge, release and tag
 movement remain out of scope.
 
+### Ninth Exact-Head Review And Monotonic Completion Proof
+
+Documentation head `4710616b58478eaeff92b286a9b541b4d2f6e2d5` naturally
+triggered Strict PR run
+[33192415447](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33192415447),
+which passed all 12 jobs. Build
+[33192415680](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33192415680),
+CodeQL
+[33192415606](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33192415606),
+Process Membership
+[33192415458](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33192415458)
+and Protobuf
+[33192415490](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33192415490)
+also passed on that head. Lifecycle artifact `9694624579` records eight
+assemblies, 147 phases, zero failures, 11 slow phases, 11 captured bundles,
+zero missing bundles, ownership 634/0, lead 3,000 ms, capture window 15,000 ms
+and all ordering checks passing. Its checkout SHA is GitHub's synthetic
+pull-request merge SHA `28f55e0f01b6507ef12d65a10b51cd3ca17039ff`;
+the workflow and PR head remained
+`4710616b58478eaeff92b286a9b541b4d2f6e2d5`.
+
+Same-head Codex review
+[5053390535](https://github.com/crazysmile-PhD/downkyicore/pull/197#pullrequestreview-5053390535)
+reported three final timing-oracle defects:
+
+1. evidence-hold completion was timestamped after releasing and acknowledging
+   the target, creating a scheduler race with target exit;
+2. UTC wall-clock samples from different components were used for correctness
+   ordering instead of one monotonic origin;
+3. the late-completion mutation did not require its phase to be otherwise
+   successful, so an unrelated lifecycle failure could satisfy the proof.
+
+Implementation `3adc4376ef8756d90b3926256799cff5269de64a` records observer
+completion immediately after the capture call returns and before evidence-hold
+release. It derives completion from the existing root `TransitionBudget` as
+operation duration minus monotonic remaining operation time, the same origin
+used by the lease's typed `TargetExitedAfter`. UTC timestamps remain diagnostic
+and do not decide correctness. The late-completion mutation now requires the
+real phase to be successful before its intentionally inverted monotonic order
+can count as proof. No new clock, deadline, retry, owner or timeout was added.
+
+On clean exact implementation HEAD, one-assembly Local `-ValidateForensics`
+recorded one assembly, nine phases, zero failures, ownership 634/0 and all
+forensics checks passing. The real managed-stack path armed after 1.280 seconds,
+recorded observer completion after 3,255.096 ms before evidence-hold release and
+validated completion before target exit. The configured path completed after
+7,666.689 ms before target exit at 8,289.826 ms. The late mutation's phase was
+successful and completed after 6,478.64 ms, later than target exit at 5,533.322
+ms. Affected Architecture passed 9/9, full Architecture 316/316, Windows 74/74
+and the review-invariant gate 325 tests plus seven adversarial proofs. The
+unchanged focused collector class remains 18/18. PowerShell parse, C# format
+and diff checks passed.
+
+Status: pending this documentation commit, exact-head push, naturally triggered
+CI and a new same-head review. No old run will be rerun. Stage 4A remains
+completed and closed; production Stage 4, Stage 5, merge, release and tag
+movement remain out of scope.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates

@@ -137,9 +137,11 @@ evidence errors cannot overwrite the process owner's causal failure.
   A controlled delay proves the child remains live during capture, so
   hosted-runner diagnostic latency cannot invalidate the proof. Capture arms at
   1.25 seconds after the authoritative lease has been established instead of
-  charging supervisor startup to the observer. The capture result also records
-  actual arming and completion timestamps and requires completion before the
-  target's authoritative exit timestamp. The machine report exposes
+  charging supervisor startup to the observer. The capture result records the
+  actual arming delay and completion on the root `TransitionBudget` monotonic
+  origin, then fixes observer completion before releasing an evidence hold.
+  Completion must precede the lease's same-origin authoritative
+  `TargetExitedAfter`; UTC timestamps remain diagnostic only. The machine report exposes
   `forensicsSelfTestCaptureLeadValidated` and
   `forensicsSelfTestPositiveCaptureThresholdValidated` plus the observed
   stopwatch time,
@@ -422,8 +424,10 @@ real phase result must be `SlowEvidenceMissing`. An immediate-dispatch mutation
 uses a zero calculated threshold and proves the recorded stopwatch value detects
 the first observation-loop iteration. A non-cooperative post-capture mutation
 writes evidence, remains within the same caller-allocated window, then returns
-after target exit; the completion timestamp must reject it even though the file
-exists and the raw status is `captured`.
+after target exit; the monotonic completion value must reject it even though the
+file exists and the raw status is `captured`. The mutated phase must otherwise
+succeed, so a process, output or stream-drain failure cannot substitute for the
+intended ordering rejection.
 
 This ordering proof deliberately skips the managed-stack tool after the ordering
 boundary; the separate evidence-hold self-test continues to require a real
