@@ -581,7 +581,8 @@ internal static class SupervisorHost
                     Environment.ProcessId,
                     endpoint.PhysicalIdentifier,
                     Listening: true,
-                    ConnectedAfterMilliseconds: null),
+                    ConnectedAfterMilliseconds: null,
+                    ConnectedAtUnixMilliseconds: null),
                 injectFailure: false)
             .ConfigureAwait(false);
         await server.WaitForConnectionAsync(CancellationToken.None).ConfigureAwait(false);
@@ -591,7 +592,8 @@ internal static class SupervisorHost
                     Environment.ProcessId,
                     endpoint.PhysicalIdentifier,
                     Listening: true,
-                    stopwatch.Elapsed.TotalMilliseconds),
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
                 injectFailure: false)
             .ConfigureAwait(false);
         await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
@@ -834,7 +836,8 @@ internal static class SupervisorHost
         int ProcessId,
         string PipeName,
         bool Listening,
-        double? ConnectedAfterMilliseconds);
+        double? ConnectedAfterMilliseconds,
+        long? ConnectedAtUnixMilliseconds);
 
     private sealed record FileSignalProbeResult(
         int ProcessId,

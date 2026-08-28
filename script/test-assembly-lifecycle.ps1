@@ -585,6 +585,8 @@ function Test-DotnetStackAttachStall {
     $targetCleanupErrorType = $null
     $ready = $null
     $connected = $null
+    $collectorRequestCreatedAtUnixMilliseconds = $null
+    $typedOutcomeReturnedAtUnixMilliseconds = $null
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $targetLease = [DownKyi.ProcessSupervision.OwnedProcessLease]::StartAsync(
@@ -595,6 +597,8 @@ function Test-DotnetStackAttachStall {
         $captureWindow = $budget.AllocateDiagnosticCollectorWindow(
             [TimeSpan]::FromSeconds(3),
             [TimeSpan]::FromSeconds(1))
+        $collectorRequestCreatedAtUnixMilliseconds =
+            [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         try {
             $null = Invoke-OwnedDiagnosticCollector `
                 -FileName $DiagnosticsTool `
@@ -616,6 +620,8 @@ function Test-DotnetStackAttachStall {
                 $unexpectedFailureType = $_.Exception.GetType().Name
             }
         }
+        $typedOutcomeReturnedAtUnixMilliseconds =
+            [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         $connected = Wait-DiagnosticFixturePublication `
             -Path $connectedPath `
             -Budget $budget
@@ -642,12 +648,6 @@ function Test-DotnetStackAttachStall {
     }
     else {
         $failure.Failure.Evidence
-    }
-    $processStarted = if ($null -eq $evidence) {
-        $null
-    }
-    else {
-        Get-DiagnosticCollectorTransition -Evidence $evidence -Name "ProcessStarted"
     }
     $targetAttach = if ($null -eq $evidence) {
         $null
@@ -696,7 +696,8 @@ function Test-DotnetStackAttachStall {
         targetListening = $null -ne $ready -and $ready.Listening -eq $true
         diagnosticsConnectionAccepted = $null -ne $connected -and
             $connected.ProcessId -eq $targetProcessId -and
-            $connected.ConnectedAfterMilliseconds -ge 0
+            $connected.ConnectedAfterMilliseconds -ge 0 -and
+            $null -ne $connected.ConnectedAtUnixMilliseconds
         typedDeadline = $null -ne $failure -and
             $failure.Failure.Kind.ToString() -eq "OperationDeadlineExceeded"
         collectorStarted = $null -ne $evidence -and $evidence.Started
@@ -705,9 +706,13 @@ function Test-DotnetStackAttachStall {
         cleanupSucceeded = $null -ne $failure -and $failure.CleanupFailures.Count -eq 0
         attachOwnerBoundaryRecorded = $null -ne $targetAttach -and
             $targetAttach.State.ToString() -eq "NotObservable"
-        connectionPrecededDeadline = $null -ne $connected -and
-            $null -ne $typedOutcome -and
-            $connected.ConnectedAfterMilliseconds -lt $typedOutcome.ElapsedMilliseconds
+        connectionAcceptedDuringCollector = $null -ne $connected -and
+            $null -ne $collectorRequestCreatedAtUnixMilliseconds -and
+            $null -ne $typedOutcomeReturnedAtUnixMilliseconds -and
+            $connected.ConnectedAtUnixMilliseconds -ge
+                $collectorRequestCreatedAtUnixMilliseconds -and
+            $connected.ConnectedAtUnixMilliseconds -le
+                $typedOutcomeReturnedAtUnixMilliseconds
         sessionDidNotStart = $traceFiles.Count -eq 0 -and
             $null -ne $stackCapture -and
             $stackCapture.State.ToString() -eq "NotObservable"
@@ -715,10 +720,8 @@ function Test-DotnetStackAttachStall {
             $firstProgress.State.ToString() -eq "NotObserved"
         noStackOutput = $null -ne $stackOutput -and
             $stackOutput.State.ToString() -eq "NotObserved"
-        windowConsumedAfterStart = $null -ne $processStarted -and
-            $null -ne $typedOutcome -and
-            ($typedOutcome.ElapsedMilliseconds -
-                $processStarted.ElapsedMilliseconds) -ge 2500
+        windowConsumedWithoutProgress = $null -ne $typedOutcome -and
+            $typedOutcome.ElapsedMilliseconds -ge 2900
         parentBudgetPreserved = $budget.RemainingOperation -gt [TimeSpan]::FromSeconds(4)
         bounded = $stopwatch.Elapsed -lt [TimeSpan]::FromSeconds(5)
         targetCleanupSucceeded = $null -eq $targetCleanupErrorType
@@ -745,6 +748,10 @@ function Test-DotnetStackAttachStall {
         parentRemainingOperationMilliseconds = [Math]::Round(
             $budget.RemainingOperation.TotalMilliseconds,
             3)
+        collectorRequestCreatedAtUnixMilliseconds =
+            $collectorRequestCreatedAtUnixMilliseconds
+        typedOutcomeReturnedAtUnixMilliseconds =
+            $typedOutcomeReturnedAtUnixMilliseconds
         unexpectedFailureType = $unexpectedFailureType
         targetCleanupErrorType = $targetCleanupErrorType
         contractChecks = [pscustomobject]$contractChecks

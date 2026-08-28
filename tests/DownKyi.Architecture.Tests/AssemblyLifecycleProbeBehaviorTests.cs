@@ -432,6 +432,9 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             TimeoutException or
             UnauthorizedAccessException)
         {
+            TestContext.Current.TestOutputHelper?.WriteLine(
+                "Lifecycle mutation execution did not produce a child result: {0}",
+                failure.GetType().Name);
             return null;
         }
     }
@@ -495,7 +498,7 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
-            TestContext.Current.SendDiagnosticMessage(
+            TestContext.Current.TestOutputHelper?.WriteLine(
                 "Lifecycle mutation artifact cleanup did not replace the executable result: {0}",
                 failure.GetType().Name);
         }
