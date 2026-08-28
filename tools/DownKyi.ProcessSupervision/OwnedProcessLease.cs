@@ -412,16 +412,16 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 nameof(launchSpec));
         }
 
-        var controlPipeName = $"dkc-{Guid.NewGuid():N}";
-        var statusPipeName = $"dks-{Guid.NewGuid():N}";
+        var controlPipeName = IpcEndpointName.Create("OwnedProcessLease.Control");
+        var statusPipeName = IpcEndpointName.Create("OwnedProcessLease.Status");
         var control = new NamedPipeServerStream(
-            controlPipeName,
+            controlPipeName.PhysicalIdentifier,
             PipeDirection.Out,
             1,
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         var status = new NamedPipeServerStream(
-            statusPipeName,
+            statusPipeName.PhysicalIdentifier,
             PipeDirection.In,
             1,
             PipeTransmissionMode.Byte,
@@ -433,8 +433,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 evidenceHoldRequest,
                 acknowledgmentPublicationGateForTesting);
         var startInfo = CreateSupervisorStartInfo(
-            controlPipeName,
-            statusPipeName,
+            controlPipeName.PhysicalIdentifier,
+            statusPipeName.PhysicalIdentifier,
             jobName,
             mutation);
         var supervisor = new Process { StartInfo = startInfo };

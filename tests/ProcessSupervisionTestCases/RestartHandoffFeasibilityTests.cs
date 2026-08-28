@@ -249,6 +249,7 @@ public sealed class RestartHandoffFeasibilityTests
     public async Task WatcherArmedAfterParentExitMutationCannotReachReady()
     {
         await using var scenario = StartScenario("late-watcher", 2_000);
+        await scenario.ReleaseLateWatcherAfterParentExitAsync().ConfigureAwait(true);
         var evidence = await scenario.CompleteAsync().ConfigureAwait(true);
 
         Assert.Contains(evidence, item => item.Type == "WatcherRejected");
@@ -260,9 +261,9 @@ public sealed class RestartHandoffFeasibilityTests
     [Fact]
     public async Task OrdinaryOwnerDeathLeaseCannotSpanCommittedSuccessorTransition()
     {
-        var pipeName = $"downkyi-stage4a-owned-successor-{Guid.NewGuid():N}";
+        var pipeName = IpcEndpointName.Create("Stage4A.OrdinaryLeaseRegression");
         using var pipe = new NamedPipeServerStream(
-            pipeName,
+            pipeName.PhysicalIdentifier,
             PipeDirection.InOut,
             1,
             PipeTransmissionMode.Byte,
@@ -270,7 +271,7 @@ public sealed class RestartHandoffFeasibilityTests
         var fixturePath = typeof(FixtureMarker).Assembly.Location;
         var launchSpec = new LaunchSpec(
             "dotnet",
-            new[] { fixturePath, "owned-successor", pipeName },
+            new[] { fixturePath, "owned-successor", pipeName.PhysicalIdentifier },
             Path.GetDirectoryName(fixturePath)
                 ?? throw new InvalidOperationException("The fixture directory is unavailable."));
         var budget = TransitionBudget.Start(
@@ -430,12 +431,14 @@ public sealed class RestartHandoffFeasibilityTests
     {
         private readonly Process _process;
         private readonly Task<string> _standardError;
+        private readonly NamedPipeServerStream? _lateWatcherGate;
         private bool _completed;
 
-        private ScenarioSession(Process process)
+        private ScenarioSession(Process process, NamedPipeServerStream? lateWatcherGate)
         {
             _process = process;
             _standardError = process.StandardError.ReadToEndAsync();
+            _lateWatcherGate = lateWatcherGate;
         }
 
         public bool ParentHasExited => _process.HasExited;
@@ -449,6 +452,17 @@ public sealed class RestartHandoffFeasibilityTests
             string scenario,
             int windowMilliseconds)
         {
+            var lateWatcherPipeName = scenario == "late-watcher"
+                ? IpcEndpointName.Create("Stage4A.LateWatcherRelease")
+                : default;
+            var lateWatcherGate = scenario == "late-watcher"
+                ? new NamedPipeServerStream(
+                    lateWatcherPipeName!.PhysicalIdentifier,
+                    PipeDirection.Out,
+                    1,
+                    PipeTransmissionMode.Byte,
+                    PipeOptions.Asynchronous)
+                : null;
             var startInfo = new ProcessStartInfo
             {
                 FileName = "dotnet",
@@ -464,9 +478,35 @@ public sealed class RestartHandoffFeasibilityTests
             startInfo.ArgumentList.Add(scenario);
             startInfo.ArgumentList.Add(windowMilliseconds.ToString(
                 System.Globalization.CultureInfo.InvariantCulture));
-            var process = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("The restart handoff parent fixture did not start.");
-            return new ScenarioSession(process);
+            startInfo.ArgumentList.Add(scenario == "late-watcher"
+                ? lateWatcherPipeName!.PhysicalIdentifier
+                : "-");
+            try
+            {
+                var process = Process.Start(startInfo)
+                    ?? throw new InvalidOperationException(
+                        "The restart handoff parent fixture did not start.");
+                return new ScenarioSession(process, lateWatcherGate);
+            }
+            catch
+            {
+                lateWatcherGate?.Dispose();
+                throw;
+            }
+        }
+
+        public async Task ReleaseLateWatcherAfterParentExitAsync()
+        {
+            Assert.NotNull(_lateWatcherGate);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+                TestContext.Current.CancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            await _lateWatcherGate.WaitForConnectionAsync(timeout.Token).ConfigureAwait(false);
+            await _process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+            await _lateWatcherGate.WriteAsync(new byte[] { 1 }, timeout.Token)
+                .ConfigureAwait(false);
+            await _lateWatcherGate.FlushAsync(timeout.Token).ConfigureAwait(false);
+            await _lateWatcherGate.DisposeAsync().ConfigureAwait(false);
         }
 
         public async Task SendAsync(string command)
@@ -530,6 +570,7 @@ public sealed class RestartHandoffFeasibilityTests
                 }
             }
 
+            _lateWatcherGate?.Dispose();
             _process.Dispose();
         }
 

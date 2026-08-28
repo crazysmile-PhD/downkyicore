@@ -64,7 +64,7 @@ internal static class Program
 
     private static async Task<int> RunParentAsync(string[] arguments)
     {
-        if (arguments.Length != 3 ||
+        if (arguments.Length != 4 ||
             !int.TryParse(arguments[2], out var windowMilliseconds) ||
             windowMilliseconds <= 0)
         {
@@ -91,7 +91,8 @@ internal static class Program
             deadline.Domain,
             deadline.WindowMilliseconds.ToString(CultureInfo.InvariantCulture),
             Convert.ToHexString(nonce),
-            scenario);
+            scenario,
+            arguments[3]);
         helperStartInfo.RedirectStandardInput = true;
         using var helper = Process.Start(helperStartInfo)
             ?? throw new InvalidOperationException("The restart helper fixture did not start.");
@@ -196,7 +197,7 @@ internal static class Program
         Justification = "Watcher establishment must fail closed and retain the exact native failure as typed evidence.")]
     private static async Task<int> RunHelperAsync(string[] arguments)
     {
-        if (arguments.Length != 9 ||
+        if (arguments.Length != 10 ||
             !int.TryParse(arguments[1], out var exactParentProcessId) ||
             !int.TryParse(arguments[2], out var watcherProcessId) ||
             !long.TryParse(arguments[3], out var expiresAt) ||
@@ -218,6 +219,7 @@ internal static class Program
         if (scenario == "late-watcher")
         {
             _ = await ReadAuthorizationAsync(deadline, nonce).ConfigureAwait(false);
+            await WaitForLateWatcherReleaseAsync(arguments[9]).ConfigureAwait(false);
         }
 
         Process? rebound = null;
@@ -487,6 +489,22 @@ internal static class Program
             }
 
             rebound?.Dispose();
+        }
+    }
+
+    private static async Task WaitForLateWatcherReleaseAsync(string pipeName)
+    {
+        using var gate = new NamedPipeClientStream(
+            ".",
+            pipeName,
+            PipeDirection.In,
+            PipeOptions.Asynchronous);
+        await gate.ConnectAsync().ConfigureAwait(false);
+        var release = new byte[1];
+        if (await gate.ReadAsync(release).ConfigureAwait(false) != 1 || release[0] != 1)
+        {
+            throw new EndOfStreamException(
+                "The late-watcher synchronization gate closed before parent-exit release.");
         }
     }
 

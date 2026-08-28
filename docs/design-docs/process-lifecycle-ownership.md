@@ -62,6 +62,28 @@ exact exit to perform one bounded relaunch attempt. Stage 4A therefore records
 restart handoff domain. See `restart-handoff-lifecycle.md`. This distinction does
 not weaken or reopen the Stage 2 invariant.
 
+## Temporary IPC Naming
+
+Human-readable endpoint labels and operating-system pipe identifiers are
+separate values. `IpcEndpointName` in `tools/DownKyi.ProcessSupervision` is the
+single physical-name policy for repository-created `NamedPipeServerStream`
+instances. Call sites retain a logical label for diagnostics, but pass only the
+physical identifier to the OS and child command line.
+
+The physical format is `dkyi-` plus 16 lowercase base32 characters generated
+from 80 bits of cryptographic randomness. It is always 21 ASCII characters;
+the policy ceiling is 24. The alphabet remains unique under Windows
+case-insensitive comparison, and the entropy supports parallel test and
+process creation without descriptive text, PID, test name or full GUID data.
+
+The 24-character ceiling reserves 79 bytes for the macOS temporary-directory
+and .NET `CoreFxPipe_` prefix plus one Unix-domain socket terminator within the
+104-byte path limit. Platform tests prove the fixed length, case-insensitive
+parallel uniqueness, independence from arbitrarily long logical labels, the
+macOS path-budget calculation and real native pipe construction. Architecture
+tests reject any repository `NamedPipeServerStream` whose physical name does
+not come from this shared value.
+
 ## Threat Model
 
 The current threat model is trusted repository-child bug containment. The

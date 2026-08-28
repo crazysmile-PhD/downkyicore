@@ -320,6 +320,20 @@
       ]
     },
     {
+      "id": "restart-handoff-feasibility-fixture",
+      "paths": [
+        "tools/DownKyi.RestartHandoff.FeasibilityFixture/**"
+      ],
+      "owner": "Stage 4A restart-handoff feasibility transaction",
+      "start": "The platform test starts one bounded parent fixture, which creates only its candidate watcher helper and one replacement probe after authenticated commit and exact-parent exit.",
+      "stop": "Every scenario reaches a typed terminal outcome within the immutable prepare-time deadline; the parent and helper wait for each started child before returning.",
+      "teardown": "Normal outcomes dispose and reap every fixture process. The test owner retains a bounded failure-only whole-tree cleanup path so a broken feasibility probe cannot escape the test process.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "external_process"
+      ]
+    },
+    {
       "id": "lifecycle-probe",
       "paths": [
         "tools/DownKyi.AssemblyLifecycleProbe/**"

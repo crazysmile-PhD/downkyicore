@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\tools\DownKyi.RestartHandoff.FeasibilityFixture\DownKyi.RestartHandoff.FeasibilityFixture.csproj" />
     <Compile Include="..\ProcessSupervisionTestCases\OwnedDiagnosticCollectorPlatformTests.cs" Link="OwnedDiagnosticCollectorPlatformTests.cs" />
     <Compile Include="..\ProcessSupervisionTestCases\OwnedProcessLeasePlatformTests.cs" Link="OwnedProcessLeasePlatformTests.cs" />
+    <Compile Include="..\ProcessSupervisionTestCases\IpcEndpointNameTests.cs" Link="IpcEndpointNameTests.cs" />
     <Compile Include="..\ProcessSupervisionTestCases\RestartHandoffFeasibilityTests.cs" Link="RestartHandoffFeasibilityTests.cs" />
   </ItemGroup>
 
