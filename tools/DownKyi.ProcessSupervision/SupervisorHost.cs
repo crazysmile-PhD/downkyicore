@@ -30,6 +30,8 @@ internal static class SupervisorHost
         "--diagnostic-ipc-stall-with-ready";
     internal const string ExitOnFileSignalWithReadyArgument =
         "--exit-on-file-signal-with-ready";
+    internal const string ExitAfterDelayWithReadyArgument =
+        "--exit-after-delay-with-ready";
 
     private const string EvidenceHoldEnvironmentVariable =
         "DOWNKYI_FORENSICS_CAPTURE_PIPE";
@@ -154,6 +156,15 @@ internal static class SupervisorHost
                 StringComparison.Ordinal))
         {
             return await RunExitOnFileSignalProbeAsync(arguments[1], arguments[2])
+                .ConfigureAwait(false);
+        }
+        if (arguments.Count == 3 &&
+            string.Equals(
+                arguments[0],
+                ExitAfterDelayWithReadyArgument,
+                StringComparison.Ordinal))
+        {
+            return await RunExitAfterDelayProbeAsync(arguments[1], arguments[2])
                 .ConfigureAwait(false);
         }
 
@@ -638,6 +649,38 @@ internal static class SupervisorHost
         return 0;
     }
 
+    private static async Task<int> RunExitAfterDelayProbeAsync(
+        string readyPath,
+        string delayMillisecondsText)
+    {
+        if (!int.TryParse(
+                delayMillisecondsText,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var delayMilliseconds) ||
+            delayMilliseconds is < 1 or > 60_000)
+        {
+            return 2;
+        }
+
+        var delayedExit = Task.Delay(
+            TimeSpan.FromMilliseconds(delayMilliseconds),
+            CancellationToken.None);
+        await PublishProbeAsync(
+                readyPath,
+                new DelayedExitProbeResult(
+                    Environment.ProcessId,
+                    delayMilliseconds,
+                    DelayScheduled: true),
+                injectFailure: false)
+            .ConfigureAwait(false);
+        await delayedExit.ConfigureAwait(false);
+        await Console.Out.WriteLineAsync(
+                JsonSerializer.Serialize(new { Success = true, Unloaded = true }))
+            .ConfigureAwait(false);
+        return 0;
+    }
+
     private static async Task WriteCollectorChunksAsync(
         TextWriter writer,
         string chunk,
@@ -842,4 +885,9 @@ internal static class SupervisorHost
     private sealed record FileSignalProbeResult(
         int ProcessId,
         bool WatcherArmed);
+
+    private sealed record DelayedExitProbeResult(
+        int ProcessId,
+        int DelayMilliseconds,
+        bool DelayScheduled);
 }

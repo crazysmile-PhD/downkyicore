@@ -111,7 +111,12 @@ public sealed class AssemblyLifecycleArchitectureTests
             "slowEvidenceCaptureLeadMilliseconds",
             "slowEvidenceTriggeredBeforeThreshold",
             "forensicsSelfTestCaptureLeadValidated",
+            "forensicsSelfTestPositiveCaptureThresholdValidated",
+            "forensicsSelfTestObservedCaptureThresholdSeconds",
             "forensicsSelfTestEvidenceHoldValidated",
+            "slowEvidenceOrderingSelfTestRequired",
+            "slowEvidenceOrderingSelfTestPassed",
+            "slowEvidenceOrderingSelfTest",
             "forensicsCaptureWindowMilliseconds",
             "forensicsCaptureCleanupWindowMilliseconds",
             "forensicsCollectorCaptureWindowSelfTestRequired",
@@ -144,7 +149,7 @@ public sealed class AssemblyLifecycleArchitectureTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "$hostedCollectorStartupAllowanceMilliseconds =",
+            "$hostedCollectorStartupAllowanceMilliseconds = 3000",
             source,
             StringComparison.Ordinal);
         Assert.Matches(
@@ -152,11 +157,12 @@ public sealed class AssemblyLifecycleArchitectureTests
             @"\$hostedCollectorStartupAllowanceMilliseconds",
             source);
         Assert.Contains(
-            "$EvidenceThresholdSeconds - ($slowEvidenceCaptureLeadMilliseconds / 1000)",
+            "$EvidenceThresholdSeconds - ($EvidenceCaptureLeadMilliseconds / 1000)",
             source,
             StringComparison.Ordinal);
+        Assert.Matches(@"\[Math\]::Max\(\s*0\.0,", source);
         Assert.Contains(
-            "-EvidenceThresholdSeconds 1.25",
+            "-EvidenceThresholdSeconds $forensicsSelfTestEvidenceThresholdSeconds",
             source,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -167,42 +173,34 @@ public sealed class AssemblyLifecycleArchitectureTests
             "$forensicsSelfTestCaptureLeadValidated =",
             source,
             StringComparison.Ordinal);
-        AssertUsesSynchronousAutomatedReporting(source, "assembly-info");
-        AssertUsesSynchronousAutomatedReporting(source, "discovery");
-        AssertUsesSynchronousAutomatedReporting(source, "execution");
-    }
-
-    [Fact]
-    public void SlowEvidenceLeadCoversHostedCollectorStartupBeforeTheThreshold()
-    {
-        var source = Read("script/test-assembly-lifecycle.ps1")
-            .Replace("\r\n", "\n", StringComparison.Ordinal);
-        var allowanceMatch = Regex.Match(
-            source,
-            @"(?m)^\$hostedCollectorStartupAllowanceMilliseconds = ([0-9]+)$",
-            RegexOptions.CultureInvariant);
-
-        Assert.True(allowanceMatch.Success, "Hosted collector startup allowance was not found.");
-        var configuredLeadMilliseconds = int.Parse(
-            allowanceMatch.Groups[1].Value,
-            System.Globalization.CultureInfo.InvariantCulture);
-        const int slowThresholdMilliseconds = 5_000;
-        const int syntheticHostedStartupMilliseconds = 1_500;
-        const int syntheticSlowTargetExitMilliseconds = 5_100;
-
-        var configuredCollectorStartedAt =
-            slowThresholdMilliseconds - configuredLeadMilliseconds +
-            syntheticHostedStartupMilliseconds;
-        var legacyCollectorStartedAt =
-            slowThresholdMilliseconds - 1_000 + syntheticHostedStartupMilliseconds;
-
-        Assert.True(configuredCollectorStartedAt < syntheticSlowTargetExitMilliseconds);
-        Assert.False(legacyCollectorStartedAt < syntheticSlowTargetExitMilliseconds);
-        Assert.Equal(3_000, configuredLeadMilliseconds);
         Assert.Contains(
             "$forensicsCaptureWindowMilliseconds = 15000",
             source,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "function Test-SlowEvidenceCaptureOrdering",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "--exit-after-delay-with-ready",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "-EvidenceCaptureLeadMilliseconds 1000",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$mutationPhase.failureType -eq \"SlowEvidenceMissing\"",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$selfTest.evidenceCaptureThresholdSeconds -",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("[Math]::Abs(", source, StringComparison.Ordinal);
+        AssertUsesSynchronousAutomatedReporting(source, "assembly-info");
+        AssertUsesSynchronousAutomatedReporting(source, "discovery");
+        AssertUsesSynchronousAutomatedReporting(source, "execution");
     }
 
     [Fact]
