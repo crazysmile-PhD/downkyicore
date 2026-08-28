@@ -892,18 +892,31 @@ push, required native/Strict PR and Assembly Lifecycle checks, closure of these
 four fixed review threads and a clean same-head Codex review. Stage 4, Stage 5,
 workflow, release, merge and tag work remain deferred.
 
-## Stage 4: Restart Transaction
+## Stage 4A: Restart Handoff Feasibility
 
-Retain prepare, authorize, commit and revoke. Keep product Policy B. The helper
-uses `OwnedProcessLease`; exact parent lifetime uses `ParentLifetimeLease`.
+The original composition assumption is invalidated. An ordinary
+`OwnedProcessLease` must terminate and reap its owned set when the owner lifetime
+ends; a committed restart helper must instead survive that exact parent exit,
+attempt one relaunch and then terminate. No existing lease transition transfers
+that ownership without weakening the Stage 2 invariant.
 
-The 30-second parent-wait product limit may remain, but it must be consumed
-through the shared `TransitionBudget`, not an independent `WaitAsync` clock.
+Stage 4A tests a separate bounded restart handoff domain. `ParentLifetimeLease`
+proves only exact parent exit. Typed authorization, one-shot commit, immutable
+cross-process deadline and terminal helper behavior belong to the restart
+domain; they must not become an `IgnoreOwnerDeathAfterCommit` switch on the
+ordinary lease. The detailed checkpoint is
+`pr-197-stage-4a-restart-handoff-feasibility.md` and the design boundary is
+`../design-docs/restart-handoff-lifecycle.md`.
 
-Required proof covers stale identity, PID reuse, authorization EOF, partial and
-replayed authorization, parent exit before commit, parent hang after commit,
-helper crash, cancellation, parent-wait failure, relaunch-start failure, desktop
-handoff failure, and cleanup failure plus accepted handoff still committing.
+The 30-second parent-wait product limit may remain only as one absolute
+monotonic deadline fixed at prepare. The helper consumes remaining time and may
+not acquire a fresh `WaitAsync` or stopwatch window.
+
+Stage 4A requires native Windows process-handle, Linux pidfd and macOS armed
+kqueue proofs plus the complete authorization, identity, deadline, exactly-once
+and terminal-helper mutation corpus. Production Stage 4 remains deferred until
+the feasibility result is separately reviewed and an explicit implementation
+instruction is given.
 
 ## Stage 5: Central Test Runner
 

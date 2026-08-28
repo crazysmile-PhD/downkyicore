@@ -19,6 +19,8 @@ platform-scoped invariant 分類分別位於 `high-risk-control-flow.md`、
 release-health 重驗契約位於 `unexpected-download-cancellation.md`。
 PR #197 的 OS-backed process lease、lifecycle、forensics、restart 與 runner
 migration 位於 `pr-197-process-lease-migration.md`。
+Stage 4A 的 restart successor、exact-parent watcher 與 cross-process deadline
+feasibility 位於 `pr-197-stage-4a-restart-handoff-feasibility.md`。
 
 每個 work item 必須包含：
 

@@ -26,8 +26,10 @@ LifecyclePhaseSupervisor
        -> OwnedDiagnosticCollector
 
 RestartTransaction
-  -> OwnedProcessLease
-  -> ParentLifetimeLease
+  -> RestartHandoffLease (candidate; Stage 4A proof required)
+       -> ParentLifetimeLease
+       -> typed one-shot authorization
+       -> immutable cross-process deadline
 ```
 
 `OwnedProcessLease` is not a generic domain supervisor. It owns only:
@@ -49,6 +51,16 @@ release policy or the policy value of any timeout.
 `ParentLifetimeLease` is separate because observing the process that created a
 restart helper is not the same operation as owning a child that this process
 launched. The two contracts must not claim identical platform capabilities.
+It proves only exact parent exit; it does not own the helper, authorize or commit
+restart, or create a deadline.
+
+The ordinary `OwnedProcessLease` owner-death contract cannot directly own a
+committed restart successor: owner lifetime EOF intentionally terminates and
+reaps the ordinary owned set, while a committed restart helper must survive that
+exact exit to perform one bounded relaunch attempt. Stage 4A therefore records
+`Stage 4 original composition assumption invalidated` and tests a separate
+restart handoff domain. See `restart-handoff-lifecycle.md`. This distinction does
+not weaken or reopen the Stage 2 invariant.
 
 ## Threat Model
 
@@ -353,6 +365,13 @@ The budget may reserve bounded cleanup time after the operation cutoff, but the
 operation and hard-cleanup deadlines are established together by the same owner
 on one monotonic timeline. Cleanup must not introduce a second clock owner.
 
+A restart handoff crosses a process boundary without crossing into a new clock
+authority. Prepare must fix an immutable absolute expiry in a platform
+monotonic-clock domain. The successor may calculate only the remaining duration
+from that expiry; it must not restart a stopwatch or allocate a fresh product
+window. Stage 4A must prove the representation natively before it becomes a
+production contract.
+
 Caller cancellation may stop work before an irreversible transition. Once a
 child has started or cleanup has begun, cleanup is not abandoned by caller
 cancellation and remains bounded by the hard deadline.
@@ -408,7 +427,8 @@ normalizes module-qualified PowerShell command names, while a shared
 failure-to-report converter and JSON round-trip fixture prove that non-empty
 cleanup stages and cause types survive the PowerShell boundary. Native
 exact-head CI and a clean same-head review must converge after the latest fix;
-Stage 4 and Stage 5 remain deferred.
+Stage 4 production implementation and Stage 5 remain deferred. Stage 4A is the
+separate restart-handoff feasibility checkpoint.
 
 ## Legacy Mechanism Disposition
 
