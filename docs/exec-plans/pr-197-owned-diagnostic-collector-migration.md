@@ -11,6 +11,7 @@ exact-head CI and same-head review are not yet complete.
 - Exact planning HEAD: `531399c375700d2bd188fe8723878fad008b7058`
 - Planning commit: `27ac6da102855fdbc647335aaf91133c1bacab1e`
 - Implementation commit: `6fc71e406ba80b2ccfbff49e05023f76f72458b6`
+- Exact-head review-fix commit: `c3a3a33f67daa20ac450212433c69774385fb679`
 - Stage 3 implementation: `1298bf5cb4bcb69c2a5cb69ce07204ba782f51e8`
 - Design authority: [Owned Diagnostic Collector](../design-docs/owned-diagnostic-collector.md)
 - Parent process design: [Process Lifecycle Ownership](../design-docs/process-lifecycle-ownership.md)
@@ -224,6 +225,49 @@ This is local evidence, not native exact-head closure. Windows/Linux/macOS CI,
 Assembly Lifecycle CI, Strict PR CI and same-head Codex review remain pending.
 No stop rule was triggered locally; Stage 4, Stage 5, workflow, release, merge
 and tag work remain deferred.
+
+## Exact-Head Review Fix
+
+Codex review `5048306320` inspected exact checkpoint
+`59339c3cb60118d5a6913c1c370b885b2bd306a4` and reported five blocking findings
+inside this migration boundary. Review-fix commit
+`c3a3a33f67daa20ac450212433c69774385fb679` makes these corrections:
+
+1. `DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET` now runs the actual lifecycle
+   script. Its typed blocked-collector self-test must preserve parent operation
+   budget and rejects the whole-budget mutation with the exact fail-closed
+   contract.
+2. The transitive PowerShell AST scan covers `CommandAst` and the mutation uses
+   `New-Object`, `Start-Process`, `Stop-Process` and `Wait-Process` forms.
+3. Collector start-failure classification uses the caught primary exception;
+   cancellation arriving after that causal failure cannot reclassify it.
+4. The PowerShell boundary unwraps `DiagnosticCollectorExecutionException`
+   from the PowerShell invocation wrapper and the lifecycle report preserves
+   typed failure kind, evidence and cleanup fields.
+5. The supervisor relays target stdout/stderr as they are read. Cancellation or
+   failure cleanup therefore retains evidence produced before termination.
+
+Local proof after the review fix:
+
+- strict Release solution build: 23 projects, zero warnings and zero errors;
+- focused Windows collector/window tests: 16 passed, zero failed;
+- focused lifecycle Architecture classes: 15 passed, zero failed;
+- full Architecture project: 312 passed, zero failed;
+- review-invariant corpus: 11 invariants, seven projects, 322 tests and all four
+  adversarial proofs; the whole-budget and command-AST mutations each failed
+  only their intended ownership assertion;
+- one-assembly Local `-ValidateForensics`: nine phase results, zero failures and
+  ownership 619/0. The report contains typed `OperationDeadlineExceeded`
+  evidence with reaped/drained true and an empty cleanup list;
+- Windows routed suite: eight projects, 1,105 total, 1,104 executed/passed, zero
+  failed and one existing packaged aria2 TLS skip because
+  `DOWNKYI_ARIA2_BINARY` was not supplied;
+- PowerShell parsing, `dotnet format --verify-no-changes` and `git diff --check`
+  passed.
+
+Required native exact-head CI and a new clean same-head Codex review remain the
+closure boundary. Review `5048306320` itself is not acceptance evidence because
+it contains the findings fixed above.
 
 ## Native CI Matrix
 

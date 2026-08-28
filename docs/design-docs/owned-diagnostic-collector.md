@@ -2,9 +2,11 @@
 
 ## Status And Authority
 
-This design is implemented locally by implementation commit
-`6fc71e406ba80b2ccfbff49e05023f76f72458b6`. Native exact-head CI and
-same-head review remain required before this independent checkpoint is closed.
+This design is implemented by implementation commit
+`6fc71e406ba80b2ccfbff49e05023f76f72458b6` plus exact-head review-fix commit
+`c3a3a33f67daa20ac450212433c69774385fb679`. Native exact-head CI and a clean
+same-head review of the later documentation checkpoint remain required before
+this independent checkpoint is closed.
 
 - Parent design: [Process Lifecycle Ownership](process-lifecycle-ownership.md)
 - Parent migration: [PR #197 Process-Lease Migration](../exec-plans/pr-197-process-lease-migration.md)
@@ -382,6 +384,28 @@ guard over the transitive forensics closure; mutations that restore raw
 collector process authority or an independent deadline make that guard fail.
 The AST guard supplements the native collector behavior tests and does not
 claim to prove runtime behavior by source inspection alone.
+
+## Exact-Head Review Follow-Up
+
+Codex review `5048306320` of checkpoint
+`59339c3cb60118d5a6913c1c370b885b2bd306a4` found five in-scope gaps. Review-fix
+commit `c3a3a33f67daa20ac450212433c69774385fb679` closes them without changing the
+target-process ownership boundary:
+
+- the whole-budget adversary now runs the real lifecycle script and is rejected
+  by a blocked-collector behavioral self-test, not a source assertion;
+- the PowerShell AST guard rejects command-based `New-Object`, `Start-Process`,
+  `Stop-Process` and `Wait-Process` ownership as well as member expressions;
+- cancellation observed after a collector start failure cannot replace the
+  causal `StartFailed` classification;
+- the PowerShell report unwraps the typed collector exception and records its
+  failure kind, evidence and cleanup list;
+- the supervisor relays target stdout and stderr while reading them, so failure
+  cleanup cannot discard evidence produced before termination.
+
+The deterministic collector self-test publishes its typed timeout evidence in
+the lifecycle report. Shared platform tests also prove failure-output relay and
+causal start-failure classification.
 
 ## Non-Goals
 

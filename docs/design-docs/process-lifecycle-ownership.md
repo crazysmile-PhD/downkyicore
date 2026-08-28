@@ -395,9 +395,14 @@ or typed primary/cleanup failures and never receives the collector process or
 cleanup target. The compiled collector has no authority over the observed
 target or owned tree.
 
-This independent boundary is implemented locally by
-`6fc71e406ba80b2ccfbff49e05023f76f72458b6`, based on the fixed Stage 3
-closure `531399c375700d2bd188fe8723878fad008b7058`. Native exact-head CI and
+This independent boundary is implemented by
+`6fc71e406ba80b2ccfbff49e05023f76f72458b6` and exact-head review-fix commit
+`c3a3a33f67daa20ac450212433c69774385fb679`, based on the fixed Stage 3 closure
+`531399c375700d2bd188fe8723878fad008b7058`. The fix preserves the first causal
+collector failure, streams already-produced target evidence through the
+supervisor before cleanup, carries typed collector failure/evidence/cleanup
+fields into the lifecycle report and behaviorally rejects whole-budget and
+command-based PowerShell ownership mutations. Native exact-head CI and a clean
 same-head review remain pending; Stage 4 and Stage 5 remain deferred.
 
 ## Legacy Mechanism Disposition

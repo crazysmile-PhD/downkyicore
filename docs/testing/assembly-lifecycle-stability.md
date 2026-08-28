@@ -156,7 +156,25 @@ evidence errors cannot overwrite the process owner's causal failure.
   budget proof through `forensicsCollectorCaptureWindowSelfTestPassed`. Shared
   platform tests separately cover blocked collectors, cancellation, terminate,
   reap and drain failures, large dual-stream output, descendant retention and a
-  mutation that consumes the parent budget.
+  mutation that consumes the parent budget. The lifecycle self-test records its
+  typed `OperationDeadlineExceeded` failure, collector evidence and cleanup
+  list in `forensicsCollectorCaptureWindowSelfTest`; a Boolean summary alone is
+  not accepted as proof.
+- PowerShell may receive collector failures through a PowerShell invocation
+  wrapper. `Get-DiagnosticCollectorExecutionFailure` walks that exception chain
+  only to recover `DiagnosticCollectorExecutionException`; lifecycle result
+  rows retain the collector failure kind, typed evidence and typed cleanup
+  stages for slow-phase and exit evidence. The helper does not classify target
+  ownership or create a second failure aggregate.
+- The supervisor copies target stdout and stderr to its owner-facing streams as
+  bytes arrive. Normal completion still awaits both copy tasks, while failure
+  cleanup retains output already published before the supervisor or target is
+  terminated.
+- The structured PowerShell gate scans both member invocation and command ASTs.
+  Raw `Process`/`ProcessStartInfo` construction and `Start-Process`,
+  `Stop-Process` or `Wait-Process` are forbidden in the transitive forensics
+  closure. The whole-budget mutation must execute the real blocked-collector
+  self-test; a source-only rejection is not behavioral proof.
 - Execution slow-phase, post-teardown slow-exit and timeout evidence have
   separate arrays. A process-exit row cannot inherit unrelated execution
   evidence.
