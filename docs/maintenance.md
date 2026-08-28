@@ -58,7 +58,8 @@ The `-ValidateForensics` self-test requests a one-shot evidence hold from
 The hold leaves no filesystem state and consumes the lease's existing
 `TransitionBudget`. It must set both
 `forensicsSelfTestCaptureLeadValidated=true` and
-`forensicsSelfTestEvidenceHoldValidated=true`.
+`forensicsSelfTestEvidenceHoldValidated=true`; the nested hold outcome must also
+report `TargetAcknowledged=true` from the actual held child.
 
 Formal Windows PR, Main, Rehearsal and Flaky lifecycle profiles require
 `-ValidateForensics`. Their schema 4 report must show a detailed

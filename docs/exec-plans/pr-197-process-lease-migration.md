@@ -590,6 +590,55 @@ implementation. Stage 3 remains open. Stage 4 and Stage 5 findings remain
 deferred, and no workflow, restart, central-runner, release or tag change is
 included.
 
+### Stage 3 Exact-Head Review Follow-up
+
+The documentation checkpoint at
+`570fc319d824e24e1012b4d377b5f95a7b1914f7` passed all 20 applicable GitHub
+checks, including Windows/Linux/macOS Strict PR CI, Assembly Lifecycle, native
+Linux/macOS membership feasibility, Build, CodeQL and Protobuf. Its exact-head
+Codex review then found five Stage 3 gaps: collector waits did not accept
+cancellation; a collector kill exception could skip bounded reap; undefined
+capture-completion enum values were accepted; the held target did not
+acknowledge the release signal; and the Architecture gate inspected only the
+observer wrapper instead of its helper closure. None of these findings changed
+the Stage 2 membership, quiescence, terminate or reap contract.
+
+Follow-up implementation commit:
+`7fc4a3a1ddd4c9d916edaefec09debc7c5fe29c2`.
+
+The evidence hold is now a two-way lease-owned transaction. The owner sends the
+defined `Captured` or `Failed` completion, the actual held target must return a
+distinct acknowledgment, and the intermediary supervisor closes its inherited
+endpoint copies immediately after target launch. A target that stays alive but
+does not consume the handoff therefore cannot validate the hold. Diagnostic
+collector exit and stream-drain waits accept cancellation, while any cleanup
+path attempts kill and bounded reap independently and retains both failures.
+The observer Architecture gate follows its transitive PowerShell helper closure;
+only the bounded collector-cleanup helper may terminate the collector it
+created, and a dedicated helper-authority mutation must make the gate fail.
+
+Local validation for the follow-up implementation passed:
+
+- strict Release solution build with all analyzers: 23 projects, zero warnings
+  and zero errors;
+- focused Architecture tests: 12/12; focused Windows process-supervision tests:
+  25/25, including undefined completion and non-acknowledging target adversaries;
+- review-invariant corpus: 11 invariants, 319 tests and three intentional
+  adversarial mutations; observer truth and transitive helper authority each
+  produced a real failed test;
+- the routed Windows solution gate selected all eight Windows-owned projects:
+  1,083 passed, zero failed and one declared aria2 integration skip;
+- lifecycle ownership: 613 matches and zero violations; one-assembly
+  `Local -ValidateForensics`: nine phase results, zero failures, with
+  `TargetAcknowledged=true`, observer miss/failure preserved and cleanup
+  complete;
+- PowerShell syntax, JSON parsing, formatting verification over 967 files and
+  `git diff --check` passed.
+
+Status: Stage 3 remains open pending native CI, Assembly Lifecycle and a clean
+same-head Codex review for the checkpoint that records this follow-up. Stage 4,
+Stage 5, workflow, release and tag work remain deferred.
+
 ## Stage 4: Restart Transaction
 
 Retain prepare, authorize, commit and revoke. Keep product Policy B. The helper

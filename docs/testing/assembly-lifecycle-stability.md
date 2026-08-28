@@ -117,18 +117,24 @@ evidence errors cannot overwrite the process owner's causal failure.
 - `-ValidateForensics` asks `OwnedProcessLease` for an evidence-hold sub-state to
   prove the capture lead actually ran before a synthetic 1.25-second threshold.
   The lease creates and owns the one-shot endpoint before target execution; the
-  observer only returns `Captured` or `Failed`, and no replayable filesystem
-  state remains.
+  observer only returns `Captured` or `Failed`, the actual held target must
+  acknowledge the handoff after the intermediary closes its copies, and no
+  replayable filesystem state remains.
   A controlled delay proves the child remains live during capture, so hosted-runner
   diagnostic latency cannot invalidate the proof. The one-second lead therefore
   arms at 0.25 seconds instead of relying on a zero-clamped threshold. The
   machine report exposes `forensicsSelfTestCaptureLeadValidated` and
   `forensicsSelfTestEvidenceHoldValidated`; the self-test fails unless the hold
-  reports requested, granted, captured, released and completion delivered.
+  reports requested, granted, captured, released, completion delivered and
+  target acknowledged.
 - Managed-stack collection can pause or otherwise perturb the observed child.
   `durationMs` remains the honest instrumented wall-clock value, while
   `diagnosticCaptureDurationMs` records collector wall time separately. These
   lifecycle timings are diagnostic evidence, not performance baselines.
+- Collector exit and stream-drain waits accept cancellation and consume the
+  existing transition budget. Collector termination and bounded reap are
+  attempted independently so both failures remain observable; that cleanup
+  authority applies only to the observer-created collector.
 - Execution slow-phase, post-teardown slow-exit and timeout evidence have
   separate arrays. A process-exit row cannot inherit unrelated execution
   evidence.

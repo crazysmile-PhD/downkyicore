@@ -366,7 +366,9 @@ When a deterministic fixture needs the target to remain available during
 capture, `LifecyclePhaseSupervisor` requests an evidence hold from the same
 `OwnedProcessLease` before launch. The lease creates and owns the hold endpoint,
 injects it through the immutable launch payload, and accepts only a `Captured`
-or `Failed` completion handoff. `ForensicsObserver` receives a diagnostic target
+or `Failed` completion handoff. The actual held target must acknowledge that
+handoff; the intermediary supervisor closes its inherited endpoint copies after
+launch, so an unconsumed signal cannot validate the hold. `ForensicsObserver` receives a diagnostic target
 ID and the existing `TransitionBudget`; it never receives a process lease,
 containment handle, membership query, terminate target or deadline constructor.
 
@@ -382,11 +384,12 @@ Running
 The hold is part of the supervisor state machine and the same transition budget.
 Forensics failure may fail the phase but cannot prevent bounded cleanup.
 The typed process outcome records whether the hold was requested, granted,
-completed, released and delivered. Lifecycle reports keep `processFailureType`
+completed, released, delivered and acknowledged. Lifecycle reports keep `processFailureType`
 and `forensicsFailureType` separate, so observer failure cannot replace the
 owner's causal failure or turn it into success. Observer-created collector
 processes may be terminated only as the observer's own bounded diagnostic work;
-they have no authority over the observed target or owned tree.
+their waits accept cancellation, and termination and bounded reap failures are
+both retained. They have no authority over the observed target or owned tree.
 
 ## Legacy Mechanism Disposition
 
