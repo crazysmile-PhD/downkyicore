@@ -227,6 +227,9 @@ public sealed class OwnedProcessLeasePlatformTests
         _ = await lease.WaitForTargetExitForTestingAsync()
             .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
+        await lease.WaitForEvidenceHoldOutcomeSnapshotForTestingAsync()
+            .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
         Assert.False(completionTask.IsCompleted);
         Assert.False(waitTask.IsCompleted);
 
@@ -242,6 +245,52 @@ public sealed class OwnedProcessLeasePlatformTests
         Assert.True(outcome.EvidenceHold.Released);
         Assert.True(outcome.EvidenceHold.CompletionSignalDelivered);
         Assert.True(outcome.EvidenceHold.TargetAcknowledged);
+    }
+
+    [Fact]
+    public async Task EvidenceHoldFailureOutcomeWaitsForStartedAcknowledgmentPublication()
+    {
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(4));
+        var acknowledgmentPublication = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var lease = await StartEvidenceHoldProbeAsync(
+                SupervisorHost.EvidenceHoldWithOwnedDescendantArgument,
+                budget,
+                acknowledgmentPublication.Task)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        using var cancellation = new CancellationTokenSource();
+        var waitTask = lease.WaitAsync(cancellation.Token);
+        var completionTask = lease.CompleteEvidenceHoldAsync(
+            EvidenceCaptureCompletion.Failed,
+            TestContext.Current.CancellationToken);
+
+        _ = await lease.WaitForTargetExitForTestingAsync()
+            .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await cancellation.CancelAsync().ConfigureAwait(true);
+        await lease.WaitForEvidenceHoldOutcomeSnapshotForTestingAsync()
+            .WaitAsync(TimeSpan.FromSeconds(4), TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        Assert.False(completionTask.IsCompleted);
+        Assert.False(waitTask.IsCompleted);
+
+        acknowledgmentPublication.SetResult(true);
+        await completionTask.ConfigureAwait(true);
+        var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(() => waitTask)
+            .ConfigureAwait(true);
+
+        Assert.Equal(OwnedProcessFailureKind.CallerCancelled, failure.Failure.Kind);
+        Assert.False(failure.Failure.TreeQuiescent);
+        Assert.Equal(
+            EvidenceCaptureCompletion.Failed,
+            failure.Failure.EvidenceHold.CaptureCompletion);
+        Assert.True(failure.Failure.EvidenceHold.Released);
+        Assert.True(failure.Failure.EvidenceHold.CompletionSignalDelivered);
+        Assert.True(failure.Failure.EvidenceHold.TargetAcknowledged);
+        Assert.Empty(failure.CleanupFailures);
     }
 
     [Fact]

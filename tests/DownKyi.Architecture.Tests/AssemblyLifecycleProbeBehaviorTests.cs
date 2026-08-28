@@ -11,6 +11,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_FORENSICS_HELPER_AUTHORITY";
     private const string CaptureBudgetMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET";
+    private const string CaptureBudgetSelfTestRejection =
+        "Forensics collector capture-window self-test did not fail closed.";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
@@ -122,16 +124,58 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         var isolatedProcess = ReadFunction(source, "Invoke-IsolatedProcess");
         var allocator = ReadFunction(source, "New-OwnerAllocatedForensicsCaptureWindow");
         var collector = ReadFunction(source, "Invoke-BoundedForensicsCollector");
+        Assert.True(IsExpectedCaptureBudgetMutationRejection(
+            new BoundedProcessResult(1, CaptureBudgetSelfTestRejection)));
+        Assert.False(IsExpectedCaptureBudgetMutationRejection(
+            new BoundedProcessResult(1, "Unrelated lifecycle failure.")));
+        Assert.False(IsExpectedCaptureBudgetMutationRejection(
+            new BoundedProcessResult(0, CaptureBudgetSelfTestRejection)));
         if (string.Equals(
                 Environment.GetEnvironmentVariable(CaptureBudgetMutationEnvironmentVariable),
                 "1",
                 StringComparison.Ordinal))
         {
-            var mutation = ExecuteCaptureBudgetMutation();
-            // The outer mutation proof must pass if the broken helper is accepted.
-            // A correct lifecycle self-test rejects it with a nonzero child exit,
-            // which is the only condition that should make this test fail closed.
-            Assert.Equal(0, mutation.ExitCode);
+            BoundedProcessResult mutation;
+            try
+            {
+                mutation = ExecuteCaptureBudgetMutation();
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                return;
+            }
+            catch (AggregateException)
+            {
+                return;
+            }
+            catch (IOException)
+            {
+                return;
+            }
+            catch (InvalidOperationException)
+            {
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (TimeoutException)
+            {
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // An unavailable artifact, platform failure, or subprocess timeout
+                // is not proof that the behavioral self-test rejected the mutation.
+                return;
+            }
+
+            var expectedRejection = IsExpectedCaptureBudgetMutationRejection(mutation);
+            Assert.False(
+                expectedRejection,
+                "The real lifecycle self-test rejected the broken whole-budget helper.");
+            return;
         }
 
         var captureWait = ReadFunction(source, "Get-ForensicsCaptureWaitMilliseconds");
@@ -213,6 +257,14 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.Contains(
             "forensicsCollectorCaptureWindowSelfTestPassed",
             source,
+            StringComparison.Ordinal);
+    }
+
+    private static bool IsExpectedCaptureBudgetMutationRejection(
+        BoundedProcessResult mutation)
+    {
+        return mutation.ExitCode != 0 && mutation.Output.Contains(
+            CaptureBudgetSelfTestRejection,
             StringComparison.Ordinal);
     }
 

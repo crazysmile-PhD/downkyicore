@@ -165,6 +165,12 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             ?? throw new InvalidOperationException("The target exited without an authoritative report.");
     }
 
+    internal Task WaitForEvidenceHoldOutcomeSnapshotForTestingAsync()
+    {
+        return _evidenceHold?.OutcomeSnapshotStartedForTesting
+            ?? throw new InvalidOperationException("This owned process lease has no evidence hold.");
+    }
+
     public Task CompleteEvidenceHoldAsync(
         EvidenceCaptureCompletion completion,
         CancellationToken cancellationToken = default)
@@ -260,10 +266,12 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     cancellationToken)
                 .ConfigureAwait(false);
 
+            pendingFailureKind = OwnedProcessFailureKind.OperationDeadlineExceeded;
             var evidenceHold = _evidenceHold == null
                 ? EvidenceHoldOutcome.CreateNotRequested()
                 : await _evidenceHold.SnapshotForOutcomeAsync(
                         _budget,
+                        useCleanupBudget: false,
                         cancellationToken)
                     .ConfigureAwait(false);
 
@@ -296,12 +304,30 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             var cleanupFailure = await CaptureFailureAsync(TerminateAndReapAsync)
                 .ConfigureAwait(false);
             var cleanupFailures = cleanupFailure == null
-                ? Array.Empty<Exception>()
-                : FlattenFailures(cleanupFailure).ToArray();
-            var standardOutput = cleanupFailures.Length == 0
+                ? new List<Exception>()
+                : FlattenFailures(cleanupFailure).ToList();
+            var evidenceHold = EvidenceHold;
+            if (_evidenceHold != null)
+            {
+                try
+                {
+                    evidenceHold = await _evidenceHold.SnapshotForOutcomeAsync(
+                            _budget,
+                            useCleanupBudget: true,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception failure)
+                {
+                    cleanupFailures.AddRange(FlattenFailures(failure));
+                    evidenceHold = EvidenceHold;
+                }
+            }
+
+            var standardOutput = cleanupFailures.Count == 0
                 ? await _standardOutput.ConfigureAwait(false)
                 : ReadCompletedOutput(_standardOutput);
-            var standardError = cleanupFailures.Length == 0
+            var standardError = cleanupFailures.Count == 0
                 ? await _standardError.ConfigureAwait(false)
                 : ReadCompletedOutput(_standardError);
             throw new OwnedProcessExecutionException(
@@ -314,7 +340,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     targetExit?.ExitedAtUnixMilliseconds,
                     TreeQuiescent: treeQuiescenceProven,
                     Ownership,
-                    EvidenceHold),
+                    evidenceHold),
                 operationFailure,
                 cleanupFailures);
         }
@@ -1174,6 +1200,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         private readonly Task? _acknowledgmentPublicationGateForTesting;
         private readonly TaskCompletionSource<bool> _completionFinished = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _outcomeSnapshotStartedForTesting = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         private EvidenceCaptureCompletion _captureCompletion;
         private bool _granted;
         private bool _completionStarted;
@@ -1208,6 +1236,9 @@ public sealed class OwnedProcessLease : IAsyncDisposable
 
         public EvidenceHoldTransport Transport { get; }
 
+        public Task OutcomeSnapshotStartedForTesting =>
+            _outcomeSnapshotStartedForTesting.Task;
+
         public EvidenceHoldOutcome Snapshot
         {
             get
@@ -1227,6 +1258,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
 
         public async Task<EvidenceHoldOutcome> SnapshotForOutcomeAsync(
             TransitionBudget budget,
+            bool useCleanupBudget,
             CancellationToken cancellationToken)
         {
             Task? completion = null;
@@ -1238,13 +1270,18 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     completion = _completionFinished.Task;
                 }
             }
+            _outcomeSnapshotStartedForTesting.TrySetResult(true);
 
             if (completion != null)
             {
                 await WaitWithBudgetAsync(
                         completion,
-                        budget.RemainingOperation,
-                        "The evidence-hold completion transaction did not settle before the operation deadline.",
+                        useCleanupBudget
+                            ? budget.RemainingCleanup
+                            : budget.RemainingOperation,
+                        useCleanupBudget
+                            ? "The evidence-hold completion transaction did not settle before the hard deadline."
+                            : "The evidence-hold completion transaction did not settle before the operation deadline.",
                         cancellationToken)
                     .ConfigureAwait(false);
             }
