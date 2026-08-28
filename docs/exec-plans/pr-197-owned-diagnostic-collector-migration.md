@@ -804,6 +804,76 @@ and same-head review. The six failed exact-head runs remain diagnostic evidence
 and will not be rerun. Stage 4A remains completed and closed; production Stage
 4, Stage 5, merge, release and tag movement remain out of scope.
 
+### Seventh Exact-Head CI And Behavioral Ordering Proof
+
+Documentation head `d7f6f4b9d52d59e1c68321c1c6d46b073b5ae7db` triggered Strict PR
+run
+[33183210973](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33183210973),
+which passed all 12 jobs. Build
+[33183211226](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33183211226),
+CodeQL
+[33183210974](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33183210974),
+Process Membership
+[33183210976](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33183210976)
+and Protobuf
+[33183211018](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33183211018)
+also passed on the same PR head without rerunning an old workflow.
+
+Assembly Lifecycle artifact `9690837165` records eight assemblies, 147 phases,
+zero failures, eight slow phases, eight captured evidence bundles, zero missing
+bundles, lead 3,000 ms, capture window 15,000 ms, ownership 634/0 and all
+forensics self-tests passing. Two near-threshold formal rows at 5,040.65 and
+5,523.58 ms both captured evidence. The artifact's checkout SHA is GitHub's
+synthetic pull-request merge SHA `8f0a5a51214e77cf544796a926433be96477ef42`;
+the workflow and PR head remained `d7f6f4b9d52d59e1c68321c1c6d46b073b5ae7db`.
+
+The first all-green same-head Codex review
+[5052599699](https://github.com/crazysmile-PhD/downkyicore/pull/197#pullrequestreview-5052599699)
+reported two P2 findings in existing Linux delegation and central test-runner
+cleanup paths. Those are explicitly excluded by this checkpoint's Linux
+delegation and Stage 5/central-runner boundaries and did not invalidate the
+slow-evidence change. Scoped same-head review
+[5052661384](https://github.com/crazysmile-PhD/downkyicore/pull/197#pullrequestreview-5052661384)
+reported two relevant P1 proof defects:
+
+1. the 1.25-second real-stack self-test threshold became zero-clamped under the
+   three-second lead, so it no longer proved a positive post-lease arming delay;
+2. the Architecture mutation evaluated detached arithmetic instead of executing
+   the real `Invoke-IsolatedProcess` slow-evidence path.
+
+Test implementation `d3bd6c152cc1296a7cdc0975b10a1ff7d87ff771`
+closes both findings. The real-stack evidence-hold fixture now uses a
+4.25-second synthetic threshold and proves an observed positive 1.25-second
+capture threshold. The clamp uses the double `Math.Max` overload so fractional
+thresholds are not truncated. A new internal delayed-exit target publishes
+typed ready evidence, then runs a bounded eight-second asynchronous workload.
+The lifecycle self-test passes that target through the real slow-evidence path
+with a five-second synthetic observer-start delay: the configured lead arms at
+two seconds and captures evidence, while a one-second lead mutation arms at four
+seconds and must fail as `SlowEvidenceMissing` after target-exit cancellation.
+The synthetic ordering proof skips the managed-stack tool only after the
+ordering boundary; the separate real-stack fixture remains mandatory.
+
+On clean implementation HEAD, the configured path captured evidence in
+5,487.245 ms before target exit at 8,275.223 ms. The mutation returned
+`capture-failed` in 4,061.31 ms and `SlowEvidenceMissing` when its target exited
+at 8,283.544 ms. Both paths published the expected target PID/delay state,
+remained authoritatively quiescent and had zero cleanup failures. One-assembly
+Local `-ValidateForensics` recorded the exact SHA, clean worktree, one assembly,
+nine phases, zero failures, ownership 634/0, observed positive threshold 1.25
+seconds, lead 3,000 ms and capture window 15,000 ms. Focused collector tests
+passed 18/18, affected Architecture 9/9, full Architecture 316/316, Windows
+74/74 and the review-invariant gate 325 tests plus seven adversarial proofs.
+PowerShell parse, C# format and diff checks passed. No collector production
+code, retry, observer deadline, parent budget, phase timeout, workflow or Stage
+4/5 state changed.
+
+Status: pending documentation commit, exact-head push, naturally triggered CI
+and a new same-head review. The six failed exact-head runs remain diagnostic
+evidence and will not be rerun. Stage 4A remains completed and closed;
+production Stage 4, Stage 5, merge, release and tag movement remain out of
+scope.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates
