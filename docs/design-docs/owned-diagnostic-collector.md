@@ -116,6 +116,23 @@ The collector consumes a caller-allocated window. It must not create its own
 PowerShell stopwatch unchanged into C# would merely move a second deadline owner
 between languages and is forbidden.
 
+### Diagnostic Transition Timeline
+
+`DiagnosticCollectorEvidence` carries exactly these ordered diagnostic
+transitions: request created, process start requested, process started, target
+attach began, first observable progress, stack capture began, stack output first
+byte, process exit observed, reap completed, streams drained and typed outcome
+returned. Each item is `Observed`, `NotObserved` or `NotObservable` and uses the
+same monotonic collector window.
+
+The generic owner can directly observe its own process, streams, reap and typed
+return. It cannot see `dotnet-stack`'s internal attach or stack-enumeration
+boundaries, so those entries must remain explicitly `NotObservable` unless the
+tool itself publishes a typed signal. Empty stdout/stderr before timeout is
+evidence of no owner-visible progress, not permission to infer target identity,
+runtime state or a correctness outcome. Timeline values never select a process,
+extend a deadline or convert failure into success.
+
 ## C# Contract
 
 The following API is a design sketch, not committed source. Names may be refined
@@ -269,6 +286,12 @@ Cancellation before start prevents launch. Cancellation after start becomes the
 primary `CallerCancelled` failure and triggers bounded cleanup. Once cleanup has
 begun, caller cancellation cannot abandon terminate, reap, stream drain or
 internal disposal; the existing hard-cleanup allowance bounds that work.
+
+The lifecycle caller may link its ordinary cancellation with the target lease's
+read-only `TargetExitedToken` before invoking an observer. This is caller-owned
+tool policy: it stops an attach or capture which can no longer describe a live
+target. The collector still receives only a `CancellationToken`, never the
+target lease, process truth, containment or cleanup authority.
 
 ### Terminate Failure
 
@@ -453,6 +476,32 @@ restores pre-ready deadline exhaustion. A second mutation publishes ready
 before creating the blocking task. The same behavioral lifecycle gate rejects
 both mutations, so source shape or an arbitrary exception cannot satisfy the
 proof.
+
+## Formal-Phase Attach/Shutdown Diagnosis
+
+Strict PR run `33165929460`, Assembly Lifecycle job `98831200568`, produced the
+only failure at `DownKyi.Core.Tests` iteration 2 execution. The real target ran
+for approximately 4.038 seconds through OS exit, but the synchronous observer
+added a 15.019-second empty `dotnet-stack` capture and the old stopwatch reported
+19.210 seconds. The collector had started, timed out, exited, reaped and drained
+with no cleanup failure, so the ownership contract remained intact.
+
+The pinned `dotnet-stack` version is `9.0.661903`, invoked as
+`dotnet-stack report --process-id 8852`. Its report path opens the EventPipe
+session before creating trace output or printing progress. The failed artifact's
+empty streams and teardown ordering therefore narrow the stall to diagnostics
+attach, before stack enumeration or publication. A deterministic Windows
+fixture confirms the class: the exact tool connects to `dotnet-diagnostic-PID`,
+the fixture accepts and withholds the reply, and the typed window expires with
+no output while reap/drain stay bounded. A separate exact-tool experiment which
+exits the target after a session begins returns promptly with
+`ServerNotAvailableException`, excluding post-session shutdown as the 15-second
+consumer.
+
+Implementation checkpoint `35606b5cdbd7a011b7a515fd7a6aa28c8c4f9039`
+changes lifecycle observer policy, target-exit timing evidence and diagnostic
+instrumentation only. It does not change the 15-second allowance, the parent
+budget, collector ownership, retry behavior or cleanup semantics.
 
 ## Non-Goals
 

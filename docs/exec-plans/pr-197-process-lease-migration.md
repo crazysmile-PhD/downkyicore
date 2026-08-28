@@ -892,6 +892,30 @@ push, required native/Strict PR and Assembly Lifecycle checks, closure of these
 four fixed review threads and a clean same-head Codex review. Stage 4, Stage 5,
 workflow, release, merge and tag work remain deferred.
 
+### Stage 3 Formal-Phase Attach/Shutdown Diagnostic Checkpoint
+
+Strict PR run `33165929460` failed only Assembly Lifecycle because the
+`DownKyi.Core.Tests` iteration 2 target exited after approximately 4.038 seconds
+while a synchronous `dotnet-stack 9.0.661903` attach consumed the full existing
+15.019-second capture window. Empty tool streams, complete collector reap/drain,
+the teardown markers and deterministic accepted-but-unanswered diagnostics-pipe
+proof classify the slow transition as attach during target shutdown, not a
+process-lease or collector cleanup failure.
+
+Implementation commit `35606b5cdbd7a011b7a515fd7a6aa28c8c4f9039`
+adds the lease owner's monotonic `TargetExitedAfter` measurement and read-only
+`TargetExitedToken`. Lifecycle policy uses the token only to cancel observer
+work and uses the timestamp only for phase duration. The observer still receives
+no lease, process truth, containment, membership, terminate/reap authority or
+deadline constructor. The pinned 15-second window, parent transition budget and
+single collector owner are unchanged. Detailed artifact, transition, mutation
+and local validation evidence is recorded in
+`pr-197-owned-diagnostic-collector-migration.md`.
+
+Status: Stage 3 remains open pending the documentation checkpoint, exact-head
+CI and same-head review. Stage 4A remains completed and is not reopened;
+production Stage 4 and all later stages remain deferred.
+
 ## Stage 4A: Restart Handoff Feasibility
 
 The original composition assumption is invalidated. An ordinary

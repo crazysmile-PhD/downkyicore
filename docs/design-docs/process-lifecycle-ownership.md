@@ -84,6 +84,13 @@ macOS path-budget calculation and real native pipe construction. Architecture
 tests reject any repository `NamedPipeServerStream` whose physical name does
 not come from this shared value.
 
+The sole test-only exception emulates the externally specified .NET diagnostics
+transport name `dotnet-diagnostic-PID` so the pinned `dotnet-stack` executable
+can attach to a deterministic stall fixture. It is never used as a repository
+control, authorization, lifetime or evidence-hold endpoint. The fixed name
+therefore models an external protocol; it does not weaken the random physical
+name policy for repository-owned IPC.
+
 ## Stage 4A Feasibility Outcome
 
 The separate restart handoff domain is behaviorally feasible but is not a
@@ -422,6 +429,13 @@ cancellation and remains bounded by the hard deadline.
 `LifecyclePhaseSupervisor` owns process truth. `ForensicsObserver` consumes
 snapshots and cannot kill a process, release a child, extend child lifetime,
 create process ownership or extend the transition deadline.
+
+The lease publishes target exit in two read-only forms from the same monotonic
+owner transition: `TargetExitedAfter` for child-lifetime measurement and
+`TargetExitedToken` for cancellation notification. Lifecycle policy may link
+the latter only to observer work so an attaching diagnostic child is stopped
+when its target is gone. This token is not a process handle, membership proof,
+kill target or new deadline, and the observer never receives the lease itself.
 
 When a deterministic fixture needs the target to remain available during
 capture, `LifecyclePhaseSupervisor` requests an evidence hold from the same

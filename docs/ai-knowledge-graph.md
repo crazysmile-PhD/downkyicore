@@ -2594,12 +2594,13 @@ contracts:
   - PR, main and release-rehearsal profiles run 3, 5 and 100 iterations per assembly; tag release evidence uses the 100-iteration Rehearsal profile.
   - Every report identifies runtime, OS, architecture, commit SHA, dirty-worktree state, thresholds, phase exit codes, typed process ownership, evidence-hold state, slow-evidence status and P50/P95/P99/max durations.
   - Every phase separates process-owner and forensics failure types; slow, exit and residual evidence errors cannot replace the lease's causal failure.
-  - Execution duration includes runner startup through OS process exit; teardown uses fixture marker timestamps, while process-exit uses the child's OS ExitTime and excludes collector overhead.
+  - Execution duration uses the process owner's monotonic target-exit transition from runner startup through OS process exit; teardown uses fixture marker timestamps, while process-exit uses the child's OS ExitTime and excludes collector overhead.
   - Marker-aware execution phases are sampled at the unchanged slow threshold; missing slow evidence is a gate failure rather than an unexplained empty array.
   - Forensics is armed 1,000 ms before the unchanged classification threshold to survive hosted-runner scheduling gaps; reports disclose the lead and per-phase pre-threshold capture state.
   - The held-child forensics self-test uses a 1.25-second synthetic threshold and must report both capture-lead and supervisor-owned evidence-hold validation, including requested, granted, captured, released, completion-delivered and target-acknowledged state; intermediary inherited endpoint copies close after launch.
   - Lifecycle marker reads tolerate bounded writer contention and report contention/retry-exhaustion counts; only Windows sharing/lock error codes are contention, while access and other I/O errors retain a separate count/type; the final marker contract remains blocking.
   - Diagnostic capture wall time is reported separately because managed-stack collection perturbs the instrumented phase; slow execution evidence cannot be presented as post-teardown exit evidence.
+  - The lifecycle caller cancels only observer work when the target-exit token fires; collector evidence carries an ordered 11-transition monotonic timeline, while external-tool attach/capture boundaries remain explicitly not observable and never become process authority.
   - Unexpected stdout/stderr, timeout, residual child process, missing teardown marker or failed process exit blocks the gate.
   - Slow and timed-out Windows processes preserve thread state, wait reason, process tree and a managed stack when `dotnet-stack` is available.
   - Residual truth comes only from Job Object active-process state, delegated cgroup v2 membership or anchored libproc group membership. PID, PPID, process name, creation time, tree depth and redacted command lines are diagnostic evidence only.

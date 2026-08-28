@@ -380,6 +380,93 @@ Exact-head native CI, Assembly Lifecycle and a clean same-head Codex review
 remain required. This correction does not reopen Stage 3 collector semantics,
 Stage 4A feasibility or any production restart work.
 
+## Formal-Phase Attach/Shutdown Diagnostic Checkpoint
+
+The next exact-head Strict PR run
+[33165929460](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33165929460),
+Assembly Lifecycle job
+[98831200568](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33165929460/job/98831200568),
+passed 19 applicable checks, skipped nine release-only checks and failed only
+the formal lifecycle phase. Artifact `assembly-lifecycle-pull_request-1`
+(`9683800393`, downloaded SHA-256
+`3f643a1ef512dbc4054aacc296e0c59f8ae8d9896388991984aa08a40c02d0db`)
+identifies `DownKyi.Core.Tests` iteration 2 execution, PID `8852`:
+
+- target marker `started` was `2026-08-28T11:12:03.763Z`, `disposing` was
+  `11:12:07.771Z`, `disposed` was `11:12:07.772Z`, and the reported
+  post-dispose exit interval was 29 ms;
+- actual target lifetime was therefore approximately 4.038 seconds, below the
+  unchanged five-second slow threshold;
+- the capture lead armed at approximately the teardown boundary and the pinned
+  `dotnet-stack 9.0.661903` invocation was
+  `dotnet-stack report --process-id 8852`;
+- the collector consumed 15,019.085 ms with empty stdout/stderr, returned typed
+  `OperationDeadlineExceeded`, and still reported started, exited, reaped and
+  streams drained with an empty cleanup list;
+- the synchronous observer inflated the old phase stopwatch to 19,209.895 ms,
+  which then produced `SlowEvidenceMissing` even though target exit had already
+  completed.
+
+Classification is A plus D: the diagnostics attach handshake began while the
+target entered CLR/test-runner shutdown. This is not stack enumeration,
+publication, stream drain, reap or generic hosted-runner slowness. In pinned
+source the report command starts the EventPipe session before trace-file
+creation or output. The historical artifact cannot observe that internal call,
+but its teardown ordering and empty streams match deterministic exact-tool
+proof:
+
+1. A Windows diagnostics-pipe emulator published listening before tool launch,
+   accepted the exact tool connection at 460.774 ms and deliberately withheld
+   the protocol reply. No `.nettrace` or stream byte appeared. The three-second
+   window returned typed `OperationDeadlineExceeded` at 3,001.445 ms, reap
+   completed at 2,996.152 ms, streams drained at 2,999.204 ms, cleanup was empty
+   and 6,498.104 ms of parent operation budget remained.
+2. With a real diagnostics-ready fixture, `.nettrace` appeared at 361.129 ms.
+   Exiting the target at 382.475 ms made the collector return at 484.503 ms with
+   `ServerNotAvailableException` during session stop. An established session
+   therefore does not reproduce the 15-second stall.
+3. The owner-visible timeline now records all 11 requested transitions and
+   marks tool-internal attach/capture as `NotObservable`, rather than inventing
+   a diagnostic authority.
+
+Implementation commit `35606b5cdbd7a011b7a515fd7a6aa28c8c4f9039`
+is the minimum fix. The target lease exposes only a read-only exit token and its
+monotonic exit offset. Lifecycle policy links target exit to observer
+cancellation, so an already-started diagnostic child returns typed
+`CallerCancelled` and completes bounded cleanup when its target is gone. Phase
+duration uses the owner's target-exit offset instead of observer wall time. The
+unlinked mutation consumes the full 600 ms collector allowance and returns
+`OperationDeadlineExceeded`. The 15-second capture window, five-second cleanup
+allowance, parent `TransitionBudget`, collector ownership/reap/drain semantics
+and absence of retry/sleep are unchanged.
+
+Local proof for that implementation commit produced:
+
+- focused collector/window tests: 19 passed, zero failed;
+- affected lifecycle, ownership and IPC Architecture tests: 19 passed, zero
+  failed;
+- one-assembly Local `-ValidateForensics`: one assembly, nine phase results,
+  zero failures, one slow phase captured, zero missing evidence and lifecycle
+  ownership 633/0; the attach-stall JSON retained the 11-transition evidence;
+- full Architecture project: 316 passed, zero failed;
+- review-invariant corpus: 11 invariants, seven projects, 325 tests and seven
+  executable adversarial proofs;
+- routed Windows solution: eight projects, 1,132 total, 1,130 passed, one
+  skipped and one failed. The only failure was the unchanged atomic-file
+  sharing violation in
+  `CallerCancellationStillCompletesOwnedCleanupBeforePropagating`; the routed
+  suite was not rerun merely to obtain green output, while the affected
+  collector class passed 19/19;
+- PowerShell parsing, `git diff --check` and
+  `dotnet format --verify-no-changes`: pass.
+
+Status: pending the documentation checkpoint, exact-head push, required native
+and Strict PR CI, Assembly Lifecycle and a clean same-head Codex review. Stage
+4A remains completed and closed; production Stage 4, Stage 5, Stage 6, merge,
+release and tag movement remain out of scope. No stop rule was triggered and no
+closed Stage 3 single-deadline, authoritative reap or drain contract was
+reopened.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates

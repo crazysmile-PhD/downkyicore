@@ -99,6 +99,12 @@ evidence errors cannot overwrite the process owner's causal failure.
   immediately before child-process creation and stops when the OS reports that
   child exited. `execution` therefore includes runner startup, test methods,
   assembly fixture teardown and CLR/runner shutdown.
+- The process owner records that boundary as monotonic `TargetExitedAfter` and
+  exposes a read-only `TargetExitedToken`. The lifecycle policy links only its
+  observer call to that token. A collector which is already attaching when the
+  target exits is canceled and authoritatively reaped; it cannot extend the
+  reported phase duration. Collector cleanup, stream drain and report
+  serialization remain outside the child-lifetime measurement.
 - `assembly-teardown` is the fixture marker interval from `disposing` to
   `disposed`. Marker timestamps use Unix milliseconds, so this metric has
   millisecond resolution.
@@ -138,9 +144,10 @@ evidence errors cannot overwrite the process owner's causal failure.
   its fixture before quiescence is tested. This is an owner-assigned test
   budget, not an observer deadline or retry.
 - Managed-stack collection can pause or otherwise perturb the observed child.
-  `durationMs` remains the honest instrumented wall-clock value, while
-  `diagnosticCaptureDurationMs` records collector wall time separately. These
-  lifecycle timings are diagnostic evidence, not performance baselines.
+  `durationMs` remains the authoritative monotonic child lifetime through
+  target exit, while `diagnosticCaptureDurationMs` records collector wall time
+  separately. These lifecycle timings are diagnostic evidence, not performance
+  baselines.
 - `Invoke-IsolatedProcess`, which holds the existing transition budget,
   allocates each observer capture a 15-second operation window and a five-second
   collector-cleanup allowance through
@@ -160,6 +167,13 @@ evidence errors cannot overwrite the process owner's causal failure.
   typed `OperationDeadlineExceeded` failure, collector evidence and cleanup
   list in `forensicsCollectorCaptureWindowSelfTest`; a Boolean summary alone is
   not accepted as proof.
+- Every collector result carries an ordered 11-transition diagnostic timeline:
+  request creation, process-start request, process start, target attach,
+  first observable progress, stack-capture start, first stack-output byte,
+  process exit, reap, stream drain and typed return. Boundaries inside an
+  external tool are explicitly `NotObservable`; absent owner-visible events are
+  `NotObserved`. These timestamps describe evidence only and never decide
+  ownership, success or deadline renewal.
 - PowerShell may receive collector failures through a PowerShell invocation
   wrapper. `Get-DiagnosticCollectorExecutionFailure` walks that exception chain
   only to recover `DiagnosticCollectorExecutionException`; lifecycle result
@@ -344,6 +358,16 @@ Dropping or remapping either cleanup item makes the gate fail. The associated
 review-invariant mutation executes the real lifecycle script and accepts only
 the explicit cleanup-report self-test rejection; an unrelated child failure is
 not proof.
+
+The Windows-only `dotnet-stack-attach-stall-self-test.json` runs the pinned real
+tool against an exact diagnostics-pipe emulator which accepts the connection
+and then deliberately never answers. The proof requires connection acceptance,
+no `.nettrace`, no stdout/stderr progress, typed
+`OperationDeadlineExceeded`, authoritative reap, complete drain, an empty
+cleanup list and remaining parent budget. It uses the existing attenuated
+collector window and no sleep, retry or renewed deadline. This fixture
+classifies a pre-session attach stall; it is not a repository IPC endpoint or a
+replacement diagnostics implementation.
 
 ## Comparing Results
 
