@@ -26,7 +26,7 @@ LifecyclePhaseSupervisor
        -> OwnedDiagnosticCollector
 
 RestartTransaction
-  -> RestartHandoffLease (candidate; Stage 4A proof required)
+  -> RestartHandoffLease (feasible candidate; production implementation deferred)
        -> ParentLifetimeLease
        -> typed one-shot authorization
        -> immutable cross-process deadline
@@ -83,6 +83,24 @@ parallel uniqueness, independence from arbitrarily long logical labels, the
 macOS path-budget calculation and real native pipe construction. Architecture
 tests reject any repository `NamedPipeServerStream` whose physical name does
 not come from this shared value.
+
+## Stage 4A Feasibility Outcome
+
+The separate restart handoff domain is behaviorally feasible but is not a
+production implementation. Exact source head
+`689c5d6c41b3a3a7b8a0c6a318c80a4ebe737879` passed Strict PR run
+[33161523853](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33161523853):
+Windows, Linux and macOS each passed 16/16 restart-handoff cases and 4/4 shared
+IPC-naming cases. The fixture exercised a retained Windows process handle,
+Linux pidfd plus poll and an armed macOS kqueue exit watcher, as well as the
+single absolute monotonic deadline and terminal helper paths.
+
+This accepts `ParentLifetimeLease` plus typed one-shot authorization and the
+immutable deadline as a future restart-domain boundary. It does not authorize
+`RestartCoordinator`, `RestartHandoffLease` or `ProcessRestartLauncher`
+production changes. `OwnedProcessLease` still terminates ordinary owned work on
+owner EOF; only its control/status pipe identifiers adopted the bounded naming
+policy, without changing owner-death behavior.
 
 ## Threat Model
 
@@ -391,8 +409,9 @@ A restart handoff crosses a process boundary without crossing into a new clock
 authority. Prepare must fix an immutable absolute expiry in a platform
 monotonic-clock domain. The successor may calculate only the remaining duration
 from that expiry; it must not restart a stopwatch or allocate a fresh product
-window. Stage 4A must prove the representation natively before it becomes a
-production contract.
+window. Stage 4A proved the representation natively as a feasibility result; a
+separate production implementation and review are still required before it can
+become a product contract.
 
 Caller cancellation may stop work before an irreversible transition. Once a
 child has started or cleanup has begun, cleanup is not abandoned by caller
@@ -449,8 +468,9 @@ normalizes module-qualified PowerShell command names, while a shared
 failure-to-report converter and JSON round-trip fixture prove that non-empty
 cleanup stages and cause types survive the PowerShell boundary. Native
 exact-head CI and a clean same-head review must converge after the latest fix;
-Stage 4 production implementation and Stage 5 remain deferred. Stage 4A is the
-separate restart-handoff feasibility checkpoint.
+Stage 4 production implementation and Stage 5 remain deferred. Stage 4A
+completed the separate restart-handoff feasibility checkpoint without changing
+that production boundary.
 
 ## Legacy Mechanism Disposition
 

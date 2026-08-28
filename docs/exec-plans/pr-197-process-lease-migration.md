@@ -912,11 +912,22 @@ The 30-second parent-wait product limit may remain only as one absolute
 monotonic deadline fixed at prepare. The helper consumes remaining time and may
 not acquire a fresh `WaitAsync` or stopwatch window.
 
-Stage 4A requires native Windows process-handle, Linux pidfd and macOS armed
-kqueue proofs plus the complete authorization, identity, deadline, exactly-once
-and terminal-helper mutation corpus. Production Stage 4 remains deferred until
-the feasibility result is separately reviewed and an explicit implementation
-instruction is given.
+Stage 4A completed its native proof at exact source head
+`689c5d6c41b3a3a7b8a0c6a318c80a4ebe737879`. Strict PR run
+[33161523853](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33161523853)
+passed the Windows process-handle, Linux pidfd and macOS armed-kqueue backends.
+Each platform passed 16/16 restart-handoff cases and 4/4 shared IPC-naming cases,
+including authorization, identity, immutable-deadline, exactly-once and
+terminal-helper mutations. Assembly Lifecycle reported 627 ownership matches,
+zero violations, zero failed phases and zero residual children.
+
+The accepted architecture is a separate bounded restart handoff domain; it is
+not an ordinary-lease transfer or owner-death exception. The ordinary lease
+contract remains unchanged. The macOS path failure was resolved as a shared IPC
+naming invariant: logical labels are diagnostic-only, while all repository pipe
+servers use `IpcEndpointName` physical identifiers of 21 ASCII characters under
+a 24-character ceiling with 80 bits of randomness. Production Stage 4 remains
+deferred until an explicit implementation instruction and separate review.
 
 ## Stage 5: Central Test Runner
 

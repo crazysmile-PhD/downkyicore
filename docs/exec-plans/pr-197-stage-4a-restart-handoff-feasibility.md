@@ -92,11 +92,55 @@ independent helper stopwatch or `WaitAsync` window.
 5. Record the native outcome in this plan and the restart design.
 6. Re-run exact-head gates after the result-only documentation checkpoint.
 
+## Outcome
+
+Stage 4A is behaviorally feasible at implementation head
+`689c5d6c41b3a3a7b8a0c6a318c80a4ebe737879`. Strict PR run
+[33161523853](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33161523853)
+completed successfully with that source head. GitHub tested merge commit
+`d75ffc90578130916dbff6884b720c0115c26a4a`; its second parent is the exact
+source head above.
+
+Native evidence:
+
+- [Windows](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33161523853/job/98816882339):
+  16/16 restart-handoff cases and 4/4 IPC-naming cases passed using a retained
+  process handle as exact-parent authority.
+- [Linux](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33161523853/job/98816882228):
+  16/16 plus 4/4 passed using `pidfd_open` and `poll`.
+- [macOS](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33161523853/job/98816882251):
+  16/16 plus 4/4 passed using an armed kqueue `EVFILT_PROC` `NOTE_EXIT`
+  watcher.
+- [Assembly Lifecycle](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33161523853/job/98816882086):
+  627 ownership matches, zero violations, zero failed phases and zero residual
+  children.
+
+The tests cover all 18 required proof statements; parameterized cases produce
+16 executions per platform. The logical PID-reuse case deterministically
+substitutes a rebound PID slot/authority rather than waiting for actual numeric
+PID recycling. The retained kernel object remains bound to the original parent,
+and the numeric-PID-authority mutation fails.
+
+Local pre-push evidence was 47/47 affected Windows process-supervision tests,
+30/30 affected Architecture tests, 9/9 Assembly Lifecycle architecture tests,
+627 ownership matches with zero violations, warnings-as-errors builds and a
+clean formatter result.
+
+The macOS ordinary-lease regression exposed a repository-wide IPC naming
+defect, so the checkpoint also introduced `IpcEndpointName`: logical diagnostic
+labels are separate from 21-character physical `dkyi-` identifiers, with a
+24-character ceiling and 80 bits of cryptographic randomness. It migrated the
+ordinary lease control/status endpoints and both Stage 4A temporary endpoints.
+Regression proof covers fixed ASCII length, 16,384 parallel unique identifiers
+under case-insensitive comparison, logical-label length independence and the
+104-byte macOS Unix-domain socket path budget. An architecture test rejects new
+pipe-server call sites that bypass the policy.
+
 ## Completion Conditions
 
-Stage 4A is feasible only when all three native backends, the deadline handoff
-and all four mutations pass on one exact head. Production Stage 4 remains
-separately deferred even after that result.
+All three native backends, the deadline handoff and all four mutations passed on
+one exact source head. Stage 4A is complete. Production Stage 4 remains
+separately deferred after this result.
 
 Any required primitive that is unavailable or ambiguous, any need for PID/PPID
 correctness, a renewed deadline, weakened Stage 2 owner death, an unbounded
@@ -104,11 +148,12 @@ helper, a persistent service or Stage 5 work stops this checkpoint.
 
 ## Commit And Rollback
 
-Keep three independent review boundaries:
+The checkpoint keeps four independent review boundaries:
 
-1. `docs: record restart handoff design conflict`;
-2. `test: prove restart handoff feasibility`;
-3. `docs: record restart handoff feasibility result`.
+1. `433e76f` `docs: record restart handoff design conflict`;
+2. `544ad3d` `test: prove restart handoff feasibility`;
+3. `689c5d6` `test: harden restart IPC naming and watcher mutation`;
+4. `docs: record restart handoff feasibility result`.
 
 Rollback removes only the Stage 4A fixture and these documentation deltas.
 Existing Stage 2 and Stage 3 production behavior remains unchanged.
