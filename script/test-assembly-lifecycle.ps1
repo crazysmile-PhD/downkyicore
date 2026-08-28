@@ -69,6 +69,8 @@ $forensicsCollectorCaptureWindowSelfTestPassed = $false
 $forensicsCollectorCaptureWindowSelfTest = $null
 $forensicsCollectorCleanupReportSelfTestPassed = $false
 $forensicsCollectorCleanupReportSelfTest = $null
+$forensicsCollectorInterruptedStackSelfTestPassed = $false
+$forensicsCollectorInterruptedStackSelfTest = $null
 $dotnetStackAttachStallSelfTestRequired = [bool]($ValidateForensics -and $IsWindows)
 $dotnetStackAttachStallSelfTestPassed = $false
 $dotnetStackAttachStallSelfTest = $null
@@ -372,6 +374,107 @@ function Test-DiagnosticCollectorCleanupFailureReport {
         failureKind = $serialized.collectorFailureKind
         evidence = $serialized.collectorEvidence
         cleanupFailures = $cleanupFailures
+    }
+}
+
+function New-DiagnosticCollectorInterruptedStackFixture {
+    param(
+        [Parameter(Mandatory)]
+        [DownKyi.ProcessSupervision.DiagnosticCollectorFailureKind]$FailureKind,
+        [AllowEmptyString()]
+        [string]$StandardOutput
+    )
+
+    $stackOutputTransition =
+        [DownKyi.ProcessSupervision.DiagnosticCollectorTransitionEvidence]::new(
+            [DownKyi.ProcessSupervision.DiagnosticCollectorTransition]::StackOutputFirstByte,
+            [DownKyi.ProcessSupervision.DiagnosticCollectorTransitionState]::Observed,
+            100.0,
+            "fixture stack output")
+    $timeline = [DownKyi.ProcessSupervision.DiagnosticCollectorTimeline]::new(
+        [DownKyi.ProcessSupervision.DiagnosticCollectorTransitionEvidence[]]@(
+            $stackOutputTransition))
+    $evidence = [DownKyi.ProcessSupervision.DiagnosticCollectorEvidence]::new(
+        $true,
+        $true,
+        $true,
+        $true,
+        $false,
+        $null,
+        $StandardOutput,
+        "",
+        $timeline)
+    $primaryFailure = [DownKyi.ProcessSupervision.DiagnosticCollectorFailure]::new(
+        $FailureKind,
+        $evidence,
+        [OperationCanceledException]::new("fixture target-exit cancellation"))
+    $cleanupFailures = [Collections.Generic.List[
+        DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailure]]::new()
+
+    $bindingFlags = [Reflection.BindingFlags]::Instance -bor
+        [Reflection.BindingFlags]::NonPublic
+    $constructor = @(
+        [DownKyi.ProcessSupervision.DiagnosticCollectorExecutionException].
+            GetConstructors($bindingFlags) |
+            Where-Object { $_.GetParameters().Count -eq 2 }
+    ) | Select-Object -First 1
+    if ($null -eq $constructor) {
+        throw "Diagnostic collector execution exception constructor was not found."
+    }
+
+    $arguments = [object[]]::new(2)
+    $arguments[0] = $primaryFailure
+    $arguments[1] = $cleanupFailures
+    return $constructor.Invoke($arguments)
+}
+
+function Test-DiagnosticCollectorFailureHasCapturedStack {
+    param(
+        [Parameter(Mandatory)]
+        [DownKyi.ProcessSupervision.DiagnosticCollectorExecutionException]$Exception
+    )
+
+    $evidence = $Exception.Failure.Evidence
+    $stackOutputTransition = Get-DiagnosticCollectorTransition `
+        -Evidence $evidence `
+        -Name "StackOutputFirstByte"
+    return $Exception.Failure.Kind -eq
+            [DownKyi.ProcessSupervision.DiagnosticCollectorFailureKind]::CallerCancelled -and
+        $Exception.CleanupFailures.Count -eq 0 -and
+        $evidence.Started -and
+        $evidence.Exited -and
+        $evidence.Reaped -and
+        $evidence.StreamsDrained -and
+        -not $evidence.TimedOut -and
+        $null -ne $stackOutputTransition -and
+        $stackOutputTransition.State -eq
+            [DownKyi.ProcessSupervision.DiagnosticCollectorTransitionState]::Observed -and
+        $evidence.StandardOutput -match '(?m)^Thread \(0x[0-9A-Fa-f]+\):\r?$'
+}
+
+function Test-DiagnosticCollectorInterruptedStackPolicy {
+    $capturedStack = New-DiagnosticCollectorInterruptedStackFixture `
+        -FailureKind CallerCancelled `
+        -StandardOutput "Thread (0x1):`r`n  fixture frame`r`n"
+    $emptyCancellation = New-DiagnosticCollectorInterruptedStackFixture `
+        -FailureKind CallerCancelled `
+        -StandardOutput ""
+    $unrelatedFailure = New-DiagnosticCollectorInterruptedStackFixture `
+        -FailureKind ExecutionFailed `
+        -StandardOutput "Thread (0x1):`r`n  fixture frame`r`n"
+    $capturedStackAccepted =
+        Test-DiagnosticCollectorFailureHasCapturedStack -Exception $capturedStack
+    $emptyCancellationRejected = -not (
+        Test-DiagnosticCollectorFailureHasCapturedStack -Exception $emptyCancellation)
+    $unrelatedFailureRejected = -not (
+        Test-DiagnosticCollectorFailureHasCapturedStack -Exception $unrelatedFailure)
+    return [pscustomobject]@{
+        passed = $capturedStackAccepted -and
+            $emptyCancellationRejected -and
+            $unrelatedFailureRejected
+        capturedStackAccepted = $capturedStackAccepted
+        emptyCancellationRejected = $emptyCancellationRejected
+        unrelatedFailureRejected = $unrelatedFailureRejected
     }
 }
 
@@ -930,29 +1033,73 @@ function Save-ManagedStack {
             captured = $false
             exitCode = $null
             timedOut = $false
+            collectorFailureKind = $null
+            collectorEvidence = $null
+            collectorCleanupFailures = @()
         }
     }
 
-    $collector = (Invoke-OwnedDiagnosticCollector `
-        -FileName $script:diagnosticsTool `
-        -Arguments @(
-            "report",
-            "--process-id",
-            $TargetProcessId.ToString(
-                [System.Globalization.CultureInfo]::InvariantCulture)) `
-        -CaptureWindow $CaptureWindow `
-        -CancellationToken $CancellationToken).Evidence
+    $collectorFailure = $null
+    try {
+        $collector = (Invoke-OwnedDiagnosticCollector `
+            -FileName $script:diagnosticsTool `
+            -Arguments @(
+                "report",
+                "--process-id",
+                $TargetProcessId.ToString(
+                    [System.Globalization.CultureInfo]::InvariantCulture)) `
+            -CaptureWindow $CaptureWindow `
+            -CancellationToken $CancellationToken).Evidence
+    }
+    catch {
+        $collectorFailure = Get-DiagnosticCollectorExecutionFailure `
+            -Exception $_.Exception
+        if ($null -eq $collectorFailure -or -not (
+                Test-DiagnosticCollectorFailureHasCapturedStack `
+                    -Exception $collectorFailure)) {
+            throw
+        }
+
+        $collector = $collectorFailure.Failure.Evidence
+    }
     [System.IO.File]::WriteAllText(
         $Destination,
         $collector.StandardOutput + $collector.StandardError,
         [System.Text.UTF8Encoding]::new($false))
     return [pscustomobject]@{
         available = $true
-        captured = -not $collector.TimedOut -and
-            $collector.ExitCode -eq 0 -and
-            -not [string]::IsNullOrWhiteSpace($collector.StandardOutput)
+        captured = if ($null -ne $collectorFailure) {
+            $true
+        }
+        else {
+            -not $collector.TimedOut -and
+                $collector.ExitCode -eq 0 -and
+                -not [string]::IsNullOrWhiteSpace($collector.StandardOutput)
+        }
         exitCode = $collector.ExitCode
         timedOut = $collector.TimedOut
+        collectorFailureKind = if ($null -eq $collectorFailure) {
+            $null
+        }
+        else {
+            $collectorFailure.Failure.Kind.ToString()
+        }
+        collectorEvidence = if ($null -eq $collectorFailure) {
+            $null
+        }
+        else {
+            $collectorFailure.Failure.Evidence
+        }
+        collectorCleanupFailures = @(
+            if ($null -ne $collectorFailure) {
+                $collectorFailure.CleanupFailures | ForEach-Object {
+                    [pscustomobject]@{
+                        kind = $_.Kind.ToString()
+                        causeType = $_.Cause.GetType().Name
+                    }
+                }
+            }
+        )
     }
 }
 
@@ -1019,6 +1166,9 @@ function Save-ProcessEvidence {
             captured = $false
             exitCode = $null
             timedOut = $false
+            collectorFailureKind = $null
+            collectorEvidence = $null
+            collectorCleanupFailures = @()
         }
     }
     else {
@@ -1041,8 +1191,11 @@ function Save-ProcessEvidence {
     $evidence |
         ConvertTo-Json -Depth 8 |
         Set-Content -LiteralPath (Join-Path $directory "process-evidence.json") -Encoding utf8
-    return [System.IO.Path]::GetRelativePath($runRoot, $directory).
-        Replace([System.IO.Path]::DirectorySeparatorChar, '/')
+    return [pscustomobject]@{
+        evidencePath = [System.IO.Path]::GetRelativePath($runRoot, $directory).
+            Replace([System.IO.Path]::DirectorySeparatorChar, '/')
+        managedStack = $stackResult
+    }
 }
 
 function Invoke-ForensicsObserverCapture {
@@ -1097,7 +1250,7 @@ function Invoke-ForensicsObserverCapture {
     }
 
     try {
-        $evidencePath = Save-ProcessEvidence `
+        $evidenceCapture = Save-ProcessEvidence `
             -Process $diagnosticProcess `
             -AssemblyName $AssemblyName `
             -Iteration $Iteration `
@@ -1108,11 +1261,20 @@ function Invoke-ForensicsObserverCapture {
                 -SkipManagedStack:$SkipManagedStack
         return [pscustomobject]@{
             status = "captured"
-            evidencePath = $evidencePath
-            errorType = $null
-            collectorFailureKind = $null
-            collectorEvidence = $null
-            collectorCleanupFailures = @()
+            evidencePath = $evidenceCapture.evidencePath
+            errorType = if (
+                [string]::IsNullOrWhiteSpace(
+                    $evidenceCapture.managedStack.collectorFailureKind)) {
+                $null
+            }
+            else {
+                "DiagnosticCollectorExecutionException"
+            }
+            collectorFailureKind =
+                $evidenceCapture.managedStack.collectorFailureKind
+            collectorEvidence = $evidenceCapture.managedStack.collectorEvidence
+            collectorCleanupFailures = @(
+                $evidenceCapture.managedStack.collectorCleanupFailures)
         }
     }
     catch {
@@ -2177,6 +2339,18 @@ if ($ValidateForensics) {
     if (-not $forensicsCollectorCleanupReportSelfTestPassed) {
         throw "Forensics collector cleanup-report self-test did not preserve evidence."
     }
+    $forensicsCollectorInterruptedStackSelfTest =
+        Test-DiagnosticCollectorInterruptedStackPolicy
+    $forensicsCollectorInterruptedStackSelfTestPassed =
+        $forensicsCollectorInterruptedStackSelfTest.passed
+    $forensicsCollectorInterruptedStackSelfTest |
+        ConvertTo-Json -Depth 4 |
+        Set-Content -LiteralPath (
+            Join-Path $runRoot "forensics-collector-interrupted-stack-self-test.json") `
+            -Encoding utf8
+    if (-not $forensicsCollectorInterruptedStackSelfTestPassed) {
+        throw "Forensics collector interrupted-stack self-test did not fail closed."
+    }
     $forensicsCollectorCaptureWindowSelfTest =
         Test-OwnedDiagnosticCollectorCaptureWindow `
         -ProcessSupervisionAssembly $processSupervisionAssembly
@@ -2934,6 +3108,11 @@ $report = [ordered]@{
         $forensicsCollectorCleanupReportSelfTestPassed
     forensicsCollectorCleanupReportSelfTest =
         $forensicsCollectorCleanupReportSelfTest
+    forensicsCollectorInterruptedStackSelfTestRequired = [bool]$ValidateForensics
+    forensicsCollectorInterruptedStackSelfTestPassed =
+        $forensicsCollectorInterruptedStackSelfTestPassed
+    forensicsCollectorInterruptedStackSelfTest =
+        $forensicsCollectorInterruptedStackSelfTest
     dotnetStackAttachStallSelfTestRequired =
         $dotnetStackAttachStallSelfTestRequired
     dotnetStackAttachStallSelfTestPassed = if (

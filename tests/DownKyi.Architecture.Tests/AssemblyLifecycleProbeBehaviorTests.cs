@@ -115,7 +115,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         {
             var mutation = TryExecuteLifecycleMutation(
                 CleanupReportMutationEnvironmentVariable,
-                "cleanup-report");
+                "cleanup-report",
+                CleanupReportSelfTestRejection);
             if (mutation is null)
             {
                 return;
@@ -133,6 +134,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         var observer = ReadFunction(source, "Invoke-ForensicsObserverCapture");
         var isolatedProcess = ReadFunction(source, "Invoke-IsolatedProcess");
         var phaseResult = ReadFunction(source, "New-ProcessPhaseResult");
+        var managedStack = ReadFunction(source, "Save-ManagedStack");
+        var interruptedStackPolicy = ReadFunction(
+            source,
+            "Test-DiagnosticCollectorFailureHasCapturedStack");
 
         Assert.Contains(
             "Get-DiagnosticCollectorExecutionFailure",
@@ -173,6 +178,22 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "forensicsCollectorCleanupReportSelfTest =",
             source,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "forensicsCollectorInterruptedStackSelfTestPassed =",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Test-DiagnosticCollectorFailureHasCapturedStack",
+            managedStack,
+            StringComparison.Ordinal);
+        Assert.Contains("collectorFailureKind", managedStack, StringComparison.Ordinal);
+        Assert.Contains("CallerCancelled", interruptedStackPolicy, StringComparison.Ordinal);
+        Assert.Contains("CleanupFailures.Count -eq 0", interruptedStackPolicy, StringComparison.Ordinal);
+        Assert.Contains("StreamsDrained", interruptedStackPolicy, StringComparison.Ordinal);
+        Assert.Contains("StackOutputFirstByte", interruptedStackPolicy, StringComparison.Ordinal);
+        Assert.Contains("^Thread", interruptedStackPolicy, StringComparison.Ordinal);
+        Assert.Contains("emptyCancellationRejected", source, StringComparison.Ordinal);
+        Assert.Contains("unrelatedFailureRejected", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -192,7 +213,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         {
             var mutation = TryExecuteLifecycleMutation(
                 CaptureBudgetMutationEnvironmentVariable,
-                "capture-budget");
+                "capture-budget",
+                CaptureBudgetSelfTestRejection);
             if (mutation is null)
             {
                 return;
@@ -259,7 +281,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         {
             var mutation = TryExecuteLifecycleMutation(
                 StartupWindowMutationEnvironmentVariable,
-                "startup-window");
+                "startup-window",
+                CaptureBudgetSelfTestRejection);
             if (mutation is null)
             {
                 return;
@@ -292,7 +315,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         {
             var mutation = TryExecuteLifecycleMutation(
                 EarlyReadyMutationEnvironmentVariable,
-                "early-ready");
+                "early-ready",
+                CaptureBudgetSelfTestRejection);
             if (mutation is null)
             {
                 return;
@@ -417,11 +441,21 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
 
     private static BoundedProcessResult? TryExecuteLifecycleMutation(
         string environmentVariable,
-        string resultPrefix)
+        string resultPrefix,
+        string expectedMessage)
     {
         try
         {
-            return ExecuteLifecycleMutation(environmentVariable, resultPrefix);
+            var result = ExecuteLifecycleMutation(environmentVariable, resultPrefix);
+            if (!IsExpectedLifecycleMutationRejection(result, expectedMessage))
+            {
+                TestContext.Current.AddWarning(
+                    $"Lifecycle {resultPrefix} mutation child result:" +
+                    $"{Environment.NewLine}ExitCode: {result.ExitCode}" +
+                    $"{Environment.NewLine}{result.Output}");
+            }
+
+            return result;
         }
         catch (Exception failure) when (failure is
             System.ComponentModel.Win32Exception or
@@ -432,9 +466,9 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             TimeoutException or
             UnauthorizedAccessException)
         {
-            TestContext.Current.TestOutputHelper?.WriteLine(
-                "Lifecycle mutation execution did not produce a child result: {0}",
-                failure.GetType().Name);
+            TestContext.Current.AddWarning(
+                $"Lifecycle {resultPrefix} mutation host failure:" +
+                $"{Environment.NewLine}{failure}");
             return null;
         }
     }
@@ -486,11 +520,13 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         }
         finally
         {
-            TryDeleteLifecycleMutationResults(resultsDirectory);
+            TryDeleteLifecycleMutationResults(resultsDirectory, resultPrefix);
         }
     }
 
-    private static void TryDeleteLifecycleMutationResults(string resultsDirectory)
+    private static void TryDeleteLifecycleMutationResults(
+        string resultsDirectory,
+        string resultPrefix)
     {
         try
         {
@@ -498,9 +534,9 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
-            TestContext.Current.TestOutputHelper?.WriteLine(
-                "Lifecycle mutation artifact cleanup did not replace the executable result: {0}",
-                failure.GetType().Name);
+            TestContext.Current.AddWarning(
+                $"Lifecycle {resultPrefix} mutation cleanup failure:" +
+                $"{Environment.NewLine}{failure}");
         }
     }
 
