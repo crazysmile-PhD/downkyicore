@@ -1039,6 +1039,52 @@ CI and a new same-head review. No old run will be rerun. Stage 4A remains
 completed and closed; production Stage 4, Stage 5, merge, release and tag
 movement remain out of scope.
 
+### Eleventh Exact-Head CI And Cold Fixture Host
+
+Documentation head `c347406876b957152d0d23b7b1b89ea33f0ab4b9`
+naturally triggered Strict PR run
+[33198126411](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33198126411).
+Its lifecycle job `98940423297` failed in the existing deterministic
+capture-window self-test before formal assembly probing. The three-second
+fixture recorded `ProcessStartRequested` after 4.775 ms but never observed
+`ProcessStarted`; the typed deadline returned after 3,241.419 ms, the wrapper
+returned after 4,372.486 ms and only 411.643 ms remained in the five-second
+parent budget. Cleanup failures were empty. All other completed Strict jobs and
+the separately triggered Build, CodeQL, Process Membership and Protobuf runs
+passed. No old workflow was rerun.
+
+This was a fixture cold-start failure, not an ordering-oracle, collector-cleanup
+or 15-second formal capture failure. The fixture had asked `dotnet` to resolve
+and launch the already-built ProcessSupervision assembly as the blocking target,
+while `OwnedProcessLease` also starts its compiled supervisor through the hosted
+runtime. Implementation `0c144c3183e463a178bc17413637c3ee4be347f2`
+changes only this self-test target to the already-built ProcessSupervision
+apphost. The same `OwnedDiagnosticCollector` and lease remain the sole owner,
+the same compiled fixture arguments run, and the owner-assigned window remains
+exactly 3,000 ms. The report now records `collectorHostName`; no production
+path, timeout, deadline, retry or formal capture window changed.
+
+On clean exact implementation HEAD, the one-assembly Local gate recorded nine
+phases, zero failures, ownership 634/0 and a clean tree. The fixture used
+`DownKyi.ProcessSupervision.exe`, observed `ProcessStarted` after 245.089 ms,
+returned typed deadline evidence after 3,027.281 ms and recorded zero cleanup
+failures. The formal capture window remained 15,000 ms. The real observer armed
+after 1,272.33 ms and completed after 3,288.236 ms. Configured completion was
+7,632.11 ms before exit at 8,274.334 ms; divergent monotonic completion was
+6,448.22 ms after exit at 5,517.017 ms; the release mutation completed after
+1,782.628 ms following exit at 1,780.346 ms. Both ordering mutations passed.
+
+Affected Architecture passed 18/18, full Architecture 316/316 and the
+review-invariant gate 325 tests plus seven adversarial proofs. PowerShell parse,
+C# format and diff checks passed. Windows 74/74 was not repeated after this
+fixture-only change; the preceding checkpoint result remains applicable, and
+the naturally triggered Windows CI job is the required new exact-head proof.
+
+Status: pending this documentation commit, exact-head push, naturally triggered
+CI and a new same-head review. No old run will be rerun. Stage 4A remains
+completed and closed; production Stage 4, Stage 5, merge, release and tag
+movement remain out of scope.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates

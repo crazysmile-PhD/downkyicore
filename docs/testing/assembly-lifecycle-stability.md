@@ -376,7 +376,12 @@ blocking task before atomically publishing its ready record; only then can the
 self-test accept typed timeout, reap and stream-drain evidence without
 consuming the parent operation budget. It also requires the ready process ID
 and pre-block stdout/stderr markers. This is a test fixture allowance, not a
-new production or global deadline. A standalone
+new production or global deadline. The fixture launches the already-built
+ProcessSupervision apphost directly instead of asking a second `dotnet` muxer
+process to resolve and launch the same assembly. This removes cold muxer startup
+from the fixture without changing the three-second window, compiled target
+behavior or sole `OwnedDiagnosticCollector`/lease owner. The report records
+`collectorHostName` so CI proves which fixture host ran. A standalone
 `forensics-collector-capture-window-self-test.json` is written before a failed
 self-test throws, so CI artifacts retain the exact predicate values even when
 formal lifecycle phases never start. Executable mutations prove that both a
