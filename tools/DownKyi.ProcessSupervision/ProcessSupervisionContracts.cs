@@ -42,6 +42,7 @@ public sealed class LaunchSpec
 public sealed class TransitionBudget
 {
     private readonly TimeProvider _timeProvider;
+    private readonly TransitionBudget? _parent;
     private readonly long _startedAt;
     private readonly TimeSpan _operationDuration;
     private readonly TimeSpan _hardDuration;
@@ -49,11 +50,13 @@ public sealed class TransitionBudget
     private TransitionBudget(
         TimeSpan operationDuration,
         TimeSpan cleanupGrace,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        TransitionBudget? parent = null)
     {
         _operationDuration = operationDuration;
         _hardDuration = checked(operationDuration + cleanupGrace);
         _timeProvider = timeProvider;
+        _parent = parent;
         _startedAt = timeProvider.GetTimestamp();
     }
 
@@ -72,16 +75,52 @@ public sealed class TransitionBudget
             timeProvider ?? TimeProvider.System);
     }
 
-    public TimeSpan RemainingOperation => Remaining(_operationDuration);
+    public TimeSpan RemainingOperation => Remaining(
+        _operationDuration,
+        _parent?.RemainingOperation);
 
-    public TimeSpan RemainingCleanup => Remaining(_hardDuration);
+    public TimeSpan RemainingCleanup => Remaining(
+        _hardDuration,
+        _parent?.RemainingCleanup);
 
-    private TimeSpan Remaining(TimeSpan duration)
+    public DiagnosticCollectorWindow AllocateDiagnosticCollectorWindow(
+        TimeSpan operationAllowance,
+        TimeSpan cleanupAllowance)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
+            operationAllowance,
+            TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThan(cleanupAllowance, TimeSpan.Zero);
+        if (RemainingOperation <= TimeSpan.Zero)
+        {
+            throw new TimeoutException(
+                "The transition owner cannot allocate a diagnostic collector window " +
+                "after its operation deadline.");
+        }
+
+        return new DiagnosticCollectorWindow(
+            this,
+            new TransitionBudget(
+                operationAllowance,
+                cleanupAllowance,
+                _timeProvider,
+                this),
+            _timeProvider);
+    }
+
+    private TimeSpan Remaining(TimeSpan duration, TimeSpan? parentRemaining)
     {
         var remaining = duration - _timeProvider.GetElapsedTime(
             _startedAt,
             _timeProvider.GetTimestamp());
-        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        if (remaining <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return parentRemaining.HasValue && parentRemaining.Value < remaining
+            ? parentRemaining.Value
+            : remaining;
     }
 }
 
@@ -233,12 +272,17 @@ public sealed class OwnedProcessExecutionException : Exception
         : base(CreateMessage(failure, cleanupFailures), operationFailure)
     {
         Failure = failure;
-        CleanupFailures = new ReadOnlyCollection<Exception>(cleanupFailures.ToArray());
+        CleanupStageFailures = new ReadOnlyCollection<OwnedProcessCleanupStageFailure>(
+            cleanupFailures.Select(OwnedProcessCleanupStageFailure.FromException).ToArray());
+        CleanupFailures = new ReadOnlyCollection<Exception>(
+            CleanupStageFailures.Select(item => item.Cause).ToArray());
     }
 
     public OwnedProcessFailure Failure { get; }
 
     public IReadOnlyList<Exception> CleanupFailures { get; }
+
+    internal IReadOnlyList<OwnedProcessCleanupStageFailure> CleanupStageFailures { get; }
 
     private static string CreateMessage(
         OwnedProcessFailure failure,
@@ -249,6 +293,51 @@ public sealed class OwnedProcessExecutionException : Exception
             : $"Owned process execution failed ({failure.Kind}) and cleanup reported " +
               $"{cleanupFailures.Count} failure(s).";
     }
+}
+
+internal enum OwnedProcessCleanupStage
+{
+    Terminate,
+    TreeQuiescence,
+    Reap,
+    StreamDrain,
+    TargetExitProtocol,
+    Dispose,
+    Unknown
+}
+
+internal sealed record OwnedProcessCleanupStageFailure(
+    OwnedProcessCleanupStage Stage,
+    Exception Cause)
+{
+    public static OwnedProcessCleanupStageFailure FromException(Exception failure)
+    {
+        return failure is OwnedProcessCleanupStageException staged
+            ? new OwnedProcessCleanupStageFailure(staged.Stage, staged.Cause)
+            : new OwnedProcessCleanupStageFailure(
+                OwnedProcessCleanupStage.Unknown,
+                failure);
+    }
+}
+
+[SuppressMessage(
+    "Design",
+    "CA1032:Implement standard exception constructors",
+    Justification = "This internal transport exception always requires a cleanup stage and original cause.")]
+internal sealed class OwnedProcessCleanupStageException : Exception
+{
+    public OwnedProcessCleanupStageException(
+        OwnedProcessCleanupStage stage,
+        Exception cause)
+        : base(cause.Message, cause)
+    {
+        Stage = stage;
+        Cause = cause;
+    }
+
+    public OwnedProcessCleanupStage Stage { get; }
+
+    public Exception Cause { get; }
 }
 
 public sealed record ParentLifetimeOutcome(bool ExactParentExited);
@@ -277,5 +366,7 @@ internal enum ProcessOwnershipMutation
     DelayAfterTargetExitReport = 64,
     ReleaseAnchorBeforeMembership = 128,
     FailFixturePublication = 256,
-    FailAfterMembershipAttachment = 512
+    FailAfterMembershipAttachment = 512,
+    StallStreamDrain = 1024,
+    StallRootReap = 2048
 }

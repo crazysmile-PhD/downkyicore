@@ -74,7 +74,11 @@ public sealed class AssemblyLifecycleArchitectureTests
             "WaitReason",
             "Get-DiagnosticProcessTreeSnapshot",
             "OwnedProcessLease]::StartAsync",
+            "OwnedDiagnosticCollector]::CollectAsync",
+            "DiagnosticCollectorRequest]::new",
             "TransitionBudget]::Start",
+            "AllocateDiagnosticCollectorWindow",
+            "Invoke-OwnedDiagnosticCollector",
             "ownedTreeQuiescent",
             "ownedProcessCleanupFailures",
             "EvidenceHoldRequest",
@@ -177,6 +181,12 @@ public sealed class AssemblyLifecycleArchitectureTests
             "[DownKyi.ProcessSupervision.TransitionBudget]::Start",
             gate,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "[DownKyi.ProcessSupervision.OwnedDiagnosticCollector]::CollectAsync",
+            gate,
+            StringComparison.Ordinal);
+        Assert.Contains("AllocateDiagnosticCollectorWindow", gate, StringComparison.Ordinal);
+        Assert.Contains("Invoke-OwnedDiagnosticCollector", gate, StringComparison.Ordinal);
         Assert.Contains("ownedTreeQuiescent", gate, StringComparison.Ordinal);
         Assert.Contains("ownedProcessCleanupFailures", gate, StringComparison.Ordinal);
         Assert.Contains("Get-DiagnosticProcessTreeSnapshot", gate, StringComparison.Ordinal);
@@ -187,6 +197,9 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.DoesNotContain("Stop-DownKyiOwnedProcess", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("ReleaseObservedChildren", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("ObservedChildReleaseLease", gate, StringComparison.Ordinal);
+        Assert.DoesNotContain("function Invoke-BoundedForensicsCollector", gate, StringComparison.Ordinal);
+        Assert.DoesNotContain("function Stop-BoundedForensicsCollector", gate, StringComparison.Ordinal);
+        Assert.DoesNotContain("function New-OwnerAllocatedForensicsCaptureWindow", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("function New-EvidenceCaptureLease", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("function Start-EvidenceCaptureLease", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("function Complete-EvidenceCaptureLease", gate, StringComparison.Ordinal);

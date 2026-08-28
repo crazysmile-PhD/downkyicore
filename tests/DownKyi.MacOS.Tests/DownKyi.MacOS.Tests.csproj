@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj" />
+    <Compile Include="..\ProcessSupervisionTestCases\OwnedDiagnosticCollectorPlatformTests.cs" Link="OwnedDiagnosticCollectorPlatformTests.cs" />
     <Compile Include="..\ProcessSupervisionTestCases\OwnedProcessLeasePlatformTests.cs" Link="OwnedProcessLeasePlatformTests.cs" />
   </ItemGroup>
 

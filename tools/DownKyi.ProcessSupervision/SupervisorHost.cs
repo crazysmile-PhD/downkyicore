@@ -15,6 +15,11 @@ internal static class SupervisorHost
     internal const string OwnedTreeProbeArgument = "--owned-tree-probe";
     internal const string ExitWithOwnedDescendantArgument = "--exit-with-owned-descendant";
     internal const string BlockForeverArgument = "--block-forever";
+    internal const string CollectorBlockWithReadyArgument =
+        "--collector-block-with-ready";
+    internal const string CollectorOutputArgument = "--collector-output";
+    internal const string CollectorNonzeroArgument = "--collector-nonzero";
+    internal const string CollectorLargeOutputArgument = "--collector-large-output";
     internal const string EvidenceHoldProbeArgument = "--evidence-hold-probe";
     internal const string EvidenceHoldWithOwnedDescendantArgument =
         "--evidence-hold-with-owned-descendant";
@@ -63,6 +68,39 @@ internal static class SupervisorHost
                 .ConfigureAwait(false);
             return 0;
         }
+        if (arguments.Count == 2 &&
+            string.Equals(
+                arguments[0],
+                CollectorBlockWithReadyArgument,
+                StringComparison.Ordinal))
+        {
+            await PublishProbeAsync(
+                    arguments[1],
+                    new CollectorReadyProbeResult(Environment.ProcessId),
+                    injectFailure: false)
+                .ConfigureAwait(false);
+            await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
+                .ConfigureAwait(false);
+            return 0;
+        }
+        if (arguments.Count == 1 &&
+            string.Equals(arguments[0], CollectorOutputArgument, StringComparison.Ordinal))
+        {
+            return await RunCollectorOutputProbeAsync(exitCode: 0, largeOutput: false)
+                .ConfigureAwait(false);
+        }
+        if (arguments.Count == 1 &&
+            string.Equals(arguments[0], CollectorNonzeroArgument, StringComparison.Ordinal))
+        {
+            return await RunCollectorOutputProbeAsync(exitCode: 23, largeOutput: false)
+                .ConfigureAwait(false);
+        }
+        if (arguments.Count == 1 &&
+            string.Equals(arguments[0], CollectorLargeOutputArgument, StringComparison.Ordinal))
+        {
+            return await RunCollectorOutputProbeAsync(exitCode: 0, largeOutput: true)
+                .ConfigureAwait(false);
+        }
         if (arguments.Count == 1 &&
             string.Equals(arguments[0], EvidenceHoldProbeArgument, StringComparison.Ordinal))
         {
@@ -101,7 +139,9 @@ internal static class SupervisorHost
             ProcessOwnershipMutation.StallLaunchPayloadRead |
             ProcessOwnershipMutation.DelayAfterTargetExitReport |
             ProcessOwnershipMutation.ReleaseAnchorBeforeMembership |
-            ProcessOwnershipMutation.FailFixturePublication;
+            ProcessOwnershipMutation.FailFixturePublication |
+            ProcessOwnershipMutation.StallStreamDrain |
+            ProcessOwnershipMutation.StallRootReap;
         if (arguments.Count != 5 ||
             !string.Equals(arguments[0], HostArgument, StringComparison.Ordinal) ||
             !int.TryParse(arguments[4], NumberStyles.None, CultureInfo.InvariantCulture, out var mutationValue) ||
@@ -170,6 +210,10 @@ internal static class SupervisorHost
         evidenceHoldHandles?.ApplyTo(startInfo);
         using var target = Process.Start(startInfo)
             ?? throw new InvalidOperationException("The owned target process did not start.");
+        var targetStandardOutput = target.StandardOutput.ReadToEndAsync(
+            CancellationToken.None);
+        var targetStandardError = target.StandardError.ReadToEndAsync(
+            CancellationToken.None);
         evidenceHoldHandles?.ReleaseSupervisorCopies();
         if (payload.CloseStandardInput)
         {
@@ -220,6 +264,11 @@ internal static class SupervisorHost
             return 206;
         }
 
+        await Console.Out.WriteAsync(await targetStandardOutput.ConfigureAwait(false))
+            .ConfigureAwait(false);
+        await Console.Error.WriteAsync(await targetStandardError.ConfigureAwait(false))
+            .ConfigureAwait(false);
+
         return target.ExitCode;
     }
 
@@ -234,7 +283,9 @@ internal static class SupervisorHost
             WorkingDirectory = payload.WorkingDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
-            RedirectStandardInput = payload.CloseStandardInput
+            RedirectStandardInput = payload.CloseStandardInput,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
         };
         foreach (var argument in payload.Arguments)
         {
@@ -413,9 +464,41 @@ internal static class SupervisorHost
         return startInfo;
     }
 
-    private static async Task PublishProbeAsync(
+    private static async Task<int> RunCollectorOutputProbeAsync(
+        int exitCode,
+        bool largeOutput)
+    {
+        if (!largeOutput)
+        {
+            await Console.Out.WriteAsync("collector-stdout").ConfigureAwait(false);
+            await Console.Error.WriteAsync("collector-stderr").ConfigureAwait(false);
+            return exitCode;
+        }
+
+        const int chunkCount = 128;
+        const int chunkLength = 4096;
+        var stdoutChunk = new string('o', chunkLength);
+        var stderrChunk = new string('e', chunkLength);
+        var stdout = WriteCollectorChunksAsync(Console.Out, stdoutChunk, chunkCount);
+        var stderr = WriteCollectorChunksAsync(Console.Error, stderrChunk, chunkCount);
+        await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
+        return exitCode;
+    }
+
+    private static async Task WriteCollectorChunksAsync(
+        TextWriter writer,
+        string chunk,
+        int chunkCount)
+    {
+        for (var index = 0; index < chunkCount; index++)
+        {
+            await writer.WriteAsync(chunk).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task PublishProbeAsync<T>(
         string readyPath,
-        OwnedTreeProbeResult result,
+        T result,
         bool injectFailure)
     {
         var temporaryPath = $"{readyPath}.{Guid.NewGuid():N}.tmp";
@@ -591,4 +674,6 @@ internal static class SupervisorHost
     private sealed record LaunchSpecProbeResult(string Argument, string? EnvironmentValue);
 
     private sealed record OwnedTreeProbeResult(int RootProcessId, int ChildProcessId);
+
+    private sealed record CollectorReadyProbeResult(int ProcessId);
 }

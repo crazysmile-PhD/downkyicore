@@ -11,8 +11,6 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_FORENSICS_HELPER_AUTHORITY";
     private const string CaptureBudgetMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET";
-    private const string CaptureBudgetSelfTestRejection =
-        "Forensics collector capture-window self-test did not fail closed.";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
@@ -25,9 +23,14 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
                 StringComparison.Ordinal))
         {
             source = source.Replace(
-                "$safeReason = $Reason -replace '[^A-Za-z0-9_.-]', '-'",
-                "$Process.Kill($true)\n    " +
-                "$safeReason = $Reason -replace '[^A-Za-z0-9_.-]', '-'",
+                "    $launchSpec = [DownKyi.ProcessSupervision.LaunchSpec]::new(",
+                "    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()\n" +
+                "    $collector = [System.Diagnostics.Process]::new()\n" +
+                "    $collector.StartInfo = $startInfo\n" +
+                "    $null = $collector.Start()\n" +
+                "    $collector.Kill($true)\n" +
+                "    $null = $collector.WaitForExitAsync().GetAwaiter().GetResult()\n" +
+                "    $launchSpec = [DownKyi.ProcessSupervision.LaunchSpec]::new(",
                 StringComparison.Ordinal);
         }
 
@@ -39,7 +42,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "OwnedProcessLease",
             "CompleteEvidenceHoldAsync",
             "TransitionBudget]::Start",
-            ".Terminate("
+            "[AggregateException]::new",
+            ".Kill(",
+            ".WaitForExit(",
+            ".WaitForExitAsync("
         ];
 
         foreach (var function in observerClosure)
@@ -48,138 +54,65 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             {
                 Assert.DoesNotContain(authority, function.Value, StringComparison.Ordinal);
             }
-
-            if (!string.Equals(
-                    function.Key,
-                    "Stop-BoundedForensicsCollector",
-                    StringComparison.Ordinal))
-            {
-                Assert.DoesNotContain(".Kill(", function.Value, StringComparison.Ordinal);
-            }
         }
 
         Assert.Contains("Save-ProcessEvidence", observerClosure.Keys);
         Assert.Contains("Get-DiagnosticProcessTreeSnapshot", observerClosure.Keys);
-        Assert.Contains("Invoke-BoundedForensicsCollector", observerClosure.Keys);
-        var collectorCleanup = observerClosure["Stop-BoundedForensicsCollector"];
-        Assert.Contains("$Collector.Kill($true)", collectorCleanup, StringComparison.Ordinal);
-        Assert.DoesNotContain("TargetProcessId", collectorCleanup, StringComparison.Ordinal);
-        Assert.DoesNotContain("$Process.", collectorCleanup, StringComparison.Ordinal);
+        Assert.Contains("Invoke-OwnedDiagnosticCollector", observerClosure.Keys);
+        Assert.DoesNotContain("Invoke-BoundedForensicsCollector", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Stop-BoundedForensicsCollector", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Test-ForensicsExceptionType", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Test-ForensicsTimeoutException", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Test-ForensicsCollectorCaptureWindow", source, StringComparison.Ordinal);
 
         Assert.Contains("EvidenceHoldRequest", source, StringComparison.Ordinal);
         Assert.Contains("CompleteEvidenceHoldAsync", source, StringComparison.Ordinal);
         Assert.Contains("EvidenceCaptureCompletion", source, StringComparison.Ordinal);
         Assert.DoesNotContain("function New-EvidenceCaptureLease", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("function Start-EvidenceCaptureLease", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("function Complete-EvidenceCaptureLease", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("function Close-EvidenceCaptureLease", source, StringComparison.Ordinal);
         Assert.DoesNotContain("ObservedChildReleaseLease", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Wait-ResidualProcessTree", source, StringComparison.Ordinal);
 
-        var probe = File.ReadAllText(Path.Combine(
-            RepositoryRoot,
-            "tools",
-            "DownKyi.AssemblyLifecycleProbe",
-            "Program.cs"));
-        Assert.DoesNotContain("DOWNKYI_TRANSIENT_CHILD", probe, StringComparison.Ordinal);
-        Assert.DoesNotContain("Kill(entireProcessTree", probe, StringComparison.Ordinal);
+        AssertCollectorClosureAstIsClean(observerClosure);
     }
 
     [Fact]
-    public void ForensicsCollectorWaitsAreCancellationAwareAndCleanupAlwaysAttemptsReap()
+    public void CompiledCollectorBoundaryOwnsStartWaitTerminateReapAndDrain()
     {
-        var source = ReadLifecycleGate();
-        var collector = ReadFunction(source, "Invoke-BoundedForensicsCollector");
-        var cleanup = ReadFunction(source, "Stop-BoundedForensicsCollector");
+        var collector = ReadFunction(ReadLifecycleGate(), "Invoke-OwnedDiagnosticCollector");
 
-        Assert.DoesNotContain(".WaitForExit(", collector, StringComparison.Ordinal);
-        Assert.DoesNotContain(".WaitForExit(", cleanup, StringComparison.Ordinal);
-        Assert.Contains("WaitForExitAsync($CancellationToken)", collector, StringComparison.Ordinal);
-        Assert.Contains(
-            "$null = $collector.WaitForExitAsync($CancellationToken)",
-            collector,
-            StringComparison.Ordinal);
-        Assert.Contains("$outputTasks.WaitAsync(", collector, StringComparison.Ordinal);
-        Assert.Contains("$null = $outputTasks.WaitAsync(", collector, StringComparison.Ordinal);
+        Assert.Contains("DiagnosticCollectorRequest]::new", collector, StringComparison.Ordinal);
+        Assert.Contains("OwnedDiagnosticCollector]::CollectAsync", collector, StringComparison.Ordinal);
         Assert.Contains("$CancellationToken", collector, StringComparison.Ordinal);
-        Assert.Contains("$Collector.Kill($true)", cleanup, StringComparison.Ordinal);
-        Assert.Contains(
-            "$Collector.WaitForExitAsync([Threading.CancellationToken]::None)",
-            cleanup,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "$null = $Collector.WaitForExitAsync([Threading.CancellationToken]::None)",
-            cleanup,
-            StringComparison.Ordinal);
-        Assert.True(
-            cleanup.IndexOf("$Collector.Kill($true)", StringComparison.Ordinal) <
-            cleanup.IndexOf("$Collector.WaitForExitAsync", StringComparison.Ordinal));
-        Assert.Contains("$Failures.Add($_.Exception)", cleanup, StringComparison.Ordinal);
+        Assert.DoesNotContain("ProcessStartInfo", collector, StringComparison.Ordinal);
+        Assert.DoesNotContain("[System.Diagnostics.Process]", collector, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Start(", collector, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Kill(", collector, StringComparison.Ordinal);
+        Assert.DoesNotContain("WaitForExit", collector, StringComparison.Ordinal);
+        Assert.DoesNotContain("ReadToEndAsync", collector, StringComparison.Ordinal);
+        Assert.DoesNotContain("List[Exception]", collector, StringComparison.Ordinal);
+        Assert.DoesNotContain("AggregateException", collector, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ForensicsCollectorConsumesAnOwnerAllocatedCaptureWindow()
+    public void ForensicsCollectorsConsumeCallerAllocatedTypedWindows()
     {
         var source = ReadLifecycleGate();
-        var isolatedProcess = ReadFunction(source, "Invoke-IsolatedProcess");
-        var allocator = ReadFunction(source, "New-OwnerAllocatedForensicsCaptureWindow");
-        var collector = ReadFunction(source, "Invoke-BoundedForensicsCollector");
-        Assert.True(IsExpectedCaptureBudgetMutationRejection(
-            new BoundedProcessResult(1, CaptureBudgetSelfTestRejection)));
-        Assert.False(IsExpectedCaptureBudgetMutationRejection(
-            new BoundedProcessResult(1, "Unrelated lifecycle failure.")));
-        Assert.False(IsExpectedCaptureBudgetMutationRejection(
-            new BoundedProcessResult(0, CaptureBudgetSelfTestRejection)));
         if (string.Equals(
                 Environment.GetEnvironmentVariable(CaptureBudgetMutationEnvironmentVariable),
                 "1",
                 StringComparison.Ordinal))
         {
-            BoundedProcessResult mutation;
-            try
-            {
-                mutation = ExecuteCaptureBudgetMutation();
-            }
-            catch (System.ComponentModel.Win32Exception)
-            {
-                return;
-            }
-            catch (AggregateException)
-            {
-                return;
-            }
-            catch (IOException)
-            {
-                return;
-            }
-            catch (InvalidOperationException)
-            {
-                return;
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (TimeoutException)
-            {
-                return;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                // An unavailable artifact, platform failure, or subprocess timeout
-                // is not proof that the behavioral self-test rejected the mutation.
-                return;
-            }
-
-            var expectedRejection = IsExpectedCaptureBudgetMutationRejection(mutation);
-            Assert.False(
-                expectedRejection,
-                "The real lifecycle self-test rejected the broken whole-budget helper.");
-            return;
+            source = source.Replace(
+                "$budget.AllocateDiagnosticCollectorWindow(",
+                "[DownKyi.ProcessSupervision.TransitionBudget]::Start(",
+                StringComparison.Ordinal);
         }
 
-        var captureWait = ReadFunction(source, "Get-ForensicsCaptureWaitMilliseconds");
+        var isolatedProcess = ReadFunction(source, "Invoke-IsolatedProcess");
         var observerClosure = ReadFunctionClosure(source, "Invoke-ForensicsObserverCapture");
+        var collector = ReadFunction(source, "Invoke-OwnedDiagnosticCollector");
+        var delay = ReadFunction(source, "Wait-ForensicsObserverDelay");
+        var snapshot = ReadFunction(source, "Get-DiagnosticProcessTreeSnapshot");
 
         Assert.Contains(
             "$forensicsCaptureWindowMilliseconds = 15000",
@@ -189,132 +122,21 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "$forensicsCaptureCleanupWindowMilliseconds = $processCleanupGraceSeconds * 1000",
             source,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "New-OwnerAllocatedForensicsCaptureWindow",
-            isolatedProcess,
-            StringComparison.Ordinal);
-        Assert.Equal(
-            3,
-            Regex.Count(source, "New-OwnerAllocatedForensicsCaptureWindow"));
-        Assert.DoesNotContain(
-            "New-OwnerAllocatedForensicsCaptureWindow",
-            observerClosure.Keys);
-        Assert.DoesNotContain("OwnedProcessLease", allocator, StringComparison.Ordinal);
-        Assert.DoesNotContain("TransitionBudget]::Start", allocator, StringComparison.Ordinal);
-        Assert.Contains(
-            "[System.Diagnostics.Stopwatch]::StartNew()",
-            allocator,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("[DateTimeOffset]::UtcNow", allocator, StringComparison.Ordinal);
-
-        Assert.Contains("[object]$CaptureWindow", collector, StringComparison.Ordinal);
-        Assert.Contains(
-            "Get-ForensicsCaptureWaitMilliseconds",
-            collector,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "Get-TransitionBudgetWaitMilliseconds",
-            collector,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Test-ForensicsTimeoutException -Exception $_.Exception",
-            collector,
-            StringComparison.Ordinal);
-
-        Assert.Contains("$Budget.RemainingOperation", captureWait, StringComparison.Ordinal);
-        Assert.Contains("$Budget.RemainingCleanup", captureWait, StringComparison.Ordinal);
-        Assert.Contains(
-            "$CaptureWindow.operationDuration",
-            captureWait,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "$CaptureWindow.cleanupDuration",
-            captureWait,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "$CaptureWindow.stopwatch.Elapsed",
-            captureWait,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("[DateTimeOffset]::UtcNow", captureWait, StringComparison.Ordinal);
-        foreach (var function in observerClosure)
+        Assert.Equal(2, Regex.Count(source, "AllocateDiagnosticCollectorWindow"));
+        Assert.Contains("AllocateDiagnosticCollectorWindow", isolatedProcess, StringComparison.Ordinal);
+        foreach (var function in observerClosure.Values)
         {
+            Assert.DoesNotContain("TransitionBudget]::Start", function, StringComparison.Ordinal);
             Assert.DoesNotContain(
                 "[System.Diagnostics.Stopwatch]::StartNew()",
-                function.Value,
+                function,
                 StringComparison.Ordinal);
         }
-
-        Assert.Contains("$timeoutFailure", collector, StringComparison.Ordinal);
-        Assert.Contains("$failures.Add($timeoutFailure)", collector, StringComparison.Ordinal);
-        Assert.Contains(
-            "Test-ForensicsCollectorCaptureWindow",
-            source,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "--block-forever",
-            source,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "forensicsCollectorCaptureWindowSelfTestPassed",
-            source,
-            StringComparison.Ordinal);
-    }
-
-    private static bool IsExpectedCaptureBudgetMutationRejection(
-        BoundedProcessResult mutation)
-    {
-        return mutation.ExitCode != 0 && mutation.Output.Contains(
-            CaptureBudgetSelfTestRejection,
-            StringComparison.Ordinal);
-    }
-
-    private static BoundedProcessResult ExecuteCaptureBudgetMutation()
-    {
-        var resultsDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"downkyi-forensics-capture-mutation-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(resultsDirectory);
-        try
-        {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "pwsh",
-                WorkingDirectory = RepositoryRoot,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            startInfo.ArgumentList.Add("-NoProfile");
-            startInfo.ArgumentList.Add("-NonInteractive");
-            startInfo.ArgumentList.Add("-File");
-            startInfo.ArgumentList.Add(Path.Combine(
-                RepositoryRoot,
-                "script",
-                "test-assembly-lifecycle.ps1"));
-            startInfo.ArgumentList.Add("-Configuration");
-            startInfo.ArgumentList.Add("Release");
-            startInfo.ArgumentList.Add("-Profile");
-            startInfo.ArgumentList.Add("Local");
-            startInfo.ArgumentList.Add("-Iterations");
-            startInfo.ArgumentList.Add("1");
-            startInfo.ArgumentList.Add("-AssemblyPattern");
-            startInfo.ArgumentList.Add("DownKyi.Core.Tests");
-            startInfo.ArgumentList.Add("-ResultsDirectory");
-            startInfo.ArgumentList.Add(resultsDirectory);
-            startInfo.ArgumentList.Add("-ValidateForensics");
-            startInfo.ArgumentList.Add("-NoBuild");
-            startInfo.Environment[CaptureBudgetMutationEnvironmentVariable] = "1";
-
-            return BoundedProcessRunner.Run(
-                startInfo,
-                TestContext.Current.CancellationToken,
-                TimeSpan.FromSeconds(30));
-        }
-        finally
-        {
-            Directory.Delete(resultsDirectory, recursive: true);
-        }
+        Assert.Contains("[object]$CaptureWindow", collector, StringComparison.Ordinal);
+        Assert.Contains("$CaptureWindow.DelayAsync", delay, StringComparison.Ordinal);
+        Assert.Contains("$CaptureWindow.RemainingOperation", snapshot, StringComparison.Ordinal);
+        Assert.DoesNotContain("New-OwnerAllocatedForensicsCaptureWindow", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Get-ForensicsCaptureWaitMilliseconds", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -369,6 +191,67 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "$ProcessResult.diagnosticTreeQuiescent",
             classifier,
             StringComparison.Ordinal);
+    }
+
+    private static void AssertCollectorClosureAstIsClean(
+        IReadOnlyDictionary<string, string> closure)
+    {
+        var temporaryPath = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-collector-closure-{Guid.NewGuid():N}.ps1");
+        try
+        {
+            File.WriteAllText(temporaryPath, string.Join(Environment.NewLine, closure.Values));
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add(
+                "$Path=$env:DOWNKYI_COLLECTOR_AST_PATH; " +
+                "$tokens=$null; $errors=$null; " +
+                "$ast=[System.Management.Automation.Language.Parser]::ParseFile(" +
+                "$Path,[ref]$tokens,[ref]$errors); " +
+                "if($errors.Count -gt 0){$errors | ForEach-Object Message; exit 8}; " +
+                "$legacy=@('New-OwnerAllocatedForensicsCaptureWindow'," +
+                "'Get-ForensicsCaptureWaitMilliseconds','Invoke-BoundedForensicsCollector'," +
+                "'Stop-BoundedForensicsCollector','Test-ForensicsCollectorCaptureWindow'); " +
+                "$violations=[Collections.Generic.List[string]]::new(); " +
+                "$ast.FindAll({param($n) $n -is " +
+                "[System.Management.Automation.Language.FunctionDefinitionAst]},$true) | " +
+                "Where-Object Name -In $legacy | ForEach-Object {$violations.Add($_.Name)}; " +
+                "$ast.FindAll({param($n) $n -is " +
+                "[System.Management.Automation.Language.InvokeMemberExpressionAst]},$true) | " +
+                "ForEach-Object {$text=$_.Extent.Text; " +
+                "if($text -match '(?i)\\[(System\\.)?Diagnostics\\.(ProcessStartInfo|Process)\\]" +
+                "\\s*::\\s*(new|Start)' -or " +
+                "$text -match '(?i)\\.(Kill|WaitForExit|WaitForExitAsync)\\s*\\(' -or " +
+                "$text -match '(?i)Stopwatch\\]\\s*::\\s*StartNew' -or " +
+                "$text -match '(?i)CancellationTokenSource\\]\\s*::' -or " +
+                "$text -match '(?i)AggregateException\\]\\s*::\\s*new')" +
+                "{$violations.Add($text)}}; " +
+                "if($violations.Count -gt 0){$violations; exit 9}; exit 0");
+            startInfo.Environment["DOWNKYI_COLLECTOR_AST_PATH"] = temporaryPath;
+
+            var result = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken,
+                TimeSpan.FromSeconds(15));
+            Assert.True(
+                result.ExitCode == 0,
+                $"Collector closure contains forbidden PowerShell ownership AST: {result.Output}");
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
     }
 
     private static string ReadFunction(string source, string functionName)

@@ -319,7 +319,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 }
                 catch (Exception failure)
                 {
-                    cleanupFailures.AddRange(FlattenFailures(failure));
+                    AddCleanupFailure(
+                        cleanupFailures,
+                        OwnedProcessCleanupStage.Dispose,
+                        failure);
                     evidenceHold = EvidenceHold;
                 }
             }
@@ -427,6 +430,13 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHold?.ReleaseLocalClientHandles();
             standardOutput = supervisor.StandardOutput.ReadToEndAsync(CancellationToken.None);
             standardError = supervisor.StandardError.ReadToEndAsync(CancellationToken.None);
+            if (mutation.HasFlag(ProcessOwnershipMutation.StallStreamDrain))
+            {
+                standardOutput = new TaskCompletionSource<string>(
+                    TaskCreationOptions.RunContinuationsAsynchronously).Task;
+                standardError = new TaskCompletionSource<string>(
+                    TaskCreationOptions.RunContinuationsAsynchronously).Task;
+            }
             containment = PlatformProcessContainment.Prepare(supervisor, jobName);
             containment.Establish(supervisor, mutation);
             containment = PlatformProcessContainment.ApplyFailureMutations(
@@ -523,7 +533,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 }
                 catch (Exception cleanupFailure)
                 {
-                    failures.Add(cleanupFailure);
+                    AddCleanupFailure(
+                        failures,
+                        OwnedProcessCleanupStage.Terminate,
+                        cleanupFailure);
                 }
 
                 try
@@ -537,7 +550,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 }
                 catch (Exception cleanupFailure)
                 {
-                    failures.Add(cleanupFailure);
+                    AddCleanupFailure(
+                        failures,
+                        OwnedProcessCleanupStage.TreeQuiescence,
+                        cleanupFailure);
                 }
             }
             else if (started)
@@ -551,7 +567,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 }
                 catch (Exception cleanupFailure)
                 {
-                    failures.Add(cleanupFailure);
+                    AddCleanupFailure(
+                        failures,
+                        OwnedProcessCleanupStage.Terminate,
+                        cleanupFailure);
                 }
             }
 
@@ -570,7 +589,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
             catch (Exception cleanupFailure)
             {
-                failures.Add(cleanupFailure);
+                AddCleanupFailure(
+                    failures,
+                    OwnedProcessCleanupStage.Reap,
+                    cleanupFailure);
             }
 
             try
@@ -587,7 +609,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
             catch (Exception cleanupFailure)
             {
-                failures.Add(cleanupFailure);
+                AddCleanupFailure(
+                    failures,
+                    OwnedProcessCleanupStage.StreamDrain,
+                    cleanupFailure);
             }
 
             foreach (var resource in new IDisposable?[]
@@ -605,7 +630,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 }
                 catch (Exception cleanupFailure)
                 {
-                    failures.Add(cleanupFailure);
+                    AddCleanupFailure(
+                        failures,
+                        OwnedProcessCleanupStage.Dispose,
+                        cleanupFailure);
                 }
             }
 
@@ -703,6 +731,17 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         bool useCleanupBudget,
         CancellationToken cancellationToken)
     {
+        if (useCleanupBudget &&
+            _mutation.HasFlag(ProcessOwnershipMutation.StallRootReap))
+        {
+            await WaitWithBudgetAsync(
+                    Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None),
+                    _budget.RemainingCleanup,
+                    "The process supervisor did not reap before its hard deadline.",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         await WaitWithBudgetAsync(
                 _supervisor.WaitForExitAsync(cancellationToken),
                 useCleanupBudget ? _budget.RemainingCleanup : _budget.RemainingOperation,
@@ -777,14 +816,20 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
             catch (Exception failure)
             {
-                failures.Add(failure);
+                AddCleanupFailure(
+                    failures,
+                    OwnedProcessCleanupStage.Terminate,
+                    failure);
                 try
                 {
                     _containment.Terminate();
                 }
                 catch (Exception terminationFailure)
                 {
-                    failures.Add(terminationFailure);
+                    AddCleanupFailure(
+                        failures,
+                        OwnedProcessCleanupStage.Terminate,
+                        terminationFailure);
                 }
             }
 
@@ -797,7 +842,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
             catch (Exception failure)
             {
-                failures.Add(failure);
+                AddCleanupFailure(
+                    failures,
+                    OwnedProcessCleanupStage.TreeQuiescence,
+                    failure);
             }
         }
         else
@@ -811,7 +859,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
             catch (Exception failure)
             {
-                failures.Add(failure);
+                AddCleanupFailure(
+                    failures,
+                    OwnedProcessCleanupStage.Terminate,
+                    failure);
             }
         }
 
@@ -825,7 +876,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
         catch (Exception failure)
         {
-            failures.Add(failure);
+            AddCleanupFailure(
+                failures,
+                OwnedProcessCleanupStage.Reap,
+                failure);
         }
 
         try
@@ -839,7 +893,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
         catch (Exception failure)
         {
-            failures.Add(failure);
+            AddCleanupFailure(
+                failures,
+                OwnedProcessCleanupStage.StreamDrain,
+                failure);
         }
 
         try
@@ -853,7 +910,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
         catch (Exception failure)
         {
-            failures.Add(failure);
+            AddCleanupFailure(
+                failures,
+                OwnedProcessCleanupStage.TargetExitProtocol,
+                failure);
         }
 
         try
@@ -862,7 +922,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
         catch (Exception failure)
         {
-            failures.Add(failure);
+            AddCleanupFailure(
+                failures,
+                OwnedProcessCleanupStage.Dispose,
+                failure);
         }
         if (failures.Count == 1)
         {
@@ -896,7 +959,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
             catch (Exception failure)
             {
-                failures.Add(failure);
+                AddCleanupFailure(
+                    failures,
+                    OwnedProcessCleanupStage.Dispose,
+                    failure);
             }
         }
 
@@ -923,7 +989,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
         catch (Exception failure) when (failures != null)
         {
-            failures.Add(failure);
+            AddCleanupFailure(
+                failures,
+                OwnedProcessCleanupStage.Dispose,
+                failure);
         }
     }
 
@@ -1153,6 +1222,17 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         return failure is AggregateException aggregate
             ? aggregate.Flatten().InnerExceptions
             : new[] { failure };
+    }
+
+    private static void AddCleanupFailure(
+        ICollection<Exception> failures,
+        OwnedProcessCleanupStage stage,
+        Exception failure)
+    {
+        foreach (var cause in FlattenFailures(failure))
+        {
+            failures.Add(new OwnedProcessCleanupStageException(stage, cause));
+        }
     }
 
     private sealed record OwnershipAttachmentPayload(
