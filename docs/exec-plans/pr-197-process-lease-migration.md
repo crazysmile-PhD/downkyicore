@@ -843,6 +843,55 @@ CI, Assembly Lifecycle, closure of the two fixed review threads and a clean
 same-head Codex review. Stage 4, Stage 5, workflow, release, merge and tag work
 remain deferred.
 
+### Stage 3 Outcome Synchronization Review Follow-up
+
+Documentation checkpoint `2cfe8b998b14733d69d5f5c8c506ab4f0999f3e7`
+passed all 29 exact-head checks: 20 applicable jobs succeeded and nine
+release-only jobs were skipped. This included Windows/Linux/macOS tests,
+Assembly Lifecycle, native Linux/macOS membership, CodeQL, Build, Protobuf,
+format and package audit. Exact-head Codex review `5047495756` then identified
+four Stage 3 blockers: unrelated child failures could satisfy the new mutation
+oracle; failure outcomes did not await already-started hold completion; a hold
+settlement timeout retained the preceding stream-drain failure kind; and the
+success-race regression released its gate before proving `WaitAsync` reached
+the outcome-snapshot boundary. None invalidated the Stage 2 ownership contract.
+
+Outcome-synchronization follow-up implementation commit:
+`1298bf5cb4bcb69c2a5cb69ce07204ba782f51e8`.
+
+The mutation proof now recognizes only a nonzero child exit carrying the exact
+capture-window self-test rejection. Unrelated build, platform, access, I/O,
+cancellation or timeout failures let the outer mutation test pass so the corpus
+rejects the ineffective proof; normal tests cover both false classifications.
+`OwnedProcessLease` resets the pending owner failure kind before hold settlement
+and synchronizes already-started completion for both success and failure
+outcomes. Ownership failure still performs terminate/reap first, then uses only
+the cleanup portion of the same `TransitionBudget`; settlement failure is
+preserved beside the causal process failure. Internal native-test latches prove
+both paths reached the actual snapshot boundary before acknowledgment
+publication is released.
+
+Local evidence for the implementation:
+
+- focused Architecture behavior tests passed 5/5 through the central runner;
+- Windows `OwnedProcessLeasePlatformTests` passed 27/27, including deterministic
+  success and caller-cancellation failure snapshot races;
+- the whole-budget mutation produced exactly one intended failure among five
+  Architecture tests and carried the exact rejection text; no blocked collector
+  remained before or after the run;
+- the full review-invariant gate passed 11 invariants, seven projects, 321 tests
+  and all four adversarial proofs;
+- one-assembly `Local -ValidateForensics` reported nine phase results, zero
+  failures and lifecycle ownership 614/0. Capture-window, capture-lead,
+  evidence-hold, observer miss/failure and lease cleanup self-tests passed;
+- PowerShell syntax, JSON parsing, formatting verification and
+  `git diff --check` passed.
+
+Status: Stage 3 remains open pending the documentation checkpoint, exact-head
+push, required native/Strict PR and Assembly Lifecycle checks, closure of these
+four fixed review threads and a clean same-head Codex review. Stage 4, Stage 5,
+workflow, release, merge and tag work remain deferred.
+
 ## Stage 4: Restart Transaction
 
 Retain prepare, authorize, commit and revoke. Keep product Policy B. The helper
