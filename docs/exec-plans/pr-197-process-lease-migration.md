@@ -952,6 +952,20 @@ fail closed. It changes no lease, deadline, ownership, production or Stage 4A
 contract. Exact artifact and validation evidence is authoritative in
 `pr-197-owned-diagnostic-collector-migration.md`.
 
+Fourth exact-head run `33176593640` exposed two remaining proof-oracle defects.
+The attach-stall caller interval was 3,006 ms, but its compiled collector
+timeline started later and reported 2,844.331 ms; the oracle incorrectly treated
+that later origin as the caller-window clock. The Windows capture-budget
+mutation also stopped on an unrelated missing-tool precondition, so its owning
+test correctly stayed green and the outer corpus failed closed. Test-only
+follow-up `155df31624d732b72c010d52c89a01f5287fd209` measures the already-recorded
+outer request/typed-return UTC interval and lets the independent capture-window
+fixture reach its exact rejection before the real-tool requirement is checked.
+Normal Windows forensics still requires the pinned tool before attach or formal
+capture. No process-lease contract, timeout, ownership, workflow, production or
+Stage 4A boundary changed. Exact CI and local evidence is authoritative in
+`pr-197-owned-diagnostic-collector-migration.md`.
+
 ## Stage 4A: Restart Handoff Feasibility
 
 The original composition assumption is invalidated. An ordinary

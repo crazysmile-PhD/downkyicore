@@ -640,6 +640,58 @@ target lease, production path, workflow or central-runner policy changed.
 Stage 4A remains completed and closed; Stage 4 production, Stage 5, merge,
 release and tag movement remain out of scope.
 
+### Fourth Exact-Head CI And Caller-Boundary Oracle
+
+Documentation head `1e8caf0c3671550d7c8e34e16322b95aee68b5f7` triggered Strict
+PR run
+[33176593640](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33176593640).
+Ten of 12 jobs passed; the two failures were allowed to finish and were not
+rerun:
+
+- Assembly Lifecycle job
+  [98866705631](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33176593640/job/98866705631)
+  failed before formal phases only because the attach-stall proof used the
+  compiled collector's later monotonic origin. Artifact `9687993595` records an
+  outer request at `1787924804412` and typed return at `1787924807418`, exactly
+  3,006 ms apart, while the internal `TypedOutcomeReturned` transition was
+  2,844.331 ms. The connection was accepted inside the outer interval, the
+  result was typed `OperationDeadlineExceeded`, output and trace were empty,
+  reap/drain completed, cleanup was empty and 6,772.763 ms of parent budget
+  remained. Only `windowConsumedWithoutProgress` was false.
+- Windows job
+  [98866705865](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33176593640/job/98866705865)
+  failed closed when the capture-budget adversarial profile executed nine tests
+  with zero failures. Artifact `9688059467` exposes the nested result: the
+  Windows runner did not install `dotnet-stack`, so the lifecycle child stopped
+  on that unrelated precondition before reaching the mutation. The owning test
+  correctly refused to count that failure, and the outer corpus correctly
+  rejected the 9/9 profile.
+
+Test-only implementation follow-up
+`155df31624d732b72c010d52c89a01f5287fd209` measures the attach-stall predicate
+from the already-recorded outer request/typed-return UTC boundary. It also lets
+the independent capture-window fixture run before checking the real-tool
+dependency and places the exact owning rejection in TRX. The normal Windows
+path still fails closed on a missing pinned tool before the attach proof or
+formal capture begins. No timeout, retry, sleep, collector/lease authority,
+production code, workflow or Stage 4A state changed.
+
+Exact implementation-head local validation reported one assembly, nine phases,
+zero failures, one slow phase captured, zero missing evidence and lifecycle
+ownership 633/0. The attach fixture accepted the connection between caller
+request `1787925598017` and typed return `1787925601026`, a 3,009 ms interval;
+the typed transition was 2,999.726 ms and 6,606.488 ms of parent operation
+budget remained. The normal lifecycle Architecture class passed 9/9; the
+capture-budget mutation executed nine and failed exactly one with the explicit
+owning rejection; full Architecture passed 316/316; the review corpus passed
+325 tests and seven adversarial proofs; PowerShell parse, format and diff checks
+passed.
+
+Status: pending exact-head push, required CI and same-head review. The four
+failed exact-head runs remain diagnostic evidence and will not be rerun. Stage
+4A remains completed and closed; production Stage 4, Stage 5, merge, release
+and tag movement remain out of scope.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates
