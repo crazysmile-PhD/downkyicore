@@ -223,7 +223,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             var expectedRejection = IsExpectedCaptureBudgetMutationRejection(mutation);
             Assert.False(
                 expectedRejection,
-                "The real lifecycle self-test rejected the broken whole-budget collector window.");
+                "The real lifecycle self-test emitted the exact rejection for the broken " +
+                $"whole-budget collector window: {CaptureBudgetSelfTestRejection}");
             return;
         }
 
@@ -232,6 +233,7 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         var collector = ReadFunction(source, "Invoke-OwnedDiagnosticCollector");
         var delay = ReadFunction(source, "Wait-ForensicsObserverDelay");
         var snapshot = ReadFunction(source, "Get-DiagnosticProcessTreeSnapshot");
+        var attachStall = ReadFunction(source, "Test-DotnetStackAttachStall");
 
         Assert.Contains(
             "$forensicsCaptureWindowMilliseconds = 15000",
@@ -254,6 +256,18 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.Contains("[object]$CaptureWindow", collector, StringComparison.Ordinal);
         Assert.Contains("$CaptureWindow.DelayAsync", delay, StringComparison.Ordinal);
         Assert.Contains("$CaptureWindow.RemainingOperation", snapshot, StringComparison.Ordinal);
+        Assert.Contains(
+            "$typedOutcomeReturnedAtUnixMilliseconds -",
+            attachStall,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$collectorRequestCreatedAtUnixMilliseconds) -ge 2900",
+            attachStall,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "$typedOutcome.ElapsedMilliseconds -ge 2900",
+            attachStall,
+            StringComparison.Ordinal);
         Assert.Contains(
             "Test-OwnedDiagnosticCollectorCaptureWindow",
             source,

@@ -823,8 +823,11 @@ function Test-DotnetStackAttachStall {
             $firstProgress.State.ToString() -eq "NotObserved"
         noStackOutput = $null -ne $stackOutput -and
             $stackOutput.State.ToString() -eq "NotObserved"
-        windowConsumedWithoutProgress = $null -ne $typedOutcome -and
-            $typedOutcome.ElapsedMilliseconds -ge 2900
+        windowConsumedWithoutProgress =
+            $null -ne $collectorRequestCreatedAtUnixMilliseconds -and
+            $null -ne $typedOutcomeReturnedAtUnixMilliseconds -and
+            ($typedOutcomeReturnedAtUnixMilliseconds -
+                $collectorRequestCreatedAtUnixMilliseconds) -ge 2900
         parentBudgetPreserved = $budget.RemainingOperation -gt [TimeSpan]::FromSeconds(4)
         bounded = $stopwatch.Elapsed -lt [TimeSpan]::FromSeconds(5)
         targetCleanupSucceeded = $null -eq $targetCleanupErrorType
@@ -2328,10 +2331,6 @@ if (-not (Test-Path -LiteralPath $processSupervisionAssembly -PathType Leaf)) {
 }
 [Reflection.Assembly]::LoadFrom($processSupervisionAssembly) | Out-Null
 if ($ValidateForensics) {
-    if ($dotnetStackAttachStallSelfTestRequired -and
-        [string]::IsNullOrWhiteSpace($script:diagnosticsTool)) {
-        throw "Forensics validation requires dotnet-stack."
-    }
     $forensicsCollectorCleanupReportSelfTest =
         Test-DiagnosticCollectorCleanupFailureReport
     $forensicsCollectorCleanupReportSelfTestPassed =
@@ -2369,6 +2368,9 @@ if ($ValidateForensics) {
         throw "Forensics collector capture-window self-test did not fail closed."
     }
     if ($dotnetStackAttachStallSelfTestRequired) {
+        if ([string]::IsNullOrWhiteSpace($script:diagnosticsTool)) {
+            throw "Forensics validation requires dotnet-stack."
+        }
         $dotnetStackAttachStallSelfTest = Test-DotnetStackAttachStall `
             -ProcessSupervisionAssembly $processSupervisionAssembly `
             -DiagnosticsTool $script:diagnosticsTool
