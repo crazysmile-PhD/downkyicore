@@ -118,6 +118,8 @@ public sealed class AssemblyLifecycleArchitectureTests
             "forensicsSelfTestObservedCaptureThresholdSeconds",
             "forensicsSelfTestCaptureCompletedBeforeTargetExitValidated",
             "forensicsSelfTestEvidenceHoldValidated",
+            "forensicsSelfTestReleaseOrderingMutationValidated",
+            "forensicsSelfTestReleaseOrderingMutation",
             "slowEvidenceOrderingSelfTestRequired",
             "slowEvidenceOrderingSelfTestPassed",
             "slowEvidenceOrderingSelfTest",
@@ -214,6 +216,22 @@ public sealed class AssemblyLifecycleArchitectureTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
+            "$slowCompletionUtcOffsetMilliseconds = -60000",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "-InjectedCaptureCompletionUtcOffsetMilliseconds",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "slowCompletionWallClockOrderingDiverged =",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$slowCompletionMutation.slowEvidenceCaptureCompletedAtUnixMilliseconds -lt",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "($OperationTimeoutSeconds * 1000.0) -",
             source,
             StringComparison.Ordinal);
@@ -256,6 +274,27 @@ public sealed class AssemblyLifecycleArchitectureTests
             StringComparison.Ordinal);
         Assert.True(captureCompletionIndex >= 0);
         Assert.True(evidenceHoldReleaseIndex > captureCompletionIndex);
+        Assert.Contains(
+            "-InjectCaptureCompletionAfterEvidenceHoldRelease",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$targetExitWaitHandle = $lease.TargetExitedToken.WaitHandle",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$targetExitWaitHandle.WaitOne($budget.RemainingOperation)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$forensicsSelfTestReleaseOrderingMutationValidated =",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "-not $releaseOrderingMutation." +
+            "slowEvidenceCaptureCompletedBeforeTargetExit",
+            source,
+            StringComparison.Ordinal);
         AssertUsesSynchronousAutomatedReporting(source, "assembly-info");
         AssertUsesSynchronousAutomatedReporting(source, "discovery");
         AssertUsesSynchronousAutomatedReporting(source, "execution");

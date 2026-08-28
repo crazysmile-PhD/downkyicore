@@ -74,6 +74,8 @@ $forensicsSelfTestPositiveCaptureThresholdValidated = $false
 $forensicsSelfTestObservedCaptureThresholdSeconds = $null
 $forensicsSelfTestCaptureCompletedBeforeTargetExitValidated = $false
 $forensicsSelfTestEvidenceHoldValidated = $false
+$forensicsSelfTestReleaseOrderingMutationValidated = $false
+$forensicsSelfTestReleaseOrderingMutation = $null
 $slowEvidenceOrderingSelfTestPassed = $false
 $slowEvidenceOrderingSelfTest = $null
 $forensicsCollectorCaptureWindowSelfTestPassed = $false
@@ -1503,6 +1505,9 @@ function Invoke-IsolatedProcess {
         [int]$EvidenceCaptureDelayMilliseconds = 0,
         [ValidateRange(0, 5000)]
         [int]$InjectedPostCaptureDelayMilliseconds = 0,
+        [ValidateRange(-300000, 300000)]
+        [int]$InjectedCaptureCompletionUtcOffsetMilliseconds = 0,
+        [switch]$InjectCaptureCompletionAfterEvidenceHoldRelease,
         [switch]$SkipSlowEvidenceManagedStack,
         [switch]$InjectForensicsObserverFailure,
         [switch]$AuthorizeRepositoryTestAssembly,
@@ -1515,6 +1520,11 @@ function Invoke-IsolatedProcess {
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
+
+    if ($InjectCaptureCompletionAfterEvidenceHoldRelease -and
+        -not $HoldForEvidenceCapture) {
+        throw "Completion-after-release injection requires an evidence hold."
+    }
 
     $phaseDirectory = Join-Path $rawRoot (
         "$AssemblyName/iteration-{0:D4}" -f $Iteration)
@@ -1665,14 +1675,18 @@ function Invoke-IsolatedProcess {
                             $InjectedPostCaptureDelayMilliseconds `
                         -SkipManagedStack:$SkipSlowEvidenceManagedStack `
                         -InjectFailure:$InjectForensicsObserverFailure
-                    $slowEvidenceCaptureCompletedAfterMilliseconds = [Math]::Round(
-                        [Math]::Max(
-                            0.0,
-                            ($OperationTimeoutSeconds * 1000.0) -
-                                $budget.RemainingOperation.TotalMilliseconds),
-                        3)
-                    $slowEvidenceCaptureCompletedAtUnixMilliseconds =
-                        [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+                    if (-not $InjectCaptureCompletionAfterEvidenceHoldRelease) {
+                        $slowEvidenceCaptureCompletedAfterMilliseconds = [Math]::Round(
+                            [Math]::Max(
+                                0.0,
+                                ($OperationTimeoutSeconds * 1000.0) -
+                                    $budget.RemainingOperation.TotalMilliseconds),
+                            3)
+                        $slowEvidenceCaptureCompletedAtUnixMilliseconds =
+                            [DateTimeOffset]::UtcNow.AddMilliseconds(
+                                $InjectedCaptureCompletionUtcOffsetMilliseconds).
+                                ToUnixTimeMilliseconds()
+                    }
                     $slowEvidenceStatus = $capture.status
                     $slowEvidenceErrorType = $capture.errorType
                     $slowEvidenceCollectorFailureKind = $capture.collectorFailureKind
@@ -1686,14 +1700,18 @@ function Invoke-IsolatedProcess {
                     }
                 }
                 catch {
-                    $slowEvidenceCaptureCompletedAfterMilliseconds = [Math]::Round(
-                        [Math]::Max(
-                            0.0,
-                            ($OperationTimeoutSeconds * 1000.0) -
-                                $budget.RemainingOperation.TotalMilliseconds),
-                        3)
-                    $slowEvidenceCaptureCompletedAtUnixMilliseconds =
-                        [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+                    if (-not $InjectCaptureCompletionAfterEvidenceHoldRelease) {
+                        $slowEvidenceCaptureCompletedAfterMilliseconds = [Math]::Round(
+                            [Math]::Max(
+                                0.0,
+                                ($OperationTimeoutSeconds * 1000.0) -
+                                    $budget.RemainingOperation.TotalMilliseconds),
+                            3)
+                        $slowEvidenceCaptureCompletedAtUnixMilliseconds =
+                            [DateTimeOffset]::UtcNow.AddMilliseconds(
+                                $InjectedCaptureCompletionUtcOffsetMilliseconds).
+                                ToUnixTimeMilliseconds()
+                    }
                     $slowEvidenceStatus = "capture-failed"
                     $slowEvidenceErrorType = $_.Exception.GetType().Name
                 }
@@ -1722,6 +1740,26 @@ function Invoke-IsolatedProcess {
                             }
                             $slowEvidenceStatus = "capture-failed"
                         }
+                    }
+                    if ($InjectCaptureCompletionAfterEvidenceHoldRelease) {
+                        $targetExitObserved = @(
+                            $targetExitWaitHandle = $lease.TargetExitedToken.WaitHandle
+                            $targetExitWaitHandle.WaitOne($budget.RemainingOperation)
+                        )[-1]
+                        if (-not $targetExitObserved) {
+                            throw "Completion-after-release injection did not observe target exit."
+                        }
+
+                        $slowEvidenceCaptureCompletedAfterMilliseconds = [Math]::Round(
+                            [Math]::Max(
+                                0.0,
+                                ($OperationTimeoutSeconds * 1000.0) -
+                                    $budget.RemainingOperation.TotalMilliseconds),
+                            3)
+                        $slowEvidenceCaptureCompletedAtUnixMilliseconds =
+                            [DateTimeOffset]::UtcNow.AddMilliseconds(
+                                $InjectedCaptureCompletionUtcOffsetMilliseconds).
+                                ToUnixTimeMilliseconds()
                     }
                     $captureStopwatch.Stop()
                     $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
@@ -2328,6 +2366,7 @@ function Test-SlowEvidenceCaptureOrdering {
     $slowCompletionTargetDelayMilliseconds = 5250
     $collectorDelayMilliseconds = 5000
     $slowCompletionDelayMilliseconds = 4000
+    $slowCompletionUtcOffsetMilliseconds = -60000
     $evidenceThresholdSeconds = 5
     $fixtureDirectory = Join-Path $rawRoot "Gate.SlowEvidenceOrdering"
     $configuredReadyPath = Join-Path $fixtureDirectory "configured-ready.json"
@@ -2435,6 +2474,8 @@ function Test-SlowEvidenceCaptureOrdering {
             ) `
             -InjectedPostCaptureDelayMilliseconds `
                 $slowCompletionDelayMilliseconds `
+            -InjectedCaptureCompletionUtcOffsetMilliseconds `
+                $slowCompletionUtcOffsetMilliseconds `
             -SkipSlowEvidenceManagedStack `
             -OperationTimeoutSeconds 12 `
             -EvidenceThresholdSeconds $evidenceThresholdSeconds `
@@ -2546,6 +2587,12 @@ function Test-SlowEvidenceCaptureOrdering {
             -not $slowCompletionMutation.slowEvidenceCaptureCompletedBeforeTargetExit -and
             $slowCompletionMutation.slowEvidenceCaptureCompletedAfterMilliseconds -ge
                 $slowCompletionMutation.targetExitedAfterMilliseconds
+        slowCompletionWallClockOrderingDiverged =
+            $null -ne $slowCompletionMutation -and
+            $slowCompletionMutation.slowEvidenceCaptureCompletedAtUnixMilliseconds -lt
+                $slowCompletionMutation.processExitedAtUnixMs -and
+            $slowCompletionMutation.slowEvidenceCaptureCompletedAfterMilliseconds -ge
+                $slowCompletionMutation.targetExitedAfterMilliseconds
         mutationTargetsReady =
             $null -ne $immediateDispatchReady -and
             $immediateDispatchReady.ProcessId -eq
@@ -2584,6 +2631,7 @@ function Test-SlowEvidenceCaptureOrdering {
             $slowCompletionTargetDelayMilliseconds
         collectorDelayMilliseconds = $collectorDelayMilliseconds
         slowCompletionDelayMilliseconds = $slowCompletionDelayMilliseconds
+        slowCompletionUtcOffsetMilliseconds = $slowCompletionUtcOffsetMilliseconds
         evidenceThresholdSeconds = $evidenceThresholdSeconds
         configured = $configured
         configuredPhase = $configuredPhase
@@ -2839,6 +2887,49 @@ if ($ValidateForensics) {
             }
         }
     )
+    $releaseOrderingMutationOutput = @(
+        Invoke-IsolatedProcess `
+            -AssemblyName "Gate.Forensics.ReleaseOrderingMutation" `
+            -Iteration 1 `
+            -Phase "execution" `
+            -FileName "dotnet" `
+            -Arguments @(
+                $probeAssembly,
+                "--assembly",
+                $selfTestAssembly
+            ) `
+            -HoldForEvidenceCapture `
+            -InjectCaptureCompletionAfterEvidenceHoldRelease `
+            -SkipSlowEvidenceManagedStack `
+            -EvidenceThresholdSeconds $forensicsSelfTestEvidenceThresholdSeconds
+    )
+    $releaseOrderingMutationResults = @(
+        $releaseOrderingMutationOutput |
+            Where-Object { $null -ne $_.PSObject.Properties["assembly"] }
+    )
+    if ($releaseOrderingMutationResults.Count -ne 1) {
+        throw "Release-ordering mutation did not return one typed process result."
+    }
+    $forensicsSelfTestReleaseOrderingMutation = $releaseOrderingMutationResults[0]
+    $releaseOrderingMutationPhase = New-ProcessPhaseResult `
+        -ProcessResult $forensicsSelfTestReleaseOrderingMutation
+    $releaseOrderingMutation = $forensicsSelfTestReleaseOrderingMutation
+    $forensicsSelfTestReleaseOrderingMutationValidated =
+        $releaseOrderingMutationPhase.success -and
+        $releaseOrderingMutation.slowEvidenceStatus -eq "captured" -and
+        $releaseOrderingMutation.evidence.Count -gt 0 -and
+        -not $releaseOrderingMutation.slowEvidenceCaptureCompletedBeforeTargetExit -and
+        $releaseOrderingMutation.slowEvidenceCaptureCompletedAfterMilliseconds -ge
+            $releaseOrderingMutation.targetExitedAfterMilliseconds -and
+        $releaseOrderingMutation.evidenceHold.Requested -and
+        $releaseOrderingMutation.evidenceHold.Granted -and
+        $releaseOrderingMutation.evidenceHold.CaptureCompletion.ToString() -eq
+            "Captured" -and
+        $releaseOrderingMutation.evidenceHold.Released -and
+        $releaseOrderingMutation.evidenceHold.CompletionSignalDelivered -and
+        $releaseOrderingMutation.evidenceHold.TargetAcknowledged -and
+        $releaseOrderingMutation.ownedTreeQuiescent -and
+        $releaseOrderingMutation.ownedProcessCleanupFailures.Count -eq 0
     $forensicsSelfTestObservedCaptureThresholdSeconds = if (
         $null -eq $selfTest.slowEvidenceCaptureArmedAfterMilliseconds) {
         $null
@@ -2867,6 +2958,7 @@ if ($ValidateForensics) {
             $forensicsSelfTestPositiveCaptureThresholdSeconds) -le 0.001 -and
         $forensicsSelfTestPositiveCaptureThresholdValidated -and
         $forensicsSelfTestCaptureCompletedBeforeTargetExitValidated -and
+        $forensicsSelfTestReleaseOrderingMutationValidated -and
         $selfTest.evidenceHold.Requested -and
         $selfTest.evidenceHold.Granted -and
         $selfTest.evidenceHold.CaptureCompletion.ToString() -eq "Captured" -and
@@ -3541,6 +3633,10 @@ $report = [ordered]@{
         $forensicsSelfTestCaptureLeadValidated
     forensicsSelfTestEvidenceHoldValidated =
         $forensicsSelfTestEvidenceHoldValidated
+    forensicsSelfTestReleaseOrderingMutationValidated =
+        $forensicsSelfTestReleaseOrderingMutationValidated
+    forensicsSelfTestReleaseOrderingMutation =
+        $forensicsSelfTestReleaseOrderingMutation
     slowEvidenceOrderingSelfTestRequired = [bool]$ValidateForensics
     slowEvidenceOrderingSelfTestPassed = if ($ValidateForensics) {
         $slowEvidenceOrderingSelfTestPassed
