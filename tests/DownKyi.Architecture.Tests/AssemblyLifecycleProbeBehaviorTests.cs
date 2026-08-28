@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 
 namespace DownKyi.Architecture.Tests;
@@ -92,11 +93,20 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.DoesNotContain(".WaitForExit(", collector, StringComparison.Ordinal);
         Assert.DoesNotContain(".WaitForExit(", cleanup, StringComparison.Ordinal);
         Assert.Contains("WaitForExitAsync($CancellationToken)", collector, StringComparison.Ordinal);
+        Assert.Contains(
+            "$null = $collector.WaitForExitAsync($CancellationToken)",
+            collector,
+            StringComparison.Ordinal);
         Assert.Contains("$outputTasks.WaitAsync(", collector, StringComparison.Ordinal);
+        Assert.Contains("$null = $outputTasks.WaitAsync(", collector, StringComparison.Ordinal);
         Assert.Contains("$CancellationToken", collector, StringComparison.Ordinal);
         Assert.Contains("$Collector.Kill($true)", cleanup, StringComparison.Ordinal);
         Assert.Contains(
             "$Collector.WaitForExitAsync([Threading.CancellationToken]::None)",
+            cleanup,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$null = $Collector.WaitForExitAsync([Threading.CancellationToken]::None)",
             cleanup,
             StringComparison.Ordinal);
         Assert.True(
@@ -117,10 +127,12 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
                 "1",
                 StringComparison.Ordinal))
         {
-            collector = collector.Replace(
-                "Get-ForensicsCaptureWaitMilliseconds",
-                "Get-TransitionBudgetWaitMilliseconds",
+            var mutation = ExecuteCaptureBudgetMutation();
+            Assert.Contains(
+                "Forensics collector capture-window self-test did not fail closed.",
+                mutation.Output,
                 StringComparison.Ordinal);
+            Assert.Equal(0, mutation.ExitCode);
         }
 
         var captureWait = ReadFunction(source, "Get-ForensicsCaptureWaitMilliseconds");
@@ -146,6 +158,11 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             observerClosure.Keys);
         Assert.DoesNotContain("OwnedProcessLease", allocator, StringComparison.Ordinal);
         Assert.DoesNotContain("TransitionBudget]::Start", allocator, StringComparison.Ordinal);
+        Assert.Contains(
+            "[System.Diagnostics.Stopwatch]::StartNew()",
+            allocator,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("[DateTimeOffset]::UtcNow", allocator, StringComparison.Ordinal);
 
         Assert.Contains("[object]$CaptureWindow", collector, StringComparison.Ordinal);
         Assert.Contains(
@@ -164,18 +181,28 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.Contains("$Budget.RemainingOperation", captureWait, StringComparison.Ordinal);
         Assert.Contains("$Budget.RemainingCleanup", captureWait, StringComparison.Ordinal);
         Assert.Contains(
-            "$CaptureWindow.operationDeadlineUtc",
+            "$CaptureWindow.operationDuration",
             captureWait,
             StringComparison.Ordinal);
         Assert.Contains(
-            "$CaptureWindow.cleanupDeadlineUtc",
+            "$CaptureWindow.cleanupDuration",
             captureWait,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "$CaptureWindow.stopwatch.Elapsed",
+            captureWait,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("[DateTimeOffset]::UtcNow", captureWait, StringComparison.Ordinal);
         foreach (var function in observerClosure)
         {
-            Assert.DoesNotContain(".AddMilliseconds(", function.Value, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "[System.Diagnostics.Stopwatch]::StartNew()",
+                function.Value,
+                StringComparison.Ordinal);
         }
 
+        Assert.Contains("$timeoutFailure", collector, StringComparison.Ordinal);
+        Assert.Contains("$failures.Add($timeoutFailure)", collector, StringComparison.Ordinal);
         Assert.Contains(
             "Test-ForensicsCollectorCaptureWindow",
             source,
@@ -188,6 +215,55 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "forensicsCollectorCaptureWindowSelfTestPassed",
             source,
             StringComparison.Ordinal);
+    }
+
+    private static BoundedProcessResult ExecuteCaptureBudgetMutation()
+    {
+        var resultsDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-forensics-capture-mutation-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(resultsDirectory);
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-File");
+            startInfo.ArgumentList.Add(Path.Combine(
+                RepositoryRoot,
+                "script",
+                "test-assembly-lifecycle.ps1"));
+            startInfo.ArgumentList.Add("-Configuration");
+            startInfo.ArgumentList.Add("Release");
+            startInfo.ArgumentList.Add("-Profile");
+            startInfo.ArgumentList.Add("Local");
+            startInfo.ArgumentList.Add("-Iterations");
+            startInfo.ArgumentList.Add("1");
+            startInfo.ArgumentList.Add("-AssemblyPattern");
+            startInfo.ArgumentList.Add("DownKyi.Core.Tests");
+            startInfo.ArgumentList.Add("-ResultsDirectory");
+            startInfo.ArgumentList.Add(resultsDirectory);
+            startInfo.ArgumentList.Add("-ValidateForensics");
+            startInfo.ArgumentList.Add("-NoBuild");
+            startInfo.Environment[CaptureBudgetMutationEnvironmentVariable] = "1";
+
+            return BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken,
+                TimeSpan.FromSeconds(30));
+        }
+        finally
+        {
+            Directory.Delete(resultsDirectory, recursive: true);
+        }
     }
 
     [Fact]
