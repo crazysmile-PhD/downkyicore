@@ -994,6 +994,51 @@ CI and a new same-head review. No old run will be rerun. Stage 4A remains
 completed and closed; production Stage 4, Stage 5, merge, release and tag
 movement remain out of scope.
 
+### Tenth Exact-Head Review And Executed Ordering Mutations
+
+Exact-head review
+[5053611273](https://github.com/crazysmile-PhD/downkyicore/pull/197#pullrequestreview-5053611273)
+reviewed documentation head
+`3182deec9d9bb792d97a3c75fa94a25264f7a484` after every required workflow was
+green. It found that source-token checks plus naturally aligned clocks did not
+prove the runtime comparator used the monotonic values, and that a source-order
+check plus the positive real-stack fixture did not deterministically reject
+completion recorded after evidence-hold release.
+
+Implementation `991d004ba06b0d999c71f1973634f49a30d89e5d` adds two
+test-only executed mutations. The existing slow-completion fixture shifts only
+its UTC completion sample backward by 60 seconds while its same-origin
+monotonic completion remains after authoritative target exit. Every gate run
+therefore requires wall-clock and monotonic ordering to disagree, and the
+recorded decision must follow the monotonic values. The new evidence-hold
+mutation releases and acknowledges the held target, waits on the lease's
+authoritative target-exit token within the existing root budget, records
+completion afterward and requires the lifecycle oracle to reject that order.
+The machine report retains one typed mutation result and requires phase
+success, captured evidence, complete hold handoff, quiescence and zero cleanup
+failures. No production owner, deadline, retry, sleep, capture window or Stage 4
+path changed.
+
+On clean exact implementation HEAD, one-assembly Local `-ValidateForensics`
+recorded one assembly, nine phases, zero failures, ownership 634/0 and a clean
+tree. The real managed-stack path armed after 1,260.658 ms, completed after
+3,236.888 ms and remained before target exit. The configured path completed
+after 7,680.605 ms before exit at 8,294.117 ms. The divergent-clock mutation's
+phase succeeded: its UTC completion was before its UTC exit, while its
+monotonic completion at 6,487.106 ms was after target exit at 5,528.510 ms and
+was rejected. The release mutation returned one typed result, completed after
+1,799.836 ms following target exit at 1,798.016 ms, was rejected, completed all
+six evidence-hold states and recorded zero cleanup failures.
+
+Focused collector tests passed 18/18, affected Architecture 18/18, full
+Architecture 316/316, Windows 74/74 and the review-invariant gate 325 tests plus
+seven adversarial proofs. PowerShell parse, C# format and diff checks passed.
+
+Status: pending this documentation commit, exact-head push, naturally triggered
+CI and a new same-head review. No old run will be rerun. Stage 4A remains
+completed and closed; production Stage 4, Stage 5, merge, release and tag
+movement remain out of scope.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates

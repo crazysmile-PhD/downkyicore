@@ -153,6 +153,18 @@ evidence errors cannot overwrite the process owner's causal failure.
   publishing that acknowledgment. Owner failure performs terminate/reap first,
   then bounds this synchronization by the cleanup portion of the same transition
   budget; it is not a new observer deadline or cleanup authority.
+  Two executed mutations protect this ordering oracle. The slow-completion
+  fixture shifts only its reported UTC completion backward by 60 seconds while
+  leaving its monotonic completion after target exit; the gate requires the two
+  clocks to disagree and rejects the phase by the monotonic values. A separate
+  evidence-hold fixture releases and acknowledges the held target, waits for the
+  lease's authoritative target-exit token within the existing root budget, then
+  records completion. Its completion must be at or after `TargetExitedAfter` and
+  `slowEvidenceCaptureCompletedBeforeTargetExit` must be false. The report
+  exposes `forensicsSelfTestReleaseOrderingMutationValidated` and the typed
+  `forensicsSelfTestReleaseOrderingMutation` result. These are test-only input
+  mutations; they add no production owner, deadline, retry, sleep or capture
+  window.
 - The adversarial owned-tree self-test gives the same `OwnedProcessLease` a
   bounded three-second operation window so hosted runtime startup can publish
   its fixture before quiescence is tested. This is an owner-assigned test
