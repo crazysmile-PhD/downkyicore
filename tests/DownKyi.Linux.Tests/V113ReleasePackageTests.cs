@@ -28,6 +28,20 @@ public sealed class V113ReleasePackageTests
     }
 
     [Fact]
+    public void FinalPackageValidationRejectsCrossFormatBinary()
+    {
+        V113ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationRejectsCrossFormatBinary();
+    }
+
+    [Fact]
+    public void FinalPackageValidationRejectsMissingAppImageEntrypoint()
+    {
+        V113ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationRejectsMissingAppImageEntrypoint();
+    }
+
+    [Fact]
     public void FinalPackageValidationRejectsPackageManagerVersionMismatch()
     {
         V113ReleaseSafetyRegressionTests
@@ -39,5 +53,12 @@ public sealed class V113ReleasePackageTests
     {
         V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsPackageManagerIdentityMismatch();
+    }
+
+    [Fact]
+    public void FinalPackageValidationRejectsRpmEvrMismatch()
+    {
+        V113ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationRejectsRpmEvrMismatch();
     }
 }

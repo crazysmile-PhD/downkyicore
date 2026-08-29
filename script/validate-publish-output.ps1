@@ -70,25 +70,17 @@ if (-not [String]::Equals($actualAriaHash, $expectedAriaHash, [StringComparison]
     throw "Published aria2 executable does not match its checksum sidecar."
 }
 
-$requiredFiles = @(
-    $downKyiAssembly,
-    $downKyiExecutable,
-    $ariaExecutable,
-    $ariaChecksum,
-    $ffmpegExecutable,
-    $ffprobeExecutable,
-    $depsFile,
-    $fluentTheme
-)
 $manifestFiles = @(
-    foreach ($path in $requiredFiles) {
-        $item = Get-Item -LiteralPath $path
-        [ordered]@{
-            path = [IO.Path]::GetRelativePath($PublishDirectory, $item.FullName).Replace('\', '/')
-            bytes = $item.Length
-            sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        }
-    }
+    Get-ChildItem -LiteralPath $PublishDirectory -Recurse -Force -File |
+        ForEach-Object {
+            $item = $_
+            [ordered]@{
+                path = [IO.Path]::GetRelativePath($PublishDirectory, $item.FullName).Replace('\', '/')
+                bytes = $item.Length
+                sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+        } |
+        Sort-Object -Property path
 )
 
 $manifest = [ordered]@{

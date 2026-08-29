@@ -67,11 +67,12 @@ function Assert-LinuxBinaryArchitecture {
         throw "Unable to inspect packaged binary architecture for $Path."
     }
 
+    $isElf = $description.Contains('ELF', [StringComparison]::OrdinalIgnoreCase)
     $matches = if ($ExpectedRuntimeIdentifier -ceq 'linux-x64') {
-        $description.Contains('x86-64', [StringComparison]::OrdinalIgnoreCase)
+        $isElf -and $description.Contains('x86-64', [StringComparison]::OrdinalIgnoreCase)
     }
     elseif ($ExpectedRuntimeIdentifier -ceq 'linux-arm64') {
-        $description.Contains('aarch64', [StringComparison]::OrdinalIgnoreCase)
+        $isElf -and $description.Contains('aarch64', [StringComparison]::OrdinalIgnoreCase)
     }
     else {
         $false
@@ -133,6 +134,11 @@ try {
             Expand-Archive -LiteralPath $package -DestinationPath $extractDirectory
         }
         'AppImage' {
+            Assert-LinuxBinaryArchitecture -Path $package -ExpectedRuntimeIdentifier $RuntimeIdentifier
+            $packageMode = [IO.File]::GetUnixFileMode($package)
+            if (($packageMode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
+                throw "AppImage is not executable by a non-owner: $package"
+            }
             & 7z x -y "-o$extractDirectory" $package | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'AppImage extraction failed.' }
         }
@@ -149,6 +155,18 @@ try {
             finally {
                 Pop-Location
             }
+        }
+    }
+
+    if ($PackageKind -ceq 'AppImage') {
+        $appRun = Join-Path $extractDirectory 'AppRun'
+        if (-not (Test-Path -LiteralPath $appRun -PathType Leaf) -or
+            (Get-Item -LiteralPath $appRun).Length -eq 0) {
+            throw 'AppImage entrypoint AppRun is missing or empty.'
+        }
+        $appRunMode = [IO.File]::GetUnixFileMode($appRun)
+        if (($appRunMode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
+            throw 'AppImage entrypoint AppRun is not executable by a non-owner.'
         }
     }
 
@@ -213,10 +231,11 @@ try {
             if ($actualArchitecture -cne $expectedPackageArchitecture.rpm) {
                 throw "RPM package architecture $actualArchitecture does not match $RuntimeIdentifier."
             }
-            $actualVersion = ((& rpm -qp --queryformat '%{VERSION}' $package 2>&1) -join '').Trim()
-            if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect RPM package version.' }
-            if ($actualVersion -cne $expectedVersion) {
-                throw "RPM package version $actualVersion does not match $expectedVersion."
+            $actualEvr = ((& rpm -qp --queryformat '%{EPOCHNUM}:%{VERSION}-%{RELEASE}' $package 2>&1) -join '').Trim()
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect RPM package EVR.' }
+            $expectedEvr = "0:$expectedVersion-1"
+            if ($actualEvr -cne $expectedEvr) {
+                throw "RPM package EVR $actualEvr does not match $expectedEvr."
             }
             $actualName = ((& rpm -qp --queryformat '%{NAME}' $package 2>&1) -join '').Trim()
             if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect RPM package identity.' }
