@@ -19,6 +19,9 @@ public sealed class V113ReleaseSafetyRegressionTests
         Assert.Equal(2, CountOccurrences(workflow, "validate-v113-release-package.ps1"));
         Assert.Equal(2, CountOccurrences(workflow, "-ExpectedManifestPath"));
         Assert.Contains("verify-dmg-contents.sh DownKyi-", workflow, StringComparison.Ordinal);
+        Assert.Contains("ubuntu-24.04-arm", workflow, StringComparison.Ordinal);
+        Assert.Contains("appimage-${{ matrix.cpu }}.transport.tar", workflow, StringComparison.Ordinal);
+        Assert.Contains("Transported AppImage lost non-owner execute permission", workflow, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -424,21 +427,40 @@ public sealed class V113ReleaseSafetyRegressionTests
         var root = CreateTemporaryDirectory();
         try
         {
-            var validFixture = CreateLinuxAppImageFixture(Path.Combine(root, "valid"), includeAppRun: true);
             var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
-            var valid = RunPowerShell(
+            var brokenAppRunFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "broken-app-run"),
+                "#!/bin/sh\nexit 0\n");
+            var brokenAppRun = RunPowerShell(
                 validator,
                 [
-                    "-PackagePath", validFixture.Package,
+                    "-PackagePath", brokenAppRunFixture.Package,
                     "-PackageKind", "AppImage",
                     "-RuntimeIdentifier", "linux-x64",
-                    "-ExpectedManifestPath", validFixture.ExpectedManifest,
-                    "-OutputPath", Path.Combine(root, "valid-appimage-manifest.json")
+                    "-ExpectedManifestPath", brokenAppRunFixture.ExpectedManifest,
+                    "-OutputPath", Path.Combine(root, "broken-app-run-manifest.json")
                 ],
                 root);
-            Assert.Equal(0, valid.ExitCode);
+            Assert.NotEqual(0, brokenAppRun.ExitCode);
+            Assert.Contains("AppRun launch smoke exited", NormalizeDiagnostic(brokenAppRun), StringComparison.Ordinal);
 
-            var mutatedFixture = CreateLinuxAppImageFixture(Path.Combine(root, "missing"), includeAppRun: false);
+            var wrongStubFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "wrong-stub"),
+                "#!/bin/sh\nsleep 30\n");
+            var wrongStub = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", wrongStubFixture.Package,
+                    "-PackageKind", "AppImage",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", wrongStubFixture.ExpectedManifest,
+                    "-OutputPath", Path.Combine(root, "wrong-stub-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, wrongStub.ExitCode);
+            Assert.Contains("AppImage runtime launch smoke exited", NormalizeDiagnostic(wrongStub), StringComparison.Ordinal);
+
+            var mutatedFixture = CreateLinuxAppImageFixture(Path.Combine(root, "missing"), appRunBody: null);
             var mutated = RunPowerShell(
                 validator,
                 [
@@ -759,7 +781,7 @@ public sealed class V113ReleaseSafetyRegressionTests
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     private static (string Package, string ExpectedManifest) CreateLinuxAppImageFixture(
         string root,
-        bool includeAppRun)
+        string? appRunBody)
     {
         Directory.CreateDirectory(root);
         var debPackage = CreateLinuxDebPackage(root, "amd64", includeExecuteBits: true);
@@ -769,10 +791,10 @@ public sealed class V113ReleaseSafetyRegressionTests
         var expectedManifest = Path.Combine(root, "appimage-expected.json");
         WriteExpectedManifest(runtime, "linux-x64", expectedManifest, root);
 
-        if (includeAppRun)
+        if (appRunBody is not null)
         {
             var appRun = Path.Combine(appRoot, "AppRun");
-            File.WriteAllText(appRun, "#!/bin/sh\nexec \"$(dirname \"$0\")/usr/lib/downkyi/DownKyi\" \"$@\"\n");
+            File.WriteAllText(appRun, appRunBody);
             File.SetUnixFileMode(
                 appRun,
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
@@ -782,11 +804,16 @@ public sealed class V113ReleaseSafetyRegressionTests
 
         var archive = Path.Combine(root, "payload.zip");
         ZipFile.CreateFromDirectory(appRoot, archive);
-        var package = Path.Combine(root, includeAppRun ? "valid.AppImage" : "missing-app-run.AppImage");
+        var package = Path.Combine(root, appRunBody is null ? "missing-app-run.AppImage" : "fixture.AppImage");
         using (var output = File.Create(package))
         {
             output.Write(File.ReadAllBytes("/bin/true"));
             output.Write(File.ReadAllBytes(archive));
+        }
+        using (var stream = File.Open(package, FileMode.Open, FileAccess.Write, FileShare.None))
+        {
+            stream.Position = 8;
+            stream.Write([0x41, 0x49, 0x02]);
         }
         File.SetUnixFileMode(
             package,

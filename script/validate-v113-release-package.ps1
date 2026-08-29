@@ -83,6 +83,56 @@ function Assert-LinuxBinaryArchitecture {
     }
 }
 
+function Assert-Type2AppImage {
+    param([string]$Path)
+
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        if ($stream.Length -lt 11) {
+            throw "AppImage is too short to contain a type 2 runtime: $Path"
+        }
+        $stream.Position = 8
+        $magic = [byte[]]::new(3)
+        if ($stream.Read($magic, 0, $magic.Length) -ne $magic.Length -or
+            $magic[0] -ne 0x41 -or
+            $magic[1] -ne 0x49 -or
+            $magic[2] -ne 0x02) {
+            throw "AppImage does not contain the type 2 runtime marker at offset 8: $Path"
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
+function Assert-LaunchStaysRunning {
+    param(
+        [string]$Label,
+        [string]$Path,
+        [string[]]$Arguments,
+        [hashtable]$Environment
+    )
+
+    $savedEnvironment = @{}
+    try {
+        foreach ($entry in $Environment.GetEnumerator()) {
+            $savedEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, 'Process')
+            [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, 'Process')
+        }
+
+        & timeout '--signal=TERM' '--kill-after=2s' '5s' xvfb-run -a $Path @Arguments *> $null
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 124) {
+            throw "$Label launch smoke exited before the five-second validation window (exit code $exitCode)."
+        }
+    }
+    finally {
+        foreach ($entry in $savedEnvironment.GetEnumerator()) {
+            [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+        }
+    }
+}
+
 function Assert-WindowsBinaryArchitecture {
     param(
         [string]$Path,
@@ -135,6 +185,7 @@ try {
         }
         'AppImage' {
             Assert-LinuxBinaryArchitecture -Path $package -ExpectedRuntimeIdentifier $RuntimeIdentifier
+            Assert-Type2AppImage -Path $package
             $packageMode = [IO.File]::GetUnixFileMode($package)
             if (($packageMode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
                 throw "AppImage is not executable by a non-owner: $package"
@@ -168,6 +219,25 @@ try {
         if (($appRunMode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
             throw 'AppImage entrypoint AppRun is not executable by a non-owner.'
         }
+
+        $launchHome = Join-Path $temporaryRoot 'launch-home'
+        New-Item -ItemType Directory -Path $launchHome -Force | Out-Null
+        $launchEnvironment = @{
+            APPDIR = $extractDirectory
+            APPIMAGE = $package
+            HOME = $launchHome
+            OWD = $temporaryRoot
+        }
+        Assert-LaunchStaysRunning `
+            -Label 'AppRun' `
+            -Path $appRun `
+            -Arguments @() `
+            -Environment $launchEnvironment
+        Assert-LaunchStaysRunning `
+            -Label 'AppImage runtime' `
+            -Path $package `
+            -Arguments @('--appimage-extract-and-run') `
+            -Environment $launchEnvironment
     }
 
     $runtimeCandidates = @(
