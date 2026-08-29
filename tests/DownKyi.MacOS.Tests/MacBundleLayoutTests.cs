@@ -130,7 +130,7 @@ public sealed class MacBundleLayoutTests
         {
             File.WriteAllText(
                 executablePath,
-                "#!/bin/bash\ntrap '' TERM\nwhile true; do sleep 1; done\n",
+                "#!/bin/bash\ntrap '' TERM\nwhile true; do :; done\n",
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             AssertSuccess(Run("/bin/chmod", fixtureRoot, "+x", executablePath));
 

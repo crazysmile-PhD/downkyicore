@@ -197,6 +197,18 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
+    public void MacTermResistanceFixtureHasOneTestOwnedProcessRoot()
+    {
+        var fixture = Read("tests/DownKyi.MacOS.Tests/MacBundleLayoutTests.cs");
+
+        Assert.Contains(
+            "#!/bin/bash\\ntrap '' TERM\\nwhile true; do :; done\\n",
+            fixture,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("while true; do sleep 1; done", fixture, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SupervisorHostTransportsButDoesNotAuthorizeRepositoryTests()
     {
         AssertSupervisorTransportOnly(Read("tools/DownKyi.ProcessSupervision/SupervisorHost.cs"));
