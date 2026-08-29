@@ -120,17 +120,31 @@ public sealed class RestartHandoffMutationTests
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous);
         var fixturePath = typeof(FeasibilityFixtureMarker).Assembly.Location;
-        var lease = await OwnedProcessLease.StartForTestingAsync(
-                new LaunchSpec(
-                    "dotnet",
-                    [fixturePath, "owned-successor", pipeName.PhysicalIdentifier],
-                    Path.GetDirectoryName(fixturePath)
-                        ?? throw new InvalidOperationException(
-                            "The feasibility fixture directory is unavailable.")),
-                TransitionBudget.Start(TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(3)),
-                ProcessOwnershipMutation.None,
-                TestContext.Current.CancellationToken)
-            .ConfigureAwait(true);
+        OwnedProcessLease lease;
+        try
+        {
+            lease = await OwnedProcessLease.StartForTestingAsync(
+                    new LaunchSpec(
+                        "dotnet",
+                        [fixturePath, "owned-successor", pipeName.PhysicalIdentifier],
+                        Path.GetDirectoryName(fixturePath)
+                            ?? throw new InvalidOperationException(
+                                "The feasibility fixture directory is unavailable.")),
+                    TransitionBudget.Start(TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(3)),
+                    ProcessOwnershipMutation.None,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+        }
+        catch (UnauthorizedAccessException) when (OperatingSystem.IsLinux())
+        {
+            Assert.False(
+                IsMutationActive(OrdinaryLeaseMutation),
+                "The ordinary-lease mutation attempted to compose restart ownership on a " +
+                "Linux runner without delegated cgroup authority; the lease rejected the " +
+                "transition before launch.");
+            return;
+        }
+
         await using var leaseScope = lease.ConfigureAwait(true);
         await pipe.WaitForConnectionAsync(TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
