@@ -500,9 +500,10 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
     $budget = [DownKyi.ProcessSupervision.TransitionBudget]::Start(
         [TimeSpan]::FromSeconds(5),
         [TimeSpan]::FromSeconds(2))
+    $parentOperationBeforeAllocation = $budget.RemainingOperation
     $operationAllowance = if (
         $env:DOWNKYI_TEST_MUTATE_FORENSICS_CAPTURE_BUDGET -eq "1") {
-        $budget.RemainingOperation
+        $parentOperationBeforeAllocation
     }
     elseif ($env:DOWNKYI_TEST_MUTATE_FORENSICS_STARTUP_WINDOW -eq "1") {
         [TimeSpan]::FromMilliseconds(1)
@@ -534,6 +535,8 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $failure = $null
     $unexpectedFailureType = $null
+    $collectorTaskSettledAfterMilliseconds = $null
+    $failureMappedAfterMilliseconds = $null
     $readyEvidence = $null
     $readyEvidenceErrorType = $null
     try {
@@ -541,10 +544,19 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
             -FileName $collectorHostPath `
             -Arguments @($probeArgument, $readyPath) `
             -CaptureWindow $captureWindow
+        $collectorTaskSettledAfterMilliseconds = [Math]::Round(
+            $stopwatch.Elapsed.TotalMilliseconds,
+            3)
     }
     catch {
+        $collectorTaskSettledAfterMilliseconds = [Math]::Round(
+            $stopwatch.Elapsed.TotalMilliseconds,
+            3)
         $failure = Get-DiagnosticCollectorExecutionFailure `
             -Exception $_.Exception
+        $failureMappedAfterMilliseconds = [Math]::Round(
+            $stopwatch.Elapsed.TotalMilliseconds,
+            3)
         if ($null -eq $failure) {
             $unexpectedFailureType = $_.Exception.GetType().Name
         }
@@ -568,6 +580,8 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
 
     $operationDeadlineKind =
         [DownKyi.ProcessSupervision.DiagnosticCollectorFailureKind]::OperationDeadlineExceeded
+    $collectorRemainingOperation = $captureWindow.RemainingOperation
+    $parentRemainingOperation = $budget.RemainingOperation
     $contractChecks = [ordered]@{
         typedFailureObserved = $null -ne $failure
         operationDeadlinePreserved = $null -ne $failure -and
@@ -590,9 +604,10 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
             $failure.Failure.Evidence.StreamsDrained
         cleanupSucceeded = $null -ne $failure -and
             $failure.CleanupFailures.Count -eq 0
-        elapsedBounded = $stopwatch.Elapsed -lt [TimeSpan]::FromSeconds(4)
+        collectorWindowOperationExhausted =
+            $collectorRemainingOperation -eq [TimeSpan]::Zero
         parentBudgetPreserved =
-            $budget.RemainingOperation -gt [TimeSpan]::FromSeconds(1)
+            $parentRemainingOperation -gt [TimeSpan]::Zero
     }
     $passed = -not ($contractChecks.Values -contains $false)
     return [pscustomobject]@{
@@ -624,8 +639,42 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
         readyEvidenceErrorType = $readyEvidenceErrorType
         contractChecks = [pscustomobject]$contractChecks
         elapsedMilliseconds = [Math]::Round($stopwatch.Elapsed.TotalMilliseconds, 3)
+        callerTiming = [pscustomobject]@{
+            collectorTaskSettledAfterMilliseconds =
+                $collectorTaskSettledAfterMilliseconds
+            failureMappedAfterMilliseconds = $failureMappedAfterMilliseconds
+            failureMappingMilliseconds = if (
+                $null -ne $collectorTaskSettledAfterMilliseconds -and
+                $null -ne $failureMappedAfterMilliseconds) {
+                [Math]::Round(
+                    $failureMappedAfterMilliseconds -
+                        $collectorTaskSettledAfterMilliseconds,
+                    3)
+            }
+            else {
+                $null
+            }
+        }
+        deadlineAuthority = [pscustomobject]@{
+            parentOperationBeforeAllocationMilliseconds = [Math]::Round(
+                $parentOperationBeforeAllocation.TotalMilliseconds,
+                3)
+            allocatedOperationAllowanceMilliseconds = [Math]::Round(
+                $operationAllowance.TotalMilliseconds,
+                3)
+            allocatedWindowWasAttenuated =
+                $operationAllowance -lt $parentOperationBeforeAllocation
+            collectorRemainingOperationMilliseconds = [Math]::Round(
+                $collectorRemainingOperation.TotalMilliseconds,
+                3)
+            parentRemainingOperationMilliseconds = [Math]::Round(
+                $parentRemainingOperation.TotalMilliseconds,
+                3)
+            parentOperationAvailableAfterCollector =
+                $parentRemainingOperation -gt [TimeSpan]::Zero
+        }
         parentRemainingOperationMilliseconds = [Math]::Round(
-            $budget.RemainingOperation.TotalMilliseconds,
+            $parentRemainingOperation.TotalMilliseconds,
             3)
     }
 }

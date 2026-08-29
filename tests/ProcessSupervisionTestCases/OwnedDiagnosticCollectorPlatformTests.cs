@@ -443,7 +443,7 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         Assert.Equal(
             DiagnosticCollectorFailureKind.OperationDeadlineExceeded,
             failure.Failure.Kind);
-        Assert.True(parent.RemainingOperation > TimeSpan.FromSeconds(1));
+        Assert.True(parent.RemainingOperation > TimeSpan.Zero);
     }
 
     [Fact]

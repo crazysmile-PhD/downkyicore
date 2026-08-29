@@ -224,7 +224,9 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             Assert.False(
                 expectedRejection,
                 "The real lifecycle self-test emitted the exact rejection for the broken " +
-                $"whole-budget collector window: {CaptureBudgetSelfTestRejection}");
+                $"whole-budget collector window: {CaptureBudgetSelfTestRejection}" +
+                $"{Environment.NewLine}Mutation child output:{Environment.NewLine}" +
+                mutation.Output);
             return;
         }
 
@@ -293,6 +295,27 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             CaptureBudgetMutationEnvironmentVariable,
             source,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "collectorWindowOperationExhausted",
+            captureWindowSelfTest,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$collectorRemainingOperation -eq [TimeSpan]::Zero",
+            captureWindowSelfTest,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$parentRemainingOperation -gt [TimeSpan]::Zero",
+            captureWindowSelfTest,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "allocatedWindowWasAttenuated",
+            captureWindowSelfTest,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "$budget.RemainingOperation -gt [TimeSpan]::FromSeconds(1)",
+            captureWindowSelfTest,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("elapsedBounded", captureWindowSelfTest, StringComparison.Ordinal);
         Assert.DoesNotContain("New-OwnerAllocatedForensicsCaptureWindow", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Get-ForensicsCaptureWaitMilliseconds", source, StringComparison.Ordinal);
     }
