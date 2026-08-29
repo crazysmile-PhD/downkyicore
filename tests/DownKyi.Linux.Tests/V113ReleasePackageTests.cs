@@ -1,0 +1,22 @@
+using System.Runtime.Versioning;
+using DownKyi.Architecture.Tests;
+
+namespace DownKyi.Linux.Tests;
+
+[SupportedOSPlatform("linux")]
+public sealed class V113ReleasePackageTests
+{
+    [Fact]
+    public void FinalPackageValidationRejectsMissingExecuteBits()
+    {
+        V113ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationRejectsMissingExecuteBits();
+    }
+
+    [Fact]
+    public void FinalPackageValidationRejectsArchitectureMismatch()
+    {
+        V113ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationRejectsArchitectureMismatch();
+    }
+}

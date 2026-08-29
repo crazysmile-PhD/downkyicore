@@ -197,14 +197,12 @@ public sealed class V113ReleaseSafetyRegressionTests
         }
     }
 
-    [Fact]
-    public void LinuxReleasePackageValidationRejectsMissingExecuteBits()
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "xUnit",
+        "xUnit1013:Public method should be marked as test")]
+    public static void LinuxReleasePackageValidationRejectsMissingExecuteBits()
     {
-        if (!OperatingSystem.IsLinux())
-        {
-            return;
-        }
-
         var root = CreateTemporaryDirectory();
         try
         {
@@ -228,14 +226,12 @@ public sealed class V113ReleaseSafetyRegressionTests
         }
     }
 
-    [Fact]
-    public void LinuxReleasePackageValidationRejectsArchitectureMismatch()
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "xUnit",
+        "xUnit1013:Public method should be marked as test")]
+    public static void LinuxReleasePackageValidationRejectsArchitectureMismatch()
     {
-        if (!OperatingSystem.IsLinux())
-        {
-            return;
-        }
-
         var root = CreateTemporaryDirectory();
         try
         {
