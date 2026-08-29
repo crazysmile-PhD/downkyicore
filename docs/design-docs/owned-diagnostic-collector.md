@@ -503,6 +503,54 @@ changes lifecycle observer policy, target-exit timing evidence and diagnostic
 instrumentation only. It does not change the 15-second allowance, the parent
 budget, collector ownership, retry behavior or cleanup semantics.
 
+## Parent-Budget Proof Classification
+
+Strict PR run
+[33225859743](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33225859743),
+Assembly Lifecycle job
+[99029376828](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33225859743/job/99029376828),
+failed at source head `2953afc4c259ae0a81a7f787d74a7e53fad7966e`
+only because `parentBudgetPreserved` required more than 1,000 ms and observed
+962.370 ms. The collector still returned typed `OperationDeadlineExceeded`,
+started, exited, reaped and drained both streams with no cleanup failure; all
+other capture-window predicates and lifecycle ownership 644/0 passed.
+
+The 1,000 ms value was a self-test proof threshold, not a correctness contract
+or safety margin. The implemented design requires an attenuated window on the
+same monotonic parent timeline and a positive, unexhausted parent operation
+budget after collector completion. The original review-fix self-test in
+`c3a3a33f67daa20ac450212433c69774385fb679` used a five-second parent and a
+one-second child while checking for more than one second remaining. Fixture fix
+`d698f855afec7e2731b29d1643f473b201096207` changed the hosted child allowance
+to three seconds but retained the old numerical threshold and an outer
+four-second stopwatch predicate. Neither number defined collector production
+semantics.
+
+The failed artifact separates the consumer. `ProcessStartRequested` occurred
+after 5.189 ms, `ProcessStarted` after 320.268 ms and first stream progress after
+370.365 ms. Reap and drain completed after 2,978.652 and 2,976.078 ms, and the
+typed result was produced after 2,984.523 ms. The outer self-test stopwatch
+stopped after 3,997.680 ms, and the root budget plus surrounding ready-file work
+had consumed 4,037.630 ms. The old artifact did not timestamp ready publication
+separately, so target-side IPC and hosted scheduling inside the first 370.365 ms
+cannot be subdivided; both nevertheless completed before the typed child
+deadline. The extra post-result interval is therefore caller-side PowerShell
+exception delivery/mapping, surrounding self-test work and hosted scheduling,
+not collector operation, cleanup, supervisor startup, process start or IPC. New
+diagnostic-only `callerTiming` fields split task settlement from failure mapping
+on later runs; they do not select pass/fail.
+
+Implementation `9c8f9765ca207116324a776c27ed973184710756`
+replaces hosted timing margins with direct contract predicates: the typed child
+operation window must be exhausted and the parent operation budget must remain
+strictly positive. The report retains raw milliseconds plus
+`deadlineAuthority`, including the parent value before allocation, allocated
+allowance, attenuation result and both remaining budgets. The whole-parent
+mutation records a non-attenuated allocation, zero child and parent remainder,
+and makes only the parent-budget contract predicate false while timeout,
+reap/drain and empty cleanup stay true. No timeout, retry, sleep, fresh deadline,
+collector owner or Stage 4 path changed.
+
 ## Non-Goals
 
 This checkpoint excludes:

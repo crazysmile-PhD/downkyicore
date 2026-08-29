@@ -374,19 +374,33 @@ self-tests. The capture-window proof gives hosted supervisor/target startup a
 three-second owner-assigned fixture window. The target creates a non-completing
 blocking task before atomically publishing its ready record; only then can the
 self-test accept typed timeout, reap and stream-drain evidence without
-consuming the parent operation budget. It also requires the ready process ID
-and pre-block stdout/stderr markers. This is a test fixture allowance, not a
-new production or global deadline. The fixture launches the already-built
-ProcessSupervision apphost directly instead of asking a second `dotnet` muxer
-process to resolve and launch the same assembly. This removes cold muxer startup
-from the fixture without changing the three-second window, compiled target
-behavior or sole `OwnedDiagnosticCollector`/lease owner. The report records
-`collectorHostName` so CI proves which fixture host ran. A standalone
+exhausting the parent operation budget. `collectorWindowOperationExhausted`
+requires the typed child operation remainder to be zero, while
+`parentBudgetPreserved` requires the parent remainder to stay strictly positive
+after typed completion and ready-artifact cleanup. It is not a 1,000 ms reserve
+or another hosted timing threshold. The report retains diagnostic-only
+`callerTiming`, raw milliseconds and `deadlineAuthority` values so task
+settlement, PowerShell failure mapping, attenuation and both remaining budgets
+can be distinguished without deciding correctness from their magnitudes.
+
+The proof also requires the ready process ID and pre-block stdout/stderr markers.
+The three seconds are a test fixture allowance, not a new production or global
+deadline. The fixture launches the already-built ProcessSupervision apphost
+directly instead of asking a second `dotnet` muxer process to resolve and launch
+the same assembly. This removes cold muxer startup from the fixture without
+changing the three-second window, compiled target behavior or sole
+`OwnedDiagnosticCollector`/lease owner. The report records `collectorHostName`
+so CI proves which fixture host ran. A standalone
 `forensics-collector-capture-window-self-test.json` is written before a failed
 self-test throws, so CI artifacts retain the exact predicate values even when
 formal lifecycle phases never start. Executable mutations prove that both a
 deadline exhausted before ready and ready published before the blocking task
-make the gate fail. The cleanup-report proof sends a typed failure with a
+make the gate fail. The whole-parent mutation must preserve timeout, ready,
+reap, drain and empty cleanup while setting the parent remainder to zero; the
+Architecture profile must execute nine tests and fail only its owning typed-window
+test. Its failure output retains the structured child evidence, so a startup,
+build, missing-tool or cleanup failure cannot substitute for the deadline
+authority violation. The cleanup-report proof sends a typed failure with a
 non-empty immutable cleanup list through the same PowerShell converter used by
 `Invoke-ForensicsObserverCapture`, JSON-round-trips the result and requires
 these exact stage/cause pairs:

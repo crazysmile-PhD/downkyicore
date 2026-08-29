@@ -980,6 +980,32 @@ timeout, ownership, workflow, production or Stage 4A boundary. Exact CI and
 local validation evidence is authoritative in
 `pr-197-owned-diagnostic-collector-migration.md`.
 
+### Stage 3 Parent-Budget Self-Test Blocker Checkpoint
+
+Starting exact head `2953afc4c259ae0a81a7f787d74a7e53fad7966e`
+failed only Assembly Lifecycle because the compiled collector had completed
+typed timeout, reap and drain with no cleanup failure, but the self-test required
+more than 1,000 ms of its five-second parent and observed 962.370 ms. Design and
+history classify 1,000 ms as a self-test proof threshold: Stage 3's contract is
+an attenuated child on the same monotonic `TransitionBudget` with a strictly
+positive parent operation remainder, not a one-second safety reserve.
+
+Implementation `9c8f9765ca207116324a776c27ed973184710756` replaces
+the inherited hosted timing margins with direct child-exhausted and
+parent-still-positive predicates, and retains caller-timing/deadline-authority
+diagnostics. The whole-parent mutation executes the same lifecycle self-test and
+produces one owning Architecture failure while timeout, authoritative
+reap/drain, empty cleanup and all unrelated predicates remain valid. Focused,
+affected and full Architecture, review corpus and one-assembly lifecycle gates
+passed locally; exact counts and timing evidence are authoritative in
+`pr-197-owned-diagnostic-collector-migration.md`.
+
+This checkpoint changes no collector timeout, root timeout, retry, sleep,
+deadline owner, target-process owner, slow-evidence policy or Stage 4 restart
+handoff implementation. Stage 4 closure and same-head review remain blocked
+until naturally triggered required CI is green. Stage 5, merge, release and tag
+movement remain prohibited.
+
 ## Stage 4A: Restart Handoff Feasibility
 
 The original composition assumption is invalidated. An ordinary

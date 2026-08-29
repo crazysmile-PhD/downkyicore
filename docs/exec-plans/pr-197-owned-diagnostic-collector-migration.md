@@ -1085,6 +1085,74 @@ CI and a new same-head review. No old run will be rerun. Stage 4A remains
 completed and closed; production Stage 4, Stage 5, merge, release and tag
 movement remain out of scope.
 
+### Parent-Budget Self-Test Blocker Checkpoint
+
+Starting head `2953afc4c259ae0a81a7f787d74a7e53fad7966e` had
+local, tracking upstream, live remote branch and PR #197 HEAD equality with a
+clean worktree. Its Strict PR run
+[33225859743](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33225859743)
+passed every applicable check except Assembly Lifecycle. The failed structured
+self-test had typed `OperationDeadlineExceeded`, started/exited/reaped/drained,
+zero cleanup failures and ownership 644/0. Only `parentBudgetPreserved` was
+false: the five-second parent retained 962.370 ms instead of the oracle's
+required 1,000 ms.
+
+Design, migration history and executable behavior classify 1,000 ms as a proof
+threshold rather than a safety contract. The design requires the child window
+to remain an attenuated view of the caller's monotonic `TransitionBudget` and
+the parent operation budget to remain legally unexhausted. The original
+`c3a3a33f67daa20ac450212433c69774385fb679` fixture paired a one-second child
+with a five-second parent; `d698f855afec7e2731b29d1643f473b201096207`
+later changed only the hosted child allowance to three seconds and retained the
+old `> 1 second` plus `< 4 seconds` oracle. Those margins were never production
+collector policy.
+
+The failed run's typed timeline finished at 2,984.523 ms after request creation:
+supervisor/process start was observed at 320.268 ms, first stream progress at
+370.365 ms, drain at 2,976.078 ms and reap at 2,978.652 ms. The outer PowerShell
+self-test stopwatch stopped at 3,997.680 ms and the parent was sampled after
+4,037.630 ms. The old artifact did not separately timestamp ready publication;
+target-side IPC and hosted scheduling inside the first 370.365 ms cannot be
+subdivided, but both preceded typed completion. Thus the interval which crossed
+the arbitrary reserve was caller-side exception delivery/mapping,
+ready-artifact work and hosted scheduling after the compiled collector had
+already completed its owned cleanup. It was not a second collector deadline or
+extra target-process owner.
+
+Implementation `9c8f9765ca207116324a776c27ed973184710756` removes
+both hosted timing thresholds from the pass/fail contract. The structured proof
+now requires the collector operation remainder to be zero and the parent
+operation remainder to be greater than zero. Raw elapsed values remain
+diagnostic, and new `callerTiming` and `deadlineAuthority` objects disclose the
+settlement/mapping split, pre-allocation parent value, assigned allowance,
+attenuation and post-completion child/parent remainder. The executable
+whole-parent mutation retains its exact rejection and now includes the complete
+child evidence in TRX.
+
+Executed local proof for this implementation commit:
+
+- focused normal lifecycle: one Architecture assembly, nine phases, zero
+  failures; all 12 capture-window contract checks passed, the child remainder
+  was zero and parent operation remainder was 1,887.746 ms;
+- whole-parent mutation: nine executed, eight passed and exactly the owning
+  typed-window test failed; the mutation used 4,997.680 ms, recorded no
+  attenuation, zero child/parent remainder, typed timeout, reap/drain and empty
+  cleanup, with only `parentBudgetPreserved=false` among contract checks;
+- affected collector/window platform tests: 19/19;
+- affected lifecycle Architecture: 18/18; full Architecture: 328/328;
+- review-invariant corpus: 12 invariants, seven projects, 333 tests and 15
+  adversarial proofs;
+- one `DownKyi.Core.Tests` lifecycle sanity: nine phases, zero failures,
+  ownership 644/0 and 1,904.452 ms parent operation remainder;
+- PowerShell parse, `git diff --check` and
+  `dotnet format --verify-no-changes`: pass.
+
+Status: pending this separate documentation commit, exact-head push and
+naturally triggered required CI. No failed run will be rerun. Stage 4 production
+implementation remains present and unchanged, but Stage 4 closure and same-head
+review remain blocked until every required check is green. Stage 5, merge,
+release and tag movement remain prohibited.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates
