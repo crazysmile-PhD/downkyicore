@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
@@ -14,6 +15,52 @@ namespace DownKyi.MacOS.Tests;
     Justification = "xUnit constructs the public assembly fixture from its assembly-level registration.")]
 public sealed class MacProcessGroupDiagnosticsFixture : IAsyncDisposable
 {
+    private static readonly ConcurrentQueue<CompilerServerEvidence> CompilerServerEvidenceQueue = new();
+    private readonly int? _processGroupId;
+    private readonly ProcessIdentity[] _initialUnexpected = [];
+    private readonly string? _initialDiagnosticFailure;
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "The baseline snapshot is diagnostic evidence and cannot replace the outer lease verdict.")]
+    public MacProcessGroupDiagnosticsFixture()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        try
+        {
+            _processGroupId = MacNative.GetProcessGroup();
+            _initialUnexpected = DescribeUnexpectedMembers(_processGroupId.Value);
+        }
+        catch (Exception failure)
+        {
+            _initialDiagnosticFailure = failure.GetType().Name;
+        }
+    }
+
+    internal static void RecordCompilerServerEvidence(
+        int invocationProcessId,
+        int? clientProcessId,
+        int? serverProcessId,
+        string? serverProcessName,
+        bool serverAliveAfterInvocation,
+        int? keepAliveMilliseconds,
+        string? diagnosticFailure)
+    {
+        CompilerServerEvidenceQueue.Enqueue(new CompilerServerEvidence(
+            invocationProcessId,
+            clientProcessId,
+            serverProcessId,
+            serverProcessName,
+            serverAliveAfterInvocation,
+            keepAliveMilliseconds,
+            diagnosticFailure));
+    }
+
     [SuppressMessage(
         "Design",
         "CA1031:Do not catch general exception types",
@@ -27,19 +74,12 @@ public sealed class MacProcessGroupDiagnosticsFixture : IAsyncDisposable
 
         try
         {
-            var processGroupId = MacNative.GetProcessGroup();
-            var members = QueryMembers(processGroupId);
-            var unexpected = members
-                .Where(processId =>
-                    processId != processGroupId &&
-                    processId != Environment.ProcessId)
-                .Select(processId => new
-                {
-                    processId,
-                    processName = GetProcessName(processId)
-                })
-                .ToArray();
-            if (unexpected.Length > 0)
+            var processGroupId = _processGroupId ?? MacNative.GetProcessGroup();
+            var unexpected = DescribeUnexpectedMembers(processGroupId);
+            var compilerServerEvidence = CompilerServerEvidenceQueue.ToArray();
+            if (unexpected.Length > 0 ||
+                compilerServerEvidence.Length > 0 ||
+                _initialDiagnosticFailure != null)
             {
                 await Console.Error.WriteLineAsync(
                     "[DownKyi.MacOS.Tests process-group observer] " +
@@ -47,6 +87,9 @@ public sealed class MacProcessGroupDiagnosticsFixture : IAsyncDisposable
                     {
                         processGroupId,
                         testProcessId = Environment.ProcessId,
+                        initialUnexpected = _initialUnexpected,
+                        initialDiagnosticFailure = _initialDiagnosticFailure,
+                        compilerServerEvidence,
                         unexpected
                     })).ConfigureAwait(false);
             }
@@ -57,6 +100,17 @@ public sealed class MacProcessGroupDiagnosticsFixture : IAsyncDisposable
                 "[DownKyi.MacOS.Tests process-group observer unavailable] " +
                 failure.GetType().Name).ConfigureAwait(false);
         }
+    }
+
+    private static ProcessIdentity[] DescribeUnexpectedMembers(int processGroupId)
+    {
+        return QueryMembers(processGroupId)
+            .Where(processId =>
+                processId != processGroupId &&
+                processId != Environment.ProcessId)
+            .Select(processId => new ProcessIdentity(processId, GetProcessName(processId)))
+            .OrderBy(process => process.ProcessId)
+            .ToArray();
     }
 
     [SuppressMessage(
@@ -122,6 +176,17 @@ public sealed class MacProcessGroupDiagnosticsFixture : IAsyncDisposable
         throw new InvalidOperationException(
             "The macOS process-group observer did not converge.");
     }
+
+    private sealed record ProcessIdentity(int ProcessId, string ProcessName);
+
+    private sealed record CompilerServerEvidence(
+        int InvocationProcessId,
+        int? ClientProcessId,
+        int? ServerProcessId,
+        string? ServerProcessName,
+        bool ServerAliveAfterInvocation,
+        int? KeepAliveMilliseconds,
+        string? DiagnosticFailure);
 
     [SuppressMessage(
         "Interoperability",

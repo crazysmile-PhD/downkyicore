@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -37,9 +38,14 @@ public sealed class MacBundleLayoutTests
                 "fixtures",
                 "BundleProbe",
                 "BundleProbe.csproj");
-            AssertSuccess(Run(
+            var compilerServerLog = Path.Combine(fixtureRoot, "roslyn-compiler-server.log");
+            var publish = Run(
                 "dotnet",
                 fixtureRoot,
+                new Dictionary<string, string?>
+                {
+                    ["RoslynCommandLineLogFile"] = compilerServerLog
+                },
                 "publish",
                 probeProject,
                 "-c",
@@ -50,7 +56,9 @@ public sealed class MacBundleLayoutTests
                 "-p:DebugType=None",
                 "-p:DebugSymbols=false",
                 "-o",
-                publishDirectory));
+                publishDirectory);
+            AssertSuccess(publish);
+            RecordCompilerServerEvidence(publish.ProcessId, compilerServerLog);
 
             CreateAppBundle(legacyApp, publishDirectory);
             var legacyRuntimeConfig = Path.Combine(
@@ -244,6 +252,7 @@ public sealed class MacBundleLayoutTests
         }
 
         return new ProcessResult(
+            process.Id,
             process.ExitCode,
             standardOutput.GetAwaiter().GetResult(),
             standardError.GetAwaiter().GetResult());
@@ -254,6 +263,113 @@ public sealed class MacBundleLayoutTests
         Assert.True(
             result.ExitCode == 0,
             $"Process failed with exit code {result.ExitCode}. stdout={result.StandardOutput} stderr={result.StandardError}");
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Unavailable compiler-server diagnostics cannot replace the publish or outer lease verdict.")]
+    private static void RecordCompilerServerEvidence(int invocationProcessId, string logPath)
+    {
+        try
+        {
+            var lines = File.Exists(logPath)
+                ? File.ReadAllLines(logPath)
+                : Array.Empty<string>();
+            var clientProcessId = FindLoggedProcessId(lines, "Attempt to open named pipe");
+            var serverProcessId = FindLoggedProcessId(lines, "Keep alive timeout is:");
+            var keepAliveMilliseconds = FindKeepAliveMilliseconds(lines);
+            var serverProcessName = serverProcessId.HasValue
+                ? TryGetProcessName(serverProcessId.Value)
+                : null;
+
+            MacProcessGroupDiagnosticsFixture.RecordCompilerServerEvidence(
+                invocationProcessId,
+                clientProcessId,
+                serverProcessId,
+                serverProcessName,
+                serverProcessName != null,
+                keepAliveMilliseconds,
+                diagnosticFailure: null);
+        }
+        catch (Exception failure)
+        {
+            MacProcessGroupDiagnosticsFixture.RecordCompilerServerEvidence(
+                invocationProcessId,
+                clientProcessId: null,
+                serverProcessId: null,
+                serverProcessName: null,
+                serverAliveAfterInvocation: false,
+                keepAliveMilliseconds: null,
+                diagnosticFailure: failure.GetType().Name);
+        }
+    }
+
+    private static int? FindLoggedProcessId(IEnumerable<string> lines, string marker)
+    {
+        foreach (var line in lines)
+        {
+            if (!line.Contains(marker, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            const string prefix = "PID=";
+            var start = line.IndexOf(prefix, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                continue;
+            }
+
+            start += prefix.Length;
+            var end = line.IndexOf(' ', start);
+            if (end > start && int.TryParse(line.AsSpan(start, end - start), out var processId))
+            {
+                return processId;
+            }
+        }
+
+        return null;
+    }
+
+    private static int? FindKeepAliveMilliseconds(IEnumerable<string> lines)
+    {
+        const string prefix = "Keep alive timeout is:";
+        const string suffix = "milliseconds";
+        foreach (var line in lines)
+        {
+            var start = line.IndexOf(prefix, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                continue;
+            }
+
+            start += prefix.Length;
+            var end = line.IndexOf(suffix, start, StringComparison.Ordinal);
+            if (end > start && int.TryParse(line.AsSpan(start, end - start).Trim(), out var milliseconds))
+            {
+                return milliseconds;
+            }
+        }
+
+        return null;
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "A disappearing diagnostic process is reported as unavailable, not a correctness result.")]
+    private static string? TryGetProcessName(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return process.ProcessName;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static string FindRepositoryRoot()
@@ -268,5 +384,9 @@ public sealed class MacBundleLayoutTests
                ?? throw new DirectoryNotFoundException("Could not locate the DownKyi repository root.");
     }
 
-    private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
+    private sealed record ProcessResult(
+        int ProcessId,
+        int ExitCode,
+        string StandardOutput,
+        string StandardError);
 }
