@@ -108,6 +108,92 @@ public sealed class CiTestActionBehaviorTests
     }
 
     [Fact]
+    public void DirectSolutionEntryAcquiresDelegatedScopeBeforeLoadingTheRunner()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-direct-solution-delegation-{Guid.NewGuid():N}");
+        var scriptDirectory = Path.Combine(directory, "script");
+        Directory.CreateDirectory(scriptDirectory);
+        var capturePath = Path.Combine(directory, "capture.json");
+        try
+        {
+            File.Copy(
+                Path.Combine(RepositoryRoot, "script", "test-solution.ps1"),
+                Path.Combine(scriptDirectory, "test-solution.ps1"));
+            File.WriteAllText(
+                Path.Combine(scriptDirectory, "delegated-cgroup-scope.ps1"),
+                """
+                function ConvertTo-DownKyiPowerShellArgumentList {
+                    param([System.Collections.IDictionary]$BoundParameters)
+                    $arguments = @()
+                    foreach ($entry in $BoundParameters.GetEnumerator()) {
+                        $arguments += "-$($entry.Key)"
+                        if ($entry.Value -is [System.Management.Automation.SwitchParameter]) { continue }
+                        $arguments += [string]$entry.Value
+                    }
+                    return $arguments
+                }
+                function Test-DownKyiDelegatedCgroupScopeRequired { return $true }
+                function Invoke-DownKyiDelegatedCgroupScope {
+                    param([string]$ScriptPath, [string[]]$ArgumentList)
+                    @{
+                        scriptPath = $ScriptPath
+                        arguments = $ArgumentList
+                    } | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:DOWNKYI_CAPTURE
+                }
+                """);
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = directory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            foreach (var argument in new[]
+                     {
+                         "-NoProfile", "-NonInteractive", "-File",
+                         Path.Combine(scriptDirectory, "test-solution.ps1"),
+                         "-Configuration", "Debug", "-NoRestore", "-NoBuild",
+                         "-ResultsDirectory", "delegated-results"
+                     })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+            startInfo.Environment["DOWNKYI_CAPTURE"] = capturePath;
+
+            var result = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.True(File.Exists(capturePath));
+            using var document = JsonDocument.Parse(File.ReadAllText(capturePath));
+            var arguments = document.RootElement.GetProperty("arguments")
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .ToArray();
+            Assert.Contains("-Configuration", arguments);
+            Assert.Contains("Debug", arguments);
+            Assert.Contains("-NoRestore", arguments);
+            Assert.Contains("-NoBuild", arguments);
+            Assert.Contains("-ResultsDirectory", arguments);
+            Assert.Contains("delegated-results", arguments);
+            Assert.EndsWith(
+                Path.Combine("script", "test-solution.ps1"),
+                document.RootElement.GetProperty("scriptPath").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void MalformedBooleanInputFailsClosedBeforeProjectExecution()
     {
         var startInfo = CreateActionStartInfo(

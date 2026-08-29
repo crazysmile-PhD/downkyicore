@@ -3444,11 +3444,16 @@ test.central-test-runner:
   guards:
     - exact token and full canonical argv authorization reaches the owned target over one current-user named endpoint
     - wrong token or invocation, replay, EOF, partial authorization, wrong child, numeric handle transport and direct execution fail closed
+    - authorization completion observes the lease target-exit token and cannot consume the full operation budget after authoritative pre-handshake exit
     - OwnedProcessLease owns normal, hung, canceled, supervisor-failed and owner-EOF test children through reap, quiescence and stream drain
+    - causal authorization or execution failure remains first while lease, authorization and temporary-TRX cleanup failures remain separately visible
     - CentralTestRunner cannot regain raw launch, wait, kill, private cleanup, a second execution deadline or Linux enumeration fallback
     - SupervisorHost cannot become a test authorization, selection or TRX authority
     - target NoBuild cannot make the required compiled runner provider optional or restore a PowerShell host fallback
-    - CI action and direct review-corpus execution enter the same delegated Linux cgroup scope before loading the runner
+    - CI action, direct solution execution and direct review-corpus execution enter the same delegated Linux cgroup scope before loading the runner
+    - required suite jobs have no skippable `needs` predecessor and retain their exact three-OS runner matrix
+    - recovery derives tracked trust inputs from the actual recursive MSBuild project and compiled-item closure; nested-checkout project paths resolve relative to the tooling repository root
+    - user-visible project status and failures use repository-relative paths while canonical absolute paths remain internal
     - the macOS TERM-resistance fixture has one test-owned app root and cannot orphan a nested sleep process
     - process exit zero cannot hide a failed TRX and zero executed tests cannot pass
     - each Stage 5 mutation executes the complete owning class and causes exactly one expected failure

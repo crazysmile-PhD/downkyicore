@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.ExceptionServices;
 using DownKyi.ProcessSupervision;
 
 #pragma warning disable CA1515 // PowerShell compatibility wrappers invoke this compiled owner.
@@ -14,20 +16,50 @@ public static class CentralTestOrchestrator
         CentralTestProjectOptions options,
         CancellationToken cancellationToken = default)
     {
+        return await RunProjectCoreAsync(
+                options,
+                CentralTestRunnerMutation.None,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task<CentralTestRunResult> RunProjectForTestingAsync(
+        CentralTestProjectOptions options,
+        CentralTestRunnerMutation mutation,
+        CancellationToken cancellationToken = default)
+    {
+        return await RunProjectCoreAsync(options, mutation, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "The orchestration boundary preserves the primary failure while collecting cleanup failures.")]
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Authorization disposal is explicitly captured in the cleanup aggregation boundary.")]
+    private static async Task<CentralTestRunResult> RunProjectCoreAsync(
+        CentralTestProjectOptions options,
+        CentralTestRunnerMutation mutation,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(options);
         ValidateConfiguration(options.Configuration);
         var project = new FileInfo(options.ProjectPath);
+        var displayProject = FormatRepositoryPath(options.RepositoryRoot, project.FullName);
         if (!project.Exists)
         {
-            throw new FileNotFoundException("The repository test project is missing.", project.FullName);
+            throw new FileNotFoundException("The repository test project is missing.", displayProject);
         }
 
         var platform = CentralTestPolicy.GetCurrentPlatform();
-        if (!CentralTestPolicy.SupportsPlatform(project.FullName, platform))
+        var declared = CentralTestPolicy.ReadProjectPlatforms(project.FullName);
+        if (!declared.Contains(platform, StringComparer.Ordinal))
         {
-            var declared = CentralTestPolicy.ReadProjectPlatforms(project.FullName);
             throw new InvalidOperationException(
-                $"Test project {project.FullName} supports [{string.Join(", ", declared)}] and cannot run on '{platform}'.");
+                $"Test project {displayProject} supports [{string.Join(", ", declared)}] and cannot run on '{platform}'.");
         }
 
         var policy = CentralTestPolicy.ReadRunnerPolicy(
@@ -36,7 +68,7 @@ public static class CentralTestOrchestrator
         if (!string.IsNullOrWhiteSpace(options.Filter))
         {
             throw new InvalidOperationException(
-                $"The xUnit in-process runner requires class locators instead of a VSTest filter: {project.FullName}");
+                $"The xUnit in-process runner requires class locators instead of a VSTest filter: {displayProject}");
         }
 
         if (!options.NoBuild)
@@ -56,7 +88,7 @@ public static class CentralTestOrchestrator
         {
             throw new FileNotFoundException(
                 "The xUnit in-process test assembly is missing.",
-                assemblyPath);
+                FormatRepositoryPath(options.RepositoryRoot, assemblyPath));
         }
 
         var arguments = CreateCanonicalArguments(
@@ -68,6 +100,9 @@ public static class CentralTestOrchestrator
             options.TrxName,
             out var validationTrxPath,
             out var reportedTrxPath);
+        Exception? primaryFailure = null;
+        var cleanupFailures = new List<Exception>();
+        CentralTestRunResult? result = null;
         try
         {
             if (File.Exists(validationTrxPath))
@@ -78,10 +113,9 @@ public static class CentralTestOrchestrator
             var budget = TransitionBudget.Start(
                 TimeSpan.FromSeconds(options.ExecutionTimeoutSeconds),
                 CleanupGrace);
-            var authorization = CentralTestAuthorization.Issue(
+            CentralTestAuthorization? authorization = CentralTestAuthorization.Issue(
                 arguments,
                 options.RepositoryRoot);
-            await using var authorizationScope = authorization.ConfigureAwait(false);
             var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 ["DOWNKYI_LIFECYCLE_MARKER"] = null
@@ -101,7 +135,21 @@ public static class CentralTestOrchestrator
                         budget,
                         cancellationToken)
                     .ConfigureAwait(false);
-                await authorization.CompleteAsync(budget, cancellationToken).ConfigureAwait(false);
+                if (mutation.HasFlag(CentralTestRunnerMutation.FailAuthorizationBeforeCompletion))
+                {
+                    throw new InvalidOperationException(
+                        "Injected central test authorization failure.");
+                }
+                await authorization.CompleteAsync(
+                        budget,
+                        lease.TargetExitedToken,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (mutation.HasFlag(CentralTestRunnerMutation.FailExecutionAfterAuthorization))
+                {
+                    throw new InvalidDataException(
+                        "Injected central test execution failure.");
+                }
                 var outcome = await lease.WaitAsync(cancellationToken).ConfigureAwait(false);
                 lease = null;
 
@@ -115,7 +163,7 @@ public static class CentralTestOrchestrator
                         "A successful runner report cannot contain failed test results.");
                 }
 
-                return new CentralTestRunResult(
+                result = new CentralTestRunResult(
                     outcome.ExitCode,
                     policy.Runner,
                     reportedTrxPath,
@@ -133,17 +181,53 @@ public static class CentralTestOrchestrator
             {
                 if (lease != null)
                 {
-                    await lease.DisposeAsync().ConfigureAwait(false);
+                    await CaptureCleanupFailureAsync(
+                            async () => await lease.DisposeAsync().ConfigureAwait(false),
+                            cleanupFailures)
+                        .ConfigureAwait(false);
+                    if (mutation.HasFlag(CentralTestRunnerMutation.FailLeaseCleanup))
+                    {
+                        cleanupFailures.Add(new IOException(
+                            "Injected owned process lease cleanup failure."));
+                    }
+                }
+                if (authorization != null)
+                {
+                    await CaptureCleanupFailureAsync(
+                            async () => await authorization.DisposeAsync().ConfigureAwait(false),
+                            cleanupFailures)
+                        .ConfigureAwait(false);
                 }
             }
+        }
+        catch (Exception failure)
+        {
+            primaryFailure = failure;
         }
         finally
         {
             if (temporaryResultsDirectory != null && Directory.Exists(temporaryResultsDirectory))
             {
-                Directory.Delete(temporaryResultsDirectory, recursive: true);
+                try
+                {
+                    Directory.Delete(temporaryResultsDirectory, recursive: true);
+                }
+                catch (Exception cleanupFailure)
+                {
+                    cleanupFailures.Add(cleanupFailure);
+                }
+            }
+            if (temporaryResultsDirectory != null &&
+                mutation.HasFlag(CentralTestRunnerMutation.FailTemporaryResultsCleanup))
+            {
+                cleanupFailures.Add(new IOException(
+                    "Injected temporary TRX directory cleanup failure."));
             }
         }
+
+        ThrowPreservingPrimaryFailure(primaryFailure, cleanupFailures);
+        return result
+            ?? throw new InvalidOperationException("Central test execution produced no result.");
     }
 
     public static async Task<CentralTestSolutionResult> RunSolutionAsync(
@@ -162,7 +246,7 @@ public static class CentralTestOrchestrator
         if (allProjects.Length == 0)
         {
             throw new InvalidOperationException(
-                $"No test projects were found under {testsRoot}.");
+                "No test projects were found under tests.");
         }
 
         var platform = CentralTestPolicy.GetCurrentPlatform();
@@ -178,7 +262,8 @@ public static class CentralTestOrchestrator
         var results = new List<CentralTestRunResult>();
         foreach (var project in selected)
         {
-            Console.WriteLine($"Testing {project}");
+            var displayProject = FormatRepositoryPath(options.RepositoryRoot, project);
+            WriteProjectStart(options.RepositoryRoot, project);
             var result = await RunProjectAsync(
                     new CentralTestProjectOptions(
                         options.RepositoryRoot,
@@ -196,7 +281,7 @@ public static class CentralTestOrchestrator
             results.Add(result);
             if (result.ExitCode != 0)
             {
-                throw new InvalidOperationException($"Test project failed: {project}");
+                throw new InvalidOperationException($"Test project failed: {displayProject}");
             }
         }
 
@@ -310,6 +395,65 @@ public static class CentralTestOrchestrator
         if (!string.IsNullOrEmpty(standardError))
         {
             Console.Error.Write(standardError);
+        }
+    }
+
+    private static string FormatRepositoryPath(string repositoryRoot, string path)
+    {
+        return Path.GetRelativePath(
+                Path.GetFullPath(repositoryRoot),
+                Path.GetFullPath(path, repositoryRoot))
+            .Replace('\\', '/');
+    }
+
+    internal static void WriteProjectStart(string repositoryRoot, string projectPath)
+    {
+        Console.WriteLine($"Testing {FormatRepositoryPath(repositoryRoot, projectPath)}");
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Cleanup failures must be retained without replacing the primary execution failure.")]
+    private static async Task CaptureCleanupFailureAsync(
+        Func<Task> cleanup,
+        List<Exception> cleanupFailures)
+    {
+        try
+        {
+            await cleanup().ConfigureAwait(false);
+        }
+        catch (Exception cleanupFailure)
+        {
+            cleanupFailures.Add(cleanupFailure);
+        }
+    }
+
+    private static void ThrowPreservingPrimaryFailure(
+        Exception? primaryFailure,
+        List<Exception> cleanupFailures)
+    {
+        if (primaryFailure != null)
+        {
+            if (cleanupFailures.Count == 0)
+            {
+                ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+            }
+
+            throw new AggregateException(
+                "Central test execution failed and cleanup reported failure(s).",
+                new[] { primaryFailure }.Concat(cleanupFailures));
+        }
+
+        if (cleanupFailures.Count == 1)
+        {
+            ExceptionDispatchInfo.Capture(cleanupFailures.Single()).Throw();
+        }
+        if (cleanupFailures.Count > 1)
+        {
+            throw new AggregateException(
+                "Central test cleanup encountered multiple failures.",
+                cleanupFailures);
         }
     }
 

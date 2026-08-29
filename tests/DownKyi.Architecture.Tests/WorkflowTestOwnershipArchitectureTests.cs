@@ -11,17 +11,20 @@ public sealed class WorkflowTestOwnershipArchitectureTests
     private static readonly string[] ForbiddenWorkflowGateKeys = ["run", "if", "continue-on-error"];
     private static readonly string[] ForbiddenActionStepKeys = ["if", "continue-on-error"];
     private static readonly string[] ForbiddenRequiredJobKeys = ["if", "continue-on-error"];
+    private static readonly string[] ForbiddenRequiredSuiteJobKeys = ["if", "continue-on-error", "needs"];
 
     [Theory]
-    [InlineData(".github/workflows/quality.yml", "build-test")]
-    [InlineData(".github/workflows/build.yml", "release-gate")]
+    [InlineData(".github/workflows/quality.yml", "build-test", "windows-latest,ubuntu-latest,macos-latest")]
+    [InlineData(".github/workflows/build.yml", "release-gate", "windows-latest,ubuntu-latest,macos-15")]
     public void RequiredRepositorySuiteIsOwnedByTheStructuredTestAction(
         string workflowPath,
-        string jobName)
+        string jobName,
+        string expectedRunners)
     {
+        ArgumentNullException.ThrowIfNull(expectedRunners);
         var workflow = LoadYaml(Path.Combine(RepositoryRoot, workflowPath));
 
-        AssertRequiredSuiteGate(workflow, jobName);
+        AssertRequiredSuiteGate(workflow, jobName, expectedRunners.Split(','));
     }
 
     [Theory]
@@ -51,7 +54,7 @@ public sealed class WorkflowTestOwnershipArchitectureTests
         "build-macos",
         "Run native recovery tooling regressions",
         "./tooling/.github/actions/test-project",
-        "./tooling/tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj",
+        "./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj",
         null)]
     public void RequiredProjectGateIsOwnedByTheStructuredTestAction(
         string workflowPath,
@@ -87,7 +90,10 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             "${{ env.CLI }} ${{ env.VERB }} ${{ env.TEST_DLL }} || true");
 
         Assert.Throws<InvalidDataException>(() =>
-            AssertRequiredSuiteGate(workflow, "build-test"));
+            AssertRequiredSuiteGate(
+                workflow,
+                "build-test",
+                ["windows-latest", "ubuntu-latest", "macos-latest"]));
     }
 
     [Fact]
@@ -130,7 +136,124 @@ public sealed class WorkflowTestOwnershipArchitectureTests
         job.Add("if", "${{ false }}");
 
         Assert.Throws<InvalidDataException>(() =>
-            AssertRequiredSuiteGate(workflow, "build-test"));
+            AssertRequiredSuiteGate(
+                workflow,
+                "build-test",
+                ["windows-latest", "ubuntu-latest", "macos-latest"]));
+    }
+
+    [Fact]
+    public void RequiredSuiteOwnerJobCannotDependOnASkippableJob()
+    {
+        var workflow = LoadYaml(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "workflows",
+            "build.yml"));
+        var jobs = RequireMapping(workflow, "jobs");
+        RequireMapping(jobs, "release-gate").Add("needs", "external-assets-preflight");
+
+        Assert.Throws<InvalidDataException>(() =>
+            AssertRequiredSuiteGate(
+                workflow,
+                "release-gate",
+                ["windows-latest", "ubuntu-latest", "macos-15"]));
+    }
+
+    [Fact]
+    public void RequiredSuiteOwnerRejectsReducedRunnerMatrix()
+    {
+        var workflow = LoadYaml(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "workflows",
+            "quality.yml"));
+        var jobs = RequireMapping(workflow, "jobs");
+        var job = RequireMapping(jobs, "build-test");
+        var runners = RequireSequence(RequireMapping(RequireMapping(job, "strategy"), "matrix"), "os");
+        runners.Children.RemoveAt(runners.Children.Count - 1);
+
+        Assert.Throws<InvalidDataException>(() =>
+            AssertRequiredSuiteGate(
+                workflow,
+                "build-test",
+                ["windows-latest", "ubuntu-latest", "macos-latest"]));
+    }
+
+    [Fact]
+    public void RequiredSuiteSchedulingMutationProfileFailsClosed()
+    {
+        var workflow = LoadYaml(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "workflows",
+            "build.yml"));
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(
+                    "DOWNKYI_TEST_MUTATE_CENTRAL_REQUIRED_SUITE_SCHEDULING"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            RequireMapping(RequireMapping(workflow, "jobs"), "release-gate")
+                .Add("needs", "external-assets-preflight");
+        }
+
+        AssertRequiredSuiteGate(
+            workflow,
+            "release-gate",
+            ["windows-latest", "ubuntu-latest", "macos-15"]);
+    }
+
+    [Fact]
+    public void RecoveryProjectPathResolvesInsideNestedToolingCheckout()
+    {
+        var workflow = LoadYaml(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "workflows",
+            "release-v112-recovery.yml"));
+        var step = FindUniqueStep(workflow, "build-macos", "Run native recovery tooling regressions");
+        var inputs = RequireMapping(step, "with");
+        var repositoryInput = RequireScalar(inputs, "repository-root");
+        var projectInput = RequireScalar(inputs, "project-path");
+        var workspace = Path.Combine(Path.GetTempPath(), $"downkyi-recovery-path-{Guid.NewGuid():N}");
+        try
+        {
+            var nestedRepository = Path.GetFullPath(repositoryInput, workspace);
+            var expectedProject = Path.Combine(
+                nestedRepository,
+                "tests",
+                "DownKyi.MacOS.Tests",
+                "DownKyi.MacOS.Tests.csproj");
+            Directory.CreateDirectory(Path.GetDirectoryName(expectedProject)!);
+            File.WriteAllText(expectedProject, "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+            var options = new DownKyi.CentralTestRunner.CentralTestProjectOptions(
+                nestedRepository,
+                projectInput,
+                "Release",
+                noRestore: false,
+                noBuild: false,
+                resultsDirectory: null,
+                trxName: null,
+                classNames: null,
+                filter: null,
+                executionTimeoutSeconds: 30);
+
+            Assert.Equal(Path.GetFullPath(expectedProject), options.ProjectPath);
+            Assert.True(File.Exists(options.ProjectPath));
+            Assert.DoesNotContain(
+                $"tooling{Path.DirectorySeparatorChar}tooling",
+                options.ProjectPath,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(workspace))
+            {
+                Directory.Delete(workspace, recursive: true);
+            }
+        }
     }
 
     [Fact]
@@ -254,10 +377,37 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             command.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 
-    private static void AssertRequiredSuiteGate(YamlMappingNode workflow, string jobName)
+    private static void AssertRequiredSuiteGate(
+        YamlMappingNode workflow,
+        string jobName,
+        IReadOnlyList<string> expectedRunners)
     {
         var step = FindUniqueStep(workflow, jobName, "Test");
         AssertStructuredGate(step, TestSolutionAction);
+        var jobs = RequireMapping(workflow, "jobs");
+        var job = RequireMapping(jobs, jobName);
+        AssertNoBypassControls(job, ForbiddenRequiredSuiteJobKeys);
+        if (!string.Equals(RequireScalar(job, "runs-on"), "${{ matrix.os }}", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The required suite owner must run directly on matrix.os.");
+        }
+
+        var matrix = RequireMapping(RequireMapping(job, "strategy"), "matrix");
+        if (matrix.Children.Count != 1)
+        {
+            throw new InvalidDataException(
+                "The required suite owner matrix may contain only the authoritative os axis.");
+        }
+
+        var actualRunners = RequireSequence(matrix, "os").Children
+            .OfType<YamlScalarNode>()
+            .Select(node => node.Value ?? string.Empty)
+            .ToArray();
+        if (!actualRunners.SequenceEqual(expectedRunners, StringComparer.Ordinal))
+        {
+            throw new InvalidDataException(
+                "The required suite owner runner matrix was reduced or changed.");
+        }
     }
 
     private static void AssertRequiredProjectGate(

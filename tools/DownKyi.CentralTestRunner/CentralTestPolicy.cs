@@ -40,7 +40,9 @@ public static class CentralTestPolicy
     public static IReadOnlyList<string> ReadProjectPlatforms(string projectPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectPath);
-        var project = XDocument.Load(Path.GetFullPath(projectPath));
+        var canonicalProject = Path.GetFullPath(projectPath);
+        var diagnosticProject = Path.GetFileName(canonicalProject);
+        var project = XDocument.Load(canonicalProject);
         var declarations = project
             .Descendants()
             .Where(element => element.Name.LocalName == "DownKyiTestPlatforms" &&
@@ -50,14 +52,14 @@ public static class CentralTestPolicy
         if (declarations.Length != 1)
         {
             throw new InvalidOperationException(
-                $"Test project must declare exactly one unconditional DownKyiTestPlatforms value: {Path.GetFullPath(projectPath)}");
+                $"Test project must declare exactly one unconditional DownKyiTestPlatforms value: {diagnosticProject}");
         }
 
         var tokens = declarations[0].Value.Split(';');
         if (tokens.Length == 0 || tokens.Any(string.IsNullOrWhiteSpace))
         {
             throw new InvalidOperationException(
-                $"DownKyiTestPlatforms contains an empty platform in {Path.GetFullPath(projectPath)}.");
+                $"DownKyiTestPlatforms contains an empty platform in {diagnosticProject}.");
         }
 
         var platforms = tokens.Select(token => token.Trim()).ToArray();
@@ -66,13 +68,13 @@ public static class CentralTestPolicy
             if (!AllowedPlatforms.Contains(platform, StringComparer.Ordinal))
             {
                 throw new InvalidOperationException(
-                    $"Unsupported DownKyiTestPlatforms value '{platform}' in {Path.GetFullPath(projectPath)}. Allowed values: {string.Join(", ", AllowedPlatforms)}.");
+                    $"Unsupported DownKyiTestPlatforms value '{platform}' in {diagnosticProject}. Allowed values: {string.Join(", ", AllowedPlatforms)}.");
             }
         }
         if (platforms.Distinct(StringComparer.Ordinal).Count() != platforms.Length)
         {
             throw new InvalidOperationException(
-                $"Duplicate DownKyiTestPlatforms value in {Path.GetFullPath(projectPath)}.");
+                $"Duplicate DownKyiTestPlatforms value in {diagnosticProject}.");
         }
 
         return new ReadOnlyCollection<string>(platforms);
@@ -108,7 +110,9 @@ public static class CentralTestPolicy
         var policyPath = Path.Combine(root, "docs", "testing", "test-runner-policy.json");
         if (!File.Exists(policyPath))
         {
-            throw new FileNotFoundException("Test runner policy is missing.", policyPath);
+            throw new FileNotFoundException(
+                "Test runner policy is missing.",
+                "docs/testing/test-runner-policy.json");
         }
 
         using var document = JsonDocument.Parse(File.ReadAllText(policyPath));

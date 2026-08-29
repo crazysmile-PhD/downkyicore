@@ -37,6 +37,111 @@ public sealed class CentralTestRunnerOwnershipTests
         }
     }
 
+    [Theory]
+    [InlineData(
+        (int)CentralTestRunnerMutation.FailAuthorizationBeforeCompletion,
+        "Injected central test authorization failure.")]
+    [InlineData(
+        (int)CentralTestRunnerMutation.FailExecutionAfterAuthorization,
+        "Injected central test execution failure.")]
+    public async Task PrimaryFailurePrecedesLeaseAndTemporaryDirectoryCleanupFailures(
+        int primaryMutationValue,
+        string expectedPrimaryMessage)
+    {
+        var options = new CentralTestProjectOptions(
+            RepositoryRoot,
+            ProjectPath,
+            "Release",
+            noRestore: true,
+            noBuild: true,
+            resultsDirectory: null,
+            trxName: null,
+            [typeof(CentralTestRunnerBlockingFixture).FullName!],
+            filter: null,
+            executionTimeoutSeconds: 20);
+        var mutation = (CentralTestRunnerMutation)primaryMutationValue |
+                       CentralTestRunnerMutation.FailLeaseCleanup |
+                       CentralTestRunnerMutation.FailTemporaryResultsCleanup;
+
+        var failure = await Assert.ThrowsAsync<AggregateException>(
+                () => CentralTestOrchestrator.RunProjectForTestingAsync(
+                    options,
+                    mutation,
+                    TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+
+        Assert.Equal(3, failure.InnerExceptions.Count);
+        Assert.Equal(expectedPrimaryMessage, failure.InnerExceptions[0].Message);
+        Assert.Equal(
+            "Injected owned process lease cleanup failure.",
+            failure.InnerExceptions[1].Message);
+        Assert.Equal(
+            "Injected temporary TRX directory cleanup failure.",
+            failure.InnerExceptions[2].Message);
+    }
+
+    [Fact]
+    public async Task TemporaryDirectoryCleanupFailureIsPrimaryAfterSuccessfulExecution()
+    {
+        var options = new CentralTestProjectOptions(
+            RepositoryRoot,
+            ProjectPath,
+            "Release",
+            noRestore: true,
+            noBuild: true,
+            resultsDirectory: null,
+            trxName: null,
+            [typeof(CentralTestRunnerBlockingFixture).FullName!],
+            filter: null,
+            executionTimeoutSeconds: 20);
+
+        var failure = await Assert.ThrowsAsync<IOException>(
+                () => CentralTestOrchestrator.RunProjectForTestingAsync(
+                    options,
+                    CentralTestRunnerMutation.FailTemporaryResultsCleanup,
+                    TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+
+        Assert.Equal("Injected temporary TRX directory cleanup failure.", failure.Message);
+    }
+
+    [Fact]
+    public async Task NormalAndExceptionalProjectDiagnosticsDoNotExposeCheckoutPaths()
+    {
+        using var output = new ScopedConsoleOutput();
+        CentralTestOrchestrator.WriteProjectStart(RepositoryRoot, ProjectPath);
+        Assert.Contains(
+            "Testing tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+            output.StandardOutput,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(RepositoryRoot, output.StandardOutput, StringComparison.OrdinalIgnoreCase);
+
+        var siblingProject = Path.Combine(
+            Directory.GetParent(RepositoryRoot)!.FullName,
+            "sibling-checkout",
+            "Missing.Tests.csproj");
+        var options = new CentralTestProjectOptions(
+            RepositoryRoot,
+            siblingProject,
+            "Release",
+            noRestore: true,
+            noBuild: true,
+            resultsDirectory: null,
+            trxName: null,
+            classNames: null,
+            filter: null,
+            executionTimeoutSeconds: 20);
+
+        var failure = await Assert.ThrowsAsync<FileNotFoundException>(
+                () => CentralTestOrchestrator.RunProjectAsync(
+                    options,
+                    TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+        Assert.Contains("../sibling-checkout/Missing.Tests.csproj", failure.FileName, StringComparison.Ordinal);
+        Assert.DoesNotContain(RepositoryRoot, failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(RepositoryRoot, failure.FileName, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task HungTestChildUsesTheLeaseDeadlineAndIsReaped()
     {
@@ -162,7 +267,10 @@ public sealed class CentralTestRunnerOwnershipTests
         await using var leaseScope = lease.ConfigureAwait(false);
         try
         {
-            await authorization.CompleteAsync(budget, TestContext.Current.CancellationToken)
+            await authorization.CompleteAsync(
+                    budget,
+                    lease.TargetExitedToken,
+                    TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
             var processId = await ReadReadyProcessIdAsync(readyPath).ConfigureAwait(true);
             lease.CloseOwnerLifetimeForTesting();

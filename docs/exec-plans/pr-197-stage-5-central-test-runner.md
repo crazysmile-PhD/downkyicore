@@ -1,8 +1,8 @@
 # PR #197 Stage 5 Central Test Runner
 
-Status: stopped at the Stage 5 scope boundary after exact-head native evidence;
-implementation checkpoint open. Required CI is not all green and same-head
-review is not authorized.
+Status: same-head review remediation implementation complete; full validation,
+commit, exact-head required CI and same-head review remain open. Stage 5 is not
+closed and Stage 6 is not started.
 
 Starting authority:
 `dd6364b7e713d3b3c81efd739821cc7e0baafe86` on
@@ -425,6 +425,54 @@ an empty final unexpected-member set and ordinary owned-tree quiescence. Until
 that evidence exists, this independent checkpoint is implementation-complete
 but validation-open. Stage 5 remains an open checkpoint, no same-head review is
 requested and Stage 6 remains deferred.
+
+## Same-Head Review Remediation Checkpoint
+
+The remediation starts after the independent DKYI1001 exact-path commit from
+starting head `6d4aae44bedf1d6dfadac43007dad480c2e9be5b`. It remains Stage 5 work and
+does not start Stage 6.
+
+The unresolved non-outdated review set established nine in-scope causes. The
+implementation resolves them through existing owners:
+
+- required suite jobs have no optional/skippable `needs` predecessor and their
+  exact Windows/Linux/macOS matrices are executable architecture invariants;
+- direct `script/test-solution.ps1` enters the shared delegated Linux scope
+  before loading the runner, with no PID/process enumeration fallback;
+- recovery `project-path` is relative to the nested `tooling` repository root,
+  with a temporary nested-checkout executable resolution proof;
+- recovery trust inputs come from one recursive MSBuild project/compiled-item
+  derivation. The old partial source registry is removed; a real compiled
+  ProcessSupervision input changed after a simulated validated head is rejected
+  by the workflow's exact Git-diff authority;
+- authorization completion observes `OwnedProcessLease.TargetExitedToken`, so
+  pre-handshake target exit promptly enters the existing operation budget's
+  cleanup/failure path without another deadline or PID polling;
+- the central orchestrator reuses the repository's primary-first aggregation
+  model: causal authorization/test failures precede separately retained lease,
+  authorization and temporary-TRX cleanup failures;
+- canonical absolute paths remain internal, while normal and exceptional
+  project diagnostics render repository-relative `/` paths and do not expose a
+  sibling checkout root.
+
+Local validation produced:
+
+- focused authorization, orchestration, workflow, recovery and action proof:
+  56/56 passed;
+- six new relevant mutation profiles: each owning class failed exactly one
+  expected test;
+- full Architecture: 378/378 passed;
+- review-invariant gate: 13 invariants, seven normal projects, 406 normal tests
+  and 31 adversarial proofs passed;
+- strict macOS-test, Architecture-test and solution Release builds: zero
+  warnings and zero errors;
+- one-assembly lifecycle sanity: 663 ownership matches / zero violations, one
+  assembly, six phases and zero failures;
+- recovery workflow architecture/project/trust proof: 49/49 passed.
+
+Formatting, final diff validation, commit and exact-head CI/review closure are
+still pending. The already-correct Linux cgroup `/` root review thread requires
+an evidence reply and resolution without another code change.
 
 ## Commits And Closure
 

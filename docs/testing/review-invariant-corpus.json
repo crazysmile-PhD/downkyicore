@@ -208,7 +208,9 @@
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.CentralTestAuthorizationTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.CentralTestRunnerMutationTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.CentralTestRunnerOwnershipTests" },
-        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.TestRunnerPolicyArchitectureTests" }
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.CiTestActionBehaviorTests" },
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.TestRunnerPolicyArchitectureTests" },
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.WorkflowTestOwnershipArchitectureTests" }
       ],
       "proofRequirements": [
         "adversarial-mutation"
@@ -300,6 +302,60 @@
           "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
           "class": "DownKyi.Architecture.Tests.CentralTestRunnerMutationTests",
           "environmentVariable": "DOWNKYI_TEST_MUTATE_CENTRAL_LINUX_FALLBACK",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CentralTestRunnerMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CENTRAL_TARGET_EXIT_AUTHORITY",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CentralTestRunnerMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CENTRAL_PRIMARY_CLEANUP_ORDER",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CentralTestRunnerMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CENTRAL_ABSOLUTE_DIAGNOSTICS",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CentralTestRunnerMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CENTRAL_DIRECT_LINUX_SCOPE",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.WorkflowTestOwnershipArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CENTRAL_REQUIRED_SUITE_SCHEDULING",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.TestRunnerPolicyArchitectureTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CENTRAL_RECOVERY_TRUST_CLOSURE",
           "environmentValue": "1",
           "expectedOutcome": "test-failure",
           "expectedFailedTests": 1

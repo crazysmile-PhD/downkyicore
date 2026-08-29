@@ -1905,6 +1905,7 @@ function Invoke-IsolatedProcess {
             Complete-DownKyiTestProcessAuthorization `
                 -Authorization $authorization `
                 -Budget $budget `
+                -TargetExitedToken $lease.TargetExitedToken `
                 -CancellationToken $CancellationToken
         }
         $processId = $lease.TargetProcessId

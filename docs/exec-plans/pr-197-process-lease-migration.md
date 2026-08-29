@@ -1266,6 +1266,22 @@ project compiled in both Release and Debug with zero warnings and zero errors.
 This checkpoint must remain a separate commit from the following Stage 5
 review remediation and does not independently trigger or close exact-head CI.
 
+### Stage 5 Same-Head Review Remediation
+
+The authorized remediation continues immediately after the independent
+DKYI1001 commit. It keeps `OwnedProcessLease` as the sole test-child owner and
+`TransitionBudget` as the sole deadline owner while closing the nine in-scope
+same-head findings: required-suite scheduling and exact OS matrices, direct
+Linux solution delegation, nested recovery project resolution, one MSBuild-
+derived recovery trust closure, target-exit-aware authorization completion,
+primary-first cleanup aggregation and repository-relative diagnostics.
+
+Focused proof is green; full validation, the separate Stage 5 remediation
+commit, one normal push, naturally triggered exact-head required CI and a clean
+same-head `@codex review` remain mandatory. The existing Linux cgroup `/` root
+thread is resolved from current executable evidence without code changes.
+Stage 5 remains open and Stage 6 remains not started.
+
 ## Stage 6: Legacy Removal
 
 Remove remaining duplicate start, wait, kill, reap, timeout and process-identity

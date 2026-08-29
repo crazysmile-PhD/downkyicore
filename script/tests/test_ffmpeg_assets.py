@@ -270,7 +270,12 @@ class FfmpegAssetsTests(unittest.TestCase):
         self.assertIn("needs.ffmpeg-tooling.result == 'success'", build)
         self.assertIn("github.event_name != 'pull_request'", build)
         self.assertIn("needs.detect-production-manifest-change.outputs.external_assets == 'true'", build)
-        self.assertIn("needs: external-assets-preflight", build)
+        self.assertNotIn("needs: external-assets-preflight", build)
+        self.assertIn(
+            "needs: [external-assets-preflight, release-gate, assembly-lifecycle-release]",
+            build,
+        )
+        self.assertIn("needs.external-assets-preflight.result == 'success'", build)
 
     def test_workflow_authority_requires_same_branch_checkout_and_manifest_base(self) -> None:
         ffmpeg_assets.validate_workflow_authority(

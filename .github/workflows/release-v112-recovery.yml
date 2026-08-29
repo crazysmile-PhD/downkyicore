@@ -75,6 +75,10 @@ jobs:
         run: >
           ./tooling/script/resolve-v112-macos-trust.ps1
           -GitHubOutputPath $env:GITHUB_OUTPUT
+      - name: Install .NET for recovery trust derivation
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
       - name: Validate prior Build gate
         shell: bash
         run: |
@@ -101,7 +105,7 @@ jobs:
             exit 1
           fi
           runner_trust_input_lines="$(
-            pwsh -NoProfile -Command ". './tooling/script/test-project-runner.ps1'; Get-DownKyiTestRunnerTrustInputs"
+            pwsh -NoProfile -Command ". './tooling/script/test-project-runner.ps1'; Get-DownKyiTestRunnerTrustInputs -RepositoryRoot './tooling' -ProjectPath './tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj'"
           )"
           if [[ -z "$runner_trust_input_lines" ]]; then
             echo "::error::The central test runner declared no release trust inputs."
@@ -122,11 +126,6 @@ jobs:
             script/macos/sign-dmg.sh
             script/macos/verify-dmg.sh
             script/macos/verify-dmg-contents.sh
-            tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
-            tests/DownKyi.MacOS.Tests/MacBundleLayoutTests.cs
-            tests/DownKyi.MacOS.Tests/MacSigningScriptTests.cs
-            tools/DownKyi.ArchitectureAnalyzers/DownKyi.ArchitectureAnalyzers.csproj
-            tools/DownKyi.ArchitectureAnalyzers/GlobalSqlitePoolCleanupAnalyzer.cs
             "$runner_trust_provider"
           )
           critical_paths+=("${runner_trust_inputs[@]}")
@@ -411,7 +410,7 @@ jobs:
         uses: ./tooling/.github/actions/test-project
         with:
           repository-root: ./tooling
-          project-path: ./tooling/tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
+          project-path: ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
       - name: Install Python
         uses: actions/setup-python@v6
         with:

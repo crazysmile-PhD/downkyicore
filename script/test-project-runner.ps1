@@ -1,28 +1,128 @@
 function Get-DownKyiTestRunnerTrustInputs {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
 
-    return @(
+        [Parameter(Mandatory)]
+        [string]$ProjectPath
+    )
+
+    $root = [IO.Path]::GetFullPath($RepositoryRoot)
+    $rootPrefix = $root.TrimEnd(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    $pathComparison = if ($IsWindows) {
+        [StringComparison]::OrdinalIgnoreCase
+    }
+    else {
+        [StringComparison]::Ordinal
+    }
+    $pathComparer = if ($IsWindows) {
+        [StringComparer]::OrdinalIgnoreCase
+    }
+    else {
+        [StringComparer]::Ordinal
+    }
+    $tracked = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($path in @(& git -C $root ls-files)) {
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not enumerate tracked recovery trust inputs."
+        }
+        $null = $tracked.Add(([string]$path).Replace("\", "/"))
+    }
+
+    function ConvertTo-DownKyiTrackedRepositoryPath {
+        param(
+            [Parameter(Mandatory)]
+            [string]$FullPath,
+            [Parameter(Mandatory)]
+            [string]$InputKind
+        )
+
+        $canonical = [IO.Path]::GetFullPath($FullPath)
+        if (-not $canonical.StartsWith($rootPrefix, $pathComparison)) {
+            throw "Recovery $InputKind escapes the repository trust root."
+        }
+        $relative = [IO.Path]::GetRelativePath($root, $canonical).Replace("\", "/")
+        if (-not $tracked.Contains($relative)) {
+            throw "Recovery $InputKind is not tracked by the validated repository head: $relative"
+        }
+        return $relative
+    }
+
+    $inputs = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $projects = [Collections.Generic.Queue[string]]::new()
+    $visitedProjects = [Collections.Generic.HashSet[string]]::new($pathComparer)
+    $projects.Enqueue([IO.Path]::GetFullPath(
+        "tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj",
+        $root))
+    $projects.Enqueue([IO.Path]::GetFullPath($ProjectPath, $root))
+
+    while ($projects.Count -gt 0) {
+        $project = $projects.Dequeue()
+        if (-not $visitedProjects.Add($project)) {
+            continue
+        }
+        $null = $inputs.Add((ConvertTo-DownKyiTrackedRepositoryPath `
+            -FullPath $project `
+            -InputKind "project"))
+
+        $evaluation = & dotnet msbuild $project -nologo `
+            "-getItem:Compile,ProjectReference,AdditionalFiles,EmbeddedResource" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not derive the compiled recovery trust closure for $($inputs | Sort-Object | Select-Object -Last 1)."
+        }
+        try {
+            $items = ($evaluation | Out-String | ConvertFrom-Json -ErrorAction Stop).Items
+        }
+        catch {
+            throw "MSBuild did not return an authoritative recovery trust closure."
+        }
+
+        foreach ($itemKind in @("Compile", "AdditionalFiles", "EmbeddedResource")) {
+            foreach ($item in @($items.$itemKind)) {
+                $null = $inputs.Add((ConvertTo-DownKyiTrackedRepositoryPath `
+                    -FullPath $item.FullPath `
+                    -InputKind $itemKind))
+                if ($null -ne $item.DefiningProjectFullPath -and
+                    ([IO.Path]::GetFullPath([string]$item.DefiningProjectFullPath)).StartsWith(
+                        $rootPrefix,
+                        $pathComparison)) {
+                    $null = $inputs.Add((ConvertTo-DownKyiTrackedRepositoryPath `
+                        -FullPath $item.DefiningProjectFullPath `
+                        -InputKind "$itemKind defining project"))
+                }
+            }
+        }
+        foreach ($reference in @($items.ProjectReference)) {
+            $referencePath = [IO.Path]::GetFullPath([string]$reference.FullPath)
+            $null = ConvertTo-DownKyiTrackedRepositoryPath `
+                -FullPath $referencePath `
+                -InputKind "project reference"
+            $projects.Enqueue($referencePath)
+        }
+    }
+
+    foreach ($controlInput in @(
+        ".editorconfig"
         ".github/actions/test-project/action.yml"
         ".github/actions/test-solution/action.yml"
-        "script/invoke-ci-test-action.ps1"
         "Directory.Build.props"
         "Directory.Build.targets"
         "Directory.Packages.props"
-        "global.json"
         "docs/testing/test-runner-policy.json"
-        "tests/CentralTestExecutionGuard.cs"
-        "tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj"
-        "tools/DownKyi.CentralTestRunner/CentralTestAuthorization.cs"
-        "tools/DownKyi.CentralTestRunner/CentralTestContracts.cs"
-        "tools/DownKyi.CentralTestRunner/CentralTestExecutionValidator.cs"
-        "tools/DownKyi.CentralTestRunner/CentralTestPolicy.cs"
-        "tools/DownKyi.CentralTestRunner/CentralTestRunner.cs"
-        "tools/DownKyi.ProcessSupervision/DownKyi.ProcessSupervision.csproj"
-        "tools/DownKyi.ProcessSupervision/OwnedProcessLease.cs"
-        "tools/DownKyi.ProcessSupervision/ProcessSupervisionContracts.cs"
-        "tools/DownKyi.ProcessSupervision/SupervisorHost.cs"
-    )
+        "global.json"
+        "script/invoke-ci-test-action.ps1"
+        "script/test-project-runner.ps1"
+    )) {
+        if (-not $tracked.Contains($controlInput)) {
+            throw "Recovery control-plane trust input is not tracked: $controlInput"
+        }
+        $null = $inputs.Add($controlInput)
+    }
+
+    return @($inputs | Sort-Object)
 }
 
 function Import-DownKyiCentralTestRunner {
@@ -190,11 +290,13 @@ function Complete-DownKyiTestProcessAuthorization {
         [DownKyi.CentralTestRunner.CentralTestAuthorization]$Authorization,
         [Parameter(Mandatory)]
         [DownKyi.ProcessSupervision.TransitionBudget]$Budget,
+        [Parameter(Mandatory)]
+        [Threading.CancellationToken]$TargetExitedToken,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
 
-    $Authorization.CompleteAsync($Budget, $CancellationToken).
+    $Authorization.CompleteAsync($Budget, $TargetExitedToken, $CancellationToken).
         GetAwaiter().GetResult()
 }
 

@@ -101,7 +101,6 @@ jobs:
   release-gate:
     name: Release gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: external-assets-preflight
     strategy:
       fail-fast: false
       matrix:
@@ -139,7 +138,6 @@ jobs:
   assembly-lifecycle-release:
     name: Assembly lifecycle release gate
     runs-on: windows-latest
-    needs: external-assets-preflight
     timeout-minutes: 180
     steps:
       - name: Checkout
@@ -184,8 +182,8 @@ jobs:
   changelog:
     name: Generate changelog
     runs-on: ubuntu-latest
-    needs: [release-gate, assembly-lifecycle-release]
-    if: ${{ always() && needs.release-gate.result == 'success' && needs.assembly-lifecycle-release.result == 'success' }}
+    needs: [external-assets-preflight, release-gate, assembly-lifecycle-release]
+    if: ${{ always() && needs.external-assets-preflight.result == 'success' && needs.release-gate.result == 'success' && needs.assembly-lifecycle-release.result == 'success' }}
     outputs:
       release_body: ${{ steps.git-cliff.outputs.content }}
     steps:

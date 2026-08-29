@@ -109,7 +109,10 @@ public sealed class CentralTestAuthorizationTests
             .ConfigureAwait(true);
         await using var leaseScope = lease.ConfigureAwait(false);
 
-        await authorization.CompleteAsync(budget, TestContext.Current.CancellationToken)
+        await authorization.CompleteAsync(
+                budget,
+                lease.TargetExitedToken,
+                TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
         var outcome = await lease.WaitAsync(TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
@@ -117,6 +120,46 @@ public sealed class CentralTestAuthorizationTests
         Assert.NotEqual(0, outcome.ExitCode);
         Assert.True(outcome.TreeQuiescent);
         Assert.False(File.Exists(paths.TrxPath));
+    }
+
+    [Fact]
+    public async Task AuthoritativeTargetExitEndsAuthorizationBeforeTheOperationBudget()
+    {
+        var paths = CreateInvocation();
+        using var resultCleanup = new ResultDirectoryCleanup(paths.TrxPath);
+        var authorization = CentralTestAuthorization.IssueForTesting(
+            paths.Arguments,
+            RepositoryRoot,
+            CentralTestAuthorizationMutation.None);
+        await using var authorizationScope = authorization.ConfigureAwait(false);
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
+        authorization.ApplyEnvironment(environment);
+        var budget = TransitionBudget.Start(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(5));
+        var lease = await OwnedProcessLease.StartAsync(
+                new LaunchSpec("dotnet", ["--info"], RepositoryRoot, environment, true),
+                budget,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+        var elapsed = Stopwatch.StartNew();
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => authorization.CompleteAsync(
+                    budget,
+                    lease.TargetExitedToken,
+                    TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+        elapsed.Stop();
+        var outcome = await lease.WaitAsync(TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        Assert.Contains("exited before authorization completed", failure.Message, StringComparison.Ordinal);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"Authorization waited {elapsed.Elapsed}.");
+        Assert.True(
+            budget.RemainingOperation > TimeSpan.FromSeconds(5),
+            $"Authorization consumed the operation budget; remaining {budget.RemainingOperation}.");
+        Assert.Equal(0, outcome.ExitCode);
+        Assert.True(outcome.TreeQuiescent);
     }
 
     [Fact]
@@ -172,7 +215,10 @@ public sealed class CentralTestAuthorizationTests
 
         try
         {
-            await authorization.CompleteAsync(budget, TestContext.Current.CancellationToken)
+            await authorization.CompleteAsync(
+                    budget,
+                    lease.TargetExitedToken,
+                    TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
         }
         catch (IOException) when (mutation == CentralTestAuthorizationMutation.Replay)

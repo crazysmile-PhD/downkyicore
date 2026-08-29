@@ -89,6 +89,7 @@ public sealed class CentralTestAuthorization : IAsyncDisposable, IDisposable
 
     public async Task CompleteAsync(
         TransitionBudget budget,
+        CancellationToken targetExitedToken,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(budget);
@@ -98,13 +99,16 @@ public sealed class CentralTestAuthorization : IAsyncDisposable, IDisposable
                 "Repository test process authorization was already completed.");
         }
 
+        using var completion = CancellationTokenSource.CreateLinkedTokenSource(
+            targetExitedToken,
+            cancellationToken);
         try
         {
             await WaitWithinBudgetAsync(
-                    _authorization.WaitForConnectionAsync(cancellationToken),
+                    _authorization.WaitForConnectionAsync(completion.Token),
                     budget,
                     "The repository test process did not connect to its authorization endpoint before the operation deadline.",
-                    cancellationToken)
+                    completion.Token)
                 .ConfigureAwait(false);
 
             var frame = CreateFrame();
@@ -116,7 +120,7 @@ public sealed class CentralTestAuthorization : IAsyncDisposable, IDisposable
                     payload,
                     budget,
                     "The repository test authorization payload exceeded the operation deadline.",
-                    cancellationToken)
+                    completion.Token)
                 .ConfigureAwait(false);
             if (_mutation == CentralTestAuthorizationMutation.Replay)
             {
@@ -125,9 +129,17 @@ public sealed class CentralTestAuthorization : IAsyncDisposable, IDisposable
                         frame,
                         budget,
                         "The replayed repository test authorization payload exceeded the operation deadline.",
-                        cancellationToken)
+                        completion.Token)
                     .ConfigureAwait(false);
             }
+        }
+        catch (OperationCanceledException failure) when (
+            targetExitedToken.IsCancellationRequested &&
+            !cancellationToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(
+                "The owned repository test process exited before authorization completed.",
+                failure);
         }
         finally
         {
@@ -216,7 +228,9 @@ public sealed class CentralTestAuthorization : IAsyncDisposable, IDisposable
                 StringComparer.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"The requested process is not a policy-owned repository test assembly: {requestedAssembly}");
+                "The requested process is not a policy-owned repository test assembly: " +
+                Path.GetRelativePath(Path.GetFullPath(repositoryRoot), requestedAssembly)
+                    .Replace('\\', '/'));
         }
 
         var endpoint = IpcEndpointName.Create("CentralTestAuthorization");

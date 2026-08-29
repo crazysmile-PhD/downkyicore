@@ -13,29 +13,6 @@ public sealed class TestRunnerPolicyArchitectureTests
         .Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
         .Order(StringComparer.Ordinal)
         .ToArray();
-    private static readonly string[] ExpectedRunnerDependencyInputs =
-    [
-        ".github/actions/test-project/action.yml",
-        ".github/actions/test-solution/action.yml",
-        "script/invoke-ci-test-action.ps1",
-        "Directory.Build.props",
-        "Directory.Build.targets",
-        "Directory.Packages.props",
-        "global.json",
-        "docs/testing/test-runner-policy.json",
-        "tests/CentralTestExecutionGuard.cs",
-        "tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj",
-        "tools/DownKyi.CentralTestRunner/CentralTestAuthorization.cs",
-        "tools/DownKyi.CentralTestRunner/CentralTestContracts.cs",
-        "tools/DownKyi.CentralTestRunner/CentralTestExecutionValidator.cs",
-        "tools/DownKyi.CentralTestRunner/CentralTestPolicy.cs",
-        "tools/DownKyi.CentralTestRunner/CentralTestRunner.cs",
-        "tools/DownKyi.ProcessSupervision/DownKyi.ProcessSupervision.csproj",
-        "tools/DownKyi.ProcessSupervision/OwnedProcessLease.cs",
-        "tools/DownKyi.ProcessSupervision/ProcessSupervisionContracts.cs",
-        "tools/DownKyi.ProcessSupervision/SupervisorHost.cs"
-    ];
-
     [Fact]
     public void EveryRepositoryTestProjectUsesTheCentralInProcessRunner()
     {
@@ -95,10 +72,30 @@ public sealed class TestRunnerPolicyArchitectureTests
     {
         var result = RunPowerShell(
             ". ./script/test-project-runner.ps1; " +
-            "@(Get-DownKyiTestRunnerTrustInputs) | ConvertTo-Json -Compress");
+            "@(Get-DownKyiTestRunnerTrustInputs -RepositoryRoot . " +
+            "-ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj) " +
+            "| ConvertTo-Json -Compress");
         Assert.Equal(0, result.ExitCode);
-        var inputs = JsonSerializer.Deserialize<string[]>(result.Output.Trim());
-        Assert.Equal(ExpectedRunnerDependencyInputs, inputs);
+        var inputs = JsonSerializer.Deserialize<string[]>(result.Output.Trim())
+            ?? throw new InvalidDataException("Recovery trust derivation returned no inputs.");
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("DOWNKYI_TEST_MUTATE_CENTRAL_RECOVERY_TRUST_CLOSURE"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            inputs = inputs.Where(input => !string.Equals(
+                    input,
+                    "tools/DownKyi.ProcessSupervision/PlatformProcessContainment.cs",
+                    StringComparison.Ordinal))
+                .ToArray();
+        }
+        Assert.Equal(inputs.Order(StringComparer.Ordinal), inputs);
+        Assert.Equal(inputs.Distinct(StringComparer.Ordinal), inputs);
+        Assert.Contains("tests/CentralTestExecutionGuard.cs", inputs);
+        Assert.Contains("tools/DownKyi.ArchitectureAnalyzers/GlobalSqlitePoolCleanupAnalyzer.cs", inputs);
+        Assert.Contains("tools/DownKyi.ProcessSupervision/PlatformProcessContainment.cs", inputs);
+        Assert.Contains("tools/DownKyi.ProcessSupervision/MacProcessGroupContainmentLease.cs", inputs);
+        Assert.Contains("tools/DownKyi.ProcessSupervision/IpcEndpointName.cs", inputs);
 
         var recovery = Read(".github/workflows/release-v112-recovery.yml");
         var providerAnchor = recovery.IndexOf(
@@ -108,6 +105,73 @@ public sealed class TestRunnerPolicyArchitectureTests
             "Get-DownKyiTestRunnerTrustInputs",
             StringComparison.Ordinal);
         Assert.True(providerAnchor >= 0 && providerAnchor < providerInvocation);
+    }
+
+    [Fact]
+    public void RecoveryRejectsACompiledTransitiveInputChangedAfterValidatedHead()
+    {
+        const string transitiveInput =
+            "tools/DownKyi.ProcessSupervision/PlatformProcessContainment.cs";
+        var derivation = RunPowerShell(
+            ". ./script/test-project-runner.ps1; " +
+            "@(Get-DownKyiTestRunnerTrustInputs -RepositoryRoot . " +
+            "-ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj) " +
+            "| ConvertTo-Json -Compress");
+        Assert.Equal(0, derivation.ExitCode);
+        var inputs = JsonSerializer.Deserialize<string[]>(derivation.Output.Trim())
+            ?? throw new InvalidDataException("Recovery trust derivation returned no inputs.");
+        Assert.Contains(transitiveInput, inputs);
+
+        var repository = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-recovery-trust-{Guid.NewGuid():N}");
+        var sourcePath = Path.Combine(
+            repository,
+            transitiveInput.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(sourcePath)!);
+        try
+        {
+            File.Copy(Path.Combine(RepositoryRoot, transitiveInput), sourcePath);
+            Assert.Equal(0, RunGit(repository, "init").ExitCode);
+            Assert.Equal(0, RunGit(repository, "config", "user.email", "recovery-proof@downkyi.invalid").ExitCode);
+            Assert.Equal(0, RunGit(repository, "config", "user.name", "Recovery Proof").ExitCode);
+            Assert.Equal(0, RunGit(repository, "add", "--", transitiveInput).ExitCode);
+            Assert.Equal(0, RunGit(repository, "commit", "-m", "validated head").ExitCode);
+            var validatedHead = RunGit(repository, "rev-parse", "HEAD");
+            Assert.Equal(0, validatedHead.ExitCode);
+
+            File.AppendAllText(sourcePath, Environment.NewLine + "// adversarial post-validation change");
+            Assert.Equal(0, RunGit(repository, "add", "--", transitiveInput).ExitCode);
+            Assert.Equal(0, RunGit(repository, "commit", "-m", "post-validation mutation").ExitCode);
+            var recoveryHead = RunGit(repository, "rev-parse", "HEAD");
+            Assert.Equal(0, recoveryHead.ExitCode);
+
+            var rejected = inputs.Where(input =>
+                    RunGit(
+                        repository,
+                        "diff",
+                        "--quiet",
+                        validatedHead.Output.Trim(),
+                        recoveryHead.Output.Trim(),
+                        "--",
+                        input).ExitCode != 0)
+                .ToArray();
+            Assert.Equal([transitiveInput], rejected);
+        }
+        finally
+        {
+            if (Directory.Exists(repository))
+            {
+                foreach (var file in Directory.EnumerateFiles(
+                             repository,
+                             "*",
+                             SearchOption.AllDirectories))
+                {
+                    File.SetAttributes(file, FileAttributes.Normal);
+                }
+                Directory.Delete(repository, recursive: true);
+            }
+        }
     }
 
     [Fact]
@@ -338,7 +402,7 @@ public sealed class TestRunnerPolicyArchitectureTests
         var execution = source[executionStart..buildStart];
 
         Assert.Equal(1, CountOccurrences(execution, "TransitionBudget.Start"));
-        Assert.Contains("authorization.CompleteAsync(budget", execution, StringComparison.Ordinal);
+        Assert.Contains("lease.TargetExitedToken", execution, StringComparison.Ordinal);
         Assert.Contains("OwnedProcessLease.StartAsync", execution, StringComparison.Ordinal);
         Assert.Contains("launchSpec,\n                        budget", execution, StringComparison.Ordinal);
         Assert.DoesNotContain("Stopwatch", execution, StringComparison.Ordinal);
@@ -428,6 +492,27 @@ public sealed class TestRunnerPolicyArchitectureTests
         startInfo.ArgumentList.Add("-NonInteractive");
         startInfo.ArgumentList.Add("-Command");
         startInfo.ArgumentList.Add(command);
+        return BoundedProcessRunner.Run(
+            startInfo,
+            TestContext.Current.CancellationToken);
+    }
+
+    private static BoundedProcessResult RunGit(string workingDirectory, params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
         return BoundedProcessRunner.Run(
             startInfo,
             TestContext.Current.CancellationToken);

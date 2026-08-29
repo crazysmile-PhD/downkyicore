@@ -49,7 +49,7 @@ authorization 不能重用於 class subset，authorization 不能 replay。
 Shared TRX validator 仍是 authoritative result boundary：process exit 0 不會覆蓋
 failed TRX，zero executed tests fail closed，需要證明 selection 的 gate 必須逐一
 確認 expected class 有 executed 與 passed result。Linux CI 在 project/solution
-mode 分支之前只建立既有 delegated-cgroup context；直接執行 review corpus 也必須
+mode 分支之前只建立既有 delegated-cgroup context；直接執行 solution 或 review corpus 也必須
 在載入 runner 前進入相同 delegated scope。實際 containment/membership 仍由
 shared process-supervision owner 完成，沒有 PID/process enumeration fallback。
 `-NoBuild` 只禁止重建選定的 test target；若固定 compiled runner provider 缺席，
@@ -63,6 +63,12 @@ Central runner 遇到 typed lease failure 時必須先輸出已 capture 的 stdo
 再保留原 exception。macOS assembly-end observer 只把額外 process-group member 的
 PID/name 寫入 stderr；它不能 kill、reap、retry 或判定成功，membership/quiescence
 仍只有 `OwnedProcessLease` 一個 authoritative owner。
+Authorization completion 同時觀察同一 lease 的 authoritative target-exit token；child
+在 handshake 前退出時立即進入既有 bounded failure/cleanup path，不建立 PID poll、額外
+deadline 或 timeout。Authorization/test primary failure 永遠位於 lease、authorization 與
+temporary-TRX cleanup failure 之前；只有沒有 causal failure 時 cleanup failure 才能成為
+primary。Canonical absolute paths 仍供內部 ownership 使用，普通 project status 與錯誤只
+顯示 repository-relative `/` path，包含 sibling path 也不得洩漏 checkout absolute root。
 MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
 guard，不是可由呼叫者提供 property 的 authorization credential。
 完整 repository suite 與 required project gate 的 workflow step 必須使用結構化的
@@ -70,10 +76,15 @@ guard，不是可由呼叫者提供 property 的 authorization credential。
 command 或 expression 不能取代 accepted test gate。Action 只能將 inputs 映射給
 `script/invoke-ci-test-action.ps1`；這個可執行 boundary 負責參數驗證、中央 runner
 委派與 result validation，並由跨平台 behavioral/mutation tests 防止 action 假綠。
+Required suite owner job 不得以 `needs` 綁在可 skipped 的 optional preflight 上，且其
+`matrix.os` 必須保持 workflow 各自宣告的完整 Windows/Linux/macOS runner set。
 Central runner 仍獨占 runtime authorization 與 result validation。Recovery 先將
 `script/test-project-runner.ps1` 固定為 bootstrap
-trust root，再由 `Get-DownKyiTestRunnerTrustInputs` 宣告 dependency closure；provider
-變更/失敗、空清單或遺失的 declared input 都必須中止 recovery。
+trust root，再由 `Get-DownKyiTestRunnerTrustInputs` 遞迴評估實際 MSBuild `Compile`、
+`ProjectReference`、`AdditionalFiles` 與 resource closure；repository 內任何 compiled
+input 都必須 tracked。Provider 變更/失敗、空清單、untracked/out-of-root input 或任一
+derived dependency 在 validated Build head 後變更都必須中止 recovery。Nested checkout
+的 action project path 永遠相對於 `repository-root`，不能形成 `tooling/tooling/...`。
 
 `DKYI1001` compiler analyzer 以 compilation-resolved method symbol 禁止非 process
 owner 呼叫 `SqliteConnection.ClearAllPools`。它分析並回報 generated code，且必須在

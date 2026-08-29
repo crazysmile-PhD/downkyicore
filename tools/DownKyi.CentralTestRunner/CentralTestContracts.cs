@@ -133,3 +133,13 @@ internal enum CentralTestAuthorizationMutation
     Replay,
     Partial
 }
+
+[Flags]
+internal enum CentralTestRunnerMutation
+{
+    None = 0,
+    FailAuthorizationBeforeCompletion = 1,
+    FailExecutionAfterAuthorization = 2,
+    FailLeaseCleanup = 4,
+    FailTemporaryResultsCleanup = 8
+}

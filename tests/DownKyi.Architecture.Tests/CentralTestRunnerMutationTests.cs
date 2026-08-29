@@ -161,6 +161,7 @@ public sealed class CentralTestRunnerMutationTests
     public void LinuxDelegationCannotFallBackToProcessEnumeration()
     {
         var source = Read("script/invoke-ci-test-action.ps1") +
+                     Read("script/test-solution.ps1") +
                      Read("script/test-review-invariants.ps1") +
                      Read("script/delegated-cgroup-scope.ps1") +
                      Read("tools/DownKyi.ProcessSupervision/LinuxCgroupContainmentLease.cs");
@@ -170,6 +171,76 @@ public sealed class CentralTestRunnerMutationTests
         }
 
         TestRunnerPolicyArchitectureTests.AssertLinuxDelegationHasNoEnumerationFallback(source);
+    }
+
+    [Fact]
+    public void AuthorizationCompletionMustObserveAuthoritativeTargetExit()
+    {
+        var source = Read("tools/DownKyi.CentralTestRunner/CentralTestRunner.cs") +
+                     Read("tools/DownKyi.CentralTestRunner/CentralTestAuthorization.cs") +
+                     Read("script/test-project-runner.ps1") +
+                     Read("script/test-assembly-lifecycle.ps1");
+        if (MutationIsActive("DOWNKYI_TEST_MUTATE_CENTRAL_TARGET_EXIT_AUTHORITY"))
+        {
+            source = source.Replace("lease.TargetExitedToken", "CancellationToken.None", StringComparison.Ordinal);
+        }
+
+        Assert.Contains("lease.TargetExitedToken", source, StringComparison.Ordinal);
+        Assert.Contains("targetExitedToken.IsCancellationRequested", source, StringComparison.Ordinal);
+        Assert.Contains("-TargetExitedToken $lease.TargetExitedToken", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CleanupAggregationCannotPrecedeThePrimaryFailure()
+    {
+        var source = Read("tools/DownKyi.CentralTestRunner/CentralTestRunner.cs");
+        if (MutationIsActive("DOWNKYI_TEST_MUTATE_CENTRAL_PRIMARY_CLEANUP_ORDER"))
+        {
+            source = source.Replace(
+                "new[] { primaryFailure }.Concat(cleanupFailures)",
+                "cleanupFailures.Concat(new[] { primaryFailure })",
+                StringComparison.Ordinal);
+        }
+
+        Assert.Contains(
+            "new[] { primaryFailure }.Concat(cleanupFailures)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("ExceptionDispatchInfo.Capture(primaryFailure).Throw()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RunnerDiagnosticsCannotRenderCanonicalCheckoutPaths()
+    {
+        var source = Read("tools/DownKyi.CentralTestRunner/CentralTestRunner.cs");
+        if (MutationIsActive("DOWNKYI_TEST_MUTATE_CENTRAL_ABSOLUTE_DIAGNOSTICS"))
+        {
+            source += " Testing {project.FullName}";
+        }
+
+        Assert.DoesNotContain("Testing {project.FullName}", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Test project failed: {project}", source, StringComparison.Ordinal);
+        Assert.Contains("FormatRepositoryPath", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DirectSolutionEntryMustAcquireDelegatedScope()
+    {
+        var source = Read("script/test-solution.ps1");
+        if (MutationIsActive("DOWNKYI_TEST_MUTATE_CENTRAL_DIRECT_LINUX_SCOPE"))
+        {
+            source = source.Replace(
+                "if (Test-DownKyiDelegatedCgroupScopeRequired)",
+                "if ($false)",
+                StringComparison.Ordinal);
+        }
+
+        Assert.Contains("if (Test-DownKyiDelegatedCgroupScopeRequired)", source, StringComparison.Ordinal);
+        Assert.Contains("Invoke-DownKyiDelegatedCgroupScope", source, StringComparison.Ordinal);
+        Assert.Contains("ConvertTo-DownKyiPowerShellArgumentList $PSBoundParameters", source, StringComparison.Ordinal);
+        Assert.True(
+            source.IndexOf("Test-DownKyiDelegatedCgroupScopeRequired", StringComparison.Ordinal) <
+            source.IndexOf("test-project-runner.ps1", StringComparison.Ordinal));
     }
 
     private static void WithSyntheticTrx(
