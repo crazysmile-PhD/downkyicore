@@ -38,13 +38,13 @@ public sealed class MacReleasePackageValidationTests
         var runtime = Path.Combine(app, "Contents", "MacOS");
         try
         {
-            var machine = Run("/usr/bin/uname", ["-m"], root).StandardOutput.Trim();
-            var actualRid = machine == "arm64" ? "osx-arm64" : "osx-x64";
-            var oppositeRid = machine == "arm64" ? "osx-x64" : "osx-arm64";
+            const string fixtureArchitecture = "x86_64";
+            const string actualRid = "osx-x64";
+            const string oppositeRid = "osx-arm64";
             var sourceBinary = "/usr/bin/true";
             var sourceArchitectures = Run("/usr/bin/lipo", ["-archs", sourceBinary], root)
                 .StandardOutput.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            Assert.Contains(machine, sourceArchitectures);
+            Assert.Contains(fixtureArchitecture, sourceArchitectures);
             foreach (var relativePath in new[] { "DownKyi", "aria2/aria2c", "ffmpeg/ffmpeg", "ffmpeg/ffprobe" })
             {
                 var path = Path.Combine(runtime, relativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -55,7 +55,7 @@ public sealed class MacReleasePackageValidationTests
                 }
                 else
                 {
-                    Assert.Equal(0, Run("/usr/bin/lipo", [sourceBinary, "-thin", machine, "-output", path], root).ExitCode);
+                    Assert.Equal(0, Run("/usr/bin/lipo", [sourceBinary, "-thin", fixtureArchitecture, "-output", path], root).ExitCode);
                 }
             }
 
