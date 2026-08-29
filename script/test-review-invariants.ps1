@@ -12,6 +12,15 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "delegated-cgroup-scope.ps1")
+
+if (Test-DownKyiDelegatedCgroupScopeRequired) {
+    Invoke-DownKyiDelegatedCgroupScope `
+        -ScriptPath $PSCommandPath `
+        -ArgumentList (ConvertTo-DownKyiPowerShellArgumentList $PSBoundParameters)
+    return
+}
+
 . (Join-Path $PSScriptRoot "test-project-runner.ps1")
 $manifestPath = Join-Path $repositoryRoot "docs/testing/review-invariant-corpus.json"
 $resultRoot = [IO.Path]::GetFullPath((Join-Path $repositoryRoot $ResultsDirectory))

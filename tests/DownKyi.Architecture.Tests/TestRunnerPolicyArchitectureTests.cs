@@ -184,6 +184,19 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
+    public void NoBuildSkipsTheTargetButStillBootstrapsTheCompiledProvider()
+    {
+        var wrapper = Read("script/test-project-runner.ps1");
+
+        Assert.Equal(2, CountOccurrences(wrapper, "-BuildIfMissing `"));
+        Assert.DoesNotContain(
+            "-BuildIfMissing:(-not $NoBuild)",
+            wrapper,
+            StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(wrapper, "[bool]$NoBuild,"));
+    }
+
+    [Fact]
     public void SupervisorHostTransportsButDoesNotAuthorizeRepositoryTests()
     {
         AssertSupervisorTransportOnly(Read("tools/DownKyi.ProcessSupervision/SupervisorHost.cs"));
@@ -193,15 +206,27 @@ public sealed class TestRunnerPolicyArchitectureTests
     public void LinuxDelegationBootstrapCoversProjectAndSolutionModes()
     {
         var action = Read("script/invoke-ci-test-action.ps1");
+        var review = Read("script/test-review-invariants.ps1");
         var delegationIndex = action.IndexOf(
             "Test-DownKyiDelegatedCgroupScopeRequired",
             StringComparison.Ordinal);
         var modeBranchIndex = action.IndexOf("if ($Mode -eq \"Solution\")", StringComparison.Ordinal);
+        var reviewDelegationIndex = review.IndexOf(
+            "Test-DownKyiDelegatedCgroupScopeRequired",
+            StringComparison.Ordinal);
+        var reviewRunnerIndex = review.IndexOf(
+            ". (Join-Path $PSScriptRoot \"test-project-runner.ps1\")",
+            StringComparison.Ordinal);
 
         Assert.True(delegationIndex >= 0 && delegationIndex < modeBranchIndex);
         Assert.Contains("-ArgumentList @(\"-Mode\", $Mode)", action, StringComparison.Ordinal);
-        Assert.DoesNotContain("Get-Process", action, StringComparison.Ordinal);
-        Assert.DoesNotContain("/proc/", action, StringComparison.Ordinal);
+        Assert.True(reviewDelegationIndex >= 0 && reviewDelegationIndex < reviewRunnerIndex);
+        Assert.Contains(
+            "ConvertTo-DownKyiPowerShellArgumentList $PSBoundParameters",
+            review,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Get-Process", action + review, StringComparison.Ordinal);
+        Assert.DoesNotContain("/proc/", action + review, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -262,6 +287,7 @@ public sealed class TestRunnerPolicyArchitectureTests
 
     internal static void AssertSingleTestExecutionBudget(string source)
     {
+        source = source.Replace("\r\n", "\n", StringComparison.Ordinal);
         var executionStart = source.IndexOf(
             "var budget = TransitionBudget.Start",
             StringComparison.Ordinal);

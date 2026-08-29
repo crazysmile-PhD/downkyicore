@@ -284,7 +284,7 @@ function Invoke-DownKyiTestProject {
     Import-DownKyiCentralTestRunner `
         -RepositoryRoot $RepositoryRoot `
         -Configuration $Configuration `
-        -BuildIfMissing:(-not $NoBuild) `
+        -BuildIfMissing `
         -NoRestore:$NoRestore
     $options = [DownKyi.CentralTestRunner.CentralTestProjectOptions]::new(
         $RepositoryRoot,
@@ -326,7 +326,7 @@ function Invoke-DownKyiTestSolution {
     Import-DownKyiCentralTestRunner `
         -RepositoryRoot $RepositoryRoot `
         -Configuration $Configuration `
-        -BuildIfMissing:(-not $NoBuild) `
+        -BuildIfMissing `
         -NoRestore:$NoRestore
     $options = [DownKyi.CentralTestRunner.CentralTestSolutionOptions]::new(
         $RepositoryRoot,

@@ -161,6 +161,7 @@ public sealed class CentralTestRunnerMutationTests
     public void LinuxDelegationCannotFallBackToProcessEnumeration()
     {
         var source = Read("script/invoke-ci-test-action.ps1") +
+                     Read("script/test-review-invariants.ps1") +
                      Read("script/delegated-cgroup-scope.ps1") +
                      Read("tools/DownKyi.ProcessSupervision/LinuxCgroupContainmentLease.cs");
         if (MutationIsActive("DOWNKYI_TEST_MUTATE_CENTRAL_LINUX_FALLBACK"))
