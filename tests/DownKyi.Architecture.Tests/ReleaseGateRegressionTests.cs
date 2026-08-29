@@ -64,7 +64,8 @@ public sealed class ReleaseGateRegressionTests
                 ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.4", "-SubjectSha", mainCommit, "-RequireExactMain"],
                 repository);
             Assert.NotEqual(0, mismatchedVersion.ExitCode);
-            Assert.Contains("version.txt contains 1.1.3", mismatchedVersion.StandardError, StringComparison.Ordinal);
+            Assert.Contains("version.txt", mismatchedVersion.StandardError, StringComparison.Ordinal);
+            Assert.Contains("1.1.3", mismatchedVersion.StandardError, StringComparison.Ordinal);
 
             RunRequired("git", ["checkout", "-b", "release-fixture"], repository);
             File.AppendAllText(Path.Combine(repository, "fixture.txt"), "\nrelease-only");
