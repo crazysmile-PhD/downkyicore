@@ -19,4 +19,18 @@ public sealed class V113ReleasePackageTests
         V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsArchitectureMismatch();
     }
+
+    [Fact]
+    public void FinalPackageValidationRejectsOwnerOnlyExecuteBits()
+    {
+        V113ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationRejectsOwnerOnlyExecuteBits();
+    }
+
+    [Fact]
+    public void FinalPackageValidationRejectsPackageManagerVersionMismatch()
+    {
+        V113ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationRejectsPackageManagerVersionMismatch();
+    }
 }

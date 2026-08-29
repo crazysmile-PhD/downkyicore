@@ -51,6 +51,51 @@ function Assert-LinuxBinaryArchitecture {
     }
 }
 
+function Assert-WindowsBinaryArchitecture {
+    param(
+        [string]$Path,
+        [string]$ExpectedRuntimeIdentifier
+    )
+
+    $expectedMachine = if ($ExpectedRuntimeIdentifier -ceq 'win-x86') {
+        0x014c
+    }
+    elseif ($ExpectedRuntimeIdentifier -ceq 'win-x64') {
+        0x8664
+    }
+    else {
+        throw "Unsupported v1.1.3 Windows runtime identifier: $ExpectedRuntimeIdentifier"
+    }
+
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        $reader = [IO.BinaryReader]::new($stream)
+        if ($stream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5a4d) {
+            throw "Packaged Windows binary is not a valid PE image: $Path"
+        }
+
+        $stream.Position = 0x3c
+        $peOffset = $reader.ReadInt32()
+        if ($peOffset -lt 0 -or ($peOffset + 6) -gt $stream.Length) {
+            throw "Packaged Windows binary has an invalid PE header offset: $Path"
+        }
+
+        $stream.Position = $peOffset
+        if ($reader.ReadUInt32() -ne 0x00004550) {
+            throw "Packaged Windows binary has an invalid PE signature: $Path"
+        }
+
+        $actualMachine = $reader.ReadUInt16()
+        if ($actualMachine -ne $expectedMachine) {
+            $actualMachineText = '0x{0:X4}' -f $actualMachine
+            throw "Packaged Windows binary $Path has PE machine $actualMachineText and does not match $ExpectedRuntimeIdentifier."
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 try {
     switch ($PackageKind) {
         'zip' {
@@ -89,7 +134,19 @@ try {
         throw "Expected exactly one packaged DownKyi runtime, found $($runtimeCandidates.Count)."
     }
 
-    if ($PackageKind -ne 'zip') {
+    if ($PackageKind -ceq 'zip') {
+        $runtime = $runtimeCandidates[0]
+        $windowsExecutables = @(
+            (Join-Path $runtime 'DownKyi.exe'),
+            (Join-Path $runtime 'aria2/aria2c.exe'),
+            (Join-Path $runtime 'ffmpeg/ffmpeg.exe'),
+            (Join-Path $runtime 'ffmpeg/ffprobe.exe')
+        )
+        foreach ($executable in $windowsExecutables) {
+            Assert-WindowsBinaryArchitecture -Path $executable -ExpectedRuntimeIdentifier $RuntimeIdentifier
+        }
+    }
+    else {
         if ($RuntimeIdentifier -notin @('linux-x64', 'linux-arm64')) {
             throw "Unsupported v1.1.3 Linux runtime identifier: $RuntimeIdentifier"
         }
@@ -107,12 +164,22 @@ try {
             if ($actualArchitecture -cne $expectedPackageArchitecture.deb) {
                 throw "Debian package architecture $actualArchitecture does not match $RuntimeIdentifier."
             }
+            $actualVersion = ((& dpkg-deb --field $package Version 2>&1) -join '').Trim()
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect Debian package version.' }
+            if ($actualVersion -cne $expectedVersion) {
+                throw "Debian package version $actualVersion does not match $expectedVersion."
+            }
         }
         elseif ($PackageKind -ceq 'rpm') {
             $actualArchitecture = ((& rpm -qp --queryformat '%{ARCH}' $package 2>&1) -join '').Trim()
             if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect RPM package architecture.' }
             if ($actualArchitecture -cne $expectedPackageArchitecture.rpm) {
                 throw "RPM package architecture $actualArchitecture does not match $RuntimeIdentifier."
+            }
+            $actualVersion = ((& rpm -qp --queryformat '%{VERSION}' $package 2>&1) -join '').Trim()
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect RPM package version.' }
+            if ($actualVersion -cne $expectedVersion) {
+                throw "RPM package version $actualVersion does not match $expectedVersion."
             }
         }
 
@@ -123,14 +190,11 @@ try {
             (Join-Path $runtime 'ffmpeg/ffmpeg'),
             (Join-Path $runtime 'ffmpeg/ffprobe')
         )
-        $executeMask = [IO.UnixFileMode]::UserExecute -bor
-            [IO.UnixFileMode]::GroupExecute -bor
-            [IO.UnixFileMode]::OtherExecute
         foreach ($executable in $linuxExecutables) {
             Assert-LinuxBinaryArchitecture -Path $executable -ExpectedRuntimeIdentifier $RuntimeIdentifier
             $mode = [IO.File]::GetUnixFileMode($executable)
-            if (($mode -band $executeMask) -eq 0) {
-                throw "Packaged Linux executable has no execute bit: $executable"
+            if (($mode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
+                throw "Packaged Linux executable is not executable by a non-owner: $executable"
             }
         }
     }

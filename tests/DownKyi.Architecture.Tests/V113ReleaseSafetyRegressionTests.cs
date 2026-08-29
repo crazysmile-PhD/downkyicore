@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Buffers.Binary;
 using System.IO.Compression;
 
 namespace DownKyi.Architecture.Tests;
@@ -137,13 +138,13 @@ public sealed class V113ReleaseSafetyRegressionTests
         try
         {
             File.Copy(typeof(V113ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
-            WriteNonEmptyFile(Path.Combine(runtime, "DownKyi.exe"));
+            WritePeFile(Path.Combine(runtime, "DownKyi.exe"), 0x8664);
             var aria = Path.Combine(runtime, "aria2", "aria2c.exe");
-            WriteNonEmptyFile(aria);
+            WritePeFile(aria, 0x8664);
             var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
             File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.exe.sha256"), ariaHash);
-            WriteNonEmptyFile(Path.Combine(runtime, "ffmpeg", "ffmpeg.exe"));
-            WriteNonEmptyFile(Path.Combine(runtime, "ffmpeg", "ffprobe.exe"));
+            WritePeFile(Path.Combine(runtime, "ffmpeg", "ffmpeg.exe"), 0x8664);
+            WritePeFile(Path.Combine(runtime, "ffmpeg", "ffprobe.exe"), 0x8664);
             File.WriteAllText(Path.Combine(runtime, "DownKyi.deps.json"), "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}");
             WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
 
@@ -159,6 +160,24 @@ public sealed class V113ReleaseSafetyRegressionTests
                 ],
                 root);
             Assert.Equal(0, valid.ExitCode);
+
+            WritePeFile(aria, 0x014c);
+            var wrongArchitecturePackage = Path.Combine(root, "wrong-architecture.zip");
+            ZipFile.CreateFromDirectory(runtime, wrongArchitecturePackage);
+            var wrongArchitecture = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", wrongArchitecturePackage,
+                    "-PackageKind", "zip",
+                    "-RuntimeIdentifier", "win-x64",
+                    "-OutputPath", Path.Combine(root, "wrong-architecture-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, wrongArchitecture.ExitCode);
+            Assert.Contains("does not match win-x64", NormalizeDiagnostic(wrongArchitecture), StringComparison.Ordinal);
+            WritePeFile(aria, 0x8664);
+            ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
+            File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.exe.sha256"), ariaHash);
 
             File.Delete(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
             var mutatedPackage = Path.Combine(root, "mutated.zip");
@@ -218,7 +237,7 @@ public sealed class V113ReleaseSafetyRegressionTests
                 root);
 
             Assert.NotEqual(0, result.ExitCode);
-            Assert.Contains("has no execute bit", NormalizeDiagnostic(result), StringComparison.Ordinal);
+            Assert.Contains("not executable by a non-owner", NormalizeDiagnostic(result), StringComparison.Ordinal);
         }
         finally
         {
@@ -255,15 +274,108 @@ public sealed class V113ReleaseSafetyRegressionTests
         }
     }
 
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "xUnit",
+        "xUnit1013:Public method should be marked as test")]
+    public static void LinuxReleasePackageValidationRejectsOwnerOnlyExecuteBits()
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var package = CreateLinuxDebPackage(
+                root,
+                "amd64",
+                includeExecuteBits: true,
+                ownerOnlyExecute: true);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
+                [
+                    "-PackagePath", package,
+                    "-PackageKind", "deb",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-OutputPath", Path.Combine(root, "owner-only-manifest.json")
+                ],
+                root);
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("not executable by a non-owner", NormalizeDiagnostic(result), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "xUnit",
+        "xUnit1013:Public method should be marked as test")]
+    public static void LinuxReleasePackageValidationRejectsPackageManagerVersionMismatch()
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
+            var debPackage = CreateLinuxDebPackage(
+                root,
+                "amd64",
+                includeExecuteBits: true,
+                version: "1.1.2");
+            var debResult = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", debPackage,
+                    "-PackageKind", "deb",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-OutputPath", Path.Combine(root, "deb-version-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, debResult.ExitCode);
+            Assert.Contains("package version 1.1.2 does not match 1.1.3", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
+
+            var rpmPackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.2");
+            var rpmResult = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", rpmPackage,
+                    "-PackageKind", "rpm",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-OutputPath", Path.Combine(root, "rpm-version-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, rpmResult.ExitCode);
+            Assert.Contains("package version 1.1.2 does not match 1.1.3", NormalizeDiagnostic(rpmResult), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
     private static void WriteNonEmptyFile(string path) => File.WriteAllText(path, "fixture");
+
+    private static void WritePeFile(string path, ushort machine)
+    {
+        var image = new byte[512];
+        image[0] = 0x4d;
+        image[1] = 0x5a;
+        BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(0x3c), 0x80);
+        image[0x80] = 0x50;
+        image[0x81] = 0x45;
+        BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(0x84), machine);
+        File.WriteAllBytes(path, image);
+    }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     private static string CreateLinuxDebPackage(
         string root,
         string architecture,
-        bool includeExecuteBits)
+        bool includeExecuteBits,
+        bool ownerOnlyExecute = false,
+        string version = "1.1.3")
     {
-        var packageRoot = Path.Combine(root, $"deb-{architecture}-{includeExecuteBits}");
+        var packageRoot = Path.Combine(root, $"deb-{architecture}-{includeExecuteBits}-{ownerOnlyExecute}-{version}");
         var controlDirectory = Path.Combine(packageRoot, "DEBIAN");
         var runtime = Path.Combine(packageRoot, "usr", "lib", "downkyi");
         Directory.CreateDirectory(controlDirectory);
@@ -287,7 +399,11 @@ public sealed class V113ReleaseSafetyRegressionTests
             UnixFileMode.GroupRead | UnixFileMode.OtherRead;
         if (includeExecuteBits)
         {
-            mode |= UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+            mode |= UnixFileMode.UserExecute;
+            if (!ownerOnlyExecute)
+            {
+                mode |= UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+            }
         }
         foreach (var executable in executables)
         {
@@ -301,11 +417,73 @@ public sealed class V113ReleaseSafetyRegressionTests
         WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
         File.WriteAllText(
             Path.Combine(controlDirectory, "control"),
-            $"Package: downkyi-fixture\nVersion: 1.1.3\nArchitecture: {architecture}\nMaintainer: fixture@example.invalid\nDescription: DownKyi release validator fixture\n");
+            $"Package: downkyi-fixture\nVersion: {version}\nArchitecture: {architecture}\nMaintainer: fixture@example.invalid\nDescription: DownKyi release validator fixture\n");
 
-        var package = Path.Combine(root, $"fixture-{architecture}-{includeExecuteBits}.deb");
+        var package = Path.Combine(root, $"fixture-{architecture}-{includeExecuteBits}-{ownerOnlyExecute}-{version}.deb");
         RunRequired("dpkg-deb", ["--root-owner-group", "--build", packageRoot, package], root);
         return package;
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    private static string CreateLinuxRpmPackage(string root, string architecture, string version)
+    {
+        var topDirectory = Path.Combine(root, $"rpm-{architecture}-{version}");
+        var runtime = Path.Combine(topDirectory, "payload", "usr", "lib", "downkyi");
+        foreach (var directory in new[] { "BUILD", "BUILDROOT", "RPMS", "SOURCES", "SPECS", "SRPMS" })
+        {
+            Directory.CreateDirectory(Path.Combine(topDirectory, directory));
+        }
+        Directory.CreateDirectory(Path.Combine(runtime, "aria2"));
+        Directory.CreateDirectory(Path.Combine(runtime, "ffmpeg"));
+
+        File.Copy(typeof(V113ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
+        var executables = new[]
+        {
+            Path.Combine(runtime, "DownKyi"),
+            Path.Combine(runtime, "aria2", "aria2c"),
+            Path.Combine(runtime, "ffmpeg", "ffmpeg"),
+            Path.Combine(runtime, "ffmpeg", "ffprobe")
+        };
+        foreach (var executable in executables)
+        {
+            File.Copy("/bin/true", executable);
+            File.SetUnixFileMode(
+                executable,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+        var aria = Path.Combine(runtime, "aria2", "aria2c");
+        var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
+        File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.sha256"), ariaHash);
+        File.WriteAllText(Path.Combine(runtime, "DownKyi.deps.json"), "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}");
+        WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
+
+        var specPath = Path.Combine(topDirectory, "SPECS", "downkyi-fixture.spec");
+        File.WriteAllText(
+            specPath,
+            $$"""
+            %global _build_id_links none
+            Name: downkyi-fixture
+            Version: {{version}}
+            Release: 1
+            Summary: DownKyi release validator fixture
+            License: MIT
+            BuildArch: {{architecture}}
+            AutoReqProv: no
+
+            %description
+            DownKyi release validator fixture.
+
+            %install
+            mkdir -p %{buildroot}/usr/lib/downkyi
+            cp -a "{{runtime}}/." %{buildroot}/usr/lib/downkyi/
+
+            %files
+            /usr/lib/downkyi
+            """);
+        RunRequired("rpmbuild", ["-bb", "--define", $"_topdir {topDirectory}", specPath], root);
+        return Directory.GetFiles(Path.Combine(topDirectory, "RPMS", architecture), "*.rpm").Single();
     }
 
     private static int CountOccurrences(string source, string value) =>
