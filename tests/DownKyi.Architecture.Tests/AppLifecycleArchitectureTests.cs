@@ -83,6 +83,10 @@ public sealed class AppLifecycleArchitectureTests
             "src", "DownKyi.Desktop",
             "Platform",
             "ProcessRestartLauncher.cs");
+        var restartLeaseSource = ReadSource(
+            "tools",
+            "DownKyi.ProcessSupervision",
+            "RestartHandoffLease.cs");
 
         Assert.Contains("SingleInstanceGuard.TryAcquire", appSource, StringComparison.Ordinal);
         Assert.Contains("_applicationLifecycle.AttachHost", appSource, StringComparison.Ordinal);
@@ -91,7 +95,9 @@ public sealed class AppLifecycleArchitectureTests
         Assert.DoesNotContain("StopHostAsync", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("FlushAsync", appSource, StringComparison.Ordinal);
         Assert.Contains("IProcessRestartLauncher", lifecycleSource, StringComparison.Ordinal);
-        Assert.Contains("WaitForExitAsync", restartSource, StringComparison.Ordinal);
+        Assert.Contains("RestartHandoffLease.PrepareAsync", restartSource, StringComparison.Ordinal);
+        Assert.Contains("RestartHandoffHelper.ExecuteAsync", restartSource, StringComparison.Ordinal);
+        Assert.Contains("WaitForExitAsync", restartLeaseSource, StringComparison.Ordinal);
         Assert.Contains("ArgumentList.Add", restartSource, StringComparison.Ordinal);
     }
 

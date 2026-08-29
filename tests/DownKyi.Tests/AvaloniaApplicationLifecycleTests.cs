@@ -3,6 +3,7 @@ using DownKyi.Application.Lifetime;
 using DownKyi.Core.Settings;
 using DownKyi.Desktop.Composition;
 using DownKyi.Platform;
+using DownKyi.ProcessSupervision;
 using DownKyi.Services.Download;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -623,15 +624,20 @@ public sealed class AvaloniaApplicationLifecycleTests
 
         public int RevokeCount { get; private set; }
 
-        public IProcessRestartTransaction? TryPrepareHelper(int parentProcessId)
+        public Task<IProcessRestartTransaction?> TryPrepareHelperAsync(
+            CancellationToken cancellationToken = default)
         {
-            Assert.True(parentProcessId > 0);
+            cancellationToken.ThrowIfCancellationRequested();
             StartCount++;
-            return result ? new Transaction(this) : null;
+            return Task.FromResult<IProcessRestartTransaction?>(
+                result ? new Transaction(this) : null);
         }
 
         private sealed class Transaction(StubRestartLauncher owner) : IProcessRestartTransaction
         {
+            public RestartHandoffState State { get; private set; } =
+                RestartHandoffState.Authorized;
+
             public void Commit()
             {
                 owner.CommitCount++;
@@ -639,11 +645,14 @@ public sealed class AvaloniaApplicationLifecycleTests
                 {
                     throw owner._commitFailure;
                 }
+
+                State = RestartHandoffState.Committed;
             }
 
             public Task RevokeAsync()
             {
                 owner.RevokeCount++;
+                State = RestartHandoffState.Revoked;
                 return owner._revokeFailure == null
                     ? Task.CompletedTask
                     : Task.FromException(owner._revokeFailure);

@@ -13,6 +13,8 @@
     <InternalsVisibleTo Include="DownKyi.Windows.Tests" />
     <InternalsVisibleTo Include="DownKyi.Linux.Tests" />
     <InternalsVisibleTo Include="DownKyi.MacOS.Tests" />
+    <InternalsVisibleTo Include="DownKyi.Architecture.Tests" />
+    <InternalsVisibleTo Include="DownKyi.RestartHandoff.ProductionFixture" />
   </ItemGroup>
 
 </Project>

@@ -59,7 +59,8 @@ public sealed class ProjectDependencyTests
                 "DownKyi.Application",
                 "DownKyi.Core",
                 "DownKyi.Domain",
-                "DownKyi.Infrastructure"
+                "DownKyi.Infrastructure",
+                "DownKyi.ProcessSupervision"
             }
         };
 

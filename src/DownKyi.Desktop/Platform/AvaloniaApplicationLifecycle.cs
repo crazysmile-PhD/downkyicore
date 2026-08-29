@@ -114,7 +114,9 @@ internal sealed class AvaloniaApplicationLifecycle : IApplicationLifecycle
     public async Task<bool> RestartAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var helper = _restartLauncher.TryPrepareHelper(Environment.ProcessId);
+        var helper = await _restartLauncher
+            .TryPrepareHelperAsync(cancellationToken)
+            .ConfigureAwait(false);
         if (helper == null)
         {
             return false;

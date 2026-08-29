@@ -87,6 +87,21 @@ public sealed class TransitionBudget
         _startedAt,
         _timeProvider.GetTimestamp());
 
+    internal RestartHandoffDeadline CreateRestartHandoffDeadline()
+    {
+        if (!ReferenceEquals(_timeProvider, TimeProvider.System) || _parent != null)
+        {
+            throw new InvalidOperationException(
+                "A cross-process restart handoff requires a root system-monotonic transition budget.");
+        }
+
+        return RestartHandoffDeadline.Create(
+            _startedAt,
+            _operationDuration,
+            _hardDuration,
+            _timeProvider.TimestampFrequency);
+    }
+
     public DiagnosticCollectorWindow AllocateDiagnosticCollectorWindow(
         TimeSpan operationAllowance,
         TimeSpan cleanupAllowance)
@@ -131,7 +146,9 @@ public sealed class TransitionBudget
 public enum ProcessIdentityAuthority
 {
     WindowsProcessHandle,
-    DirectChildWait
+    DirectChildWait,
+    LinuxPidFd,
+    MacOSKqueueProcessNote
 }
 
 public enum ProcessContainmentKind
@@ -352,8 +369,10 @@ public abstract class ParentLifetimeLease : IAsyncDisposable
 {
     public abstract ProcessIdentityAuthority IdentityAuthority { get; }
 
+    internal abstract bool IsExited();
+
     public abstract ValueTask<ParentLifetimeOutcome> WaitForExitAsync(
-        TransitionBudget budget,
+        RestartHandoffDeadline deadline,
         CancellationToken cancellationToken = default);
 
     public abstract ValueTask DisposeAsync();

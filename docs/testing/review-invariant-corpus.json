@@ -124,6 +124,83 @@
       ]
     },
     {
+      "id": "restart-handoff-ownership",
+      "historicalRoots": ["PR #197 Stage 4A", "PR #197 Stage 4"],
+      "guards": "A prepared restart candidate is revocable and reaped, while a committed successor uses one authenticated deadline and an exact native old-parent watcher to make one relaunch attempt without weakening ordinary process ownership.",
+      "testClasses": [
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests" }
+      ],
+      "proofRequirements": [
+        "adversarial-mutation"
+      ],
+      "adversarialProofs": [
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_NUMERIC_AUTHORITY",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_EARLY_READY",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_FRESH_DEADLINE",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_ORDINARY_LEASE",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_AUTHORIZATION_REPLAY",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_RELAUNCH_RETRY",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_PARENT_ORDERING",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_REVOKE_REAP",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure"
+        }
+      ]
+    },
+    {
       "id": "host-process-and-log-lifecycle",
       "historicalRoots": ["PR #94", "PR #113", "PR #120", "PR #122", "PR #197"],
       "guards": "Host, process and logging owners dispose, exit and persist deterministically; accepted work is not reported completed before durable flush.",
