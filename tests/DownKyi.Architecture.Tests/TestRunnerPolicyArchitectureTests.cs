@@ -226,6 +226,17 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
+    public void MacBundlePublishCannotCreateAPersistentSharedCompilerServer()
+    {
+        var fixture = Read("tests/DownKyi.MacOS.Tests/MacBundleLayoutTests.cs");
+
+        Assert.Contains("\"-p:UseSharedCompilation=false\"", fixture, StringComparison.Ordinal);
+        Assert.DoesNotContain("dotnet build-server shutdown", fixture, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetProcessesByName", fixture, StringComparison.Ordinal);
+        Assert.DoesNotContain("Thread.Sleep", fixture, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SupervisorHostTransportsButDoesNotAuthorizeRepositoryTests()
     {
         AssertSupervisorTransportOnly(Read("tools/DownKyi.ProcessSupervision/SupervisorHost.cs"));

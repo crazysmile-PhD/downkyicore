@@ -55,6 +55,7 @@ public sealed class MacBundleLayoutTests
                 "--self-contained",
                 "-p:DebugType=None",
                 "-p:DebugSymbols=false",
+                "-p:UseSharedCompilation=false",
                 "-o",
                 publishDirectory);
             AssertSuccess(publish);
@@ -276,8 +277,14 @@ public sealed class MacBundleLayoutTests
             var lines = File.Exists(logPath)
                 ? File.ReadAllLines(logPath)
                 : Array.Empty<string>();
-            var clientProcessId = FindLoggedProcessId(lines, "Attempt to open named pipe");
-            var serverProcessId = FindLoggedProcessId(lines, "Keep alive timeout is:");
+            var clientProcessId = FindLoggedProcessId(
+                lines,
+                "Attempt to open named pipe",
+                "MSBuild");
+            var serverProcessId = FindLoggedProcessId(
+                lines,
+                "Keep alive timeout is:",
+                "VBCSCompiler");
             var keepAliveMilliseconds = FindKeepAliveMilliseconds(lines);
             var serverProcessName = serverProcessId.HasValue
                 ? TryGetProcessName(serverProcessId.Value)
@@ -308,7 +315,10 @@ public sealed class MacBundleLayoutTests
         }
     }
 
-    private static int? FindLoggedProcessId(IEnumerable<string> lines, string marker)
+    private static int? FindLoggedProcessId(
+        IEnumerable<string> lines,
+        string marker,
+        string identity)
     {
         foreach (var line in lines)
         {
@@ -317,7 +327,7 @@ public sealed class MacBundleLayoutTests
                 continue;
             }
 
-            const string prefix = "PID";
+            var prefix = $"ID={identity} ";
             var start = line.IndexOf(prefix, StringComparison.Ordinal);
             if (start < 0)
             {
@@ -325,10 +335,6 @@ public sealed class MacBundleLayoutTests
             }
 
             start += prefix.Length;
-            while (start < line.Length && !char.IsAsciiDigit(line[start]))
-            {
-                start++;
-            }
             var end = start;
             while (end < line.Length && char.IsAsciiDigit(line[end]))
             {
