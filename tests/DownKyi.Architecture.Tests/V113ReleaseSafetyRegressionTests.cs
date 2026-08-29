@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.IO.Compression;
 
 namespace DownKyi.Architecture.Tests;
