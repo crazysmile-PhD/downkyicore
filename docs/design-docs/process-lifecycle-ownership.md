@@ -110,12 +110,12 @@ runner provider optional: when that provider is missing, the wrapper builds it
 with the caller's restore policy and then forwards the unchanged target option.
 PowerShell never substitutes a private test host or process owner.
 
-The macOS packaged-app launch verification script is a bounded fixture owner,
-not a central test-child owner. It creates an app-specific process group before
-launch and terminates that whole group before waiting for the app root. This
-keeps a term-resistant root from orphaning descendants after fixture success;
-the outer `OwnedProcessLease` remains the authoritative repository-test
-quiescence check.
+The macOS packaged-app launch verification script is an unchanged bounded
+release-tooling owner of the app root, not a central test-child owner. Its
+TERM-resistance test fixture therefore creates one shell root and no nested
+`sleep` process. The release verifier keeps its original root TERM-to-KILL
+contract while the outer `OwnedProcessLease` remains the authoritative
+repository-test quiescence check.
 
 Lifecycle marker write authority is also one-shot. The lifecycle gate gives
 only its outer test target `DOWNKYI_LIFECYCLE_MARKER_OWNER=1`; the module

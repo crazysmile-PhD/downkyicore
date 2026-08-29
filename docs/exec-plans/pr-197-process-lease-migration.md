@@ -1167,6 +1167,15 @@ Stage 3 slow-evidence ordering self-test `AggregateException` was not folded
 into Stage 5. Replacement exact-head CI and same-head review remain required;
 Stage 6 stays deferred.
 
+Exact follow-up head `83d62b8ad39c6ca0aaeaaabca595d76077191a59`
+naturally triggered run `33234070529`. Windows, Ubuntu, all six aria2 jobs and
+all other Stage 5 integration gates passed. macOS again produced a 93/93 TRX
+followed by `OwnedTreeNotQuiescent`, disproving the release-verifier process-
+group attempt. Commit `4691e100826c760a0578568242ffa3350bca14df`
+restores that out-of-scope release tooling exactly and makes only the
+TERM-resistant test app single-rooted. The repeated Stage 3 lifecycle self-test
+failure remains separate; no rerun or review was requested.
+
 ## Stage 6: Legacy Removal
 
 Remove remaining duplicate start, wait, kill, reap, timeout and process-identity

@@ -3446,6 +3446,7 @@ test.central-test-runner:
     - SupervisorHost cannot become a test authorization, selection or TRX authority
     - target NoBuild cannot make the required compiled runner provider optional or restore a PowerShell host fallback
     - CI action and direct review-corpus execution enter the same delegated Linux cgroup scope before loading the runner
+    - the macOS TERM-resistance fixture has one test-owned app root and cannot orphan a nested sleep process
     - process exit zero cannot hide a failed TRX and zero executed tests cannot pass
     - each Stage 5 mutation executes the complete owning class and causes exactly one expected failure
 

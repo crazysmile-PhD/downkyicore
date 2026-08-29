@@ -128,11 +128,11 @@ the caller's `-NoRestore` choice, then forwards `NoBuild=true` to the target
 options. There is still one compiled entrypoint and no PowerShell test-host
 fallback.
 
-The macOS packaged-app launch verifier is a bounded fixture owner separate from
-the central test child. It enables shell job control before launching the app,
-thereby creating an app-specific process group, and sends TERM/KILL to that
-group before waiting for its root. A term-resistant root can no longer orphan
-its `sleep` descendant after the fixture reports success.
+The macOS packaged-app launch verifier remains a bounded release-tooling owner
+of the app root only and is outside Stage 5. Its TERM-resistance regression
+therefore constructs one test-owned shell root with no nested `sleep` process.
+The test still proves the existing TERM-to-KILL bound without creating a child
+that the root-only verifier cannot reap.
 
 ## Executable Proof
 
@@ -225,9 +225,11 @@ The failed jobs established four Stage 5 follow-up causes:
 Implementation/proof follow-up
 `86d99537a8a360edce00be16d666f96c3dda93c1` routes the direct review gate through
 the shared delegated scope, bootstraps the provider independently of target
-`NoBuild`, normalizes the static C# oracle's line endings and makes the macOS
-fixture own its whole app process group. It does not change the closed Stage 2,
-Stage 3, Stage 4A or Stage 4 production contracts.
+`NoBuild` and normalizes the static C# oracle's line endings. It also attempted
+process-group cleanup in the macOS release verifier; the next exact-head run
+proved that attempt did not resolve the residual, and the later in-scope
+follow-up removes it. The closed Stage 2, Stage 3, Stage 4A and Stage 4
+production contracts remain unchanged.
 
 The Assembly Lifecycle job failed earlier in the unchanged Stage 3 slow-
 evidence ordering self-test with `AggregateException`, before formal assembly
@@ -258,8 +260,46 @@ bootstrapped `DownKyi.CentralTestRunner` with zero build warnings/errors while
 leaving the target unbuilt. The deliberately stale Debug target execution did
 not complete and was canceled; it is not counted as test evidence. The newly
 built Release target and all reported Release gates above are the local
-executable evidence. Native Linux delegation and macOS process-group cleanup
-remain CI-only proof.
+executable evidence. Native Linux delegation and macOS cleanup remain CI-only
+proof.
+
+## Second Exact-Head CI Feedback
+
+Follow-up documentation head
+`83d62b8ad39c6ca0aaeaaabca595d76077191a59` naturally triggered Strict PR run
+`33234070529`. Windows Strict, Ubuntu Strict, all six aria2 TLS jobs, format,
+package audit, CodeQL, protobuf, FFmpeg and the three platform-membership jobs
+passed. This proves the CRLF, direct Linux delegation and provider-bootstrap
+fixes on their native paths.
+
+macOS Strict again completed `DownKyi.MacOS.Tests` with a 93/93 passing TRX and
+then returned `OwnedTreeNotQuiescent` after consuming the process deadline.
+Therefore the release-script process-group attempt was neither closure evidence
+nor an allowed Stage 5 change. Commit
+`4691e100826c760a0578568242ffa3350bca14df` restores the release script and its
+architecture assertions exactly, then changes only the TERM-resistant test app
+from a shell root that repeatedly spawns `sleep` to one single shell root. The
+outer native lease remains responsible for proving quiescence.
+
+The same run repeated the independent Assembly Lifecycle Stage 3 self-test
+failure: `AggregateException`, all configured/mutation phase results null,
+formal phases not started, and ownership audit 657 matches / zero violations.
+No prior run was rerun, no Stage 3 code was modified and no same-head review was
+requested.
+
+Local validation of `4691e100826c760a0578568242ffa3350bca14df` produced:
+
+- focused runner/release fixture policy: 29/29 passed;
+- full Architecture: 355/355 passed;
+- review-invariant gate: 13 invariants, seven normal projects, 369 normal tests
+  and 25 adversarial proofs passed;
+- all ten Stage 5 profiles still executed ten tests with exactly one owning
+  failure per profile;
+- strict Release solution build: zero warnings and zero errors;
+- format verification, staged LF `bash -n` and `git diff --check` passed.
+
+The single-root fixture is cross-compiled but cannot execute on Windows. Its
+behavioral proof remains the next naturally triggered macOS Strict run.
 
 ## Commits And Closure
 
@@ -270,6 +310,8 @@ remain CI-only proof.
 - `5177d4605e12fbeb0039e8ef27434d8062938051` — initial documentation
   checkpoint;
 - `86d99537a8a360edce00be16d666f96c3dda93c1` — native-CI ownership follow-up;
+- `4691e100826c760a0578568242ffa3350bca14df` — in-scope single-root macOS
+  TERM-resistance fixture and release-tooling reversion;
 - follow-up documentation checkpoint — this file and the stable owner indexes.
 
 After the documentation commit, push once and verify local HEAD, upstream,

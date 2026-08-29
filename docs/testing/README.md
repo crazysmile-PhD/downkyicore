@@ -55,6 +55,10 @@ shared process-supervision owner 完成，沒有 PID/process enumeration fallbac
 `-NoBuild` 只禁止重建選定的 test target；若固定 compiled runner provider 缺席，
 wrapper 必須依相同 restore policy 先補齊 provider，再把 `NoBuild=true` 原樣傳給
 target，不能改走 PowerShell test-host fallback。
+macOS packaged-app TERM-resistance regression 只能建立一個 test-owned app root；
+不得在 root 內反覆產生未由該 fixture reap 的 `sleep` descendant。release verifier
+仍維持原有 root TERM/KILL contract，repository test 的最終 quiescence 由外層
+`OwnedProcessLease` 判定。
 MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
 guard，不是可由呼叫者提供 property 的 authorization credential。
 完整 repository suite 與 required project gate 的 workflow step 必須使用結構化的
