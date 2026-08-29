@@ -1054,6 +1054,28 @@ Local implementation evidence on Windows passed:
 - one-assembly Local lifecycle sanity: 644 ownership matches, zero violations,
   nine successful phases, zero failures and zero residual children.
 
+The first pushed documentation checkpoint
+`13926b2190716537ada92d6dc242ed535e6b4dcd` naturally triggered Strict PR run
+[`33225293262`](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33225293262).
+Its Ubuntu Architecture step failed before the ordinary-lease mutation could
+launch the fixture: the generic runner's systemd cgroup did not delegate
+directory creation under `/sys/fs/cgroup`, so `OwnedProcessLease` correctly
+rejected preparation with `UnauthorizedAccessException`. This was a mutation
+test capability error, not a pidfd restart-watcher or production handoff
+failure. The failed workflow was not rerun.
+
+Test-only follow-up commit
+`a1ac9b1ee5b37a66ec16529678c7aef5707b9513` treats that exact Linux rejection as
+the stronger normal fail-closed outcome. With the ordinary-lease mutation
+active, the same unavailable authority remains an explicit invariant failure.
+Windows, macOS and delegated Linux still execute the original owner-EOF
+successor-kill proof. No production lease, workflow, delegation, deadline,
+retry or Stage 4A contract changed. Local Windows validation passed the normal
+mutation class 8/8, the ordinary-lease mutation with eight executed and exactly
+one failed test, all 328 Architecture tests, and the complete review-invariant
+gate with 333 normal tests and all 15 adversarial proofs. Formatting and
+`git diff --check` also passed.
+
 Cross-platform compilation is not native evidence. Stage 4 remains an open
 implementation checkpoint until the implementation and documentation commits
 are pushed, Windows/Linux/macOS exact-parent jobs pass naturally on the same
