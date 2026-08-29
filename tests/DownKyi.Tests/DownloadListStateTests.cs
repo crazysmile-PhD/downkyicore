@@ -50,6 +50,20 @@ public sealed class DownloadListStateTests
     }
 
     [Fact]
+    public void AddDownloadedRangeDoesNotDuplicateItemsAcrossPages()
+    {
+        var state = new DownloadListState();
+        var first = CreateDownloadedItem("A", order: 1, finishedTimestamp: 10);
+        var duplicate = CreateDownloadedItem("A", order: 1, finishedTimestamp: 10);
+        var second = CreateDownloadedItem("B", order: 2, finishedTimestamp: 20);
+
+        state.AddDownloadedRange([first]);
+        state.AddDownloadedRange([duplicate, second]);
+
+        Assert.Equal([first, second], state.Downloaded);
+    }
+
+    [Fact]
     public void ExposedCollectionsRejectExternalMutation()
     {
         var state = new DownloadListState();

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -18,6 +19,10 @@ internal static class ImageBrushLoader
         Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);
     public static readonly AttachedProperty<string?> SourceProperty =
         AvaloniaProperty.RegisterAttached<ImageBrush, string?>("Source", typeof(ImageLoader));
+    private static readonly AttachedProperty<CancellationTokenSource?> PendingOperationProperty =
+        AvaloniaProperty.RegisterAttached<ImageBrush, CancellationTokenSource?>(
+            "PendingOperation",
+            typeof(ImageBrushLoader));
     public static IAsyncImageLoader AsyncImageLoader { get; set; } = NullAsyncImageLoader.Instance;
 
     static ImageBrushLoader()
@@ -36,6 +41,7 @@ internal static class ImageBrushLoader
         if (oldValue == newValue)
             return;
 
+        var cancellation = ReplacePendingOperation(imageBrush);
         SetIsLoading(imageBrush, true);
 
         Bitmap? bitmap = null;
@@ -46,18 +52,35 @@ internal static class ImageBrushLoader
                 // 注意缩放比例
                 var width = GetWidth(imageBrush);
                 var height = GetHeight(imageBrush);
+                PixelSize? targetSize = null;
                 if (width > 0 && height > 0)
                 {
                     var scale = await Dispatcher.UIThread.InvokeAsync(GetDesktopScaling);
-                    var actualWidth = Convert.ToInt32(width * scale);
-                    var actualHeight = Convert.ToInt32(height * scale);
-                    bitmap = (await AsyncImageLoader.ProvideImageAsync(newValue).ConfigureAwait(true))?.CreateScaledBitmap(new PixelSize(actualWidth, actualHeight));
+                    targetSize = new PixelSize(
+                        Convert.ToInt32(width * scale),
+                        Convert.ToInt32(height * scale));
                 }
-                else
+
+                bitmap = await Task.Run(async () =>
                 {
-                    bitmap = await AsyncImageLoader.ProvideImageAsync(newValue).ConfigureAwait(true);
-                }
+                    var sourceBitmap = await AsyncImageLoader
+                        .ProvideImageAsync(newValue, cancellation.Token)
+                        .ConfigureAwait(false);
+                    if (sourceBitmap == null || !targetSize.HasValue)
+                    {
+                        return sourceBitmap;
+                    }
+
+                    using (sourceBitmap)
+                    {
+                        return sourceBitmap.CreateScaledBitmap(targetSize.Value);
+                    }
+                }, CancellationToken.None).ConfigureAwait(true);
             }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            return;
         }
         catch (HttpRequestException e)
         {
@@ -72,10 +95,63 @@ internal static class ImageBrushLoader
             Logger?.Log("ImageBrushLoader", "ImageBrushLoader image resolution failed: {0}", e);
         }
 
-        if (GetSource(imageBrush) != newValue) return;
-        imageBrush.Source = bitmap;
+        finally
+        {
+            if (GetSource(imageBrush) != newValue)
+            {
+                bitmap?.Dispose();
+            }
+            else
+            {
+                imageBrush.Source = bitmap;
+            }
 
-        SetIsLoading(imageBrush, false);
+            if (CompletePendingOperation(imageBrush, cancellation))
+            {
+                SetIsLoading(imageBrush, false);
+            }
+        }
+    }
+
+    private static CancellationTokenSource ReplacePendingOperation(ImageBrush imageBrush)
+    {
+        var previous = imageBrush.GetValue(PendingOperationProperty);
+        var current = new CancellationTokenSource();
+        imageBrush.SetValue(PendingOperationProperty, current);
+        if (previous != null)
+        {
+            CancelBestEffort(previous);
+        }
+
+        return current;
+    }
+
+    private static void CancelBestEffort(CancellationTokenSource cancellationTokenSource)
+    {
+        try
+        {
+            cancellationTokenSource.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+    }
+
+    private static bool CompletePendingOperation(
+        ImageBrush imageBrush,
+        CancellationTokenSource operation)
+    {
+        var ownsPendingOperation = ReferenceEquals(
+            imageBrush.GetValue(PendingOperationProperty),
+            operation);
+        if (ownsPendingOperation)
+        {
+            imageBrush.SetValue(PendingOperationProperty, null);
+        }
+
+        operation.Dispose();
+        return ownsPendingOperation;
     }
 
     public static string? GetSource(ImageBrush element)

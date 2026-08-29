@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 
@@ -25,11 +26,14 @@ internal class DiskCachedWebImageLoader : BaseWebImageLoader
         return File.Exists(path) ? new Bitmap(path) : null;
     }
 
-    protected override async Task SaveToGlobalCache(string url, byte[] imageBytes)
+    protected override async Task SaveToGlobalCache(
+        string url,
+        byte[] imageBytes,
+        CancellationToken cancellationToken)
     {
         var path = Path.Combine(_cacheFolder, CreateCacheKey(url));
         Directory.CreateDirectory(_cacheFolder);
-        await File.WriteAllBytesAsync(path, imageBytes).ConfigureAwait(false);
+        await File.WriteAllBytesAsync(path, imageBytes, cancellationToken).ConfigureAwait(false);
     }
 
     protected static string CreateCacheKey(string input)
