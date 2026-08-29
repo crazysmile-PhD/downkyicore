@@ -62,6 +62,54 @@ exact exit to perform one bounded relaunch attempt. Stage 4A therefore records
 restart handoff domain. See `restart-handoff-lifecycle.md`. This distinction does
 not weaken or reopen the Stage 2 invariant.
 
+## Central Test Execution Boundary
+
+Stage 5 separates test-policy correctness from child-process lifecycle
+correctness. `CentralTestOrchestrator` owns project/platform routing, canonical
+xUnit arguments, selection, one-shot authorization issuance, aggregate
+orchestration and result validation. It constructs one immutable `LaunchSpec`
+and asks the existing `OwnedProcessLease` to execute it. The lease and
+`SupervisorHost` are the only owners of process start, ownership establishment
+before target code, wait, terminate, reap, quiescence, target streams and
+cleanup. The PowerShell and action layers forward typed inputs and propagate
+results; they contain no fallback process owner.
+
+Authorization uses a random `IpcEndpointName` and a one-client
+`NamedPipeServerStream` restricted with `PipeOptions.CurrentUserOnly`. The
+immutable launch environment carries only the physical endpoint name and a
+random token value. The issuer sends a versioned frame containing that token
+and the SHA-256 hash of the complete canonical argument vector. The test
+assembly's module initializer connects to the named endpoint, consumes and
+clears the environment values, verifies the exact token and invocation hash,
+requires an exact-length frame followed by EOF, and rejects the legacy numeric
+`DOWNKYI_CENTRAL_TEST_PIPE` form. Endpoint names and tokens are ordinary values;
+no process-local HANDLE or file-descriptor number is copied across the
+`CentralTestRunner -> SupervisorHost -> test process` topology.
+
+`SupervisorHost` transports the immutable launch environment but neither
+issues nor verifies test authorization. The one caller-created
+`TransitionBudget` is shared by authorization connection/write,
+`OwnedProcessLease.StartAsync`, execution, cancellation cleanup, reap,
+quiescence and stream drain. Neither authorization nor the supervisor creates a
+fresh process deadline.
+
+The lease's typed outcome answers only whether the process was safely executed
+and collected. `CentralTestExecutionValidator` remains the semantic owner of
+the TRX: exit code zero cannot hide a failed test, zero executed tests fail
+closed, expected classes must have executed results and every expected class
+must contain a passing result. Platform routing remains in the central policy.
+On Linux, the CI action establishes the existing delegated-cgroup context
+before either project or solution mode reaches the compiled runner; containment
+and membership remain shared `OwnedProcessLease` responsibilities, with no
+PID/process-enumeration fallback.
+
+Lifecycle marker write authority is also one-shot. The lifecycle gate gives
+only its outer test target `DOWNKYI_LIFECYCLE_MARKER_OWNER=1`; the module
+initializer consumes that value before test code can create children. Nested
+test processes can inherit a marker path but not its write authority, so their
+guard clears the path before fixture construction and cannot pollute the outer
+teardown proof.
+
 ## Temporary IPC Naming
 
 Human-readable endpoint labels and operating-system pipe identifiers are
@@ -503,11 +551,10 @@ fields into the lifecycle report and behaviorally reject whole-budget and
 command-based PowerShell ownership mutations. Command ownership detection also
 normalizes module-qualified PowerShell command names, while a shared
 failure-to-report converter and JSON round-trip fixture prove that non-empty
-cleanup stages and cause types survive the PowerShell boundary. Native
-exact-head CI and a clean same-head review must converge after the latest fix;
-Stage 4 now changes only the separate restart-handoff production boundary;
-Stage 5 remains deferred. The diagnostic owner, observer classification and
-collector deadlines remain unchanged.
+cleanup stages and cause types survive the PowerShell boundary. The diagnostic
+owner, observer classification and collector deadlines remain unchanged by the
+later restart and central-runner migrations. Stage 5 reuses the ordinary lease
+without reopening Stage 3 or the separate Stage 4 handoff domain.
 
 ## Legacy Mechanism Disposition
 
@@ -524,7 +571,10 @@ is redesigned:
 - duplicate start, wait, kill and reap implementations;
 - independent timeout owners for the same transition.
 
-The migration retains central-runner capability authorization, canonical test
-arguments, TRX semantic validation, desktop cleanup/handoff failure aggregation
-and PID/PPID/thread/stack diagnostics. Diagnostic identity must not affect
-success, kill target, reap target or residual classification.
+Stage 5 removed raw test-child `Process.Start`, wait, kill, reap, stream-drain
+and timeout ownership from the central runner and its PowerShell wrappers. It
+retains central-runner capability authorization, canonical test arguments, TRX
+semantic validation, desktop cleanup/handoff failure aggregation and
+PID/PPID/thread/stack diagnostics. Diagnostic identity must not affect success,
+kill target, reap target or residual classification. Stage 6 remains the owner
+of broader legacy removal outside this migrated path.

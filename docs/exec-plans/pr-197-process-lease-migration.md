@@ -1102,17 +1102,54 @@ one failed test, all 328 Architecture tests, and the complete review-invariant
 gate with 333 normal tests and all 15 adversarial proofs. Formatting and
 `git diff --check` also passed.
 
-Cross-platform compilation is not native evidence. Stage 4 remains an open
-implementation checkpoint until the implementation and documentation commits
-are pushed, Windows/Linux/macOS exact-parent jobs pass naturally on the same
-head, same-head Codex review is clean and the worktree is clean. Stage 5 and
-Stage 6 remain deferred.
+That was the pre-closure status of the Stage 4 implementation. Stage 4 is
+`CLOSED` at the authoritative Stage 5 starting head
+`dd6364b7e713d3b3c81efd739821cc7e0baafe86`; Stage 5 does not modify or reopen
+the production handoff, native watcher, deadline, Policy B, authorization,
+commit or revoke paths. Stage 6 remains deferred.
 
 ## Stage 5: Central Test Runner
 
-Share only the low-level process lease. Do not rewrite or weaken canonical
-arguments, one-shot authorization, immutable invocation contracts, platform
-routing or TRX semantic validation unless a direct contract conflict is proved.
+Implementation/proof commit
+`a768a9d86bba3b5bd0f0834a7997cf21a9ccd017` migrates repository test-child
+execution to the existing `OwnedProcessLease`. Marker-isolation follow-up
+`8ecba8f0fc86dd10d70ce309c9101379873a8ba6` makes lifecycle-marker write
+authority one-shot so nested proof processes cannot corrupt the outer target's
+teardown evidence. These commits do not reopen Stage 2, Stage 3, Stage 4A or
+Stage 4.
+
+The compiled `DownKyi.CentralTestRunner` retains project/platform routing,
+canonical xUnit arguments, one-shot authorization issuance, immutable
+invocation hashing, aggregate orchestration and TRX validation. One
+caller-created `TransitionBudget` covers authorization handoff and the test
+process lease. `OwnedProcessLease` / `SupervisorHost` exclusively own start,
+pre-execution containment, wait, terminate, reap, quiescence, streams and
+cleanup. PowerShell wrappers retain only typed argument forwarding, fixed
+compiled entrypoint invocation, logging and result propagation.
+
+Authorization uses a random current-user named endpoint plus token and complete
+argv hash. The assembly guard requires the exact one-frame protocol and EOF,
+clears the transport environment, rejects replay, wrong token/hash,
+partial/empty input and the legacy numeric pipe-handle environment. The
+supervisor transports opaque launch metadata and has no test authorization or
+policy dependency. Linux delegation is established before project/solution
+mode selection and the shared lease remains the only containment/membership
+owner; no PID/process-enumeration fallback was added.
+
+The focused executable proof covers authorization success/failure, owned
+normal/hung/cancelled/supervisor-failure children, owner EOF, stream drain,
+TRX failure despite exit zero and zero-test rejection. Ten review-corpus
+mutations each require exactly one owning test failure: raw `Process.Start`,
+numeric HANDLE/fd transport, supervisor authorization, guard bypass, replay,
+fresh deadline, private cleanup, exit-code-only TRX success, zero-test success
+and Linux enumeration fallback.
+
+The detailed owner table, transport contract, validation evidence and closure
+state are authoritative in
+`pr-197-stage-5-central-test-runner.md`. Stage 5 remains an open implementation
+checkpoint until its documentation commit is pushed, required Windows/Linux/
+macOS CI passes naturally on one exact head, the same head receives a clean
+Codex review and the worktree is clean. Stage 6 remains deferred.
 
 ## Stage 6: Legacy Removal
 

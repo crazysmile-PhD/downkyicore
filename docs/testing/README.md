@@ -29,16 +29,28 @@ TLS runtime、certificate storage、path comparison 與 Unix file-mode assertion
 
 正式 workflow 不直接啟動 `dotnet test`、VSTest 或 xUnit；所有 repository
 test execution 由 `script/test-project-runner.ps1` 統一處理 project ownership、
-platform routing 與 runner selection。這是 authoritative execution boundary；
-workflow 只委派 project 與 selection intent，不能自行選 test host。中央 runner
-對所有 test project 使用 in-process xUnit execution。所有宣告 test platform 的 assembly
-也共用 runtime execution guard，中央 runner 若退化成 VSTest 會在 assembly load 時
-fail closed。Runner 的 project owner 會依 canonical selection 建立完整 argument contract，
-並由同一 owner 建立 `ProcessStartInfo`、啟動 process 與完成一次性 pipe handshake；中間沒有
-可重新簽發 subset contract 的 launcher owner。Assembly initializer 會比對實際 command
-line，不能把 full-suite authorization 重用於 class subset。任何 started child 都由同一
-process owner 以有界、可取消的 wait 擁有；setup、execution、timeout、cancellation 或 capture
-失敗後皆 bounded terminate，cleanup failure 與原 failure 一併保留。
+platform routing 與 runner selection。PowerShell wrapper 只載入固定的 compiled
+entrypoint、轉交 typed options 並傳播結果；workflow 只委派 project 與 selection
+intent，不能自行選 test host。`DownKyi.CentralTestRunner` 對所有 test project
+使用 in-process xUnit execution，並獨占 policy、canonical arguments、one-shot
+authorization、aggregate orchestration 與 TRX semantics。它不直接啟動、等待或
+終止 test child。
+
+每次執行由中央 runner 建立完整 immutable argument contract、current-user random
+named endpoint、random token 與完整 argv hash，再以同一個 caller-owned
+`TransitionBudget` 將 immutable `LaunchSpec` 交給 `OwnedProcessLease`。
+`OwnedProcessLease` / `SupervisorHost` 是 test child start、pre-execution ownership、
+wait、terminate、reap、quiescence、streams 與 cleanup deadline 的唯一 owner；
+SupervisorHost 只 transport opaque endpoint/token metadata，不驗證 test policy。
+Assembly initializer 會清除 transport environment、驗證 exact token / argv hash /
+frame EOF，拒絕 legacy numeric HANDLE/fd 字串與 direct execution。Full-suite
+authorization 不能重用於 class subset，authorization 不能 replay。
+
+Shared TRX validator 仍是 authoritative result boundary：process exit 0 不會覆蓋
+failed TRX，zero executed tests fail closed，需要證明 selection 的 gate 必須逐一
+確認 expected class 有 executed 與 passed result。Linux CI 在 project/solution
+mode 分支之前只建立既有 delegated-cgroup context；實際 containment/membership
+仍由 shared process-supervision owner 完成，沒有 PID/process enumeration fallback。
 MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
 guard，不是可由呼叫者提供 property 的 authorization credential。
 完整 repository suite 與 required project gate 的 workflow step 必須使用結構化的
@@ -50,9 +62,6 @@ Central runner 仍獨占 runtime authorization 與 result validation。Recovery 
 `script/test-project-runner.ps1` 固定為 bootstrap
 trust root，再由 `Get-DownKyiTestRunnerTrustInputs` 宣告 dependency closure；provider
 變更/失敗、空清單或遺失的 declared input 都必須中止 recovery。
-需要證明實際 selection 的 security gate 必須使用共享 TRX
-validator，透過 test definition/result 關係逐一確認每個預期 class 都有實際 executed
-與 passed result，且 runner success 不得與 failed report outcome 矛盾。
 
 `DKYI1001` compiler analyzer 以 compilation-resolved method symbol 禁止非 process
 owner 呼叫 `SqliteConnection.ClearAllPools`。它分析並回報 generated code，且必須在
@@ -69,6 +78,7 @@ repository 支援的 Debug 與 Release compilation 都執行；語法、alias、
 - `review-invariant-policy.md`
 - `review-invariant-corpus.json`
 - `test-runner-policy.json`
+- `../exec-plans/pr-197-stage-5-central-test-runner.md`
 - `../maintenance.md`
 - `../operations/verification-and-rollback.md`
 

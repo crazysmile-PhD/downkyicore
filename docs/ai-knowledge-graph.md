@@ -2,7 +2,7 @@
 
 Status: maintained architecture index
 Schema version: 1.0
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-29
 
 This document is the first file an AI agent should read before changing DownKyi. Its goal is to preserve stable knowledge about project structure, ownership boundaries, and call relationships so agents do not rediscover the same code paths from scratch.
 
@@ -28,6 +28,11 @@ The target projects exist and the Desktop boundary is operational, but Infrastru
   not process arguments; Cookie is a host-scoped per-task option. Custom remote
   RPC requires HTTPS. The legacy settings `UseSsl` field is a one-way migration
   marker and has no runtime authority.
+- Repository tests route through the compiled central runner. It owns platform
+  and selection policy, canonical xUnit argv, one-shot named-endpoint
+  authorization and TRX semantics; the shared `OwnedProcessLease` exclusively
+  owns test-child start, pre-execution containment, wait, termination, reap,
+  quiescence, streams and the single caller-owned transition deadline.
 - These facts are tracked debt, not stable contracts. The ordered migration and release blockers live in `docs/refactoring-live-plan.md`.
 - `ModuleBoundaryBaselineTests` allows every listed debt item to disappear, but rejects new owners, consumers, duplicate names, UI dependencies, synchronous HTTP debt, or oversized-file growth.
 
@@ -144,6 +149,7 @@ flowchart TD
     UiSmoke["test.ui-smoke\nDownKyi.Desktop.Tests"]
     Benchmarks["test.performance-baseline\nBenchmarkCases + runner"]
     SystemBenchmarks["test.system-performance\nisolated system scenarios"]
+    CentralTestRunner["workflow.central-test-runner\npolicy + authorization + TRX semantics"]
     CI["workflow.strict-pr-ci\n.github/workflows/quality.yml"]
     ReviewInvariants["test.review-invariant-corpus\nroot-cause failure corpus"]
     AriaTlsCI["workflow.aria2-tls-security\nsix RID real-binary gate"]
@@ -180,6 +186,8 @@ flowchart TD
     SystemBenchmarks -->|measures| DownloadService
     SystemBenchmarks -->|measures| FFmpeg
     Nightly -->|runs| SystemBenchmarks
+    CI -->|delegates test intent| CentralTestRunner
+    CentralTestRunner -->|executes through owned lease| Tests
     CI -->|runs PR and main profiles| LifecycleGate
     CI -->|runs deterministic corpus| ReviewInvariants
     ReviewInvariants -->|guards| Tests
@@ -2463,6 +2471,47 @@ tests:
   - test.image-loader
 ```
 
+### workflow.central-test-runner
+
+```yaml
+id: workflow.central-test-runner
+type: workflow
+paths:
+  - tools/DownKyi.CentralTestRunner
+  - tools/DownKyi.ProcessSupervision
+  - tests/CentralTestExecutionGuard.cs
+  - script/test-project-runner.ps1
+  - script/test-solution.ps1
+  - script/invoke-ci-test-action.ps1
+  - docs/testing/test-runner-policy.json
+  - docs/testing/review-invariant-corpus.json
+responsibility: Owns repository test routing, canonical in-process xUnit invocation, one-shot launch authorization, aggregate orchestration and TRX semantics while delegating every test-child lifecycle transition to the shared process lease.
+inbound:
+  - workflow.strict-pr-ci
+  - workflow.assembly-lifecycle
+outbound:
+  - test.suites
+contracts:
+  - CentralTestPolicy is the only project/platform and runner-policy owner; PowerShell and YAML forward typed intent but do not select another host.
+  - CentralTestAuthorization issues one random current-user named endpoint, token and complete argv hash; the guard consumes the environment and requires the exact versioned frame followed by EOF.
+  - Numeric HANDLE/fd strings, wrong token or argv, replay, partial/empty authorization, wrong child, direct execution and VSTest fail closed.
+  - SupervisorHost transports the immutable LaunchSpec and owns no test authorization, selection or TRX policy.
+  - OwnedProcessLease is the only test-child start, pre-execution ownership, wait, terminate, reap, quiescence, stream and cleanup owner.
+  - Authorization and lease consume the same caller-created TransitionBudget; no fresh process deadline or cleanup window can appear after launch.
+  - Exit code zero cannot override a failed TRX, zero executed tests fail closed and expected-class proofs require executed and passed results.
+  - Linux establishes the existing delegated-cgroup context before project/solution routing and never falls back to PID, PPID, /proc or process enumeration.
+  - Lifecycle marker write authority is consumed by the outer target before it can launch nested test processes.
+hazards:
+  - Reintroducing the anonymous-pipe numeric handle across SupervisorHost treats a process-local reference as a portable capability.
+  - Letting the supervisor validate test policy creates a second authorization owner.
+  - Keeping a raw PowerShell launch or kill fallback creates a second lifecycle and deadline owner.
+  - Treating process exit as the test result can turn failed or zero-test TRX evidence green.
+tests:
+  - test.central-test-runner
+  - test.review-invariant-corpus
+  - test.assembly-lifecycle-architecture
+```
+
 ### workflow.strict-pr-ci
 
 ```yaml
@@ -2471,6 +2520,9 @@ type: workflow
 paths:
   - .github/workflows/quality.yml
   - .github/workflows/build.yml
+  - tools/DownKyi.CentralTestRunner
+  - tools/DownKyi.ProcessSupervision
+  - tests/CentralTestExecutionGuard.cs
   - script/test-project-runner.ps1
   - script/test-platform-selector.ps1
   - script/test-solution.ps1
@@ -2490,6 +2542,7 @@ contracts:
   - Compiler and CA warnings block every PR on Windows, Linux, and macOS with the repository default `CodeAnalysisTreatWarningsAsErrors=true`.
   - Cleaned analyzer rules are promoted to errors and cannot regress.
   - Test projects run in stable path order so one constrained runner cannot make independent xUnit hosts starve one another during discovery or shutdown.
+  - Structured test actions delegate to the compiled central runner; the runner retains policy, authorization and TRX semantics while the shared process lease exclusively owns test-child lifecycle and its single TransitionBudget.
   - Every test project explicitly lists its supported subset of Windows, Linux and macOS; shared runners reject missing or unknown declarations and select only projects that include the current OS.
   - Every test project writes a distinct assembly-named TRX; no solution-level logger filename may overwrite earlier project evidence.
   - Windows PR and main jobs must run the Assembly Lifecycle Stability Gate and upload its reports even when a phase fails.
@@ -3376,6 +3429,23 @@ test.application-lifetime:
     - helper arguments accept only one positive parent PID and use `ProcessStartInfo.ArgumentList`
     - single-instance names are stable per install, do not expose the install path, and can be reacquired after disposal
     - ViewModels cannot regain App, desktop lifetime, or process-restart ownership
+
+test.central-test-runner:
+  paths:
+    - tests/DownKyi.Architecture.Tests/CentralTestAuthorizationTests.cs
+    - tests/DownKyi.Architecture.Tests/CentralTestRunnerOwnershipTests.cs
+    - tests/DownKyi.Architecture.Tests/CentralTestRunnerMutationTests.cs
+    - tests/DownKyi.Architecture.Tests/TestRunnerPolicyArchitectureTests.cs
+    - tests/CentralTestExecutionGuard.cs
+    - docs/testing/review-invariant-corpus.json
+  guards:
+    - exact token and full canonical argv authorization reaches the owned target over one current-user named endpoint
+    - wrong token or invocation, replay, EOF, partial authorization, wrong child, numeric handle transport and direct execution fail closed
+    - OwnedProcessLease owns normal, hung, canceled, supervisor-failed and owner-EOF test children through reap, quiescence and stream drain
+    - CentralTestRunner cannot regain raw launch, wait, kill, private cleanup, a second execution deadline or Linux enumeration fallback
+    - SupervisorHost cannot become a test authorization, selection or TRX authority
+    - process exit zero cannot hide a failed TRX and zero executed tests cannot pass
+    - each Stage 5 mutation executes the complete owning class and causes exactly one expected failure
 
 test.assembly-lifecycle-architecture:
   paths:
