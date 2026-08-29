@@ -112,6 +112,7 @@ public static partial class VideoStreamApi
                 referer,
                 nameof(GetSubtitleAsync),
                 "GetSubtitle()",
+                includeCredentials: false,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(response))
             {
@@ -168,14 +169,14 @@ public static partial class VideoStreamApi
         if (Uri.TryCreate(normalizedUrl, UriKind.Absolute, out var absoluteUri))
         {
             return IsSupportedSubtitleUri(absoluteUri)
-                ? absoluteUri.ToString()
+                ? normalizedUrl
                 : null;
         }
 
         var httpsUrl = $"https://{normalizedUrl.TrimStart('/')}";
         return Uri.TryCreate(httpsUrl, UriKind.Absolute, out var httpsUri)
                && IsSupportedSubtitleUri(httpsUri)
-            ? httpsUri.ToString()
+            ? httpsUrl
             : null;
     }
 
