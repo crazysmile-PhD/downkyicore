@@ -11,6 +11,9 @@ internal static class CentralTestExecutionGuard
 {
     internal const string AssemblyLoadOwnerKey = "DownKyi.CentralTestAssemblyLoadOwner";
     internal const string AssemblyLoadOwnerValue = "DownKyi.AssemblyLifecycleProbe";
+    private const string LifecycleMarkerEnvironmentVariable = "DOWNKYI_LIFECYCLE_MARKER";
+    private const string LifecycleMarkerOwnerEnvironmentVariable =
+        "DOWNKYI_LIFECYCLE_MARKER_OWNER";
 
     [ModuleInitializer]
     [SuppressMessage(
@@ -19,6 +22,8 @@ internal static class CentralTestExecutionGuard
         Justification = "Every repository test assembly is an executable, and this initializer rejects non-central test hosts before discovery.")]
     internal static void RequireInProcessTestHost()
     {
+        ConsumeLifecycleMarkerOwnership();
+
         if (string.Equals(
                 Environment.GetEnvironmentVariable(
                     "DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS"),
@@ -104,6 +109,19 @@ internal static class CentralTestExecutionGuard
             pipe.ReadByte() != -1)
         {
             ThrowUnauthorized();
+        }
+    }
+
+    private static void ConsumeLifecycleMarkerOwnership()
+    {
+        var ownsLifecycleMarker = string.Equals(
+            Environment.GetEnvironmentVariable(LifecycleMarkerOwnerEnvironmentVariable),
+            "1",
+            StringComparison.Ordinal);
+        Environment.SetEnvironmentVariable(LifecycleMarkerOwnerEnvironmentVariable, null);
+        if (!ownsLifecycleMarker)
+        {
+            Environment.SetEnvironmentVariable(LifecycleMarkerEnvironmentVariable, null);
         }
     }
 

@@ -3500,6 +3500,7 @@ foreach ($testProject in $testProjects) {
             ) `
             -Environment @{
                 DOWNKYI_LIFECYCLE_MARKER = $markerPath
+                DOWNKYI_LIFECYCLE_MARKER_OWNER = "1"
             } `
             -LifecycleMarkerPath $markerPath
         $phaseResults += New-ProcessPhaseResult -ProcessResult $execution

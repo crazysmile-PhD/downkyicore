@@ -29,6 +29,33 @@ public sealed class AssemblyLifecycleArchitectureTests
     }
 
     [Fact]
+    public void LifecycleMarkerOwnershipIsConsumedBeforeNestedTestProcessesStart()
+    {
+        var lifecycle = Read("script/test-assembly-lifecycle.ps1");
+        var guard = Read("tests/CentralTestExecutionGuard.cs");
+
+        Assert.Contains(
+            "DOWNKYI_LIFECYCLE_MARKER_OWNER = \"1\"",
+            lifecycle,
+            StringComparison.Ordinal);
+        var consumeIndex = guard.IndexOf(
+            "ConsumeLifecycleMarkerOwnership();",
+            StringComparison.Ordinal);
+        var guardBypassIndex = guard.IndexOf(
+            "DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS",
+            StringComparison.Ordinal);
+        Assert.True(consumeIndex >= 0 && consumeIndex < guardBypassIndex);
+        Assert.Contains(
+            "Environment.SetEnvironmentVariable(LifecycleMarkerOwnerEnvironmentVariable, null)",
+            guard,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Environment.SetEnvironmentVariable(LifecycleMarkerEnvironmentVariable, null)",
+            guard,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DesktopSmokeTestsClearOnlyTheirOwnedSqlitePools()
     {
         var source = Read("tests/DownKyi.Desktop.Tests/UiSmokeTests.cs");
@@ -90,6 +117,7 @@ public sealed class AssemblyLifecycleArchitectureTests
             "dotnet-stack",
             "managed-stack.txt",
             "DOWNKYI_LIFECYCLE_MARKER",
+            "DOWNKYI_LIFECYCLE_MARKER_OWNER",
             "stdoutPolluted",
             "stderrPolluted",
             "residualChildCount",
