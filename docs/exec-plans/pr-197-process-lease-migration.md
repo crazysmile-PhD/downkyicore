@@ -1151,6 +1151,22 @@ checkpoint until its documentation commit is pushed, required Windows/Linux/
 macOS CI passes naturally on one exact head, the same head receives a clean
 Codex review and the worktree is clean. Stage 6 remains deferred.
 
+Initial documentation head
+`5177d4605e12fbeb0039e8ef27434d8062938051` naturally triggered Strict PR run
+`33232585457`. Successful format, audit, CodeQL, protobuf, FFmpeg, delegated
+Linux and macOS-membership jobs did not override four Stage 5 integration
+findings: direct review execution missed Linux delegation, prebuilt aria2 jobs
+could not bootstrap a missing compiled provider under target `NoBuild`, a
+Windows source oracle assumed LF and the macOS launch fixture orphaned a child
+after killing only its term-resistant root. No failed job was rerun and no
+same-head review was requested.
+
+Follow-up `86d99537a8a360edce00be16d666f96c3dda93c1` fixes only those proven
+boundaries and adds their policy/mutation proof. The run's separate unchanged
+Stage 3 slow-evidence ordering self-test `AggregateException` was not folded
+into Stage 5. Replacement exact-head CI and same-head review remain required;
+Stage 6 stays deferred.
+
 ## Stage 6: Legacy Removal
 
 Remove remaining duplicate start, wait, kill, reap, timeout and process-identity

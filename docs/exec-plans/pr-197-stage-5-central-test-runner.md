@@ -1,7 +1,7 @@
 # PR #197 Stage 5 Central Test Runner
 
-Status: implementation and local executable proof complete; exact-head native
-CI and same-head review pending.
+Status: native-CI follow-up implementation and local executable proof complete;
+replacement exact-head native CI and same-head review pending.
 
 Starting authority:
 `dd6364b7e713d3b3c81efd739821cc7e0baafe86` on
@@ -116,6 +116,24 @@ create a central-runner-private containment path. The shared Linux
 owner. If the delegated cgroup is unavailable, launch fails closed; there is no
 PID, PPID, `/proc` or process-enumeration kill fallback.
 
+The direct `script/test-review-invariants.ps1` entrypoint evaluates the same
+shared bootstrap before it loads the runner or starts a normal/mutation test.
+This prevents a caller from bypassing the delegated scope merely by invoking
+the review corpus directly.
+
+`-NoBuild` applies to the selected test target, not to the compiled provider
+required to interpret that request. If `DownKyi.CentralTestRunner.dll` is
+missing, the wrapper deterministically builds that provider while preserving
+the caller's `-NoRestore` choice, then forwards `NoBuild=true` to the target
+options. There is still one compiled entrypoint and no PowerShell test-host
+fallback.
+
+The macOS packaged-app launch verifier is a bounded fixture owner separate from
+the central test child. It enables shell job control before launching the app,
+thereby creating an app-specific process group, and sends TERM/KILL to that
+group before waiting for its root. A term-resistant root can no longer orphan
+its `sleep` descendant after the fixture reports success.
+
 ## Executable Proof
 
 Normal authorization and ownership tests prove exact invocation success,
@@ -180,13 +198,79 @@ Linux and macOS cross-platform compilation is not native execution evidence.
 Their runner, transport and containment proof remains pending naturally
 triggered exact-head CI.
 
+## First Exact-Head CI Feedback
+
+The documentation checkpoint produced exact head
+`5177d4605e12fbeb0039e8ef27434d8062938051` and naturally triggered Strict PR
+run `33232585457`. Format, package audit, CodeQL, protobuf, FFmpeg, delegated
+Linux cgroup and both macOS membership jobs passed. No job was rerun and no
+same-head `@codex review` was requested because the required set was not green.
+
+The failed jobs established four Stage 5 follow-up causes:
+
+1. Ubuntu Strict entered the review corpus directly, outside the shared
+   delegated-cgroup bootstrap, and failed to create its lease cgroup under the
+   hosted service scope.
+2. All six aria2 TLS jobs restored the solution and built only
+   `DownKyi.Tests`; `-NoBuild` incorrectly prevented bootstrap of the missing
+   compiled runner provider before the prebuilt target could execute.
+3. Windows Strict reached the Architecture policy gate, where two budget
+   assertions depended on LF source text and rejected the hosted Windows CRLF
+   checkout.
+4. macOS Strict completed `DownKyi.MacOS.Tests` with a 93/93 passing TRX, then
+   the outer lease correctly reported `OwnedTreeNotQuiescent`. The last
+   process-spawning fixture killed only its term-resistant app root and left the
+   shell's `sleep` descendant alive.
+
+Implementation/proof follow-up
+`86d99537a8a360edce00be16d666f96c3dda93c1` routes the direct review gate through
+the shared delegated scope, bootstraps the provider independently of target
+`NoBuild`, normalizes the static C# oracle's line endings and makes the macOS
+fixture own its whole app process group. It does not change the closed Stage 2,
+Stage 3, Stage 4A or Stage 4 production contracts.
+
+The Assembly Lifecycle job failed earlier in the unchanged Stage 3 slow-
+evidence ordering self-test with `AggregateException`, before formal assembly
+phases and with repository-test authorization disabled for that fixture. The
+Stage 5 follow-up does not alter that observer/collector contract. Replacement
+exact-head CI must determine whether this remains a separate blocker; blind
+rerun or a Stage 3 scope expansion is prohibited.
+
+## Follow-Up Local Validation
+
+Validation of `86d99537a8a360edce00be16d666f96c3dda93c1` before the follow-up
+documentation commit produced:
+
+- targeted policy/release/mutation proof: 38/38 passed on the Windows CRLF
+  checkout;
+- full Architecture: 354/354 passed;
+- review-invariant gate: 13 invariants, seven normal projects, 368 normal tests
+  and 25 adversarial proofs passed;
+- all ten Stage 5 profiles: ten tests executed with exactly one owning failure
+  per profile;
+- strict Release solution build: zero warnings and zero errors;
+- `dotnet format --verify-no-changes`: 0/1008 files changed;
+- PowerShell parse, `bash -n`, JSON-backed corpus execution and
+  `git diff --check` passed.
+
+An isolated missing-Debug-provider check proved that `-NoBuild -NoRestore`
+bootstrapped `DownKyi.CentralTestRunner` with zero build warnings/errors while
+leaving the target unbuilt. The deliberately stale Debug target execution did
+not complete and was canceled; it is not counted as test evidence. The newly
+built Release target and all reported Release gates above are the local
+executable evidence. Native Linux delegation and macOS process-group cleanup
+remain CI-only proof.
+
 ## Commits And Closure
 
 - `a768a9d86bba3b5bd0f0834a7997cf21a9ccd017` — compiled migration and
   executable proof;
 - `8ecba8f0fc86dd10d70ce309c9101379873a8ba6` — nested lifecycle-marker
   isolation proof;
-- documentation checkpoint — this file and the stable owner indexes.
+- `5177d4605e12fbeb0039e8ef27434d8062938051` — initial documentation
+  checkpoint;
+- `86d99537a8a360edce00be16d666f96c3dda93c1` — native-CI ownership follow-up;
+- follow-up documentation checkpoint — this file and the stable owner indexes.
 
 After the documentation commit, push once and verify local HEAD, upstream,
 remote branch and PR #197 head are identical. Do not rerun a previous workflow.

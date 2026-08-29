@@ -49,8 +49,12 @@ authorization 不能重用於 class subset，authorization 不能 replay。
 Shared TRX validator 仍是 authoritative result boundary：process exit 0 不會覆蓋
 failed TRX，zero executed tests fail closed，需要證明 selection 的 gate 必須逐一
 確認 expected class 有 executed 與 passed result。Linux CI 在 project/solution
-mode 分支之前只建立既有 delegated-cgroup context；實際 containment/membership
-仍由 shared process-supervision owner 完成，沒有 PID/process enumeration fallback。
+mode 分支之前只建立既有 delegated-cgroup context；直接執行 review corpus 也必須
+在載入 runner 前進入相同 delegated scope。實際 containment/membership 仍由
+shared process-supervision owner 完成，沒有 PID/process enumeration fallback。
+`-NoBuild` 只禁止重建選定的 test target；若固定 compiled runner provider 缺席，
+wrapper 必須依相同 restore policy 先補齊 provider，再把 `NoBuild=true` 原樣傳給
+target，不能改走 PowerShell test-host fallback。
 MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
 guard，不是可由呼叫者提供 property 的 authorization credential。
 完整 repository suite 與 required project gate 的 workflow step 必須使用結構化的

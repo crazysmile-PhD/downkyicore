@@ -3444,6 +3444,8 @@ test.central-test-runner:
     - OwnedProcessLease owns normal, hung, canceled, supervisor-failed and owner-EOF test children through reap, quiescence and stream drain
     - CentralTestRunner cannot regain raw launch, wait, kill, private cleanup, a second execution deadline or Linux enumeration fallback
     - SupervisorHost cannot become a test authorization, selection or TRX authority
+    - target NoBuild cannot make the required compiled runner provider optional or restore a PowerShell host fallback
+    - CI action and direct review-corpus execution enter the same delegated Linux cgroup scope before loading the runner
     - process exit zero cannot hide a failed TRX and zero executed tests cannot pass
     - each Stage 5 mutation executes the complete owning class and causes exactly one expected failure
 

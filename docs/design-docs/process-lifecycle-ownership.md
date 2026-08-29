@@ -101,7 +101,21 @@ must contain a passing result. Platform routing remains in the central policy.
 On Linux, the CI action establishes the existing delegated-cgroup context
 before either project or solution mode reaches the compiled runner; containment
 and membership remain shared `OwnedProcessLease` responsibilities, with no
-PID/process-enumeration fallback.
+PID/process-enumeration fallback. Direct review-corpus execution establishes
+that same delegated context before loading the runner, so the review entrypoint
+cannot bypass the platform owner.
+
+`NoBuild` describes the selected test target. It does not make the compiled
+runner provider optional: when that provider is missing, the wrapper builds it
+with the caller's restore policy and then forwards the unchanged target option.
+PowerShell never substitutes a private test host or process owner.
+
+The macOS packaged-app launch verification script is a bounded fixture owner,
+not a central test-child owner. It creates an app-specific process group before
+launch and terminates that whole group before waiting for the app root. This
+keeps a term-resistant root from orphaning descendants after fixture success;
+the outer `OwnedProcessLease` remains the authoritative repository-test
+quiescence check.
 
 Lifecycle marker write authority is also one-shot. The lifecycle gate gives
 only its outer test target `DOWNKYI_LIFECYCLE_MARKER_OWNER=1`; the module
