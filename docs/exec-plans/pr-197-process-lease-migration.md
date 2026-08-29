@@ -1242,6 +1242,30 @@ Stage 4 code or Stage 5 central-runner code changed. Exact-head CI and same-head
 review remain required before Stage 5 can close; Stage 6 does not start
 automatically.
 
+### Independent DKYI1001 Exact Repository-Path Review Remediation
+
+This review-remediation checkpoint starts from exact head
+`6d4aae44bedf1d6dfadac43007dad480c2e9be5b`. It is independent of Stage 5
+and does not start Stage 6.
+
+The compiler-resolved `DKYI1001` symbol invariant and `NotConfigurable`
+severity remain unchanged. The sole `SqliteConnection.ClearAllPools` owner is
+now bound to repository-relative exact path
+`benchmarks/DownKyi.SystemBenchmarks/Program.cs`. The authoritative
+`Directory.Build.targets` contributes its own path as a marked compiler
+`AdditionalFiles` input, so the analyzer derives one repository root from
+build context rather than accepting a suffix-shaped source path. Missing or
+ambiguous markers fail closed; nested suffixes, separator changes and source
+`#line` directives cannot confer authority.
+
+The focused analyzer class passed 20/20, including exact owner, nested suffix,
+non-owner assembly/path, path normalization, alternate separator, missing
+build context, source-line forgery, delegate/method-reference and pragma
+suppression proofs. Full Architecture passed 363/363. The real benchmark
+project compiled in both Release and Debug with zero warnings and zero errors.
+This checkpoint must remain a separate commit from the following Stage 5
+review remediation and does not independently trigger or close exact-head CI.
+
 ## Stage 6: Legacy Removal
 
 Remove remaining duplicate start, wait, kill, reap, timeout and process-identity

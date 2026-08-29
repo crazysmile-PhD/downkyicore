@@ -1,4 +1,13 @@
 ﻿<Project>
+  <ItemGroup>
+    <AdditionalFiles Include="$(MSBuildThisFileFullPath)">
+      <DownKyiRepositoryRootMarker>true</DownKyiRepositoryRootMarker>
+    </AdditionalFiles>
+    <CompilerVisibleItemMetadata
+      Include="AdditionalFiles"
+      MetadataName="DownKyiRepositoryRootMarker" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(DownKyiTestPlatforms)' != ''">
     <Compile
       Include="$(MSBuildThisFileDirectory)tests\CentralTestExecutionGuard.cs"

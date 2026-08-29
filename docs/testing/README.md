@@ -80,7 +80,11 @@ owner 呼叫 `SqliteConnection.ClearAllPools`。它分析並回報 generated cod
 repository 支援的 Debug 與 Release compilation 都執行；語法、alias、global using
 與 preprocessor 形式不構成例外，caller source 也不得 suppress 該 ownership error。
 唯一 process-level allowlist owner 是
-`DownKyi.SystemBenchmarks`。
+`DownKyi.SystemBenchmarks` 中 repository-relative exact path
+`benchmarks/DownKyi.SystemBenchmarks/Program.cs`。Repository root 只由
+`Directory.Build.targets` 發布的 marked compiler `AdditionalFiles` build context
+提供；缺少或重複 root marker、nested suffix、separator 變形與其他 assembly/path
+組合都 fail closed，source text 與 `#line` 不能取得 owner authority。
 
 重要文件：
 

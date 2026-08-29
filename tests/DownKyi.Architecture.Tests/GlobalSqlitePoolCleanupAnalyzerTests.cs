@@ -3,6 +3,7 @@ using DownKyi.ArchitectureAnalyzers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Text;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -120,12 +121,18 @@ public sealed class GlobalSqlitePoolCleanupAnalyzerTests
     {
         const string source =
             "using Microsoft.Data.Sqlite; class C { void M() => SqliteConnection.ClearAllPools(); }";
+        var ownerPath = Path.Combine(
+            RepositoryRoot,
+            "benchmarks",
+            "DownKyi.SystemBenchmarks",
+            "Program.cs");
 
         var diagnostics = await AnalyzeAsync(
                 source,
                 "Release",
                 GlobalSqlitePoolCleanupAnalyzer.AllowedProcessOwnerAssembly,
-                GlobalSqlitePoolCleanupAnalyzer.AllowedProcessOwnerPath)
+                ownerPath,
+                RepositoryRoot)
             .ConfigureAwait(true);
 
         Assert.DoesNotContain(diagnostics, diagnostic =>
@@ -135,14 +142,146 @@ public sealed class GlobalSqlitePoolCleanupAnalyzerTests
     [Theory]
     [InlineData("DownKyi.SystemBenchmarks", "benchmarks/Other/Program.cs")]
     [InlineData("OtherAssembly", "benchmarks/DownKyi.SystemBenchmarks/Program.cs")]
-    public async Task ProcessOwnerAllowlistRequiresAssemblyAndSourceIdentity(
+    public async Task ProcessOwnerAllowlistRequiresAssemblyAndExactRepositoryPath(
         string assemblyName,
-        string path)
+        string repositoryRelativePath)
+    {
+        ArgumentNullException.ThrowIfNull(repositoryRelativePath);
+        const string source =
+            "using Microsoft.Data.Sqlite; class C { void M() => SqliteConnection.ClearAllPools(); }";
+        var path = Path.Combine(
+            RepositoryRoot,
+            repositoryRelativePath.Replace('/', Path.DirectorySeparatorChar));
+
+        var diagnostics = await AnalyzeAsync(
+                source,
+                "Release",
+                assemblyName,
+                path,
+                RepositoryRoot)
+            .ConfigureAwait(true);
+
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == GlobalSqlitePoolCleanupAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task NestedSuffixPathCannotAcquireProcessOwnership()
     {
         const string source =
             "using Microsoft.Data.Sqlite; class C { void M() => SqliteConnection.ClearAllPools(); }";
+        var nestedSuffixPath = Path.Combine(
+            RepositoryRoot,
+            "benchmarks",
+            "DownKyi.SystemBenchmarks",
+            "nested",
+            "benchmarks",
+            "DownKyi.SystemBenchmarks",
+            "Program.cs");
 
-        var diagnostics = await AnalyzeAsync(source, "Release", assemblyName, path)
+        var diagnostics = await AnalyzeAsync(
+                source,
+                "Release",
+                GlobalSqlitePoolCleanupAnalyzer.AllowedProcessOwnerAssembly,
+                nestedSuffixPath,
+                RepositoryRoot)
+            .ConfigureAwait(true);
+
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == GlobalSqlitePoolCleanupAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task NormalizedExactOwnerPathRemainsTheSameOwner()
+    {
+        const string source =
+            "using Microsoft.Data.Sqlite; class C { void M() => SqliteConnection.ClearAllPools(); }";
+        var normalizedOwnerPath = Path.Combine(
+            RepositoryRoot,
+            "benchmarks",
+            "DownKyi.SystemBenchmarks",
+            "nested",
+            "..",
+            "Program.cs");
+
+        var diagnostics = await AnalyzeAsync(
+                source,
+                "Release",
+                GlobalSqlitePoolCleanupAnalyzer.AllowedProcessOwnerAssembly,
+                normalizedOwnerPath,
+                RepositoryRoot)
+            .ConfigureAwait(true);
+
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            diagnostic.Id == GlobalSqlitePoolCleanupAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task AlternateSeparatorCannotTurnNestedSuffixIntoTheOwner()
+    {
+        const string source =
+            "using Microsoft.Data.Sqlite; class C { void M() => SqliteConnection.ClearAllPools(); }";
+        var alternateSeparator = Path.DirectorySeparatorChar == '/' ? '\\' : '/';
+        var nestedSuffixPath = string.Join(
+            alternateSeparator,
+            RepositoryRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            "benchmarks",
+            "DownKyi.SystemBenchmarks",
+            "nested",
+            "benchmarks",
+            "DownKyi.SystemBenchmarks",
+            "Program.cs");
+
+        var diagnostics = await AnalyzeAsync(
+                source,
+                "Release",
+                GlobalSqlitePoolCleanupAnalyzer.AllowedProcessOwnerAssembly,
+                nestedSuffixPath,
+                RepositoryRoot)
+            .ConfigureAwait(true);
+
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == GlobalSqlitePoolCleanupAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task MissingTrustedRepositoryRootFailsClosed()
+    {
+        const string source =
+            "using Microsoft.Data.Sqlite; class C { void M() => SqliteConnection.ClearAllPools(); }";
+        var ownerPath = Path.Combine(
+            RepositoryRoot,
+            "benchmarks",
+            "DownKyi.SystemBenchmarks",
+            "Program.cs");
+
+        var diagnostics = await AnalyzeAsync(
+                source,
+                "Release",
+                GlobalSqlitePoolCleanupAnalyzer.AllowedProcessOwnerAssembly,
+                ownerPath)
+            .ConfigureAwait(true);
+
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == GlobalSqlitePoolCleanupAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task SourceLineDirectiveCannotForgeOwnerPath()
+    {
+        const string source = """
+            #line 1 "benchmarks/DownKyi.SystemBenchmarks/Program.cs"
+            using Microsoft.Data.Sqlite;
+            class C { void M() => SqliteConnection.ClearAllPools(); }
+            """;
+        var nonOwnerPath = Path.Combine(RepositoryRoot, "AdversarialOwner.cs");
+
+        var diagnostics = await AnalyzeAsync(
+                source,
+                "Release",
+                GlobalSqlitePoolCleanupAnalyzer.AllowedProcessOwnerAssembly,
+                nonOwnerPath,
+                RepositoryRoot)
             .ConfigureAwait(true);
 
         Assert.Contains(diagnostics, diagnostic =>
@@ -175,7 +314,8 @@ public sealed class GlobalSqlitePoolCleanupAnalyzerTests
         string source,
         string configuration,
         string assemblyName = "AdversarialOwner",
-        string path = "Source.cs")
+        string path = "Source.cs",
+        string? repositoryRoot = null)
     {
         var symbols = configuration switch
         {
@@ -195,11 +335,59 @@ public sealed class GlobalSqlitePoolCleanupAnalyzerTests
                 OutputKind.DynamicallyLinkedLibrary,
                 allowUnsafe: true));
         var analyzer = new GlobalSqlitePoolCleanupAnalyzer();
+        var repositoryRootMarker = repositoryRoot == null
+            ? null
+            : new TestAdditionalText(Path.Combine(repositoryRoot, "Directory.Build.targets"));
+        var additionalFiles = repositoryRootMarker == null
+            ? ImmutableArray<AdditionalText>.Empty
+            : ImmutableArray.Create<AdditionalText>(repositoryRootMarker);
+        var analyzerOptions = new AnalyzerOptions(
+            additionalFiles,
+            new TestAnalyzerConfigOptionsProvider(repositoryRootMarker));
 
         return await compilation
-            .WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(analyzer))
+            .WithAnalyzers(
+                ImmutableArray.Create<DiagnosticAnalyzer>(analyzer),
+                analyzerOptions)
             .GetAnalyzerDiagnosticsAsync(TestContext.Current.CancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private sealed class TestAnalyzerConfigOptionsProvider(
+        AdditionalText? repositoryRootMarker)
+        : AnalyzerConfigOptionsProvider
+    {
+        private static readonly AnalyzerConfigOptions Empty =
+            new TestAnalyzerConfigOptions(new Dictionary<string, string>());
+
+        public override AnalyzerConfigOptions GlobalOptions { get; } =
+            Empty;
+
+        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => Empty;
+
+        public override AnalyzerConfigOptions GetOptions(AdditionalText textFile) =>
+            ReferenceEquals(textFile, repositoryRootMarker)
+                ? new TestAnalyzerConfigOptions(
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        [GlobalSqlitePoolCleanupAnalyzer.RepositoryRootMarkerMetadata] = "true"
+                    })
+                : Empty;
+    }
+
+    private sealed class TestAnalyzerConfigOptions(
+        IReadOnlyDictionary<string, string> values) : AnalyzerConfigOptions
+    {
+        public override bool TryGetValue(string key, out string value) =>
+            values.TryGetValue(key, out value!);
+    }
+
+    private sealed class TestAdditionalText(string path) : AdditionalText
+    {
+        public override string Path { get; } = path;
+
+        public override SourceText GetText(CancellationToken cancellationToken = default) =>
+            SourceText.From(string.Empty);
     }
 
     private static string FindRepositoryRoot()
