@@ -38,6 +38,12 @@ $ariaChecksum = Resolve-RequiredFile "aria2 binary checksum" @("aria2/aria2c.exe
 $ffmpegExecutable = Resolve-RequiredFile "FFmpeg executable" @("ffmpeg/ffmpeg.exe", "ffmpeg/ffmpeg")
 $ffprobeExecutable = Resolve-RequiredFile "ffprobe executable" @("ffmpeg/ffprobe.exe", "ffmpeg/ffprobe")
 $depsFile = Resolve-RequiredFile "DownKyi dependency manifest" @("DownKyi.deps.json")
+$fluentTheme = Resolve-RequiredFile "Avalonia Fluent theme assembly" @("Avalonia.Themes.Fluent.dll")
+
+$simpleTheme = Join-Path $PublishDirectory "Avalonia.Themes.Simple.dll"
+if (Test-Path -LiteralPath $simpleTheme -PathType Leaf) {
+    throw "Published output still contains Avalonia.Themes.Simple.dll."
+}
 
 $actualVersion = [Reflection.AssemblyName]::GetAssemblyName($downKyiAssembly).Version
 $expected = [Version]$ExpectedVersion
@@ -71,7 +77,8 @@ $requiredFiles = @(
     $ariaChecksum,
     $ffmpegExecutable,
     $ffprobeExecutable,
-    $depsFile
+    $depsFile,
+    $fluentTheme
 )
 $manifestFiles = @(
     foreach ($path in $requiredFiles) {

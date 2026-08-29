@@ -194,6 +194,10 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Validate annotated release subject
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: ./script/validate-release-subject.ps1 -SubjectDirectory . -ReleaseVersion '${{ github.ref_name }}' -SubjectSha '${{ github.sha }}' -RequireExactMain
       - name: Generate a changelog
         uses: orhun/git-cliff-action@v4
         id: git-cliff
@@ -260,6 +264,12 @@ jobs:
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
             -OutputPath "script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json"
           $package = "script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}"
+          ./script/validate-release-package.ps1 `
+            -PackagePath $package `
+            -PackageKind "${{ matrix.kind }}" `
+            -RuntimeIdentifier "win-${{ matrix.cpu }}" `
+            -ExpectedVersion "${{ steps.version.outputs.content }}" `
+            -OutputPath "script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json"
           $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload build artifacts ${{ matrix.kind }}
@@ -322,7 +332,7 @@ jobs:
         run: |
           dotnet tool install --tool-path ./.tools KuiperZone.PupNet --version 1.8.0
           sudo apt-get update
-          sudo apt-get install -y libfuse2
+          sudo apt-get install -y cpio libfuse2 p7zip-full rpm2cpio
       - name: Get Deps
         run: |
           chmod +x ffmpeg.sh
@@ -358,6 +368,12 @@ jobs:
           $package = Get-ChildItem "script/pupnet/output" -File -Filter "*${{ matrix.package-tail }}.${{ matrix.kind }}" |
             Select-Object -First 1
           if ($null -eq $package) { throw "Expected Linux package was not produced." }
+          ./script/validate-release-package.ps1 `
+            -PackagePath $package.FullName `
+            -PackageKind "${{ matrix.kind }}" `
+            -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
+            -ExpectedVersion "${{ steps.version.outputs.content }}" `
+            -OutputPath "script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
           $hash = (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($package.Name)" | Set-Content -LiteralPath "$($package.FullName).sha256" -Encoding ascii
       - name: Upload build artifacts ${{ matrix.kind }}
@@ -371,8 +387,6 @@ jobs:
   build-macos:
     runs-on: ${{ matrix.os }}
     needs: changelog
-    env:
-      HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -384,6 +398,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Resolve macOS release trust mode
+        shell: pwsh
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
+        run: |
+          $resultPath = Join-Path $env:RUNNER_TEMP "macos-release-trust.json"
+          ./script/resolve-macos-release-trust.ps1 -OutputPath $resultPath
+          $trust = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+          "HAS_MACOS_SIGNING=$($trust.hasMacosSigning.ToString().ToLowerInvariant())" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          "MACOS_TRUST_MODE=$($trust.macosTrustMode)" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
       - name: Import certificate
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         uses: apple-actions/import-codesign-certs@v7
