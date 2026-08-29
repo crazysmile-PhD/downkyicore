@@ -314,7 +314,7 @@ public sealed class MacBundleLayoutTests
                 continue;
             }
 
-            const string prefix = "PID=";
+            const string prefix = "PID";
             var start = line.IndexOf(prefix, StringComparison.Ordinal);
             if (start < 0)
             {
@@ -322,7 +322,25 @@ public sealed class MacBundleLayoutTests
             }
 
             start += prefix.Length;
-            var end = line.IndexOf(' ', start);
+            while (start < line.Length && char.IsWhiteSpace(line[start]))
+            {
+                start++;
+            }
+            if (start >= line.Length || line[start] != '=')
+            {
+                continue;
+            }
+
+            start++;
+            while (start < line.Length && char.IsWhiteSpace(line[start]))
+            {
+                start++;
+            }
+            var end = start;
+            while (end < line.Length && char.IsAsciiDigit(line[end]))
+            {
+                end++;
+            }
             if (end > start && int.TryParse(line.AsSpan(start, end - start), out var processId))
             {
                 return processId;
