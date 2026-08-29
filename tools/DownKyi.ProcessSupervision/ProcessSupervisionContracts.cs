@@ -393,5 +393,6 @@ internal enum ProcessOwnershipMutation
     FailFixturePublication = 256,
     FailAfterMembershipAttachment = 512,
     StallStreamDrain = 1024,
-    StallRootReap = 2048
+    StallRootReap = 2048,
+    SkipTargetStreamForwarding = 4096
 }

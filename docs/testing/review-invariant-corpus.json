@@ -359,6 +359,15 @@
           "environmentValue": "1",
           "expectedOutcome": "test-failure",
           "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CentralTestRunnerOwnershipTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CENTRAL_TARGET_STREAM_FORWARDING",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
         }
       ]
     },

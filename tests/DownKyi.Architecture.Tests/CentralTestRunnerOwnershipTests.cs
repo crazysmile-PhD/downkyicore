@@ -8,6 +8,8 @@ public sealed class CentralTestRunnerOwnershipTests
 {
     private const string BlockingModeVariable = "DOWNKYI_STAGE5_BLOCKING_MODE";
     private const string ReadyPathVariable = "DOWNKYI_STAGE5_READY_PATH";
+    private const string TargetStreamMutationVariable =
+        "DOWNKYI_TEST_MUTATE_CENTRAL_TARGET_STREAM_FORWARDING";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
     private static readonly string ProjectPath = Path.Combine(
         RepositoryRoot,
@@ -195,6 +197,14 @@ public sealed class CentralTestRunnerOwnershipTests
             Assert.Empty(failure.CleanupFailures);
             Assert.IsAssignableFrom<OperationCanceledException>(failure.InnerException);
             AssertProcessExited(processId);
+            Assert.Contains(
+                "stage5-owned-test-stdout",
+                failure.Failure.StandardOutput,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "stage5-owned-test-stderr",
+                failure.Failure.StandardError,
+                StringComparison.Ordinal);
             Assert.Contains("stage5-owned-test-stdout", output.StandardOutput, StringComparison.Ordinal);
             Assert.Contains("stage5-owned-test-stderr", output.StandardError, StringComparison.Ordinal);
         }
@@ -257,11 +267,17 @@ public sealed class CentralTestRunnerOwnershipTests
             [ReadyPathVariable] = readyPath
         };
         authorization.ApplyEnvironment(environment);
+        var processMutation = string.Equals(
+            Environment.GetEnvironmentVariable(TargetStreamMutationVariable),
+            "1",
+            StringComparison.Ordinal)
+            ? ProcessOwnershipMutation.SkipTargetStreamForwarding
+            : ProcessOwnershipMutation.None;
         var budget = TransitionBudget.Start(TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(5));
         var lease = await OwnedProcessLease.StartForTestingAsync(
                 new LaunchSpec("dotnet", arguments, RepositoryRoot, environment, true),
                 budget,
-                ProcessOwnershipMutation.None,
+                processMutation,
                 TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
         await using var leaseScope = lease.ConfigureAwait(false);
@@ -282,6 +298,14 @@ public sealed class CentralTestRunnerOwnershipTests
             Assert.Equal(OwnedProcessFailureKind.ExecutionFailed, failure.Failure.Kind);
             Assert.Empty(failure.CleanupFailures);
             AssertProcessExited(processId);
+            Assert.Contains(
+                "stage5-owned-test-stdout",
+                failure.Failure.StandardOutput,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "stage5-owned-test-stderr",
+                failure.Failure.StandardError,
+                StringComparison.Ordinal);
         }
         finally
         {
@@ -457,11 +481,7 @@ public sealed class CentralTestRunnerBlockingFixture
         var readyPath = Environment.GetEnvironmentVariable("DOWNKYI_STAGE5_READY_PATH");
         if (!string.IsNullOrWhiteSpace(readyPath))
         {
-            await File.WriteAllTextAsync(
-                    readyPath,
-                    Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    TestContext.Current.CancellationToken)
-                .ConfigureAwait(true);
+            await PublishReadyProcessIdAsync(readyPath).ConfigureAwait(true);
         }
 
         if (blocking)
@@ -471,5 +491,35 @@ public sealed class CentralTestRunnerBlockingFixture
         }
 
         Assert.True(Environment.ProcessId > 0);
+    }
+
+    private static async Task PublishReadyProcessIdAsync(string readyPath)
+    {
+        var temporaryPath = $"{readyPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            var payload = System.Text.Encoding.UTF8.GetBytes(
+                Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            var stream = new FileStream(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.WriteThrough);
+            await using (stream.ConfigureAwait(false))
+            {
+                await stream.WriteAsync(payload, TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+                await stream.FlushAsync(TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+            }
+
+            File.Move(temporaryPath, readyPath);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
     }
 }

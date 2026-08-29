@@ -179,7 +179,8 @@ internal static class SupervisorHost
             ProcessOwnershipMutation.ReleaseAnchorBeforeMembership |
             ProcessOwnershipMutation.FailFixturePublication |
             ProcessOwnershipMutation.StallStreamDrain |
-            ProcessOwnershipMutation.StallRootReap;
+            ProcessOwnershipMutation.StallRootReap |
+            ProcessOwnershipMutation.SkipTargetStreamForwarding;
         if (arguments.Count != 5 ||
             !string.Equals(arguments[0], HostArgument, StringComparison.Ordinal) ||
             !int.TryParse(arguments[4], NumberStyles.None, CultureInfo.InvariantCulture, out var mutationValue) ||
@@ -250,12 +251,19 @@ internal static class SupervisorHost
             ?? throw new InvalidOperationException("The owned target process did not start.");
         using var supervisorStandardOutput = Console.OpenStandardOutput();
         using var supervisorStandardError = Console.OpenStandardError();
-        var targetStandardOutput = target.StandardOutput.BaseStream.CopyToAsync(
-            supervisorStandardOutput,
-            CancellationToken.None);
-        var targetStandardError = target.StandardError.BaseStream.CopyToAsync(
-            supervisorStandardError,
-            CancellationToken.None);
+        var skipTargetStreamForwarding =
+            mutation.HasFlag(ProcessOwnershipMutation.SkipTargetStreamForwarding);
+        var targetStandardOutput = skipTargetStreamForwarding
+            ? Task.CompletedTask
+            : target.StandardOutput.BaseStream.CopyToAsync(
+                supervisorStandardOutput,
+                CancellationToken.None);
+        var targetStandardError = skipTargetStreamForwarding
+            ? Task.CompletedTask
+            : target.StandardError.BaseStream.CopyToAsync(
+                supervisorStandardError,
+                CancellationToken.None);
+        var targetStreams = Task.WhenAll(targetStandardOutput, targetStandardError);
         evidenceHoldHandles?.ReleaseSupervisorCopies();
         if (payload.CloseStandardInput)
         {
@@ -276,6 +284,7 @@ internal static class SupervisorHost
                 attachment.ContainmentId,
                 attachment.MembershipId);
             await targetExit.ConfigureAwait(false);
+            await targetStreams.ConfigureAwait(false);
             return 205;
         }
 
@@ -303,10 +312,11 @@ internal static class SupervisorHost
             PlatformProcessContainment.TerminateCurrentOwnership(
                 attachment.ContainmentId,
                 attachment.MembershipId);
+            await targetStreams.ConfigureAwait(false);
             return 206;
         }
 
-        await Task.WhenAll(targetStandardOutput, targetStandardError).ConfigureAwait(false);
+        await targetStreams.ConfigureAwait(false);
 
         return target.ExitCode;
     }

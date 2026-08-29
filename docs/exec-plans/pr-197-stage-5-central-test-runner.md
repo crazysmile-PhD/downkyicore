@@ -500,6 +500,39 @@ in-scope blocking thread. The already-correct Linux cgroup `/` root review
 thread was replied to with executable evidence and resolved without another
 code change.
 
+The next natural head `41263372421a7d9cb14b1f7d90bf9bc6f4eca675` exposed two
+additional readiness/stream-ordering defects in Strict PR CI run `33256252902`.
+The macOS job `99110392350` observed the ready path while its PID payload was
+still empty: `WriteAllTextAsync` created the visible file before completing the
+write. The fixture now uses the repository's existing write-through temporary
+file plus same-directory move publication contract, so visible readiness is a
+complete integer rather than a filename-shape hint or reader retry.
+
+The Ubuntu job `99110392353` still lost the pre-readiness markers because
+`SupervisorHost` returned from its owner-lifetime termination path immediately
+after target exit, before the already-started target-to-supervisor stream copy
+tasks completed. One `targetStreams` completion task now owns that forwarding
+closure and is awaited by normal completion and both post-start early-return
+paths. The parent lease retains the only cleanup deadline and authoritative
+supervisor-stream drain; no timeout, retry, PID poll or second lifecycle owner
+is added. Both cancellation and direct owner-EOF executable proofs now require
+the typed failure itself to preserve stdout/stderr before proving child reap.
+The review corpus also skips target stream forwarding through the existing
+test-only process-supervision mutation boundary and proves exactly the direct
+owner-EOF test fails on the missing typed stdout.
+Because `SupervisorHost.cs` is an actual compiled project input, the existing
+MSBuild-derived recovery trust closure includes this change automatically; no
+source registry entry was added.
+
+Validation after these two fixes again produced focused ownership 9/9, seven
+one-failure remediation mutations, full Architecture 378/378, and the full 13
+invariant / seven project / 406 normal test / 32 adversarial proof corpus. The
+three strict Release builds completed with zero warnings/errors. Lifecycle
+sanity produced 664 ownership matches / zero violations, one assembly, six
+phases and zero failures; recovery workflow/project/trust passed 49/49.
+Solution formatting, all three changed PowerShell files, the changed JSON
+corpus and `git diff --check` also passed.
+
 ## Commits And Closure
 
 - `a768a9d86bba3b5bd0f0834a7997cf21a9ccd017` — compiled migration and
