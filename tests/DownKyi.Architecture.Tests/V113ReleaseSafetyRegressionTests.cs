@@ -3,7 +3,7 @@ using System.IO.Compression;
 
 namespace DownKyi.Architecture.Tests;
 
-public sealed class ReleaseGateRegressionTests
+public sealed class V113ReleaseSafetyRegressionTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
@@ -12,10 +12,10 @@ public sealed class ReleaseGateRegressionTests
     {
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
 
-        Assert.Contains("validate-release-subject.ps1", workflow, StringComparison.Ordinal);
-        Assert.Contains("resolve-macos-release-trust.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("validate-v113-release-subject.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("resolve-v112-macos-trust.ps1", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("HAS_MACOS_SIGNING: ${{ secrets.", workflow, StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(workflow, "validate-release-package.ps1"));
+        Assert.Equal(2, CountOccurrences(workflow, "validate-v113-release-package.ps1"));
     }
 
     [Fact]
@@ -24,7 +24,7 @@ public sealed class ReleaseGateRegressionTests
         var root = CreateTemporaryDirectory();
         var remote = Path.Combine(root, "remote.git");
         var repository = Path.Combine(root, "repository");
-        var validator = Path.Combine(RepositoryRoot, "script", "validate-release-subject.ps1");
+        var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-subject.ps1");
 
         try
         {
@@ -43,7 +43,7 @@ public sealed class ReleaseGateRegressionTests
             RunRequired("git", ["tag", "-a", "v1.1.3", "-m", "v1.1.3"], repository);
             var valid = RunPowerShell(
                 validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mainCommit, "-RequireExactMain"],
+                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mainCommit],
                 repository);
             Assert.Equal(0, valid.ExitCode);
 
@@ -51,21 +51,29 @@ public sealed class ReleaseGateRegressionTests
             RunRequired("git", ["tag", "v1.1.3"], repository);
             var lightweight = RunPowerShell(
                 validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mainCommit, "-RequireExactMain"],
+                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mainCommit],
                 repository);
             Assert.NotEqual(0, lightweight.ExitCode);
             Assert.Contains("annotated tag", NormalizeDiagnostic(lightweight), StringComparison.OrdinalIgnoreCase);
 
             RunRequired("git", ["tag", "-d", "v1.1.3"], repository);
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.1.4");
+            RunRequired("git", ["add", "version.txt"], repository);
+            RunRequired("git", ["commit", "-m", "mismatched version fixture"], repository);
+            RunRequired("git", ["push", "origin", "main"], repository);
+            var mismatchedMainCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
             RunRequired("git", ["tag", "-a", "v1.1.3", "-m", "v1.1.3"], repository);
-            RunRequired("git", ["tag", "-a", "v1.1.4", "-m", "v1.1.4"], repository);
             var mismatchedVersion = RunPowerShell(
                 validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.4", "-SubjectSha", mainCommit, "-RequireExactMain"],
+                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mismatchedMainCommit],
                 repository);
             Assert.NotEqual(0, mismatchedVersion.ExitCode);
-            Assert.Contains("version.txt", NormalizeDiagnostic(mismatchedVersion), StringComparison.Ordinal);
-            Assert.Contains("1.1.3", NormalizeDiagnostic(mismatchedVersion), StringComparison.Ordinal);
+            Assert.Contains("version.txt is 1.1.4", NormalizeDiagnostic(mismatchedVersion), StringComparison.Ordinal);
+
+            File.WriteAllText(Path.Combine(repository, "version.txt"), "1.1.3");
+            RunRequired("git", ["add", "version.txt"], repository);
+            RunRequired("git", ["commit", "-m", "restore release version fixture"], repository);
+            RunRequired("git", ["push", "origin", "main"], repository);
 
             RunRequired("git", ["checkout", "-b", "release-fixture"], repository);
             File.AppendAllText(Path.Combine(repository, "fixture.txt"), "\nrelease-only");
@@ -75,10 +83,10 @@ public sealed class ReleaseGateRegressionTests
             RunRequired("git", ["tag", "-f", "-a", "v1.1.3", "-m", "v1.1.3"], repository);
             var nonMain = RunPowerShell(
                 validator,
-                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", releaseOnlyCommit, "-RequireExactMain"],
+                ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", releaseOnlyCommit],
                 repository);
             Assert.NotEqual(0, nonMain.ExitCode);
-            Assert.Contains("is not an ancestor of current main", NormalizeDiagnostic(nonMain), StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("does not equal current main", NormalizeDiagnostic(nonMain), StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
@@ -91,7 +99,7 @@ public sealed class ReleaseGateRegressionTests
     {
         var root = CreateTemporaryDirectory();
         var output = Path.Combine(root, "trust.json");
-        var resolver = Path.Combine(RepositoryRoot, "script", "resolve-macos-release-trust.ps1");
+        var resolver = Path.Combine(RepositoryRoot, "script", "resolve-v112-macos-trust.ps1");
 
         try
         {
@@ -120,12 +128,11 @@ public sealed class ReleaseGateRegressionTests
         var runtime = Path.Combine(root, "runtime");
         Directory.CreateDirectory(Path.Combine(runtime, "aria2"));
         Directory.CreateDirectory(Path.Combine(runtime, "ffmpeg"));
-        var expectedVersion = File.ReadAllText(Path.Combine(RepositoryRoot, "version.txt")).Trim();
-        var validator = Path.Combine(RepositoryRoot, "script", "validate-release-package.ps1");
+        var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
 
         try
         {
-            File.Copy(typeof(ReleaseGateRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
+            File.Copy(typeof(V113ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
             WriteNonEmptyFile(Path.Combine(runtime, "DownKyi.exe"));
             var aria = Path.Combine(runtime, "aria2", "aria2c.exe");
             WriteNonEmptyFile(aria);
@@ -144,7 +151,6 @@ public sealed class ReleaseGateRegressionTests
                     "-PackagePath", validPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
-                    "-ExpectedVersion", expectedVersion,
                     "-OutputPath", Path.Combine(root, "valid-manifest.json")
                 ],
                 root);
@@ -159,7 +165,6 @@ public sealed class ReleaseGateRegressionTests
                     "-PackagePath", mutatedPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
-                    "-ExpectedVersion", expectedVersion,
                     "-OutputPath", Path.Combine(root, "mutated-manifest.json")
                 ],
                 root);
@@ -176,7 +181,6 @@ public sealed class ReleaseGateRegressionTests
                     "-PackagePath", wrongVersionPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
-                    "-ExpectedVersion", expectedVersion,
                     "-OutputPath", Path.Combine(root, "wrong-version-manifest.json")
                 ],
                 root);

@@ -11,13 +11,15 @@ param(
     [string]$RuntimeIdentifier,
 
     [Parameter(Mandatory = $true)]
-    [string]$ExpectedVersion,
-
-    [Parameter(Mandatory = $true)]
     [string]$OutputPath
 )
 
 $ErrorActionPreference = 'Stop'
+$expectedVersion = '1.1.3'
+$repositoryVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot '../version.txt') -Raw).Trim()
+if ($repositoryVersion -cne $expectedVersion) {
+    throw "v1.1.3 package validation requires version.txt to remain exactly $expectedVersion."
+}
 $package = (Resolve-Path -LiteralPath $PackagePath).Path
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "downkyi-release-package-$([Guid]::NewGuid().ToString('N'))"
 $extractDirectory = Join-Path $temporaryRoot 'extracted'
@@ -64,7 +66,7 @@ try {
     & "$PSScriptRoot/validate-publish-output.ps1" `
         -PublishDirectory $runtimeCandidates[0] `
         -RuntimeIdentifier $RuntimeIdentifier `
-        -ExpectedVersion $ExpectedVersion `
+        -ExpectedVersion $expectedVersion `
         -OutputPath $OutputPath
 
     Write-Output "Validated extracted $PackageKind package: $package"

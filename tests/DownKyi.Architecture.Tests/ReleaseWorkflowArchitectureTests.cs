@@ -496,8 +496,8 @@ public sealed class ReleaseWorkflowArchitectureTests
 
         Assert.Contains("$expectedReleaseVersion = 'v1.1.2'", subjectValidator, StringComparison.Ordinal);
         Assert.Contains("$expectedSubjectSha = '16c690d8719f86eb6eecb56c24efabc1afc41d55'", subjectValidator, StringComparison.Ordinal);
-        Assert.Contains("validate-release-subject.ps1", subjectValidator, StringComparison.Ordinal);
-        Assert.Contains("-RequireMainAncestry", subjectValidator, StringComparison.Ordinal);
+        Assert.Contains("cat-file -t $expectedReleaseVersion", subjectValidator, StringComparison.Ordinal);
+        Assert.Contains("status --porcelain --untracked-files=no", subjectValidator, StringComparison.Ordinal);
         Assert.Contains("Validated $($expected.Count) v1.1.2 packages", artifactValidator, StringComparison.Ordinal);
         Assert.Contains("Get-FileHash", artifactValidator, StringComparison.Ordinal);
         Assert.Contains("Publish manifest contract failed", artifactValidator, StringComparison.Ordinal);

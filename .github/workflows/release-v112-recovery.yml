@@ -98,8 +98,6 @@ jobs:
             .github/workflows/build.yml
             .github/workflows/release-v112-recovery.yml
             docs/operations/v1.1.2-release-notes.md
-            script/validate-release-subject.ps1
-            script/resolve-macos-release-trust.ps1
             script/resolve-v112-macos-trust.ps1
             script/render-v112-recovery-release-notes.ps1
             script/macos/codesign-common.sh
