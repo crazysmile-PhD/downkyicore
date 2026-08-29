@@ -59,6 +59,10 @@ macOS packaged-app TERM-resistance regression 只能建立一個 test-owned app 
 不得在 root 內反覆產生未由該 fixture reap 的 `sleep` descendant。release verifier
 仍維持原有 root TERM/KILL contract，repository test 的最終 quiescence 由外層
 `OwnedProcessLease` 判定。
+Central runner 遇到 typed lease failure 時必須先輸出已 capture 的 stdout/stderr，
+再保留原 exception。macOS assembly-end observer 只把額外 process-group member 的
+PID/name 寫入 stderr；它不能 kill、reap、retry 或判定成功，membership/quiescence
+仍只有 `OwnedProcessLease` 一個 authoritative owner。
 MSBuild test target 無條件拒絕 VSTest；兩者都只是 defense-in-depth
 guard，不是可由呼叫者提供 property 的 authorization credential。
 完整 repository suite 與 required project gate 的 workflow step 必須使用結構化的

@@ -1,7 +1,8 @@
 # PR #197 Stage 5 Central Test Runner
 
-Status: native-CI follow-up implementation and local executable proof complete;
-replacement exact-head native CI and same-head review pending.
+Status: native-CI residual diagnostics and local executable proof complete;
+replacement exact-head native CI pending. Same-head review remains blocked until
+every required job is green.
 
 Starting authority:
 `dd6364b7e713d3b3c81efd739821cc7e0baafe86` on
@@ -301,6 +302,46 @@ Local validation of `4691e100826c760a0578568242ffa3350bca14df` produced:
 The single-root fixture is cross-compiled but cannot execute on Windows. Its
 behavioral proof remains the next naturally triggered macOS Strict run.
 
+## Third Exact-Head CI Feedback And Residual Diagnostics
+
+Documentation head `86f9ac51c73856b1734337872fed6e22456748ba` naturally
+triggered Strict PR run `33235099993`. Windows Strict, Ubuntu Strict, all six
+aria2 TLS jobs, format, package audit, CodeQL, protobuf, FFmpeg and all three
+platform-membership jobs passed. macOS Strict nevertheless completed the same
+93/93 passing TRX and then returned `OwnedTreeNotQuiescent`. This disproves the
+single nested `sleep` explanation; it does not authorize a change to the closed
+Stage 4 contract or the unchanged release verifier.
+
+The same run repeated the separate Stage 3 slow-evidence ordering self-test
+`AggregateException` for the third exact head, before any formal assembly phase
+started. No failed job was rerun, no Stage 3 or Stage 4 code was modified and no
+same-head review was requested.
+
+Implementation/proof follow-up
+`3a909f22e465da94d91c09964c582b84478d0ee0` closes only the Stage 5
+observability gap. `CentralTestOrchestrator` now writes the typed lease failure's
+already captured stdout and stderr before preserving the same exception. A
+macOS assembly-end observer lists unexpected process-group members as JSON. The
+observer neither terminates nor reaps a process and cannot decide success;
+`OwnedProcessLease` remains the sole membership, quiescence and cleanup owner.
+
+Local validation of that diagnostic follow-up produced:
+
+- focused central-runner architecture proof: 13/13 passed;
+- authoritative documentation/index proof: 12/12 passed;
+- full Architecture: 356/356 passed;
+- review-invariant gate: 13 invariants, seven normal projects, 370 normal tests
+  and 25 adversarial proofs passed;
+- all ten Stage 5 profiles still executed ten tests with exactly one owning
+  failure per profile;
+- strict macOS-project, Architecture-project and solution Release builds: zero
+  warnings and zero errors;
+- format verification and `git diff --check` passed.
+
+The observer is cross-compiled only on this Windows checkout. Its diagnostic
+identity evidence remains pending the next naturally triggered macOS Strict
+run.
+
 ## Commits And Closure
 
 - `a768a9d86bba3b5bd0f0834a7997cf21a9ccd017` — compiled migration and
@@ -312,6 +353,8 @@ behavioral proof remains the next naturally triggered macOS Strict run.
 - `86d99537a8a360edce00be16d666f96c3dda93c1` — native-CI ownership follow-up;
 - `4691e100826c760a0578568242ffa3350bca14df` — in-scope single-root macOS
   TERM-resistance fixture and release-tooling reversion;
+- `3a909f22e465da94d91c09964c582b84478d0ee0` — typed failure-output
+  propagation and diagnostics-only macOS residual-member observer;
 - follow-up documentation checkpoint — this file and the stable owner indexes.
 
 After the documentation commit, push once and verify local HEAD, upstream,

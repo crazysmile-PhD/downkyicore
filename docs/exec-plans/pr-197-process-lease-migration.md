@@ -1176,6 +1176,17 @@ restores that out-of-scope release tooling exactly and makes only the
 TERM-resistant test app single-rooted. The repeated Stage 3 lifecycle self-test
 failure remains separate; no rerun or review was requested.
 
+Next documentation head `86f9ac51c73856b1734337872fed6e22456748ba`
+naturally triggered run `33235099993`. All Stage 5 integration gates except
+macOS Strict passed; macOS again produced a 93/93 TRX followed by
+`OwnedTreeNotQuiescent`, so the single-root fixture did not identify the
+residual. The unchanged Stage 3 self-test also repeated before formal phases.
+Diagnostic follow-up `3a909f22e465da94d91c09964c582b84478d0ee0`
+preserves typed captured output and adds a diagnostics-only macOS assembly-end
+group-member observer. It does not kill, reap, decide quiescence or reopen the
+closed Stage 3/4 contracts. Replacement exact-head CI remains required; no
+failed run was rerun and no review was requested.
+
 ## Stage 6: Legacy Removal
 
 Remove remaining duplicate start, wait, kill, reap, timeout and process-identity

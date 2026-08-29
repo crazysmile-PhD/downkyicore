@@ -117,6 +117,14 @@ TERM-resistance test fixture therefore creates one shell root and no nested
 contract while the outer `OwnedProcessLease` remains the authoritative
 repository-test quiescence check.
 
+Typed lease failures retain the target's bounded stdout and stderr. The central
+runner must write that captured output before propagating the unchanged failure
+so a native residual-process failure remains observable. The macOS test assembly
+also has an end-of-assembly observer that reports unexpected anchored-group
+members by PID and process name. It is diagnostics only: it never kills, reaps,
+retries or changes the result, and `OwnedProcessLease` remains the sole
+membership and quiescence authority.
+
 Lifecycle marker write authority is also one-shot. The lifecycle gate gives
 only its outer test target `DOWNKYI_LIFECYCLE_MARKER_OWNER=1`; the module
 initializer consumes that value before test code can create children. Nested

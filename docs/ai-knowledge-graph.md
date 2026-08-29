@@ -2480,6 +2480,7 @@ paths:
   - tools/DownKyi.CentralTestRunner
   - tools/DownKyi.ProcessSupervision
   - tests/CentralTestExecutionGuard.cs
+  - tests/DownKyi.MacOS.Tests/MacProcessGroupDiagnosticsFixture.cs
   - script/test-project-runner.ps1
   - script/test-solution.ps1
   - script/invoke-ci-test-action.ps1
@@ -2497,6 +2498,7 @@ contracts:
   - Numeric HANDLE/fd strings, wrong token or argv, replay, partial/empty authorization, wrong child, direct execution and VSTest fail closed.
   - SupervisorHost transports the immutable LaunchSpec and owns no test authorization, selection or TRX policy.
   - OwnedProcessLease is the only test-child start, pre-execution ownership, wait, terminate, reap, quiescence, stream and cleanup owner.
+  - Typed ownership failures preserve captured target output; the macOS assembly-end process-group observer reports residual identity only and cannot terminate, reap, retry, or override the lease verdict.
   - Authorization and lease consume the same caller-created TransitionBudget; no fresh process deadline or cleanup window can appear after launch.
   - Exit code zero cannot override a failed TRX, zero executed tests fail closed and expected-class proofs require executed and passed results.
   - Linux establishes the existing delegated-cgroup context before project/solution routing and never falls back to PID, PPID, /proc or process enumeration.
@@ -2506,6 +2508,7 @@ hazards:
   - Letting the supervisor validate test policy creates a second authorization owner.
   - Keeping a raw PowerShell launch or kill fallback creates a second lifecycle and deadline owner.
   - Treating process exit as the test result can turn failed or zero-test TRX evidence green.
+  - Treating a diagnostic process observer as cleanup or membership authority creates a second owner and can hide a real residual-process failure.
 tests:
   - test.central-test-runner
   - test.review-invariant-corpus
