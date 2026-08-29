@@ -442,6 +442,18 @@ public sealed class CentralTestRunnerBlockingFixture
     [Fact]
     public async Task TestCodeRunsOnlyAfterOwnershipAndCanBeBoundedlyStopped()
     {
+        var blocking = string.Equals(
+            Environment.GetEnvironmentVariable("DOWNKYI_STAGE5_BLOCKING_MODE"),
+            "hang",
+            StringComparison.Ordinal);
+        if (blocking)
+        {
+            await Console.Out.WriteLineAsync("stage5-owned-test-stdout").ConfigureAwait(true);
+            await Console.Error.WriteLineAsync("stage5-owned-test-stderr").ConfigureAwait(true);
+            await Console.Out.FlushAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+            await Console.Error.FlushAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+        }
+
         var readyPath = Environment.GetEnvironmentVariable("DOWNKYI_STAGE5_READY_PATH");
         if (!string.IsNullOrWhiteSpace(readyPath))
         {
@@ -452,13 +464,8 @@ public sealed class CentralTestRunnerBlockingFixture
                 .ConfigureAwait(true);
         }
 
-        if (string.Equals(
-                Environment.GetEnvironmentVariable("DOWNKYI_STAGE5_BLOCKING_MODE"),
-                "hang",
-                StringComparison.Ordinal))
+        if (blocking)
         {
-            await Console.Out.WriteLineAsync("stage5-owned-test-stdout").ConfigureAwait(true);
-            await Console.Error.WriteLineAsync("stage5-owned-test-stderr").ConfigureAwait(true);
             await Task.Delay(Timeout.InfiniteTimeSpan, TestContext.Current.CancellationToken)
                 .ConfigureAwait(true);
         }

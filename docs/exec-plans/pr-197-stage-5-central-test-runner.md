@@ -470,9 +470,35 @@ Local validation produced:
   assembly, six phases and zero failures;
 - recovery workflow architecture/project/trust proof: 49/49 passed.
 
-Formatting, final diff validation, commit and exact-head CI/review closure are
-still pending. The already-correct Linux cgroup `/` root review thread requires
-an evidence reply and resolution without another code change.
+The first natural unified-head run at
+`2b0c9106fb7550d8ccc8754fae35ebd365210c55` exposed one distinct Linux-only
+failure in build run `33255181896`, release-gate job `99107528481`:
+`RunnerCancellationIsTypedAndReapsTheTestChild` observed an empty captured
+stdout after cancellation. The blocking fixture published its ready PID before
+writing either diagnostic marker, so readiness permitted the caller to cancel
+and reap the child before those diagnostics existed. The follow-up makes
+blocking readiness mean that both markers have been written and flushed; only
+then is the existing ready evidence published. The cancellation proof still
+cancels immediately after readiness, uses the same lease deadline and requires
+typed output plus child reaping. No sleep, retry, timeout increase, PID polling
+or additional deadline owner is introduced. The failed exact head is not a
+closure candidate and must not be rerun.
+
+Follow-up local validation produced 9/9 focused ownership tests; each of the six
+Stage 5 remediation mutation profiles failed exactly one owning test; full
+Architecture passed 378/378; and the review invariant gate again passed 13
+invariants, seven projects, 406 normal tests and 31 adversarial proofs. All
+three strict Release builds completed with zero warnings/errors. Lifecycle
+sanity again produced 663 ownership matches / zero violations, one assembly,
+six phases and zero failures; the recovery workflow/project/trust class set
+passed 49/49. Solution formatting verification, all three changed PowerShell
+files, the changed JSON corpus and `git diff --check` also passed.
+
+This follow-up does not close Stage 5 by itself. Its new exact head still
+requires natural required CI, same-head clean review and resolution of every
+in-scope blocking thread. The already-correct Linux cgroup `/` root review
+thread was replied to with executable evidence and resolved without another
+code change.
 
 ## Commits And Closure
 
