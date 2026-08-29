@@ -329,6 +329,56 @@ public sealed class AssemblyLifecycleArchitectureTests
     }
 
     [Fact]
+    public void SlowEvidenceSelfTestPreservesCausalTransitionsAndNullCleanupBoundary()
+    {
+        var source = Read("script/test-assembly-lifecycle.ps1");
+        string[] requiredTokens =
+        [
+            "function ConvertTo-ExceptionEvidence",
+            "function Test-LifecycleFailureEvidenceSeparation",
+            "function Invoke-SlowEvidenceOrderingScenario",
+            "targetStart = $null",
+            "readyEstablishment = $null",
+            "collectorArm = $null",
+            "targetExit = $null",
+            "collectorCompletion = $null",
+            "cleanupCompletion = $null",
+            "faultBoundary = $null",
+            "firstFailedScenarioTransition =",
+            "scenarioTransitionsRecorded =",
+            "failureSeparationPreserved =",
+            "diagnosticProcessIdentities ="
+        ];
+        foreach (var token in requiredTokens)
+        {
+            Assert.Contains(token, source, StringComparison.Ordinal);
+        }
+
+        Assert.Matches(
+            @"if \(\$null -ne \$authorization\)\s*\{\s*" +
+            @"Close-DownKyiTestProcessAuthorization -Authorization \$authorization",
+            source);
+        var selfTestStart = source.IndexOf(
+            "function Test-SlowEvidenceCaptureOrdering",
+            StringComparison.Ordinal);
+        var contractStart = source.IndexOf(
+            "$contractChecks = [ordered]@{",
+            selfTestStart,
+            StringComparison.Ordinal);
+        var contractEnd = source.IndexOf(
+            "$passed =",
+            contractStart,
+            StringComparison.Ordinal);
+        Assert.True(selfTestStart >= 0);
+        Assert.True(contractStart > selfTestStart);
+        Assert.True(contractEnd > contractStart);
+        Assert.DoesNotContain(
+            ".ProcessId",
+            source[contractStart..contractEnd],
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LifecyclePhaseProcessCorrectnessHasOneLeaseOwner()
     {
         var gate = Read("script/test-assembly-lifecycle.ps1");

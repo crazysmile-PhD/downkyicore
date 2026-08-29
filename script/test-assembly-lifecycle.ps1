@@ -292,6 +292,213 @@ function Get-DiagnosticCollectorExecutionFailure {
     return $null
 }
 
+function ConvertTo-ExceptionEvidence {
+    param(
+        [Parameter(Mandatory)]
+        [System.Exception]$Exception
+    )
+
+    $innerFailures = [Collections.Generic.List[object]]::new()
+    $pending = [Collections.Generic.Queue[object]]::new()
+    $pending.Enqueue([pscustomobject]@{
+        exception = $Exception
+        path = "outer"
+    })
+    while ($pending.Count -gt 0) {
+        $entry = $pending.Dequeue()
+        $candidate = $entry.exception
+        if ($entry.path -ne "outer") {
+            $innerFailures.Add([pscustomobject]@{
+                path = $entry.path
+                type = $candidate.GetType().FullName
+                message = $candidate.Message
+                stack = $candidate.StackTrace
+            })
+        }
+
+        $children = if ($candidate -is [AggregateException]) {
+            @($candidate.InnerExceptions)
+        }
+        elseif ($null -ne $candidate.InnerException) {
+            @($candidate.InnerException)
+        }
+        else {
+            @()
+        }
+        if ($children.Count -gt 0) {
+            for ($index = 0; $index -lt $children.Count; $index++) {
+                $pending.Enqueue([pscustomobject]@{
+                    exception = $children[$index]
+                    path = ("{0}.inner[{1}]" -f $entry.path, $index)
+                })
+            }
+        }
+    }
+
+    $primaryException = if (
+        $Exception.Data.Contains("DownKyi.Lifecycle.PrimaryFailure")) {
+        $Exception.Data["DownKyi.Lifecycle.PrimaryFailure"]
+    }
+    else {
+        $Exception
+    }
+    $cleanupExceptions = if (
+        $Exception.Data.Contains("DownKyi.Lifecycle.CleanupFailures")) {
+        @($Exception.Data["DownKyi.Lifecycle.CleanupFailures"])
+    }
+    else {
+        @()
+    }
+    $firstCausalException = if ($null -ne $primaryException) {
+        $primaryException
+    }
+    elseif ($cleanupExceptions.Count -gt 0) {
+        $cleanupExceptions[0]
+    }
+    else {
+        $Exception
+    }
+    while ($true) {
+        $causalChildren = if ($firstCausalException -is [AggregateException]) {
+            @($firstCausalException.InnerExceptions)
+        }
+        elseif ($null -ne $firstCausalException.InnerException) {
+            @($firstCausalException.InnerException)
+        }
+        else {
+            @()
+        }
+        if ($causalChildren.Count -eq 0) {
+            break
+        }
+
+        $firstCausalException = $causalChildren[0]
+    }
+
+    return [pscustomobject]@{
+        outer = [pscustomobject]@{
+            type = $Exception.GetType().FullName
+            message = $Exception.Message
+            stack = $Exception.StackTrace
+        }
+        primaryFailure = if ($null -eq $primaryException) {
+            $null
+        }
+        else {
+            [pscustomobject]@{
+                type = $primaryException.GetType().FullName
+                message = $primaryException.Message
+                stack = $primaryException.StackTrace
+            }
+        }
+        firstCausal = [pscustomobject]@{
+            type = $firstCausalException.GetType().FullName
+            message = $firstCausalException.Message
+            stack = $firstCausalException.StackTrace
+        }
+        innerFailures = @($innerFailures)
+        cleanupFailures = @(
+            $cleanupExceptions | ForEach-Object {
+                [pscustomobject]@{
+                    type = $_.GetType().FullName
+                    message = $_.Message
+                    stack = $_.StackTrace
+                }
+            }
+        )
+    }
+}
+
+function New-LifecycleFailureAggregate {
+    param(
+        [AllowNull()]
+        [System.Exception]$PrimaryFailure,
+        [Parameter(Mandatory)]
+        [System.Exception[]]$CleanupFailures
+    )
+
+    $message = if ($null -eq $PrimaryFailure) {
+        "Lifecycle owned child-process cleanup failed."
+    }
+    else {
+        "Lifecycle phase and owned child-process cleanup both failed."
+    }
+    $failures = [Collections.Generic.List[Exception]]::new()
+    if ($null -ne $PrimaryFailure) {
+        $failures.Add($PrimaryFailure)
+    }
+    foreach ($failure in $CleanupFailures) {
+        $failures.Add($failure)
+    }
+
+    $aggregate = [AggregateException]::new($message, $failures.ToArray())
+    $aggregate.Data["DownKyi.Lifecycle.PrimaryFailure"] = $PrimaryFailure
+    $aggregate.Data["DownKyi.Lifecycle.CleanupFailures"] = $CleanupFailures
+    return $aggregate
+}
+
+function Test-LifecycleFailureEvidenceSeparation {
+    $causal = [InvalidOperationException]::new("fixture causal failure")
+    $primary = [Exception]::new("fixture primary boundary", $causal)
+    $cleanup = [UnauthorizedAccessException]::new("fixture cleanup failure")
+    $combined = New-LifecycleFailureAggregate `
+        -PrimaryFailure $primary `
+        -CleanupFailures @($cleanup)
+    $combinedEvidence = ConvertTo-ExceptionEvidence -Exception $combined
+    $cleanupOnly = New-LifecycleFailureAggregate `
+        -PrimaryFailure $null `
+        -CleanupFailures @($cleanup)
+    $cleanupOnlyEvidence = ConvertTo-ExceptionEvidence -Exception $cleanupOnly
+    $passed =
+        $combinedEvidence.primaryFailure.type -eq "System.Exception" -and
+        $combinedEvidence.primaryFailure.message -eq "fixture primary boundary" -and
+        $combinedEvidence.firstCausal.type -eq "System.InvalidOperationException" -and
+        $combinedEvidence.firstCausal.message -eq "fixture causal failure" -and
+        $combinedEvidence.innerFailures.Count -eq 3 -and
+        $combinedEvidence.cleanupFailures.Count -eq 1 -and
+        $combinedEvidence.cleanupFailures[0].type -eq
+            "System.UnauthorizedAccessException" -and
+        $null -eq $cleanupOnlyEvidence.primaryFailure -and
+        $cleanupOnlyEvidence.firstCausal.type -eq
+            "System.UnauthorizedAccessException" -and
+        $cleanupOnlyEvidence.cleanupFailures.Count -eq 1
+    return [pscustomobject]@{
+        passed = $passed
+        combined = $combinedEvidence
+        cleanupOnly = $cleanupOnlyEvidence
+    }
+}
+
+function Set-LifecycleTransitionEvidence {
+    param(
+        [AllowNull()]
+        [System.Collections.IDictionary]$Transitions,
+        [Parameter(Mandatory)]
+        [string]$Name,
+        [Parameter(Mandatory)]
+        [string]$State,
+        [AllowNull()]
+        [Nullable[double]]$AfterMilliseconds,
+        [AllowNull()]
+        [Nullable[long]]$AtUnixMilliseconds,
+        [Parameter(Mandatory)]
+        [string]$Authority,
+        [hashtable]$Diagnostic = @{}
+    )
+
+    if ($null -eq $Transitions) {
+        return
+    }
+
+    $Transitions[$Name] = [pscustomobject]@{
+        state = $State
+        afterMilliseconds = $AfterMilliseconds
+        atUnixMilliseconds = $AtUnixMilliseconds
+        authority = $Authority
+        diagnostic = [pscustomobject]$Diagnostic
+    }
+}
+
 function ConvertTo-DiagnosticCollectorFailureReport {
     param(
         [Parameter(Mandatory)]
@@ -1575,6 +1782,8 @@ function Invoke-IsolatedProcess {
         [ValidateRange(0, 60000)]
         [int]$EvidenceCaptureLeadMilliseconds =
             $slowEvidenceCaptureLeadMilliseconds,
+        [System.Collections.IDictionary]$TransitionEvidence,
+        [string]$ReadyEvidencePath,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
@@ -1699,12 +1908,40 @@ function Invoke-IsolatedProcess {
                 -CancellationToken $CancellationToken
         }
         $processId = $lease.TargetProcessId
+        Set-LifecycleTransitionEvidence `
+            -Transitions $TransitionEvidence `
+            -Name "targetStart" `
+            -State "observed" `
+            -AfterMilliseconds ([Math]::Round(
+                ($OperationTimeoutSeconds * 1000.0) -
+                    $budget.RemainingOperation.TotalMilliseconds,
+                3)) `
+            -AtUnixMilliseconds ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) `
+            -Authority "OwnedProcessLease.TargetStarted" `
+            -Diagnostic @{ processId = $processId }
         $observerCancellation = [Threading.CancellationTokenSource]::CreateLinkedTokenSource(
                 $CancellationToken,
                 $lease.TargetExitedToken)
         $waitTask = $lease.WaitAsync($CancellationToken)
         $evidenceObservationStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         while (-not $waitTask.IsCompleted) {
+            if ($null -ne $TransitionEvidence -and
+                $TransitionEvidence["readyEstablishment"].state -eq
+                    "not-observed" -and
+                -not [string]::IsNullOrWhiteSpace($ReadyEvidencePath) -and
+                (Test-Path -LiteralPath $ReadyEvidencePath -PathType Leaf)) {
+                Set-LifecycleTransitionEvidence `
+                    -Transitions $TransitionEvidence `
+                    -Name "readyEstablishment" `
+                    -State "observed" `
+                    -AfterMilliseconds ([Math]::Round(
+                        ($OperationTimeoutSeconds * 1000.0) -
+                            $budget.RemainingOperation.TotalMilliseconds,
+                        3)) `
+                    -AtUnixMilliseconds (
+                        [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) `
+                    -Authority "atomic-ready-file-observation"
+            }
             if (-not $slowEvidenceAttempted -and
                 $evidenceObservationStopwatch.Elapsed.TotalSeconds -ge
                     $evidenceCaptureThresholdSeconds) {
@@ -1716,6 +1953,20 @@ function Invoke-IsolatedProcess {
                     3)
                 $slowEvidenceCaptureArmedAtUnixMilliseconds =
                     [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+                Set-LifecycleTransitionEvidence `
+                    -Transitions $TransitionEvidence `
+                    -Name "collectorArm" `
+                    -State "observed" `
+                    -AfterMilliseconds ([Math]::Round(
+                        ($OperationTimeoutSeconds * 1000.0) -
+                            $budget.RemainingOperation.TotalMilliseconds,
+                        3)) `
+                    -AtUnixMilliseconds $slowEvidenceCaptureArmedAtUnixMilliseconds `
+                    -Authority "TransitionBudget" `
+                    -Diagnostic @{
+                        policyStopwatchAfterLeaseMilliseconds =
+                            $slowEvidenceCaptureArmedAfterMilliseconds
+                    }
                 $slowEvidenceAttempted = $true
                 $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
                 try {
@@ -1825,6 +2076,14 @@ function Invoke-IsolatedProcess {
                     }
                     $captureStopwatch.Stop()
                     $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
+                    Set-LifecycleTransitionEvidence `
+                        -Transitions $TransitionEvidence `
+                        -Name "collectorCompletion" `
+                        -State $slowEvidenceStatus `
+                        -AfterMilliseconds $slowEvidenceCaptureCompletedAfterMilliseconds `
+                        -AtUnixMilliseconds `
+                            $slowEvidenceCaptureCompletedAtUnixMilliseconds `
+                        -Authority "TransitionBudget"
                 }
             }
 
@@ -1902,6 +2161,19 @@ function Invoke-IsolatedProcess {
         else {
             $ownedFailure.Failure.TargetExitedAfter
         }
+        Set-LifecycleTransitionEvidence `
+            -Transitions $TransitionEvidence `
+            -Name "targetExit" `
+            -State "observed" `
+            -AfterMilliseconds $(
+                if ($null -eq $targetExitedAfter) {
+                    $null
+                }
+                else {
+                    [Math]::Round($targetExitedAfter.TotalMilliseconds, 3)
+                }) `
+            -AtUnixMilliseconds $processExitedAtUnixMs `
+            -Authority "OwnedProcessLease.TargetExitedAfter"
         $slowEvidenceCaptureCompletedBeforeTargetExit =
             $null -ne $slowEvidenceCaptureCompletedAfterMilliseconds -and
             $null -ne $targetExitedAfter -and
@@ -2081,6 +2353,20 @@ function Invoke-IsolatedProcess {
     }
     catch {
         $operationFailure = $_.Exception
+        Set-LifecycleTransitionEvidence `
+            -Transitions $TransitionEvidence `
+            -Name "faultBoundary" `
+            -State "failed" `
+            -AfterMilliseconds ([Math]::Round(
+                ($OperationTimeoutSeconds * 1000.0) -
+                    $budget.RemainingOperation.TotalMilliseconds,
+                3)) `
+            -AtUnixMilliseconds ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) `
+            -Authority "Invoke-IsolatedProcess.operation" `
+            -Diagnostic @{
+                exceptionType = $operationFailure.GetType().FullName
+                exceptionMessage = $operationFailure.Message
+            }
     }
 
     $cleanupFailures = [Collections.Generic.List[Exception]]::new()
@@ -2101,24 +2387,53 @@ function Invoke-IsolatedProcess {
         $cleanupFailures.Add($_.Exception)
     }
     try {
-        Close-DownKyiTestProcessAuthorization -Authorization $authorization
+        if ($null -ne $authorization) {
+            Close-DownKyiTestProcessAuthorization -Authorization $authorization
+        }
     }
     catch {
         $cleanupFailures.Add($_.Exception)
     }
+    Set-LifecycleTransitionEvidence `
+        -Transitions $TransitionEvidence `
+        -Name "cleanupCompletion" `
+        -State $(if ($cleanupFailures.Count -eq 0) { "completed" } else { "failed" }) `
+        -AfterMilliseconds ([Math]::Round(
+            ($OperationTimeoutSeconds * 1000.0) -
+                $budget.RemainingOperation.TotalMilliseconds,
+            3)) `
+        -AtUnixMilliseconds ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) `
+        -Authority "Invoke-IsolatedProcess.cleanup" `
+        -Diagnostic @{ failureCount = $cleanupFailures.Count }
     if ($null -ne $operationFailure) {
         if ($cleanupFailures.Count -gt 0) {
-            throw [AggregateException]::new(
-                "Lifecycle phase and owned child-process cleanup both failed.",
-                @($operationFailure) + $cleanupFailures.ToArray())
+            $aggregate = New-LifecycleFailureAggregate `
+                -PrimaryFailure $operationFailure `
+                -CleanupFailures $cleanupFailures.ToArray()
+            throw $aggregate
         }
 
         throw $operationFailure
     }
     if ($cleanupFailures.Count -gt 0) {
-        throw [AggregateException]::new(
-            "Lifecycle owned child-process cleanup failed.",
-            $cleanupFailures.ToArray())
+        Set-LifecycleTransitionEvidence `
+            -Transitions $TransitionEvidence `
+            -Name "faultBoundary" `
+            -State "failed" `
+            -AfterMilliseconds ([Math]::Round(
+                ($OperationTimeoutSeconds * 1000.0) -
+                    $budget.RemainingOperation.TotalMilliseconds,
+                3)) `
+            -AtUnixMilliseconds ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) `
+            -Authority "Invoke-IsolatedProcess.cleanup" `
+            -Diagnostic @{
+                exceptionType = $cleanupFailures[0].GetType().FullName
+                exceptionMessage = $cleanupFailures[0].Message
+            }
+        $aggregate = New-LifecycleFailureAggregate `
+            -PrimaryFailure $null `
+            -CleanupFailures $cleanupFailures.ToArray()
+        throw $aggregate
     }
 
     return $operationResult
@@ -2417,6 +2732,104 @@ function New-ProcessPhaseResult {
     }
 }
 
+function Invoke-SlowEvidenceOrderingScenario {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name,
+        [Parameter(Mandatory)]
+        [string]$ReadyPath,
+        [Parameter(Mandatory)]
+        [scriptblock]$Invocation
+    )
+
+    $transitions = [ordered]@{
+        targetStart = $null
+        readyEstablishment = $null
+        collectorArm = $null
+        targetExit = $null
+        collectorCompletion = $null
+        cleanupCompletion = $null
+        faultBoundary = $null
+    }
+    foreach ($transitionName in @(
+        "targetStart",
+        "readyEstablishment",
+        "collectorArm",
+        "targetExit",
+        "collectorCompletion",
+        "cleanupCompletion",
+        "faultBoundary")) {
+        Set-LifecycleTransitionEvidence `
+            -Transitions $transitions `
+            -Name $transitionName `
+            -State "not-observed" `
+            -AfterMilliseconds $null `
+            -AtUnixMilliseconds $null `
+            -Authority "not-observed"
+    }
+    $processResult = $null
+    $phaseResult = $null
+    $readyEvidence = $null
+    $readyEvidenceFailure = $null
+    $failure = $null
+    try {
+        $processResult = & $Invocation $transitions $ReadyPath
+        $phaseResult = New-ProcessPhaseResult -ProcessResult $processResult
+    }
+    catch {
+        $failure = ConvertTo-ExceptionEvidence -Exception $_.Exception
+        if ($transitions.faultBoundary.state -eq "not-observed") {
+            Set-LifecycleTransitionEvidence `
+                -Transitions $transitions `
+                -Name "faultBoundary" `
+                -State "failed" `
+                -AfterMilliseconds $null `
+                -AtUnixMilliseconds (
+                    [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) `
+                -Authority "Test-SlowEvidenceCaptureOrdering" `
+                -Diagnostic @{
+                    exceptionType = $_.Exception.GetType().FullName
+                    exceptionMessage = $_.Exception.Message
+                }
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $ReadyPath -PathType Leaf) {
+            try {
+                $readyEvidence = Get-Content -LiteralPath $ReadyPath -Raw |
+                    ConvertFrom-Json
+            }
+            catch {
+                $readyEvidenceFailure = ConvertTo-ExceptionEvidence `
+                    -Exception $_.Exception
+            }
+        }
+    }
+
+    $firstFailedTransition = @(
+        $transitions.GetEnumerator() |
+            Where-Object {
+                $null -ne $_.Value -and $_.Value.state -eq "failed"
+            } |
+            Select-Object -First 1
+    )
+    return [pscustomobject]@{
+        name = $Name
+        processResult = $processResult
+        phaseResult = $phaseResult
+        readyEvidence = $readyEvidence
+        readyEvidenceFailure = $readyEvidenceFailure
+        transitions = [pscustomobject]$transitions
+        failure = $failure
+        firstFailedTransition = if ($firstFailedTransition.Count -eq 0) {
+            $null
+        }
+        else {
+            $firstFailedTransition[0].Key
+        }
+    }
+}
+
 function Test-SlowEvidenceCaptureOrdering {
     param(
         [Parameter(Mandatory)]
@@ -2440,119 +2853,114 @@ function Test-SlowEvidenceCaptureOrdering {
         $fixtureDirectory `
         "slow-completion-ready.json"
     New-Item -ItemType Directory -Force -Path $fixtureDirectory | Out-Null
-    $configured = $null
-    $configuredPhase = $null
-    $configuredReady = $null
-    $mutation = $null
-    $mutationPhase = $null
-    $mutationReady = $null
-    $immediateDispatchMutation = $null
-    $immediateDispatchMutationPhase = $null
-    $immediateDispatchReady = $null
-    $slowCompletionMutation = $null
-    $slowCompletionMutationPhase = $null
-    $slowCompletionReady = $null
+    $configuredScenario = $null
+    $mutationScenario = $null
+    $immediateDispatchScenario = $null
+    $slowCompletionScenario = $null
     $readyCleanupFailures = [Collections.Generic.List[string]]::new()
-    $errorType = $null
     try {
-        $configured = Invoke-IsolatedProcess `
-            -AssemblyName "Gate.SlowEvidenceOrdering.Configured" `
-            -Iteration 1 `
-            -Phase "load" `
-            -FileName "dotnet" `
-            -Arguments @(
-                $ProcessSupervisionAssembly,
-                "--exit-after-delay-with-ready",
-                $configuredReadyPath,
-                [string]$targetDelayMilliseconds
-            ) `
-            -EvidenceCaptureDelayMilliseconds $collectorDelayMilliseconds `
-            -SkipSlowEvidenceManagedStack `
-            -OperationTimeoutSeconds 15 `
-            -EvidenceThresholdSeconds $evidenceThresholdSeconds `
-            -EvidenceCaptureLeadMilliseconds `
-                $hostedCollectorStartupAllowanceMilliseconds
-        $configuredPhase = New-ProcessPhaseResult -ProcessResult $configured
-        if (Test-Path -LiteralPath $configuredReadyPath -PathType Leaf) {
-            $configuredReady = Get-Content -LiteralPath $configuredReadyPath -Raw |
-                ConvertFrom-Json
-        }
-
-        $mutation = Invoke-IsolatedProcess `
-            -AssemblyName "Gate.SlowEvidenceOrdering.OneSecondMutation" `
-            -Iteration 1 `
-            -Phase "load" `
-            -FileName "dotnet" `
-            -Arguments @(
-                $ProcessSupervisionAssembly,
-                "--exit-after-delay-with-ready",
-                $mutationReadyPath,
-                [string]$targetDelayMilliseconds
-            ) `
-            -EvidenceCaptureDelayMilliseconds $collectorDelayMilliseconds `
-            -SkipSlowEvidenceManagedStack `
-            -OperationTimeoutSeconds 15 `
-            -EvidenceThresholdSeconds $evidenceThresholdSeconds `
-            -EvidenceCaptureLeadMilliseconds 1000
-        $mutationPhase = New-ProcessPhaseResult -ProcessResult $mutation
-        if (Test-Path -LiteralPath $mutationReadyPath -PathType Leaf) {
-            $mutationReady = Get-Content -LiteralPath $mutationReadyPath -Raw |
-                ConvertFrom-Json
-        }
-
-        $immediateDispatchMutation = Invoke-IsolatedProcess `
-            -AssemblyName "Gate.SlowEvidenceOrdering.ImmediateDispatchMutation" `
-            -Iteration 1 `
-            -Phase "load" `
-            -FileName "dotnet" `
-            -Arguments @(
-                $ProcessSupervisionAssembly,
-                "--exit-after-delay-with-ready",
-                $immediateDispatchReadyPath,
-                [string]$immediateDispatchTargetDelayMilliseconds
-            ) `
-            -InjectForensicsObserverFailure `
-            -OperationTimeoutSeconds 10 `
-            -EvidenceThresholdSeconds $evidenceThresholdSeconds `
-            -EvidenceCaptureLeadMilliseconds 5000
-        $immediateDispatchMutationPhase = New-ProcessPhaseResult `
-            -ProcessResult $immediateDispatchMutation
-        if (Test-Path -LiteralPath $immediateDispatchReadyPath -PathType Leaf) {
-            $immediateDispatchReady =
-                Get-Content -LiteralPath $immediateDispatchReadyPath -Raw |
-                    ConvertFrom-Json
-        }
-
-        $slowCompletionMutation = Invoke-IsolatedProcess `
-            -AssemblyName "Gate.SlowEvidenceOrdering.SlowCompletionMutation" `
-            -Iteration 1 `
-            -Phase "load" `
-            -FileName "dotnet" `
-            -Arguments @(
-                $ProcessSupervisionAssembly,
-                "--exit-after-delay-with-ready",
-                $slowCompletionReadyPath,
-                [string]$slowCompletionTargetDelayMilliseconds
-            ) `
-            -InjectedPostCaptureDelayMilliseconds `
-                $slowCompletionDelayMilliseconds `
-            -InjectedCaptureCompletionUtcOffsetMilliseconds `
-                $slowCompletionUtcOffsetMilliseconds `
-            -SkipSlowEvidenceManagedStack `
-            -OperationTimeoutSeconds 12 `
-            -EvidenceThresholdSeconds $evidenceThresholdSeconds `
-            -EvidenceCaptureLeadMilliseconds `
-                $hostedCollectorStartupAllowanceMilliseconds
-        $slowCompletionMutationPhase = New-ProcessPhaseResult `
-            -ProcessResult $slowCompletionMutation
-        if (Test-Path -LiteralPath $slowCompletionReadyPath -PathType Leaf) {
-            $slowCompletionReady =
-                Get-Content -LiteralPath $slowCompletionReadyPath -Raw |
-                    ConvertFrom-Json
-        }
-    }
-    catch {
-        $errorType = $_.Exception.GetType().Name
+        $configuredScenario = Invoke-SlowEvidenceOrderingScenario `
+            -Name "configured" `
+            -ReadyPath $configuredReadyPath `
+            -Invocation {
+                param($transitions, $readyPath)
+                Invoke-IsolatedProcess `
+                    -AssemblyName "Gate.SlowEvidenceOrdering.Configured" `
+                    -Iteration 1 `
+                    -Phase "load" `
+                    -FileName "dotnet" `
+                    -Arguments @(
+                        $ProcessSupervisionAssembly,
+                        "--exit-after-delay-with-ready",
+                        $readyPath,
+                        [string]$targetDelayMilliseconds
+                    ) `
+                    -EvidenceCaptureDelayMilliseconds $collectorDelayMilliseconds `
+                    -SkipSlowEvidenceManagedStack `
+                    -OperationTimeoutSeconds 15 `
+                    -EvidenceThresholdSeconds $evidenceThresholdSeconds `
+                    -EvidenceCaptureLeadMilliseconds `
+                        $hostedCollectorStartupAllowanceMilliseconds `
+                    -TransitionEvidence $transitions `
+                    -ReadyEvidencePath $readyPath
+            }
+        $mutationScenario = Invoke-SlowEvidenceOrderingScenario `
+            -Name "mutation" `
+            -ReadyPath $mutationReadyPath `
+            -Invocation {
+                param($transitions, $readyPath)
+                Invoke-IsolatedProcess `
+                    -AssemblyName "Gate.SlowEvidenceOrdering.OneSecondMutation" `
+                    -Iteration 1 `
+                    -Phase "load" `
+                    -FileName "dotnet" `
+                    -Arguments @(
+                        $ProcessSupervisionAssembly,
+                        "--exit-after-delay-with-ready",
+                        $readyPath,
+                        [string]$targetDelayMilliseconds
+                    ) `
+                    -EvidenceCaptureDelayMilliseconds $collectorDelayMilliseconds `
+                    -SkipSlowEvidenceManagedStack `
+                    -OperationTimeoutSeconds 15 `
+                    -EvidenceThresholdSeconds $evidenceThresholdSeconds `
+                    -EvidenceCaptureLeadMilliseconds 1000 `
+                    -TransitionEvidence $transitions `
+                    -ReadyEvidencePath $readyPath
+            }
+        $immediateDispatchScenario = Invoke-SlowEvidenceOrderingScenario `
+            -Name "immediate-dispatch" `
+            -ReadyPath $immediateDispatchReadyPath `
+            -Invocation {
+                param($transitions, $readyPath)
+                Invoke-IsolatedProcess `
+                    -AssemblyName `
+                        "Gate.SlowEvidenceOrdering.ImmediateDispatchMutation" `
+                    -Iteration 1 `
+                    -Phase "load" `
+                    -FileName "dotnet" `
+                    -Arguments @(
+                        $ProcessSupervisionAssembly,
+                        "--exit-after-delay-with-ready",
+                        $readyPath,
+                        [string]$immediateDispatchTargetDelayMilliseconds
+                    ) `
+                    -InjectForensicsObserverFailure `
+                    -OperationTimeoutSeconds 10 `
+                    -EvidenceThresholdSeconds $evidenceThresholdSeconds `
+                    -EvidenceCaptureLeadMilliseconds 5000 `
+                    -TransitionEvidence $transitions `
+                    -ReadyEvidencePath $readyPath
+            }
+        $slowCompletionScenario = Invoke-SlowEvidenceOrderingScenario `
+            -Name "slow-completion" `
+            -ReadyPath $slowCompletionReadyPath `
+            -Invocation {
+                param($transitions, $readyPath)
+                Invoke-IsolatedProcess `
+                    -AssemblyName `
+                        "Gate.SlowEvidenceOrdering.SlowCompletionMutation" `
+                    -Iteration 1 `
+                    -Phase "load" `
+                    -FileName "dotnet" `
+                    -Arguments @(
+                        $ProcessSupervisionAssembly,
+                        "--exit-after-delay-with-ready",
+                        $readyPath,
+                        [string]$slowCompletionTargetDelayMilliseconds
+                    ) `
+                    -InjectedPostCaptureDelayMilliseconds `
+                        $slowCompletionDelayMilliseconds `
+                    -InjectedCaptureCompletionUtcOffsetMilliseconds `
+                        $slowCompletionUtcOffsetMilliseconds `
+                    -SkipSlowEvidenceManagedStack `
+                    -OperationTimeoutSeconds 12 `
+                    -EvidenceThresholdSeconds $evidenceThresholdSeconds `
+                    -EvidenceCaptureLeadMilliseconds `
+                        $hostedCollectorStartupAllowanceMilliseconds `
+                    -TransitionEvidence $transitions `
+                    -ReadyEvidencePath $readyPath
+            }
     }
     finally {
         foreach ($readyPath in @(
@@ -2576,6 +2984,49 @@ function Test-SlowEvidenceCaptureOrdering {
         }
     }
 
+    $configured = $configuredScenario.processResult
+    $configuredPhase = $configuredScenario.phaseResult
+    $configuredReady = $configuredScenario.readyEvidence
+    $mutation = $mutationScenario.processResult
+    $mutationPhase = $mutationScenario.phaseResult
+    $mutationReady = $mutationScenario.readyEvidence
+    $immediateDispatchMutation = $immediateDispatchScenario.processResult
+    $immediateDispatchMutationPhase = $immediateDispatchScenario.phaseResult
+    $immediateDispatchReady = $immediateDispatchScenario.readyEvidence
+    $slowCompletionMutation = $slowCompletionScenario.processResult
+    $slowCompletionMutationPhase = $slowCompletionScenario.phaseResult
+    $slowCompletionReady = $slowCompletionScenario.readyEvidence
+    $firstFailedScenario = @(
+        @(
+            $configuredScenario,
+            $mutationScenario,
+            $immediateDispatchScenario,
+            $slowCompletionScenario) |
+            Where-Object { $null -ne $_ -and $null -ne $_.failure } |
+            Select-Object -First 1
+    )
+    $errorType = if ($firstFailedScenario.Count -eq 0) {
+        $null
+    }
+    else {
+        $firstFailedScenario[0].failure.outer.type.Split('.')[-1]
+    }
+    $failureEvidence = if ($firstFailedScenario.Count -eq 0) {
+        $null
+    }
+    else {
+        $firstFailedScenario[0].failure
+    }
+    $firstFailedScenarioTransition = if ($firstFailedScenario.Count -eq 0) {
+        $null
+    }
+    else {
+        [pscustomobject]@{
+            scenario = $firstFailedScenario[0].name
+            transition = $firstFailedScenario[0].firstFailedTransition
+        }
+    }
+
     $remainingReadyFiles = @(
         foreach ($readyPath in @(
             $configuredReadyPath,
@@ -2587,14 +3038,31 @@ function Test-SlowEvidenceCaptureOrdering {
             }
         }
     )
+    $scenarioEvidence = @(
+        $configuredScenario,
+        $mutationScenario,
+        $immediateDispatchScenario,
+        $slowCompletionScenario)
+    $scenarioTransitionsRecorded = $scenarioEvidence.Count -eq 4 -and
+        -not @(
+            $scenarioEvidence | Where-Object {
+                $null -eq $_ -or
+                $_.transitions.targetStart.state -eq "not-observed" -or
+                $_.transitions.readyEstablishment.state -eq "not-observed" -or
+                $_.transitions.collectorArm.state -eq "not-observed" -or
+                $_.transitions.targetExit.state -eq "not-observed" -or
+                $_.transitions.collectorCompletion.state -eq "not-observed" -or
+                $_.transitions.cleanupCompletion.state -eq "not-observed" -or
+                $null -eq $_.transitions.faultBoundary.state
+            }
+        ).Count
+    $failureSeparationProof = Test-LifecycleFailureEvidenceSeparation
 
     $contractChecks = [ordered]@{
         configuredTargetReady = $null -ne $configuredReady -and
-            $configuredReady.ProcessId -eq $configured.processId -and
             $configuredReady.DelayMilliseconds -eq $targetDelayMilliseconds -and
             $configuredReady.DelayScheduled -eq $true
         mutationTargetReady = $null -ne $mutationReady -and
-            $mutationReady.ProcessId -eq $mutation.processId -and
             $mutationReady.DelayMilliseconds -eq $targetDelayMilliseconds -and
             $mutationReady.DelayScheduled -eq $true
         configuredUsedRealLifecyclePath = $null -ne $configuredPhase -and
@@ -2657,13 +3125,10 @@ function Test-SlowEvidenceCaptureOrdering {
                 $slowCompletionMutation.targetExitedAfterMilliseconds
         mutationTargetsReady =
             $null -ne $immediateDispatchReady -and
-            $immediateDispatchReady.ProcessId -eq
-                $immediateDispatchMutation.processId -and
             $immediateDispatchReady.DelayMilliseconds -eq
                 $immediateDispatchTargetDelayMilliseconds -and
             $immediateDispatchReady.DelayScheduled -eq $true -and
             $null -ne $slowCompletionReady -and
-            $slowCompletionReady.ProcessId -eq $slowCompletionMutation.processId -and
             $slowCompletionReady.DelayMilliseconds -eq
                 $slowCompletionTargetDelayMilliseconds -and
             $slowCompletionReady.DelayScheduled -eq $true
@@ -2681,6 +3146,8 @@ function Test-SlowEvidenceCaptureOrdering {
             $slowCompletionMutation.ownedProcessCleanupFailures.Count -eq 0
         readyFilesCleaned = $readyCleanupFailures.Count -eq 0 -and
             $remainingReadyFiles.Count -eq 0
+        scenarioTransitionsRecorded = $scenarioTransitionsRecorded
+        failureSeparationPreserved = $failureSeparationProof.passed
         noUnexpectedFailure = $null -eq $errorType
     }
     $passed = -not @($contractChecks.Values | Where-Object { -not $_ }).Count
@@ -2710,6 +3177,73 @@ function Test-SlowEvidenceCaptureOrdering {
         readyCleanupFailures = @($readyCleanupFailures)
         remainingReadyFiles = $remainingReadyFiles
         errorType = $errorType
+        failureEvidence = $failureEvidence
+        failureSeparationProof = $failureSeparationProof
+        firstFailedScenarioTransition = $firstFailedScenarioTransition
+        scenarios = [pscustomobject]@{
+            configured = $configuredScenario
+            mutation = $mutationScenario
+            immediateDispatch = $immediateDispatchScenario
+            slowCompletion = $slowCompletionScenario
+        }
+        diagnosticProcessIdentities = [pscustomobject]@{
+            configured = [pscustomobject]@{
+                readyProcessId = if ($null -eq $configuredReady) {
+                    $null
+                }
+                else {
+                    $configuredReady.ProcessId
+                }
+                ownedTargetProcessId = if ($null -eq $configured) {
+                    $null
+                }
+                else {
+                    $configured.processId
+                }
+            }
+            mutation = [pscustomobject]@{
+                readyProcessId = if ($null -eq $mutationReady) {
+                    $null
+                }
+                else {
+                    $mutationReady.ProcessId
+                }
+                ownedTargetProcessId = if ($null -eq $mutation) {
+                    $null
+                }
+                else {
+                    $mutation.processId
+                }
+            }
+            immediateDispatch = [pscustomobject]@{
+                readyProcessId = if ($null -eq $immediateDispatchReady) {
+                    $null
+                }
+                else {
+                    $immediateDispatchReady.ProcessId
+                }
+                ownedTargetProcessId = if ($null -eq $immediateDispatchMutation) {
+                    $null
+                }
+                else {
+                    $immediateDispatchMutation.processId
+                }
+            }
+            slowCompletion = [pscustomobject]@{
+                readyProcessId = if ($null -eq $slowCompletionReady) {
+                    $null
+                }
+                else {
+                    $slowCompletionReady.ProcessId
+                }
+                ownedTargetProcessId = if ($null -eq $slowCompletionMutation) {
+                    $null
+                }
+                else {
+                    $slowCompletionMutation.processId
+                }
+            }
+        }
         contractChecks = [pscustomobject]$contractChecks
     }
 }
