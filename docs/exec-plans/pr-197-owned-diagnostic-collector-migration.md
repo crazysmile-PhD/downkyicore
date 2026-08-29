@@ -1153,6 +1153,67 @@ implementation remains present and unchanged, but Stage 4 closure and same-head
 review remain blocked until every required check is green. Stage 5, merge,
 release and tag movement remain prohibited.
 
+## Stage 3 Assembly Lifecycle Slow-Evidence Self-Test Blocker Checkpoint
+
+This independent checkpoint starts from exact head
+`253e1023e6e62191d331867b6f607ee049f3a4de` and does not start Stage 6. Exact-
+head Strict PR run `33247269844` failed only Windows Assembly Lifecycle before
+formal phases: configured, mutation, immediate-dispatch and slow-completion
+results and ready evidence were null, `errorType=AggregateException`, and
+ownership was 658/0. The phase-level text `Slow-evidence ordering self-test did
+not reject the one-second lead.` was therefore not classified as timing proof.
+
+Root-cause observability expanded the aggregate before any timeout, sleep,
+retry, threshold, capture window, mutation or correctness-oracle change. The
+first causal exception was
+`System.Management.Automation.RuntimeException: Unable to find type
+[DownKyi.CentralTestRunner.CentralTestAuthorization].` The configured target
+had already published its slow-phase evidence and completed its owned path. The
+first failed transition was the subsequent cleanup authorization dispatch:
+`Invoke-IsolatedProcess` called `Close-DownKyiTestProcessAuthorization` with a
+null authorization, causing PowerShell to resolve an unloaded typed parameter.
+There was no primary lifecycle failure; this was a cleanup-only failure which
+the old artifact collapsed into `AggregateException`.
+
+Implementation/proof commit
+`4e38fed05466df44c3b6a5a34d3e9620994a712b` guards that cleanup dispatch with
+the same non-null authorization condition used to create, apply and complete
+the authorization. It changes neither `script/test-project-runner.ps1` nor the
+Stage 5 central runner. Each slow-evidence scenario now independently retains:
+
+- target start on the existing `OwnedProcessLease` boundary;
+- atomic ready-file observation;
+- collector arm on the existing root `TransitionBudget`;
+- authoritative typed target exit;
+- collector completion on the same monotonic origin;
+- caller cleanup completion and cleanup failure count;
+- fault boundary with outer, first causal and inner exception evidence.
+
+Primary and cleanup failures have separate fields and an executable fixture
+proves combined and cleanup-only exception shapes. PID equality was removed
+from readiness predicates and retained only under diagnostic process identities.
+The positive configured scenario, one-second `SlowEvidenceMissing` mutation,
+immediate-dispatch mutation and monotonic late-completion mutation remain the
+correctness proof; none was weakened.
+
+Local implementation-head evidence currently includes:
+
+- focused one-assembly Local `-ValidateForensics`: self-test passed, all
+  transition/separation predicates true, nine formal phases, zero failures and
+  ownership 658/0;
+- focused Architecture class through the required prebuilt central runner:
+  11/11 passed;
+- strict Architecture project build: zero warnings and zero errors;
+- PowerShell parse and `git diff --check`: pass.
+
+The implementation commit, documentation commit and wider validation counts
+are recorded before push. Then one new exact HEAD must run focused proof,
+lifecycle sanity, full Architecture, the review corpus and strict builds before
+push. Only naturally triggered required CI may close the checkpoint. Same-head
+`@codex review` is requested only after every required check is green; Stage 5
+is `CLOSED` only after that review is clean. Merge, release and tag movement
+remain prohibited, and Stage 6 remains deferred.
+
 ## Native CI Matrix
 
 ### Required Jobs And Gates

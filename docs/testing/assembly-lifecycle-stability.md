@@ -217,6 +217,16 @@ evidence errors cannot overwrite the process owner's causal failure.
   rows retain the collector failure kind, typed evidence and typed cleanup
   stages for slow-phase and exit evidence. The helper does not classify target
   ownership or create a second failure aggregate.
+- The slow-evidence ordering self-test records a same-root-budget transition
+  row for target start, atomic ready-file observation, collector arm, target
+  exit, collector completion, caller cleanup completion and the fault boundary
+  in each configured, one-second, immediate-dispatch and slow-completion
+  scenario. An exception record retains outer type/message/stack, every inner
+  type/message/stack and the first causal exception while keeping cleanup
+  failures separate from an optional primary failure. A missing optional test
+  authorization is not dispatched to its typed cleanup helper. Ready-file and
+  lease PIDs remain in a separate diagnostic object and do not decide readiness
+  correctness.
 - The supervisor copies target stdout and stderr to its owner-facing streams as
   bytes arrive. Normal completion still awaits both copy tasks, while failure
   cleanup retains output already published before the supervisor or target is

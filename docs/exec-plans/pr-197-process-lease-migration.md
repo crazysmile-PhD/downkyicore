@@ -1221,6 +1221,27 @@ passed 13 invariants, seven normal projects, 371 normal tests and 25 adversarial
 proofs. Native positive proof remains pending on the naturally triggered final
 exact-head CI. Stage 5 stays open and Stage 6 stays deferred.
 
+An independently authorized Stage 3 Assembly Lifecycle slow-evidence blocker
+checkpoint starts from exact head
+`253e1023e6e62191d331867b6f607ee049f3a4de` after the macOS checkpoint. Strict
+run `33247269844` proved the macOS compiler-server correction on its native path
+and left only the pre-formal-phase Windows slow-evidence self-test red. Causal
+exception evidence classified the first failure as configured-scenario cleanup,
+not timing: a null optional authorization was passed to its typed close helper,
+which attempted to resolve an unloaded central-runner type and raised a cleanup-
+only `RuntimeException` inside `AggregateException`.
+
+Stage 3 implementation/proof commit
+`4e38fed05466df44c3b6a5a34d3e9620994a712b` skips that cleanup dispatch when no
+authorization exists, without changing the Stage 5 runner or authorization
+helper. Four scenario timelines now retain target start, readiness, collector
+arm, target exit, collector completion, cleanup completion and fault boundary;
+primary and cleanup failures are separate, and PID values are diagnostic only.
+No sleep, retry, deadline, threshold, capture window, ownership authority,
+Stage 4 code or Stage 5 central-runner code changed. Exact-head CI and same-head
+review remain required before Stage 5 can close; Stage 6 does not start
+automatically.
+
 ## Stage 6: Legacy Removal
 
 Remove remaining duplicate start, wait, kill, reap, timeout and process-identity

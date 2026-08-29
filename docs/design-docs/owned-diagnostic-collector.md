@@ -551,6 +551,51 @@ and makes only the parent-budget contract predicate false while timeout,
 reap/drain and empty cleanup stay true. No timeout, retry, sleep, fresh deadline,
 collector owner or Stage 4 path changed.
 
+## Stage 3 Assembly Lifecycle Slow-Evidence Self-Test Blocker Checkpoint
+
+Starting exact head `253e1023e6e62191d331867b6f607ee049f3a4de`
+naturally triggered Strict PR run
+[33247269844](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33247269844).
+Its only required failure was the Windows Assembly Lifecycle job. Ownership
+reported 658 matches and zero violations, no formal lifecycle phase started and
+all four slow-evidence scenario results were null. The outer
+`AggregateException` and final one-second-lead message did not identify a timing
+failure.
+
+The failed artifact nevertheless contained the configured scenario's completed
+slow-phase process evidence. A local exact-head reproduction with causal
+exception expansion identified the first failed transition as
+`configured.cleanup.authorization-dispatch`: the target and collector path had
+completed, but `Invoke-IsolatedProcess` unconditionally invoked
+`Close-DownKyiTestProcessAuthorization` with a null authorization. PowerShell
+then resolved the helper's unloaded
+`DownKyi.CentralTestRunner.CentralTestAuthorization` parameter type and threw
+`System.Management.Automation.RuntimeException` with message `Unable to find
+type [DownKyi.CentralTestRunner.CentralTestAuthorization].` The cleanup-only
+failure was wrapped as `Lifecycle owned child-process cleanup failed.` This was
+not a readiness race, collector/target-exit race or collector timeout.
+
+Implementation `4e38fed05466df44c3b6a5a34d3e9620994a712b` skips that typed
+cleanup helper when no authorization was created. It does not modify the helper
+or any Stage 5 central-runner code. The
+ordering self-test now runs configured, one-second, immediate-dispatch and
+slow-completion scenarios independently and records target start, atomic ready
+observation, collector arm, authoritative target exit, collector completion,
+caller cleanup completion and fault boundary for each scenario. Aggregate
+evidence retains the outer exception and every inner type/message/stack, the
+first causal exception, an optional primary failure and separate cleanup
+failures. The executable separation fixture covers primary-plus-cleanup and
+cleanup-only shapes.
+
+Ready-file PIDs and lease target PIDs remain diagnostic-only output. Readiness
+correctness uses the invocation-owned atomic ready file and its scheduled-delay
+contract, while target exit remains the typed `OwnedProcessLease` transition.
+No timeout, timing threshold, sleep, retry, capture window, mutation, collector
+owner, target owner or `TransitionBudget` changed. Local focused evidence after
+the correction recorded all ordering predicates true, one assembly, nine
+formal phases, zero failures and ownership 658/0; the focused Architecture class
+passed 11/11 through the prebuilt authorized central-runner path.
+
 ## Non-Goals
 
 This checkpoint excludes:
