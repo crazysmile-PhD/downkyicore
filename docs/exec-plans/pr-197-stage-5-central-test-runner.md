@@ -533,6 +533,37 @@ phases and zero failures; recovery workflow/project/trust passed 49/49.
 Solution formatting, all three changed PowerShell files, the changed JSON
 corpus and `git diff --check` also passed.
 
+Natural Build run `33257705914` at
+`53a448af1840cd90d2d05c2e0d2357cfc2e98f77` then exposed a Windows-only
+defect in the target-exit executable proof, release-gate job `99114206801`.
+The proof used `dotnet --info` as its unauthorised child and measured from the
+start of authorization; on the Windows runner that command itself took about
+9.216 seconds to exit. The authoritative target-exit token did end
+authorization, but the assertion incorrectly charged the child's pre-exit
+runtime to authorization completion. The proof now uses the existing
+file-signal ProcessSupervision fixture: it first observes atomic evidence that
+the target watcher is armed, establishes the pending authorization task, then
+signals target exit and measures only the exit-to-failure transition. This
+keeps the real `OwnedProcessLease.TargetExitedToken`, the caller's original
+`TransitionBudget` and the existing bounded cleanup path; it adds no polling,
+retry, timeout or second deadline owner. The failed exact head is not a closure
+candidate and is not rerun.
+
+Final follow-up validation produced focused authorization 9/9 and a
+target-exit-authority mutation with 14 executed tests and exactly its one
+owning failure. Full Architecture passed 378/378. The review-invariant gate
+passed 13 invariants, seven projects, 406 normal tests and 32 adversarial
+proofs. The strict macOS-test, Architecture-test and solution Release builds
+completed with zero warnings/errors. Lifecycle sanity produced 664 ownership
+matches / zero violations, one assembly, six phases and zero failures; the
+exact recovery workflow/project/trust set passed 49/49. Solution formatting
+verification and `git diff --check` passed. One earlier local corpus attempt
+was not counted because the existing replay fixture independently consumed
+its 10-second operation and five-second cleanup budgets under the sustained
+adversarial sequence. Its typed failure completed cleanup with no residual
+process; the isolated target-exit profile remained exactly 14/1, and the full
+prebuilt corpus then passed without changing or extending any deadline.
+
 ## Commits And Closure
 
 - `a768a9d86bba3b5bd0f0834a7997cf21a9ccd017` — compiled migration and

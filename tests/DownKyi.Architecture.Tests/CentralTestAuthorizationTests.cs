@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Text.Json;
 using DownKyi.CentralTestRunner;
 using DownKyi.ProcessSupervision;
 
@@ -127,6 +128,10 @@ public sealed class CentralTestAuthorizationTests
     {
         var paths = CreateInvocation();
         using var resultCleanup = new ResultDirectoryCleanup(paths.TrxPath);
+        var resultDirectory = Path.GetDirectoryName(paths.TrxPath)
+            ?? throw new InvalidOperationException("The authorization result directory is unavailable.");
+        var readyPath = Path.Combine(resultDirectory, "target-ready.json");
+        var exitSignalPath = Path.Combine(resultDirectory, "target-exit.signal");
         var authorization = CentralTestAuthorization.IssueForTesting(
             paths.Arguments,
             RepositoryRoot,
@@ -135,29 +140,67 @@ public sealed class CentralTestAuthorizationTests
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
         authorization.ApplyEnvironment(environment);
         var budget = TransitionBudget.Start(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(5));
+        var processSupervisionAssembly = typeof(OwnedProcessLease).Assembly.Location;
         var lease = await OwnedProcessLease.StartAsync(
-                new LaunchSpec("dotnet", ["--info"], RepositoryRoot, environment, true),
+                new LaunchSpec(
+                    "dotnet",
+                    [
+                        processSupervisionAssembly,
+                        SupervisorHost.ExitOnFileSignalWithReadyArgument,
+                        readyPath,
+                        exitSignalPath
+                    ],
+                    Path.GetDirectoryName(processSupervisionAssembly)
+                        ?? throw new InvalidOperationException(
+                            "The target-exit fixture directory is unavailable."),
+                    environment,
+                    closeStandardInput: true),
                 budget,
                 TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
         await using var leaseScope = lease.ConfigureAwait(false);
-        var elapsed = Stopwatch.StartNew();
+        await WaitForReadyPathAsync(readyPath, TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        using (var ready = JsonDocument.Parse(
+                   await File.ReadAllTextAsync(
+                           readyPath,
+                           TestContext.Current.CancellationToken)
+                       .ConfigureAwait(true)))
+        {
+            Assert.True(ready.RootElement.GetProperty("WatcherArmed").GetBoolean());
+        }
+        var authorizationCompletion = authorization.CompleteAsync(
+            budget,
+            lease.TargetExitedToken,
+            TestContext.Current.CancellationToken);
+        Assert.False(authorizationCompletion.IsCompleted);
+        var remainingBeforeExitSignal = budget.RemainingOperation;
+        Assert.True(
+            remainingBeforeExitSignal > TimeSpan.Zero,
+            "The operation budget expired before the target-exit transition began.");
+        var elapsedAfterExitSignal = Stopwatch.StartNew();
+        await File.WriteAllTextAsync(
+                exitSignalPath,
+                "exit",
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => authorization.CompleteAsync(
-                    budget,
-                    lease.TargetExitedToken,
-                    TestContext.Current.CancellationToken))
+                () => authorizationCompletion)
             .ConfigureAwait(true);
-        elapsed.Stop();
+        elapsedAfterExitSignal.Stop();
         var outcome = await lease.WaitAsync(TestContext.Current.CancellationToken)
             .ConfigureAwait(true);
 
         Assert.Contains("exited before authorization completed", failure.Message, StringComparison.Ordinal);
-        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"Authorization waited {elapsed.Elapsed}.");
         Assert.True(
-            budget.RemainingOperation > TimeSpan.FromSeconds(5),
-            $"Authorization consumed the operation budget; remaining {budget.RemainingOperation}.");
+            elapsedAfterExitSignal.Elapsed < TimeSpan.FromSeconds(5),
+            $"Authorization waited {elapsedAfterExitSignal.Elapsed} after the target exit signal.");
+        var remainingAfterAuthorization = budget.RemainingOperation;
+        Assert.True(
+            remainingAfterAuthorization > TimeSpan.Zero,
+            "Authorization consumed the caller's remaining operation budget after target exit; " +
+            $"remaining before signal {remainingBeforeExitSignal}.");
         Assert.Equal(0, outcome.ExitCode);
         Assert.True(outcome.TreeQuiescent);
     }
@@ -285,6 +328,28 @@ public sealed class CentralTestAuthorizationTests
 
         return directory?.FullName
                ?? throw new DirectoryNotFoundException("Could not locate the DownKyi repository root.");
+    }
+
+    private static async Task WaitForReadyPathAsync(
+        string readyPath,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(readyPath)
+            ?? throw new InvalidOperationException("The target-ready directory is unavailable.");
+        var completion = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var watcher = new FileSystemWatcher(directory, Path.GetFileName(readyPath));
+        FileSystemEventHandler created = (_, _) => completion.TrySetResult();
+        RenamedEventHandler renamed = (_, _) => completion.TrySetResult();
+        watcher.Created += created;
+        watcher.Renamed += renamed;
+        watcher.EnableRaisingEvents = true;
+        if (File.Exists(readyPath))
+        {
+            completion.TrySetResult();
+        }
+
+        await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private sealed record InvocationPaths(string[] Arguments, string TrxPath);
