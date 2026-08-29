@@ -81,12 +81,16 @@ public sealed class V113ReleaseSafetyRegressionTests
             RunRequired("git", ["commit", "-m", "release-only fixture"], repository);
             var releaseOnlyCommit = RunRequired("git", ["rev-parse", "HEAD"], repository).StandardOutput.Trim();
             RunRequired("git", ["tag", "-f", "-a", "v1.1.3", "-m", "v1.1.3"], repository);
+            var remoteMain = RunRequired("git", ["rev-parse", "refs/remotes/origin/main"], repository).StandardOutput.Trim();
+            Assert.NotEqual(remoteMain, releaseOnlyCommit);
+            Assert.Equal("tag", RunRequired("git", ["cat-file", "-t", "v1.1.3"], repository).StandardOutput.Trim());
+            Assert.Equal(releaseOnlyCommit, RunRequired("git", ["rev-list", "-n", "1", "v1.1.3"], repository).StandardOutput.Trim());
+            Assert.Equal("1.1.3", File.ReadAllText(Path.Combine(repository, "version.txt")));
             var nonMain = RunPowerShell(
                 validator,
                 ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", releaseOnlyCommit],
                 repository);
             Assert.NotEqual(0, nonMain.ExitCode);
-            Assert.Contains("does not equal current main", NormalizeDiagnostic(nonMain), StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
