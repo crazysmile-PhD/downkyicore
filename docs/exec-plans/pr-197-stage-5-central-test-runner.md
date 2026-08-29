@@ -1,8 +1,8 @@
 # PR #197 Stage 5 Central Test Runner
 
-Status: native-CI residual diagnostics and local executable proof complete;
-replacement exact-head native CI pending. Same-head review remains blocked until
-every required job is green.
+Status: stopped at the Stage 5 scope boundary after exact-head native evidence;
+implementation checkpoint open. Required CI is not all green and same-head
+review is not authorized.
 
 Starting authority:
 `dd6364b7e713d3b3c81efd739821cc7e0baafe86` on
@@ -338,9 +338,47 @@ Local validation of that diagnostic follow-up produced:
   warnings and zero errors;
 - format verification and `git diff --check` passed.
 
-The observer is cross-compiled only on this Windows checkout. Its diagnostic
-identity evidence remains pending the next naturally triggered macOS Strict
-run.
+At that local checkpoint the observer was cross-compiled only on Windows. The
+next naturally triggered macOS Strict run supplied its native identity evidence
+below.
+
+## Fourth Exact-Head CI Feedback And Stop Condition
+
+Diagnostic documentation head `636d276b6aff7663ab1836fd8357e6713062adfb`
+naturally triggered Strict PR run `33236158868`. Windows Strict, Ubuntu Strict,
+format, package audit and all six aria2 TLS jobs passed. The separate Build,
+CodeQL, Protobuf and three-platform Process Membership Feasibility workflows
+also passed on that exact head. No run was rerun.
+
+macOS Strict passed its build, Architecture and review-invariant steps, then the
+repository test gate failed in `DownKyi.MacOS.Tests`. The diagnostic observer
+reported one unexpected anchored-group member:
+
+```json
+{"processGroupId":8342,"testProcessId":8343,"unexpected":[{"processId":9191,"processName":"VBCSCompiler"}]}
+```
+
+This replaces the earlier shell/`sleep` hypothesis with compiler-server
+identity evidence. The only `dotnet` build/publish call site inside the macOS
+test assembly is the bundle-layout release fixture's `dotnet publish`; the log
+does not retain the residual process's parent chain, so that call-site link is
+an inventory-based classification rather than captured parentage. Release
+tooling and macOS signing are outside Stage 5, and the ordinary lease correctly
+failed closed instead of treating the residual as quiescent. Stage 5 therefore
+cannot modify that fixture or weaken membership authority.
+
+The Assembly Lifecycle job independently repeated the unchanged Stage 3 slow-
+evidence ordering self-test `AggregateException`: configured and mutation
+results were null, all readiness/real-lifecycle-path contract checks were false,
+formal phases did not start, and the ownership audit still reported 657 matches
+with zero violations. Stage 3 observer, collector and slow-evidence policy are
+closed inputs. This fourth repetition is a required-CI blocker but does not
+authorize a Stage 5 fix.
+
+The exact-head required set is therefore red for two prohibited scope
+expansions: the macOS bundle/release fixture's compiler-server residual and the
+unchanged Stage 3 self-test. No `@codex review` was requested. Stage 5 remains
+an open implementation checkpoint and Stage 6 remains deferred.
 
 ## Commits And Closure
 
@@ -355,14 +393,17 @@ run.
   TERM-resistance fixture and release-tooling reversion;
 - `3a909f22e465da94d91c09964c582b84478d0ee0` — typed failure-output
   propagation and diagnostics-only macOS residual-member observer;
-- follow-up documentation checkpoint — this file and the stable owner indexes.
+- `636d276b6aff7663ab1836fd8357e6713062adfb` — residual-diagnostics
+  documentation checkpoint;
+- stop-condition documentation checkpoint — this file and the parent execution
+  plan.
 
-After the documentation commit, push once and verify local HEAD, upstream,
-remote branch and PR #197 head are identical. Do not rerun a previous workflow.
-Wait for naturally triggered required CI. Windows, Linux and macOS runner proof,
-authorization transport, Stage 5 mutations and required lifecycle checks must
-all be green on that exact head before requesting `@codex review`. Any review
-fix creates a new head and invalidates the prior CI/review closure.
+After the stop-condition documentation commit, push once and verify local HEAD,
+upstream, remote branch and PR #197 head are identical. Do not rerun a previous
+workflow. Windows, Linux and macOS runner proof, authorization transport, Stage
+5 mutations and required lifecycle checks must all be green on one exact head
+before requesting `@codex review`. Any later authorized fix creates a new head
+and invalidates prior CI/review closure.
 
 Stage 5 is `CLOSED` only when required exact-head CI is green, the same-head
 review is clean, no in-scope blocking thread remains and the worktree is clean.

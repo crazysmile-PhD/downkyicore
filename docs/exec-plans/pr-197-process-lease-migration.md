@@ -1187,6 +1187,19 @@ group-member observer. It does not kill, reap, decide quiescence or reopen the
 closed Stage 3/4 contracts. Replacement exact-head CI remains required; no
 failed run was rerun and no review was requested.
 
+Diagnostic documentation head `636d276b6aff7663ab1836fd8357e6713062adfb`
+naturally triggered run `33236158868`. Every Stage 5 integration job except
+macOS Strict passed. The macOS observer identified the residual as
+`VBCSCompiler`; source inventory associates that compiler server with the
+bundle-layout release fixture's in-assembly `dotnet publish`, although the log
+did not capture its parent chain. That fixture and release tooling are outside
+Stage 5, while the ordinary lease correctly failed closed. The required
+Assembly Lifecycle job also repeated the unchanged pre-formal-phase Stage 3
+slow-evidence `AggregateException`, with 657 ownership matches and zero
+violations. Both remedies are prohibited scope expansions, so Stage 5 is
+stopped as an open implementation checkpoint. No rerun or same-head review was
+requested; Stage 6 remains deferred.
+
 ## Stage 6: Legacy Removal
 
 Remove remaining duplicate start, wait, kill, reap, timeout and process-identity
