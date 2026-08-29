@@ -331,7 +331,7 @@ jobs:
         run: |
           dotnet tool install --tool-path ./.tools KuiperZone.PupNet --version 1.8.0
           sudo apt-get update
-          sudo apt-get install -y cpio libfuse2 p7zip-full rpm2cpio
+          sudo apt-get install -y cpio libfuse2 p7zip-full rpm rpm2cpio
       - name: Get Deps
         run: |
           chmod +x ffmpeg.sh

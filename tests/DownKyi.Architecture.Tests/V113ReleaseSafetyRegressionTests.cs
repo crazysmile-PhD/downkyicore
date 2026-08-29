@@ -197,7 +197,120 @@ public sealed class V113ReleaseSafetyRegressionTests
         }
     }
 
+    [Fact]
+    public void LinuxReleasePackageValidationRejectsMissingExecuteBits()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var package = CreateLinuxDebPackage(root, "amd64", includeExecuteBits: false);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
+                [
+                    "-PackagePath", package,
+                    "-PackageKind", "deb",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-OutputPath", Path.Combine(root, "permission-manifest.json")
+                ],
+                root);
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("has no execute bit", NormalizeDiagnostic(result), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void LinuxReleasePackageValidationRejectsArchitectureMismatch()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var package = CreateLinuxDebPackage(root, "amd64", includeExecuteBits: true);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
+                [
+                    "-PackagePath", package,
+                    "-PackageKind", "deb",
+                    "-RuntimeIdentifier", "linux-arm64",
+                    "-OutputPath", Path.Combine(root, "architecture-manifest.json")
+                ],
+                root);
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("architecture amd64 does not match linux-arm64", NormalizeDiagnostic(result), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
     private static void WriteNonEmptyFile(string path) => File.WriteAllText(path, "fixture");
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    private static string CreateLinuxDebPackage(
+        string root,
+        string architecture,
+        bool includeExecuteBits)
+    {
+        var packageRoot = Path.Combine(root, $"deb-{architecture}-{includeExecuteBits}");
+        var controlDirectory = Path.Combine(packageRoot, "DEBIAN");
+        var runtime = Path.Combine(packageRoot, "usr", "lib", "downkyi");
+        Directory.CreateDirectory(controlDirectory);
+        Directory.CreateDirectory(Path.Combine(runtime, "aria2"));
+        Directory.CreateDirectory(Path.Combine(runtime, "ffmpeg"));
+
+        File.Copy(typeof(V113ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
+        var executables = new[]
+        {
+            Path.Combine(runtime, "DownKyi"),
+            Path.Combine(runtime, "aria2", "aria2c"),
+            Path.Combine(runtime, "ffmpeg", "ffmpeg"),
+            Path.Combine(runtime, "ffmpeg", "ffprobe")
+        };
+        foreach (var executable in executables)
+        {
+            File.Copy("/bin/true", executable);
+        }
+
+        var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite |
+            UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        if (includeExecuteBits)
+        {
+            mode |= UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+        }
+        foreach (var executable in executables)
+        {
+            File.SetUnixFileMode(executable, mode);
+        }
+
+        var aria = Path.Combine(runtime, "aria2", "aria2c");
+        var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
+        File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.sha256"), ariaHash);
+        File.WriteAllText(Path.Combine(runtime, "DownKyi.deps.json"), "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}");
+        WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
+        File.WriteAllText(
+            Path.Combine(controlDirectory, "control"),
+            $"Package: downkyi-fixture\nVersion: 1.1.3\nArchitecture: {architecture}\nMaintainer: fixture@example.invalid\nDescription: DownKyi release validator fixture\n");
+
+        var package = Path.Combine(root, $"fixture-{architecture}-{includeExecuteBits}.deb");
+        RunRequired("dpkg-deb", ["--root-owner-group", "--build", packageRoot, package], root);
+        return package;
+    }
 
     private static int CountOccurrences(string source, string value) =>
         source.Split(value, StringSplitOptions.None).Length - 1;
