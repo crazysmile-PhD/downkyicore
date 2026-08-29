@@ -41,11 +41,22 @@ public sealed class MacReleasePackageValidationTests
             var machine = Run("/usr/bin/uname", ["-m"], root).StandardOutput.Trim();
             var actualRid = machine == "arm64" ? "osx-arm64" : "osx-x64";
             var oppositeRid = machine == "arm64" ? "osx-x64" : "osx-arm64";
+            var sourceBinary = "/usr/bin/true";
+            var sourceArchitectures = Run("/usr/bin/lipo", ["-archs", sourceBinary], root)
+                .StandardOutput.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            Assert.Contains(machine, sourceArchitectures);
             foreach (var relativePath in new[] { "DownKyi", "aria2/aria2c", "ffmpeg/ffmpeg", "ffmpeg/ffprobe" })
             {
                 var path = Path.Combine(runtime, relativePath.Replace('/', Path.DirectorySeparatorChar));
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                Assert.Equal(0, Run("/usr/bin/lipo", ["/usr/bin/true", "-thin", machine, "-output", path], root).ExitCode);
+                if (sourceArchitectures.Length == 1)
+                {
+                    File.Copy(sourceBinary, path);
+                }
+                else
+                {
+                    Assert.Equal(0, Run("/usr/bin/lipo", [sourceBinary, "-thin", machine, "-output", path], root).ExitCode);
+                }
             }
 
             var validator = Path.Combine(RepositoryRoot, "script", "macos", "verify-runtime-architecture.sh");
