@@ -54,7 +54,7 @@ public sealed class ReleaseGateRegressionTests
                 ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", mainCommit, "-RequireExactMain"],
                 repository);
             Assert.NotEqual(0, lightweight.ExitCode);
-            Assert.Contains("annotated tag", lightweight.StandardError, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("annotated tag", NormalizeDiagnostic(lightweight), StringComparison.OrdinalIgnoreCase);
 
             RunRequired("git", ["tag", "-d", "v1.1.3"], repository);
             RunRequired("git", ["tag", "-a", "v1.1.3", "-m", "v1.1.3"], repository);
@@ -64,8 +64,8 @@ public sealed class ReleaseGateRegressionTests
                 ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.4", "-SubjectSha", mainCommit, "-RequireExactMain"],
                 repository);
             Assert.NotEqual(0, mismatchedVersion.ExitCode);
-            Assert.Contains("version.txt", mismatchedVersion.StandardError, StringComparison.Ordinal);
-            Assert.Contains("1.1.3", mismatchedVersion.StandardError, StringComparison.Ordinal);
+            Assert.Contains("version.txt", NormalizeDiagnostic(mismatchedVersion), StringComparison.Ordinal);
+            Assert.Contains("1.1.3", NormalizeDiagnostic(mismatchedVersion), StringComparison.Ordinal);
 
             RunRequired("git", ["checkout", "-b", "release-fixture"], repository);
             File.AppendAllText(Path.Combine(repository, "fixture.txt"), "\nrelease-only");
@@ -78,7 +78,7 @@ public sealed class ReleaseGateRegressionTests
                 ["-SubjectDirectory", repository, "-ReleaseVersion", "v1.1.3", "-SubjectSha", releaseOnlyCommit, "-RequireExactMain"],
                 repository);
             Assert.NotEqual(0, nonMain.ExitCode);
-            Assert.Contains("is not an ancestor of current main", nonMain.StandardError, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("is not an ancestor of current main", NormalizeDiagnostic(nonMain), StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
@@ -105,7 +105,7 @@ public sealed class ReleaseGateRegressionTests
                 root,
                 new Dictionary<string, string> { ["APPLE_ID"] = "fixture@example.invalid" });
             Assert.NotEqual(0, partial.ExitCode);
-            Assert.Contains("Partial Apple credentials", partial.StandardError, StringComparison.Ordinal);
+            Assert.Contains("Partial Apple credentials", NormalizeDiagnostic(partial), StringComparison.Ordinal);
         }
         finally
         {
@@ -164,7 +164,7 @@ public sealed class ReleaseGateRegressionTests
                 ],
                 root);
             Assert.NotEqual(0, mutated.ExitCode);
-            Assert.Contains("Avalonia Fluent theme assembly", mutated.StandardError, StringComparison.Ordinal);
+            Assert.Contains("Avalonia Fluent theme assembly", NormalizeDiagnostic(mutated), StringComparison.Ordinal);
 
             WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
             File.Copy(typeof(string).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"), overwrite: true);
@@ -181,7 +181,7 @@ public sealed class ReleaseGateRegressionTests
                 ],
                 root);
             Assert.NotEqual(0, wrongVersion.ExitCode);
-            Assert.Contains("does not match expected version", wrongVersion.StandardError, StringComparison.Ordinal);
+            Assert.Contains("does not match expected version", NormalizeDiagnostic(wrongVersion), StringComparison.Ordinal);
         }
         finally
         {
@@ -193,6 +193,12 @@ public sealed class ReleaseGateRegressionTests
 
     private static int CountOccurrences(string source, string value) =>
         source.Split(value, StringSplitOptions.None).Length - 1;
+
+    private static string NormalizeDiagnostic(ProcessResult result) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            $"{result.StandardOutput}\n{result.StandardError}",
+            @"\s+",
+            " ");
 
     private static string CreateTemporaryDirectory()
     {
