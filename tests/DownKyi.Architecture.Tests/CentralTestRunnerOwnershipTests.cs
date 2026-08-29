@@ -44,6 +44,7 @@ public sealed class CentralTestRunnerOwnershipTests
         var readyPath = Path.Combine(paths.Directory, "hung.pid");
         using var mode = new ScopedEnvironmentVariable(BlockingModeVariable, "hang");
         using var ready = new ScopedEnvironmentVariable(ReadyPathVariable, readyPath);
+        using var output = new ScopedConsoleOutput();
         try
         {
             var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
@@ -55,6 +56,8 @@ public sealed class CentralTestRunnerOwnershipTests
             Assert.Equal(OwnedProcessFailureKind.OperationDeadlineExceeded, failure.Failure.Kind);
             Assert.Empty(failure.CleanupFailures);
             AssertProcessExited(await ReadReadyProcessIdAsync(readyPath).ConfigureAwait(true));
+            Assert.Contains("stage5-owned-test-stdout", output.StandardOutput, StringComparison.Ordinal);
+            Assert.Contains("stage5-owned-test-stderr", output.StandardError, StringComparison.Ordinal);
         }
         finally
         {
@@ -69,6 +72,7 @@ public sealed class CentralTestRunnerOwnershipTests
         var readyPath = Path.Combine(paths.Directory, "cancel.pid");
         using var mode = new ScopedEnvironmentVariable(BlockingModeVariable, "hang");
         using var ready = new ScopedEnvironmentVariable(ReadyPathVariable, readyPath);
+        using var output = new ScopedConsoleOutput();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);
         try
@@ -86,6 +90,8 @@ public sealed class CentralTestRunnerOwnershipTests
             Assert.Empty(failure.CleanupFailures);
             Assert.IsAssignableFrom<OperationCanceledException>(failure.InnerException);
             AssertProcessExited(processId);
+            Assert.Contains("stage5-owned-test-stdout", output.StandardOutput, StringComparison.Ordinal);
+            Assert.Contains("stage5-owned-test-stderr", output.StandardError, StringComparison.Ordinal);
         }
         finally
         {
@@ -275,6 +281,34 @@ public sealed class CentralTestRunnerOwnershipTests
     }
 
     private sealed record ResultPaths(string Directory, string TrxPath);
+
+    private sealed class ScopedConsoleOutput : IDisposable
+    {
+        private readonly TextWriter _originalOutput;
+        private readonly TextWriter _originalError;
+        private readonly StringWriter _standardOutput = new();
+        private readonly StringWriter _standardError = new();
+
+        internal ScopedConsoleOutput()
+        {
+            _originalOutput = Console.Out;
+            _originalError = Console.Error;
+            Console.SetOut(_standardOutput);
+            Console.SetError(_standardError);
+        }
+
+        internal string StandardOutput => _standardOutput.ToString();
+
+        internal string StandardError => _standardError.ToString();
+
+        public void Dispose()
+        {
+            Console.SetOut(_originalOutput);
+            Console.SetError(_originalError);
+            _standardOutput.Dispose();
+            _standardError.Dispose();
+        }
+    }
 
     private sealed class ScopedEnvironmentVariable : IDisposable
     {
