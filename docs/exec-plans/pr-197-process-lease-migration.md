@@ -1200,6 +1200,27 @@ violations. Both remedies are prohibited scope expansions, so Stage 5 is
 stopped as an open implementation checkpoint. No rerun or same-head review was
 requested; Stage 6 remains deferred.
 
+An independently authorized macOS VBCSCompiler blocker checkpoint then
+preserved the Stage 5 stop boundary. Invocation-scoped Roslyn logs plus native
+assembly-start/end group snapshots on diagnostic head
+`674c34ae17348059c8fe1a6981310aac2d140833` and Strict run `33246460021` proved
+that the bundle-layout fixture's `dotnet publish` started VBCSCompiler PID
+`20440` with a 600000 ms keep-alive. The initial unexpected-member set was
+empty; the same PID remained in the anchored group after publish returned and
+caused the ordinary lease to fail closed with `OwnedTreeNotQuiescent`.
+
+Implementation/proof commit
+`a01968cde9595cec9a14ea48abe6c2ee8d98b26b` adds only
+`-p:UseSharedCompilation=false` to that publish invocation, corrects its
+diagnostic log parser and ratchets the invocation against build-server global
+shutdown, process-name cleanup and sleeps. It does not change the central test
+runner, ownership or authorization authority, deadlines, Stage 3 or Stage 4.
+Local strict builds passed with zero warnings/errors, focused Architecture
+passed 14/14, full Architecture passed 357/357, and the review-invariant gate
+passed 13 invariants, seven normal projects, 371 normal tests and 25 adversarial
+proofs. Native positive proof remains pending on the naturally triggered final
+exact-head CI. Stage 5 stays open and Stage 6 stays deferred.
+
 ## Stage 6: Legacy Removal
 
 Remove remaining duplicate start, wait, kill, reap, timeout and process-identity

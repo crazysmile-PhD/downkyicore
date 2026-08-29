@@ -380,6 +380,52 @@ expansions: the macOS bundle/release fixture's compiler-server residual and the
 unchanged Stage 3 self-test. No `@codex review` was requested. Stage 5 remains
 an open implementation checkpoint and Stage 6 remains deferred.
 
+## Independent macOS VBCSCompiler Blocker Checkpoint
+
+This checkpoint is outside the stopped Stage 5 implementation and does not
+start Stage 6. Diagnostic-only commits
+`bfceaec3693af5f589dd73c9d130c049c7620284`,
+`cb022b8230f4cf58e21f11385e5e41ec15fdbebc` and
+`674c34ae17348059c8fe1a6981310aac2d140833` added invocation-scoped Roslyn logs
+and macOS assembly-start/end process-group snapshots. They do not terminate,
+reap or authorize any process.
+
+The final negative-proof head naturally triggered Strict PR run `33246460021`.
+At assembly start, anchored process group `20158` had no unexpected member. The
+bundle fixture then launched MSBuild client PID `20196`; the same invocation's
+Roslyn log recorded VBCSCompiler PID `20440` with a 600000 ms keep-alive. After
+the publish fixture returned, the assembly-end snapshot found that exact server
+PID still in the anchored group and the ordinary lease reported
+`OwnedTreeNotQuiescent`. This proves the creator and persistence boundary. It is
+not a publish failure, a missing fixture, a parent-PID inference or a
+process-name cleanup classification.
+
+Implementation/proof commit
+`a01968cde9595cec9a14ea48abe6c2ee8d98b26b` changes only that fixture's
+`dotnet publish` invocation to pass `-p:UseSharedCompilation=false`, corrects
+the diagnostic parser for the current Roslyn log identity, and adds one
+architecture ratchet. The ratchet also forbids build-server shutdown,
+process-name cleanup and sleeps in this fixture. `OwnedProcessLease`, native
+process-group membership, authorization, `TransitionBudget`, the central test
+runner, Stage 3 and Stage 4 remain unchanged.
+
+Local validation before this documentation checkpoint produced:
+
+- focused runner-policy architecture proof: 14/14 passed;
+- full Architecture: 357/357 passed;
+- review-invariant gate: 13 invariants, seven normal projects, 371 normal tests
+  and 25 adversarial proofs passed;
+- strict macOS-project, Architecture-project and solution Release builds: zero
+  warnings and zero errors;
+- format verification and `git diff --check` passed.
+
+The positive macOS execution is CI-only from this Windows checkout. The next
+naturally triggered exact-head Strict run must show no VBCSCompiler residual,
+an empty final unexpected-member set and ordinary owned-tree quiescence. Until
+that evidence exists, this independent checkpoint is implementation-complete
+but validation-open. Stage 5 remains an open checkpoint, no same-head review is
+requested and Stage 6 remains deferred.
+
 ## Commits And Closure
 
 - `a768a9d86bba3b5bd0f0834a7997cf21a9ccd017` — compiled migration and
@@ -395,15 +441,25 @@ an open implementation checkpoint and Stage 6 remains deferred.
   propagation and diagnostics-only macOS residual-member observer;
 - `636d276b6aff7663ab1836fd8357e6713062adfb` — residual-diagnostics
   documentation checkpoint;
-- stop-condition documentation checkpoint — this file and the parent execution
-  plan.
+- `36e89b4dda143af89b6449ec927db15a11e3a51a` — Stage 5 exact-head stop
+  condition;
+- `bfceaec3693af5f589dd73c9d130c049c7620284`,
+  `cb022b8230f4cf58e21f11385e5e41ec15fdbebc` and
+  `674c34ae17348059c8fe1a6981310aac2d140833` — independent macOS compiler-server
+  causal diagnostics;
+- `a01968cde9595cec9a14ea48abe6c2ee8d98b26b` — invocation-only shared-compilation
+  fix and executable architecture proof;
+- independent macOS blocker documentation checkpoint — this file and the parent
+  execution plan.
 
-After the stop-condition documentation commit, push once and verify local HEAD,
-upstream, remote branch and PR #197 head are identical. Do not rerun a previous
-workflow. Windows, Linux and macOS runner proof, authorization transport, Stage
-5 mutations and required lifecycle checks must all be green on one exact head
-before requesting `@codex review`. Any later authorized fix creates a new head
-and invalidates prior CI/review closure.
+After the independent blocker documentation commit, push once and verify local
+HEAD, upstream, remote branch and PR #197 head are identical. Do not rerun a
+previous workflow. This checkpoint closes only when the naturally triggered
+exact-head macOS job proves no compiler-server residual and ordinary owned-tree
+quiescence. Stage 5 still requires all Windows, Linux and macOS runner proof,
+authorization transport, mutations and required lifecycle checks to be green
+on one exact head before requesting `@codex review`. Any later authorized fix
+creates a new head and invalidates prior CI/review closure.
 
 Stage 5 is `CLOSED` only when required exact-head CI is green, the same-head
 review is clean, no in-scope blocking thread remains and the worktree is clean.
