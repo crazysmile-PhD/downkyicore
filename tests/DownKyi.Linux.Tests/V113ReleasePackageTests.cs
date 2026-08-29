@@ -33,4 +33,11 @@ public sealed class V113ReleasePackageTests
         V113ReleaseSafetyRegressionTests
             .LinuxReleasePackageValidationRejectsPackageManagerVersionMismatch();
     }
+
+    [Fact]
+    public void FinalPackageValidationRejectsPackageManagerIdentityMismatch()
+    {
+        V113ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationRejectsPackageManagerIdentityMismatch();
+    }
 }

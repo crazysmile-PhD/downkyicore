@@ -11,6 +11,9 @@ param(
     [string]$RuntimeIdentifier,
 
     [Parameter(Mandatory = $true)]
+    [string]$ExpectedManifestPath,
+
+    [Parameter(Mandatory = $true)]
     [string]$OutputPath
 )
 
@@ -21,9 +24,37 @@ if ($repositoryVersion -cne $expectedVersion) {
     throw "v1.1.3 package validation requires version.txt to remain exactly $expectedVersion."
 }
 $package = (Resolve-Path -LiteralPath $PackagePath).Path
+$expectedManifestPath = (Resolve-Path -LiteralPath $ExpectedManifestPath).Path
+$approvedManifestPath = [IO.Path]::GetFullPath($OutputPath)
+if ([String]::Equals($expectedManifestPath, $approvedManifestPath, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Expected and approved publish manifest paths must be distinct.'
+}
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "downkyi-release-package-$([Guid]::NewGuid().ToString('N'))"
 $extractDirectory = Join-Path $temporaryRoot 'extracted'
 New-Item -ItemType Directory -Path $extractDirectory -Force | Out-Null
+
+function ConvertTo-ComparableManifestJson {
+    param([string]$Path)
+
+    $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    $files = @(
+        $manifest.files |
+            Sort-Object -Property path |
+            ForEach-Object {
+                [ordered]@{
+                    path = [string]$_.path
+                    bytes = [long]$_.bytes
+                    sha256 = ([string]$_.sha256).ToLowerInvariant()
+                }
+            }
+    )
+    return ([ordered]@{
+        schemaVersion = [int]$manifest.schemaVersion
+        runtimeIdentifier = [string]$manifest.runtimeIdentifier
+        applicationVersion = [string]$manifest.applicationVersion
+        files = $files
+    } | ConvertTo-Json -Depth 5 -Compress)
+}
 
 function Assert-LinuxBinaryArchitecture {
     param(
@@ -166,8 +197,14 @@ try {
             }
             $actualVersion = ((& dpkg-deb --field $package Version 2>&1) -join '').Trim()
             if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect Debian package version.' }
-            if ($actualVersion -cne $expectedVersion) {
-                throw "Debian package version $actualVersion does not match $expectedVersion."
+            $expectedDebianVersion = "$expectedVersion-1"
+            if ($actualVersion -cne $expectedDebianVersion) {
+                throw "Debian package version $actualVersion does not match $expectedDebianVersion."
+            }
+            $actualName = ((& dpkg-deb --field $package Package 2>&1) -join '').Trim()
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect Debian package identity.' }
+            if ($actualName -cne 'downkyi') {
+                throw "Debian package identity $actualName does not match downkyi."
             }
         }
         elseif ($PackageKind -ceq 'rpm') {
@@ -180,6 +217,11 @@ try {
             if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect RPM package version.' }
             if ($actualVersion -cne $expectedVersion) {
                 throw "RPM package version $actualVersion does not match $expectedVersion."
+            }
+            $actualName = ((& rpm -qp --queryformat '%{NAME}' $package 2>&1) -join '').Trim()
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect RPM package identity.' }
+            if ($actualName -cne 'downkyi') {
+                throw "RPM package identity $actualName does not match downkyi."
             }
         }
 
@@ -199,11 +241,24 @@ try {
         }
     }
 
+    $packageManifestPath = Join-Path $temporaryRoot 'package-manifest.json'
     & "$PSScriptRoot/validate-publish-output.ps1" `
         -PublishDirectory $runtimeCandidates[0] `
         -RuntimeIdentifier $RuntimeIdentifier `
         -ExpectedVersion $expectedVersion `
-        -OutputPath $OutputPath
+        -OutputPath $packageManifestPath
+
+    $expectedManifest = ConvertTo-ComparableManifestJson -Path $expectedManifestPath
+    $packageManifest = ConvertTo-ComparableManifestJson -Path $packageManifestPath
+    if ($expectedManifest -cne $packageManifest) {
+        throw 'Final package payload does not match the validated publish manifest.'
+    }
+
+    $outputDirectory = Split-Path -Parent $approvedManifestPath
+    if ($outputDirectory) {
+        New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+    }
+    Copy-Item -LiteralPath $expectedManifestPath -Destination $approvedManifestPath
 
     Write-Output "Validated extracted $PackageKind package: $package"
 }

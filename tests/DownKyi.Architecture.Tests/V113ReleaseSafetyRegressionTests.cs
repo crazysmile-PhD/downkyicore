@@ -17,6 +17,8 @@ public sealed class V113ReleaseSafetyRegressionTests
         Assert.Contains("resolve-v112-macos-trust.ps1", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("HAS_MACOS_SIGNING: ${{ secrets.", workflow, StringComparison.Ordinal);
         Assert.Equal(2, CountOccurrences(workflow, "validate-v113-release-package.ps1"));
+        Assert.Equal(2, CountOccurrences(workflow, "-ExpectedManifestPath"));
+        Assert.Contains("verify-dmg-contents.sh DownKyi-", workflow, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -143,10 +145,22 @@ public sealed class V113ReleaseSafetyRegressionTests
             WritePeFile(aria, 0x8664);
             var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
             File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.exe.sha256"), ariaHash);
-            WritePeFile(Path.Combine(runtime, "ffmpeg", "ffmpeg.exe"), 0x8664);
+            var ffmpeg = Path.Combine(runtime, "ffmpeg", "ffmpeg.exe");
+            WritePeFile(ffmpeg, 0x8664);
             WritePeFile(Path.Combine(runtime, "ffmpeg", "ffprobe.exe"), 0x8664);
             File.WriteAllText(Path.Combine(runtime, "DownKyi.deps.json"), "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}");
             WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
+            var expectedManifest = Path.Combine(root, "expected-publish-manifest.json");
+            var expected = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-publish-output.ps1"),
+                [
+                    "-PublishDirectory", runtime,
+                    "-RuntimeIdentifier", "win-x64",
+                    "-ExpectedVersion", "1.1.3",
+                    "-OutputPath", expectedManifest
+                ],
+                root);
+            Assert.Equal(0, expected.ExitCode);
 
             var validPackage = Path.Combine(root, "valid.zip");
             ZipFile.CreateFromDirectory(runtime, validPackage);
@@ -156,10 +170,28 @@ public sealed class V113ReleaseSafetyRegressionTests
                     "-PackagePath", validPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
+                    "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "valid-manifest.json")
                 ],
                 root);
             Assert.Equal(0, valid.ExitCode);
+
+            File.AppendAllText(ffmpeg, "substituted");
+            var substitutedPackage = Path.Combine(root, "substituted.zip");
+            ZipFile.CreateFromDirectory(runtime, substitutedPackage);
+            var substituted = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", substitutedPackage,
+                    "-PackageKind", "zip",
+                    "-RuntimeIdentifier", "win-x64",
+                    "-ExpectedManifestPath", expectedManifest,
+                    "-OutputPath", Path.Combine(root, "substituted-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, substituted.ExitCode);
+            Assert.Contains("does not match the validated publish manifest", NormalizeDiagnostic(substituted), StringComparison.Ordinal);
+            WritePeFile(ffmpeg, 0x8664);
 
             WritePeFile(aria, 0x014c);
             var wrongArchitecturePackage = Path.Combine(root, "wrong-architecture.zip");
@@ -170,6 +202,7 @@ public sealed class V113ReleaseSafetyRegressionTests
                     "-PackagePath", wrongArchitecturePackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
+                    "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "wrong-architecture-manifest.json")
                 ],
                 root);
@@ -188,6 +221,7 @@ public sealed class V113ReleaseSafetyRegressionTests
                     "-PackagePath", mutatedPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
+                    "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "mutated-manifest.json")
                 ],
                 root);
@@ -204,6 +238,7 @@ public sealed class V113ReleaseSafetyRegressionTests
                     "-PackagePath", wrongVersionPackage,
                     "-PackageKind", "zip",
                     "-RuntimeIdentifier", "win-x64",
+                    "-ExpectedManifestPath", expectedManifest,
                     "-OutputPath", Path.Combine(root, "wrong-version-manifest.json")
                 ],
                 root);
@@ -232,6 +267,7 @@ public sealed class V113ReleaseSafetyRegressionTests
                     "-PackagePath", package,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", package + ".expected.json",
                     "-OutputPath", Path.Combine(root, "permission-manifest.json")
                 ],
                 root);
@@ -261,6 +297,7 @@ public sealed class V113ReleaseSafetyRegressionTests
                     "-PackagePath", package,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-arm64",
+                    "-ExpectedManifestPath", package + ".expected.json",
                     "-OutputPath", Path.Combine(root, "architecture-manifest.json")
                 ],
                 root);
@@ -294,6 +331,7 @@ public sealed class V113ReleaseSafetyRegressionTests
                     "-PackagePath", package,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", package + ".expected.json",
                     "-OutputPath", Path.Combine(root, "owner-only-manifest.json")
                 ],
                 root);
@@ -328,11 +366,12 @@ public sealed class V113ReleaseSafetyRegressionTests
                     "-PackagePath", debPackage,
                     "-PackageKind", "deb",
                     "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", debPackage + ".expected.json",
                     "-OutputPath", Path.Combine(root, "deb-version-manifest.json")
                 ],
                 root);
             Assert.NotEqual(0, debResult.ExitCode);
-            Assert.Contains("package version 1.1.2 does not match 1.1.3", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
+            Assert.Contains("package version 1.1.2-1 does not match 1.1.3-1", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
 
             var rpmPackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.2");
             var rpmResult = RunPowerShell(
@@ -341,11 +380,60 @@ public sealed class V113ReleaseSafetyRegressionTests
                     "-PackagePath", rpmPackage,
                     "-PackageKind", "rpm",
                     "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", rpmPackage + ".expected.json",
                     "-OutputPath", Path.Combine(root, "rpm-version-manifest.json")
                 ],
                 root);
             Assert.NotEqual(0, rpmResult.ExitCode);
             Assert.Contains("package version 1.1.2 does not match 1.1.3", NormalizeDiagnostic(rpmResult), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "xUnit",
+        "xUnit1013:Public method should be marked as test")]
+    public static void LinuxReleasePackageValidationRejectsPackageManagerIdentityMismatch()
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
+            var debPackage = CreateLinuxDebPackage(
+                root,
+                "amd64",
+                includeExecuteBits: true,
+                packageName: "downkyi-fixture");
+            var debResult = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", debPackage,
+                    "-PackageKind", "deb",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", debPackage + ".expected.json",
+                    "-OutputPath", Path.Combine(root, "deb-identity-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, debResult.ExitCode);
+            Assert.Contains("package identity downkyi-fixture does not match downkyi", NormalizeDiagnostic(debResult), StringComparison.Ordinal);
+
+            var rpmPackage = CreateLinuxRpmPackage(root, "x86_64", "1.1.3", "downkyi-fixture");
+            var rpmResult = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", rpmPackage,
+                    "-PackageKind", "rpm",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", rpmPackage + ".expected.json",
+                    "-OutputPath", Path.Combine(root, "rpm-identity-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, rpmResult.ExitCode);
+            Assert.Contains("package identity downkyi-fixture does not match downkyi", NormalizeDiagnostic(rpmResult), StringComparison.Ordinal);
         }
         finally
         {
@@ -373,9 +461,10 @@ public sealed class V113ReleaseSafetyRegressionTests
         string architecture,
         bool includeExecuteBits,
         bool ownerOnlyExecute = false,
-        string version = "1.1.3")
+        string version = "1.1.3",
+        string packageName = "downkyi")
     {
-        var packageRoot = Path.Combine(root, $"deb-{architecture}-{includeExecuteBits}-{ownerOnlyExecute}-{version}");
+        var packageRoot = Path.Combine(root, $"deb-{architecture}-{includeExecuteBits}-{ownerOnlyExecute}-{version}-{packageName}");
         var controlDirectory = Path.Combine(packageRoot, "DEBIAN");
         var runtime = Path.Combine(packageRoot, "usr", "lib", "downkyi");
         Directory.CreateDirectory(controlDirectory);
@@ -417,17 +506,26 @@ public sealed class V113ReleaseSafetyRegressionTests
         WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
         File.WriteAllText(
             Path.Combine(controlDirectory, "control"),
-            $"Package: downkyi-fixture\nVersion: {version}\nArchitecture: {architecture}\nMaintainer: fixture@example.invalid\nDescription: DownKyi release validator fixture\n");
+            $"Package: {packageName}\nVersion: {version}-1\nArchitecture: {architecture}\nMaintainer: fixture@example.invalid\nDescription: DownKyi release validator fixture\n");
 
-        var package = Path.Combine(root, $"fixture-{architecture}-{includeExecuteBits}-{ownerOnlyExecute}-{version}.deb");
+        var package = Path.Combine(root, $"fixture-{architecture}-{includeExecuteBits}-{ownerOnlyExecute}-{version}-{packageName}.deb");
+        WriteExpectedManifest(
+            runtime,
+            architecture == "amd64" ? "linux-x64" : "linux-arm64",
+            package + ".expected.json",
+            root);
         RunRequired("dpkg-deb", ["--root-owner-group", "--build", packageRoot, package], root);
         return package;
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
-    private static string CreateLinuxRpmPackage(string root, string architecture, string version)
+    private static string CreateLinuxRpmPackage(
+        string root,
+        string architecture,
+        string version,
+        string packageName = "downkyi")
     {
-        var topDirectory = Path.Combine(root, $"rpm-{architecture}-{version}");
+        var topDirectory = Path.Combine(root, $"rpm-{architecture}-{version}-{packageName}");
         var runtime = Path.Combine(topDirectory, "payload", "usr", "lib", "downkyi");
         foreach (var directory in new[] { "BUILD", "BUILDROOT", "RPMS", "SOURCES", "SPECS", "SRPMS" })
         {
@@ -464,7 +562,7 @@ public sealed class V113ReleaseSafetyRegressionTests
             specPath,
             $$"""
             %global _build_id_links none
-            Name: downkyi-fixture
+            Name: {{packageName}}
             Version: {{version}}
             Release: 1
             Summary: DownKyi release validator fixture
@@ -483,7 +581,30 @@ public sealed class V113ReleaseSafetyRegressionTests
             /usr/lib/downkyi
             """);
         RunRequired("rpmbuild", ["-bb", "--define", $"_topdir {topDirectory}", specPath], root);
-        return Directory.GetFiles(Path.Combine(topDirectory, "RPMS", architecture), "*.rpm").Single();
+        var package = Directory.GetFiles(Path.Combine(topDirectory, "RPMS", architecture), "*.rpm").Single();
+        WriteExpectedManifest(runtime, "linux-x64", package + ".expected.json", root);
+        return package;
+    }
+
+    private static void WriteExpectedManifest(
+        string runtime,
+        string runtimeIdentifier,
+        string outputPath,
+        string workingDirectory)
+    {
+        var result = RunPowerShell(
+            Path.Combine(RepositoryRoot, "script", "validate-publish-output.ps1"),
+            [
+                "-PublishDirectory", runtime,
+                "-RuntimeIdentifier", runtimeIdentifier,
+                "-ExpectedVersion", "1.1.3",
+                "-OutputPath", outputPath
+            ],
+            workingDirectory);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Failed to create expected publish manifest: {NormalizeDiagnostic(result)}");
+        }
     }
 
     private static int CountOccurrences(string source, string value) =>
