@@ -122,6 +122,13 @@ public static class CentralTestOrchestrator
                     report,
                     outcome.Ownership);
             }
+            catch (OwnedProcessExecutionException failure)
+            {
+                WriteCapturedOutput(
+                    failure.Failure.StandardOutput,
+                    failure.Failure.StandardError);
+                throw;
+            }
             finally
             {
                 if (lease != null)

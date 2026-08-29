@@ -184,6 +184,23 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
+    public void OwnedFailurePreservesCapturedTestOutputForDiagnostics()
+    {
+        var runner = Read("tools/DownKyi.CentralTestRunner/CentralTestRunner.cs");
+        var catchIndex = runner.IndexOf(
+            "catch (OwnedProcessExecutionException failure)",
+            StringComparison.Ordinal);
+        var writeIndex = runner.IndexOf(
+            "failure.Failure.StandardOutput",
+            catchIndex,
+            StringComparison.Ordinal);
+        var rethrowIndex = runner.IndexOf("throw;", catchIndex, StringComparison.Ordinal);
+
+        Assert.True(catchIndex >= 0 && writeIndex > catchIndex && rethrowIndex > writeIndex);
+        Assert.Contains("failure.Failure.StandardError", runner, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void NoBuildSkipsTheTargetButStillBootstrapsTheCompiledProvider()
     {
         var wrapper = Read("script/test-project-runner.ps1");
