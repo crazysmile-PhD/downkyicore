@@ -77,7 +77,9 @@ $adversarialProofs = @(
                 [string]::IsNullOrWhiteSpace($proof.class) -or
                 [string]::IsNullOrWhiteSpace($proof.environmentVariable) -or
                 [string]::IsNullOrWhiteSpace($proof.environmentValue) -or
-                $proof.expectedOutcome -ne "test-failure") {
+                $proof.expectedOutcome -ne "test-failure" -or
+                ($null -ne $proof.expectedFailedTests -and
+                    [int]$proof.expectedFailedTests -lt 1)) {
                 throw "Review invariant '$($invariant.id)' contains an incomplete adversarial proof."
             }
 
@@ -182,7 +184,13 @@ foreach ($proof in $adversarialProofs) {
     $counters = $trx.TestRun.ResultSummary.Counters
     $failed = [int]$counters.failed
     $executed = [int]$counters.executed
-    if ($mutationExitCode -eq 0 -or $failed -eq 0 -or $executed -eq 0) {
+    $unexpectedFailureCount =
+        $null -ne $proof.expectedFailedTests -and
+        $failed -ne [int]$proof.expectedFailedTests
+    if ($mutationExitCode -eq 0 -or
+        $failed -eq 0 -or
+        $executed -eq 0 -or
+        $unexpectedFailureCount) {
         throw "Adversarial proof did not make the invariant test fail closed: project=$($proof.project) class=$($proof.class) exitCode=$mutationExitCode executed=$executed failed=$failed."
     }
 

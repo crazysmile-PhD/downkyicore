@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 
+#pragma warning disable CA1515 // Repository process owners share this bounded physical IPC naming policy.
+
 namespace DownKyi.ProcessSupervision;
 
-internal sealed record IpcEndpointName
+public sealed record IpcEndpointName
 {
     private const string TokenAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";
     private const int EntropyByteCount = 10;

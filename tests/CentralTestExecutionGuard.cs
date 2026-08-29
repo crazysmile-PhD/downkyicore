@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipes;
 using System.Runtime.CompilerServices;
@@ -19,6 +20,15 @@ internal static class CentralTestExecutionGuard
     internal static void RequireInProcessTestHost()
     {
         if (string.Equals(
+                Environment.GetEnvironmentVariable(
+                    "DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (string.Equals(
                 AppContext.GetData(AssemblyLoadOwnerKey) as string,
                 AssemblyLoadOwnerValue,
                 StringComparison.Ordinal))
@@ -26,11 +36,15 @@ internal static class CentralTestExecutionGuard
             return;
         }
 
-        var pipeHandle = Environment.GetEnvironmentVariable("DOWNKYI_CENTRAL_TEST_PIPE");
+        var endpoint = Environment.GetEnvironmentVariable("DOWNKYI_CENTRAL_TEST_ENDPOINT");
         var expectedTokenText = Environment.GetEnvironmentVariable("DOWNKYI_CENTRAL_TEST_TOKEN");
+        var legacyPipeHandle = Environment.GetEnvironmentVariable("DOWNKYI_CENTRAL_TEST_PIPE");
+        Environment.SetEnvironmentVariable("DOWNKYI_CENTRAL_TEST_ENDPOINT", null);
         Environment.SetEnvironmentVariable("DOWNKYI_CENTRAL_TEST_PIPE", null);
         Environment.SetEnvironmentVariable("DOWNKYI_CENTRAL_TEST_TOKEN", null);
-        if (string.IsNullOrWhiteSpace(pipeHandle) || string.IsNullOrWhiteSpace(expectedTokenText))
+        if (string.IsNullOrWhiteSpace(endpoint) ||
+            string.IsNullOrWhiteSpace(expectedTokenText) ||
+            !string.IsNullOrWhiteSpace(legacyPipeHandle))
         {
             ThrowUnauthorized();
         }
@@ -46,16 +60,24 @@ internal static class CentralTestExecutionGuard
             return;
         }
 
+        const byte protocolVersion = 1;
         const int invocationHashLength = 32;
-        var authorizationPayload = new byte[expectedToken.Length + invocationHashLength];
-        using var pipe = new AnonymousPipeClientStream(PipeDirection.In, pipeHandle);
+        const int frameHeaderLength = sizeof(byte) + sizeof(int);
+        var authorizationFrame = new byte[
+            frameHeaderLength + expectedToken.Length + invocationHashLength];
+        using var pipe = new NamedPipeClientStream(
+            ".",
+            endpoint,
+            PipeDirection.In,
+            PipeOptions.None);
+        pipe.Connect();
         var offset = 0;
-        while (offset < authorizationPayload.Length)
+        while (offset < authorizationFrame.Length)
         {
             var read = pipe.Read(
-                authorizationPayload,
+                authorizationFrame,
                 offset,
-                authorizationPayload.Length - offset);
+                authorizationFrame.Length - offset);
             if (read == 0)
             {
                 break;
@@ -66,13 +88,20 @@ internal static class CentralTestExecutionGuard
 
         var actualInvocationHash = ComputeInvocationHash(Environment.GetCommandLineArgs());
         if (expectedToken.Length != 32 ||
-            offset != authorizationPayload.Length ||
+            offset != authorizationFrame.Length ||
+            authorizationFrame[0] != protocolVersion ||
+            BinaryPrimitives.ReadInt32LittleEndian(
+                authorizationFrame.AsSpan(sizeof(byte), sizeof(int))) !=
+                expectedToken.Length + invocationHashLength ||
             !CryptographicOperations.FixedTimeEquals(
-                authorizationPayload.AsSpan(0, expectedToken.Length),
+                authorizationFrame.AsSpan(frameHeaderLength, expectedToken.Length),
                 expectedToken) ||
             !CryptographicOperations.FixedTimeEquals(
-                authorizationPayload.AsSpan(expectedToken.Length, invocationHashLength),
-                actualInvocationHash))
+                authorizationFrame.AsSpan(
+                    frameHeaderLength + expectedToken.Length,
+                    invocationHashLength),
+                actualInvocationHash) ||
+            pipe.ReadByte() != -1)
         {
             ThrowUnauthorized();
         }

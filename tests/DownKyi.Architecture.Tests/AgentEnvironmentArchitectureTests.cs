@@ -70,15 +70,15 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.DoesNotContain("LogFileName=test-results-${{ matrix.os }}.trx", qualityWorkflow, StringComparison.Ordinal);
 
         var testScript = Read("script/test-solution.ps1");
-        Assert.Contains("Get-ChildItem", testScript, StringComparison.Ordinal);
-        Assert.Contains("Sort-Object FullName", testScript, StringComparison.Ordinal);
-        Assert.Contains("Invoke-DownKyiTestProject", testScript, StringComparison.Ordinal);
-        Assert.Contains("throw \"Test project failed:", testScript, StringComparison.Ordinal);
+        Assert.Contains("Invoke-DownKyiTestSolution", testScript, StringComparison.Ordinal);
 
         var runnerScript = Read("script/test-project-runner.ps1");
         Assert.Contains("test-runner-policy.json", runnerScript, StringComparison.Ordinal);
-        Assert.Contains("xunit-in-process", runnerScript, StringComparison.Ordinal);
-        Assert.Contains("-class", runnerScript, StringComparison.Ordinal);
+        Assert.Contains("CentralTestOrchestrator", runnerScript, StringComparison.Ordinal);
+
+        var compiledRunner = Read("tools/DownKyi.CentralTestRunner/CentralTestRunner.cs");
+        Assert.Contains("xunit-in-process", Read("docs/testing/test-runner-policy.json"), StringComparison.Ordinal);
+        Assert.Contains("arguments.Add(\"-class\")", compiledRunner, StringComparison.Ordinal);
 
         var runnerPolicy = Read("docs/testing/test-runner-policy.json");
         Assert.Contains("DownKyi.Desktop.Tests.csproj", runnerPolicy, StringComparison.Ordinal);

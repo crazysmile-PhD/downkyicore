@@ -31,14 +31,14 @@ function ConvertFrom-DownKyiActionBoolean {
 
 $actionRepositoryRoot = Split-Path -Parent $PSScriptRoot
 
-if ($Mode -eq "Solution") {
-    if (Test-DownKyiDelegatedCgroupScopeRequired) {
-        Invoke-DownKyiDelegatedCgroupScope `
-            -ScriptPath $PSCommandPath `
-            -ArgumentList @("-Mode", "Solution")
-        return
-    }
+if (Test-DownKyiDelegatedCgroupScopeRequired) {
+    Invoke-DownKyiDelegatedCgroupScope `
+        -ScriptPath $PSCommandPath `
+        -ArgumentList @("-Mode", $Mode)
+    return
+}
 
+if ($Mode -eq "Solution") {
     $solutionParameters = @{
         Configuration = "Release"
         NoRestore = $true

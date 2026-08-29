@@ -41,7 +41,7 @@
       "owner": "Central repository test runner",
       "start": "The project owner constructs the canonical invocation, immutable contract, ProcessStartInfo, and child process without delegating reissuance; the module initializer authenticates that live owner and complete contract before xUnit discovery begins.",
       "stop": "Authorization is consumed once during module initialization.",
-      "teardown": "The initializer disposes its inherited authorization pipe before test discovery proceeds; the parent process owner bounded-terminates any child left by setup or execution failure.",
+      "teardown": "The initializer consumes and closes its one-shot current-user authorization endpoint before test discovery proceeds; OwnedProcessLease bounded-terminates and reaps any child left by setup or execution failure.",
       "allowedMechanisms": [
         "module_initializer"
       ]
@@ -302,6 +302,21 @@
       "teardown": "Only immutable diagnostic metadata may be initialized statically; the analyzer owns no thread, process, timer, event handler or disposable runtime resource.",
       "allowedMechanisms": [
         "static_initialization"
+      ]
+    },
+    {
+      "id": "central-test-runner",
+      "paths": [
+        "tools/DownKyi.CentralTestRunner/**"
+      ],
+      "owner": "CentralTestOrchestrator test policy transaction",
+      "start": "The caller selects a policy-owned test project and configuration. CentralTestOrchestrator constructs the canonical immutable argv, issues one one-shot authorization endpoint and asks OwnedProcessLease to execute it under the caller-created TransitionBudget.",
+      "stop": "The orchestrator awaits the lease typed outcome, then the TRX validator decides test semantics independently of the child exit code.",
+      "teardown": "The authorization issuer closes its one-shot endpoint and temporary report directory. OwnedProcessLease alone owns test-child termination, reap, quiescence and stream drain; this runner has no raw process fallback.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "host_lifecycle",
+        "synchronous_cleanup"
       ]
     },
     {

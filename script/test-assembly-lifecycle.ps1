@@ -1609,7 +1609,8 @@ function Invoke-IsolatedProcess {
     $authorization = if ($AuthorizeRepositoryTestAssembly) {
         New-DownKyiTestProcessAuthorization `
             -Arguments $Arguments `
-            -RepositoryRoot $repositoryRoot
+            -RepositoryRoot $repositoryRoot `
+            -Configuration $Configuration
     }
     else {
         $null
@@ -1623,10 +1624,11 @@ function Invoke-IsolatedProcess {
         Set-DownKyiTestProcessAuthorization `
             -Authorization $authorization `
             -StartInfo $authorizationStartInfo
-        $launchEnvironment["DOWNKYI_CENTRAL_TEST_PIPE"] =
-            $authorizationStartInfo.Environment["DOWNKYI_CENTRAL_TEST_PIPE"]
+        $launchEnvironment["DOWNKYI_CENTRAL_TEST_ENDPOINT"] =
+            $authorizationStartInfo.Environment["DOWNKYI_CENTRAL_TEST_ENDPOINT"]
         $launchEnvironment["DOWNKYI_CENTRAL_TEST_TOKEN"] =
             $authorizationStartInfo.Environment["DOWNKYI_CENTRAL_TEST_TOKEN"]
+        $launchEnvironment["DOWNKYI_CENTRAL_TEST_PIPE"] = $null
     }
 
     $launchSpec = [DownKyi.ProcessSupervision.LaunchSpec]::new(
@@ -1691,8 +1693,10 @@ function Invoke-IsolatedProcess {
                 $CancellationToken).GetAwaiter().GetResult()
         }
         if ($null -ne $authorization) {
-            $authorization.Item2.ChildProcessId = $lease.TargetProcessId
-            Complete-DownKyiTestProcessAuthorization -Authorization $authorization
+            Complete-DownKyiTestProcessAuthorization `
+                -Authorization $authorization `
+                -Budget $budget `
+                -CancellationToken $CancellationToken
         }
         $processId = $lease.TargetProcessId
         $observerCancellation = [Threading.CancellationTokenSource]::CreateLinkedTokenSource(

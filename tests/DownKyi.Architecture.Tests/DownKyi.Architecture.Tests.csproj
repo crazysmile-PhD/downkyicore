@@ -26,6 +26,7 @@
     <ProjectReference
       Include="..\..\tools\DownKyi.AssemblyLifecycleProbe\DownKyi.AssemblyLifecycleProbe.csproj"
       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\tools\DownKyi.CentralTestRunner\DownKyi.CentralTestRunner.csproj" />
     <ProjectReference Include="..\..\tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj" />
     <ProjectReference Include="..\..\tools\DownKyi.RestartHandoff.FeasibilityFixture\DownKyi.RestartHandoff.FeasibilityFixture.csproj" />
     <ProjectReference Include="..\..\tools\DownKyi.RestartHandoff.ProductionFixture\DownKyi.RestartHandoff.ProductionFixture.csproj" />

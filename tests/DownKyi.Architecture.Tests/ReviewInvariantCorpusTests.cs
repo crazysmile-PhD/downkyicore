@@ -54,6 +54,10 @@ public sealed class ReviewInvariantCorpusTests
                 Assert.False(string.IsNullOrWhiteSpace(
                     adversarialProof.GetProperty("environmentValue").GetString()));
                 Assert.Equal("test-failure", adversarialProof.GetProperty("expectedOutcome").GetString());
+                if (adversarialProof.TryGetProperty("expectedFailedTests", out var expectedFailedTests))
+                {
+                    Assert.True(expectedFailedTests.GetInt32() > 0);
+                }
                 Assert.True(File.Exists(Path.Combine(RepositoryRoot, project!)), project);
             }
         }

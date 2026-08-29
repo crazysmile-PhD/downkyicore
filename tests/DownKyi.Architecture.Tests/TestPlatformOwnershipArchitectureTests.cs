@@ -36,6 +36,7 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
     {
         var directoryProps = Read("tests/Directory.Build.props");
         var runner = Read("script/test-project-runner.ps1");
+        var compiledRunner = Read("tools/DownKyi.CentralTestRunner/CentralTestRunner.cs");
         var selectorTests = Read("script/test-platform-selector.ps1");
         var solutionRunner = Read("script/test-solution.ps1");
         var lifecycleRunner = Read("script/test-assembly-lifecycle.ps1");
@@ -49,13 +50,13 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
         Assert.Contains("Get-DownKyiTestProjectPlatforms", runner, StringComparison.Ordinal);
         Assert.Contains("Test-DownKyiTestProjectSupportsPlatform", runner, StringComparison.Ordinal);
         Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", runner, StringComparison.Ordinal);
-        Assert.Contains("cannot run on", runner, StringComparison.Ordinal);
+        Assert.Contains("cannot run on", compiledRunner, StringComparison.Ordinal);
         Assert.Contains("DownKyi.MacOS.Tests", selectorTests, StringComparison.Ordinal);
         Assert.Contains("DownKyi.Linux.Tests", selectorTests, StringComparison.Ordinal);
         Assert.Contains("missing ownership", selectorTests, StringComparison.Ordinal);
         Assert.Contains("unknown platform", selectorTests, StringComparison.Ordinal);
         Assert.Contains("test-platform-selector.ps1", solutionRunner, StringComparison.Ordinal);
-        Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", solutionRunner, StringComparison.Ordinal);
+        Assert.Contains("CentralTestPolicy.SelectProjects", compiledRunner, StringComparison.Ordinal);
         Assert.Contains("test-project-runner.ps1", lifecycleRunner, StringComparison.Ordinal);
         Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", lifecycleRunner, StringComparison.Ordinal);
         Assert.Contains("test-project-runner.ps1", reviewRunner, StringComparison.Ordinal);
