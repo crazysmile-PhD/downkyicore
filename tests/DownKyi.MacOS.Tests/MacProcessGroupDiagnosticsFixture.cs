@@ -49,6 +49,7 @@ public sealed class MacProcessGroupDiagnosticsFixture : IAsyncDisposable
         string? serverProcessName,
         bool serverAliveAfterInvocation,
         int? keepAliveMilliseconds,
+        string[] diagnosticMarkers,
         string? diagnosticFailure)
     {
         CompilerServerEvidenceQueue.Enqueue(new CompilerServerEvidence(
@@ -58,6 +59,7 @@ public sealed class MacProcessGroupDiagnosticsFixture : IAsyncDisposable
             serverProcessName,
             serverAliveAfterInvocation,
             keepAliveMilliseconds,
+            diagnosticMarkers,
             diagnosticFailure));
     }
 
@@ -186,6 +188,7 @@ public sealed class MacProcessGroupDiagnosticsFixture : IAsyncDisposable
         string? ServerProcessName,
         bool ServerAliveAfterInvocation,
         int? KeepAliveMilliseconds,
+        string[] DiagnosticMarkers,
         string? DiagnosticFailure);
 
     [SuppressMessage(

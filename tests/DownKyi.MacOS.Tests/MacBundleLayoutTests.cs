@@ -282,6 +282,7 @@ public sealed class MacBundleLayoutTests
             var serverProcessName = serverProcessId.HasValue
                 ? TryGetProcessName(serverProcessId.Value)
                 : null;
+            var diagnosticMarkers = FindDiagnosticMarkers(lines);
 
             MacProcessGroupDiagnosticsFixture.RecordCompilerServerEvidence(
                 invocationProcessId,
@@ -290,6 +291,7 @@ public sealed class MacBundleLayoutTests
                 serverProcessName,
                 serverProcessName != null,
                 keepAliveMilliseconds,
+                diagnosticMarkers,
                 diagnosticFailure: null);
         }
         catch (Exception failure)
@@ -301,6 +303,7 @@ public sealed class MacBundleLayoutTests
                 serverProcessName: null,
                 serverAliveAfterInvocation: false,
                 keepAliveMilliseconds: null,
+                diagnosticMarkers: [],
                 diagnosticFailure: failure.GetType().Name);
         }
     }
@@ -322,17 +325,7 @@ public sealed class MacBundleLayoutTests
             }
 
             start += prefix.Length;
-            while (start < line.Length && char.IsWhiteSpace(line[start]))
-            {
-                start++;
-            }
-            if (start >= line.Length || line[start] != '=')
-            {
-                continue;
-            }
-
-            start++;
-            while (start < line.Length && char.IsWhiteSpace(line[start]))
+            while (start < line.Length && !char.IsAsciiDigit(line[start]))
             {
                 start++;
             }
@@ -348,6 +341,29 @@ public sealed class MacBundleLayoutTests
         }
 
         return null;
+    }
+
+    private static string[] FindDiagnosticMarkers(IEnumerable<string> lines)
+    {
+        var markers = new[]
+        {
+            "Attempt to open named pipe",
+            "Keep alive timeout is:"
+        };
+        var results = new List<string>();
+        foreach (var marker in markers)
+        {
+            var line = lines.FirstOrDefault(candidate => candidate.Contains(marker, StringComparison.Ordinal));
+            if (line == null)
+            {
+                continue;
+            }
+
+            var markerEnd = line.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
+            results.Add(line[..markerEnd]);
+        }
+
+        return results.ToArray();
     }
 
     private static int? FindKeepAliveMilliseconds(IEnumerable<string> lines)
