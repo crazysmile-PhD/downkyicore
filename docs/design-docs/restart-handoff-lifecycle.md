@@ -2,10 +2,13 @@
 
 ## Status
 
-Stage 4A feasibility is complete. It records an invalidated composition
-assumption and an executable cross-platform result for a separate bounded
-restart domain. It does not authorize or complete production Stage 4
-implementation.
+Stage 4A feasibility remains complete and authoritative for the domain choice.
+Production Stage 4 now implements that separate bounded restart domain through
+`RestartHandoffLease`, `RestartHandoffHelper` and native
+`ParentLifetimeLease` backends. The product caller is migrated; exact-head
+cross-platform CI and same-head review remain the closure authority for this
+implementation checkpoint. The production implementation and executable proof
+commit is `12fbde8647d0a8ddc907264f3ab10741f84e966a`.
 
 ## Confirmed Conflict
 
@@ -67,9 +70,9 @@ remain alive after a terminal outcome.
 
 ## Feasible Platform Contracts
 
-The test-only fixture proved these contracts natively. They are accepted as
-behaviorally feasible design inputs, not as implemented production backends.
-Production Stage 4 requires a separate implementation instruction and review.
+Stage 4A proved these contracts natively in its feasibility fixture. Production
+Stage 4 implements the same contracts in `tools/DownKyi.ProcessSupervision` and
+routes the native platform test projects through a production restart fixture.
 
 ### Windows
 
@@ -101,18 +104,20 @@ required conversion metadata as authenticated handoff data. It may read that
 same clock only to calculate remaining time. It cannot restart a stopwatch,
 renew the product window or create an independent `WaitAsync` window.
 
-The feasibility harness proved that time consumed by the old desktop reduces
-the helper's remaining window and that a fresh-clock mutation is rejected.
-Serialization details remain a feasibility result, not a production API choice.
+The production transaction serializes the prepared clock domain, operation
+expiry, cleanup expiry and frequency in the authenticated handoff. Time consumed
+by prepare, watcher arming and authorization therefore reduces the helper's
+parent-wait and relaunch window. The helper has no deadline constructor or fresh
+stopwatch authority.
 
 ## Contract Responsibilities
 
 `ParentLifetimeLease` answers only whether the exact original parent exited. It
 does not own or terminate the helper, authorize restart, commit a transaction or
-create a deadline. If native feasibility succeeds, a separate restart domain,
-conceptually `RestartHandoffLease` coordinated by `RestartCoordinator`, composes
-that observation with typed authorization, one immutable deadline and bounded
-terminal helper behavior.
+create a deadline. `RestartHandoffLease` owns the prepared helper, the two named
+pipe endpoints, one transition budget and one one-shot commit/revoke decision.
+After commit, `RestartHandoffHelper` owns only the retained exact-parent watcher,
+the authenticated deadline and one relaunch attempt before terminal exit.
 
 `OwnedProcessLease` remains unchanged and continues to own ordinary launched
 children. No `IgnoreOwnerDeathAfterCommit` flag or restart-specific weakening is
@@ -146,9 +151,47 @@ labels only for diagnostics and supplies every repository pipe server with a
 
 Source-shape checks are supplemental only. Missing native capability, a second
 deadline owner, PID/PPID correctness, weakened Stage 2 cleanup, an unbounded
-helper or a persistent service would have triggered the Stage 4A stop rule.
-None was required by the accepted feasibility result; production migration
-remains outside this checkpoint.
+helper or a persistent service would trigger the Stage 4 stop rule. None is
+present in the production implementation.
+
+## Production Stage 4 Checkpoint
+
+`ProcessRestartLauncher` now prepares `RestartHandoffLease`; it no longer parses
+or waits on PID plus start time, owns a raw detached helper, uses an anonymous
+commit byte or falls back to the old path. `DesktopApplication` enters helper
+mode through the typed protocol before Avalonia starts. Physical authorization
+and readiness endpoints come only from `IpcEndpointName`.
+
+The transaction state is typed and one-way:
+
+```text
+Prepared -> WatcherReady -> Authorized
+  -> Revoked -> terminal helper cleanup/reap
+  -> Committed -> ParentExited -> RelaunchStarted -> Completed
+  -> Failed
+```
+
+Authorization is a fixed, nonce-bound, deadline-bound frame followed by channel
+EOF. Empty, partial, malformed, replayed and multi-transition payloads fail
+closed. Commit and revoke are mutually exclusive. Revocation closes the channel,
+terminates the prepared helper, waits within the original cleanup deadline and
+preserves concurrent cleanup failures. Committed relaunch is one-shot: a start
+failure is terminal and is never retried.
+
+Avalonia Policy B is unchanged. Cleanup failure plus accepted desktop handoff
+still commits and preserves cleanup evidence. Desktop handoff or handoff-protocol
+failure revokes the prepared helper. Cleanup, desktop and helper failures remain
+separate causal entries in the existing lifecycle aggregation.
+
+Local Windows proof at the implementation checkpoint passed 32 production and
+Stage 4A restart cases, 30 affected architecture cases, 23 desktop restart and
+Policy B cases, and all 328 Architecture tests. The full review-invariant gate
+passed 333 normal tests and rejected all 15 adversarial profiles. The eight
+Stage 4 mutations each executed eight tests and failed exactly its owning test:
+numeric identity, early READY, fresh deadline, ordinary lease composition,
+authorization replay, relaunch retry, reversed parent ordering and missing
+reap. Linux pidfd and macOS x64/arm64 kqueue production execution remain pending
+exact-head CI; local cross-platform project compilation is not native proof.
 
 ## Native Contract References
 

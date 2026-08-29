@@ -26,7 +26,7 @@ LifecyclePhaseSupervisor
        -> OwnedDiagnosticCollector
 
 RestartTransaction
-  -> RestartHandoffLease (feasible candidate; production implementation deferred)
+  -> RestartHandoffLease
        -> ParentLifetimeLease
        -> typed one-shot authorization
        -> immutable cross-process deadline
@@ -108,6 +108,28 @@ immutable deadline as a future restart-domain boundary. It does not authorize
 production changes. `OwnedProcessLease` still terminates ordinary owned work on
 owner EOF; only its control/status pipe identifiers adopted the bounded naming
 policy, without changing owner-death behavior.
+
+## Stage 4 Production Migration Checkpoint
+
+Stage 4A remains the feasibility authority; Stage 4 is the production migration.
+`ProcessRestartLauncher`, `AvaloniaApplicationLifecycle` and the desktop helper
+entrypoint now use `RestartHandoffLease` and `RestartHandoffHelper`. The old
+PID/start-time comparison, anonymous commit pipe and raw helper cleanup owner
+were removed without a fallback path in implementation commit
+`12fbde8647d0a8ddc907264f3ab10741f84e966a`.
+
+Before commit, `RestartHandoffLease` owns helper launch, readiness and
+authorization endpoints, the absolute deadline, revoke, terminate and reap.
+After commit, the restart-specific helper owns its exact old-parent watcher and
+one relaunch attempt until it exits. It is not an ordinary lease, detached API,
+daemon or service. `OwnedProcessLease` retains its unconditional owner-EOF
+terminate/reap invariant.
+
+Production exact-parent authority is a retained Windows process handle with only
+`SYNCHRONIZE`, Linux `pidfd_open` plus `poll`, or macOS `kqueue`
+`EVFILT_PROC/NOTE_EXIT`. Watcher arming and an immediate exact-parent liveness
+check precede READY. Capability failure is terminal; there is no PID, PPID,
+start-time, `/proc`, enumeration or sleep fallback.
 
 ## Threat Model
 
@@ -416,9 +438,10 @@ A restart handoff crosses a process boundary without crossing into a new clock
 authority. Prepare must fix an immutable absolute expiry in a platform
 monotonic-clock domain. The successor may calculate only the remaining duration
 from that expiry; it must not restart a stopwatch or allocate a fresh product
-window. Stage 4A proved the representation natively as a feasibility result; a
-separate production implementation and review are still required before it can
-become a product contract.
+window. Stage 4A proved the representation natively; Stage 4 carries that exact
+expiry through the production helper protocol and authenticates it in the
+one-shot commit frame. Cross-platform product closure still requires exact-head
+native CI and same-head review.
 
 Caller cancellation may stop work before an irreversible transition. Once a
 child has started or cleanup has begun, cleanup is not abandoned by caller
@@ -482,9 +505,9 @@ normalizes module-qualified PowerShell command names, while a shared
 failure-to-report converter and JSON round-trip fixture prove that non-empty
 cleanup stages and cause types survive the PowerShell boundary. Native
 exact-head CI and a clean same-head review must converge after the latest fix;
-Stage 4 production implementation and Stage 5 remain deferred. Stage 4A
-completed the separate restart-handoff feasibility checkpoint without changing
-that production boundary.
+Stage 4 now changes only the separate restart-handoff production boundary;
+Stage 5 remains deferred. The diagnostic owner, observer classification and
+collector deadlines remain unchanged.
 
 ## Legacy Mechanism Disposition
 
@@ -494,7 +517,7 @@ is redesigned:
 
 - `Get-ProcessTree` WMI/`ps` PPID recursion;
 - `Get-ProcessIdentityKey` and `Get-LiveObservedProcess` as authorities;
-- PID plus start time as restart authority;
+- PID plus start time as restart authority (removed from the production restart path);
 - `Wait-ResidualProcessTree`;
 - synthetic-only `ReleaseObservedChildren` correctness;
 - `New/Start/Complete/Close-ObservedChildReleaseLease` as a second owner;
