@@ -23,6 +23,8 @@ single caller-created transition budget. Neither owner may duplicate the other.
   [audit-lifecycle-ownership.ps1](../../script/audit-lifecycle-ownership.ps1).
 - Machine-readable start/stop/teardown declarations:
   [assembly-lifecycle-owners.json](assembly-lifecycle-owners.json).
+- Release topology and aggregation contract:
+  [assembly-lifecycle-release-topology.json](../../script/assembly-lifecycle-release-topology.json).
 - Probe child:
   [DownKyi.AssemblyLifecycleProbe](../../tools/DownKyi.AssemblyLifecycleProbe/).
 - Process owner: [DownKyi.ProcessSupervision](../../tools/DownKyi.ProcessSupervision/).
@@ -34,6 +36,12 @@ single caller-created transition budget. Neither owner may duplicate the other.
 Profile counts, thresholds, capture lead, quiescence duration and report fields
 are owned by the script and generated machine report. Do not copy their current
 numeric values into downstream policy documents.
+
+PR lock preflight is a fast guard, not a substitute for release rehearsal.
+Sharding may change scheduling only: every shard must retain the canonical
+profile, forensics validation and all lifecycle phases, and aggregation must
+fail closed unless one exact-commit evidence set covers the full machine-owned
+iteration budget.
 
 ## Dynamic Phases
 
