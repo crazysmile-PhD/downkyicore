@@ -28,6 +28,8 @@ public sealed class RestartHandoffMutationTests
         "DOWNKYI_TEST_MUTATE_RESTART_PARENT_ORDERING";
     private const string RevokeReapMutation =
         "DOWNKYI_TEST_MUTATE_RESTART_REVOKE_REAP";
+    private const string CleanupShortCircuitMutation =
+        "DOWNKYI_TEST_MUTATE_RESTART_CLEANUP_SHORT_CIRCUIT";
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
 
@@ -315,6 +317,43 @@ public sealed class RestartHandoffMutationTests
         }
     }
 
+    [Fact]
+    public void CleanupFailureCannotSkipLaterHelperResources()
+    {
+        var source = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot(),
+                "tools",
+                "DownKyi.ProcessSupervision",
+                "RestartHandoffLease.cs"))
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
+        if (IsMutationActive(CleanupShortCircuitMutation))
+        {
+            source = source.Replace(
+                "RestartHandoffCleanupStage.ParentLifetime,",
+                "RestartHandoffCleanupStage.AuthorizationEndpoint,",
+                StringComparison.Ordinal);
+        }
+
+        var statusIndex = source.IndexOf(
+            "RestartHandoffCleanupStage.StatusEndpoint,",
+            StringComparison.Ordinal);
+        var authorizationIndex = source.IndexOf(
+            "RestartHandoffCleanupStage.AuthorizationEndpoint,",
+            statusIndex + 1,
+            StringComparison.Ordinal);
+        var parentIndex = source.IndexOf(
+            "RestartHandoffCleanupStage.ParentLifetime,",
+            authorizationIndex + 1,
+            StringComparison.Ordinal);
+        Assert.True(statusIndex >= 0);
+        Assert.True(authorizationIndex > statusIndex);
+        Assert.True(parentIndex > authorizationIndex);
+        Assert.Contains(
+            "failures.Add(RestartHandoffCleanupFailure.FromException(stage, failure));",
+            source,
+            StringComparison.Ordinal);
+    }
+
     private static bool IsMutationActive(string environmentVariable)
     {
         return string.Equals(
@@ -371,6 +410,18 @@ public sealed class RestartHandoffMutationTests
         }
 
         return line;
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "DownKyi.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName
+            ?? throw new DirectoryNotFoundException("Could not locate the DownKyi repository root.");
     }
 
     private static OwnedSuccessorEvidence DeserializeOwnedSuccessor(string? line)

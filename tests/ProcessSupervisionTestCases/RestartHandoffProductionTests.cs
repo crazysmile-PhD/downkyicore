@@ -92,6 +92,55 @@ public sealed class RestartHandoffProductionTests
     }
 
     [Fact]
+    public async Task RelaunchFailureRemainsPrimaryWhileEveryCleanupStageIsAttempted()
+    {
+        await using var scenario = StartScenario("relaunch-failure-cleanup", 8_000);
+        _ = await scenario.ReadExpectedAsync("Prepared").ConfigureAwait(true);
+        await scenario.SendAsync("COMMIT").ConfigureAwait(true);
+        var evidence = await scenario.CompleteAsync().ConfigureAwait(true);
+
+        var terminal = Assert.Single(evidence, item => item.Type == "HelperTerminal");
+        Assert.Equal(RestartHandoffState.Failed, terminal.State);
+        Assert.Equal(RestartHandoffFailureKind.RelaunchFailed, terminal.FailureKind);
+        Assert.Equal(1, terminal.RelaunchAttempts);
+        Assert.False(terminal.Succeeded);
+        Assert.Equal(
+            [
+                RestartHandoffCleanupStage.StatusEndpoint,
+                RestartHandoffCleanupStage.AuthorizationEndpoint,
+                RestartHandoffCleanupStage.ParentLifetime
+            ],
+            terminal.CleanupFailures?.Select(failure => failure.Stage));
+        Assert.All(
+            terminal.CleanupFailures!,
+            failure => Assert.Equal(
+                typeof(InvalidOperationException).FullName,
+                failure.CauseType));
+        Assert.DoesNotContain(evidence, item => item.Type == "ReplacementStarted");
+        Assert.True(scenario.StandardOutputReachedEof);
+    }
+
+    [Fact]
+    public async Task CleanupOnlyFailureIsReportedWithoutInventingAPrimaryTransition()
+    {
+        await using var scenario = StartScenario("cleanup-only", 8_000);
+        _ = await scenario.ReadExpectedAsync("Prepared").ConfigureAwait(true);
+        await scenario.SendAsync("COMMIT").ConfigureAwait(true);
+        var evidence = await scenario.CompleteAsync().ConfigureAwait(true);
+
+        var terminal = Assert.Single(evidence, item => item.Type == "HelperTerminal");
+        Assert.Equal(RestartHandoffState.Completed, terminal.State);
+        Assert.Null(terminal.FailureKind);
+        Assert.False(terminal.Succeeded);
+        var cleanupFailure = Assert.Single(terminal.CleanupFailures!);
+        Assert.Equal(
+            RestartHandoffCleanupStage.AuthorizationEndpoint,
+            cleanupFailure.Stage);
+        Assert.Single(evidence, item => item.Type == "ReplacementStarted");
+        Assert.True(scenario.StandardOutputReachedEof);
+    }
+
+    [Fact]
     public async Task DuplicateCommitIsRejectedWithoutSecondRelaunch()
     {
         await using var scenario = StartScenario("duplicate", 8_000);
@@ -331,7 +380,9 @@ public sealed class RestartHandoffProductionTests
         ProcessIdentityAuthority? Authority,
         int? ProcessId,
         int RelaunchAttempts,
-        string? Detail);
+        string? Detail,
+        bool? Succeeded,
+        IReadOnlyList<RestartHandoffCleanupFailure>? CleanupFailures);
 
     private sealed class ScenarioSession : IAsyncDisposable
     {

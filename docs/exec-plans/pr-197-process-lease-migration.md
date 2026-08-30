@@ -1108,6 +1108,35 @@ That was the pre-closure status of the Stage 4 implementation. Stage 4 is
 the production handoff, native watcher, deadline, Policy B, authorization,
 commit or revoke paths. Stage 6 remains deferred.
 
+### Stage 4 Blocking-Review Cleanup Remediation
+
+The review of remote head `6f700058d44e1bf8f2e3a8ca7c53dce598054a9d`
+found one independently owned Stage 4 defect after the earlier architecture
+closure: raw helper disposal could replace an already selected typed outcome
+and skip later resources. This remediation reopens only the helper-terminal
+cleanup evidence boundary. It does not move ownership to the central runner,
+change Policy B, add a deadline/retry, alter commit/revoke semantics or compose
+the helper as an ordinary `OwnedProcessLease`.
+
+`RestartHandoffOutcome` now retains ordered typed cleanup-stage failures.
+Status endpoint, authorization endpoint and `ParentLifetimeLease` disposal are
+each attempted even after an earlier failure. The primary relaunch,
+authorization or parent-wait transition remains first; cleanup-only failure
+retains the completed transition but cannot report aggregate success. The
+native fixture injects disposal failures through an internal friend-only API so
+production callers receive no mutation switch. Focused execution evidence is
+recorded after validation and this remediation remains a separate commit from
+Stage 5 and Stage 4A work.
+
+Local Windows focused validation passed strict Release builds for Architecture
+and the native Windows project with zero warnings/errors, 19/19 production
+restart cases and 14/14 restart architecture/mutation cases. The cleanup
+short-circuit profile executed nine mutation tests and failed exactly its owning
+test (eight passed, one failed). The executable fixture preserved a typed
+`RelaunchFailed` primary outcome with all three injected cleanup failures,
+proved later cleanup after the first failure, and reported an independent
+cleanup-only failure without replacing the completed transition.
+
 ## Stage 5: Central Test Runner
 
 Implementation/proof commit

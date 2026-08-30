@@ -42,6 +42,13 @@ public enum RestartHandoffRequestParseResult
     Invalid
 }
 
+public enum RestartHandoffCleanupStage
+{
+    StatusEndpoint,
+    AuthorizationEndpoint,
+    ParentLifetime
+}
+
 public sealed record RestartHandoffFailure(
     RestartHandoffFailureKind Kind,
     RestartHandoffState State,
@@ -49,13 +56,35 @@ public sealed record RestartHandoffFailure(
     int? HelperProcessId,
     string Detail);
 
+public sealed record RestartHandoffCleanupFailure(
+    RestartHandoffCleanupStage Stage,
+    string CauseType,
+    string Detail)
+{
+    internal static RestartHandoffCleanupFailure FromException(
+        RestartHandoffCleanupStage stage,
+        Exception failure)
+    {
+        return new RestartHandoffCleanupFailure(
+            stage,
+            failure.GetType().FullName ?? failure.GetType().Name,
+            failure.Message);
+    }
+}
+
 public sealed record RestartHandoffOutcome(
     RestartHandoffState State,
     ProcessIdentityAuthority? ParentIdentityAuthority,
     int RelaunchAttempts,
     RestartHandoffFailure? Failure)
 {
-    public bool Succeeded => State == RestartHandoffState.Completed && Failure == null;
+    public IReadOnlyList<RestartHandoffCleanupFailure> CleanupFailures { get; init; } =
+        Array.Empty<RestartHandoffCleanupFailure>();
+
+    public bool Succeeded =>
+        State == RestartHandoffState.Completed &&
+        Failure == null &&
+        CleanupFailures.Count == 0;
 }
 
 [SuppressMessage(

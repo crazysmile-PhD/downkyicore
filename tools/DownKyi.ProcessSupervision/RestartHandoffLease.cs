@@ -617,13 +617,44 @@ public sealed class RestartHandoffLease : IAsyncDisposable
 
 public static class RestartHandoffHelper
 {
+    public static Task<RestartHandoffOutcome> ExecuteAsync(
+        RestartHandoffRequest request,
+        ProcessStartInfo relaunchStartInfo,
+        CancellationToken cancellationToken = default)
+    {
+        return ExecuteCoreAsync(
+            request,
+            relaunchStartInfo,
+            cleanupFailureForTesting: null,
+            cancellationToken);
+    }
+
+    internal static Task<RestartHandoffOutcome> ExecuteWithCleanupFailureForTestingAsync(
+        RestartHandoffRequest request,
+        ProcessStartInfo relaunchStartInfo,
+        Func<RestartHandoffCleanupStage, Exception?> cleanupFailureForTesting,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cleanupFailureForTesting);
+        return ExecuteCoreAsync(
+            request,
+            relaunchStartInfo,
+            cleanupFailureForTesting,
+            cancellationToken);
+    }
+
     [SuppressMessage(
         "Design",
         "CA1031:Do not catch general exception types",
         Justification = "The helper converts every terminal native, protocol and relaunch failure into typed evidence.")]
-    public static async Task<RestartHandoffOutcome> ExecuteAsync(
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The finally block independently disposes every acquired helper resource through the typed cleanup collector.")]
+    private static async Task<RestartHandoffOutcome> ExecuteCoreAsync(
         RestartHandoffRequest request,
         ProcessStartInfo relaunchStartInfo,
+        Func<RestartHandoffCleanupStage, Exception?>? cleanupFailureForTesting,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -641,6 +672,8 @@ public static class RestartHandoffHelper
         NamedPipeClientStream? status = null;
         ProcessIdentityAuthority? authority = null;
         var relaunchAttempts = 0;
+        var cleanupFailures = new List<RestartHandoffCleanupFailure>();
+        var readOnlyCleanupFailures = cleanupFailures.AsReadOnly();
         try
         {
             request.Deadline.ValidateCurrentClock();
@@ -680,7 +713,8 @@ public static class RestartHandoffHelper
                         machine.State,
                         authority,
                         relaunchAttempts,
-                        "The exact parent exited before watcher readiness.");
+                        "The exact parent exited before watcher readiness.",
+                        readOnlyCleanupFailures);
                 }
             }
             catch (Exception failure)
@@ -700,7 +734,8 @@ public static class RestartHandoffHelper
                     machine.State,
                     authority,
                     relaunchAttempts,
-                    failure.Message);
+                    failure.Message,
+                    readOnlyCleanupFailures);
             }
 
             machine.Transition(RestartHandoffState.Prepared, RestartHandoffState.WatcherReady);
@@ -716,7 +751,6 @@ public static class RestartHandoffHelper
                     cancellationToken)
                 .ConfigureAwait(false);
             await status.DisposeAsync().ConfigureAwait(false);
-            status = null;
 
             var authorizationResult = await RestartAuthorizationFrame.ReadAsync(
                     authorization,
@@ -732,7 +766,8 @@ public static class RestartHandoffHelper
                     machine.State,
                     authority,
                     relaunchAttempts,
-                    authorizationResult.Value.Detail);
+                    authorizationResult.Value.Detail,
+                    readOnlyCleanupFailures);
             }
 
             machine.Transition(RestartHandoffState.Authorized, RestartHandoffState.Committed);
@@ -748,7 +783,8 @@ public static class RestartHandoffHelper
                     machine.State,
                     authority,
                     relaunchAttempts,
-                    "The exact parent did not exit before the prepared deadline.");
+                    "The exact parent did not exit before the prepared deadline.",
+                    readOnlyCleanupFailures);
             }
 
             machine.Transition(RestartHandoffState.Committed, RestartHandoffState.ParentExited);
@@ -760,7 +796,8 @@ public static class RestartHandoffHelper
                     machine.State,
                     authority,
                     relaunchAttempts,
-                    "The prepared deadline expired before relaunch.");
+                    "The prepared deadline expired before relaunch.",
+                    readOnlyCleanupFailures);
             }
 
             machine.Transition(
@@ -778,7 +815,10 @@ public static class RestartHandoffHelper
                 machine.State,
                 authority,
                 relaunchAttempts,
-                null);
+                null)
+            {
+                CleanupFailures = readOnlyCleanupFailures
+            };
         }
         catch (OperationCanceledException failure)
         {
@@ -795,7 +835,8 @@ public static class RestartHandoffHelper
                 machine.State,
                 authority,
                 relaunchAttempts,
-                failure.Message);
+                failure.Message,
+                readOnlyCleanupFailures);
         }
         catch (TimeoutException failure)
         {
@@ -805,7 +846,8 @@ public static class RestartHandoffHelper
                 machine.State,
                 authority,
                 relaunchAttempts,
-                failure.Message);
+                failure.Message,
+                readOnlyCleanupFailures);
         }
         catch (Exception failure)
         {
@@ -827,24 +869,29 @@ public static class RestartHandoffHelper
                 machine.State,
                 authority,
                 relaunchAttempts,
-                failure.Message);
+                failure.Message,
+                readOnlyCleanupFailures);
         }
         finally
         {
-            if (status != null)
-            {
-                await status.DisposeAsync().ConfigureAwait(false);
-            }
-
-            if (authorization != null)
-            {
-                await authorization.DisposeAsync().ConfigureAwait(false);
-            }
-
-            if (parent != null)
-            {
-                await parent.DisposeAsync().ConfigureAwait(false);
-            }
+            await CaptureCleanupFailureAsync(
+                    status,
+                    RestartHandoffCleanupStage.StatusEndpoint,
+                    cleanupFailures,
+                    cleanupFailureForTesting)
+                .ConfigureAwait(false);
+            await CaptureCleanupFailureAsync(
+                    authorization,
+                    RestartHandoffCleanupStage.AuthorizationEndpoint,
+                    cleanupFailures,
+                    cleanupFailureForTesting)
+                .ConfigureAwait(false);
+            await CaptureCleanupFailureAsync(
+                    parent,
+                    RestartHandoffCleanupStage.ParentLifetime,
+                    cleanupFailures,
+                    cleanupFailureForTesting)
+                .ConfigureAwait(false);
         }
     }
 
@@ -853,7 +900,8 @@ public static class RestartHandoffHelper
         RestartHandoffState state,
         ProcessIdentityAuthority? authority,
         int relaunchAttempts,
-        string detail)
+        string detail,
+        IReadOnlyList<RestartHandoffCleanupFailure> cleanupFailures)
     {
         return new RestartHandoffOutcome(
             state,
@@ -864,7 +912,53 @@ public static class RestartHandoffHelper
                 state,
                 authority,
                 Environment.ProcessId,
-                detail));
+                detail))
+        {
+            CleanupFailures = cleanupFailures
+        };
+    }
+
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Every helper cleanup stage must be attempted and retained independently.")]
+    private static async Task CaptureCleanupFailureAsync(
+        IAsyncDisposable? resource,
+        RestartHandoffCleanupStage stage,
+        List<RestartHandoffCleanupFailure> failures,
+        Func<RestartHandoffCleanupStage, Exception?>? cleanupFailureForTesting)
+    {
+        if (resource == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await resource.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception failure)
+        {
+            failures.Add(RestartHandoffCleanupFailure.FromException(stage, failure));
+        }
+
+        if (cleanupFailureForTesting == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var injectedFailure = cleanupFailureForTesting(stage);
+            if (injectedFailure != null)
+            {
+                throw injectedFailure;
+            }
+        }
+        catch (Exception failure)
+        {
+            failures.Add(RestartHandoffCleanupFailure.FromException(stage, failure));
+        }
     }
 
     private static async Task ConnectWithinDeadlineAsync(

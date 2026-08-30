@@ -195,6 +195,13 @@ one relaunch attempt until it exits. It is not an ordinary lease, detached API,
 daemon or service. `OwnedProcessLease` retains its unconditional owner-EOF
 terminate/reap invariant.
 
+Helper terminal cleanup is part of the same restart transaction. The typed
+primary transition is selected first; status endpoint, authorization endpoint
+and exact-parent authority disposal are then each attempted and recorded by
+stage. Cleanup A cannot skip B or C, cleanup cannot replace the primary
+transition, and cleanup-only failure is not reported as success. This does not
+create another deadline, retry, helper owner or ordinary-lease composition.
+
 Production exact-parent authority is a retained Windows process handle with only
 `SYNCHRONIZE`, Linux `pidfd_open` plus `poll`, or macOS `kqueue`
 `EVFILT_PROC/NOTE_EXIT`. Watcher arming and an immediate exact-parent liveness

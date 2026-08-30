@@ -197,6 +197,15 @@
           "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_REVOKE_REAP",
           "environmentValue": "1",
           "expectedOutcome": "test-failure"
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_CLEANUP_SHORT_CIRCUIT",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
         }
       ]
     },

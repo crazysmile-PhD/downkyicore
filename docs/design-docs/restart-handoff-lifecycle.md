@@ -183,6 +183,20 @@ still commits and preserves cleanup evidence. Desktop handoff or handoff-protoco
 failure revokes the prepared helper. Cleanup, desktop and helper failures remain
 separate causal entries in the existing lifecycle aggregation.
 
+The blocking-review cleanup remediation keeps that transaction boundary but
+adds typed helper-terminal cleanup evidence. Status endpoint, authorization
+endpoint and exact-parent lease disposal are attempted independently in Policy
+B order. A relaunch, authorization or parent-wait transition remains the first
+causal outcome even when one or more later cleanup stages fail; cleanup-only
+failure leaves the completed transition visible but makes the aggregate outcome
+unsuccessful. The fault injection used to prove this is internal to the native
+production fixture and is not a helper command-line or environment option.
+Local Windows proof passed all 19 production restart cases, 14 affected
+architecture/mutation cases and the nine-test cleanup mutation profile with
+exactly one owning failure. Linux and macOS native regression remains part of
+the later unified exact-head closure rather than evidence inferred from this
+Windows run.
+
 Local Windows proof at the implementation checkpoint passed 32 production and
 Stage 4A restart cases, 30 affected architecture cases, 23 desktop restart and
 Policy B cases, and all 328 Architecture tests. The full review-invariant gate

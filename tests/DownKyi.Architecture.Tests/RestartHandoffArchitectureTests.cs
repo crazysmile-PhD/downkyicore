@@ -43,6 +43,35 @@ public sealed class RestartHandoffArchitectureTests
     }
 
     [Fact]
+    public void HelperCleanupPreservesThePrimaryOutcomeAndAttemptsEveryStage()
+    {
+        var lease = ReadSource(
+            "tools",
+            "DownKyi.ProcessSupervision",
+            "RestartHandoffLease.cs");
+        var contracts = ReadSource(
+            "tools",
+            "DownKyi.ProcessSupervision",
+            "RestartHandoffContracts.cs");
+
+        Assert.Contains("CaptureCleanupFailureAsync", lease, StringComparison.Ordinal);
+        Assert.Contains(
+            "RestartHandoffCleanupStage.StatusEndpoint",
+            lease,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RestartHandoffCleanupStage.AuthorizationEndpoint",
+            lease,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RestartHandoffCleanupStage.ParentLifetime",
+            lease,
+            StringComparison.Ordinal);
+        Assert.Contains("CleanupFailures = readOnlyCleanupFailures", lease, StringComparison.Ordinal);
+        Assert.Contains("CleanupFailures.Count == 0", contracts, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ExactParentBackendsHaveNoPidOrSleepFallback()
     {
         var source = ReadSource(

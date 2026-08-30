@@ -199,7 +199,9 @@ internal static class Program
             return await RunHelperCrashPostCommitAsync(request).ConfigureAwait(false);
         }
 
-        var relaunchStartInfo = scenario == "relaunch-failure"
+        var relaunchStartInfo = scenario.StartsWith(
+            "relaunch-failure",
+            StringComparison.Ordinal)
             ? new ProcessStartInfo
             {
                 FileName = Path.Combine(
@@ -208,8 +210,27 @@ internal static class Program
                 UseShellExecute = false
             }
             : CreateFixtureStartInfo("replacement", scenario);
-        var outcome = await RestartHandoffHelper.ExecuteAsync(request, relaunchStartInfo)
-            .ConfigureAwait(false);
+        var outcome = scenario switch
+        {
+            "relaunch-failure-cleanup" =>
+                await RestartHandoffHelper.ExecuteWithCleanupFailureForTestingAsync(
+                        request,
+                        relaunchStartInfo,
+                        stage => new InvalidOperationException(
+                            $"Injected {stage} cleanup failure."))
+                    .ConfigureAwait(false),
+            "cleanup-only" =>
+                await RestartHandoffHelper.ExecuteWithCleanupFailureForTestingAsync(
+                        request,
+                        relaunchStartInfo,
+                        stage => stage == RestartHandoffCleanupStage.AuthorizationEndpoint
+                            ? new InvalidOperationException(
+                                "Injected authorization cleanup failure.")
+                            : null)
+                    .ConfigureAwait(false),
+            _ => await RestartHandoffHelper.ExecuteAsync(request, relaunchStartInfo)
+                .ConfigureAwait(false)
+        };
         Emit(new ProductionRestartEvidence(
             "HelperTerminal",
             outcome.State,
@@ -217,7 +238,9 @@ internal static class Program
             outcome.ParentIdentityAuthority,
             Environment.ProcessId,
             outcome.RelaunchAttempts,
-            outcome.Failure?.Detail));
+            outcome.Failure?.Detail,
+            outcome.Succeeded,
+            outcome.CleanupFailures));
         return 0;
     }
 
@@ -340,4 +363,6 @@ internal sealed record ProductionRestartEvidence(
     ProcessIdentityAuthority? Authority,
     int? ProcessId,
     int RelaunchAttempts,
-    string? Detail);
+    string? Detail,
+    bool? Succeeded = null,
+    IReadOnlyList<RestartHandoffCleanupFailure>? CleanupFailures = null);
