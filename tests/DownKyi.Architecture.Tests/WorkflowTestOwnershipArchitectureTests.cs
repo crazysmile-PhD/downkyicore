@@ -291,9 +291,13 @@ public sealed class WorkflowTestOwnershipArchitectureTests
         var jobs = RequireMapping(workflow, "jobs");
         var verdict = RequireMapping(jobs, "required-verdict");
         AssertNoBypassControls(verdict, ["continue-on-error"]);
-        if (!string.Equals(RequireScalar(verdict, "if"), "${{ always() }}", StringComparison.Ordinal))
+        if (!string.Equals(
+                RequireScalar(verdict, "if"),
+                "${{ always() && !cancelled() }}",
+                StringComparison.Ordinal))
         {
-            throw new InvalidDataException("The final verdict must run after failed or cancelled upstream work.");
+            throw new InvalidDataException(
+                "The final verdict must run after failed upstream work but skip a cancelled workflow.");
         }
         var expectedNeeds = new[]
         {

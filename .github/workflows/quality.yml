@@ -477,7 +477,7 @@ jobs:
 
   required-verdict:
     name: PR required verdict
-    if: ${{ always() }}
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     needs:
       - format
