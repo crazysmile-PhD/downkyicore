@@ -35,6 +35,13 @@ public sealed class V113ReleasePackageTests
     }
 
     [Fact]
+    public void FinalPackageValidationRejectsMixedElfArchitectures()
+    {
+        V113ReleaseSafetyRegressionTests
+            .LinuxReleasePackageValidationRejectsMixedElfArchitectures();
+    }
+
+    [Fact]
     public void FinalPackageValidationRejectsMissingAppImageEntrypoint()
     {
         V113ReleaseSafetyRegressionTests

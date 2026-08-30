@@ -83,6 +83,27 @@ function Assert-LinuxBinaryArchitecture {
     }
 }
 
+function Test-ElfFile {
+    param([string]$Path)
+
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        if ($stream.Length -lt 4) {
+            return $false
+        }
+
+        $magic = [byte[]]::new(4)
+        return $stream.Read($magic, 0, $magic.Length) -eq $magic.Length -and
+            $magic[0] -eq 0x7f -and
+            $magic[1] -eq 0x45 -and
+            $magic[2] -eq 0x4c -and
+            $magic[3] -eq 0x46
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 function Assert-Type2AppImage {
     param([string]$Path)
 
@@ -366,11 +387,21 @@ try {
             (Join-Path $runtime 'ffmpeg/ffprobe')
         )
         foreach ($executable in $linuxExecutables) {
-            Assert-LinuxBinaryArchitecture -Path $executable -ExpectedRuntimeIdentifier $RuntimeIdentifier
             $mode = [IO.File]::GetUnixFileMode($executable)
             if (($mode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
                 throw "Packaged Linux executable is not executable by a non-owner: $executable"
             }
+        }
+
+        $elfFiles = @(
+            Get-ChildItem -LiteralPath $runtime -Recurse -File |
+                Where-Object { Test-ElfFile -Path $_.FullName }
+        )
+        if ($elfFiles.Count -eq 0) {
+            throw 'Packaged Linux runtime does not contain any ELF files.'
+        }
+        foreach ($elfFile in $elfFiles) {
+            Assert-LinuxBinaryArchitecture -Path $elfFile.FullName -ExpectedRuntimeIdentifier $RuntimeIdentifier
         }
     }
 

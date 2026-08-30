@@ -23,13 +23,37 @@ public sealed class V113ReleaseSafetyRegressionTests
         Assert.Contains("verify-dmg-contents.sh DownKyi-", workflow, StringComparison.Ordinal);
         Assert.Contains("ubuntu-24.04-arm", workflow, StringComparison.Ordinal);
         Assert.Contains("validate-linux-arm64:", workflow, StringComparison.Ordinal);
-        Assert.Contains("linux-arm64-${{ matrix.kind }}.candidate.transport.tar", workflow, StringComparison.Ordinal);
+        Assert.Contains("linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar", workflow, StringComparison.Ordinal);
         Assert.Contains("appimage-${{ matrix.cpu }}.transport.tar", workflow, StringComparison.Ordinal);
         Assert.Contains("Transported AppImage lost non-owner execute permission", workflow, StringComparison.Ordinal);
         Assert.Contains("'--appimage-extract'", packageValidator, StringComparison.Ordinal);
         Assert.Contains("LinkType -ceq 'SymbolicLink'", packageValidator, StringComparison.Ordinal);
         Assert.Contains("usr/bin/DownKyi", packageValidator, StringComparison.Ordinal);
+        Assert.Contains("Test-ElfFile", packageValidator, StringComparison.Ordinal);
         Assert.DoesNotContain("& 7z", packageValidator, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Arm64CandidatePromotionRejectsBrokenWorkflowTransitions()
+    {
+        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+
+        AssertArm64PromotionContract(workflow);
+        Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
+            workflow.Replace(
+                "needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
+                "needs: [changelog, build-windows, build-linux, build-macos]",
+                StringComparison.Ordinal)));
+        Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
+            workflow.Replace(
+                "name: linux-arm64-${{ matrix.kind }}-candidate",
+                "name: appimage-arm64-transport",
+                StringComparison.Ordinal)));
+        Assert.ThrowsAny<Exception>(() => AssertArm64PromotionContract(
+            workflow.Replace(
+                "Get-ChildItem artifacts -File -Filter '*.internal.transport.tar'",
+                "Get-ChildItem artifacts -File -Filter '*.candidate.transport.tar'",
+                StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -38,6 +62,8 @@ public sealed class V113ReleaseSafetyRegressionTests
         var configuration = File.ReadAllText(
             Path.Combine(RepositoryRoot, "script", "pupnet", "DownKyi.pupnet.conf"));
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var linuxPublish = GetWorkflowJob(workflow, "build-linux-publish");
+        var linuxPackages = GetWorkflowJob(workflow, "build-linux");
         var root = CreateTemporaryDirectory();
         var source = Path.Combine(root, "canonical");
         var destination = Path.Combine(root, "pupnet-staging");
@@ -50,6 +76,12 @@ public sealed class V113ReleaseSafetyRegressionTests
         Assert.Equal(2, CountOccurrences(workflow, "- name: Finalize and validate canonical publish payload"));
         Assert.Equal(2, CountOccurrences(workflow, "CANONICAL_PUBLISH_DIRECTORY:"));
         Assert.Equal(5, CountOccurrences(workflow, "os: ubuntu-22.04"));
+        Assert.Equal(3, CountOccurrences(workflow, "linux-${{ matrix.cpu }}.canonical-publish.internal.transport.tar"));
+        Assert.Equal(1, CountOccurrences(linuxPublish, "dotnet publish ./DownKyi/DownKyi.csproj"));
+        Assert.Contains("cpu: [ x64, arm64 ]", linuxPublish, StringComparison.Ordinal);
+        Assert.DoesNotContain("kind: [ AppImage, deb, rpm ]", linuxPublish, StringComparison.Ordinal);
+        Assert.DoesNotContain("dotnet publish ./DownKyi/DownKyi.csproj", linuxPackages, StringComparison.Ordinal);
+        Assert.Contains("needs: [changelog, build-linux-publish]", linuxPackages, StringComparison.Ordinal);
         Assert.Contains("tools/linux_x64/protoc", workflow, StringComparison.Ordinal);
         Assert.Contains("file artifacts/publish/linux-arm64/DownKyi | grep -qi 'ELF.*aarch64'", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("p7zip-full", workflow, StringComparison.Ordinal);
@@ -517,6 +549,41 @@ public sealed class V113ReleaseSafetyRegressionTests
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "xUnit",
         "xUnit1013:Public method should be marked as test")]
+    public static void LinuxReleasePackageValidationRejectsMixedElfArchitectures()
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var package = CreateLinuxDebPackage(
+                root,
+                "amd64",
+                includeExecuteBits: true,
+                mixedArchitectureLibrary: true);
+            var result = RunPowerShell(
+                Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"),
+                [
+                    "-PackagePath", package,
+                    "-PackageKind", "deb",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", package + ".expected.json",
+                    "-OutputPath", Path.Combine(root, "mixed-elf-manifest.json")
+                ],
+                root);
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("wrong-architecture-fixture.so", NormalizeDiagnostic(result), StringComparison.Ordinal);
+            Assert.Contains("does not match linux-x64", NormalizeDiagnostic(result), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "xUnit",
+        "xUnit1013:Public method should be marked as test")]
     public static void LinuxReleasePackageValidationRejectsMissingAppImageEntrypoint()
     {
         var root = CreateTemporaryDirectory();
@@ -800,6 +867,22 @@ public sealed class V113ReleaseSafetyRegressionTests
         File.WriteAllBytes(path, image);
     }
 
+    private static void WriteElfFile(string path, ushort machine)
+    {
+        var image = new byte[64];
+        image[0] = 0x7f;
+        image[1] = 0x45;
+        image[2] = 0x4c;
+        image[3] = 0x46;
+        image[4] = 2;
+        image[5] = 1;
+        image[6] = 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(16), 3);
+        BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(18), machine);
+        BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(20), 1);
+        File.WriteAllBytes(path, image);
+    }
+
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     private static string CreateLinuxDebPackage(
         string root,
@@ -808,7 +891,8 @@ public sealed class V113ReleaseSafetyRegressionTests
         bool ownerOnlyExecute = false,
         string version = "1.1.3",
         string packageName = "downkyi",
-        bool crossFormatExecutable = false)
+        bool crossFormatExecutable = false,
+        bool mixedArchitectureLibrary = false)
     {
         var packageRoot = Path.Combine(root, $"deb-{architecture}-{includeExecuteBits}-{ownerOnlyExecute}-{version}-{packageName}");
         var controlDirectory = Path.Combine(packageRoot, "DEBIAN");
@@ -832,6 +916,10 @@ public sealed class V113ReleaseSafetyRegressionTests
         if (crossFormatExecutable)
         {
             WritePeFile(executables[0], 0x8664);
+        }
+        if (mixedArchitectureLibrary)
+        {
+            WriteElfFile(Path.Combine(runtime, "wrong-architecture-fixture.so"), 0x00b7);
         }
 
         var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite |
@@ -1078,6 +1166,62 @@ public sealed class V113ReleaseSafetyRegressionTests
 
     private static int CountOccurrences(string source, string value) =>
         source.Split(value, StringSplitOptions.None).Length - 1;
+
+    private static void AssertArm64PromotionContract(string workflow)
+    {
+        var buildLinux = GetWorkflowJob(workflow, "build-linux");
+        var validateArm64 = GetWorkflowJob(workflow, "validate-linux-arm64");
+        var release = GetWorkflowJob(workflow, "release");
+
+        Assert.Contains(
+            "name: linux-arm64-${{ matrix.kind }}-candidate",
+            buildLinux,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "path: linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar",
+            buildLinux,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("name: appimage-arm64-transport", buildLinux, StringComparison.Ordinal);
+        Assert.DoesNotContain("name: downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb", buildLinux, StringComparison.Ordinal);
+
+        Assert.Contains("needs: build-linux", validateArm64, StringComparison.Ordinal);
+        Assert.Contains("name: linux-arm64-${{ matrix.kind }}-candidate", validateArm64, StringComparison.Ordinal);
+        Assert.Contains("name: appimage-arm64-transport", validateArm64, StringComparison.Ordinal);
+        Assert.Contains(
+            "name: downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb",
+            validateArm64,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]",
+            release,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Get-ChildItem artifacts -File -Filter '*.internal.transport.tar'",
+            release,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Get-ChildItem artifacts -Recurse -File -Filter '*.internal.*'",
+            release,
+            StringComparison.Ordinal);
+    }
+
+    private static string GetWorkflowJob(string workflow, string jobName)
+    {
+        var normalized = workflow.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var marker = $"\n  {jobName}:\n";
+        var start = normalized.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"Workflow job was not found: {jobName}");
+        start += 1;
+        var remainder = normalized[(start + marker.Length - 1)..];
+        var nextJob = System.Text.RegularExpressions.Regex.Match(
+            remainder,
+            @"\n  [A-Za-z0-9_-]+:\n",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        return nextJob.Success
+            ? normalized[start..(start + marker.Length - 1 + nextJob.Index)]
+            : normalized[start..];
+    }
 
     private static string NormalizeDiagnostic(ProcessResult result) =>
         System.Text.RegularExpressions.Regex.Replace(
