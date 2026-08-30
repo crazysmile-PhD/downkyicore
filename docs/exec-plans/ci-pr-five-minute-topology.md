@@ -1,7 +1,8 @@
 # CI PR Five-Minute Execution Topology
 
-Status: implementation and local verification in progress; exact-head GitHub PR
-measurement is pending
+Status: independent checkpoint validated on a real draft PR; correctness is
+green, but the five-minute performance acceptance is not met and integration
+remains pending Stage 5 closure
 
 ## Boundary
 
@@ -19,9 +20,11 @@ lifecycle profile, strict Release analysis and Windows Debug compilation remain
 required.
 
 On 2026-08-30 the independent Stage 5 branch advanced during this work from the
-starting head to `75bd15efb425ac9b652b1efdbe4b0952a73b62fc`; its worktree was
-clean when rechecked. This checkpoint overlaps those intervening commits in
-six files: `docs/ai-knowledge-graph.md`, `docs/testing/README.md`,
+starting head to `75bd15efb425ac9b652b1efdbe4b0952a73b62fc`. Its worktree later
+contained 12 uncommitted Stage 5 files, which this checkpoint did not read as
+inputs, modify, discard or absorb. This checkpoint overlaps the committed
+Stage 5 changes since the starting head in six files:
+`docs/ai-knowledge-graph.md`, `docs/testing/README.md`,
 `docs/testing/review-invariant-corpus.json`, `script/test-project-runner.ps1`,
 `AssemblyLifecycleArchitectureTests.cs` and `CiTestActionBehaviorTests.cs`.
 Integration therefore requires a post-closure rebase and full proof rerun, not
@@ -121,7 +124,8 @@ repository TRX only when the aggregator independently proves the same exact
 SHA, OS, Release configuration, project, central runner and class coverage.
 
 Lifecycle shards are per exact assembly. Within one shard the PR profile still
-runs iteration 1, then 2, then 3. Each shard builds the lifecycle probe and the
+runs iteration 1, then 2, then 3. Each shard builds the lifecycle probe, the
+central runner (and its transitive process-supervision dependency) and the
 selected test-project closure, not the whole solution. The aggregator requires
 all eight Windows assemblies, every one of the six phases for every iteration,
 and the three schema-v4 gate self-tests. Missing or duplicate assemblies,
@@ -150,11 +154,11 @@ iteration.
 
 ## Validation Record
 
-Local evidence on the uncommitted worktree is implementation evidence only;
-it is not exact-head CI closure:
+Local evidence established the implementation before the remote measurement:
 
 - strict Architecture project build: zero warnings and zero errors;
-- full Architecture suite: green after contract migration;
+- full Architecture suite through the central owner: 397 executed, zero
+  failures after contract migration;
 - Windows repository suite: all 8 platform-owned projects green;
 - review invariant gate: 14 invariants, 7 projects, 424 normal tests and all
   42 adversarial proofs green;
@@ -167,32 +171,74 @@ it is not exact-head CI closure:
 - `dotnet format --verify-no-changes`: 0 of 1,011 files required changes;
 - `git diff --check`: clean apart from line-ending conversion notices.
 
-Required before completion:
+Draft PR #203 then exercised the topology against GitHub's generated PR merge
+SHA. Early natural failures exposed and fixed only topology defects: actionlint
+shell quoting, missing lifecycle build-closure projects, missing fresh-shard
+central-runner bootstrap, retained compiler/build-server processes and one
+action behavior fixture that consumed an ambient outer shard. Superseded runs
+also proved that the final verdict skips a cancelled workflow instead of
+holding the replacement run behind an `always()` job.
 
-1. rerun strict build, complete Architecture, central runner/workflow tests,
-   complete review corpus and all mutations on the final local diff;
-2. run the complete Windows PR lifecycle profile locally where practical and
-   rely on the exact-head Windows matrix for the authoritative eight-assembly
-   parallel proof;
-3. obtain exact-head Windows, Linux and macOS repository, mutation, CodeQL,
-   lifecycle, actionlint and final-verdict evidence from a real PR;
-4. record job queue, execution-only critical path, fastest, median, slowest and
-   the available p95 sample without claiming statistical stability from an
-   insufficient run count.
+Strict PR CI run `33292521979` on implementation head
+`b4b6b1d0eee46c7b315fbbbbea91e9e3a1cbf02a` and generated PR merge SHA
+`91f988afcbce75b8e5bfeab027c7203d30f3f81f` completed with all 38 producers and
+the compiled `PR required verdict` green. Protobuf run `33292521965`, Process
+Membership run `33292521978` and CodeQL run `33292521969` were also green on the
+same head. That evidence covers all six repository shards, all 12 review
+mutation shards, all eight lifecycle assemblies with three sequential
+iterations, all Release/Debug lanes, all six aria2 RIDs, package audit and
+semantic aggregation.
+
+Because this isolation PR targets the Stage 5 branch rather than `main`, the
+existing `Build` workflow pull-request branch filter did not trigger on PR #203.
+Its ordinary-PR skip and release/Rehearsal preservation contracts are covered
+by actionlint and Architecture behavior tests, but require a natural PR run
+after the post-Stage-5 rebase/retarget. This limit is not reported as remote
+Build evidence.
+
+## Measured Result
+
+The optimized topology is materially faster than the old 668-second stable
+first-attempt lifecycle critical job, but it does not meet the requested budget.
+In the one complete exact-head sample, the 38 producer job execution durations
+ranged from 63 to 416 seconds; median was 146 seconds and the per-job p95 was
+400 seconds. Maximum runner queue/provisioning delay was 258 seconds. The last
+producer completed 638 seconds after workflow creation and the 37-second
+semantic verdict completed at 677 seconds (11 minutes 17 seconds).
+
+Ignoring queue delay, the slowest producer plus the required verdict is 453
+seconds (7 minutes 33 seconds), a 32.2 percent reduction from the former
+668-second critical job but still above both the four-minute repository budget
+and five-minute goal. `DownKyi.Windows.Tests` was the longest producer: 85
+seconds to build its exact closure and 279 seconds for the required three
+sequential lifecycle iterations. `DownKyi.Desktop.Tests` took 400 seconds on a
+slow runner, including 58 seconds to install diagnostics, 71 seconds to restore,
+159 seconds to build and 61 seconds for iterations. These step results separate
+repository execution from infrastructure/network variance.
+
+Only one fully green exact-head topology run exists, so no statistically stable
+cross-run median or p95 can be claimed. The per-job distribution above is a
+diagnostic sample, not a hosted-runner SLO measurement. Meeting the four-minute
+repository budget now requires either reducing the Stage 5 lifecycle execution
+cost or changing its evidence contract; this checkpoint is not authorized to
+do either while Stage 5 is under final review. It therefore remains a validated
+independent checkpoint rather than a completed performance closure.
 
 ## Completion And Rollback
 
-Completion requires one exact ending HEAD with every naturally triggered
-workflow green, the final semantic verdict green and measured repository-owned
-critical path reported separately from GitHub queue/network delay. No failed
-run is made green by rerun.
+Completion requires repeated exact ending HEADs with every naturally triggered
+workflow green, the final semantic verdict green, a statistically meaningful
+hosted-runner p95 at or below five minutes and a repository-controlled critical
+path at or below four minutes. No failed run is made green by rerun. The current
+checkpoint satisfies correctness on one exact-head run, but not these
+performance and sampling conditions.
 
 Rollback is one revert of this independent checkpoint. It restores the former
 single-lane quality workflow and central-runner sequential solution behavior.
 Do not roll back any Stage 5 commit or the release Rehearsal matrix. Integration
-must rebase or cherry-pick only after Stage 5 closure and resolve the known
-overlap in `build.yml`, central-runner contracts/tests, review corpus and Stage
-5 documentation without reopening their ownership decisions.
+must rebase or cherry-pick only after Stage 5 closure and explicitly review the
+six known overlapping files named in the Boundary section without reopening
+their ownership decisions.
 
 The repository currently has no active main-branch protection or enabled
 ruleset requiring a named status check. Before integration, repository settings
