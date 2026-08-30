@@ -28,7 +28,9 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         Assert.Equal(0, outcome.Evidence.ExitCode);
         Assert.Equal("collector-stdout", outcome.Evidence.StandardOutput);
         Assert.Equal("collector-stderr", outcome.Evidence.StandardError);
-        Assert.Equal(11, outcome.Evidence.Timeline.Transitions.Count);
+        Assert.Equal(
+            Enum.GetValues<DiagnosticCollectorTransition>().Length,
+            outcome.Evidence.Timeline.Transitions.Count);
         Assert.Equal(
             DiagnosticCollectorTransitionState.NotObservable,
             GetTransition(outcome.Evidence, DiagnosticCollectorTransition.TargetAttachBegan).State);
@@ -40,6 +42,13 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             {
                 DiagnosticCollectorTransition.RequestCreated,
                 DiagnosticCollectorTransition.ProcessStartRequested,
+                DiagnosticCollectorTransition.SupervisorProcessStartReturned,
+                DiagnosticCollectorTransition.ContainmentPrepared,
+                DiagnosticCollectorTransition.ContainmentEstablished,
+                DiagnosticCollectorTransition.ControlStatusPipeConnectionsCompleted,
+                DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
+                DiagnosticCollectorTransition.LaunchAuthorizationWritten,
+                DiagnosticCollectorTransition.TargetStartAcknowledgementReceived,
                 DiagnosticCollectorTransition.ProcessStarted,
                 DiagnosticCollectorTransition.FirstObservableProgress,
                 DiagnosticCollectorTransition.StackOutputFirstByte,
@@ -292,6 +301,71 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         {
             File.Delete(readyPath);
         }
+    }
+
+    [Fact]
+    public async Task SupervisorConnectionStallIdentifiesTheLastOwnedStartupTransition()
+    {
+        var failure = await CollectFailureAsync(
+                CreateRequest(
+                    SupervisorHost.CollectorOutputArgument,
+                    TimeSpan.FromSeconds(1),
+                    TimeSpan.FromSeconds(1)),
+                DiagnosticCollectorMutation.StallBeforeSupervisorPipeConnection)
+            .ConfigureAwait(true);
+
+        Assert.Equal(
+            DiagnosticCollectorFailureKind.OperationDeadlineExceeded,
+            failure.Failure.Kind);
+        Assert.False(failure.Failure.Evidence.Started);
+        Assert.False(failure.Failure.Evidence.Reaped);
+        Assert.False(failure.Failure.Evidence.StreamsDrained);
+        Assert.Empty(failure.CleanupFailures);
+        Assert.All(
+            new[]
+            {
+                DiagnosticCollectorTransition.SupervisorProcessStartReturned,
+                DiagnosticCollectorTransition.ContainmentPrepared,
+                DiagnosticCollectorTransition.ContainmentEstablished,
+                DiagnosticCollectorTransition.StartFailureObserved,
+                DiagnosticCollectorTransition.OperationDeadlineExhausted,
+                DiagnosticCollectorTransition.OperationDeadlineExhaustionObserved,
+                DiagnosticCollectorTransition.StartFailureTerminationBegan,
+                DiagnosticCollectorTransition.StartFailureTerminationCompleted,
+                DiagnosticCollectorTransition.StartFailureSupervisorReapBegan,
+                DiagnosticCollectorTransition.StartFailureSupervisorReapCompleted,
+                DiagnosticCollectorTransition.StartFailureStreamDrainBegan,
+                DiagnosticCollectorTransition.StartFailureStreamDrainCompleted
+            },
+            transition => Assert.Equal(
+                DiagnosticCollectorTransitionState.Observed,
+                GetTransition(failure.Failure.Evidence, transition).State));
+        Assert.All(
+            new[]
+            {
+                DiagnosticCollectorTransition.ControlStatusPipeConnectionsCompleted,
+                DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
+                DiagnosticCollectorTransition.LaunchAuthorizationWritten,
+                DiagnosticCollectorTransition.TargetStartAcknowledgementReceived,
+                DiagnosticCollectorTransition.ProcessStarted,
+                DiagnosticCollectorTransition.StartFailureTreeQuiescenceBegan,
+                DiagnosticCollectorTransition.StartFailureTreeQuiescenceCompleted
+            },
+            transition => Assert.Equal(
+                DiagnosticCollectorTransitionState.NotObserved,
+                GetTransition(failure.Failure.Evidence, transition).State));
+
+        var deadline = GetTransition(
+            failure.Failure.Evidence,
+            DiagnosticCollectorTransition.OperationDeadlineExhausted);
+        var deadlineObservation = GetTransition(
+            failure.Failure.Evidence,
+            DiagnosticCollectorTransition.OperationDeadlineExhaustionObserved);
+        var cleanupBegin = GetTransition(
+            failure.Failure.Evidence,
+            DiagnosticCollectorTransition.StartFailureTerminationBegan);
+        Assert.True(deadline.ElapsedMilliseconds <= deadlineObservation.ElapsedMilliseconds);
+        Assert.True(deadlineObservation.ElapsedMilliseconds <= cleanupBegin.ElapsedMilliseconds);
     }
 
     [Fact]

@@ -180,7 +180,8 @@ internal static class SupervisorHost
             ProcessOwnershipMutation.FailFixturePublication |
             ProcessOwnershipMutation.StallStreamDrain |
             ProcessOwnershipMutation.StallRootReap |
-            ProcessOwnershipMutation.SkipTargetStreamForwarding;
+            ProcessOwnershipMutation.SkipTargetStreamForwarding |
+            ProcessOwnershipMutation.StallBeforeSupervisorPipeConnection;
         if (arguments.Count != 5 ||
             !string.Equals(arguments[0], HostArgument, StringComparison.Ordinal) ||
             !int.TryParse(arguments[4], NumberStyles.None, CultureInfo.InvariantCulture, out var mutationValue) ||
@@ -189,6 +190,7 @@ internal static class SupervisorHost
             return null;
         }
 
+        var mutation = (ProcessOwnershipMutation)mutationValue;
         var control = new NamedPipeClientStream(
             ".",
             arguments[1],
@@ -201,12 +203,18 @@ internal static class SupervisorHost
             PipeDirection.Out,
             PipeOptions.Asynchronous);
         await using var statusScope = status.ConfigureAwait(false);
+        if (mutation.HasFlag(ProcessOwnershipMutation.StallBeforeSupervisorPipeConnection))
+        {
+            var pipeConnectionLatch = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            await pipeConnectionLatch.Task.ConfigureAwait(false);
+        }
+
         await Task.WhenAll(
                 control.ConnectAsync(CancellationToken.None),
                 status.ConnectAsync(CancellationToken.None))
             .ConfigureAwait(false);
 
-        var mutation = (ProcessOwnershipMutation)mutationValue;
         var attachmentBytes = await ReadFrameAsync(
                 control,
                 OwnershipAttachment,

@@ -98,35 +98,26 @@ public static class OwnedDiagnosticCollector
             ? request.Window.ParentBudget
             : request.Window.Budget;
         var processMutation = MapMutation(mutation);
+        var processStartTimeline = new OwnedProcessStartTimeline(budget);
         OwnedProcessLease lease;
         try
         {
             timeline.Mark(DiagnosticCollectorTransition.ProcessStartRequested);
-            lease = startFailureObservedForTesting != null
-                ? await OwnedProcessLease.StartForTestingAsync(
-                        request.Launch,
-                        budget,
-                        processMutation,
-                        startFailureObservedForTesting,
-                        cancellationToken)
-                    .ConfigureAwait(false)
-                : processMutation == ProcessOwnershipMutation.None
-                ? await OwnedProcessLease.StartAsync(
-                        request.Launch,
-                        budget,
-                        cancellationToken)
-                    .ConfigureAwait(false)
-                : await OwnedProcessLease.StartForTestingAsync(
-                        request.Launch,
-                        budget,
-                        processMutation,
-                        cancellationToken)
-                    .ConfigureAwait(false);
+            lease = await OwnedProcessLease.StartObservedAsync(
+                    request.Launch,
+                    budget,
+                    processMutation,
+                    processStartTimeline,
+                    startFailureObservedForTesting,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            timeline.ObserveOwnedProcessStart(processStartTimeline);
             timeline.Mark(DiagnosticCollectorTransition.ProcessStarted);
             collectorStartedForTesting?.TrySetResult();
         }
         catch (Exception failure)
         {
+            timeline.ObserveOwnedProcessStart(processStartTimeline);
             var (primary, cleanupFailures) = SplitStartFailure(failure);
             var kind = primary is OperationCanceledException
                 ? DiagnosticCollectorFailureKind.CallerCancelled
@@ -234,6 +225,10 @@ public static class OwnedDiagnosticCollector
         {
             processMutation |= ProcessOwnershipMutation.StallStreamDrain;
         }
+        if (mutation.HasFlag(DiagnosticCollectorMutation.StallBeforeSupervisorPipeConnection))
+        {
+            processMutation |= ProcessOwnershipMutation.StallBeforeSupervisorPipeConnection;
+        }
 
         return processMutation;
     }
@@ -335,6 +330,38 @@ public static class OwnedDiagnosticCollector
 
     private sealed class DiagnosticCollectorTimelineBuilder
     {
+        private static readonly DiagnosticCollectorTransition[] OrderedTransitions =
+        [
+            DiagnosticCollectorTransition.RequestCreated,
+            DiagnosticCollectorTransition.ProcessStartRequested,
+            DiagnosticCollectorTransition.SupervisorProcessStartReturned,
+            DiagnosticCollectorTransition.ContainmentPrepared,
+            DiagnosticCollectorTransition.ContainmentEstablished,
+            DiagnosticCollectorTransition.ControlStatusPipeConnectionsCompleted,
+            DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
+            DiagnosticCollectorTransition.LaunchAuthorizationWritten,
+            DiagnosticCollectorTransition.TargetStartAcknowledgementReceived,
+            DiagnosticCollectorTransition.ProcessStarted,
+            DiagnosticCollectorTransition.StartFailureObserved,
+            DiagnosticCollectorTransition.OperationDeadlineExhausted,
+            DiagnosticCollectorTransition.OperationDeadlineExhaustionObserved,
+            DiagnosticCollectorTransition.StartFailureTerminationBegan,
+            DiagnosticCollectorTransition.StartFailureTerminationCompleted,
+            DiagnosticCollectorTransition.StartFailureTreeQuiescenceBegan,
+            DiagnosticCollectorTransition.StartFailureTreeQuiescenceCompleted,
+            DiagnosticCollectorTransition.StartFailureSupervisorReapBegan,
+            DiagnosticCollectorTransition.StartFailureSupervisorReapCompleted,
+            DiagnosticCollectorTransition.StartFailureStreamDrainBegan,
+            DiagnosticCollectorTransition.StartFailureStreamDrainCompleted,
+            DiagnosticCollectorTransition.TargetAttachBegan,
+            DiagnosticCollectorTransition.FirstObservableProgress,
+            DiagnosticCollectorTransition.StackCaptureBegan,
+            DiagnosticCollectorTransition.StackOutputFirstByte,
+            DiagnosticCollectorTransition.ProcessExitObserved,
+            DiagnosticCollectorTransition.ReapCompleted,
+            DiagnosticCollectorTransition.StreamsDrained,
+            DiagnosticCollectorTransition.TypedOutcomeReturned
+        ];
         private readonly DiagnosticCollectorRequest _request;
         private readonly Dictionary<DiagnosticCollectorTransition, DiagnosticCollectorTransitionEvidence>
             _transitions = new();
@@ -416,6 +443,21 @@ public static class OwnedDiagnosticCollector
             }
         }
 
+        public void ObserveOwnedProcessStart(OwnedProcessStartTimeline startTimeline)
+        {
+            ArgumentNullException.ThrowIfNull(startTimeline);
+            foreach (var transition in Enum.GetValues<OwnedProcessStartTransition>())
+            {
+                if (startTimeline.TryGetElapsed(transition, out var elapsed))
+                {
+                    Mark(
+                        MapStartTransition(transition),
+                        elapsed,
+                        GetStartTransitionDetail(transition));
+                }
+            }
+        }
+
         public void MarkTypedOutcomeReturned()
         {
             Mark(
@@ -435,7 +477,7 @@ public static class OwnedDiagnosticCollector
                     "The generic collector owner cannot observe an external tool's capture boundary.");
             }
 
-            var entries = Enum.GetValues<DiagnosticCollectorTransition>()
+            var entries = OrderedTransitions
                 .Select(transition => _transitions.TryGetValue(transition, out var evidence)
                     ? evidence
                     : new DiagnosticCollectorTransitionEvidence(
@@ -472,6 +514,95 @@ public static class OwnedDiagnosticCollector
                     DiagnosticCollectorTransitionState.NotObservable,
                     ElapsedMilliseconds: null,
                     detail));
+        }
+
+        private static DiagnosticCollectorTransition MapStartTransition(
+            OwnedProcessStartTransition transition)
+        {
+            return transition switch
+            {
+                OwnedProcessStartTransition.SupervisorProcessStartReturned =>
+                    DiagnosticCollectorTransition.SupervisorProcessStartReturned,
+                OwnedProcessStartTransition.ContainmentPrepared =>
+                    DiagnosticCollectorTransition.ContainmentPrepared,
+                OwnedProcessStartTransition.ContainmentEstablished =>
+                    DiagnosticCollectorTransition.ContainmentEstablished,
+                OwnedProcessStartTransition.ControlStatusPipeConnectionsCompleted =>
+                    DiagnosticCollectorTransition.ControlStatusPipeConnectionsCompleted,
+                OwnedProcessStartTransition.OwnershipAcknowledgementReceived =>
+                    DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
+                OwnedProcessStartTransition.LaunchAuthorizationWritten =>
+                    DiagnosticCollectorTransition.LaunchAuthorizationWritten,
+                OwnedProcessStartTransition.TargetStartAcknowledgementReceived =>
+                    DiagnosticCollectorTransition.TargetStartAcknowledgementReceived,
+                OwnedProcessStartTransition.StartFailureObserved =>
+                    DiagnosticCollectorTransition.StartFailureObserved,
+                OwnedProcessStartTransition.OperationDeadlineExhausted =>
+                    DiagnosticCollectorTransition.OperationDeadlineExhausted,
+                OwnedProcessStartTransition.OperationDeadlineExhaustionObserved =>
+                    DiagnosticCollectorTransition.OperationDeadlineExhaustionObserved,
+                OwnedProcessStartTransition.StartFailureTerminationBegan =>
+                    DiagnosticCollectorTransition.StartFailureTerminationBegan,
+                OwnedProcessStartTransition.StartFailureTerminationCompleted =>
+                    DiagnosticCollectorTransition.StartFailureTerminationCompleted,
+                OwnedProcessStartTransition.StartFailureTreeQuiescenceBegan =>
+                    DiagnosticCollectorTransition.StartFailureTreeQuiescenceBegan,
+                OwnedProcessStartTransition.StartFailureTreeQuiescenceCompleted =>
+                    DiagnosticCollectorTransition.StartFailureTreeQuiescenceCompleted,
+                OwnedProcessStartTransition.StartFailureSupervisorReapBegan =>
+                    DiagnosticCollectorTransition.StartFailureSupervisorReapBegan,
+                OwnedProcessStartTransition.StartFailureSupervisorReapCompleted =>
+                    DiagnosticCollectorTransition.StartFailureSupervisorReapCompleted,
+                OwnedProcessStartTransition.StartFailureStreamDrainBegan =>
+                    DiagnosticCollectorTransition.StartFailureStreamDrainBegan,
+                OwnedProcessStartTransition.StartFailureStreamDrainCompleted =>
+                    DiagnosticCollectorTransition.StartFailureStreamDrainCompleted,
+                _ => throw new ArgumentOutOfRangeException(nameof(transition), transition, null)
+            };
+        }
+
+        private static string GetStartTransitionDetail(OwnedProcessStartTransition transition)
+        {
+            return transition switch
+            {
+                OwnedProcessStartTransition.SupervisorProcessStartReturned =>
+                    "The supervisor Process.Start call returned.",
+                OwnedProcessStartTransition.ContainmentPrepared =>
+                    "The platform containment owner was prepared.",
+                OwnedProcessStartTransition.ContainmentEstablished =>
+                    "The supervisor was placed under platform containment.",
+                OwnedProcessStartTransition.ControlStatusPipeConnectionsCompleted =>
+                    "Both supervisor control and status channels connected.",
+                OwnedProcessStartTransition.OwnershipAcknowledgementReceived =>
+                    "The supervisor acknowledged its containment ownership.",
+                OwnedProcessStartTransition.LaunchAuthorizationWritten =>
+                    "The immutable target launch authorization was written.",
+                OwnedProcessStartTransition.TargetStartAcknowledgementReceived =>
+                    "The supervisor acknowledged target start.",
+                OwnedProcessStartTransition.StartFailureObserved =>
+                    "The process owner observed the causal start failure.",
+                OwnedProcessStartTransition.OperationDeadlineExhausted =>
+                    "The existing operation deadline was exhausted on the shared monotonic timeline.",
+                OwnedProcessStartTransition.OperationDeadlineExhaustionObserved =>
+                    "The process owner observed that the operation deadline was exhausted.",
+                OwnedProcessStartTransition.StartFailureTerminationBegan =>
+                    "Start-failure termination began under the process owner.",
+                OwnedProcessStartTransition.StartFailureTerminationCompleted =>
+                    "Start-failure termination settled under the process owner.",
+                OwnedProcessStartTransition.StartFailureTreeQuiescenceBegan =>
+                    "Start-failure tree-quiescence observation began.",
+                OwnedProcessStartTransition.StartFailureTreeQuiescenceCompleted =>
+                    "Start-failure tree-quiescence observation settled.",
+                OwnedProcessStartTransition.StartFailureSupervisorReapBegan =>
+                    "Start-failure supervisor reap began.",
+                OwnedProcessStartTransition.StartFailureSupervisorReapCompleted =>
+                    "Start-failure supervisor reap settled.",
+                OwnedProcessStartTransition.StartFailureStreamDrainBegan =>
+                    "Start-failure supervisor stream drain began.",
+                OwnedProcessStartTransition.StartFailureStreamDrainCompleted =>
+                    "Start-failure supervisor stream drain settled.",
+                _ => throw new ArgumentOutOfRangeException(nameof(transition), transition, null)
+            };
         }
 
         private static TimeSpan? Minimum(TimeSpan? left, TimeSpan? right)

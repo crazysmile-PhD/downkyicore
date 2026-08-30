@@ -1153,6 +1153,105 @@ implementation remains present and unchanged, but Stage 4 closure and same-head
 review remain blocked until every required check is green. Stage 5, merge,
 release and tag movement remain prohibited.
 
+## Stage 3 Windows Supervisor Startup Blocker Remediation
+
+This independent checkpoint starts from exact head
+`75bd15efb425ac9b652b1efdbe4b0952a73b62fc` on PR #197's existing branch. It
+does not reopen Stage 4, modify the Stage 5 central runner or begin Stage 6.
+Strict Release run `33289558531` exposed the same Windows collector-start
+boundary in two different Assembly Lifecycle jobs.
+
+Infrastructure job `99198667340` stopped after `ProcessStartRequested` at
+4.232 ms and never observed `ProcessStarted`, ready publication, target reap or
+stream drain. The child operation and parent operation were both exhausted;
+the collector's typed timeline returned at 7,393.343 ms after request creation,
+the PowerShell caller settled at 8,099.581 ms and the self-test completed at
+8,113.196 ms. This is not the earlier 1,000-ms parent-reserve oracle: the parent
+was actually zero.
+
+DownKyi.Tests job `99198667359` completed all 100 iterations and 603 phases.
+Only iteration 76 and 89 failed, both as `SlowEvidenceMissing`; their underlying
+365-test executions passed with one skip. Forty-one other slow phases captured
+evidence. The two failures requested a collector and reached
+`ProcessStartRequested`, but not `ProcessStarted` or stack output, before target
+exit produced typed `CallerCancelled`. Successful near-threshold examples also
+ended as `CallerCancelled`, but only after `ProcessStarted` and stack output.
+Target exit is therefore not the discriminator; supervisor startup and
+ownership handshake are.
+
+Code/history correlation found that the capture-window target already uses its
+compiled apphost, while `OwnedProcessLease` still launched its own Windows
+supervisor as `dotnet DownKyi.ProcessSupervision.dll`. That extra hosted-runtime
+startup remained between the collector request and the first supervisor pipe
+handshake. Windows now requires and launches the compiled ProcessSupervision
+apphost directly; non-Windows launch behavior is unchanged. No timeout,
+operation/cleanup allowance, retry, sleep, predicate or process-owner boundary
+changed.
+
+The old artifact could not retrospectively say whether `Process.Start()` had
+returned or when start-failure cleanup began. That observation gap is closed on
+the existing `TransitionBudget`: evidence now records supervisor start return,
+containment prepare/establish, pipe connection, ownership acknowledgment,
+authorization write and target-start acknowledgment. Failure evidence records
+the exact assigned operation-deadline boundary separately from when the owner
+observed exhaustion, then termination, tree-quiescence, supervisor-reap and
+stream-drain begin/settled transitions. No UTC value participates in these
+records or correctness.
+
+The assigned child operation deadline was exactly 3,000 ms after window
+allocation and the parent operation deadline was exactly 5,000 ms; both were
+already zero when PowerShell sampled them. The historical 8,113.196-ms total is
+fully accounted for as 8,099.581 ms until the collector task settled, 12.315 ms
+for typed failure mapping, and approximately 1.3 ms for final ready-artifact
+observation/removal. Aligning the same typed-return event shows that the old
+collector request was created approximately 706.238 ms after the caller
+stopwatch began, followed by 7,393.343 ms inside the opaque typed owner path.
+The old schema cannot truthfully divide that latter interval into synchronous
+startup versus failure cleanup; the new deadline/observation/cleanup entries
+are the monotonic discriminator if the boundary ever recurs.
+
+The deterministic Windows regression stalls the supervisor on a permanent
+test-only latch immediately before pipe connection. It proves that the last
+successful transition is containment establishment, the existing operation
+deadline causes typed `OperationDeadlineExceeded`, no target start/reap/drain
+is claimed, cleanup failures remain empty, and supervisor terminate/reap/drain
+settle under the sole owner. A separate direct-apphost regression fails against
+the old hosted launch. The Architecture mutation changes only that owning
+invariant and must fail exactly one of its ten tests; unrelated or incomplete
+execution cannot satisfy the review corpus.
+
+Executed local validation for the checkpoint diff:
+
+- strict Release solution build: zero warnings and zero errors;
+- affected Windows ProcessSupervision classes: 47/47. A wider Windows run
+  executed 97 tests and failed only the unchanged
+  `CallerCancellationStillCompletesOwnedCleanupBeforePropagating` fixture when
+  its reader opened a still-writer-locked ready JSON file; the same affected
+  classes had just passed, the failing lines are outside this diff, and the
+  unrelated 96/97 result was retained without rerun or scope expansion;
+- affected Assembly Lifecycle Architecture classes: 21/21; full Architecture:
+  389/389;
+- direct-apphost adversarial mutation: ten executed, nine passed, exactly one
+  owning failure and zero not-executed;
+- review-invariant corpus: 13 root-cause invariants, seven projects, 415 normal
+  tests and 36 adversarial proofs;
+- final `DownKyi.Infrastructure.Tests` Local lifecycle: one assembly, nine
+  phases, zero failures and ownership 672/0;
+- capture-window normal proof: all 12 predicates passed, typed
+  `OperationDeadlineExceeded`, child operation remainder zero, parent operation
+  remainder 1,933.319 ms, started/reaped/drained true and zero cleanup failures;
+- its startup timeline observed supervisor start return at 20.172 ms,
+  containment prepare/establish at 26.611/27.471 ms, pipe connection at
+  100.301 ms, ownership acknowledgment at 203.682 ms, authorization write at
+  212.600 ms, target-start acknowledgment at 236.844 ms and public
+  `ProcessStarted` at 244.228 ms;
+- PowerShell parse, `dotnet format --verify-no-changes`, `git diff --check`:
+  pass.
+
+The checkpoint commit is the commit containing this section. Push, CI closure,
+same-head review, merge, release and user delivery remain pending and out of
+this local checkpoint.
+
 ## Stage 3 Assembly Lifecycle Slow-Evidence Self-Test Blocker Checkpoint
 
 This independent checkpoint starts from exact head

@@ -115,6 +115,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest: null,
             ProcessOwnershipMutation.None,
             acknowledgmentPublicationGateForTesting: null,
+            startTimeline: null,
             startFailureObservedForTesting: null,
             cancellationToken);
     }
@@ -132,6 +133,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest,
             ProcessOwnershipMutation.None,
             acknowledgmentPublicationGateForTesting: null,
+            startTimeline: null,
             startFailureObservedForTesting: null,
             cancellationToken);
     }
@@ -148,6 +150,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest: null,
             mutation,
             acknowledgmentPublicationGateForTesting: null,
+            startTimeline: null,
             startFailureObservedForTesting: null,
             cancellationToken);
     }
@@ -166,6 +169,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest: null,
             mutation,
             acknowledgmentPublicationGateForTesting: null,
+            startTimeline: null,
             startFailureObservedForTesting,
             cancellationToken);
     }
@@ -184,6 +188,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest,
             mutation,
             acknowledgmentPublicationGateForTesting: null,
+            startTimeline: null,
             startFailureObservedForTesting: null,
             cancellationToken);
     }
@@ -204,7 +209,28 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             evidenceHoldRequest,
             mutation,
             acknowledgmentPublicationGateForTesting,
+            startTimeline: null,
             startFailureObservedForTesting: null,
+            cancellationToken);
+    }
+
+    internal static Task<OwnedProcessLease> StartObservedAsync(
+        LaunchSpec launchSpec,
+        TransitionBudget budget,
+        ProcessOwnershipMutation mutation,
+        OwnedProcessStartTimeline startTimeline,
+        Action? startFailureObservedForTesting,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(startTimeline);
+        return StartCoreAsync(
+            launchSpec,
+            budget,
+            evidenceHoldRequest: null,
+            mutation,
+            acknowledgmentPublicationGateForTesting: null,
+            startTimeline,
+            startFailureObservedForTesting,
             cancellationToken);
     }
 
@@ -432,6 +458,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         EvidenceHoldRequest? evidenceHoldRequest,
         ProcessOwnershipMutation mutation,
         Task? acknowledgmentPublicationGateForTesting,
+        OwnedProcessStartTimeline? startTimeline,
         Action? startFailureObservedForTesting,
         CancellationToken cancellationToken)
     {
@@ -482,7 +509,9 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         var processOwnershipEstablished = false;
         try
         {
-            if (!supervisor.Start())
+            var supervisorStarted = supervisor.Start();
+            startTimeline?.Mark(OwnedProcessStartTransition.SupervisorProcessStartReturned);
+            if (!supervisorStarted)
             {
                 throw new InvalidOperationException("The process supervisor did not start.");
             }
@@ -503,7 +532,9 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     TaskCreationOptions.RunContinuationsAsynchronously).Task;
             }
             containment = PlatformProcessContainment.Prepare(supervisor, jobName);
+            startTimeline?.Mark(OwnedProcessStartTransition.ContainmentPrepared);
             containment.Establish(supervisor, mutation);
+            startTimeline?.Mark(OwnedProcessStartTransition.ContainmentEstablished);
             containment = PlatformProcessContainment.ApplyFailureMutations(
                 containment,
                 mutation);
@@ -515,6 +546,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     "The process supervisor did not connect its control channels before the deadline.",
                     cancellationToken)
                 .ConfigureAwait(false);
+            startTimeline?.Mark(
+                OwnedProcessStartTransition.ControlStatusPipeConnectionsCompleted);
 
             var attachment = JsonSerializer.SerializeToUtf8Bytes(
                 new OwnershipAttachmentPayload(
@@ -536,6 +569,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     "The supervisor did not acknowledge ownership before the deadline.",
                     cancellationToken)
                 .ConfigureAwait(false);
+            startTimeline?.Mark(OwnedProcessStartTransition.OwnershipAcknowledgementReceived);
             if (ownershipStatus is not (OwnershipEstablished or OwnershipMutationActive))
             {
                 throw new InvalidOperationException(
@@ -560,12 +594,14 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     "The immutable launch specification did not reach the supervisor before the deadline.",
                     cancellationToken)
                 .ConfigureAwait(false);
+            startTimeline?.Mark(OwnedProcessStartTransition.LaunchAuthorizationWritten);
 
             var targetProcessId = await ReadTargetStartedAsync(
                     status,
                     budget,
                     cancellationToken)
                 .ConfigureAwait(false);
+            startTimeline?.Mark(OwnedProcessStartTransition.TargetStartAcknowledgementReceived);
             evidenceHold?.Grant();
             var targetExitReport = ReadTargetExitReportAsync(
                 status,
@@ -595,10 +631,19 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
         catch (Exception startFailure)
         {
+            startTimeline?.Mark(OwnedProcessStartTransition.StartFailureObserved);
+            if (startFailure is TimeoutException ||
+                budget.RemainingOperation <= TimeSpan.Zero)
+            {
+                startTimeline?.MarkOperationDeadlineExhausted();
+                startTimeline?.MarkOperationDeadlineExhaustionObserved();
+            }
             var failures = new Collection<Exception> { startFailure };
             startFailureObservedForTesting?.Invoke();
             if (containment != null && processOwnershipEstablished)
             {
+                startTimeline?.Mark(
+                    OwnedProcessStartTransition.StartFailureTerminationBegan);
                 try
                 {
                     containment.Terminate();
@@ -610,7 +655,14 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                         OwnedProcessCleanupStage.Terminate,
                         cleanupFailure);
                 }
+                finally
+                {
+                    startTimeline?.Mark(
+                        OwnedProcessStartTransition.StartFailureTerminationCompleted);
+                }
 
+                startTimeline?.Mark(
+                    OwnedProcessStartTransition.StartFailureTreeQuiescenceBegan);
                 try
                 {
                     await WaitForTreeQuiescenceAsync(
@@ -627,9 +679,16 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                         OwnedProcessCleanupStage.TreeQuiescence,
                         cleanupFailure);
                 }
+                finally
+                {
+                    startTimeline?.Mark(
+                        OwnedProcessStartTransition.StartFailureTreeQuiescenceCompleted);
+                }
             }
             else if (started)
             {
+                startTimeline?.Mark(
+                    OwnedProcessStartTransition.StartFailureTerminationBegan);
                 try
                 {
                     supervisor.Kill();
@@ -644,8 +703,18 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                         OwnedProcessCleanupStage.Terminate,
                         cleanupFailure);
                 }
+                finally
+                {
+                    startTimeline?.Mark(
+                        OwnedProcessStartTransition.StartFailureTerminationCompleted);
+                }
             }
 
+            if (started)
+            {
+                startTimeline?.Mark(
+                    OwnedProcessStartTransition.StartFailureSupervisorReapBegan);
+            }
             try
             {
                 if (started)
@@ -666,7 +735,20 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     OwnedProcessCleanupStage.Reap,
                     cleanupFailure);
             }
+            finally
+            {
+                if (started)
+                {
+                    startTimeline?.Mark(
+                        OwnedProcessStartTransition.StartFailureSupervisorReapCompleted);
+                }
+            }
 
+            if (standardOutput != null && standardError != null)
+            {
+                startTimeline?.Mark(
+                    OwnedProcessStartTransition.StartFailureStreamDrainBegan);
+            }
             try
             {
                 if (standardOutput != null && standardError != null)
@@ -685,6 +767,14 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     failures,
                     OwnedProcessCleanupStage.StreamDrain,
                     cleanupFailure);
+            }
+            finally
+            {
+                if (standardOutput != null && standardError != null)
+                {
+                    startTimeline?.Mark(
+                        OwnedProcessStartTransition.StartFailureStreamDrainCompleted);
+                }
             }
 
             foreach (var resource in new IDisposable?[]
@@ -721,24 +811,38 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
     }
 
-    private static ProcessStartInfo CreateSupervisorStartInfo(
+    internal static ProcessStartInfo CreateSupervisorStartInfo(
         string controlPipeName,
         string statusPipeName,
         string jobName,
         ProcessOwnershipMutation mutation)
     {
         var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var supervisorDirectory = Path.GetDirectoryName(assemblyPath)
+            ?? throw new InvalidOperationException("The supervisor directory is unavailable.");
+        var useDirectAppHost = OperatingSystem.IsWindows();
+        var supervisorFileName = useDirectAppHost
+            ? Path.ChangeExtension(assemblyPath, ".exe")
+            : "dotnet";
+        if (useDirectAppHost && !File.Exists(supervisorFileName))
+        {
+            throw new InvalidOperationException(
+                $"The compiled process supervisor apphost was not found: {supervisorFileName}");
+        }
+
         var startInfo = new ProcessStartInfo
         {
-            FileName = "dotnet",
-            WorkingDirectory = Path.GetDirectoryName(assemblyPath)
-                ?? throw new InvalidOperationException("The supervisor directory is unavailable."),
+            FileName = supervisorFileName,
+            WorkingDirectory = supervisorDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        startInfo.ArgumentList.Add(assemblyPath);
+        if (!useDirectAppHost)
+        {
+            startInfo.ArgumentList.Add(assemblyPath);
+        }
         startInfo.ArgumentList.Add(SupervisorHost.HostArgument);
         startInfo.ArgumentList.Add(controlPipeName);
         startInfo.ArgumentList.Add(statusPipeName);

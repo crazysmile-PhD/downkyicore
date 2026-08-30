@@ -17,6 +17,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_FORENSICS_EARLY_READY";
     private const string CleanupReportMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_CLEANUP_REPORT";
+    private const string SupervisorStartupMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_FORENSICS_SUPERVISOR_STARTUP";
     private const string CaptureBudgetSelfTestRejection =
         "Forensics collector capture-window self-test did not fail closed.";
     private const string CleanupReportSelfTestRejection =
@@ -103,6 +105,80 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.DoesNotContain("ReadToEndAsync", collector, StringComparison.Ordinal);
         Assert.DoesNotContain("List[Exception]", collector, StringComparison.Ordinal);
         Assert.DoesNotContain("AggregateException", collector, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WindowsSupervisorStartupBoundaryHasOwnedMonotonicEvidence()
+    {
+        var leaseSource = ReadRepositoryFile(
+            "tools",
+            "DownKyi.ProcessSupervision",
+            "OwnedProcessLease.cs");
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(
+                    SupervisorStartupMutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            leaseSource = leaseSource.Replace(
+                "var useDirectAppHost = OperatingSystem.IsWindows();",
+                "var useDirectAppHost = false;",
+                StringComparison.Ordinal);
+        }
+
+        var collectorSource = ReadRepositoryFile(
+            "tools",
+            "DownKyi.ProcessSupervision",
+            "OwnedDiagnosticCollector.cs");
+        var contractSource = ReadRepositoryFile(
+            "tools",
+            "DownKyi.ProcessSupervision",
+            "DiagnosticCollectorContracts.cs");
+        var supervisorSource = ReadRepositoryFile(
+            "tools",
+            "DownKyi.ProcessSupervision",
+            "SupervisorHost.cs");
+        var regressionSource = ReadRepositoryFile(
+            "tests",
+            "ProcessSupervisionTestCases",
+            "OwnedDiagnosticCollectorPlatformTests.cs");
+
+        Assert.Contains(
+            "var useDirectAppHost = OperatingSystem.IsWindows();",
+            leaseSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Path.ChangeExtension(assemblyPath, \".exe\")",
+            leaseSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "OwnedProcessStartTimeline(budget)",
+            collectorSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ControlStatusPipeConnectionsCompleted",
+            contractSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "OperationDeadlineExhausted",
+            contractSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "OperationDeadlineExhaustionObserved",
+            contractSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "StartFailureTreeQuiescenceCompleted",
+            contractSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "StallBeforeSupervisorPipeConnection",
+            supervisorSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SupervisorConnectionStallIdentifiesTheLastOwnedStartupTransition",
+            regressionSource,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -712,6 +788,11 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             RepositoryRoot,
             "script",
             "test-assembly-lifecycle.ps1"));
+    }
+
+    private static string ReadRepositoryFile(params string[] pathSegments)
+    {
+        return File.ReadAllText(Path.Combine([RepositoryRoot, .. pathSegments]));
     }
 
     private static string FindRepositoryRoot()

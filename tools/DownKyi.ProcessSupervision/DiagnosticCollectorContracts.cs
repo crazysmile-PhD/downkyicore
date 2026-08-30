@@ -79,17 +79,35 @@ public sealed class DiagnosticCollectorRequest
 
 public enum DiagnosticCollectorTransition
 {
-    RequestCreated,
-    ProcessStartRequested,
-    ProcessStarted,
-    TargetAttachBegan,
-    FirstObservableProgress,
-    StackCaptureBegan,
-    StackOutputFirstByte,
-    ProcessExitObserved,
-    ReapCompleted,
-    StreamsDrained,
-    TypedOutcomeReturned
+    RequestCreated = 0,
+    ProcessStartRequested = 1,
+    ProcessStarted = 2,
+    TargetAttachBegan = 3,
+    FirstObservableProgress = 4,
+    StackCaptureBegan = 5,
+    StackOutputFirstByte = 6,
+    ProcessExitObserved = 7,
+    ReapCompleted = 8,
+    StreamsDrained = 9,
+    TypedOutcomeReturned = 10,
+    SupervisorProcessStartReturned = 11,
+    ContainmentPrepared = 12,
+    ContainmentEstablished = 13,
+    ControlStatusPipeConnectionsCompleted = 14,
+    OwnershipAcknowledgementReceived = 15,
+    LaunchAuthorizationWritten = 16,
+    TargetStartAcknowledgementReceived = 17,
+    StartFailureObserved = 18,
+    OperationDeadlineExhausted = 19,
+    OperationDeadlineExhaustionObserved = 20,
+    StartFailureTerminationBegan = 21,
+    StartFailureTerminationCompleted = 22,
+    StartFailureTreeQuiescenceBegan = 23,
+    StartFailureTreeQuiescenceCompleted = 24,
+    StartFailureSupervisorReapBegan = 25,
+    StartFailureSupervisorReapCompleted = 26,
+    StartFailureStreamDrainBegan = 27,
+    StartFailureStreamDrainCompleted = 28
 }
 
 public enum DiagnosticCollectorTransitionState
@@ -194,5 +212,6 @@ internal enum DiagnosticCollectorMutation
     IgnoreAllocatedWindow = 1,
     FailAfterTerminate = 2,
     StallReap = 4,
-    StallStreamDrain = 8
+    StallStreamDrain = 8,
+    StallBeforeSupervisorPipeConnection = 16
 }

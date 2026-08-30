@@ -118,12 +118,22 @@ between languages and is forbidden.
 
 ### Diagnostic Transition Timeline
 
-`DiagnosticCollectorEvidence` carries exactly these ordered diagnostic
-transitions: request created, process start requested, process started, target
-attach began, first observable progress, stack capture began, stack output first
-byte, process exit observed, reap completed, streams drained and typed outcome
-returned. Each item is `Observed`, `NotObserved` or `NotObservable` and uses the
-same monotonic collector window.
+`DiagnosticCollectorEvidence` carries ordered diagnostic transitions on the
+same monotonic collector window. Startup records request creation, process-start
+request, supervisor `Process.Start()` return, containment preparation and
+establishment, both control/status pipe connections, ownership acknowledgment,
+launch-authorization write, target-start acknowledgment and the public
+`ProcessStarted` boundary. A failed start additionally records the exact
+existing operation-deadline boundary, when the owner observed that boundary,
+and begin/settled evidence for termination, tree quiescence, supervisor reap
+and stream drain. Runtime observation then retains target attach, first
+observable progress, stack capture, first stack byte, target exit, reap, drain
+and typed return. Each item is `Observed`, `NotObserved` or `NotObservable`.
+
+The exact deadline entry is captured from one `TransitionBudget` observation;
+it is not a second timer. Separating it from the owner's later observation
+makes a synchronous Windows startup or cleanup call which crosses the assigned
+boundary visible without using UTC or changing correctness.
 
 The generic owner can directly observe its own process, streams, reap and typed
 return. It cannot see `dotnet-stack`'s internal attach or stack-enumeration
@@ -132,6 +142,14 @@ tool itself publishes a typed signal. Empty stdout/stderr before timeout is
 evidence of no owner-visible progress, not permission to infer target identity,
 runtime state or a correctness outcome. Timeline values never select a process,
 extend a deadline or convert failure into success.
+
+On Windows, `OwnedProcessLease` launches the already-built
+`DownKyi.ProcessSupervision.exe` apphost as its inert supervisor. The apphost is
+required and there is no hosted-`dotnet` fallback. Linux and macOS retain the
+existing `dotnet <assembly>` launch. This removes the extra Windows muxer/runtime
+startup layer before the supervisor pipe and ownership handshake; it does not
+change the target launch protocol, sole-owner boundary, timeout values, retry
+policy or cleanup semantics.
 
 ## C# Contract
 

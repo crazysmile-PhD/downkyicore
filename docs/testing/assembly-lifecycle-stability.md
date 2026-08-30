@@ -419,7 +419,29 @@ reap, drain and empty cleanup while setting the parent remainder to zero; the
 Architecture profile must execute nine tests and fail only its owning typed-window
 test. Its failure output retains the structured child evidence, so a startup,
 build, missing-tool or cleanup failure cannot substitute for the deadline
-authority violation. The cleanup-report proof sends a typed failure with a
+authority violation.
+
+The Windows lease supervisor now also starts through the same compiled apphost,
+rather than introducing another hosted `dotnet` runtime before its control and
+status pipes. Collector evidence distinguishes supervisor start return,
+containment preparation/establishment, pipe connection, ownership
+acknowledgment, launch authorization and target-start acknowledgment. A failed
+start retains the existing operation-deadline boundary separately from the
+owner's later deadline observation, followed by termination, tree-quiescence,
+supervisor-reap and stream-drain begin/settled evidence. Every timestamp comes
+from the existing `TransitionBudget` monotonic origin.
+
+A Windows platform regression permanently latches the supervisor immediately
+before pipe connection. It requires typed `OperationDeadlineExceeded`, no
+target-start/reap/drain claim, no cleanup failure, startup evidence through
+containment establishment, and owner cleanup evidence for supervisor
+termination, reap and drain. The matching review-corpus mutation changes only
+the direct-apphost invariant in memory and must execute the complete lifecycle
+Architecture class with exactly one failed test. Zero-test, build, platform or
+additional cleanup failures are not accepted as adversarial proof. Neither
+fixture uses a sleep, retry or runner-latency threshold.
+
+The cleanup-report proof sends a typed failure with a
 non-empty immutable cleanup list through the same PowerShell converter used by
 `Invoke-ForensicsObserverCapture`, JSON-round-trips the result and requires
 these exact stage/cause pairs:

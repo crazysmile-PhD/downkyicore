@@ -171,6 +171,27 @@ public sealed class OwnedProcessLeasePlatformTests
     }
 
     [Fact]
+    public void WindowsSupervisorLaunchUsesTheCompiledAppHost()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var startInfo = OwnedProcessLease.CreateSupervisorStartInfo(
+            "test-control",
+            "test-status",
+            "test-job",
+            ProcessOwnershipMutation.None);
+
+        Assert.Equal(Path.ChangeExtension(assemblyPath, ".exe"), startInfo.FileName);
+        Assert.NotEqual("dotnet", startInfo.FileName);
+        Assert.Equal(SupervisorHost.HostArgument, startInfo.ArgumentList[0]);
+        Assert.DoesNotContain(assemblyPath, startInfo.ArgumentList);
+    }
+
+    [Fact]
     public async Task EvidenceHoldIsALeaseOwnedCaptureSubstate()
     {
         var budget = TransitionBudget.Start(
@@ -776,19 +797,49 @@ public sealed class OwnedProcessLeasePlatformTests
         var budget = TransitionBudget.Start(
             TimeSpan.FromSeconds(3),
             TimeSpan.FromSeconds(5));
+        var startTimeline = new OwnedProcessStartTimeline(budget);
         var stopwatch = Stopwatch.StartNew();
 
         var failure = await Assert.ThrowsAnyAsync<Exception>(
-                () => OwnedProcessLease.StartForTestingAsync(
+                () => OwnedProcessLease.StartObservedAsync(
                     launchSpec,
                     budget,
                     ProcessOwnershipMutation.StallLaunchPayloadRead,
+                    startTimeline,
+                    startFailureObservedForTesting: null,
                     TestContext.Current.CancellationToken))
             .ConfigureAwait(true);
         stopwatch.Stop();
 
         Assert.Contains("launch specification", failure.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10));
+        Assert.All(
+            new[]
+            {
+                OwnedProcessStartTransition.SupervisorProcessStartReturned,
+                OwnedProcessStartTransition.ContainmentPrepared,
+                OwnedProcessStartTransition.ContainmentEstablished,
+                OwnedProcessStartTransition.ControlStatusPipeConnectionsCompleted,
+                OwnedProcessStartTransition.OwnershipAcknowledgementReceived,
+                OwnedProcessStartTransition.StartFailureObserved,
+                OwnedProcessStartTransition.OperationDeadlineExhausted,
+                OwnedProcessStartTransition.OperationDeadlineExhaustionObserved,
+                OwnedProcessStartTransition.StartFailureTerminationBegan,
+                OwnedProcessStartTransition.StartFailureTerminationCompleted,
+                OwnedProcessStartTransition.StartFailureTreeQuiescenceBegan,
+                OwnedProcessStartTransition.StartFailureTreeQuiescenceCompleted,
+                OwnedProcessStartTransition.StartFailureSupervisorReapBegan,
+                OwnedProcessStartTransition.StartFailureSupervisorReapCompleted,
+                OwnedProcessStartTransition.StartFailureStreamDrainBegan,
+                OwnedProcessStartTransition.StartFailureStreamDrainCompleted
+            },
+            transition => Assert.True(startTimeline.TryGetElapsed(transition, out _)));
+        Assert.False(startTimeline.TryGetElapsed(
+            OwnedProcessStartTransition.LaunchAuthorizationWritten,
+            out _));
+        Assert.False(startTimeline.TryGetElapsed(
+            OwnedProcessStartTransition.TargetStartAcknowledgementReceived,
+            out _));
     }
 
     [Fact]

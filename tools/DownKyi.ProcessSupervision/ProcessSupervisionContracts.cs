@@ -87,6 +87,14 @@ public sealed class TransitionBudget
         _startedAt,
         _timeProvider.GetTimestamp());
 
+    internal TransitionBudgetObservation Observe()
+    {
+        var timestamp = _timeProvider.GetTimestamp();
+        return new TransitionBudgetObservation(
+            _timeProvider.GetElapsedTime(_startedAt, timestamp),
+            RemainingOperationAt(timestamp));
+    }
+
     internal RestartHandoffDeadline CreateRestartHandoffDeadline()
     {
         if (!ReferenceEquals(_timeProvider, TimeProvider.System) || _parent != null)
@@ -140,6 +148,100 @@ public sealed class TransitionBudget
         return parentRemaining.HasValue && parentRemaining.Value < remaining
             ? parentRemaining.Value
             : remaining;
+    }
+
+    private TimeSpan RemainingOperationAt(long timestamp)
+    {
+        return RemainingAt(
+            _operationDuration,
+            _parent?.RemainingOperationAt(timestamp),
+            timestamp);
+    }
+
+    private TimeSpan RemainingAt(
+        TimeSpan duration,
+        TimeSpan? parentRemaining,
+        long timestamp)
+    {
+        var remaining = duration - _timeProvider.GetElapsedTime(_startedAt, timestamp);
+        if (remaining <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return parentRemaining.HasValue && parentRemaining.Value < remaining
+            ? parentRemaining.Value
+            : remaining;
+    }
+}
+
+internal readonly record struct TransitionBudgetObservation(
+    TimeSpan Elapsed,
+    TimeSpan RemainingOperation);
+
+internal enum OwnedProcessStartTransition
+{
+    SupervisorProcessStartReturned,
+    ContainmentPrepared,
+    ContainmentEstablished,
+    ControlStatusPipeConnectionsCompleted,
+    OwnershipAcknowledgementReceived,
+    LaunchAuthorizationWritten,
+    TargetStartAcknowledgementReceived,
+    StartFailureObserved,
+    OperationDeadlineExhausted,
+    OperationDeadlineExhaustionObserved,
+    StartFailureTerminationBegan,
+    StartFailureTerminationCompleted,
+    StartFailureTreeQuiescenceBegan,
+    StartFailureTreeQuiescenceCompleted,
+    StartFailureSupervisorReapBegan,
+    StartFailureSupervisorReapCompleted,
+    StartFailureStreamDrainBegan,
+    StartFailureStreamDrainCompleted
+}
+
+internal sealed class OwnedProcessStartTimeline
+{
+    private readonly TransitionBudget _budget;
+    private readonly TimeSpan _operationDeadlineElapsed;
+    private readonly Dictionary<OwnedProcessStartTransition, TimeSpan> _transitions = new();
+
+    public OwnedProcessStartTimeline(TransitionBudget budget)
+    {
+        _budget = budget ?? throw new ArgumentNullException(nameof(budget));
+        var observation = budget.Observe();
+        _operationDeadlineElapsed = checked(
+            observation.Elapsed + observation.RemainingOperation);
+    }
+
+    public void Mark(OwnedProcessStartTransition transition)
+    {
+        _transitions.TryAdd(transition, _budget.Elapsed);
+    }
+
+    public void MarkOperationDeadlineExhausted()
+    {
+        _transitions.TryAdd(
+            OwnedProcessStartTransition.OperationDeadlineExhausted,
+            _operationDeadlineElapsed);
+    }
+
+    public void MarkOperationDeadlineExhaustionObserved()
+    {
+        var observedAt = _budget.Elapsed;
+        _transitions.TryAdd(
+            OwnedProcessStartTransition.OperationDeadlineExhaustionObserved,
+            observedAt < _operationDeadlineElapsed
+                ? _operationDeadlineElapsed
+                : observedAt);
+    }
+
+    public bool TryGetElapsed(
+        OwnedProcessStartTransition transition,
+        out TimeSpan elapsed)
+    {
+        return _transitions.TryGetValue(transition, out elapsed);
     }
 }
 
@@ -417,5 +519,6 @@ internal enum ProcessOwnershipMutation
     FailAfterMembershipAttachment = 512,
     StallStreamDrain = 1024,
     StallRootReap = 2048,
-    SkipTargetStreamForwarding = 4096
+    SkipTargetStreamForwarding = 4096,
+    StallBeforeSupervisorPipeConnection = 8192
 }
