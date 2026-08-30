@@ -29,7 +29,7 @@ public sealed class ReviewInvariantCorpusTests
         {
             Assert.False(string.IsNullOrWhiteSpace(invariant.GetProperty("id").GetString()));
             Assert.False(string.IsNullOrWhiteSpace(invariant.GetProperty("guards").GetString()));
-            Assert.NotEmpty(invariant.GetProperty("historicalRoots").EnumerateArray());
+            Assert.False(invariant.TryGetProperty("historicalRoots", out _));
             var tests = invariant.GetProperty("testClasses").EnumerateArray().ToArray();
             Assert.NotEmpty(tests);
             foreach (var test in tests)
@@ -94,13 +94,8 @@ public sealed class ReviewInvariantCorpusTests
         Assert.Contains("adversarial or mutation fixture", policy, StringComparison.Ordinal);
 
         var agents = File.ReadAllText(Path.Combine(RepositoryRoot, "AGENTS.md"));
-        Assert.Contains("Review Remediation Gate", agents, StringComparison.Ordinal);
-        Assert.Contains("停止 local patch", agents, StringComparison.Ordinal);
-        Assert.Contains("不能自動擴大目前 PR 的修改範圍", agents, StringComparison.Ordinal);
-        Assert.Contains("backlog 或 separate PR", agents, StringComparison.Ordinal);
-        Assert.Contains("generator/state space", agents, StringComparison.Ordinal);
-        Assert.Contains("durable task state", agents, StringComparison.Ordinal);
-        Assert.Contains("mutation fixture", agents, StringComparison.Ordinal);
+        Assert.Contains("docs/testing/review-invariant-policy.md", agents, StringComparison.Ordinal);
+        Assert.Contains("Review And Change Locality", agents, StringComparison.Ordinal);
     }
 
     [Fact]

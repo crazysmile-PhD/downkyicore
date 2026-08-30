@@ -347,6 +347,26 @@ public sealed class WorkflowTestOwnershipArchitectureTests
     }
 
     [Fact]
+    public void ReleaseLifecyclePreflightCannotReplaceARequiredProofClass()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "script",
+            "assembly-lifecycle-release-topology.json"));
+        var mutation = source.Replace(
+            "DownKyi.Architecture.Tests.TestRunnerPolicyArchitectureTests",
+            "DownKyi.Architecture.Tests.WorkflowTestOwnershipArchitectureTests",
+            StringComparison.Ordinal);
+        using var topology = JsonDocument.Parse(mutation);
+        var project = topology.RootElement.GetProperty("preflightProjects")[0];
+
+        Assert.Throws<InvalidDataException>(() => AssertPreflightProject(
+            project,
+            "DownKyi.Architecture.Tests",
+            ArchitecturePreflightClasses));
+    }
+
+    [Fact]
     public void ReleaseLifecycleShardFailureCannotBeMaskedMutationProfile()
     {
         var workflow = LoadYaml(Path.Combine(
@@ -839,6 +859,8 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             "assert-assembly-lifecycle-release-evidence.ps1"));
         Assert.Contains("-Profile Rehearsal", shardRunner, StringComparison.Ordinal);
         Assert.Contains("-ValidateForensics", shardRunner, StringComparison.Ordinal);
+        Assert.Contains("$assemblyPattern = $Assembly", shardRunner, StringComparison.Ordinal);
+        Assert.DoesNotContain("[Regex]::Escape", shardRunner, StringComparison.Ordinal);
         Assert.DoesNotContain("TotalIterations", shardRunner, StringComparison.Ordinal);
         foreach (var mutation in new[]
                  {

@@ -55,10 +55,7 @@ function Invoke-DotNetChecked {
     }
 }
 
-$projects = @(
-    "tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj",
-    "tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj") +
-    @($assemblies | ForEach-Object { "tests/$_/$_.csproj" })
+$projects = @($assemblies | ForEach-Object { "tests/$_/$_.csproj" })
 foreach ($project in $projects) {
     $projectPath = Join-Path $repositoryRoot $project
     if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {

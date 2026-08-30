@@ -171,8 +171,8 @@ an executable counterexample is insufficient.
 - Target rationale remains in the design document.
 - Baseline numbers, reachability observations, estimates and task status remain
   here and are remeasured rather than copied into stable documentation.
-- `../refactoring-live-plan.md` contains only the current/deferred status and
-  links here; it does not duplicate this plan.
+- Current/deferred status belongs in the owner workboard and linked PR; stable
+  documentation does not duplicate this plan.
 
 ## Rollback
 
