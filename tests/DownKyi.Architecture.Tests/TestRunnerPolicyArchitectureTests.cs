@@ -275,6 +275,31 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
+    public void ProviderBootstrapCannotRetainBuildServers()
+    {
+        var result = RunPowerShell(
+            ". ./script/test-project-runner.ps1; " +
+            "@(Get-DownKyiCentralTestRunnerBuildArguments " +
+            "-ProjectPath ./tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj " +
+            "-Configuration Release -NoRestore) | ConvertTo-Json -Compress");
+
+        Assert.Equal(0, result.ExitCode);
+        var arguments = JsonSerializer.Deserialize<string[]>(result.Output.Trim())
+                        ?? throw new InvalidDataException(
+                            "The provider bootstrap returned no build arguments.");
+        Assert.Equal("build", arguments[0]);
+        Assert.Contains("-nodeReuse:false", arguments);
+        Assert.Contains("-p:UseSharedCompilation=false", arguments);
+        Assert.Contains("--no-restore", arguments);
+
+        var wrapper = Read("script/test-project-runner.ps1");
+        Assert.Contains(
+            "$buildArguments = Get-DownKyiCentralTestRunnerBuildArguments",
+            wrapper,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MacTermResistanceFixtureHasOneTestOwnedProcessRoot()
     {
         var fixture = Read("tests/DownKyi.MacOS.Tests/MacBundleLayoutTests.cs");

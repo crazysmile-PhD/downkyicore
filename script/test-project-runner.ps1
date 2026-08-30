@@ -126,6 +126,33 @@ function Get-DownKyiTestRunnerTrustInputs {
     return @($inputs | Sort-Object)
 }
 
+function Get-DownKyiCentralTestRunnerBuildArguments {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProjectPath,
+
+        [ValidateSet("Debug", "Release")]
+        [string]$Configuration = "Release",
+
+        [switch]$NoRestore
+    )
+
+    $buildArguments = @(
+        "build"
+        $ProjectPath
+        "-c"
+        $Configuration
+        "-nodeReuse:false"
+        "-p:UseSharedCompilation=false"
+    )
+    if ($NoRestore) {
+        $buildArguments += "--no-restore"
+    }
+
+    return $buildArguments
+}
+
 function Import-DownKyiCentralTestRunner {
     [CmdletBinding()]
     param(
@@ -150,10 +177,10 @@ function Import-DownKyiCentralTestRunner {
         "tools/DownKyi.CentralTestRunner/bin/$Configuration/net10.0/" +
         "DownKyi.CentralTestRunner.dll")
     if (-not (Test-Path -LiteralPath $assemblyPath -PathType Leaf) -and $BuildIfMissing) {
-        $buildArguments = @("build", $projectPath, "-c", $Configuration)
-        if ($NoRestore) {
-            $buildArguments += "--no-restore"
-        }
+        $buildArguments = Get-DownKyiCentralTestRunnerBuildArguments `
+            -ProjectPath $projectPath `
+            -Configuration $Configuration `
+            -NoRestore:$NoRestore
         & dotnet @buildArguments | Out-Host
         if ($LASTEXITCODE -ne 0) {
             throw "The compiled central test runner build failed."
