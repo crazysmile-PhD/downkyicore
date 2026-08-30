@@ -1268,7 +1268,7 @@ function Get-DiagnosticCollectorTransition {
 
     return @(
         $Evidence.Timeline.Transitions |
-            Where-Object { $_.Transition.ToString() -eq $Name }
+            Where-Object { $_.TransitionName -eq $Name }
     ) | Select-Object -First 1
 }
 
@@ -1431,7 +1431,7 @@ function Test-DotnetStackAttachStall {
         cleanupSucceeded = $null -ne $failure -and $failure.CleanupFailures.Count -eq 0
         ownerJournalPreserved = $null -ne $ownerJournal
         attachOwnerBoundaryRecorded = $null -ne $targetAttach -and
-            $targetAttach.State.ToString() -eq "NotObservable"
+            $targetAttach.StateName -eq "NotObservable"
         connectionAcceptedDuringCollector = $null -ne $connected -and
             $null -ne $collectorRequestCreatedAtUnixMilliseconds -and
             $null -ne $typedOutcomeReturnedAtUnixMilliseconds -and
@@ -1441,11 +1441,11 @@ function Test-DotnetStackAttachStall {
                 $typedOutcomeReturnedAtUnixMilliseconds
         sessionDidNotStart = $traceFiles.Count -eq 0 -and
             $null -ne $stackCapture -and
-            $stackCapture.State.ToString() -eq "NotObservable"
+            $stackCapture.StateName -eq "NotObservable"
         noToolProgress = $null -ne $firstProgress -and
-            $firstProgress.State.ToString() -eq "NotObserved"
+            $firstProgress.StateName -eq "NotObserved"
         noStackOutput = $null -ne $stackOutput -and
-            $stackOutput.State.ToString() -eq "NotObserved"
+            $stackOutput.StateName -eq "NotObserved"
         windowConsumedWithoutProgress =
             $null -ne $collectorRequestCreatedAtUnixMilliseconds -and
             $null -ne $typedOutcomeReturnedAtUnixMilliseconds -and

@@ -447,6 +447,29 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
     }
 
     [Fact]
+    public void SerializedCollectorTransitionNamesSurvivePowerShellProjection()
+    {
+        var source = ReadLifecycleGate();
+        var transitionLookup = ReadFunction(source, "Get-DiagnosticCollectorTransition");
+        Assert.Contains("$_.TransitionName -eq $Name", transitionLookup, StringComparison.Ordinal);
+        Assert.DoesNotContain("$_.Transition.ToString()", transitionLookup, StringComparison.Ordinal);
+        Assert.Contains("$targetAttach.StateName -eq \"NotObservable\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("$targetAttach.State.ToString()", source, StringComparison.Ordinal);
+
+        AssertCollectorTransitionProjection(
+            transitionLookup,
+            "$result.StateName -eq 'NotObservable'",
+            expectedSuccess: true);
+        AssertCollectorTransitionProjection(
+            transitionLookup.Replace(
+                "$_.TransitionName -eq $Name",
+                "$_.Transition.ToString() -eq $Name",
+                StringComparison.Ordinal),
+            "$result.State.ToString() -eq 'NotObservable'",
+            expectedSuccess: false);
+    }
+
+    [Fact]
     public void DiagnosticOwnerJournalSurvivesPrimaryEvidenceFailure()
     {
         var collector = ReadRepositoryFile(
@@ -1005,6 +1028,40 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         {
             File.Delete(temporaryPath);
         }
+    }
+
+    private static void AssertCollectorTransitionProjection(
+        string transitionLookup,
+        string statePredicate,
+        bool expectedSuccess)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "pwsh",
+            WorkingDirectory = RepositoryRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(
+            "Invoke-Expression $env:DOWNKYI_TRANSITION_LOOKUP; " +
+            "$transition=[pscustomobject]@{" +
+            "Transition=0;State=2;TransitionName='TargetAttachBegan';StateName='NotObservable'}; " +
+            "$evidence=[pscustomobject]@{Timeline=[pscustomobject]@{Transitions=@($transition)}}; " +
+            "$result=Get-DiagnosticCollectorTransition -Evidence $evidence " +
+            "-Name 'TargetAttachBegan'; " +
+            $"if($null -ne $result -and ({statePredicate})){{exit 0}}; exit 7");
+        startInfo.Environment["DOWNKYI_TRANSITION_LOOKUP"] = transitionLookup;
+
+        var result = BoundedProcessRunner.Run(
+            startInfo,
+            TestContext.Current.CancellationToken,
+            TimeSpan.FromSeconds(10));
+        Assert.Equal(expectedSuccess ? 0 : 7, result.ExitCode);
     }
 
     private static string ReadFunction(string source, string functionName)
