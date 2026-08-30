@@ -76,8 +76,8 @@ guard，不是可由呼叫者提供 property 的 authorization credential。
 command 或 expression 不能取代 accepted test gate。Action 只能將 inputs 映射給
 `script/invoke-ci-test-action.ps1`；這個可執行 boundary 負責參數驗證、中央 runner
 委派與 result validation，並由跨平台 behavioral/mutation tests 防止 action 假綠。
-Required suite owner job 不得以 `needs` 綁在可 skipped 的 optional preflight 上，且其
-`matrix.os` 必須保持 workflow 各自宣告的完整 Windows/Linux/macOS runner set。
+Required suite producer job 不得以 `needs` 綁在可 skipped 的 optional preflight 上，
+且 distributed matrix 必須保持完整 Windows/Linux/macOS owner set。
 Central runner 仍獨占 runtime authorization 與 result validation。Recovery 先將
 `script/test-project-runner.ps1` 固定為 bootstrap
 trust root，再由 `Get-DownKyiTestRunnerTrustInputs` 遞迴評估實際 MSBuild `Compile`、
@@ -85,6 +85,13 @@ trust root，再由 `Get-DownKyiTestRunnerTrustInputs` 遞迴評估實際 MSBuil
 input 都必須 tracked。Provider 變更/失敗、空清單、untracked/out-of-root input 或任一
 derived dependency 在 validated Build head 後變更都必須中止 recovery。Nested checkout
 的 action project path 永遠相對於 `repository-root`，不能形成 `tooling/tooling/...`。
+
+普通 PR 的完整 scheduling/evidence set 由 `ci-required-topology.json` 擁有。
+`.github/workflows/quality.yml` 以 exact OS、project、review mutation 與 lifecycle
+assembly shard 產生 current-SHA evidence；`script/validate-ci-evidence.ps1` 只在每個
+upstream 成功且 compiled semantic aggregator 證明沒有
+missing/duplicate/zero-test/wrong-SHA evidence 後才允許 `PR required verdict` 通過。
+分片是 scheduling contract，不是縮減 coverage。
 
 `DKYI1001` compiler analyzer 以 compilation-resolved method symbol 禁止非 process
 owner 呼叫 `SqliteConnection.ClearAllPools`。它分析並回報 generated code，且必須在
@@ -104,6 +111,7 @@ repository 支援的 Debug 與 Release compilation 都執行；語法、alias、
 - `assembly-lifecycle-owners.json`
 - `review-invariant-policy.md`
 - `review-invariant-corpus.json`
+- `ci-required-topology.json`
 - `test-runner-policy.json`
 - `../exec-plans/pr-197-stage-5-central-test-runner.md`
 - `../maintenance.md`

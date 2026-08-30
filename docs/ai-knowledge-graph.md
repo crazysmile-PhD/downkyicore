@@ -3441,6 +3441,9 @@ test.central-test-runner:
     - tests/DownKyi.Architecture.Tests/TestRunnerPolicyArchitectureTests.cs
     - tests/CentralTestExecutionGuard.cs
     - docs/testing/review-invariant-corpus.json
+    - docs/testing/ci-required-topology.json
+    - script/ci-evidence.ps1
+    - script/validate-ci-evidence.ps1
   guards:
     - exact token and full canonical argv authorization reaches the owned target over one current-user named endpoint
     - wrong token or invocation, replay, EOF, partial authorization, wrong child, numeric handle transport and direct execution fail closed
@@ -3451,7 +3454,9 @@ test.central-test-runner:
     - SupervisorHost cannot become a test authorization, selection or TRX authority
     - target NoBuild cannot make the required compiled runner provider optional or restore a PowerShell host fallback
     - CI action, direct solution execution and direct review-corpus execution enter the same delegated Linux cgroup scope before loading the runner
-    - required suite jobs have no skippable `needs` predecessor and retain their exact three-OS runner matrix
+    - distributed required-suite producers have no skippable `needs` predecessor, retain exact three-OS project ownership, and converge through one exact-head semantic verdict
+    - deterministic repository shards execute each platform-owned project exactly once with bounded owned children and unique TRX paths
+    - final evidence rejects failed upstreams, missing or duplicate shards, wrong SHA, malformed evidence, zero tests, mutation false-green and unexpected failure cardinality
     - recovery derives tracked trust inputs from the actual recursive MSBuild project and compiled-item closure; nested-checkout project paths resolve relative to the tooling repository root
     - user-visible project status and failures use repository-relative paths while canonical absolute paths remain internal
     - the macOS TERM-resistance fixture has one test-owned app root and cannot orphan a nested sleep process
@@ -3468,6 +3473,7 @@ test.assembly-lifecycle-architecture:
     - the lifecycle gate retains all six process phases, timing statistics, output-pollution checks and timeout forensics
     - residual-child failures retain sanitized identity and evidence, stay fail-closed, and execute a deterministic observation/classification/cleanup self-test
     - PR, main and release workflows cannot drop their lifecycle profiles or managed-stack diagnostics
+    - PR assemblies may run in parallel, but every assembly retains sequential profile iterations and the aggregator requires every phase and gate self-test exactly once per report
     - formal Verification cannot omit the ownership audit, five-iteration local gate or Rehearsal report
     - Desktop main-loop teardown awaits async App and Host disposal
     - every declared lifecycle owner documents start, stop, teardown, paths and allowed mechanisms
@@ -3483,6 +3489,7 @@ test.review-invariant-corpus:
     - repeated failure families in one PR stop local patches and escalate to shared typed-result, state, ownership or transaction remediation
     - scope containment keeps unrelated invariants and incidental product defects out of the active PR
     - deterministic PR coverage resolves to existing classes across every platform-eligible test project and proves each class executed
+    - adversarial shards use unique proof identities and immutable child-only mutation environments; normal evidence is reused only after exact execution-contract equivalence is proven
     - Main/rehearsal retains lifecycle stress and real-binary transfer evidence
 
 test.infrastructure-clock:

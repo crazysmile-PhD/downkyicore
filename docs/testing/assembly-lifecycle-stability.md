@@ -93,6 +93,21 @@ Schema 4 records `processFailureType` and `forensicsFailureType` separately in
 addition to the general `failureType` and `errorType`; slow, exit and residual
 evidence errors cannot overwrite the process owner's causal failure.
 
+### PR Scheduling Topology
+
+Ordinary PR CI schedules one Windows job per platform-owned test assembly.
+Assemblies may run concurrently, but each job invokes one exact assembly with
+the unchanged `PR` profile, so its iteration 1, 2 and 3 remain sequential in
+one checkout. Each job builds the lifecycle probe plus the compiler-resolved
+selected test-project closure. It does not build the full solution merely to
+probe one assembly.
+
+Every schema-v4 report remains exact-head and fail closed. The final CI
+aggregator requires every expected assembly exactly once, all six phases for
+every required iteration, and the `Gate.Forensics`, `Gate.ProcessLease` and
+`Gate.MarkerReader` self-test results. Tag/manual Rehearsal remains 100
+sequential iterations per assembly and is not part of the ordinary PR budget.
+
 ### Measurement Definitions
 
 - `load`, `assembly-info`, `discovery` and `execution` duration starts

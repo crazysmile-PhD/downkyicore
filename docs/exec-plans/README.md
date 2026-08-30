@@ -24,6 +24,10 @@ feasibility 位於 `pr-197-stage-4a-restart-handoff-feasibility.md`。
 PR #197 的獨立 Stage 5 Rehearsal capacity 量測、matrix scheduling contract、
 驗證與回滾位於 `pr-197-stage-5-rehearsal-capacity.md`；此 checkpoint 不屬於
 Stage 5 lifecycle remediation，也不開始 Stage 6。
+普通 PR 的 Release/Debug 分流、repository/review/lifecycle sharding、
+exact-head evidence aggregator、baseline 與量測 checkpoint 位於
+`ci-pr-five-minute-topology.md`；它從 Stage 5 exact HEAD 分支，但不屬於
+Stage 5 closure。
 
 每個 work item 必須包含：
 

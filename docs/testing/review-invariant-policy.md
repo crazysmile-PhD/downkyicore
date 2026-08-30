@@ -175,6 +175,15 @@ requires a real failed test in TRX; an always-passing replacement therefore
 fails the Gate. Test rename or decomposition is migrated by updating the proof
 locator while preserving its required proof kinds and mutation outcome.
 
+In distributed PR CI, adversarial profiles are deterministically partitioned by
+their unique `invariant/environmentVariable` identity. A profile's mutation is
+an immutable per-invocation environment map injected by the central runner into
+only that authorized child; shards never mutate the parent PowerShell process
+environment. Normal class execution may reuse a repository-suite TRX only when
+the final aggregator proves exact SHA, OS, configuration, project, central
+runner and required class equivalence. Missing, duplicate, zero-test, unexpected
+failure cardinality or runner-exit-zero evidence remains a hard failure.
+
 ## Completion Rule
 
 A finding is complete only when the violated invariant and earliest incorrect
