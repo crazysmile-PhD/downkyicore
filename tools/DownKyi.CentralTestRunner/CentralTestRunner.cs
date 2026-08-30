@@ -363,18 +363,33 @@ public static class CentralTestOrchestrator
                 cancellationToken)
             .ConfigureAwait(false);
         await using var leaseScope = lease.ConfigureAwait(false);
-        var outcome = await lease.WaitAsync(cancellationToken).ConfigureAwait(false);
-        WriteCapturedOutput(outcome.StandardOutput, outcome.StandardError);
-        if (outcome.ExitCode != 0)
+        try
         {
-            throw new InvalidOperationException(
-                $"The repository test project build failed with exit code {outcome.ExitCode}.");
+            var outcome = await lease.WaitAsync(cancellationToken).ConfigureAwait(false);
+            WriteCapturedOutput(outcome.StandardOutput, outcome.StandardError);
+            if (outcome.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    $"The repository test project build failed with exit code {outcome.ExitCode}.");
+            }
+        }
+        catch (OwnedProcessExecutionException failure)
+        {
+            WriteCapturedOutput(
+                failure.Failure.StandardOutput,
+                failure.Failure.StandardError);
+            throw;
         }
     }
 
     internal static IReadOnlyList<string> CreateBuildArgumentsForTesting(
         CentralTestProjectOptions options) =>
         CreateBuildArguments(options);
+
+    internal static Task BuildProjectForTestingAsync(
+        CentralTestProjectOptions options,
+        CancellationToken cancellationToken) =>
+        BuildProjectAsync(options, cancellationToken);
 
     private static ReadOnlyCollection<string> CreateBuildArguments(
         CentralTestProjectOptions options)

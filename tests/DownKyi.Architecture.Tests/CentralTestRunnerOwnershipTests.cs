@@ -102,6 +102,70 @@ public sealed class CentralTestRunnerOwnershipTests
     }
 
     [Fact]
+    public async Task CancelledProjectBuildPreservesOwnedProcessOutput()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-stage5-build-output-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var projectPath = Path.Combine(directory, "Blocked.proj");
+        var readyPath = Path.Combine(directory, "build-ready.json");
+        var processSupervisionAssembly = typeof(OwnedProcessLease).Assembly.Location;
+        await File.WriteAllTextAsync(
+                projectPath,
+                $"""
+                <Project>
+                  <Target Name="Build">
+                    <Message Text="stage5-owned-build-output" Importance="High" />
+                    <Exec Command="dotnet &quot;{processSupervisionAssembly}&quot; {SupervisorHost.CollectorBlockWithReadyArgument} &quot;{readyPath}&quot;" />
+                  </Target>
+                </Project>
+                """,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        var options = new CentralTestProjectOptions(
+            directory,
+            projectPath,
+            "Release",
+            noRestore: true,
+            noBuild: false,
+            resultsDirectory: null,
+            trxName: null,
+            classNames: null,
+            filter: null,
+            executionTimeoutSeconds: 30);
+        using var output = new ScopedConsoleOutput();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        try
+        {
+            var ready = WaitForReadyPathAsync(readyPath, cancellation.Token);
+            var build = CentralTestOrchestrator.BuildProjectForTestingAsync(
+                options,
+                cancellation.Token);
+            var first = await Task.WhenAny(ready, build).ConfigureAwait(true);
+            Assert.Same(ready, first);
+            await ready.ConfigureAwait(true);
+            await cancellation.CancelAsync().ConfigureAwait(true);
+
+            var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(() => build)
+                .ConfigureAwait(true);
+
+            Assert.Equal(OwnedProcessFailureKind.CallerCancelled, failure.Failure.Kind);
+            Assert.Empty(failure.CleanupFailures);
+            Assert.Contains(
+                "stage5-owned-build-output",
+                output.StandardOutput,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            await cancellation.CancelAsync().ConfigureAwait(true);
+            DeleteResultDirectory(directory);
+        }
+    }
+
+    [Fact]
     public async Task FocusedTemporaryRunReturnsAUsableValidatedReport()
     {
         var options = new CentralTestProjectOptions(
@@ -509,6 +573,28 @@ public sealed class CentralTestRunnerOwnershipTests
                 await Task.Delay(TimeSpan.FromMilliseconds(25), timeout.Token).ConfigureAwait(true);
             }
         }
+    }
+
+    private static async Task WaitForReadyPathAsync(
+        string readyPath,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(readyPath)
+            ?? throw new InvalidOperationException("The build fixture directory is unavailable.");
+        var completion = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var watcher = new FileSystemWatcher(directory, Path.GetFileName(readyPath));
+        FileSystemEventHandler created = (_, _) => completion.TrySetResult();
+        RenamedEventHandler renamed = (_, _) => completion.TrySetResult();
+        watcher.Created += created;
+        watcher.Renamed += renamed;
+        watcher.EnableRaisingEvents = true;
+        if (File.Exists(readyPath))
+        {
+            completion.TrySetResult();
+        }
+
+        await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static void AssertProcessExited(int processId)
