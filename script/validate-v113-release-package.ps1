@@ -387,6 +387,7 @@ try {
             (Join-Path $runtime 'ffmpeg/ffprobe')
         )
         foreach ($executable in $linuxExecutables) {
+            Assert-LinuxBinaryArchitecture -Path $executable -ExpectedRuntimeIdentifier $RuntimeIdentifier
             $mode = [IO.File]::GetUnixFileMode($executable)
             if (($mode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
                 throw "Packaged Linux executable is not executable by a non-owner: $executable"

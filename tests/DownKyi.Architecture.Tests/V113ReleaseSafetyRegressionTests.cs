@@ -30,6 +30,10 @@ public sealed class V113ReleaseSafetyRegressionTests
         Assert.Contains("LinkType -ceq 'SymbolicLink'", packageValidator, StringComparison.Ordinal);
         Assert.Contains("usr/bin/DownKyi", packageValidator, StringComparison.Ordinal);
         Assert.Contains("Test-ElfFile", packageValidator, StringComparison.Ordinal);
+        Assert.Contains(
+            "Assert-LinuxBinaryArchitecture -Path $executable",
+            packageValidator,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("& 7z", packageValidator, StringComparison.Ordinal);
     }
 
