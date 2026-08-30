@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
+using DownKyi.ProcessSupervision;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -14,63 +14,50 @@ internal static class BoundedProcessRunner
         TimeSpan? executionTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(startInfo);
-
-        using var process = new Process { StartInfo = startInfo };
-        process.Start();
-        var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
-        try
+        if (startInfo.UseShellExecute)
         {
-            process.WaitForExitAsync(cancellationToken)
-                .WaitAsync(executionTimeout ?? ExecutionTimeout, cancellationToken)
-                .GetAwaiter()
-                .GetResult();
+            throw new InvalidOperationException(
+                "The bounded architecture child cannot use shell execution.");
         }
-        catch (Exception executionFailure)
+        if (!string.IsNullOrWhiteSpace(startInfo.Arguments))
         {
-            var terminationFailure = Terminate(process);
-            if (terminationFailure != null)
-            {
-                throw new AggregateException(
-                    "The architecture-test child process failed and could not be terminated.",
-                    executionFailure,
-                    terminationFailure);
-            }
-
-            throw;
+            throw new InvalidOperationException(
+                "The bounded architecture child requires an immutable ArgumentList.");
         }
 
-        Task.WhenAll(standardOutput, standardError)
-            .WaitAsync(TerminationTimeout, cancellationToken)
+        var workingDirectory = string.IsNullOrWhiteSpace(startInfo.WorkingDirectory)
+            ? Environment.CurrentDirectory
+            : startInfo.WorkingDirectory;
+        var environment = startInfo.Environment.ToDictionary(
+            entry => entry.Key,
+            entry => (string?)entry.Value,
+            StringComparer.Ordinal);
+        var budget = TransitionBudget.Start(
+            executionTimeout ?? ExecutionTimeout,
+            TerminationTimeout);
+        var lease = OwnedProcessLease.StartAsync(
+                new LaunchSpec(
+                    startInfo.FileName,
+                    startInfo.ArgumentList,
+                    workingDirectory,
+                    environment,
+                    closeStandardInput: true),
+                budget,
+                cancellationToken)
             .GetAwaiter()
             .GetResult();
-        return new BoundedProcessResult(
-            process.ExitCode,
-            standardOutput.Result + standardError.Result);
-    }
-
-    [SuppressMessage(
-        "Design",
-        "CA1031:Do not catch general exception types",
-        Justification = "The bounded child-process owner must preserve any cleanup failure with the original process failure.")]
-    private static Exception? Terminate(Process process)
-    {
         try
         {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-                process.WaitForExitAsync(CancellationToken.None)
-                    .WaitAsync(TerminationTimeout)
-                    .GetAwaiter()
-                    .GetResult();
-            }
-
-            return null;
+            var outcome = lease.WaitAsync(cancellationToken)
+                .GetAwaiter()
+                .GetResult();
+            return new BoundedProcessResult(
+                outcome.ExitCode,
+                outcome.StandardOutput + outcome.StandardError);
         }
-        catch (Exception failure)
+        finally
         {
-            return failure;
+            lease.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
     }
 }
