@@ -596,5 +596,6 @@ internal enum ProcessOwnershipMutation
     StallRootReap = 2048,
     SkipTargetStreamForwarding = 4096,
     StallBeforeSupervisorPipeConnection = 8192,
-    FailResourceRelease = 16384
+    FailResourceRelease = 16384,
+    BlockAsynchronousStartupIo = 32768
 }

@@ -182,7 +182,8 @@ internal static class SupervisorHost
             ProcessOwnershipMutation.StallRootReap |
             ProcessOwnershipMutation.SkipTargetStreamForwarding |
             ProcessOwnershipMutation.StallBeforeSupervisorPipeConnection |
-            ProcessOwnershipMutation.FailResourceRelease;
+            ProcessOwnershipMutation.FailResourceRelease |
+            ProcessOwnershipMutation.BlockAsynchronousStartupIo;
         if (arguments.Count != 5 ||
             !string.Equals(arguments[0], HostArgument, StringComparison.Ordinal) ||
             !int.TryParse(arguments[4], NumberStyles.None, CultureInfo.InvariantCulture, out var mutationValue) ||
@@ -204,6 +205,17 @@ internal static class SupervisorHost
             PipeDirection.Out,
             PipeOptions.Asynchronous);
         await using var statusScope = status.ConfigureAwait(false);
+        var blockAsynchronousStartupIo =
+            OperatingSystem.IsWindows() &&
+            mutation.HasFlag(ProcessOwnershipMutation.BlockAsynchronousStartupIo);
+        using var startupControlScope = blockAsynchronousStartupIo
+            ? new SynchronousStartupStream(control)
+            : null;
+        using var startupStatusScope = blockAsynchronousStartupIo
+            ? new SynchronousStartupStream(status)
+            : null;
+        Stream startupControl = (Stream?)startupControlScope ?? control;
+        Stream startupStatus = (Stream?)startupStatusScope ?? status;
         if (mutation.HasFlag(ProcessOwnershipMutation.StallBeforeSupervisorPipeConnection))
         {
             var pipeConnectionLatch = new TaskCompletionSource(
@@ -211,13 +223,11 @@ internal static class SupervisorHost
             await pipeConnectionLatch.Task.ConfigureAwait(false);
         }
 
-        await Task.WhenAll(
-                control.ConnectAsync(CancellationToken.None),
-                status.ConnectAsync(CancellationToken.None))
+        await ConnectStartupPipesAsync(control, status)
             .ConfigureAwait(false);
 
-        var attachmentBytes = await ReadFrameAsync(
-                control,
+        var attachmentBytes = await ReadStartupFrameAsync(
+                startupControl,
                 OwnershipAttachment,
                 MaximumLaunchPayloadBytes)
             .ConfigureAwait(false);
@@ -230,12 +240,12 @@ internal static class SupervisorHost
         if (!ownershipEstablished &&
             !mutation.HasFlag(ProcessOwnershipMutation.ResumeTargetBeforeOwnership))
         {
-            await WriteStatusAsync(status, 0).ConfigureAwait(false);
+            await WriteStartupStatusAsync(startupStatus, 0).ConfigureAwait(false);
             return 204;
         }
 
-        await WriteStatusAsync(
-                status,
+        await WriteStartupStatusAsync(
+                startupStatus,
                 ownershipEstablished ? OwnershipEstablished : OwnershipMutationActive)
             .ConfigureAwait(false);
         if (mutation.HasFlag(ProcessOwnershipMutation.StallLaunchPayloadRead))
@@ -244,8 +254,8 @@ internal static class SupervisorHost
                 .ConfigureAwait(false);
         }
 
-        var payloadBytes = await ReadFrameAsync(
-                control,
+        var payloadBytes = await ReadStartupFrameAsync(
+                startupControl,
                 LaunchAuthorization,
                 MaximumLaunchPayloadBytes)
             .ConfigureAwait(false);
@@ -282,7 +292,7 @@ internal static class SupervisorHost
         var targetStarted = new byte[sizeof(byte) + sizeof(int)];
         targetStarted[0] = TargetStarted;
         BinaryPrimitives.WriteInt32LittleEndian(targetStarted.AsSpan(sizeof(byte)), target.Id);
-        await WriteStatusAsync(status, targetStarted).ConfigureAwait(false);
+        await WriteStartupStatusAsync(startupStatus, targetStarted).ConfigureAwait(false);
 
         var targetExit = target.WaitForExitAsync(CancellationToken.None);
         var ownerLifetime = ReadOwnerLifetimeSignalAsync(control);
@@ -779,6 +789,81 @@ internal static class SupervisorHost
         return await ReadExactAsync(stream, payloadLength).ConfigureAwait(false);
     }
 
+    [SuppressMessage(
+        "Performance",
+        "CA1849:Call async methods when in an async method",
+        Justification = "The dedicated Windows supervisor must keep the authorization handshake on its startup thread; the process owner supplies cancellation by terminating and reaping the contained supervisor.")]
+    private static ValueTask ConnectStartupPipesAsync(
+        NamedPipeClientStream control,
+        NamedPipeClientStream status)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            control.Connect();
+            status.Connect();
+            return ValueTask.CompletedTask;
+        }
+
+        return new ValueTask(Task.WhenAll(
+            control.ConnectAsync(CancellationToken.None),
+            status.ConnectAsync(CancellationToken.None)));
+    }
+
+    [SuppressMessage(
+        "Performance",
+        "CA1849:Call async methods when in an async method",
+        Justification = "The dedicated Windows supervisor must keep the authorization handshake on its startup thread; the process owner supplies cancellation by terminating and reaping the contained supervisor.")]
+    private static ValueTask<byte[]> ReadStartupFrameAsync(
+        Stream stream,
+        byte expectedType,
+        int maximumPayloadBytes)
+    {
+        return OperatingSystem.IsWindows()
+            ? ValueTask.FromResult(ReadFrame(stream, expectedType, maximumPayloadBytes))
+            : new ValueTask<byte[]>(ReadFrameAsync(
+                stream,
+                expectedType,
+                maximumPayloadBytes));
+    }
+
+    private static byte[] ReadFrame(
+        Stream stream,
+        byte expectedType,
+        int maximumPayloadBytes)
+    {
+        var header = ReadExact(stream, sizeof(byte) + sizeof(int));
+        if (header[0] != expectedType)
+        {
+            throw new InvalidOperationException("The owner sent an invalid supervision protocol state.");
+        }
+
+        var payloadLength = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(sizeof(byte)));
+        if (payloadLength is <= 0 || payloadLength > maximumPayloadBytes)
+        {
+            throw new InvalidOperationException("The owner sent an invalid supervision payload length.");
+        }
+
+        return ReadExact(stream, payloadLength);
+    }
+
+    private static byte[] ReadExact(Stream stream, int length)
+    {
+        var payload = new byte[length];
+        var offset = 0;
+        while (offset < payload.Length)
+        {
+            var read = stream.Read(payload, offset, payload.Length - offset);
+            if (read == 0)
+            {
+                throw new EndOfStreamException("The owner-lifetime channel closed during authorization.");
+            }
+
+            offset += read;
+        }
+
+        return payload;
+    }
+
     private static async Task<byte[]> ReadExactAsync(Stream stream, int length)
     {
         var payload = new byte[length];
@@ -816,6 +901,96 @@ internal static class SupervisorHost
     {
         await status.WriteAsync(payload, CancellationToken.None).ConfigureAwait(false);
         await status.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static ValueTask WriteStartupStatusAsync(Stream status, byte value)
+    {
+        return WriteStartupStatusAsync(status, new[] { value });
+    }
+
+    [SuppressMessage(
+        "Performance",
+        "CA1849:Call async methods when in an async method",
+        Justification = "The dedicated Windows supervisor must publish startup status without an unowned ThreadPool continuation; the process owner supplies cancellation by terminating and reaping the contained supervisor.")]
+    private static ValueTask WriteStartupStatusAsync(Stream status, byte[] payload)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return new ValueTask(WriteStatusAsync(status, payload));
+        }
+
+        status.Write(payload, 0, payload.Length);
+        status.Flush();
+        return ValueTask.CompletedTask;
+    }
+
+    [SuppressMessage(
+        "Usage",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "This mutation-only non-owning stream preserves the NamedPipeClientStream lifetime held by RunIfRequestedAsync.")]
+    private sealed class SynchronousStartupStream : Stream
+    {
+        private readonly Stream _inner;
+
+        public SynchronousStartupStream(Stream inner)
+        {
+            _inner = inner;
+        }
+
+        public override bool CanRead => _inner.CanRead;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => _inner.CanWrite;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+            _inner.Flush();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return _inner.Read(buffer, offset, count);
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            _inner.Write(buffer, offset, count);
+        }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<int>(new TaskCompletionSource<int>(
+                TaskCreationOptions.RunContinuationsAsynchronously).Task);
+        }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            return new ValueTask(new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously).Task);
+        }
     }
 
     private sealed record OwnershipAttachmentPayload(

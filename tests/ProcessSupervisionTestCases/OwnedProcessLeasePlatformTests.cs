@@ -120,6 +120,27 @@ public sealed class OwnedProcessLeasePlatformTests
     }
 
     [Fact]
+    public async Task WindowsStartupHandshakeDoesNotDependOnAsynchronousPipeContinuations()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(3));
+        var outcome = await RunProbeAsync(
+                ProcessOwnershipMutation.BlockAsynchronousStartupIo,
+                budget)
+            .ConfigureAwait(true);
+
+        Assert.Equal(0, outcome.ExitCode);
+        Assert.True(outcome.TreeQuiescent);
+        Assert.True(outcome.Ownership.OwnershipEstablished);
+    }
+
+    [Fact]
     public void LinuxDelegatedHierarchyRootIsAValidMembershipAuthority()
     {
         if (!OperatingSystem.IsLinux())
@@ -935,7 +956,8 @@ public sealed class OwnedProcessLeasePlatformTests
     }
 
     private static async Task<OwnedProcessOutcome> RunProbeAsync(
-        ProcessOwnershipMutation mutation)
+        ProcessOwnershipMutation mutation,
+        TransitionBudget? budget = null)
     {
         var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
         var launchSpec = new LaunchSpec(
@@ -944,7 +966,7 @@ public sealed class OwnedProcessLeasePlatformTests
             Path.GetDirectoryName(assemblyPath)
                 ?? throw new InvalidOperationException("The probe directory is unavailable."),
             closeStandardInput: true);
-        return await RunAsync(launchSpec, mutation).ConfigureAwait(true);
+        return await RunAsync(launchSpec, mutation, budget).ConfigureAwait(true);
     }
 
     private static async Task<OwnedProcessLease> StartEvidenceHoldProbeAsync(
