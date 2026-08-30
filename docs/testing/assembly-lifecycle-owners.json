@@ -292,19 +292,6 @@
       ]
     },
     {
-      "id": "architecture-analyzer",
-      "paths": [
-        "tools/DownKyi.ArchitectureAnalyzers/**"
-      ],
-      "owner": "Roslyn compiler analyzer host",
-      "start": "The compiler loads the stateless architecture analyzer for a project compilation.",
-      "stop": "The compiler process releases the analyzer with the compilation.",
-      "teardown": "Only immutable diagnostic metadata may be initialized statically; the analyzer owns no thread, process, timer, event handler or disposable runtime resource.",
-      "allowedMechanisms": [
-        "static_initialization"
-      ]
-    },
-    {
       "id": "central-test-runner",
       "paths": [
         "tools/DownKyi.CentralTestRunner/**"
@@ -324,10 +311,10 @@
       "paths": [
         "tools/DownKyi.ProcessSupervision/**"
       ],
-      "owner": "OwnedProcessLease or RestartHandoffLease",
-      "start": "The caller supplies one immutable launch contract and TransitionBudget. OwnedProcessLease establishes ordinary Job, delegated-cgroup or retained-anchor ownership before target authorization. RestartHandoffLease instead starts one prepared restart candidate and requires its exact-parent watcher READY before returning authorization authority.",
-      "stop": "Ordinary WaitAsync consumes authoritative target-exit and membership state; owner EOF or DisposeAsync begins bounded termination. RestartHandoffLease makes one commit/revoke decision: revoke terminates and reaps the candidate, while commit transfers only to the bounded restart-specific exact-parent wait and one relaunch attempt.",
-      "teardown": "Each lease consumes its caller-created deadline, releases native handles and IPC endpoints, reaps every direct helper it owns before commit, and preserves concurrent primary and cleanup failures. Restart commit does not weaken ordinary owner-EOF cleanup or create a generic detached process owner.",
+      "owner": "OwnedProcessLease",
+      "start": "The caller supplies one immutable LaunchSpec and TransitionBudget. OwnedProcessLease establishes Windows Job Object, delegated Linux cgroup, or anchored macOS process-group ownership before target authorization.",
+      "stop": "WaitAsync consumes authoritative target-exit and membership state; timeout, cancellation, owner EOF, or disposal begins bounded termination, reap, quiescence, and stream drain.",
+      "teardown": "The lease consumes the caller-created deadline, releases native handles and IPC endpoints, and preserves the primary failure plus ordered cleanup failures.",
       "allowedMechanisms": [
         "static_initialization",
         "external_process",
@@ -336,42 +323,14 @@
       ]
     },
     {
-      "id": "restart-handoff-feasibility-fixture",
-      "paths": [
-        "tools/DownKyi.RestartHandoff.FeasibilityFixture/**"
-      ],
-      "owner": "Stage 4A restart-handoff feasibility transaction",
-      "start": "The platform test starts one bounded parent fixture, which creates only its candidate watcher helper and one replacement probe after authenticated commit and exact-parent exit.",
-      "stop": "Every scenario reaches a typed terminal outcome within the immutable prepare-time deadline; the parent and helper wait for each started child before returning.",
-      "teardown": "Normal outcomes dispose and reap every fixture process. The test owner retains a bounded failure-only whole-tree cleanup path so a broken feasibility probe cannot escape the test process.",
-      "allowedMechanisms": [
-        "static_initialization",
-        "external_process"
-      ]
-    },
-    {
-      "id": "restart-handoff-production-fixture",
-      "paths": [
-        "tools/DownKyi.RestartHandoff.ProductionFixture/**"
-      ],
-      "owner": "Stage 4 production restart-handoff transaction test",
-      "start": "The platform test starts one bounded parent fixture. The production RestartHandoffLease starts its candidate helper, and only an authenticated committed helper may start one replacement probe after exact-parent exit.",
-      "stop": "Every normal, revoke, crash and deadline scenario reaches typed terminal evidence within the caller-created deadline; the test waits for fixture stdout EOF and the direct parent process before returning.",
-      "teardown": "Production revoke terminates and reaps the prepared helper. Committed helpers dispose their exact-parent watcher and endpoints before exit. The test session retains a bounded failure-only whole-tree kill and reap path so injected mutations cannot escape.",
-      "allowedMechanisms": [
-        "static_initialization",
-        "external_process"
-      ]
-    },
-    {
       "id": "lifecycle-probe",
       "paths": [
         "tools/DownKyi.AssemblyLifecycleProbe/**"
       ],
       "owner": "Assembly lifecycle gate child process",
-      "start": "The probe creates one collectible AssemblyLoadContext. In the forensics fixture it receives only the evidence-hold endpoint established by OwnedProcessLease before target execution.",
-      "stop": "The probe unloads the context, consumes and acknowledges the lease-owned evidence-capture completion handoff, then reports its result.",
-      "teardown": "A retained context fails the load phase. Owner death or an exhausted transition budget is handled by OwnedProcessLease containment; the probe has no child-process kill, reap or deadline authority.",
+      "start": "The probe loads one test assembly for one lifecycle phase.",
+      "stop": "The probe emits its protocol result and unloads its collectible AssemblyLoadContext.",
+      "teardown": "A retained context or invalid protocol fails the phase; OwnedProcessLease owns process cleanup.",
       "allowedMechanisms": [
         "static_initialization",
         "bounded_sleep"

@@ -15,8 +15,7 @@ public static class CentralTestExecutionValidator
         return ValidateReportCore(
             trxPath,
             expectedClassNames,
-            requireUniqueReport,
-            CentralTestValidatorMutation.None);
+            requireUniqueReport);
     }
 
     public static CentralTestExecutionReport ValidateExpectedExecution(
@@ -27,8 +26,7 @@ public static class CentralTestExecutionValidator
         return ValidateExpectedExecutionCore(
             runnerExitCode,
             trxPath,
-            expectedClassNames,
-            CentralTestValidatorMutation.None);
+            expectedClassNames);
     }
 
     public static CentralTestExecutionReport ValidateExpectedExecutionReport(
@@ -60,24 +58,10 @@ public static class CentralTestExecutionValidator
         return report;
     }
 
-    internal static CentralTestExecutionReport ValidateExpectedExecutionForTesting(
-        int runnerExitCode,
-        string trxPath,
-        IEnumerable<string> expectedClassNames,
-        CentralTestValidatorMutation mutation)
-    {
-        return ValidateExpectedExecutionCore(
-            runnerExitCode,
-            trxPath,
-            expectedClassNames,
-            mutation);
-    }
-
     private static CentralTestExecutionReport ValidateExpectedExecutionCore(
         int runnerExitCode,
         string trxPath,
-        IEnumerable<string> expectedClassNames,
-        CentralTestValidatorMutation mutation)
+        IEnumerable<string> expectedClassNames)
     {
         ArgumentNullException.ThrowIfNull(expectedClassNames);
         var expected = expectedClassNames.Distinct(StringComparer.Ordinal).ToArray();
@@ -94,10 +78,8 @@ public static class CentralTestExecutionValidator
         var report = ValidateReportCore(
             trxPath,
             expected,
-            requireUniqueReport: true,
-            mutation);
-        if (report.Failed > 0 &&
-            mutation != CentralTestValidatorMutation.TreatProcessExitZeroAsPass)
+            requireUniqueReport: true);
+        if (report.Failed > 0)
         {
             throw new InvalidOperationException(
                 "A successful runner report cannot contain failed test results.");
@@ -111,24 +93,10 @@ public static class CentralTestExecutionValidator
         return report;
     }
 
-    internal static CentralTestExecutionReport ValidateReportForTesting(
-        string trxPath,
-        IEnumerable<string>? expectedClassNames,
-        bool requireUniqueReport,
-        CentralTestValidatorMutation mutation)
-    {
-        return ValidateReportCore(
-            trxPath,
-            expectedClassNames,
-            requireUniqueReport,
-            mutation);
-    }
-
     private static CentralTestExecutionReport ValidateReportCore(
         string trxPath,
         IEnumerable<string>? expectedClassNames,
-        bool requireUniqueReport,
-        CentralTestValidatorMutation mutation)
+        bool requireUniqueReport)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(trxPath);
         var expected = (expectedClassNames ?? []).ToArray();
@@ -183,7 +151,7 @@ public static class CentralTestExecutionValidator
         var executed = ReadCounter(counters, "executed");
         var passed = ReadCounter(counters, "passed");
         var failed = ReadCounter(counters, "failed");
-        if (executed < 1 && mutation != CentralTestValidatorMutation.AcceptZeroExecuted)
+        if (executed < 1)
         {
             throw new InvalidDataException("The expected test selection executed no tests.");
         }

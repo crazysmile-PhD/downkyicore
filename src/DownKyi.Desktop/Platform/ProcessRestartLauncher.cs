@@ -1,73 +1,47 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DownKyi.Application.Diagnostics;
-using DownKyi.ProcessSupervision;
 using Microsoft.Extensions.Logging;
 
 namespace DownKyi.Platform;
 
 internal interface IProcessRestartLauncher
 {
-    Task<IProcessRestartTransaction?> TryPrepareHelperAsync(
-        CancellationToken cancellationToken = default);
+    bool TryStartHelper(int parentProcessId);
 }
 
-internal interface IProcessRestartTransaction : IAsyncDisposable
+internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> logger) : IProcessRestartLauncher
 {
-    RestartHandoffState State { get; }
-
-    void Commit();
-
-    Task RevokeAsync();
-}
-
-internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> logger) :
-    IProcessRestartLauncher
-{
-    internal static readonly TimeSpan RestartHelperTerminationTimeout = TimeSpan.FromSeconds(5);
-    internal static readonly TimeSpan RestartParentExitTimeout = TimeSpan.FromSeconds(30);
+    internal const string WaitForParentArgument = "--restart-after-pid";
 
     private readonly ILogger<ProcessRestartLauncher> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
-    [SuppressMessage(
-        "Design",
-        "CA1031:Do not catch general exception types",
-        Justification = "Preparation failure must leave the current desktop running and is logged with typed handoff evidence.")]
-    public async Task<IProcessRestartTransaction?> TryPrepareHelperAsync(
-        CancellationToken cancellationToken = default)
+    public bool TryStartHelper(int parentProcessId)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        var budget = TransitionBudget.Start(
-            RestartParentExitTimeout,
-            RestartHelperTerminationTimeout);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(parentProcessId);
         try
         {
-            var lease = await RestartHandoffLease.PrepareAsync(
-                    CreateStartInfo(),
-                    Environment.ProcessId,
-                    budget,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            return new ProcessRestartTransaction(lease);
+            using var process = Process.Start(CreateStartInfo(parentProcessId));
+            if (process != null)
+            {
+                return true;
+            }
+
+            _logger.LogWarningMessage("The restart helper could not be started.");
+            return false;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception
+            or PlatformNotSupportedException)
         {
-            throw;
-        }
-        catch (Exception failure) when (failure is RestartHandoffException or IOException
-            or Win32Exception or PlatformNotSupportedException or UnauthorizedAccessException
-            or InvalidOperationException or ArgumentException)
-        {
-            _logger.LogErrorMessage("The restart helper could not be prepared.", failure);
-            return null;
+            _logger.LogErrorMessage("The restart helper could not be started.", e);
+            return false;
         }
     }
 
@@ -76,60 +50,54 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        var parseResult = RestartHandoffProtocol.ParseRequest(arguments, out var request);
-        if (parseResult == RestartHandoffRequestParseResult.NotRequested)
+        if (!TryParseParentProcessId(arguments, out var parentProcessId))
         {
             return false;
         }
 
-        if (parseResult != RestartHandoffRequestParseResult.Valid || request == null)
-        {
-            throw new RestartHandoffException(new RestartHandoffFailure(
-                RestartHandoffFailureKind.AuthorizationRejected,
-                RestartHandoffState.Prepared,
-                null,
-                Environment.ProcessId,
-                "The restart helper command line was malformed."));
-        }
+        await WaitForParentExitAsync(parentProcessId, cancellationToken).ConfigureAwait(false);
 
-        var outcome = await RestartHandoffHelper.ExecuteAsync(
-                request,
-                CreateStartInfo(),
-                cancellationToken)
-            .ConfigureAwait(false);
-        ThrowIfHelperFailed(outcome);
+        cancellationToken.ThrowIfCancellationRequested();
+        using var process = Process.Start(CreateStartInfo(null));
+        if (process == null)
+        {
+            throw new InvalidOperationException("The application could not be relaunched.");
+        }
 
         return true;
     }
 
-    internal static void ThrowIfHelperFailed(RestartHandoffOutcome outcome)
+    private static async Task WaitForParentExitAsync(
+        int parentProcessId,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(outcome);
-        if (outcome.Succeeded)
+        try
+        {
+            using var parent = Process.GetProcessById(parentProcessId);
+            await parent.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException)
         {
             return;
         }
-
-        var failure = outcome.Failure ?? new RestartHandoffFailure(
-            RestartHandoffFailureKind.CleanupFailed,
-            outcome.State,
-            outcome.ParentIdentityAuthority,
-            Environment.ProcessId,
-            "The restart helper completed but final cleanup did not succeed.");
-        throw new RestartHandoffException(
-            failure,
-            cause: null,
-            outcome.CleanupFailures);
     }
 
-    internal static RestartHandoffRequestParseResult TryParseRestartRequest(
+    internal static bool TryParseParentProcessId(
         IReadOnlyList<string> arguments,
-        out RestartHandoffRequest? request)
+        out int parentProcessId)
     {
-        return RestartHandoffProtocol.ParseRequest(arguments, out request);
+        parentProcessId = 0;
+        return arguments.Count == 2
+               && string.Equals(arguments[0], WaitForParentArgument, StringComparison.Ordinal)
+               && int.TryParse(
+                   arguments[1],
+                   NumberStyles.None,
+                   CultureInfo.InvariantCulture,
+                   out parentProcessId)
+               && parentProcessId > 0;
     }
 
-    internal static ProcessStartInfo CreateStartInfo()
+    internal static ProcessStartInfo CreateStartInfo(int? parentProcessId)
     {
         var processPath = Environment.ProcessPath
             ?? throw new InvalidOperationException("The current executable path is unavailable.");
@@ -150,37 +118,18 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
         {
             if (string.IsNullOrWhiteSpace(entryAssemblyPath))
             {
-                throw new InvalidOperationException(
-                    "The managed application entry point is unavailable.");
+                throw new InvalidOperationException("The managed application entry point is unavailable.");
             }
 
             startInfo.ArgumentList.Add(entryAssemblyPath);
         }
 
+        if (parentProcessId is { } processId)
+        {
+            startInfo.ArgumentList.Add(WaitForParentArgument);
+            startInfo.ArgumentList.Add(processId.ToString(CultureInfo.InvariantCulture));
+        }
+
         return startInfo;
-    }
-
-    private sealed class ProcessRestartTransaction(RestartHandoffLease lease) :
-        IProcessRestartTransaction
-    {
-        private readonly RestartHandoffLease _lease = lease
-            ?? throw new ArgumentNullException(nameof(lease));
-
-        public RestartHandoffState State => _lease.State;
-
-        public void Commit()
-        {
-            _lease.Commit();
-        }
-
-        public Task RevokeAsync()
-        {
-            return _lease.RevokeAsync();
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            return _lease.DisposeAsync();
-        }
     }
 }

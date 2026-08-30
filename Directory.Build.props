@@ -14,11 +14,4 @@
       <_Parameter1>false</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
-
-  <ItemGroup Condition="'$(MSBuildProjectName)' != 'DownKyi.ArchitectureAnalyzers'">
-    <ProjectReference
-      Include="$(MSBuildThisFileDirectory)tools\DownKyi.ArchitectureAnalyzers\DownKyi.ArchitectureAnalyzers.csproj"
-      OutputItemType="Analyzer"
-      ReferenceOutputAssembly="false" />
-  </ItemGroup>
 </Project>

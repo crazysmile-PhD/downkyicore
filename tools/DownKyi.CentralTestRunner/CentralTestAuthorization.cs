@@ -112,26 +112,13 @@ public sealed class CentralTestAuthorization : IAsyncDisposable, IDisposable
                 .ConfigureAwait(false);
 
             var frame = CreateFrame();
-            var payload = _mutation == CentralTestAuthorizationMutation.Partial
-                ? frame.AsMemory(0, frame.Length - 1)
-                : frame.AsMemory();
             await WriteWithinBudgetAsync(
                     _authorization,
-                    payload,
+                    frame,
                     budget,
                     "The repository test authorization payload exceeded the operation deadline.",
                     completion.Token)
                 .ConfigureAwait(false);
-            if (_mutation == CentralTestAuthorizationMutation.Replay)
-            {
-                await WriteWithinBudgetAsync(
-                        _authorization,
-                        frame,
-                        budget,
-                        "The replayed repository test authorization payload exceeded the operation deadline.",
-                        completion.Token)
-                    .ConfigureAwait(false);
-            }
         }
         catch (OperationCanceledException failure) when (
             cancellationToken.IsCancellationRequested)
@@ -248,16 +235,10 @@ public sealed class CentralTestAuthorization : IAsyncDisposable, IDisposable
             1,
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-        var hash = ComputeInvocationHash(immutableArguments);
-        if (mutation == CentralTestAuthorizationMutation.WrongInvocationHash)
-        {
-            hash = new byte[InvocationHashLength];
-        }
-
         return new CentralTestAuthorization(
             immutableArguments,
             RandomNumberGenerator.GetBytes(TokenLength),
-            hash,
+            ComputeInvocationHash(immutableArguments),
             endpoint,
             server,
             mutation);

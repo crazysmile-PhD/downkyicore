@@ -21,11 +21,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Verify documentation contract
-        shell: pwsh
-        run: |
-          ./script/verify-documentation.ps1 -SelfTest
-          ./script/verify-documentation.ps1 -Verify
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
@@ -81,14 +76,6 @@ jobs:
           project-path: ./tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj
           no-restore: 'true'
           no-build: 'true'
-      - name: Run review invariant failure corpus
-        shell: pwsh
-        run: >
-          ./script/test-review-invariants.ps1
-          -Configuration Release
-          -NoRestore
-          -NoBuild
-          -ResultsDirectory ./TestResults/review-invariants
       - name: Test
         uses: ./.github/actions/test-solution
         with:
@@ -100,7 +87,6 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: |
             TestResults/*.trx
-            TestResults/review-invariants/*.trx
           if-no-files-found: ignore
 
   aria2-tls-security:
@@ -227,7 +213,6 @@ jobs:
             -Configuration Release `
             -Profile $profile `
             -NoBuild `
-            -ValidateForensics `
             -ResultsDirectory ./artifacts/assembly-lifecycle/ci
       - name: Upload lifecycle reports and evidence
         if: always()

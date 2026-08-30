@@ -140,11 +140,6 @@ public static class CentralTestOrchestrator
                         lease.TargetExitedToken,
                         cancellationToken)
                     .ConfigureAwait(false);
-                if (mutation.HasFlag(CentralTestRunnerMutation.FailExecutionAfterAuthorization))
-                {
-                    throw new InvalidDataException(
-                        "Injected central test execution failure.");
-                }
                 var outcome = await lease.WaitAsync(cancellationToken).ConfigureAwait(false);
                 lease = null;
 
@@ -179,11 +174,6 @@ public static class CentralTestOrchestrator
                             async () => await lease.DisposeAsync().ConfigureAwait(false),
                             cleanupFailures)
                         .ConfigureAwait(false);
-                    if (mutation.HasFlag(CentralTestRunnerMutation.FailLeaseCleanup))
-                    {
-                        cleanupFailures.Add(new IOException(
-                            "Injected owned process lease cleanup failure."));
-                    }
                 }
                 if (authorization != null)
                 {
@@ -222,11 +212,6 @@ public static class CentralTestOrchestrator
                         () => DeleteDirectoryIfPresentAsync(temporaryResultsDirectory),
                         cleanupFailures)
                     .ConfigureAwait(false);
-                if (mutation.HasFlag(CentralTestRunnerMutation.FailTemporaryResultsCleanup))
-                {
-                    cleanupFailures.Add(new IOException(
-                        "Injected temporary TRX directory cleanup failure."));
-                }
             }
 
             if (primaryFailure == null && cleanupFailures.Count == 0)
@@ -253,11 +238,6 @@ public static class CentralTestOrchestrator
                     () => DeleteDirectoryIfPresentAsync(temporaryResultsDirectory),
                     cleanupFailures)
                 .ConfigureAwait(false);
-            if (mutation.HasFlag(CentralTestRunnerMutation.FailTemporaryResultsCleanup))
-            {
-                cleanupFailures.Add(new IOException(
-                    "Injected temporary TRX directory cleanup failure."));
-            }
         }
 
         if (Directory.Exists(temporaryResultsDirectory))

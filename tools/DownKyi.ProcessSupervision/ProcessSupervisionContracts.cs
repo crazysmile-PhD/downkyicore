@@ -95,21 +95,6 @@ public sealed class TransitionBudget
             RemainingOperationAt(timestamp));
     }
 
-    internal RestartHandoffDeadline CreateRestartHandoffDeadline()
-    {
-        if (!ReferenceEquals(_timeProvider, TimeProvider.System) || _parent != null)
-        {
-            throw new InvalidOperationException(
-                "A cross-process restart handoff requires a root system-monotonic transition budget.");
-        }
-
-        return RestartHandoffDeadline.Create(
-            _startedAt,
-            _operationDuration,
-            _hardDuration,
-            _timeProvider.TimestampFrequency);
-    }
-
     public DiagnosticCollectorWindow AllocateDiagnosticCollectorWindow(
         TimeSpan operationAllowance,
         TimeSpan cleanupAllowance)
@@ -451,6 +436,7 @@ public sealed record OwnedProcessFailure(
     OwnedProcessFailureKind Kind,
     int SupervisorProcessId,
     int? TargetProcessId,
+    int? TargetExitCode,
     string StandardOutput,
     string StandardError,
     long? TargetExitedAtUnixMilliseconds,
@@ -482,7 +468,7 @@ public sealed class OwnedProcessExecutionException : Exception
 
     public IReadOnlyList<Exception> CleanupFailures { get; }
 
-    internal IReadOnlyList<OwnedProcessCleanupStageFailure> CleanupStageFailures { get; }
+    public IReadOnlyList<OwnedProcessCleanupStageFailure> CleanupStageFailures { get; }
 
     private static string CreateMessage(
         OwnedProcessFailure failure,
@@ -495,7 +481,7 @@ public sealed class OwnedProcessExecutionException : Exception
     }
 }
 
-internal enum OwnedProcessCleanupStage
+public enum OwnedProcessCleanupStage
 {
     Terminate,
     TreeQuiescence,
@@ -506,7 +492,7 @@ internal enum OwnedProcessCleanupStage
     Unknown
 }
 
-internal sealed record OwnedProcessCleanupStageFailure(
+public sealed record OwnedProcessCleanupStageFailure(
     OwnedProcessCleanupStage Stage,
     Exception Cause)
 {
@@ -538,44 +524,6 @@ internal sealed class OwnedProcessCleanupStageException : Exception
     public OwnedProcessCleanupStage Stage { get; }
 
     public Exception Cause { get; }
-}
-
-public sealed record ParentLifetimeOutcome(bool ExactParentExited);
-
-public abstract class ParentLifetimeLease : IAsyncDisposable
-{
-    public abstract ProcessIdentityAuthority IdentityAuthority { get; }
-
-    internal abstract bool IsExited();
-
-    public ValueTask<ParentLifetimeOutcome> WaitForExitAsync(
-        RestartHandoffDeadline deadline,
-        CancellationToken cancellationToken = default)
-    {
-        return WaitForExitCoreAsync(
-            deadline,
-            waitStartedForTesting: null,
-            cancellationToken);
-    }
-
-    internal ValueTask<ParentLifetimeOutcome> WaitForExitForTestingAsync(
-        RestartHandoffDeadline deadline,
-        Action waitStartedForTesting,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(waitStartedForTesting);
-        return WaitForExitCoreAsync(
-            deadline,
-            waitStartedForTesting,
-            cancellationToken);
-    }
-
-    protected abstract ValueTask<ParentLifetimeOutcome> WaitForExitCoreAsync(
-        RestartHandoffDeadline deadline,
-        Action? waitStartedForTesting,
-        CancellationToken cancellationToken);
-
-    public abstract ValueTask DisposeAsync();
 }
 
 [Flags]

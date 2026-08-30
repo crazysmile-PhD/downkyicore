@@ -1,617 +1,101 @@
 # Process Lifecycle Ownership
 
-## Problem Statement
+Status: current design authority
 
-The historical process, restart and lifecycle failure family has one common
-root cause: PID and PPID observation have been used in place of launch-time OS
-process ownership.
+This document owns the process-lifecycle boundary used by repository tests and
+lifecycle diagnostics. It describes current behavior only; implementation
+history belongs in Git.
 
-PID, PPID, process start time, WMI and `ps` process-tree data are useful
-diagnostics. They must not be an ownership authority, kill-target authority,
-residual-process correctness oracle, reap authority or exact process identity.
-The final correctness truth must come from OS-backed ownership state established
-before target code executes. Stable identity, descendant containment and
-membership/quiescence are separate contracts. A primitive that supplies one of
-them must not be treated as proof of the others.
+## Invariant
 
-## Architecture Boundaries
+`OwnedProcessLease` is the only component that owns a launched test or
+diagnostic process. It owns start, ownership establishment, wait, caller
+cancellation, timeout, bounded terminate, reap, owned-tree quiescence and
+stdout/stderr drain. Callers may coordinate phases and render evidence, but
+they must not start or clean up a parallel process path.
 
-```text
-CentralTestRunner
-  -> OwnedProcessLease
+`TransitionBudget` provides one caller-owned monotonic operation deadline and a
+reserved cleanup interval. A child collector may receive a smaller window; it
+cannot extend or replace its parent's deadline.
 
-LifecyclePhaseSupervisor
-  -> OwnedProcessLease
-  -> ForensicsObserver
-       -> OwnedDiagnosticCollector
+## Owners
 
-RestartTransaction
-  -> RestartHandoffLease
-       -> ParentLifetimeLease
-       -> typed one-shot authorization
-       -> immutable cross-process deadline
-```
-
-`OwnedProcessLease` is not a generic domain supervisor. It owns only:
-
-- an immutable `LaunchSpec`;
-- launch and pre-execution ownership establishment;
-- stable root or group-anchor identity, owned-tree containment and an explicit
-  membership/quiescence authority;
-- supervisor/control handles and standard-I/O endpoints;
-- an explicit inherited-handle allowlist;
-- consumption of a caller-owned `TransitionBudget`;
-- bounded wait, termination, tree-quiescence, reap and stream drain;
-- a typed process outcome and diagnostic snapshot.
-
-It does not know restart authorization semantics, test selection, test-platform
-policy, TRX interpretation, lifecycle phase semantics, forensics interpretation,
-release policy or the policy value of any timeout.
-
-`ParentLifetimeLease` is separate because observing the process that created a
-restart helper is not the same operation as owning a child that this process
-launched. The two contracts must not claim identical platform capabilities.
-It proves only exact parent exit; it does not own the helper, authorize or commit
-restart, or create a deadline.
-
-The ordinary `OwnedProcessLease` owner-death contract cannot directly own a
-committed restart successor: owner lifetime EOF intentionally terminates and
-reaps the ordinary owned set, while a committed restart helper must survive that
-exact exit to perform one bounded relaunch attempt. Stage 4A therefore records
-`Stage 4 original composition assumption invalidated` and tests a separate
-restart handoff domain. See `restart-handoff-lifecycle.md`. This distinction does
-not weaken or reopen the Stage 2 invariant.
-
-## Central Test Execution Boundary
-
-Stage 5 separates test-policy correctness from child-process lifecycle
-correctness. `CentralTestOrchestrator` owns project/platform routing, canonical
-xUnit arguments, selection, one-shot authorization issuance, aggregate
-orchestration and result validation. It constructs one immutable `LaunchSpec`
-and asks the existing `OwnedProcessLease` to execute it. The lease and
-`SupervisorHost` are the only owners of process start, ownership establishment
-before target code, wait, terminate, reap, quiescence, target streams and
-cleanup. The PowerShell and action layers forward typed inputs and propagate
-results; they contain no fallback process owner.
-
-Authorization uses a random `IpcEndpointName` and a one-client
-`NamedPipeServerStream` restricted with `PipeOptions.CurrentUserOnly`. The
-immutable launch environment carries only the physical endpoint name and a
-random token value. The issuer sends a versioned frame containing that token
-and the SHA-256 hash of the complete canonical argument vector. The test
-assembly's module initializer connects to the named endpoint, consumes and
-clears the environment values, verifies the exact token and invocation hash,
-requires an exact-length frame followed by EOF, and rejects the legacy numeric
-`DOWNKYI_CENTRAL_TEST_PIPE` form. Endpoint names and tokens are ordinary values;
-no process-local HANDLE or file-descriptor number is copied across the
-`CentralTestRunner -> SupervisorHost -> test process` topology.
-
-`SupervisorHost` transports the immutable launch environment but neither
-issues nor verifies test authorization. The one caller-created
-`TransitionBudget` is shared by authorization connection/write,
-`OwnedProcessLease.StartAsync`, execution, cancellation cleanup, reap,
-quiescence and stream drain. Neither authorization nor the supervisor creates a
-fresh process deadline.
-
-The lease's typed outcome answers only whether the process was safely executed
-and collected. `CentralTestExecutionValidator` remains the semantic owner of
-the TRX: exit code zero cannot hide a failed test, zero executed tests fail
-closed, expected classes must have executed results and every expected class
-must contain a passing result. Platform routing remains in the central policy.
-On Linux, the CI action establishes the existing delegated-cgroup context
-before either project or solution mode reaches the compiled runner; containment
-and membership remain shared `OwnedProcessLease` responsibilities, with no
-PID/process-enumeration fallback. Direct review-corpus execution establishes
-that same delegated context before loading the runner, so the review entrypoint
-cannot bypass the platform owner.
-
-`NoBuild` describes the selected test target. It does not make the compiled
-runner provider optional: when that provider is missing, the wrapper builds it
-with the caller's restore policy and then forwards the unchanged target option.
-PowerShell never substitutes a private test host or process owner.
-
-The macOS packaged-app launch verification script is an unchanged bounded
-release-tooling owner of the app root, not a central test-child owner. Its
-TERM-resistance test fixture therefore creates one shell root and no nested
-`sleep` process. The release verifier keeps its original root TERM-to-KILL
-contract while the outer `OwnedProcessLease` remains the authoritative
-repository-test quiescence check.
-
-Typed lease failures retain the target's bounded stdout and stderr. The central
-runner must write that captured output before propagating the unchanged failure
-so a native residual-process failure remains observable. The macOS test assembly
-also has an end-of-assembly observer that reports unexpected anchored-group
-members by PID and process name. It is diagnostics only: it never kills, reaps,
-retries or changes the result, and `OwnedProcessLease` remains the sole
-membership and quiescence authority.
-
-Lifecycle marker write authority is also one-shot. The lifecycle gate gives
-only its outer test target `DOWNKYI_LIFECYCLE_MARKER_OWNER=1`; the module
-initializer consumes that value before test code can create children. Nested
-test processes can inherit a marker path but not its write authority, so their
-guard clears the path before fixture construction and cannot pollute the outer
-teardown proof.
-
-## Temporary IPC Naming
-
-Human-readable endpoint labels and operating-system pipe identifiers are
-separate values. `IpcEndpointName` in `tools/DownKyi.ProcessSupervision` is the
-single physical-name policy for repository-created `NamedPipeServerStream`
-instances. Call sites retain a logical label for diagnostics, but pass only the
-physical identifier to the OS and child command line.
-
-The physical format is `dkyi-` plus 16 lowercase base32 characters generated
-from 80 bits of cryptographic randomness. It is always 21 ASCII characters;
-the policy ceiling is 24. The alphabet remains unique under Windows
-case-insensitive comparison, and the entropy supports parallel test and
-process creation without descriptive text, PID, test name or full GUID data.
-
-The 24-character ceiling reserves 79 bytes for the macOS temporary-directory
-and .NET `CoreFxPipe_` prefix plus one Unix-domain socket terminator within the
-104-byte path limit. Platform tests prove the fixed length, case-insensitive
-parallel uniqueness, independence from arbitrarily long logical labels, the
-macOS path-budget calculation and real native pipe construction. Architecture
-tests reject any repository `NamedPipeServerStream` whose physical name does
-not come from this shared value.
-
-The sole test-only exception emulates the externally specified .NET diagnostics
-transport name `dotnet-diagnostic-PID` so the pinned `dotnet-stack` executable
-can attach to a deterministic stall fixture. It is never used as a repository
-control, authorization, lifetime or evidence-hold endpoint. The fixed name
-therefore models an external protocol; it does not weaken the random physical
-name policy for repository-owned IPC.
-
-## Stage 4A Feasibility Outcome
-
-The separate restart handoff domain is behaviorally feasible but is not a
-production implementation. Exact source head
-`689c5d6c41b3a3a7b8a0c6a318c80a4ebe737879` passed Strict PR run
-[33161523853](https://github.com/crazysmile-PhD/downkyicore/actions/runs/33161523853):
-Windows, Linux and macOS each passed 16/16 restart-handoff cases and 4/4 shared
-IPC-naming cases. The fixture exercised a retained Windows process handle,
-Linux pidfd plus poll and an armed macOS kqueue exit watcher, as well as the
-single absolute monotonic deadline and terminal helper paths.
-
-This accepts `ParentLifetimeLease` plus typed one-shot authorization and the
-immutable deadline as a future restart-domain boundary. It does not authorize
-`RestartCoordinator`, `RestartHandoffLease` or `ProcessRestartLauncher`
-production changes. `OwnedProcessLease` still terminates ordinary owned work on
-owner EOF; only its control/status pipe identifiers adopted the bounded naming
-policy, without changing owner-death behavior.
-
-## Stage 4 Production Migration Checkpoint
-
-Stage 4A remains the feasibility authority; Stage 4 is the production migration.
-`ProcessRestartLauncher`, `AvaloniaApplicationLifecycle` and the desktop helper
-entrypoint now use `RestartHandoffLease` and `RestartHandoffHelper`. The old
-PID/start-time comparison, anonymous commit pipe and raw helper cleanup owner
-were removed without a fallback path in implementation commit
-`12fbde8647d0a8ddc907264f3ab10741f84e966a`.
-
-Before commit, `RestartHandoffLease` owns helper launch, readiness and
-authorization endpoints, the absolute deadline, revoke, terminate and reap.
-After commit, the restart-specific helper owns its exact old-parent watcher and
-one relaunch attempt until it exits. It is not an ordinary lease, detached API,
-daemon or service. `OwnedProcessLease` retains its unconditional owner-EOF
-terminate/reap invariant.
-
-Helper terminal cleanup is part of the same restart transaction. The typed
-primary transition is selected first; status endpoint, authorization endpoint
-and exact-parent authority disposal are then each attempted and recorded by
-stage. Cleanup A cannot skip B or C, cleanup cannot replace the primary
-transition, and cleanup-only failure is not reported as success. This does not
-create another deadline, retry, helper owner or ordinary-lease composition.
-
-Production exact-parent authority is a retained Windows process handle with only
-`SYNCHRONIZE`, Linux `pidfd_open` plus `poll`, or macOS `kqueue`
-`EVFILT_PROC/NOTE_EXIT`. Watcher arming and an immediate exact-parent liveness
-check precede READY. Capability failure is terminal; there is no PID, PPID,
-start-time, `/proc`, enumeration or sleep fallback.
-
-Cancellation after the helper enters that native wait is represented inside the
-same bounded wait operation: a Windows token handle, Linux private eventfd, or
-macOS `EVFILT_USER` registration wakes the call. Those signals cannot establish
-parent identity, renew the immutable deadline or authorize relaunch. If the
-exact-parent event is already established it is evaluated first; otherwise the
-helper records typed `CancellationRequested`, performs all terminal cleanup and
-does not launch a replacement.
-
-## Threat Model
-
-The current threat model is trusted repository-child bug containment. The
-supervisor must contain accidentally retained children and subprocesses, early
-parent exit, inherited handles, teardown bugs, ordinary daemon-like behavior and
-stdout/stderr closure bugs.
-
-The current contract does not claim containment of a hostile child that calls
-`setsid()`, deliberately escapes its process group or attempts a sandbox escape.
-Trusted-child does not mean cooperative lifetime-lease propagation: an ordinary
-child may launch a descendant through a runtime API that closes unlisted file
-descriptors. Process groups are therefore useful containment and termination
-primitives, but are not by themselves a stable identity or a descendant
-membership/quiescence authority.
-
-Privileged daemons or system services remain outside this threat model. An
-OS-backed membership primitive such as a delegated cgroup is permitted when it
-is required to prove lifecycle closure for trusted children; inability to
-establish the selected backend fails closed before target authorization.
-
-## Restart Product Policy
-
-Restart retains existing Policy B:
-
-```text
-cleanup failure
-  -> preserve the failure
-  -> still attempt desktop termination handoff
-  -> commit restart when the desktop handoff is accepted
-
-desktop handoff failure
-  -> do not commit
-  -> revoke the prepared helper
-```
-
-Cleanup failure must not be reinterpreted as unconditional `No Relaunch`. This
-is existing product behavior and is not owned by process-supervision plumbing.
-
-## Restart Guarantees
-
-Restart provides a strong safety guarantee. If authorization, stable parent
-identity, exact parent exit or a required transition cannot be proved, the
-helper must not relaunch.
-
-Availability is best effort. Commit does not guarantee a replacement process.
-A helper crash, parent hang or relaunch-start failure may fail closed and lose
-restart availability. A future requirement for guaranteed restart after commit
-would require an external persistent OS or service supervisor and is outside
-`OwnedProcessLease`.
-
-## Platform Semantics
-
-### Authority Separation
-
-Every backend must identify one primitive for each row below. One primitive may
-implement multiple rows only where the OS contract actually provides them.
-
-| Authority | Required answer |
+| Concern | Authority |
 | --- | --- |
-| Stable identity | Is this still the exact root or supervisor-owned anchor established at launch? |
-| Containment | Which descendants receive bounded termination as one owned set? |
-| Membership/quiescence | Does that exact owned set contain any member that can still execute, fork or retain an owned endpoint? |
-| Reap | Which direct children must this supervisor collect? |
+| Repository test selection, authorization and TRX result validation | `DownKyi.CentralTestRunner` |
+| Target and descendant process lifecycle | `OwnedProcessLease` |
+| OS containment and membership | `IProcessContainmentLease` implementations |
+| Diagnostic collector process lifecycle | `OwnedDiagnosticCollector`, using `OwnedProcessLease` |
+| Operation and cleanup deadline | `TransitionBudget` |
+| Lifecycle phase orchestration and report rendering | `script/test-assembly-lifecycle.ps1` |
 
-PID, PPID and numeric PGID enumeration cannot fill any missing row. They remain
-diagnostic evidence only.
+The PowerShell lifecycle script is a caller. It does not own termination,
+reaping, membership convergence or stream closure.
 
-### Windows
+## OS Ownership Primitives
 
-- A stable process `HANDLE` identifies the root.
-- The target must join its Job Object before target code executes.
-- `Process.Start` followed by `AssignProcessToJobObject` is not atomic ownership.
-- A backend may use `CREATE_SUSPENDED -> assign Job -> resume`, or an inert
-  launch host that cannot start target code until Job assignment is confirmed.
-- Assignment failure must terminate the still-inert child and fail closed.
-- Kill-on-close and bounded Job termination close the owned tree.
+- Windows uses a Job Object. The target cannot execute as an unowned process;
+  the supervisor establishes job membership before authorizing execution.
+- Linux uses a delegated cgroup v2 subtree. The target and descendants must be
+  members of that subtree, and cleanup requires authoritative cgroup
+  convergence.
+- macOS uses an anchored process group plus authoritative membership queries.
+  PID, PPID, process name and command line are diagnostic facts, not ownership
+  authority.
 
-### Linux
+The repository entry scripts use `delegated-cgroup-scope.ps1` when a Linux
+runner must first enter an available delegated cgroup. That bootstrap does not
+replace `OwnedProcessLease`.
 
-- Prefer pidfd for stable anchor identity. A pidfd identifies one task; it does
-  not prove descendant membership. `PIDFD_SIGNAL_PROCESS_GROUP`, where
-  available, supplies stable group signalling while the anchor exists, not a
-  membership oracle.
-- Establish a process group before target `exec`, with a supervisor-owned anchor
-  that remains alive through all destructive group operations. The group is a
-  containment/termination primitive only.
-- A delegated cgroup v2 child is the Stage 2 membership authority.
-  Recursive
-  `cgroup.events` `populated` state proves that no live process remains, and
-  `cgroup.kill` provides atomic tree termination against concurrent forks and
-  migration within the delegated subtree. Direct-child zombies remain the
-  separate reap authority's responsibility.
-- The backend must prove delegation and required files before authorizing target
-  execution. A machine without that capability is unsupported for the formal
-  lifecycle gate until another stable membership backend is designed and
-  behaviorally proved.
-- The supervisor initially joins the workload cgroup so target descendants
-  inherit membership before authorization. After target exit is recorded, the
-  still-live group anchor moves back to the delegated owner scope. The workload
-  cgroup then contains descendants only, so `populated=0` can be proved without
-  releasing the process-group identity or owner-lifetime channel.
-- A minimal native shim or interoperability layer is allowed when public .NET
-  APIs cannot establish this boundary. Implementation difficulty never
-  authorizes a PID/PPID/PGID polling fallback.
+## Lifecycle
 
-### macOS
+1. The caller creates a `LaunchSpec` and one `TransitionBudget`.
+2. `OwnedProcessLease.StartAsync` starts the supervisor and establishes the OS
+   ownership primitive before the target is authorized to run.
+3. The caller waits through the lease. Target exit alone is not completion;
+   the owned tree must quiesce and redirected streams must drain.
+4. On failure, timeout or caller cancellation, the lease consumes only its
+   bounded cleanup reserve while it terminates, reaps and verifies quiescence.
+5. The lease returns an `OwnedProcessOutcome` or throws an
+   `OwnedProcessExecutionException` containing an `OwnedProcessFailure`.
+6. The caller disposes the lease. Disposal failures remain separate cleanup
+   evidence and do not replace the primary failure.
 
-- macOS has no pidfd.
-- A retained direct-child handle and wait/reap state identify the
-  supervisor-owned group anchor. The anchor must not be reaped before group
-  termination is complete and membership quiescence has been proved.
-- A process group provides trusted-child descendant containment and termination
-  while the anchor identity is retained. Numeric PGID probing is not a
-  membership/quiescence authority.
-- `proc_listpgrppids` is the Stage 2 authority for an atomic kernel membership
-  snapshot of the anchored group. It must exclude the intentionally live anchor
-  and prove zero remaining members before the anchor is reaped. The API is a
-  private libproc interface. Native x64 and arm64 behavioral proof authorizes
-  its use only with fail-closed runtime availability, buffer and error checks.
-- The live anchor remains in the process group while the lease queries
-  non-anchor membership. It exits only after the owner sends the finalization
-  signal following a zero-membership proof; owner EOF instead terminates the
-  anchored group.
-- `kqueue` `EVFILT_PROC` / `NOTE_EXIT` observes selected processes but does not
-  supply group membership. Historical `NOTE_TRACK` fork tracking is unsupported
-  and is not a candidate authority.
+## Failure Contract
 
-Reports must disclose the actual platform identity and containment strength.
-The abstraction must not claim stronger or identical semantics where the OS
-does not provide them.
+`OwnedProcessFailure` carries the typed failure kind, primary cause, target exit
+code when observed, stdout, stderr, ownership identity, tree-quiescence result
+and typed cleanup-stage failures. Cleanup stages remain ordered so terminate,
+reap, membership convergence, stream drain and resource release failures can be
+reported without obscuring the first causal failure.
 
-## Supervisor-Owned Group Anchor
+Diagnostic collection is demand-driven. The lifecycle gate may collect stack
+or process evidence for a failure, timeout, slow threshold or residual owned
+process. A successful ordinary phase does not run a diagnostic self-test.
 
-The POSIX group anchor separates stable group identity from the workload root:
+## Non-Owners
 
-1. the supervisor launches and retains the exact direct-child anchor;
-2. the anchor establishes the process group before workload target code starts;
-3. the anchor remains alive, or intentionally unreaped, until membership is
-   quiescent and no further group-directed termination can occur;
-4. all destructive group operations are issued only while that stable anchor
-   identity remains owned;
-5. the membership backend, not group existence, decides quiescence;
-6. the owner finalizes the still-live anchor only after that decision, except
-   on Windows where kill-on-close Job ownership permits the anchor to exit
-   before the Job active-process query;
-7. the anchor is reaped only after that decision; bounded stream closure then
-   completes against the now-quiescent owned set.
+The following may be logged for diagnosis but cannot decide correctness:
 
-Keeping the leader as a zombie prevents PGID reuse, but it also keeps a
-signal-zero group probe positive after all descendants have exited. Reaping it
-restores numeric group emptiness but releases the identity for reuse. Therefore
-an anchor closes the identity and termination races but cannot itself prove
-descendant quiescence.
+- PID or PPID ancestry;
+- process name or command-line matching;
+- elapsed sleeps or retry counts;
+- kill-all cleanup;
+- a target exit code without owned-tree quiescence;
+- captured evidence without completed process cleanup.
 
-## Lifetime And Membership Leases
+## Verification
 
-An inherited pipe or equivalent capability remains useful for owner death,
-authorization EOF and cooperative lifetime signalling. It is not the sole
-membership oracle. Ordinary descendant-launch APIs may close a file descriptor
-that the intermediate child did not explicitly forward, producing EOF while a
-descendant remains alive.
+Use the repository central entry points, never direct solution-wide
+`dotnet test`:
 
-The formal lifecycle gate may rely on an inherited membership lease only if
-propagation is made unavoidable by the launch boundary and a mutation proves
-that an unleased descendant cannot execute. The current .NET descendant-launch
-model does not provide that property. Until such a boundary exists, the lease is
-supplemental and the platform membership backend remains authoritative.
-
-## POSIX Lifecycle State Machine
-
-```text
-Prepared
-  -> OwnerLifetimeBound
-  -> AnchorIdentityEstablished
-  -> ContainmentEstablished
-  -> MembershipAuthorityEstablished
-  -> Authorized
-  -> Running
-  -> TargetExitRecorded
-  -> AnchorExcludedFromMembershipSet
-  -> MembershipQuiescent
-  -> AnchorFinalized
-  -> AnchorReaped
-  -> StreamsDrained
-  -> Completed
-
-Any state
-  -> Deadline | Cancellation | LaunchFailure | OwnerDeath
-     | MembershipFailure | TerminateFailure | ReapFailure
-  -> CleanupCommitted
-  -> BoundedTerminateWhileAnchorIsStable
-  -> MembershipQuiescent
-  -> AnchorFinalizedAndReaped
-  -> BoundedStreamDrain
-  -> Failed
+```powershell
+pwsh ./script/test-solution.ps1 -Configuration Release
+pwsh ./script/test-assembly-lifecycle.ps1 `
+  -Configuration Release -Profile PR -NoBuild
 ```
 
-Unknown or unavailable membership state is failure, not quiescence. Cleanup
-preserves every operation, termination, membership, reap and drain failure; a
-later failure cannot replace earlier causal evidence.
-
-The owner-to-supervisor control pipe is retained through target exit. Closing
-it at any point is owner death and triggers platform termination. A normal
-finalization signal is accepted only after target exit and, on POSIX, after the
-lease has proved authoritative membership quiescence. This closes the race in
-which an anchor could exit after authorization while its owner died before
-descendant cleanup.
-
-## Reference And Behavioral Feasibility
-
-The current design checkpoint is based on these primary contracts, isolated
-probes and hosted native proof. It authorizes the platform membership backends
-described below for Stage 2 implementation, subject to their fail-closed
-capability preconditions. It does not claim that implementation is complete.
-
-- The .NET Unix process wait implementation reaps an exited direct child through
-  `waitpid`. Retaining a managed `Process` object therefore does not retain a
-  zombie leader after the wait completes.
-- Linux `kill(-pgid, 0)` reports group existence and permission, not stable
-  membership identity. An isolated probe confirmed that a zombie leader keeps
-  the group observable until `waitpid`, after which the numeric PGID can be
-  reused.
-- An isolated inherited-pipe probe observed EOF while an uncooperative but
-  non-hostile grandchild remained alive because the intermediate launch did not
-  forward the descriptor. A positive control that explicitly forwarded the
-  descriptor delayed EOF until the grandchild exited.
-- A delegated cgroup v2 probe retained `populated=1` after the root exited while
-  a live descendant remained and was reparented; `cgroup.kill` then converged to
-  `populated=0`.
-- XNU's process-list implementation can filter `allproc` and `zombproc` by
-  process group under the kernel process-list lock. The exposed libproc
-  interface is private and subject to change, so runtime availability and every
-  query result must remain fail closed.
-
-Hosted run [32980954766](https://github.com/crazysmile-PhD/downkyicore/actions/runs/32980954766)
-provides the native feasibility decision:
-
-- A GitHub Ubuntu 24.04 job starts in the root-owned
-  `hosted-compute-agent.service` cgroup and cannot create a child directly. The
-  preceding negative run failed closed with `EACCES`.
-- The same unprivileged runner can request `Delegate=yes` from its systemd user
-  manager. Inside that user scope it created and removed a child cgroup, retained
-  `populated=1` after workload-parent exit and descendant reparent, terminated
-  through `cgroup.kill`, converged to `populated=0`, and rejected an injected
-  membership-query failure.
-- Native `macos-15-intel` and `macos-15` jobs compiled against libproc. Both
-  retained a group anchor, reaped the workload parent, observed the live
-  reparented descendant through `proc_listpgrppids`, terminated the anchored
-  group, proved zero non-anchor membership before anchor reap, and rejected an
-  injected query failure.
-
-The Linux systemd user scope is capability bootstrap, not a process or
-membership truth owner. The backend must verify actual delegation and then use
-only cgroup state for membership correctness. It must never invoke privileged
-`sudo` setup. If the user manager, delegation, `cgroup.events` or `cgroup.kill`
-is unavailable, launch fails before target authorization.
-
-The macOS backend uses the retained direct-child anchor as stable group identity,
-the process group for containment/termination, and `proc_listpgrppids` for
-membership. A missing symbol, ambiguous zero/error result, exhausted buffer
-growth or query error is failure, not quiescence.
-
-References:
-
-- [.NET Unix process wait state](https://github.com/dotnet/runtime/blob/main/src/libraries/System.Diagnostics.Process/src/System/Diagnostics/ProcessWaitState.Unix.cs)
-- [.NET explicit inherited-handle allowlist](https://github.com/dotnet/runtime/blob/main/src/libraries/System.Diagnostics.Process/src/System/Diagnostics/ProcessStartInfo.cs)
-- [Linux `kill(2)`](https://man7.org/linux/man-pages/man2/kill.2.html)
-- [Linux `pidfd_open(2)`](https://man7.org/linux/man-pages/man2/pidfd_open.2.html)
-- [Linux `pidfd_send_signal(2)`](https://man7.org/linux/man-pages/man2/pidfd_send_signal.2.html)
-- [Linux cgroup v2](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html)
-- [Apple libproc interface](https://github.com/apple-oss-distributions/xnu/blob/main/libsyscall/wrappers/libproc/libproc.h)
-- [XNU process-group listing implementation](https://github.com/apple/darwin-xnu/blob/main/bsd/kern/proc_info.c)
-- [XNU kqueue process-note contract](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/event.h)
-
-## Handle And Stream Lifecycle Closure
-
-Process ownership alone does not establish lifecycle closure. The same owner
-must account for process state, handles or file descriptors, stdin, stdout,
-stderr and bounded stream drain.
-
-Stdout and stderr drain concurrently from launch. They must not begin only after
-root exit. If a descendant retains an output handle, owned-tree termination must
-close the handle before the owner completes a bounded drain; waiting indefinitely
-for EOF is forbidden.
-
-Authorization, diagnostic and lifetime pipes retain their domain semantics.
-The low-level lease owns their declared handle lifetime and permits inheritance
-only through an immutable explicit allowlist.
-
-## Deadline Model
-
-Every operation receives one `TransitionBudget` based on an absolute monotonic
-clock. Nested operations may read remaining time but cannot extend the deadline
-or create a substitute deadline.
-
-Wait, evidence capture, termination, reap and stream drain consume that budget.
-Ownership attachment, immutable launch-payload writes and supervisor
-finalization also consume the same remaining budget; pipe backpressure cannot
-create an unbounded pre-launch transition.
-The budget may reserve bounded cleanup time after the operation cutoff, but the
-operation and hard-cleanup deadlines are established together by the same owner
-on one monotonic timeline. Cleanup must not introduce a second clock owner.
-
-A restart handoff crosses a process boundary without crossing into a new clock
-authority. Prepare must fix an immutable absolute expiry in a platform
-monotonic-clock domain. The successor may calculate only the remaining duration
-from that expiry; it must not restart a stopwatch or allocate a fresh product
-window. Stage 4A proved the representation natively; Stage 4 carries that exact
-expiry through the production helper protocol and authenticates it in the
-one-shot commit frame. Cross-platform product closure still requires exact-head
-native CI and same-head review.
-
-Caller cancellation may stop work before an irreversible transition. Once a
-child has started or cleanup has begun, cleanup is not abandoned by caller
-cancellation and remains bounded by the hard deadline.
-
-## Forensics Boundary
-
-`LifecyclePhaseSupervisor` owns process truth. `ForensicsObserver` consumes
-snapshots and cannot kill a process, release a child, extend child lifetime,
-create process ownership or extend the transition deadline.
-
-The lease publishes target exit in two read-only forms from the same monotonic
-owner transition: `TargetExitedAfter` for child-lifetime measurement and
-`TargetExitedToken` for cancellation notification. Lifecycle policy may link
-the latter only to observer work so an attaching diagnostic child is stopped
-when its target is gone. This token is not a process handle, membership proof,
-kill target or new deadline, and the observer never receives the lease itself.
-
-When a deterministic fixture needs the target to remain available during
-capture, `LifecyclePhaseSupervisor` requests an evidence hold from the same
-`OwnedProcessLease` before launch. The lease creates and owns the hold endpoint,
-injects it through the immutable launch payload, and accepts only a `Captured`
-or `Failed` completion handoff. The actual held target must acknowledge that
-handoff; the intermediary supervisor closes its inherited endpoint copies after
-launch, so an unconsumed signal cannot validate the hold. `ForensicsObserver`
-receives a diagnostic target ID and a caller-allocated
-`DiagnosticCollectorWindow`; it never receives a target process lease,
-containment handle, membership query, terminate target or deadline constructor.
-
-A deterministic fixture may request this supervisor-owned sub-state:
-
-```text
-Running
-  -> EvidenceHoldGranted
-  -> EvidenceCaptured | EvidenceFailed
-  -> Released
-```
-
-The hold is part of the supervisor state machine and the same transition budget.
-Forensics failure may fail the phase but cannot prevent bounded cleanup.
-The typed process outcome records whether the hold was requested, granted,
-completed, released, delivered and acknowledged. Lifecycle reports keep `processFailureType`
-and `forensicsFailureType` separate, so observer failure cannot replace the
-owner's causal failure or turn it into success. `OwnedDiagnosticCollector`
-owns collector start, wait, termination, authoritative reap and concurrent
-stream drain on the attenuated window. PowerShell receives only typed evidence
-or typed primary/cleanup failures and never receives the collector process or
-cleanup target. The compiled collector has no authority over the observed
-target or owned tree.
-
-This independent boundary is implemented by
-`6fc71e406ba80b2ccfbff49e05023f76f72458b6` and exact-head review-fix commits
-`c3a3a33f67daa20ac450212433c69774385fb679` and
-`e98c8a6c27cb22a44ffc63099af53a447139c6ee`, based on the fixed Stage 3 closure
-`531399c375700d2bd188fe8723878fad008b7058`. The fixes preserve the first causal
-collector failure, stream already-produced target evidence through the
-supervisor before cleanup, carry typed collector failure/evidence/cleanup
-fields into the lifecycle report and behaviorally reject whole-budget and
-command-based PowerShell ownership mutations. Command ownership detection also
-normalizes module-qualified PowerShell command names, while a shared
-failure-to-report converter and JSON round-trip fixture prove that non-empty
-cleanup stages and cause types survive the PowerShell boundary. The diagnostic
-owner, observer classification and collector deadlines remain unchanged by the
-later restart and central-runner migrations. Stage 5 reuses the ordinary lease
-without reopening Stage 3 or the separate Stage 4 handoff domain.
-
-## Legacy Mechanism Disposition
-
-The migration target removes these mechanisms from correctness paths. Paths
-already removed during Stage 2 must not return while POSIX membership authority
-is redesigned:
-
-- `Get-ProcessTree` WMI/`ps` PPID recursion;
-- `Get-ProcessIdentityKey` and `Get-LiveObservedProcess` as authorities;
-- PID plus start time as restart authority (removed from the production restart path);
-- `Wait-ResidualProcessTree`;
-- synthetic-only `ReleaseObservedChildren` correctness;
-- `New/Start/Complete/Close-ObservedChildReleaseLease` as a second owner;
-- duplicate start, wait, kill and reap implementations;
-- independent timeout owners for the same transition.
-
-Stage 5 removed raw test-child `Process.Start`, wait, kill, reap, stream-drain
-and timeout ownership from the central runner and its PowerShell wrappers. It
-retains central-runner capability authorization, canonical test arguments, TRX
-semantic validation, desktop cleanup/handoff failure aggregation and
-PID/PPID/thread/stack diagnostics. Diagnostic identity must not affect success,
-kill target, reap target or residual classification. Stage 6 remains the owner
-of broader legacy removal outside this migrated path.
+The platform-owned process-supervision tests cover real Windows, Linux and
+macOS primitives. Architecture tests verify that lifecycle phases use one
+`OwnedProcessLease`, one `TransitionBudget` and direct compiled central-runner
+authorization.

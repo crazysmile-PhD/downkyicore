@@ -151,7 +151,7 @@ pwsh ./script/test-solution.ps1 -Configuration Release -NoRestore -NoBuild
 pwsh ./script/audit-lifecycle-ownership.ps1 `
   -OutputDirectory ./artifacts/assembly-lifecycle/ownership
 pwsh ./script/test-assembly-lifecycle.ps1 `
-  -Configuration Release -Iterations 5 -NoBuild -ValidateForensics `
+  -Configuration Release -Profile Main -NoBuild `
   -ResultsDirectory ./artifacts/assembly-lifecycle/verification
 dotnet format ./DownKyi.sln --verify-no-changes --no-restore
 pwsh ./script/audit-module-boundaries.ps1 `

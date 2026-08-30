@@ -3,7 +3,6 @@ using DownKyi.Application.Lifetime;
 using DownKyi.Core.Settings;
 using DownKyi.Desktop.Composition;
 using DownKyi.Platform;
-using DownKyi.ProcessSupervision;
 using DownKyi.Services.Download;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -129,340 +128,6 @@ public sealed class AvaloniaApplicationLifecycleTests
     }
 
     [Fact]
-    public async Task RestartCleanupTimeoutTerminatesDesktopAndStillFailsClosed()
-    {
-        var directory = CreateTemporaryDirectory();
-        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
-        var hostedService = new BlockingStopHostedService();
-        using var host = DownKyiHost.Create(services =>
-            services.AddSingleton<IHostedService>(hostedService));
-        var restartLauncher = new StubRestartLauncher(true);
-        var desktopShutdownCount = 0;
-        var lifecycle = CreateLifecycle(
-            settingsStore,
-            new RecordingLogService(),
-            restartLauncher,
-            TimeSpan.Zero,
-            afterHandoff =>
-            {
-                desktopShutdownCount++;
-                return CompleteDesktopHandoff(afterHandoff);
-            });
-        lifecycle.AttachHost(host);
-
-        try
-        {
-            await lifecycle.StartHostAsync().ConfigureAwait(true);
-
-            await Assert.ThrowsAsync<TimeoutException>(() =>
-                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
-
-            Assert.Equal(1, restartLauncher.StartCount);
-            Assert.Equal(1, restartLauncher.CommitCount);
-            Assert.Equal(0, restartLauncher.RevokeCount);
-            Assert.Equal(1, desktopShutdownCount);
-            Assert.False(hostedService.IsQuiescent);
-        }
-        finally
-        {
-            hostedService.AllowStop.TrySetResult();
-            await host.StopAsync(CancellationToken.None).ConfigureAwait(true);
-            await settingsStore.DisposeAsync().ConfigureAwait(true);
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task RestartCleanupFailureTerminatesDesktopAndPreservesFailure()
-    {
-        var directory = CreateTemporaryDirectory();
-        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
-        using var host = DownKyiHost.Create(services =>
-            services.AddSingleton<IHostedService>(new FatalStopHostedService()));
-        var restartLauncher = new StubRestartLauncher(true);
-        var desktopShutdownCount = 0;
-        var lifecycle = CreateLifecycle(
-            settingsStore,
-            new RecordingLogService(),
-            restartLauncher,
-            desktopShutdown: afterHandoff =>
-            {
-                desktopShutdownCount++;
-                return CompleteDesktopHandoff(afterHandoff);
-            });
-        lifecycle.AttachHost(host);
-
-        try
-        {
-            await lifecycle.StartHostAsync().ConfigureAwait(true);
-
-            var exception = await Assert.ThrowsAsync<NotSupportedException>(() =>
-                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
-
-            Assert.Equal("fatal stop failure", exception.Message);
-            Assert.Equal(1, restartLauncher.StartCount);
-            Assert.Equal(1, restartLauncher.CommitCount);
-            Assert.Equal(0, restartLauncher.RevokeCount);
-            Assert.Equal(1, desktopShutdownCount);
-        }
-        finally
-        {
-            await settingsStore.DisposeAsync().ConfigureAwait(true);
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task RestartPreservesCleanupAndDesktopShutdownFailures()
-    {
-        var directory = CreateTemporaryDirectory();
-        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
-        using var host = DownKyiHost.Create(services =>
-            services.AddSingleton<IHostedService>(new FatalStopHostedService()));
-        var restartLauncher = new StubRestartLauncher(true);
-        var lifecycle = CreateLifecycle(
-            settingsStore,
-            new RecordingLogService(),
-            restartLauncher,
-            desktopShutdown: _ => FailDesktopHandoff(
-                new InvalidOperationException("desktop shutdown failure")));
-        lifecycle.AttachHost(host);
-
-        try
-        {
-            await lifecycle.StartHostAsync().ConfigureAwait(true);
-
-            var exception = await Assert.ThrowsAsync<AggregateException>(() =>
-                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
-
-            Assert.Collection(
-                exception.InnerExceptions,
-                cleanup => Assert.IsType<NotSupportedException>(cleanup),
-                desktop => Assert.IsType<InvalidOperationException>(desktop));
-            Assert.Equal("fatal stop failure", exception.InnerExceptions[0].Message);
-            Assert.Equal("desktop shutdown failure", exception.InnerExceptions[1].Message);
-            Assert.Equal(0, restartLauncher.CommitCount);
-            Assert.Equal(1, restartLauncher.RevokeCount);
-        }
-        finally
-        {
-            await settingsStore.DisposeAsync().ConfigureAwait(true);
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task RestartCommitsPreparedHelperAfterSuccessfulDesktopHandoff()
-    {
-        var directory = CreateTemporaryDirectory();
-        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
-        using var host = DownKyiHost.Create();
-        var restartLauncher = new StubRestartLauncher(true);
-        var lifecycle = CreateLifecycle(
-            settingsStore,
-            new RecordingLogService(),
-            restartLauncher,
-            desktopShutdown: afterHandoff =>
-            {
-                Assert.Equal(0, restartLauncher.CommitCount);
-                var result = CompleteDesktopHandoff(afterHandoff);
-                Assert.Equal(1, restartLauncher.CommitCount);
-                return result;
-            });
-        lifecycle.AttachHost(host);
-
-        try
-        {
-            await lifecycle.StartHostAsync().ConfigureAwait(true);
-
-            Assert.True(await lifecycle.RestartAsync(TestContext.Current.CancellationToken));
-            Assert.Equal(1, restartLauncher.StartCount);
-            Assert.Equal(1, restartLauncher.CommitCount);
-            Assert.Equal(0, restartLauncher.RevokeCount);
-        }
-        finally
-        {
-            await settingsStore.DisposeAsync().ConfigureAwait(true);
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task RestartRevokesPreparedHelperWhenDesktopHandoffFails()
-    {
-        var directory = CreateTemporaryDirectory();
-        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
-        using var host = DownKyiHost.Create();
-        var restartLauncher = new StubRestartLauncher(true);
-        var lifecycle = CreateLifecycle(
-            settingsStore,
-            new RecordingLogService(),
-            restartLauncher,
-            desktopShutdown: _ => FailDesktopHandoff(
-                new InvalidOperationException("desktop shutdown failure")));
-        lifecycle.AttachHost(host);
-
-        try
-        {
-            await lifecycle.StartHostAsync().ConfigureAwait(true);
-
-            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
-
-            Assert.Equal("desktop shutdown failure", exception.Message);
-            Assert.Equal(0, restartLauncher.CommitCount);
-            Assert.Equal(1, restartLauncher.RevokeCount);
-        }
-        finally
-        {
-            await settingsStore.DisposeAsync().ConfigureAwait(true);
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task RestartFailsClosedWhenDesktopHandoffOmitsCommitBoundary()
-    {
-        var directory = CreateTemporaryDirectory();
-        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
-        using var host = DownKyiHost.Create();
-        var restartLauncher = new StubRestartLauncher(true);
-        var lifecycle = CreateLifecycle(
-            settingsStore,
-            new RecordingLogService(),
-            restartLauncher,
-            desktopShutdown: _ => Task.FromResult(new DesktopTerminationOutcome(
-                PostHandoffInvoked: false,
-                HandoffFailure: null,
-                PostHandoffFailure: null)));
-        lifecycle.AttachHost(host);
-
-        try
-        {
-            await lifecycle.StartHostAsync().ConfigureAwait(true);
-
-            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
-
-            Assert.Contains("accepted restart handoff", exception.Message, StringComparison.Ordinal);
-            Assert.Equal(0, restartLauncher.CommitCount);
-            Assert.Equal(1, restartLauncher.RevokeCount);
-        }
-        finally
-        {
-            await settingsStore.DisposeAsync().ConfigureAwait(true);
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task RestartPreservesCommitFailureAfterAcceptedDesktopHandoff()
-    {
-        var directory = CreateTemporaryDirectory();
-        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
-        using var host = DownKyiHost.Create();
-        var restartLauncher = new StubRestartLauncher(
-            true,
-            commitFailure: new InvalidOperationException("helper commit failure"));
-        var lifecycle = CreateLifecycle(
-            settingsStore,
-            new RecordingLogService(),
-            restartLauncher,
-            desktopShutdown: CompleteDesktopHandoff);
-        lifecycle.AttachHost(host);
-
-        try
-        {
-            await lifecycle.StartHostAsync().ConfigureAwait(true);
-
-            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
-
-            Assert.Equal("helper commit failure", exception.Message);
-            Assert.Equal(1, restartLauncher.CommitCount);
-            Assert.Equal(0, restartLauncher.RevokeCount);
-        }
-        finally
-        {
-            await settingsStore.DisposeAsync().ConfigureAwait(true);
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task RestartPreservesCleanupDesktopAndHelperRevokeFailures()
-    {
-        var directory = CreateTemporaryDirectory();
-        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
-        using var host = DownKyiHost.Create(services =>
-            services.AddSingleton<IHostedService>(new FatalStopHostedService()));
-        var restartLauncher = new StubRestartLauncher(
-            true,
-            revokeFailure: new System.ComponentModel.Win32Exception("helper revoke failure"));
-        var lifecycle = CreateLifecycle(
-            settingsStore,
-            new RecordingLogService(),
-            restartLauncher,
-            desktopShutdown: _ => FailDesktopHandoff(
-                new InvalidOperationException("desktop shutdown failure")));
-        lifecycle.AttachHost(host);
-
-        try
-        {
-            await lifecycle.StartHostAsync().ConfigureAwait(true);
-
-            var exception = await Assert.ThrowsAsync<AggregateException>(() =>
-                lifecycle.RestartAsync(TestContext.Current.CancellationToken));
-
-            Assert.Collection(
-                exception.InnerExceptions,
-                cleanup => Assert.Equal("fatal stop failure", cleanup.Message),
-                desktop => Assert.Equal("desktop shutdown failure", desktop.Message),
-                revoke => Assert.Equal("helper revoke failure", revoke.Message));
-            Assert.Equal(0, restartLauncher.CommitCount);
-            Assert.Equal(1, restartLauncher.RevokeCount);
-        }
-        finally
-        {
-            await settingsStore.DisposeAsync().ConfigureAwait(true);
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task RestartCancellationBeforePreparationLeavesApplicationRunning()
-    {
-        var directory = CreateTemporaryDirectory();
-        var settingsStore = new SettingsStore(Path.Combine(directory, "settings.json"));
-        using var host = DownKyiHost.Create();
-        var restartLauncher = new StubRestartLauncher(true);
-        var lifecycle = CreateLifecycle(settingsStore, new RecordingLogService(), restartLauncher);
-        lifecycle.AttachHost(host);
-        using var cancellation = new CancellationTokenSource();
-        await cancellation.CancelAsync();
-
-        try
-        {
-            await lifecycle.StartHostAsync().ConfigureAwait(true);
-
-            await Assert.ThrowsAsync<OperationCanceledException>(() =>
-                lifecycle.RestartAsync(cancellation.Token));
-
-            Assert.Equal(0, restartLauncher.StartCount);
-            Assert.False(host.Services
-                .GetRequiredService<ApplicationCancellation>()
-                .ShutdownToken
-                .IsCancellationRequested);
-        }
-        finally
-        {
-            await host.StopAsync(CancellationToken.None).ConfigureAwait(true);
-            await settingsStore.DisposeAsync().ConfigureAwait(true);
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
     public async Task RestartHelperFailureKeepsRunningApplicationAlive()
     {
         var directory = CreateTemporaryDirectory();
@@ -533,18 +198,16 @@ public sealed class AvaloniaApplicationLifecycleTests
         ISettingsStore settingsStore,
         IApplicationLogService logService,
         IProcessRestartLauncher restartLauncher,
-        TimeSpan? cleanupTimeout = null,
-        Func<Action?, Task<DesktopTerminationOutcome>>? desktopShutdown = null)
+        TimeSpan? cleanupTimeout = null)
     {
-        return cleanupTimeout != null || desktopShutdown != null
+        return cleanupTimeout is { } timeout
             ? new AvaloniaApplicationLifecycle(
                 new AvaloniaDesktopContext(),
                 restartLauncher,
                 settingsStore,
                 logService,
                 NullLogger<AvaloniaApplicationLifecycle>.Instance,
-                cleanupTimeout ?? AvaloniaApplicationLifecycle.DefaultCleanupTimeout,
-                desktopShutdown)
+                timeout)
             : new AvaloniaApplicationLifecycle(
                 new AvaloniaDesktopContext(),
                 restartLauncher,
@@ -560,108 +223,15 @@ public sealed class AvaloniaApplicationLifecycleTests
         return directory;
     }
 
-    private static async Task<DesktopTerminationOutcome> CompleteDesktopHandoff(
-        Action? afterHandoff)
+    private sealed class StubRestartLauncher(bool result) : IProcessRestartLauncher
     {
-        if (afterHandoff == null)
-        {
-            return new DesktopTerminationOutcome(
-                PostHandoffInvoked: false,
-                HandoffFailure: null,
-                PostHandoffFailure: null);
-        }
-
-        var operation = CaptureHandoffOperation(afterHandoff);
-        await Task.WhenAny(operation).ConfigureAwait(false);
-        return new DesktopTerminationOutcome(
-            PostHandoffInvoked: true,
-            HandoffFailure: null,
-            PostHandoffFailure: GetTaskFailure(operation));
-    }
-
-    private static async Task CaptureHandoffOperation(Action operation)
-    {
-        operation();
-        await Task.CompletedTask.ConfigureAwait(false);
-    }
-
-    private static Exception? GetTaskFailure(Task task)
-    {
-        if (task.IsCanceled)
-        {
-            return new TaskCanceledException(task);
-        }
-
-        if (!task.IsFaulted)
-        {
-            return null;
-        }
-
-        return task.Exception!.InnerExceptions.Count == 1
-            ? task.Exception.InnerExceptions[0]
-            : task.Exception;
-    }
-
-    private static Task<DesktopTerminationOutcome> FailDesktopHandoff(Exception failure)
-    {
-        return Task.FromResult(new DesktopTerminationOutcome(
-            PostHandoffInvoked: false,
-            HandoffFailure: failure,
-            PostHandoffFailure: null));
-    }
-
-    private sealed class StubRestartLauncher(
-        bool result,
-        Exception? revokeFailure = null,
-        Exception? commitFailure = null) : IProcessRestartLauncher
-    {
-        private readonly Exception? _commitFailure = commitFailure;
-        private readonly Exception? _revokeFailure = revokeFailure;
-
         public int StartCount { get; private set; }
 
-        public int CommitCount { get; private set; }
-
-        public int RevokeCount { get; private set; }
-
-        public Task<IProcessRestartTransaction?> TryPrepareHelperAsync(
-            CancellationToken cancellationToken = default)
+        public bool TryStartHelper(int parentProcessId)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            Assert.True(parentProcessId > 0);
             StartCount++;
-            return Task.FromResult<IProcessRestartTransaction?>(
-                result ? new Transaction(this) : null);
-        }
-
-        private sealed class Transaction(StubRestartLauncher owner) : IProcessRestartTransaction
-        {
-            public RestartHandoffState State { get; private set; } =
-                RestartHandoffState.Authorized;
-
-            public void Commit()
-            {
-                owner.CommitCount++;
-                if (owner._commitFailure != null)
-                {
-                    throw owner._commitFailure;
-                }
-
-                State = RestartHandoffState.Committed;
-            }
-
-            public Task RevokeAsync()
-            {
-                owner.RevokeCount++;
-                State = RestartHandoffState.Revoked;
-                return owner._revokeFailure == null
-                    ? Task.CompletedTask
-                    : Task.FromException(owner._revokeFailure);
-            }
-
-            public ValueTask DisposeAsync()
-            {
-                return ValueTask.CompletedTask;
-            }
+            return result;
         }
     }
 
@@ -704,19 +274,6 @@ public sealed class AvaloniaApplicationLifecycleTests
         public Task StopAsync(CancellationToken cancellationToken)
         {
             return Task.FromException(new InvalidOperationException("stop failed"));
-        }
-    }
-
-    private sealed class FatalStopHostedService : IHostedService
-    {
-        public Task StartAsync(CancellationToken cancellationToken)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task StopAsync(CancellationToken cancellationToken)
-        {
-            return Task.FromException(new NotSupportedException("fatal stop failure"));
         }
     }
 

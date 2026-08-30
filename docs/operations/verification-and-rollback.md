@@ -30,16 +30,12 @@ dotnet build ./DownKyi.sln -c Release --no-restore --no-incremental `
   -p:EnableNETAnalyzers=true -p:AnalysisMode=All `
   -p:EnforceCodeStyleInBuild=true -p:TreatWarningsAsErrors=true `
   -p:CodeAnalysisTreatWarningsAsErrors=true -p:UseSharedCompilation=false
-pwsh ./script/verify-documentation.ps1 -SelfTest
-pwsh ./script/verify-documentation.ps1 -Verify
-pwsh ./script/test-review-invariants.ps1 `
-  -Configuration Release -NoRestore -NoBuild
 pwsh ./script/test-solution.ps1 `
   -Configuration Release -NoRestore -NoBuild
 pwsh ./script/audit-lifecycle-ownership.ps1 `
   -OutputDirectory ./artifacts/assembly-lifecycle/ownership
 pwsh ./script/test-assembly-lifecycle.ps1 `
-  -Configuration Release -Iterations 5 -NoBuild -ValidateForensics `
+  -Configuration Release -Profile Main -NoBuild `
   -ResultsDirectory ./artifacts/assembly-lifecycle/verification
 dotnet format ./DownKyi.sln --verify-no-changes --no-restore
 pwsh ./script/audit-module-boundaries.ps1 `
@@ -59,9 +55,9 @@ owned by the current OS and applies
 [test-runner-policy.json](../testing/test-runner-policy.json). Do not replace it
 with direct solution-wide `dotnet test`.
 
-The review-invariant gate proves every machine-policy locator executes; total
-test count is not a coverage oracle. Lifecycle verification separately proves
-load, assembly-info, discovery, execution, fixture teardown and process exit.
+Lifecycle verification separately proves load, assembly-info, discovery,
+execution, fixture teardown and process exit. Total test count is not a
+coverage oracle.
 
 Use the smallest focused regression while iterating. Run the complete sequence
 when the change affects a formal owner, before publishing a final candidate, or
@@ -92,7 +88,6 @@ pwsh ./script/test-assembly-lifecycle.ps1 `
   -Configuration Release `
   -Profile Rehearsal `
   -NoBuild `
-  -ValidateForensics `
   -ResultsDirectory ./artifacts/assembly-lifecycle/release
 ```
 

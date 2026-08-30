@@ -47,17 +47,13 @@ references.
   owns the cross-platform identity, deadline and lifetime-domain intent.
 - Stable invariant: one OS-backed owner establishes containment before target
   authorization and consumes one caller-created monotonic budget through reap,
-  quiescence and stream drain. A committed restart successor is a separate,
-  one-shot lifetime domain with exact-parent authority and the same handoff
-  deadline.
+  quiescence and stream drain.
 - Hazard: PID/PPID, process names, command syntax and diagnostic observers are
   evidence, not authorization, identity, membership or cleanup authority; a
   fallback owner or fresh deadline breaks fail-closed lifecycle semantics.
 - Executable guard:
-  [AssemblyLifecycleArchitectureTests.cs](../tests/DownKyi.Architecture.Tests/AssemblyLifecycleArchitectureTests.cs)
-  and [RestartHandoffMutationTests.cs](../tests/DownKyi.Architecture.Tests/RestartHandoffMutationTests.cs).
-- Detail: [restart-handoff-lifecycle.md](design-docs/restart-handoff-lifecycle.md)
-  and [owned-diagnostic-collector.md](design-docs/owned-diagnostic-collector.md).
+  [AssemblyLifecycleArchitectureTests.cs](../tests/DownKyi.Architecture.Tests/AssemblyLifecycleArchitectureTests.cs).
+- Detail: [process-lifecycle-ownership.md](design-docs/process-lifecycle-ownership.md).
 
 ### Download state and persistence
 

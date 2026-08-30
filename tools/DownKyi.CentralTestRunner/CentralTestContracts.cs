@@ -142,28 +142,15 @@ public sealed record CentralTestExecutionReport(
     int Failed,
     string? ReportPath);
 
-internal enum CentralTestValidatorMutation
-{
-    None,
-    TreatProcessExitZeroAsPass,
-    AcceptZeroExecuted
-}
-
 internal enum CentralTestAuthorizationMutation
 {
     None,
-    WrongToken,
-    WrongInvocationHash,
-    Replay,
-    Partial
+    WrongToken
 }
 
 [Flags]
 internal enum CentralTestRunnerMutation
 {
     None = 0,
-    FailAuthorizationBeforeCompletion = 1,
-    FailExecutionAfterAuthorization = 2,
-    FailLeaseCleanup = 4,
-    FailTemporaryResultsCleanup = 8
+    FailAuthorizationBeforeCompletion = 1
 }

@@ -180,6 +180,6 @@ locator while preserving its required proof kinds and mutation outcome.
 A finding is complete only when the violated invariant and earliest incorrect
 boundary are documented, sibling paths are searched, the fix lives in the
 smallest correct shared owner, the invariant-derived regression or matrix is
-green, and every affected authoritative owner plus documentation verifier
-matches executable behavior. No new undocumented sentinel, failure
-interpretation or destructive lifecycle rule may remain.
+green, and architecture/knowledge/plan documents match executable behavior. No
+new undocumented sentinel, failure interpretation or destructive lifecycle rule
+may remain.

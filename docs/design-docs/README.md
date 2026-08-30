@@ -7,9 +7,7 @@
 - `desktop-feature-locality.md`：Desktop routed-feature identity、Shell metadata locality、route completeness 與拒絕全域 FeatureRegistry 的設計決策。
 - `logging-ownership-sink-adr.md`：logging privacy boundary、Infrastructure owner、rolling sink、retention 與 diagnostic export 決策。
 - `process-lifecycle-ownership.md`：OS-backed process identity、tree containment、
-  deadline、stream closure、restart lifetime 與 forensics observer boundary。
-- `restart-handoff-lifecycle.md`：ordinary owned child 與 committed restart
-  successor 的 lifetime-domain 分界、native watcher 與 deadline feasibility。
+  deadline、stream closure 與 forensics observer boundary。
 - 根層 `ARCHITECTURE.md`：目前與目標拓樸的權威入口。
 - `../ai-knowledge-graph.md`：高價值 topic-to-authority locator。
 

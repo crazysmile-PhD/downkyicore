@@ -36,51 +36,10 @@ internal sealed class AvaloniaDesktopContext
         _mainWindow = mainWindow;
     }
 
-    public async Task<DesktopTerminationOutcome> ShutdownAsync(Action? afterHandoff = null)
+    public async Task ShutdownAsync()
     {
         var lifetime = _lifetime
             ?? throw new InvalidOperationException("The desktop lifetime has not been attached.");
-        var handoffCompleted = false;
-        var postHandoffInvoked = false;
-        var operation = Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            lifetime.Shutdown();
-            handoffCompleted = true;
-            if (afterHandoff != null)
-            {
-                postHandoffInvoked = true;
-                afterHandoff();
-            }
-        });
-        var operationTask = operation.GetTask();
-        await Task.WhenAny(operationTask).ConfigureAwait(false);
-        var operationFailure = GetTaskFailure(operationTask);
-
-        return new DesktopTerminationOutcome(
-            postHandoffInvoked,
-            handoffCompleted ? null : operationFailure,
-            handoffCompleted ? operationFailure : null);
-    }
-
-    private static Exception? GetTaskFailure(Task task)
-    {
-        if (task.IsCanceled)
-        {
-            return new TaskCanceledException(task);
-        }
-
-        if (!task.IsFaulted)
-        {
-            return null;
-        }
-
-        return task.Exception!.InnerExceptions.Count == 1
-            ? task.Exception.InnerExceptions[0]
-            : task.Exception;
+        await Dispatcher.UIThread.InvokeAsync(() => lifetime.Shutdown());
     }
 }
-
-internal sealed record DesktopTerminationOutcome(
-    bool PostHandoffInvoked,
-    Exception? HandoffFailure,
-    Exception? PostHandoffFailure);
