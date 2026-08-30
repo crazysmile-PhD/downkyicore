@@ -24,7 +24,7 @@ public sealed class ReleaseWorkflowArchitectureTests
         Assert.Contains("./script/validate-release-version.ps1", workflow, StringComparison.Ordinal);
         Assert.True(CountOccurrences(workflow, "fail-fast: false") > 0);
         Assert.Equal(3, CountOccurrences(workflow, "validate-publish-output.ps1"));
-        Assert.Equal(3, CountOccurrences(workflow, "Get-FileHash"));
+        Assert.Equal(4, CountOccurrences(workflow, "Get-FileHash"));
     }
 
     [Fact]

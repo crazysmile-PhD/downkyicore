@@ -1,5 +1,27 @@
 # 更新日志
 
+## [1.1.3] - 2026-08-29
+
+### Security
+
+- 动态字幕 JSON 下载不再向 Bilibili 回应指定的 host 发送登录 Cookie 或 buvid，避免凭证泄漏到跨来源地址。
+
+### Bug Fixes
+
+- 修复 QR 登录只保存部分回调参数的问题：现在会收集完整 `Set-Cookie` session、原子写入登录档、重新载入并通过 `/nav` 验证，避免关闭并重启应用后丢失登录状态。
+- 修复 Windows 将 `//host/path` 字幕地址误判为 UNC / `file://` 而导致特定影片字幕无法下载的问题；protocol-relative 地址会补为 HTTPS，并拒绝 `file:`、`ftp:`、`data:` 等非 HTTP scheme。
+- 字幕 URL 的 URI parser 只负责验证，不再 canonicalize CDN path 或 query；`%7E`、`%2F` 等 percent-encoded spelling 会保持 Bilibili 回应的原始形式。
+
+### Reliability
+
+- 下载 shutdown 遇到 owned worker timeout 时会 fail closed，不再记录错误后回报成功；test runner、SQLite pool 与 lifecycle ownership gates 同步加强。
+- 更新六平台发布所使用的固定 FFmpeg mirror，并保留 archive layout、执行、SHA-256 与 encoder 验证。
+
+### Release
+
+- Windows、Linux 与 macOS 套件继续使用单一 `version.txt`、严格 Release build、完整测试、100 轮 assembly lifecycle rehearsal、package manifest 与 SHA-256 sidecar gate。
+- macOS 发布只允许完整 Developer ID / notarization / stapling / Gatekeeper 验证，或无凭证时的 ad-hoc signing + strict bundle / DMG / launch 验证；不接受部分凭证或未验证产物。
+
 ## [1.1.2] - 2026-08-20
 
 ### Bug Fixes
