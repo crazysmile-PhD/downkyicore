@@ -2481,6 +2481,7 @@ paths:
   - tools/DownKyi.ProcessSupervision
   - tests/CentralTestExecutionGuard.cs
   - tests/DownKyi.MacOS.Tests/MacProcessGroupDiagnosticsFixture.cs
+  - script/test-project.ps1
   - script/test-project-runner.ps1
   - script/test-solution.ps1
   - script/invoke-ci-test-action.ps1
@@ -2501,7 +2502,9 @@ contracts:
   - Typed ownership failures preserve captured target output; the macOS assembly-end process-group observer reports residual identity only and cannot terminate, reap, retry, or override the lease verdict.
   - Authorization and lease consume the same caller-created TransitionBudget; no fresh process deadline or cleanup window can appear after launch.
   - Exit code zero cannot override a failed TRX, zero executed tests fail closed and expected-class proofs require executed and passed results.
-  - Linux establishes the existing delegated-cgroup context before project/solution routing and never falls back to PID, PPID, /proc or process enumeration.
+  - Every formal Linux project, solution, review-corpus, lifecycle and action entrypoint establishes the existing delegated-cgroup context before loading the runner and never falls back to PID, PPID, /proc or process enumeration.
+  - `test-project-runner.ps1` remains invocation glue, not a standalone Linux entrypoint; direct focused projects use the re-entrant `test-project.ps1` boundary.
+  - The production assembly guard has no caller-controlled disable switch; adversarial guard removal is compiled only inside a temporary test fixture.
   - Lifecycle marker write authority is consumed by the outer target before it can launch nested test processes.
 hazards:
   - Reintroducing the anonymous-pipe numeric handle across SupervisorHost treats a process-local reference as a portable capability.
@@ -2526,6 +2529,7 @@ paths:
   - tools/DownKyi.CentralTestRunner
   - tools/DownKyi.ProcessSupervision
   - tests/CentralTestExecutionGuard.cs
+  - script/test-project.ps1
   - script/test-project-runner.ps1
   - script/test-platform-selector.ps1
   - script/test-solution.ps1

@@ -25,15 +25,6 @@ internal static class CentralTestExecutionGuard
         ConsumeLifecycleMarkerOwnership();
 
         if (string.Equals(
-                Environment.GetEnvironmentVariable(
-                    "DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS"),
-                "1",
-                StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        if (string.Equals(
                 AppContext.GetData(AssemblyLoadOwnerKey) as string,
                 AssemblyLoadOwnerValue,
                 StringComparison.Ordinal))

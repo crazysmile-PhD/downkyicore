@@ -41,10 +41,14 @@ public sealed class AssemblyLifecycleArchitectureTests
         var consumeIndex = guard.IndexOf(
             "ConsumeLifecycleMarkerOwnership();",
             StringComparison.Ordinal);
-        var guardBypassIndex = guard.IndexOf(
-            "DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS",
+        var authorizationIndex = guard.IndexOf(
+            "var endpoint = Environment.GetEnvironmentVariable",
             StringComparison.Ordinal);
-        Assert.True(consumeIndex >= 0 && consumeIndex < guardBypassIndex);
+        Assert.True(consumeIndex >= 0 && consumeIndex < authorizationIndex);
+        Assert.DoesNotContain(
+            "DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS",
+            guard,
+            StringComparison.Ordinal);
         Assert.Contains(
             "Environment.SetEnvironmentVariable(LifecycleMarkerOwnerEnvironmentVariable, null)",
             guard,

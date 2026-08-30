@@ -1,8 +1,8 @@
 # PR #197 Stage 5 Central Test Runner
 
-Status: same-head review remediation implementation complete; full validation,
-commit, exact-head required CI and same-head review remain open. Stage 5 is not
-closed and Stage 6 is not started.
+Status: blocking-review remediation is in progress from local capacity
+checkpoint `db37fb1f094e575b5f750ca16614d6b3ec1b9653`. Exact-head required CI and
+same-head review remain open. Stage 5 is not closed and Stage 6 is not started.
 
 Starting authority:
 `dd6364b7e713d3b3c81efd739821cc7e0baafe86` on
@@ -614,6 +614,42 @@ one-assembly lifecycle boundary then passed with 666 ownership matches, zero
 violations, one assembly, nine phase results and zero failures; Architecture
 execution completed in 158.362 seconds. The exact recovery
 workflow/project/trust set passed 49/49.
+
+## Blocking-Review Remediation Before Closure
+
+The review of remote head `6f700058d44e1bf8f2e3a8ca7c53dce598054a9d`
+found two current Stage 5 authorization/entrypoint gaps that remain present at
+the local `db37fb1` capacity checkpoint. That capacity commit changes only the
+release Rehearsal matrix and its proofs; this remediation does not alter or
+repeat that work.
+
+Direct focused project execution now uses `script/test-project.ps1`. This is a
+re-entrant executable boundary that calls the existing
+`delegated-cgroup-scope.ps1` owner before loading `test-project-runner.ps1` or
+the compiled runner. It passes the exact bound parameters through a delegated
+Linux re-exec and adds no cgroup bootstrap, fallback, process enumeration or
+second containment owner. Solution, review-corpus, lifecycle and action
+entrypoints retain the same existing contract.
+
+`CentralTestExecutionGuard` no longer reads any environment value that disables
+authorization. The former `DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS` value is
+now ordinary untrusted process input and cannot skip endpoint, token, complete
+argv hash or EOF validation. The adversarial profile compiles a temporary copy
+of the production guard and removes its initializer at build time; no mutation
+switch is compiled into a repository test assembly.
+
+Focused and closure validation evidence is recorded only after execution. This
+checkpoint remains open until the Stage 5 remediation commit is followed by the
+separate Stage 4 and Stage 4A blocking-review commits, unified local closure,
+one normal push, green required exact-head CI and same-head review.
+
+The local focused checkpoint passed a strict Release Architecture build with
+zero warnings/errors and 39/39 affected delegation, guard, authorization,
+lifecycle and platform-ownership tests. The old guard-bypass environment value
+was present during the real unauthorized-process proof and remained rejected.
+The build-time guard-removal and direct-project delegation-bypass profiles each
+executed 14 tests and produced exactly one owning failure (13 passed, one
+failed), so both review oracles kill their intended mutation.
 
 ## Commits And Closure
 

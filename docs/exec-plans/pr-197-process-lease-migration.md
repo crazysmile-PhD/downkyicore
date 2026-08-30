@@ -1282,6 +1282,18 @@ same-head `@codex review` remain mandatory. The existing Linux cgroup `/` root
 thread is resolved from current executable evidence without code changes.
 Stage 5 remains open and Stage 6 remains not started.
 
+### Stage 5 Blocking-Review Remediation Before Closure
+
+The independent `db37fb1` Rehearsal-capacity commit remains unchanged. The next
+Stage 5 checkpoint closes two current review findings without revisiting that
+capacity architecture: direct focused project execution enters the existing
+delegated-cgroup owner through `script/test-project.ps1`, and the production
+assembly guard removes its caller-controlled environment bypass. Guard-removal
+mutation proof is a temporary build-time source mutation rather than runtime
+configuration of the real guard. `CentralTestRunner`, `OwnedProcessLease` and
+the one `TransitionBudget` retain their existing authorities. Stage 6 remains
+not started.
+
 ## Stage 6: Legacy Removal
 
 Remove remaining duplicate start, wait, kill, reap, timeout and process-identity

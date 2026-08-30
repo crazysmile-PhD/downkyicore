@@ -114,6 +114,7 @@ function Get-DownKyiTestRunnerTrustInputs {
         "docs/testing/test-runner-policy.json"
         "global.json"
         "script/invoke-ci-test-action.ps1"
+        "script/test-project.ps1"
         "script/test-project-runner.ps1"
     )) {
         if (-not $tracked.Contains($controlInput)) {

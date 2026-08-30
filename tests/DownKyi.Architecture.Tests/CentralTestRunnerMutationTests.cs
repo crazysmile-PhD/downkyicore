@@ -1,10 +1,19 @@
+using System.Collections.Immutable;
+using System.Diagnostics;
 using DownKyi.CentralTestRunner;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace DownKyi.Architecture.Tests;
 
 public sealed class CentralTestRunnerMutationTests
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+    private static readonly ImmutableArray<MetadataReference> PlatformReferences =
+        ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
+        .Split(Path.PathSeparator)
+        .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
+        .ToImmutableArray();
 
     [Fact]
     public void RawProcessStartCannotReturnToTheCentralRunner()
@@ -44,7 +53,7 @@ public sealed class CentralTestRunnerMutationTests
     }
 
     [Fact]
-    public void TestAssemblyGuardCannotBeBypassed()
+    public void TestAssemblyGuardCannotBeDisabledByCallerOrRemovedByMutation()
     {
         var directory = Path.Combine(
             Path.GetTempPath(),
@@ -54,19 +63,45 @@ public sealed class CentralTestRunnerMutationTests
         {
             var startInfo = CentralTestAuthorizationTests.CreateDirectStartInfo(
                 Path.Combine(directory, "direct.trx"));
-            if (MutationIsActive("DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS_PROOF"))
-            {
-                startInfo.Environment["DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS"] = "1";
-            }
-
-            var result = BoundedProcessRunner.Run(
+            startInfo.Environment["DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS"] = "1";
+            var productionResult = BoundedProcessRunner.Run(
                 startInfo,
                 TestContext.Current.CancellationToken);
 
-            Assert.NotEqual(0, result.ExitCode);
+            Assert.NotEqual(0, productionResult.ExitCode);
             Assert.Contains(
                 "must execute through the central in-process test runner",
-                result.Output,
+                productionResult.Output,
+                StringComparison.OrdinalIgnoreCase);
+
+            var guardSource = Read("tests/CentralTestExecutionGuard.cs")
+                .Replace("\r\n", "\n", StringComparison.Ordinal);
+            if (MutationIsActive("DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS_PROOF"))
+            {
+                const string initializerBoundary =
+                    "internal static void RequireInProcessTestHost()\n" +
+                    "    {\n" +
+                    "        ConsumeLifecycleMarkerOwnership();";
+                Assert.Contains(initializerBoundary, guardSource, StringComparison.Ordinal);
+                guardSource = guardSource.Replace(
+                    initializerBoundary,
+                    "internal static void RequireInProcessTestHost()\n" +
+                    "    {\n" +
+                    "        return;",
+                    StringComparison.Ordinal);
+            }
+
+            var fixtureStartInfo = CompileGuardFixture(directory, guardSource);
+            fixtureStartInfo.Environment[
+                "DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS"] = "1";
+            var fixtureResult = BoundedProcessRunner.Run(
+                fixtureStartInfo,
+                TestContext.Current.CancellationToken);
+
+            Assert.NotEqual(0, fixtureResult.ExitCode);
+            Assert.Contains(
+                "must execute through the central in-process test runner",
+                fixtureResult.Output,
                 StringComparison.OrdinalIgnoreCase);
         }
         finally
@@ -161,6 +196,7 @@ public sealed class CentralTestRunnerMutationTests
     public void LinuxDelegationCannotFallBackToProcessEnumeration()
     {
         var source = Read("script/invoke-ci-test-action.ps1") +
+                     Read("script/test-project.ps1") +
                      Read("script/test-solution.ps1") +
                      Read("script/test-review-invariants.ps1") +
                      Read("script/delegated-cgroup-scope.ps1") +
@@ -224,9 +260,9 @@ public sealed class CentralTestRunnerMutationTests
     }
 
     [Fact]
-    public void DirectSolutionEntryMustAcquireDelegatedScope()
+    public void DirectProjectEntryMustAcquireDelegatedScope()
     {
-        var source = Read("script/test-solution.ps1");
+        var source = Read("script/test-project.ps1");
         if (MutationIsActive("DOWNKYI_TEST_MUTATE_CENTRAL_DIRECT_LINUX_SCOPE"))
         {
             source = source.Replace(
@@ -241,6 +277,63 @@ public sealed class CentralTestRunnerMutationTests
         Assert.True(
             source.IndexOf("Test-DownKyiDelegatedCgroupScopeRequired", StringComparison.Ordinal) <
             source.IndexOf("test-project-runner.ps1", StringComparison.Ordinal));
+    }
+
+    private static ProcessStartInfo CompileGuardFixture(string directory, string guardSource)
+    {
+        var assemblyName = $"DownKyi.GuardMutation.{Guid.NewGuid():N}";
+        var assemblyPath = Path.Combine(directory, assemblyName + ".dll");
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [
+                CSharpSyntaxTree.ParseText(
+                    "global using System;\n" +
+                    "global using System.IO;\n" +
+                    guardSource,
+                    new CSharpParseOptions(LanguageVersion.Latest),
+                    "CentralTestExecutionGuard.cs"),
+                CSharpSyntaxTree.ParseText(
+                    "internal static class Program { public static void Main() { " +
+                    "System.Console.WriteLine(\"guard fixture executed\"); } }",
+                    new CSharpParseOptions(LanguageVersion.Latest),
+                    "Program.cs")
+            ],
+            PlatformReferences,
+            new CSharpCompilationOptions(
+                OutputKind.ConsoleApplication,
+                optimizationLevel: OptimizationLevel.Release));
+        using (var output = File.Create(assemblyPath))
+        {
+            var emitted = compilation.Emit(output);
+            Assert.True(
+                emitted.Success,
+                string.Join(Environment.NewLine, emitted.Diagnostics));
+        }
+
+        File.WriteAllText(
+            Path.Combine(directory, assemblyName + ".runtimeconfig.json"),
+            $$"""
+            {
+              "runtimeOptions": {
+                "tfm": "net{{Environment.Version.Major}}.0",
+                "framework": {
+                  "name": "Microsoft.NETCore.App",
+                  "version": "{{Environment.Version.Major}}.0.0"
+                }
+              }
+            }
+            """);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = directory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add(assemblyPath);
+        return startInfo;
     }
 
     private static void WithSyntheticTrx(

@@ -27,9 +27,11 @@ Job Object 與 startup secret handle 行為移至 `DownKyi.Windows.Tests`。
 TLS runtime、certificate storage、path comparison 與 Unix file-mode assertions
 仍是刻意跨平台執行的 platform-adaptive coverage，不是整個 test 的 OS skip。
 
-正式 workflow 不直接啟動 `dotnet test`、VSTest 或 xUnit；所有 repository
-test execution 由 `script/test-project-runner.ps1` 統一處理 project ownership、
-platform routing 與 runner selection。PowerShell wrapper 只載入固定的 compiled
+正式 workflow 不直接啟動 `dotnet test`、VSTest 或 xUnit；直接 project execution
+使用 `script/test-project.ps1`，其與 solution、review corpus、lifecycle 及 action
+entrypoint 都會先取得同一 Linux delegated-cgroup scope，再由
+`script/test-project-runner.ps1` 統一處理 project ownership、platform routing 與
+runner selection。PowerShell wrapper 只載入固定的 compiled
 entrypoint、轉交 typed options 並傳播結果；workflow 只委派 project 與 selection
 intent，不能自行選 test host。`DownKyi.CentralTestRunner` 對所有 test project
 使用 in-process xUnit execution，並獨占 policy、canonical arguments、one-shot
@@ -49,8 +51,9 @@ authorization 不能重用於 class subset，authorization 不能 replay。
 Shared TRX validator 仍是 authoritative result boundary：process exit 0 不會覆蓋
 failed TRX，zero executed tests fail closed，需要證明 selection 的 gate 必須逐一
 確認 expected class 有 executed 與 passed result。Linux CI 在 project/solution
-mode 分支之前只建立既有 delegated-cgroup context；直接執行 solution 或 review corpus 也必須
-在載入 runner 前進入相同 delegated scope。實際 containment/membership 仍由
+mode 分支之前只建立既有 delegated-cgroup context；直接執行 project、solution 或
+review corpus 也必須在載入 runner 前進入相同 delegated scope。實際
+containment/membership 仍由
 shared process-supervision owner 完成，沒有 PID/process enumeration fallback。
 `-NoBuild` 只禁止重建選定的 test target；若固定 compiled runner provider 缺席，
 wrapper 必須依相同 restore policy 先補齊 provider，再把 `NoBuild=true` 原樣傳給

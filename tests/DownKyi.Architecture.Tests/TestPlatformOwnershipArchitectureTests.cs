@@ -38,6 +38,7 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
         var runner = Read("script/test-project-runner.ps1");
         var compiledRunner = Read("tools/DownKyi.CentralTestRunner/CentralTestRunner.cs");
         var selectorTests = Read("script/test-platform-selector.ps1");
+        var directProjectRunner = Read("script/test-project.ps1");
         var solutionRunner = Read("script/test-solution.ps1");
         var lifecycleRunner = Read("script/test-assembly-lifecycle.ps1");
         var reviewRunner = Read("script/test-review-invariants.ps1");
@@ -61,6 +62,8 @@ public sealed partial class TestPlatformOwnershipArchitectureTests
         Assert.Contains("Select-DownKyiTestProjectsForCurrentPlatform", lifecycleRunner, StringComparison.Ordinal);
         Assert.Contains("test-project-runner.ps1", reviewRunner, StringComparison.Ordinal);
         Assert.Contains("Invoke-DownKyiTestProject", reviewRunner, StringComparison.Ordinal);
+        Assert.Contains("Invoke-DownKyiTestProject", directProjectRunner, StringComparison.Ordinal);
+        Assert.Contains("delegated-cgroup-scope.ps1", directProjectRunner, StringComparison.Ordinal);
         Assert.Contains("delegated-cgroup-scope.ps1", ciActionRunner, StringComparison.Ordinal);
         Assert.Contains("delegated-cgroup-scope.ps1", lifecycleRunner, StringComparison.Ordinal);
         Assert.Contains("systemd-run", delegatedScope, StringComparison.Ordinal);

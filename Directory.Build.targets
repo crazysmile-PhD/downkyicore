@@ -18,6 +18,6 @@
     Name="EnforceDownKyiCentralTestRunner"
     BeforeTargets="VSTest"
     Condition="'$(IsTestProject)' == 'true'">
-    <Error Text="VSTest execution is disabled for repository test projects; use script/test-project-runner.ps1." />
+    <Error Text="VSTest execution is disabled for repository test projects; use script/test-project.ps1." />
   </Target>
 </Project>

@@ -49,6 +49,57 @@ public sealed class CiTestActionBehaviorTests
     }
 
     [Fact]
+    public void DirectProjectEntrypointExecutesTheCentralRunnerAndValidatesSelection()
+    {
+        var resultsDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-direct-project-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(resultsDirectory);
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            foreach (var argument in new[]
+                     {
+                         "-NoProfile", "-NonInteractive", "-File",
+                         Path.Combine(RepositoryRoot, "script", "test-project.ps1"),
+                         "-ProjectPath",
+                         Path.Combine(
+                             RepositoryRoot,
+                             "tests",
+                             "DownKyi.Architecture.Tests",
+                             "DownKyi.Architecture.Tests.csproj"),
+                         "-Configuration", "Release", "-NoRestore", "-NoBuild",
+                         "-ResultsDirectory", resultsDirectory,
+                         "-TrxName", "direct-project.trx",
+                         "-ClassNames", ExpectedClass
+                     })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            var result = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.True(File.Exists(Path.Combine(resultsDirectory, "direct-project.trx")));
+            Assert.Contains("ExecutedExpected", result.Output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(resultsDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SolutionModeBindsNamedParametersAcrossPowerShellPlatforms()
     {
         var capture = ExecuteSolutionMode(mutateDelegation: false);
@@ -184,6 +235,95 @@ public sealed class CiTestActionBehaviorTests
             Assert.Contains("delegated-results", arguments);
             Assert.EndsWith(
                 Path.Combine("script", "test-solution.ps1"),
+                document.RootElement.GetProperty("scriptPath").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DirectProjectEntryAcquiresDelegatedScopeBeforeLoadingTheRunner()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-direct-project-delegation-{Guid.NewGuid():N}");
+        var scriptDirectory = Path.Combine(directory, "script");
+        Directory.CreateDirectory(scriptDirectory);
+        var capturePath = Path.Combine(directory, "capture.json");
+        try
+        {
+            File.Copy(
+                Path.Combine(RepositoryRoot, "script", "test-project.ps1"),
+                Path.Combine(scriptDirectory, "test-project.ps1"));
+            File.WriteAllText(
+                Path.Combine(scriptDirectory, "delegated-cgroup-scope.ps1"),
+                """
+                function ConvertTo-DownKyiPowerShellArgumentList {
+                    param([System.Collections.IDictionary]$BoundParameters)
+                    $arguments = @()
+                    foreach ($entry in $BoundParameters.GetEnumerator()) {
+                        $arguments += "-$($entry.Key)"
+                        if ($entry.Value -is [System.Management.Automation.SwitchParameter]) { continue }
+                        foreach ($value in @($entry.Value)) { $arguments += [string]$value }
+                    }
+                    return $arguments
+                }
+                function Test-DownKyiDelegatedCgroupScopeRequired { return $true }
+                function Invoke-DownKyiDelegatedCgroupScope {
+                    param([string]$ScriptPath, [string[]]$ArgumentList)
+                    @{
+                        scriptPath = $ScriptPath
+                        arguments = $ArgumentList
+                    } | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:DOWNKYI_CAPTURE
+                }
+                """);
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = directory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            foreach (var argument in new[]
+                     {
+                         "-NoProfile", "-NonInteractive", "-File",
+                         Path.Combine(scriptDirectory, "test-project.ps1"),
+                         "-ProjectPath", "tests/Focused.Tests/Focused.Tests.csproj",
+                         "-Configuration", "Debug", "-NoRestore", "-NoBuild",
+                         "-ResultsDirectory", "delegated-results",
+                         "-TrxName", "focused.trx",
+                         "-ClassNames", "Focused.Tests.Selected"
+                     })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+            startInfo.Environment["DOWNKYI_CAPTURE"] = capturePath;
+
+            var result = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.True(File.Exists(capturePath));
+            using var document = JsonDocument.Parse(File.ReadAllText(capturePath));
+            var arguments = document.RootElement.GetProperty("arguments")
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .ToArray();
+            Assert.Contains("-ProjectPath", arguments);
+            Assert.Contains("tests/Focused.Tests/Focused.Tests.csproj", arguments);
+            Assert.Contains("-NoRestore", arguments);
+            Assert.Contains("-NoBuild", arguments);
+            Assert.Contains("-ClassNames", arguments);
+            Assert.Contains("Focused.Tests.Selected", arguments);
+            Assert.EndsWith(
+                Path.Combine("script", "test-project.ps1"),
                 document.RootElement.GetProperty("scriptPath").GetString(),
                 StringComparison.OrdinalIgnoreCase);
         }
