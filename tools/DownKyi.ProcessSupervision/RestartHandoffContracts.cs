@@ -33,7 +33,8 @@ public enum RestartHandoffFailureKind
     RelaunchFailed,
     RevocationFailed,
     HelperCrashed,
-    CancellationRequested
+    CancellationRequested,
+    CleanupFailed
 }
 
 public enum RestartHandoffRequestParseResult
@@ -101,20 +102,53 @@ public sealed class RestartHandoffException : Exception
         : base(CreateMessage(failure, cleanupFailures), cause)
     {
         Failure = failure;
+        CleanupStageFailures = Array.Empty<RestartHandoffCleanupFailure>();
         CleanupFailures = new ReadOnlyCollection<Exception>(
             cleanupFailures?.ToArray() ?? []);
+    }
+
+    public RestartHandoffException(
+        RestartHandoffFailure failure,
+        Exception? cause,
+        IReadOnlyList<RestartHandoffCleanupFailure> cleanupFailures)
+        : base(
+            CreateMessage(
+                failure,
+                cleanupFailures?.Count
+                    ?? throw new ArgumentNullException(nameof(cleanupFailures))),
+            cause)
+    {
+        ArgumentNullException.ThrowIfNull(cleanupFailures);
+        Failure = failure;
+        CleanupStageFailures = new ReadOnlyCollection<RestartHandoffCleanupFailure>(
+            cleanupFailures.ToArray());
+        CleanupFailures = new ReadOnlyCollection<Exception>(
+            cleanupFailures
+                .Select(item => new IOException(
+                    $"Restart handoff {item.Stage} cleanup failed ({item.CauseType}): " +
+                    item.Detail))
+                .ToArray());
     }
 
     public RestartHandoffFailure Failure { get; }
 
     public IReadOnlyList<Exception> CleanupFailures { get; }
 
+    public IReadOnlyList<RestartHandoffCleanupFailure> CleanupStageFailures { get; }
+
     private static string CreateMessage(
         RestartHandoffFailure failure,
         IReadOnlyList<Exception>? cleanupFailures)
     {
-        var suffix = cleanupFailures is { Count: > 0 }
-            ? $" Cleanup reported {cleanupFailures.Count} failure(s)."
+        return CreateMessage(failure, cleanupFailures?.Count ?? 0);
+    }
+
+    private static string CreateMessage(
+        RestartHandoffFailure failure,
+        int cleanupFailureCount)
+    {
+        var suffix = cleanupFailureCount > 0
+            ? $" Cleanup reported {cleanupFailureCount} failure(s)."
             : string.Empty;
         return $"Restart handoff failed ({failure.Kind}) in state {failure.State}: " +
             failure.Detail + suffix;

@@ -99,6 +99,61 @@ public sealed class ProcessRestartLauncherTests
     }
 
     [Fact]
+    public void HelperCleanupOnlyFailureCannotReportSuccessfulProductExecution()
+    {
+        var cleanup = new RestartHandoffCleanupFailure(
+            RestartHandoffCleanupStage.ParentLifetime,
+            typeof(IOException).FullName!,
+            "fixture cleanup failed");
+        var outcome = new RestartHandoffOutcome(
+            RestartHandoffState.Completed,
+            ProcessIdentityAuthority.WindowsProcessHandle,
+            RelaunchAttempts: 1,
+            Failure: null)
+        {
+            CleanupFailures = [cleanup]
+        };
+
+        var failure = Assert.Throws<RestartHandoffException>(
+            () => ProcessRestartLauncher.ThrowIfHelperFailed(outcome));
+
+        Assert.Equal(RestartHandoffFailureKind.CleanupFailed, failure.Failure.Kind);
+        Assert.Equal(RestartHandoffState.Completed, failure.Failure.State);
+        Assert.Equal(cleanup, Assert.Single(failure.CleanupStageFailures));
+        Assert.Single(failure.CleanupFailures);
+    }
+
+    [Fact]
+    public void HelperPrimaryFailureRetainsIndependentCleanupEvidence()
+    {
+        var primary = new RestartHandoffFailure(
+            RestartHandoffFailureKind.RelaunchFailed,
+            RestartHandoffState.RelaunchStarted,
+            ProcessIdentityAuthority.WindowsProcessHandle,
+            HelperProcessId: 42,
+            "fixture relaunch failed");
+        var cleanup = new RestartHandoffCleanupFailure(
+            RestartHandoffCleanupStage.StatusEndpoint,
+            typeof(IOException).FullName!,
+            "fixture status cleanup failed");
+        var outcome = new RestartHandoffOutcome(
+            RestartHandoffState.Failed,
+            ProcessIdentityAuthority.WindowsProcessHandle,
+            RelaunchAttempts: 1,
+            Failure: primary)
+        {
+            CleanupFailures = [cleanup]
+        };
+
+        var failure = Assert.Throws<RestartHandoffException>(
+            () => ProcessRestartLauncher.ThrowIfHelperFailed(outcome));
+
+        Assert.Equal(primary, failure.Failure);
+        Assert.Equal(cleanup, Assert.Single(failure.CleanupStageFailures));
+        Assert.Single(failure.CleanupFailures);
+    }
+
+    [Fact]
     public void ProductTimeoutPolicyIsUnchanged()
     {
         Assert.Equal(

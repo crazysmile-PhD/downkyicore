@@ -97,12 +97,29 @@ internal sealed class ProcessRestartLauncher(ILogger<ProcessRestartLauncher> log
                 CreateStartInfo(),
                 cancellationToken)
             .ConfigureAwait(false);
-        if (!outcome.Succeeded && outcome.Failure != null)
-        {
-            throw new RestartHandoffException(outcome.Failure);
-        }
+        ThrowIfHelperFailed(outcome);
 
         return true;
+    }
+
+    internal static void ThrowIfHelperFailed(RestartHandoffOutcome outcome)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+        if (outcome.Succeeded)
+        {
+            return;
+        }
+
+        var failure = outcome.Failure ?? new RestartHandoffFailure(
+            RestartHandoffFailureKind.CleanupFailed,
+            outcome.State,
+            outcome.ParentIdentityAuthority,
+            Environment.ProcessId,
+            "The restart helper completed but final cleanup did not succeed.");
+        throw new RestartHandoffException(
+            failure,
+            cause: null,
+            outcome.CleanupFailures);
     }
 
     internal static RestartHandoffRequestParseResult TryParseRestartRequest(
