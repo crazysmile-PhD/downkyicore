@@ -89,7 +89,7 @@ jobs:
             -o "$RUNNER_TEMP/downkyi-macos-membership"
       - name: Prove parent-exit membership and bounded termination
         shell: bash
-        run: "$RUNNER_TEMP/downkyi-macos-membership"
+        run: '"$RUNNER_TEMP/downkyi-macos-membership"'
       - name: Prove membership failure is fail closed
         shell: bash
         run: |
