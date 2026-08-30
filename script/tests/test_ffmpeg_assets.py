@@ -272,7 +272,7 @@ class FfmpegAssetsTests(unittest.TestCase):
         self.assertIn("needs.detect-production-manifest-change.outputs.external_assets == 'true'", build)
         self.assertNotIn("needs: external-assets-preflight", build)
         self.assertIn(
-            "needs: [external-assets-preflight, release-gate, assembly-lifecycle-release]",
+            "needs: [external-assets-preflight, release-gate, assembly-lifecycle-rehearsal]",
             build,
         )
         self.assertIn("needs.external-assets-preflight.result == 'success'", build)
