@@ -517,7 +517,7 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.Contains("-ValidateForensics", quality, StringComparison.Ordinal);
         Assert.Contains("dotnet-stack", quality, StringComparison.Ordinal);
         Assert.Contains(
-            "./tools/DownKyi.ProcessSupervision/DownKyi.ProcessSupervision.csproj",
+            "./tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj",
             quality,
             StringComparison.Ordinal);
         Assert.DoesNotContain("-Profile Rehearsal", quality, StringComparison.Ordinal);

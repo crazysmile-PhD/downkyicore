@@ -380,7 +380,7 @@ jobs:
         run: |
           dotnet restore ./tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet restore ./tools/DownKyi.ProcessSupervision/DownKyi.ProcessSupervision.csproj
+          dotnet restore ./tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet restore ./tests/${{ matrix.assembly }}/${{ matrix.assembly }}.csproj
       - name: Build exact lifecycle closure
@@ -396,7 +396,7 @@ jobs:
             '-p:UseSharedCompilation=false')
           dotnet build ./tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj @strict
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet build ./tools/DownKyi.ProcessSupervision/DownKyi.ProcessSupervision.csproj @strict
+          dotnet build ./tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj @strict
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet build ./tests/${{ matrix.assembly }}/${{ matrix.assembly }}.csproj @strict
       - name: Run sequential iterations for exact assembly
