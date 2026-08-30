@@ -122,8 +122,7 @@ public sealed class ReviewInvariantCorpusTests
             "invoke-assembly-lifecycle-release-shard.ps1"));
         using var topology = JsonDocument.Parse(File.ReadAllText(Path.Combine(
             RepositoryRoot,
-            "docs",
-            "testing",
+            "script",
             "assembly-lifecycle-release-topology.json")));
 
         Assert.Contains("test-review-invariants.ps1", quality, StringComparison.Ordinal);

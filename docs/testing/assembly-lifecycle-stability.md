@@ -303,45 +303,16 @@ suppression list.
 
 Formal local Verification overrides the profile with `-Iterations 5` and runs
 `-ValidateForensics`. Normal main validation runs five complete iterations;
-tag release evidence uses the `Rehearsal` profile and deliberately proves 100
-iterations for every assembly.
+tag release evidence uses the `Rehearsal` profile and deliberately runs 100.
 
-`docs/testing/assembly-lifecycle-release-topology.json` is the machine-readable
-release scheduling authority. An ordinary pull-request execution of the Build
-workflow does not start the 100-round jobs. It first runs the lock preflight:
-one `Local` iteration with complete `-ValidateForensics` for the Architecture
-and Windows assemblies, after a strict Release build of only their exact
-project closures. The preflight is an early rejection signal, not release
-evidence and not a substitute for the repeated proof.
-
-Adding the `assembly-lifecycle-release-ready` label to a pull request enables
-the complete release proof at that exact head. Non-pull-request release
-executions enable it without the label. Removing the label disables later PR
-executions; a newer PR head cancels the obsolete run so evidence from different
-commits cannot be combined.
-
-The 100 iterations for each assembly are scheduled as two bounded waves:
-
-- wave 1 runs the six standard assembly owners, at most four concurrently,
-  beside 16 Architecture shards. Architecture assigns seven iterations to the
-  first four shards and six to the remaining twelve;
-- wave 2 starts only after every wave-1 owner and the Architecture aggregate
-  succeed, then runs 20 Windows shards of five iterations each.
-
-Every shard invokes the existing lifecycle runner with profile `Rehearsal`, an
-exact assembly pattern, its deterministic share of the immutable 100-round
-authority and the complete `-ValidateForensics` contract. Nothing from the six
-lifecycle phases, process ownership, cleanup, timeout, quiescence, slow
-threshold or forensics proof is hoisted out of an iteration. `fail-fast: false`
-preserves evidence from sibling shards after a failure.
-
-Each shard writes an assembly-and-index-qualified artifact. The aggregate gate
-rejects missing or duplicate indices, the wrong commit, the wrong iteration
-allocation, copied or changed reports, any incomplete forensics contract,
-residual processes and failed phases. It also runs deliberate missing-shard,
-duplicate-shard, stale-commit and wrong-report-hash mutations. Only an exact
-aggregate of 100 successful iterations can unblock changelog or later release
-work.
+The release workflow owns `Rehearsal` as one required matrix cell per exact
+Windows-owned test assembly. Every cell still executes all 100 iterations and
+the complete `-ValidateForensics` self-test contract; sharding changes only
+scheduling, not lifecycle policy or sample count. `fail-fast: false` preserves
+evidence from sibling cells after a failure, while the aggregate matrix job
+must be successful before changelog or later release work can start. Each cell
+writes and uploads an assembly-qualified artifact directory, so reports from
+different assemblies cannot share or replace an output owner.
 
 Use `-AssemblyPattern` to isolate one or more suspect assemblies without
 weakening the normal PR or release profiles:

@@ -25,7 +25,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$topologyPath = Join-Path $repositoryRoot "docs/testing/assembly-lifecycle-release-topology.json"
+$topologyPath = Join-Path $repositoryRoot "script/assembly-lifecycle-release-topology.json"
 $topology = Get-Content -LiteralPath $topologyPath -Raw | ConvertFrom-Json -Depth 10
 $assemblyTopology = @($topology.assemblies | Where-Object name -eq $ExpectedAssembly)
 if ([int]$topology.schemaVersion -ne 1 -or

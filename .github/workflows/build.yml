@@ -159,8 +159,6 @@ jobs:
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
-      - name: Install lifecycle diagnostics
-        run: dotnet tool install dotnet-stack --tool-path ./.tools --version 9.0.661903
       - name: Inspect both lifecycle locks once
         shell: pwsh
         run: >

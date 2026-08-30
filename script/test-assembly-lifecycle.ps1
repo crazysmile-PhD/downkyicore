@@ -2692,20 +2692,19 @@ function Invoke-IsolatedProcess {
         $timedOut = $ownedFailureKind -in @(
             "OperationDeadlineExceeded",
             "StreamDrainDeadlineExceeded")
-        $residualChildren = if (-not $ownedTreeQuiescent -and
-            $ownedFailureKind -eq "OwnedTreeNotQuiescent") {
-            @([pscustomobject]@{
-                processId = $null
-                parentProcessId = $null
-                name = "owned-process-tree"
-                createdAtUtc = $null
-                containmentId = $ownedFailure.Failure.Ownership.ContainmentId
-                containmentKind = $ownedFailure.Failure.Ownership.ContainmentKind.ToString()
-            })
-        }
-        else {
-            @()
-        }
+        $residualChildren = @(
+            if (-not $ownedTreeQuiescent -and
+                $ownedFailureKind -eq "OwnedTreeNotQuiescent") {
+                [pscustomobject]@{
+                    processId = $null
+                    parentProcessId = $null
+                    name = "owned-process-tree"
+                    createdAtUtc = $null
+                    containmentId = $ownedFailure.Failure.Ownership.ContainmentId
+                    containmentKind = $ownedFailure.Failure.Ownership.ContainmentKind.ToString()
+                }
+            }
+        )
         if ($residualChildren.Count -gt 0) {
             $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
             try {

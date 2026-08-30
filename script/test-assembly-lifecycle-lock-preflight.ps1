@@ -19,17 +19,31 @@ if (@(& git -C $repositoryRoot status --porcelain).Count -ne 0) {
     throw "Lifecycle lock preflight requires a clean exact-commit checkout."
 }
 
-$topologyPath = Join-Path $repositoryRoot "docs/testing/assembly-lifecycle-release-topology.json"
+$topologyPath = Join-Path $repositoryRoot "script/assembly-lifecycle-release-topology.json"
 $topology = Get-Content -LiteralPath $topologyPath -Raw | ConvertFrom-Json -Depth 10
-$assemblies = @($topology.preflightAssemblies)
+$preflightProjects = @($topology.preflightProjects)
+$expectedArchitectureClasses = @(
+    "DownKyi.Architecture.Tests.WorkflowTestOwnershipArchitectureTests",
+    "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests",
+    "DownKyi.Architecture.Tests.AssemblyLifecycleReleaseEvidenceTests",
+    "DownKyi.Architecture.Tests.TestRunnerPolicyArchitectureTests")
+$expectedWindowsClasses = @(
+    "DownKyi.Windows.Tests.AriaServerWindowsTests",
+    "DownKyi.ProcessSupervision.Tests.TransitionBudgetTests",
+    "DownKyi.ProcessSupervision.Tests.DiagnosticCollectorWindowTests")
 if ([int]$topology.schemaVersion -ne 1 -or
     $topology.profile -ne "Rehearsal" -or
     [int]$topology.totalIterations -ne 100 -or
-    $assemblies.Count -ne 2 -or
-    $assemblies[0] -ne "DownKyi.Architecture.Tests" -or
-    $assemblies[1] -ne "DownKyi.Windows.Tests") {
+    $preflightProjects.Count -ne 2 -or
+    $preflightProjects[0].assembly -ne "DownKyi.Architecture.Tests" -or
+    $preflightProjects[1].assembly -ne "DownKyi.Windows.Tests" -or
+    [string]::Join("|", @($preflightProjects[0].classes)) -ne
+        [string]::Join("|", $expectedArchitectureClasses) -or
+    [string]::Join("|", @($preflightProjects[1].classes)) -ne
+        [string]::Join("|", $expectedWindowsClasses)) {
     throw "Lifecycle lock preflight topology is invalid."
 }
+$assemblies = @($preflightProjects | ForEach-Object assembly)
 
 $env:MSBUILDDISABLENODEREUSE = "1"
 function Invoke-DotNetChecked {
@@ -69,38 +83,55 @@ foreach ($project in $projects) {
     Invoke-DotNetChecked -Arguments $buildArguments
 }
 
-$patterns = @($assemblies | ForEach-Object { "^$([Regex]::Escape($_))$" })
 $resultRoot = [IO.Path]::GetFullPath($ResultsDirectory, $repositoryRoot)
-& (Join-Path $PSScriptRoot "test-assembly-lifecycle.ps1") `
-    -Configuration Release `
-    -Profile Local `
-    -NoBuild `
-    -ValidateForensics `
-    -AssemblyPattern $patterns `
-    -ResultsDirectory $resultRoot
+New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
+$verified = [Collections.Generic.List[object]]::new()
+foreach ($preflightProject in $preflightProjects) {
+    $assembly = [string]$preflightProject.assembly
+    $classes = @($preflightProject.classes | ForEach-Object { [string]$_ })
+    $projectResultRoot = Join-Path $resultRoot $assembly
+    $trxName = "$assembly.lock-preflight.trx"
+    $result = & (Join-Path $PSScriptRoot "test-project.ps1") `
+        -ProjectPath "tests/$assembly/$assembly.csproj" `
+        -RepositoryRoot $repositoryRoot `
+        -Configuration Release `
+        -NoRestore `
+        -NoBuild `
+        -ResultsDirectory $projectResultRoot `
+        -TrxName $trxName `
+        -ClassNames $classes `
+        -ExecutionTimeoutSeconds 300
+    if ($result.ExitCode -ne 0 -or
+        $result.Report.Failed -ne 0 -or
+        $result.Report.ExecutedExpectedClasses -ne $classes.Count -or
+        $result.Report.PassedExpectedClasses -ne $classes.Count -or
+        -not (Test-Path -LiteralPath $result.TrxPath -PathType Leaf)) {
+        throw "Lifecycle lock preflight failed for $assembly."
+    }
 
-$reports = @(Get-ChildItem -LiteralPath $resultRoot -Recurse -File |
-        Where-Object Name -eq "assembly-lifecycle-report.json")
-if ($reports.Count -ne 1) {
-    throw "Lifecycle lock preflight must produce exactly one machine report."
-}
-$report = Get-Content -LiteralPath $reports[0].FullName -Raw | ConvertFrom-Json -Depth 30
-$actualAssemblies = @(
-    $report.results |
-        Where-Object { $_.assembly -in $assemblies } |
-        ForEach-Object assembly |
-        Sort-Object -Unique)
-if (-not [bool]$report.successful -or
-    $report.profile -ne "Local" -or
-    [int]$report.iterations -ne 1 -or
-    $report.commitSha.ToLowerInvariant() -ne $expectedCommit -or
-    [bool]$report.workingTreeDirty -or
-    [int]$report.testAssemblyCount -ne 2 -or
-    [int]$report.failedPhaseCount -ne 0 -or
-    [int]$report.slowEvidenceMissingCount -ne 0 -or
-    [int]$report.residualChildPhaseCount -ne 0 -or
-    [string]::Join("|", $actualAssemblies) -ne [string]::Join("|", $assemblies)) {
-    throw "Lifecycle lock preflight did not prove both exact assemblies."
+    $verified.Add([ordered]@{
+        assembly = $assembly
+        classes = $classes
+        executed = $result.Report.Executed
+        passed = $result.Report.PassedExpected
+        trxRelativePath = [IO.Path]::GetRelativePath(
+            $resultRoot,
+            $result.TrxPath).Replace('\', '/')
+        trxSha256 = (Get-FileHash -LiteralPath $result.TrxPath -Algorithm SHA256).
+            Hash.ToLowerInvariant()
+    })
 }
 
+$manifest = [ordered]@{
+    schemaVersion = 1
+    kind = "assembly-lifecycle-lock-preflight"
+    generatedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
+    commitSha = $expectedCommit
+    configuration = "Release"
+    projects = @($verified)
+    successful = $true
+}
+$manifest | ConvertTo-Json -Depth 8 | Set-Content `
+    -LiteralPath (Join-Path $resultRoot "preflight-manifest.json") `
+    -Encoding utf8
 Write-Host "Lifecycle lock preflight passed for $($assemblies -join ', ') at $expectedCommit."

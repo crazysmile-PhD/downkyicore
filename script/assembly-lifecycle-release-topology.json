@@ -3,9 +3,24 @@
   "readyLabel": "assembly-lifecycle-release-ready",
   "profile": "Rehearsal",
   "totalIterations": 100,
-  "preflightAssemblies": [
-    "DownKyi.Architecture.Tests",
-    "DownKyi.Windows.Tests"
+  "preflightProjects": [
+    {
+      "assembly": "DownKyi.Architecture.Tests",
+      "classes": [
+        "DownKyi.Architecture.Tests.WorkflowTestOwnershipArchitectureTests",
+        "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests",
+        "DownKyi.Architecture.Tests.AssemblyLifecycleReleaseEvidenceTests",
+        "DownKyi.Architecture.Tests.TestRunnerPolicyArchitectureTests"
+      ]
+    },
+    {
+      "assembly": "DownKyi.Windows.Tests",
+      "classes": [
+        "DownKyi.Windows.Tests.AriaServerWindowsTests",
+        "DownKyi.ProcessSupervision.Tests.TransitionBudgetTests",
+        "DownKyi.ProcessSupervision.Tests.DiagnosticCollectorWindowTests"
+      ]
+    }
   ],
   "waveOneMaximumJobs": 20,
   "waveTwoMaximumJobs": 20,

@@ -478,7 +478,7 @@ public sealed class AssemblyLifecycleArchitectureTests
         var quality = Read(".github/workflows/quality.yml");
         var release = Read(".github/workflows/build.yml");
         var releaseShard = Read("script/invoke-assembly-lifecycle-release-shard.ps1");
-        var releaseTopology = Read("docs/testing/assembly-lifecycle-release-topology.json");
+        var releaseTopology = Read("script/assembly-lifecycle-release-topology.json");
         var activeReleaseContract = Read(
             "docs/product-specs/v1.1.1-corrective-release-gate.md");
         var expectedProfiles = new Dictionary<string, int>(StringComparer.Ordinal)

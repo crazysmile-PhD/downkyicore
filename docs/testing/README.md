@@ -105,7 +105,6 @@ repository 支援的 Debug 與 Release compilation 都執行；語法、alias、
 - `module-boundary-ratchets.md`
 - `assembly-lifecycle-stability.md`
 - `assembly-lifecycle-owners.json`
-- `assembly-lifecycle-release-topology.json`
 - `review-invariant-policy.md`
 - `review-invariant-corpus.json`
 - `test-runner-policy.json`

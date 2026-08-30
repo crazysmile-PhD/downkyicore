@@ -25,7 +25,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$topologyPath = Join-Path $repositoryRoot "docs/testing/assembly-lifecycle-release-topology.json"
+$topologyPath = Join-Path $repositoryRoot "script/assembly-lifecycle-release-topology.json"
 $topology = Get-Content -LiteralPath $topologyPath -Raw | ConvertFrom-Json -Depth 10
 $assemblyTopology = @($topology.assemblies | Where-Object name -eq $Assembly)
 if ([int]$topology.schemaVersion -ne 1 -or
@@ -63,7 +63,7 @@ if ($shardIterations -lt 1) {
 
 $resultRoot = [IO.Path]::GetFullPath($ResultsDirectory, $repositoryRoot)
 New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
-$assemblyPattern = "^$([Regex]::Escape($Assembly))$"
+$assemblyPattern = $Assembly
 & (Join-Path $PSScriptRoot "test-assembly-lifecycle.ps1") `
     -Configuration Release `
     -Profile Rehearsal `

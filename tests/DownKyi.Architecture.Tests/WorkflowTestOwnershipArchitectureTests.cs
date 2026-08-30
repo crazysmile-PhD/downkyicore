@@ -33,6 +33,19 @@ public sealed class WorkflowTestOwnershipArchitectureTests
         "DownKyi.Infrastructure.Tests",
         "DownKyi.Tests"
     ];
+    private static readonly string[] ArchitecturePreflightClasses =
+    [
+        "DownKyi.Architecture.Tests.WorkflowTestOwnershipArchitectureTests",
+        "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests",
+        "DownKyi.Architecture.Tests.AssemblyLifecycleReleaseEvidenceTests",
+        "DownKyi.Architecture.Tests.TestRunnerPolicyArchitectureTests"
+    ];
+    private static readonly string[] WindowsPreflightClasses =
+    [
+        "DownKyi.Windows.Tests.AriaServerWindowsTests",
+        "DownKyi.ProcessSupervision.Tests.TransitionBudgetTests",
+        "DownKyi.ProcessSupervision.Tests.DiagnosticCollectorWindowTests"
+    ];
     private const string ReleaseReadyLabel = "assembly-lifecycle-release-ready";
     private const string ExactLifecycleSha = "${{ github.event.pull_request.head.sha || github.sha }}";
     private const string ReleaseReadyCondition =
@@ -596,8 +609,7 @@ public sealed class WorkflowTestOwnershipArchitectureTests
     {
         using var topology = JsonDocument.Parse(File.ReadAllText(Path.Combine(
             RepositoryRoot,
-            "docs",
-            "testing",
+            "script",
             "assembly-lifecycle-release-topology.json")));
         var topologyRoot = topology.RootElement;
         if (topologyRoot.GetProperty("schemaVersion").GetInt32() != 1 ||
@@ -638,6 +650,21 @@ public sealed class WorkflowTestOwnershipArchitectureTests
         {
             throw new InvalidDataException("The release lifecycle topology has an invalid shard allocation.");
         }
+        var preflightProjects = topologyRoot.GetProperty("preflightProjects")
+            .EnumerateArray()
+            .ToArray();
+        if (preflightProjects.Length != 2)
+        {
+            throw new InvalidDataException("The lifecycle lock preflight lost a project.");
+        }
+        AssertPreflightProject(
+            preflightProjects[0],
+            "DownKyi.Architecture.Tests",
+            ArchitecturePreflightClasses);
+        AssertPreflightProject(
+            preflightProjects[1],
+            "DownKyi.Windows.Tests",
+            WindowsPreflightClasses);
 
         var eventMapping = RequireMapping(RequireMapping(workflow, "on"), "pull_request");
         var eventTypes = RequireSequence(eventMapping, "types").Children
@@ -843,6 +870,23 @@ public sealed class WorkflowTestOwnershipArchitectureTests
         AssertScalar(job, "if", ReleaseReadyCondition);
         AssertScalar(job, "runs-on", "windows-latest");
         AssertNeeds(job, expectedNeeds);
+    }
+
+    private static void AssertPreflightProject(
+        JsonElement project,
+        string expectedAssembly,
+        IReadOnlyList<string> expectedClasses)
+    {
+        var assembly = project.GetProperty("assembly").GetString();
+        var classes = project.GetProperty("classes")
+            .EnumerateArray()
+            .Select(item => item.GetString() ?? string.Empty)
+            .ToArray();
+        if (!string.Equals(assembly, expectedAssembly, StringComparison.Ordinal) ||
+            !classes.SequenceEqual(expectedClasses, StringComparer.Ordinal))
+        {
+            throw new InvalidDataException("The lifecycle lock preflight changed its exact proof set.");
+        }
     }
 
     private static void AssertShardMatrix(
