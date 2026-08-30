@@ -241,7 +241,7 @@ jobs:
           .\ffmpeg.ps1 ${{ matrix.cpu }}
           .\aria2.ps1 ${{ matrix.cpu }}
         working-directory: ./script
-      - name: Build validation publish
+      - name: Build canonical publish
         run: >
           dotnet publish ./DownKyi/DownKyi.csproj
           -c Release
@@ -251,18 +251,24 @@ jobs:
           -p:DebugType=None
           -p:DebugSymbols=false
           -o ./artifacts/publish/win-${{ matrix.cpu }}
-      - name: Package
-        run: |
-          & "$env:GITHUB_WORKSPACE\.tools\pupnet.exe" DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r win-${{ matrix.cpu }} -y
-        working-directory: ./script/pupnet
-      - name: Validate packaged runtime
+      - name: Finalize and validate canonical publish payload
         shell: pwsh
         run: |
+          Copy-Item -LiteralPath ./LICENSE -Destination "artifacts/publish/win-${{ matrix.cpu }}/LICENSE"
           ./script/validate-publish-output.ps1 `
             -PublishDirectory "artifacts/publish/win-${{ matrix.cpu }}" `
             -RuntimeIdentifier "win-${{ matrix.cpu }}" `
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
             -OutputPath "script/pupnet/output/expected-publish-manifest-win-${{ matrix.cpu }}.json"
+      - name: Package
+        run: |
+          & "$env:GITHUB_WORKSPACE\.tools\pupnet.exe" DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r win-${{ matrix.cpu }} -y
+        working-directory: ./script/pupnet
+        env:
+          CANONICAL_PUBLISH_DIRECTORY: ${{ github.workspace }}/artifacts/publish/win-${{ matrix.cpu }}
+      - name: Validate packaged runtime
+        shell: pwsh
+        run: |
           $package = "script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}"
           ./script/validate-v113-release-package.ps1 `
             -PackagePath $package `
@@ -280,9 +286,79 @@ jobs:
             script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}
             script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}.sha256
             script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json
+  build-linux-publish:
+    runs-on: ubuntu-22.04
+    needs: changelog
+    strategy:
+      fail-fast: false
+      matrix:
+        cpu: [ x64, arm64 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install Python for FFmpeg manifest verification
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Read Version Text
+        id: version
+        run: |
+          echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
+      - name: Get Deps
+        run: |
+          chmod +x ffmpeg.sh
+          chmod +x aria2.sh
+          ./ffmpeg.sh linux ${{ matrix.cpu }}
+          ./aria2.sh linux-${{ matrix.cpu }}
+        working-directory: ./script
+      - name: Build canonical publish
+        run: >
+          dotnet publish ./DownKyi/DownKyi.csproj
+          -c Release
+          -r linux-${{ matrix.cpu }}
+          --self-contained
+          -p:Version=${{ steps.version.outputs.content }}
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o ./artifacts/publish/linux-${{ matrix.cpu }}
+      - name: Finalize and validate canonical publish payload
+        shell: pwsh
+        run: |
+          Copy-Item -LiteralPath ./LICENSE -Destination "artifacts/publish/linux-${{ matrix.cpu }}/LICENSE"
+          ./script/validate-publish-output.ps1 `
+            -PublishDirectory "artifacts/publish/linux-${{ matrix.cpu }}" `
+            -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
+            -ExpectedVersion "${{ steps.version.outputs.content }}" `
+            -OutputPath "script/pupnet/output/expected-publish-manifest-linux-${{ matrix.cpu }}.json"
+      - name: Verify ARM64 cross-publish host tool and target architecture
+        if: ${{ matrix.cpu == 'arm64' }}
+        run: |
+          test "$(uname -m)" = x86_64
+          protoc="$HOME/.nuget/packages/grpc.tools/2.82.0/tools/linux_x64/protoc"
+          test -x "$protoc"
+          file "$protoc" | grep -q 'x86-64'
+          "$protoc" --version
+          file artifacts/publish/linux-arm64/DownKyi | grep -qi 'ELF.*aarch64'
+      - name: Create canonical Linux publish transport
+        run: |
+          mkdir -p artifacts/canonical-transport
+          cp "script/pupnet/output/expected-publish-manifest-linux-${{ matrix.cpu }}.json" artifacts/canonical-transport/
+          tar -C artifacts -cf "linux-${{ matrix.cpu }}.canonical-publish.internal.transport.tar" \
+            "publish/linux-${{ matrix.cpu }}" \
+            "canonical-transport/expected-publish-manifest-linux-${{ matrix.cpu }}.json"
+      - name: Upload canonical Linux publish transport
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.cpu }}-canonical-publish
+          path: linux-${{ matrix.cpu }}.canonical-publish.internal.transport.tar
+          retention-days: 1
   build-linux:
     runs-on: ${{ matrix.os }}
-    needs: changelog
+    needs: [changelog, build-linux-publish]
     strategy:
       fail-fast: false
       matrix:
@@ -307,71 +383,59 @@ jobs:
             package-head: downkyi_
           - kind: AppImage
             cpu: arm64
-            os: ubuntu-24.04-arm
+            os: ubuntu-22.04
             package-tail: .aarch64
             package-head: DownKyi-
           - kind: deb
             cpu: arm64
-            os: ubuntu-24.04-arm
+            os: ubuntu-22.04
             package-tail: _arm64
             package-head: downkyi_
         exclude:
           - kind: rpm
             cpu: arm64
     steps:
-      - name: Checkout
+      - name: Checkout packagers
         uses: actions/checkout@v7
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-      - name: Install Python for FFmpeg manifest verification
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
       - name: Read Version Text
         id: version
         run: |
           echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
-      - name: Install Pupnet
+      - name: Install Pupnet and package validators
         run: |
           dotnet tool install --tool-path ./.tools KuiperZone.PupNet --version 1.8.0
           sudo apt-get update
           fuse_package=libfuse2
           if ! apt-cache show "$fuse_package" >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
-          sudo apt-get install -y cpio "$fuse_package" p7zip-full rpm rpm2cpio xauth xvfb
-      - name: Get Deps
+          sudo apt-get install -y cpio "$fuse_package" rpm rpm2cpio xauth xvfb
+      - name: Download canonical Linux publish
+        uses: actions/download-artifact@v7
+        with:
+          name: linux-${{ matrix.cpu }}-canonical-publish
+          path: canonical
+      - name: Restore immutable canonical Linux publish
         run: |
-          chmod +x ffmpeg.sh
-          chmod +x aria2.sh
-          ./ffmpeg.sh linux ${{ matrix.cpu }}
-          ./aria2.sh linux-${{ matrix.cpu }}
-        working-directory: ./script
-      - name: Build validation publish
-        run: >
-          dotnet publish ./DownKyi/DownKyi.csproj
-          -c Release
-          -r linux-${{ matrix.cpu }}
-          --self-contained
-          -p:Version=${{ steps.version.outputs.content }}
-          -p:DebugType=None
-          -p:DebugSymbols=false
-          -o ./artifacts/publish/linux-${{ matrix.cpu }}
+          mkdir -p artifacts
+          mkdir -p script/pupnet/output
+          tar -xf "canonical/linux-${{ matrix.cpu }}.canonical-publish.internal.transport.tar" -C artifacts
+          cp "artifacts/canonical-transport/expected-publish-manifest-linux-${{ matrix.cpu }}.json" script/pupnet/output/
       - name: Package
         run: |
           "$GITHUB_WORKSPACE/.tools/pupnet" DownKyi.pupnet.conf --app-version ${{ steps.version.outputs.content }} --kind ${{ matrix.kind }} -r linux-${{ matrix.cpu }} -y
         working-directory: ./script/pupnet
+        env:
+          CANONICAL_PUBLISH_DIRECTORY: ${{ github.workspace }}/artifacts/publish/linux-${{ matrix.cpu }}
       - name: Change Name
         run: mv "${{ matrix.package-head }}${{ steps.version.outputs.content }}-1${{ matrix.package-tail }}.${{ matrix.kind }}" "${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}"
         working-directory: ./script/pupnet/output/
       - name: Validate packaged runtime
+        if: ${{ matrix.cpu == 'x64' }}
         shell: pwsh
         run: |
-          ./script/validate-publish-output.ps1 `
-            -PublishDirectory "artifacts/publish/linux-${{ matrix.cpu }}" `
-            -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
-            -ExpectedVersion "${{ steps.version.outputs.content }}" `
-            -OutputPath "script/pupnet/output/expected-publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
           $package = Get-ChildItem "script/pupnet/output" -File -Filter "*${{ matrix.package-tail }}.${{ matrix.kind }}" |
             Select-Object -First 1
           if ($null -eq $package) { throw "Expected Linux package was not produced." }
@@ -379,19 +443,25 @@ jobs:
             -PackagePath $package.FullName `
             -PackageKind "${{ matrix.kind }}" `
             -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
-            -ExpectedManifestPath "script/pupnet/output/expected-publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json" `
+            -ExpectedManifestPath "script/pupnet/output/expected-publish-manifest-linux-${{ matrix.cpu }}.json" `
             -OutputPath "script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
           $hash = (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($package.Name)" | Set-Content -LiteralPath "$($package.FullName).sha256" -Encoding ascii
+      - name: Create ARM64 native-validation candidate transport
+        if: ${{ matrix.cpu == 'arm64' }}
+        run: |
+          tar -C script/pupnet/output -cf "linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar" \
+            "${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}" \
+            "expected-publish-manifest-linux-arm64.json"
       - name: Create permission-preserving AppImage transport
-        if: ${{ matrix.kind == 'AppImage' }}
+        if: ${{ matrix.kind == 'AppImage' && matrix.cpu == 'x64' }}
         run: |
           tar -C script/pupnet/output -cf "appimage-${{ matrix.cpu }}.transport.tar" \
             "${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}" \
             "${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}.sha256" \
             "publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
       - name: Upload build artifacts ${{ matrix.kind }}
-        if: ${{ matrix.kind != 'AppImage' }}
+        if: ${{ matrix.kind != 'AppImage' && matrix.cpu == 'x64' }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
@@ -400,11 +470,87 @@ jobs:
             script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}.sha256
             script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json
       - name: Upload permission-preserving AppImage transport
-        if: ${{ matrix.kind == 'AppImage' }}
+        if: ${{ matrix.kind == 'AppImage' && matrix.cpu == 'x64' }}
         uses: actions/upload-artifact@v7
         with:
           name: appimage-${{ matrix.cpu }}-transport
           path: appimage-${{ matrix.cpu }}.transport.tar
+      - name: Upload ARM64 native-validation candidate transport
+        if: ${{ matrix.cpu == 'arm64' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-arm64-${{ matrix.kind }}-candidate
+          path: linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar
+          retention-days: 1
+  validate-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    needs: build-linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: AppImage
+            package-filter: '*.aarch64.AppImage'
+          - kind: deb
+            package-filter: '*_arm64.deb'
+    steps:
+      - name: Checkout validators
+        uses: actions/checkout@v7
+      - name: Read Version Text
+        id: version
+        run: |
+          echo "content=$(tr -d '\r\n' < version.txt)" >> "$GITHUB_OUTPUT"
+      - name: Install native AppImage validation dependencies
+        run: |
+          sudo apt-get update
+          fuse_package=libfuse2
+          if ! apt-cache show "$fuse_package" >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
+          sudo apt-get install -y "$fuse_package" xauth xvfb
+      - name: Download ARM64 native-validation candidate
+        uses: actions/download-artifact@v7
+        with:
+          name: linux-arm64-${{ matrix.kind }}-candidate
+          path: candidate
+      - name: Restore candidate transport
+        run: |
+          tar -xf "candidate/linux-arm64-${{ matrix.kind }}.candidate.internal.transport.tar" -C candidate
+      - name: Validate native ARM64 package
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem candidate -File -Filter "${{ matrix.package-filter }}")
+          if ($packages.Count -ne 1) { throw "Expected exactly one ARM64 ${{ matrix.kind }} package, found $($packages.Count)." }
+          $expectedManifest = "candidate/expected-publish-manifest-linux-arm64.json"
+          $approvedManifest = "candidate/publish-manifest-linux-arm64-${{ matrix.kind }}.json"
+          ./script/validate-v113-release-package.ps1 `
+            -PackagePath $packages[0].FullName `
+            -PackageKind "${{ matrix.kind }}" `
+            -RuntimeIdentifier linux-arm64 `
+            -ExpectedManifestPath $expectedManifest `
+            -OutputPath $approvedManifest
+          $hash = (Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($packages[0].Name)" | Set-Content -LiteralPath "$($packages[0].FullName).sha256" -Encoding ascii
+      - name: Create validated ARM64 AppImage transport
+        if: ${{ matrix.kind == 'AppImage' }}
+        run: |
+          tar -C candidate -cf appimage-arm64.transport.tar \
+            "DownKyi-${{ steps.version.outputs.content }}_linux_self-contained.aarch64.AppImage" \
+            "DownKyi-${{ steps.version.outputs.content }}_linux_self-contained.aarch64.AppImage.sha256" \
+            "publish-manifest-linux-arm64-AppImage.json"
+      - name: Upload validated ARM64 AppImage transport
+        if: ${{ matrix.kind == 'AppImage' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: appimage-arm64-transport
+          path: appimage-arm64.transport.tar
+      - name: Upload validated ARM64 Debian package
+        if: ${{ matrix.kind == 'deb' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb
+          path: |
+            candidate/downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb
+            candidate/downkyi_${{ steps.version.outputs.content }}_linux_self-contained_arm64.deb.sha256
+            candidate/publish-manifest-linux-arm64-deb.json
   build-macos:
     runs-on: ${{ matrix.os }}
     needs: changelog
@@ -575,7 +721,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [changelog, build-windows, build-linux, build-macos]
+    needs: [changelog, build-windows, build-linux, validate-linux-arm64, build-macos]
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:
       - name: Checkout release validators
@@ -585,6 +731,14 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - name: Remove internal canonical and candidate transports
+        shell: pwsh
+        run: |
+          Get-ChildItem artifacts -File -Filter '*.internal.transport.tar' | Remove-Item
+          $remainingInternalFiles = @(Get-ChildItem artifacts -Recurse -File -Filter '*.internal.*')
+          if ($remainingInternalFiles.Count -ne 0) {
+            throw "Internal canonical or candidate transports reached the release publication input."
+          }
       - name: Restore and verify validated AppImages
         shell: pwsh
         run: |
