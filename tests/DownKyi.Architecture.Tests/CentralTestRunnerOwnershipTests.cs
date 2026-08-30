@@ -101,6 +101,35 @@ public sealed class CentralTestRunnerOwnershipTests
         Assert.DoesNotContain("build-server", arguments);
     }
 
+    [Theory]
+    [InlineData("../outside.trx")]
+    [InlineData("..\\outside.trx")]
+    [InlineData("nested/outside.trx")]
+    [InlineData("nested\\outside.trx")]
+    [InlineData("/outside.trx")]
+    [InlineData("C:\\outside.trx")]
+    [InlineData("C:outside.trx")]
+    [InlineData(".")]
+    [InlineData("..")]
+    public void TrxPublicationNameCannotEscapeItsResultsDirectory(string trxName)
+    {
+        var failure = Assert.Throws<ArgumentException>(() =>
+            new CentralTestProjectOptions(
+                RepositoryRoot,
+                ProjectPath,
+                "Release",
+                noRestore: true,
+                noBuild: true,
+                resultsDirectory: Path.GetTempPath(),
+                trxName,
+                classNames: null,
+                filter: null,
+                executionTimeoutSeconds: 20));
+
+        Assert.Equal("trxName", failure.ParamName);
+        Assert.Contains("file name", failure.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task CancelledProjectBuildPreservesOwnedProcessOutput()
     {

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.ObjectModel;
 
 #pragma warning disable CA1515 // PowerShell compatibility wrappers invoke this compiled boundary.
@@ -6,6 +7,9 @@ namespace DownKyi.CentralTestRunner;
 
 public sealed class CentralTestProjectOptions
 {
+    private static readonly SearchValues<char> InvalidTrxNameCharacters =
+        SearchValues.Create(Path.GetInvalidFileNameChars().Concat("/\\:").ToArray());
+
     public CentralTestProjectOptions(
         string repositoryRoot,
         string projectPath,
@@ -32,7 +36,7 @@ public sealed class CentralTestProjectOptions
         ResultsDirectory = string.IsNullOrWhiteSpace(resultsDirectory)
             ? null
             : Path.GetFullPath(resultsDirectory, RepositoryRoot);
-        TrxName = trxName;
+        TrxName = ValidateTrxName(trxName);
         ClassNames = new ReadOnlyCollection<string>(
             (classNames ?? []).Order(StringComparer.Ordinal).Distinct(StringComparer.Ordinal).ToArray());
         Filter = filter;
@@ -58,6 +62,26 @@ public sealed class CentralTestProjectOptions
     public string? Filter { get; }
 
     public int ExecutionTimeoutSeconds { get; }
+
+    private static string? ValidateTrxName(string? trxName)
+    {
+        if (string.IsNullOrWhiteSpace(trxName))
+        {
+            return null;
+        }
+
+        if (Path.IsPathRooted(trxName) ||
+            trxName is "." or ".." ||
+            trxName.AsSpan().ContainsAny(InvalidTrxNameCharacters) ||
+            !string.Equals(Path.GetFileName(trxName), trxName, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "The TRX name must be a file name without a root or directory components.",
+                nameof(trxName));
+        }
+
+        return trxName;
+    }
 }
 
 public sealed record CentralTestRunResult(
