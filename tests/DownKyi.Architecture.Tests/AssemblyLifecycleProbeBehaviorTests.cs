@@ -15,6 +15,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_FORENSICS_STARTUP_WINDOW";
     private const string EarlyReadyMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_EARLY_READY";
+    private const string ReadyCleanupMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_FORENSICS_READY_CLEANUP";
     private const string CleanupReportMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_CLEANUP_REPORT";
     private const string SupervisorStartupMutationEnvironmentVariable =
@@ -695,6 +697,44 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.Contains("readyProcessIdValid", source, StringComparison.Ordinal);
         Assert.Contains("stdoutMarkerPreserved", source, StringComparison.Ordinal);
         Assert.Contains("stderrMarkerPreserved", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CaptureWindowSelfTestRejectsReadyArtifactCleanupFailure()
+    {
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(ReadyCleanupMutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            var mutation = TryExecuteLifecycleMutation(
+                ReadyCleanupMutationEnvironmentVariable,
+                "ready-cleanup",
+                CaptureBudgetSelfTestRejection);
+            if (mutation is null)
+            {
+                return;
+            }
+
+            Assert.False(
+                IsExpectedLifecycleMutationRejection(
+                    mutation,
+                    CaptureBudgetSelfTestRejection),
+                "The real lifecycle self-test accepted a ready-artifact cleanup failure.");
+            return;
+        }
+
+        var source = ReadFunction(
+            ReadLifecycleGate(),
+            "Test-OwnedDiagnosticCollectorCaptureWindow");
+        Assert.Contains(ReadyCleanupMutationEnvironmentVariable, source, StringComparison.Ordinal);
+        Assert.Contains(
+            "Remove-Item -LiteralPath $readyPath -Force -ErrorAction Stop",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("readyArtifactCleanupSucceeded", source, StringComparison.Ordinal);
+        Assert.Contains("readyCleanupErrorType", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("-ErrorAction SilentlyContinue", source, StringComparison.Ordinal);
     }
 
     [Fact]

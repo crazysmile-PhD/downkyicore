@@ -1044,6 +1044,7 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
     $failureMappedAfterMilliseconds = $null
     $readyEvidence = $null
     $readyEvidenceErrorType = $null
+    $readyCleanupErrorType = $null
     try {
         $null = Invoke-OwnedDiagnosticCollector `
             -FileName $collectorHostPath `
@@ -1080,7 +1081,18 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
         $readyEvidenceErrorType = $_.Exception.GetType().Name
     }
     finally {
-        Remove-Item -LiteralPath $readyPath -Force -ErrorAction SilentlyContinue
+        try {
+            if ($env:DOWNKYI_TEST_MUTATE_FORENSICS_READY_CLEANUP -eq "1") {
+                throw [System.IO.IOException]::new(
+                    "Injected collector ready-artifact cleanup failure.")
+            }
+            if (Test-Path -LiteralPath $readyPath) {
+                Remove-Item -LiteralPath $readyPath -Force -ErrorAction Stop
+            }
+        }
+        catch {
+            $readyCleanupErrorType = $_.Exception.GetType().Name
+        }
     }
 
     $operationDeadlineKind =
@@ -1115,6 +1127,8 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
             $failure.Failure.Evidence.StreamsDrained
         cleanupSucceeded = $null -ne $failure -and
             $failure.CleanupFailures.Count -eq 0
+        readyArtifactCleanupSucceeded =
+            [string]::IsNullOrWhiteSpace($readyCleanupErrorType)
         ownerJournalPreserved = $null -ne $ownerJournal -and
             $null -ne $ownerJournal.FailureInterval -and
             $ownerJournal.DeadlineExhausted -and
@@ -1155,6 +1169,7 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
         unexpectedFailureType = $unexpectedFailureType
         readyEvidence = $readyEvidence
         readyEvidenceErrorType = $readyEvidenceErrorType
+        readyCleanupErrorType = $readyCleanupErrorType
         contractChecks = [pscustomobject]$contractChecks
         elapsedMilliseconds = [Math]::Round($stopwatch.Elapsed.TotalMilliseconds, 3)
         callerTiming = [pscustomobject]@{
