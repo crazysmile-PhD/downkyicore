@@ -230,6 +230,41 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     }
 
     [Fact]
+    public async Task TargetExitCancellationBeforeDispatchDoesNotLaunchCollector()
+    {
+        using var startupCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        using var executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        await executionCancellation.CancelAsync().ConfigureAwait(true);
+        var transitions = new List<OwnedProcessStartTransition>();
+
+        var failure = await Assert.ThrowsAsync<DiagnosticCollectorExecutionException>(
+                () => OwnedDiagnosticCollector.CollectForTestingAsync(
+                    CreateRequest(
+                        SupervisorHost.CollectorBlockWithReadyArgument,
+                        TimeSpan.FromSeconds(5),
+                        TimeSpan.FromSeconds(2),
+                        CreateReadyPath("pre-dispatch-cancellation")),
+                    DiagnosticCollectorMutation.None,
+                    transitions.Add,
+                    startupCancellation.Token,
+                    executionCancellation.Token))
+            .ConfigureAwait(true);
+
+        var cancellation = Assert.IsAssignableFrom<OperationCanceledException>(
+            failure.Failure.Cause);
+        Assert.Equal(executionCancellation.Token, cancellation.CancellationToken);
+        Assert.Empty(transitions);
+        AssertStartupCancellationInterval(
+            failure,
+            DiagnosticCollectorTransition.CollectorDispatchRequested,
+            DiagnosticCollectorTransition.ProcessStartRequested,
+            DiagnosticCollectorFailureBoundary.ProcessStart,
+            cleanupExpected: false);
+    }
+
+    [Fact]
     public async Task TargetExitCancellationAtLaunchAuthorizationDoesNotCancelTargetStart()
     {
         var failure = await RunStartupCancellationBoundaryCaseAsync(
@@ -900,7 +935,8 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         DiagnosticCollectorExecutionException failure,
         DiagnosticCollectorTransition lastKnownGood,
         DiagnosticCollectorTransition firstMissingRequired,
-        DiagnosticCollectorFailureBoundary boundary)
+        DiagnosticCollectorFailureBoundary boundary,
+        bool cleanupExpected = true)
     {
         Assert.Equal(DiagnosticCollectorFailureKind.CallerCancelled, failure.Failure.Kind);
         Assert.False(failure.Failure.Evidence.Started);
@@ -914,10 +950,10 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         Assert.Equal(boundary, interval.Boundary);
         Assert.False(journal.DeadlineExhausted);
         Assert.False(journal.TargetStarted);
-        Assert.True(journal.TerminationStarted);
-        Assert.True(journal.TerminationCompleted);
-        Assert.True(journal.ReapCompleted);
-        Assert.True(journal.StreamsDrained);
+        Assert.Equal(cleanupExpected, journal.TerminationStarted);
+        Assert.Equal(cleanupExpected, journal.TerminationCompleted);
+        Assert.Equal(cleanupExpected, journal.ReapCompleted);
+        Assert.Equal(cleanupExpected, journal.StreamsDrained);
     }
 
     private static async Task<TargetExitCancellationCaseResult>

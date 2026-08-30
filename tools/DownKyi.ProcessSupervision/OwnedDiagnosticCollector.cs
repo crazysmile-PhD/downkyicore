@@ -114,8 +114,12 @@ public static class OwnedDiagnosticCollector
         ArgumentNullException.ThrowIfNull(request);
         var timeline = new DiagnosticCollectorTimelineBuilder(request);
         timeline.Mark(DiagnosticCollectorTransition.CollectorDispatchRequested);
-        if (startupCancellationToken.IsCancellationRequested)
+        var preDispatchCancellationToken = startupCancellationToken.IsCancellationRequested
+            ? startupCancellationToken
+            : executionCancellationToken;
+        if (preDispatchCancellationToken.IsCancellationRequested)
         {
+            timeline.RecordFailureInterval();
             timeline.MarkTypedOutcomeReturned();
             var kind = DiagnosticCollectorFailureKind.CallerCancelled;
             throw CreateFailure(
@@ -123,7 +127,7 @@ public static class OwnedDiagnosticCollector
                 CreateNotStartedEvidence(
                     timedOut: false,
                     timeline.BuildPrimaryTimeline(mutation)),
-                new OperationCanceledException(startupCancellationToken),
+                new OperationCanceledException(preDispatchCancellationToken),
                 Array.Empty<DiagnosticCollectorCleanupFailure>(),
                 timeline.BuildOwnerJournal(
                     kind,
