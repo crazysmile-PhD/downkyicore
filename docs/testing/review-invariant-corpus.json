@@ -126,7 +126,7 @@
     {
       "id": "restart-handoff-ownership",
       "historicalRoots": ["PR #197 Stage 4A", "PR #197 Stage 4"],
-      "guards": "A prepared restart candidate is revocable and reaped, while a committed successor uses one authenticated deadline and an exact native old-parent watcher to make one relaunch attempt without weakening ordinary process ownership.",
+      "guards": "A prepared restart candidate is revocable and reaped, while a committed successor uses one authenticated deadline and an exact native old-parent watcher with non-authoritative native cancellation wake-up to make one relaunch attempt without weakening ordinary process ownership.",
       "testClasses": [
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests" }
       ],
@@ -203,6 +203,15 @@
           "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
           "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
           "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_CLEANUP_SHORT_CIRCUIT",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.RestartHandoffMutationTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_RESTART_CANCELLATION_WAKE",
           "environmentValue": "1",
           "expectedOutcome": "test-failure",
           "expectedFailedTests": 1

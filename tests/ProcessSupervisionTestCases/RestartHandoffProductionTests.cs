@@ -176,6 +176,85 @@ public sealed class RestartHandoffProductionTests
     }
 
     [Fact]
+    public async Task CancellationInterruptsAnEnteredNativeParentWaitAndIsTyped()
+    {
+        await using var scenario = StartScenario("parent-wait-cancellation", 8_000);
+        _ = await scenario.ReadExpectedAsync("Prepared").ConfigureAwait(true);
+        var elapsed = Stopwatch.StartNew();
+        await scenario.SendAsync("COMMIT_HOLD").ConfigureAwait(true);
+        _ = await scenario.ReadExpectedAsync("Committed").ConfigureAwait(true);
+        var terminal = await scenario.ReadExpectedAsync("HelperTerminal").ConfigureAwait(true);
+
+        Assert.Equal(RestartHandoffState.Failed, terminal.State);
+        Assert.Equal(RestartHandoffFailureKind.CancellationRequested, terminal.FailureKind);
+        Assert.Equal(0, terminal.RelaunchAttempts);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(4),
+            $"Cancellation returned after {elapsed.Elapsed} instead of waking the native wait.");
+        Assert.False(scenario.ParentHasExited);
+
+        await scenario.SendAsync("EXIT").ConfigureAwait(true);
+        var remaining = await scenario.CompleteAsync().ConfigureAwait(true);
+        Assert.DoesNotContain(remaining, item => item.Type == "ReplacementStarted");
+    }
+
+    [Fact]
+    public async Task EstablishedExactParentExitWinsACancellationRace()
+    {
+        using var parent = Process.Start(CreateFixtureStartInfo("hold"))
+            ?? throw new InvalidOperationException("The exact-parent fixture did not start.");
+        ParentLifetimeLease? watcher = null;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        try
+        {
+            watcher = ParentLifetimeLeaseFactory.Create(parent.Id);
+            var deadline = TransitionBudget.Start(
+                    TimeSpan.FromSeconds(6),
+                    TimeSpan.FromSeconds(1))
+                .CreateRestartHandoffDeadline();
+            var waitStarted = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var waitTask = Task.Run(async () =>
+                await watcher.WaitForExitForTestingAsync(
+                        deadline,
+                        () => waitStarted.TrySetResult(true),
+                        cancellation.Token)
+                    .ConfigureAwait(false));
+
+            await waitStarted.Task.WaitAsync(
+                    deadline.RemainingOperation,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            parent.Kill(entireProcessTree: true);
+            await parent.WaitForExitAsync(TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            await cancellation.CancelAsync().ConfigureAwait(true);
+
+            var outcome = await waitTask.WaitAsync(
+                    deadline.RemainingOperation,
+                    TestContext.Current.CancellationToken)
+                .ConfigureAwait(true);
+            Assert.True(outcome.ExactParentExited);
+            Assert.Equal(ExpectedAuthority(), watcher.IdentityAuthority);
+        }
+        finally
+        {
+            await cancellation.CancelAsync().ConfigureAwait(true);
+            if (!parent.HasExited)
+            {
+                parent.Kill(entireProcessTree: true);
+                await parent.WaitForExitAsync(TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true);
+            }
+
+            if (watcher != null)
+            {
+                await watcher.DisposeAsync().ConfigureAwait(true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task HelperCrashBeforeCommitFailsClosedWithoutResidualHelper()
     {
         await using var scenario = StartScenario("helper-crash-before-commit", 5_000);

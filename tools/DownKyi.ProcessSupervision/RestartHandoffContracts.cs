@@ -32,7 +32,8 @@ public enum RestartHandoffFailureKind
     ParentWaitFailed,
     RelaunchFailed,
     RevocationFailed,
-    HelperCrashed
+    HelperCrashed,
+    CancellationRequested
 }
 
 public enum RestartHandoffRequestParseResult

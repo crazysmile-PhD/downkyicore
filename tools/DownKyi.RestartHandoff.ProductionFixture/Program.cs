@@ -228,6 +228,9 @@ internal static class Program
                                 "Injected authorization cleanup failure.")
                             : null)
                     .ConfigureAwait(false),
+            "parent-wait-cancellation" =>
+                await ExecuteParentWaitCancellationScenarioAsync(request, relaunchStartInfo)
+                    .ConfigureAwait(false),
             _ => await RestartHandoffHelper.ExecuteAsync(request, relaunchStartInfo)
                 .ConfigureAwait(false)
         };
@@ -242,6 +245,24 @@ internal static class Program
             outcome.Succeeded,
             outcome.CleanupFailures));
         return 0;
+    }
+
+    private static async Task<RestartHandoffOutcome> ExecuteParentWaitCancellationScenarioAsync(
+        RestartHandoffRequest request,
+        ProcessStartInfo relaunchStartInfo)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var waitStarted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var execution = RestartHandoffHelper.ExecuteWithParentWaitObservationForTestingAsync(
+            request,
+            relaunchStartInfo,
+            () => waitStarted.TrySetResult(true),
+            cancellation.Token);
+        await waitStarted.Task.WaitAsync(request.Deadline.RemainingOperation)
+            .ConfigureAwait(false);
+        await cancellation.CancelAsync().ConfigureAwait(false);
+        return await execution.ConfigureAwait(false);
     }
 
     private static async Task<int> RunHelperCrashPostCommitAsync(

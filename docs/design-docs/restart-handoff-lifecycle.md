@@ -82,6 +82,10 @@ can be waited. The handle, not the numeric PID or start time, is correctness
 authority. Process exit signals that retained object even if the numeric PID is
 later reused.
 
+Cancellation is a second wait signal, not a second identity authority. A
+cancellable wait supplies the retained process handle and the token wait handle
+to one `WaitForMultipleObjects` call using the original remaining deadline.
+
 ### Linux
 
 Call `pidfd_open` while the old desktop is alive and wait for readiness with
@@ -89,12 +93,20 @@ Call `pidfd_open` while the old desktop is alive and wait for readiness with
 is correctness authority. Unsupported pidfd behavior is a capability failure;
 there is no polling fallback.
 
+A cancellable Linux wait adds one private `eventfd` to the same `poll` call as
+the retained pidfd. The eventfd can only wake the wait; only the pidfd can prove
+that the exact parent exited.
+
 ### macOS
 
 Register `EVFILT_PROC` plus `NOTE_EXIT` in a `kqueue` while the old desktop is
 alive. Return `Ready` only after the registration succeeds, and do not permit
 the desktop to finish handoff before that readiness. PID observation is only the
 input used to arm the kernel watcher; it is not a later polling authority.
+
+The kqueue also owns an `EVFILT_USER` cancellation wake registration. Parent
+`EVFILT_PROC/NOTE_EXIT` is evaluated first when both events are returned;
+`EVFILT_USER` never becomes process-identity evidence.
 
 ## Deadline Handoff Feasibility
 
@@ -196,6 +208,20 @@ architecture/mutation cases and the nine-test cleanup mutation profile with
 exactly one owning failure. Linux and macOS native regression remains part of
 the later unified exact-head closure rather than evidence inferred from this
 Windows run.
+
+The blocking-review cancellation remediation makes the already-entered native
+parent wait responsive without polling, sleeps, retries or a fresh deadline.
+Windows waits on the retained process handle plus the token handle, Linux polls
+the retained pidfd plus a private eventfd, and macOS waits on the retained
+`EVFILT_PROC` registration plus `EVFILT_USER`. Exact-parent exit wins when its
+native event is already established; otherwise cancellation is the typed
+`CancellationRequested` terminal outcome and no replacement is launched. The
+fixture-only wait-entry callback is internal and does not add a product command,
+environment switch or alternate authority. Local Windows proof passed all 21
+production restart cases, 16 affected architecture/mutation cases, and the
+ten-test cancellation mutation profile produced exactly one owning failure.
+Linux and macOS execution remains pending the unified exact-head CI run; local
+cross-compilation is not native execution evidence.
 
 Local Windows proof at the implementation checkpoint passed 32 production and
 Stage 4A restart cases, 30 affected architecture cases, 23 desktop restart and

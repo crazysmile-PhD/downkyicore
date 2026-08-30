@@ -208,6 +208,14 @@ Production exact-parent authority is a retained Windows process handle with only
 check precede READY. Capability failure is terminal; there is no PID, PPID,
 start-time, `/proc`, enumeration or sleep fallback.
 
+Cancellation after the helper enters that native wait is represented inside the
+same bounded wait operation: a Windows token handle, Linux private eventfd, or
+macOS `EVFILT_USER` registration wakes the call. Those signals cannot establish
+parent identity, renew the immutable deadline or authorize relaunch. If the
+exact-parent event is already established it is evaluated first; otherwise the
+helper records typed `CancellationRequested`, performs all terminal cleanup and
+does not launch a replacement.
+
 ## Threat Model
 
 The current threat model is trusted repository-child bug containment. The

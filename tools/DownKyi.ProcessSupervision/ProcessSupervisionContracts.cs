@@ -371,9 +371,32 @@ public abstract class ParentLifetimeLease : IAsyncDisposable
 
     internal abstract bool IsExited();
 
-    public abstract ValueTask<ParentLifetimeOutcome> WaitForExitAsync(
+    public ValueTask<ParentLifetimeOutcome> WaitForExitAsync(
         RestartHandoffDeadline deadline,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default)
+    {
+        return WaitForExitCoreAsync(
+            deadline,
+            waitStartedForTesting: null,
+            cancellationToken);
+    }
+
+    internal ValueTask<ParentLifetimeOutcome> WaitForExitForTestingAsync(
+        RestartHandoffDeadline deadline,
+        Action waitStartedForTesting,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(waitStartedForTesting);
+        return WaitForExitCoreAsync(
+            deadline,
+            waitStartedForTesting,
+            cancellationToken);
+    }
+
+    protected abstract ValueTask<ParentLifetimeOutcome> WaitForExitCoreAsync(
+        RestartHandoffDeadline deadline,
+        Action? waitStartedForTesting,
+        CancellationToken cancellationToken);
 
     public abstract ValueTask DisposeAsync();
 }

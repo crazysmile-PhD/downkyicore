@@ -626,6 +626,7 @@ public static class RestartHandoffHelper
             request,
             relaunchStartInfo,
             cleanupFailureForTesting: null,
+            parentWaitStartedForTesting: null,
             cancellationToken);
     }
 
@@ -640,6 +641,22 @@ public static class RestartHandoffHelper
             request,
             relaunchStartInfo,
             cleanupFailureForTesting,
+            parentWaitStartedForTesting: null,
+            cancellationToken);
+    }
+
+    internal static Task<RestartHandoffOutcome> ExecuteWithParentWaitObservationForTestingAsync(
+        RestartHandoffRequest request,
+        ProcessStartInfo relaunchStartInfo,
+        Action parentWaitStartedForTesting,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(parentWaitStartedForTesting);
+        return ExecuteCoreAsync(
+            request,
+            relaunchStartInfo,
+            cleanupFailureForTesting: null,
+            parentWaitStartedForTesting,
             cancellationToken);
     }
 
@@ -655,6 +672,7 @@ public static class RestartHandoffHelper
         RestartHandoffRequest request,
         ProcessStartInfo relaunchStartInfo,
         Func<RestartHandoffCleanupStage, Exception?>? cleanupFailureForTesting,
+        Action? parentWaitStartedForTesting,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -771,10 +789,16 @@ public static class RestartHandoffHelper
             }
 
             machine.Transition(RestartHandoffState.Authorized, RestartHandoffState.Committed);
-            var parentOutcome = await parent.WaitForExitAsync(
-                    request.Deadline,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            var parentOutcome = parentWaitStartedForTesting == null
+                ? await parent.WaitForExitAsync(
+                        request.Deadline,
+                        cancellationToken)
+                    .ConfigureAwait(false)
+                : await parent.WaitForExitForTestingAsync(
+                        request.Deadline,
+                        parentWaitStartedForTesting,
+                        cancellationToken)
+                    .ConfigureAwait(false);
             if (!parentOutcome.ExactParentExited)
             {
                 machine.Fail();
@@ -822,16 +846,9 @@ public static class RestartHandoffHelper
         }
         catch (OperationCanceledException failure)
         {
-            var kind = machine.State switch
-            {
-                RestartHandoffState.Committed => RestartHandoffFailureKind.ParentWaitFailed,
-                RestartHandoffState.ParentExited or RestartHandoffState.RelaunchStarted =>
-                    RestartHandoffFailureKind.RelaunchFailed,
-                _ => RestartHandoffFailureKind.AuthorizationFailed
-            };
             machine.Fail();
             return Failure(
-                kind,
+                RestartHandoffFailureKind.CancellationRequested,
                 machine.State,
                 authority,
                 relaunchAttempts,

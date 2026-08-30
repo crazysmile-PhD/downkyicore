@@ -458,6 +458,7 @@ contracts:
   - Repeated shutdown calls return the same Task and never synchronously wait.
   - Restart prepares an inert non-shell helper before cleanup and commits it only after desktop termination handoff; an uncommitted, revoked or disconnected helper cannot relaunch.
   - The committed helper retains an OS-backed exact-parent authority, consumes only the original transaction deadline, and fails closed without relaunch on stale identity, timeout, cancellation or wait failure; PID/start-time polling is not authority.
+  - Cancellation wakes the already-entered native parent wait through a Windows token handle, Linux eventfd or macOS EVFILT_USER in the same wait set; those wake signals cannot prove parent exit, renew the deadline or authorize relaunch.
   - Restart-helper authorization is transactional; revoke closes authorization, terminates the owned child within one owner deadline, releases resources, and preserves concurrent failures from every stage.
   - Helper terminal cleanup preserves the primary typed transition, attempts status, authorization and exact-parent disposal independently, and reports cleanup-only failure as unsuccessful without inventing another primary transition.
   - Framework-dependent execution preserves the managed entry assembly argument; packaged execution relaunches the current executable directly.

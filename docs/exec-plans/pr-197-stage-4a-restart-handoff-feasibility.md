@@ -136,6 +136,28 @@ under case-insensitive comparison, logical-label length independence and the
 104-byte macOS Unix-domain socket path budget. An architecture test rejects new
 pipe-server call sites that bypass the policy.
 
+## Blocking-Review Cancellation Remediation
+
+The Stage 4A identity and feasibility decision remains closed. The later
+blocking review exposed one production wait-boundary defect: once
+`WaitForSingleObject`, pidfd `poll`, or `kevent` had begun, caller cancellation
+could not wake the call before the original deadline. The remediation keeps the
+same retained exact-parent authority and immutable deadline while adding a
+non-authoritative cancellation signal to each native wait set:
+
+- Windows: token wait handle beside the retained `SYNCHRONIZE` process handle;
+- Linux: private eventfd beside the retained pidfd;
+- macOS: `EVFILT_USER` beside the retained `EVFILT_PROC/NOTE_EXIT` registration.
+
+There is no PID/PPID/start-time fallback, sleep, retry, renewed deadline or
+second owner. A cross-process fixture cancels only after an internal observation
+proves the native parent wait has started. A separate race proof establishes the
+parent event before cancellation and requires exact-parent exit to win. Local
+Windows validation passed all 21 production restart cases and all 16 affected
+architecture/mutation cases. The ten-test cancellation mutation profile failed
+exactly its owning test. Native Linux and macOS behavior is not inferred from
+the Windows result and remains a required exact-head CI closure condition.
+
 ## Completion Conditions
 
 All three native backends, the deadline handoff and all four mutations passed on

@@ -90,6 +90,29 @@ public sealed class RestartHandoffArchitectureTests
     }
 
     [Fact]
+    public void ExactParentBackendsWakeCancellationInsideTheOriginalNativeWait()
+    {
+        var source = ReadSource(
+            "tools",
+            "DownKyi.ProcessSupervision",
+            "ParentLifetimeLeases.cs");
+        var contracts = ReadSource(
+            "tools",
+            "DownKyi.ProcessSupervision",
+            "RestartHandoffContracts.cs");
+
+        Assert.Contains("WaitForMultipleObjects", source, StringComparison.Ordinal);
+        Assert.Contains("eventfd(", source, StringComparison.Ordinal);
+        Assert.Contains("EventFilterUser = -10", source, StringComparison.Ordinal);
+        Assert.Contains("NoteTrigger", source, StringComparison.Ordinal);
+        Assert.Contains("deadline.RemainingOperation", source, StringComparison.Ordinal);
+        Assert.Contains("CancellationRequested", contracts, StringComparison.Ordinal);
+        Assert.DoesNotContain("Process.GetProcessById", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("TransitionBudget.Start", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Stopwatch.StartNew", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void OrdinaryLeaseRetainsOwnerDeathSemanticsWithoutRestartExceptions()
     {
         var source = ReadSource(

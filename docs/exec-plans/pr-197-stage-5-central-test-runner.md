@@ -651,6 +651,15 @@ The build-time guard-removal and direct-project delegation-bypass profiles each
 executed 14 tests and produced exactly one owning failure (13 passed, one
 failed), so both review oracles kill their intended mutation.
 
+The independent remediation commits preserve review ownership: `067ca28c`
+owns Stage 5 findings A/B, and `55828360` owns Stage 4 finding C. The Stage 4A
+finding D checkpoint adds native cancellation wake-up while retaining the same
+exact-parent authority and caller deadline; its local Windows proof passed 21
+production cases and 16 architecture/mutation cases, while the ten-case
+cancellation mutation profile produced exactly one owning failure. These are
+local implementation checkpoints only. Unified exact-head validation, one
+normal push, required CI and same-head review remain mandatory before closure.
+
 ## Commits And Closure
 
 - `a768a9d86bba3b5bd0f0834a7997cf21a9ccd017` — compiled migration and

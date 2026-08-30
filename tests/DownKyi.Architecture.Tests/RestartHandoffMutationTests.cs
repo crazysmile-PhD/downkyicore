@@ -30,6 +30,8 @@ public sealed class RestartHandoffMutationTests
         "DOWNKYI_TEST_MUTATE_RESTART_REVOKE_REAP";
     private const string CleanupShortCircuitMutation =
         "DOWNKYI_TEST_MUTATE_RESTART_CLEANUP_SHORT_CIRCUIT";
+    private const string CancellationWakeMutation =
+        "DOWNKYI_TEST_MUTATE_RESTART_CANCELLATION_WAKE";
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
 
@@ -352,6 +354,30 @@ public sealed class RestartHandoffMutationTests
             "failures.Add(RestartHandoffCleanupFailure.FromException(stage, failure));",
             source,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CancellationWakeCannotBeRemovedFromAnyNativeParentBackend()
+    {
+        var source = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot(),
+                "tools",
+                "DownKyi.ProcessSupervision",
+                "ParentLifetimeLeases.cs"))
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
+        if (IsMutationActive(CancellationWakeMutation))
+        {
+            source = source.Replace(
+                "private const short EventFilterUser = -10;",
+                "private const short EventFilterUser = EventFilterProcess;",
+                StringComparison.Ordinal);
+        }
+
+        Assert.Contains("WaitForMultipleObjects", source, StringComparison.Ordinal);
+        Assert.Contains("eventfd(", source, StringComparison.Ordinal);
+        Assert.Contains("private const short EventFilterUser = -10;", source, StringComparison.Ordinal);
+        Assert.Contains("FilterFlags = NoteTrigger", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Process.GetProcessById", source, StringComparison.Ordinal);
     }
 
     private static bool IsMutationActive(string environmentVariable)
