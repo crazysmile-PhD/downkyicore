@@ -91,7 +91,9 @@ derived dependency 在 validated Build head 後變更都必須中止 recovery。
 assembly shard 產生 current-SHA evidence；`script/validate-ci-evidence.ps1` 只在每個
 upstream 成功且 compiled semantic aggregator 證明沒有
 missing/duplicate/zero-test/wrong-SHA evidence 後才允許 `PR required verdict` 通過。
-分片是 scheduling contract，不是縮減 coverage。
+分片是 scheduling contract，不是縮減 coverage。Lifecycle 的 assembly phases 各自保留
+完整 iteration；與 assembly 無關的 gate self-tests 則只由 topology 指定的一個
+`gateAuthorityAssembly` 產生，缺少、重複或由其他 assembly report 冒充都會 fail closed。
 
 `DKYI1001` compiler analyzer 以 compilation-resolved method symbol 禁止非 process
 owner 呼叫 `SqliteConnection.ClearAllPools`。它分析並回報 generated code，且必須在

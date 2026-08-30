@@ -1,3 +1,4 @@
+using System.Text.Json;
 using YamlDotNet.RepresentationModel;
 
 namespace DownKyi.Architecture.Tests;
@@ -255,12 +256,32 @@ public sealed class WorkflowTestOwnershipArchitectureTests
         {
             throw new InvalidDataException("PR lifecycle assembly coverage is missing or duplicated.");
         }
+        using var topology = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "docs",
+            "testing",
+            "ci-required-topology.json")));
+        var gateAuthorityAssembly = topology.RootElement.GetProperty("lifecycle")
+            .GetProperty("gateAuthorityAssembly")
+            .GetString();
+        if (string.IsNullOrWhiteSpace(gateAuthorityAssembly) ||
+            assemblies.Count(assembly => string.Equals(
+                assembly,
+                gateAuthorityAssembly,
+                StringComparison.Ordinal)) != 1)
+        {
+            throw new InvalidDataException("PR lifecycle has no unique required gate authority assembly.");
+        }
 
         var command = NormalizeCommand(RequireScalar(
             FindUniqueStep(workflow, "assembly-lifecycle", "Run sequential iterations for exact assembly"),
             "run"));
         if (!command.Contains("-Profile $profile", StringComparison.Ordinal) ||
             !command.Contains("-AssemblyPattern '${{ matrix.assembly }}'", StringComparison.Ordinal) ||
+            !command.Contains("ci-required-topology.json", StringComparison.Ordinal) ||
+            !command.Contains("$topology.lifecycle.gateAuthorityAssembly", StringComparison.Ordinal) ||
+            !command.Contains("-ValidateForensics", StringComparison.Ordinal) ||
+            !command.Contains("-SkipGateSelfTests:$skipGateSelfTests", StringComparison.Ordinal) ||
             command.Contains("-Iterations", StringComparison.Ordinal))
         {
             throw new InvalidDataException(

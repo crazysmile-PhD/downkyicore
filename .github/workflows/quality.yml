@@ -403,11 +403,14 @@ jobs:
         shell: pwsh
         run: |
           $profile = if ('${{ github.event_name }}' -eq 'pull_request') { 'PR' } else { 'Main' }
+          $topology = Get-Content -Raw ./docs/testing/ci-required-topology.json | ConvertFrom-Json
+          $skipGateSelfTests = '${{ matrix.assembly }}' -ne $topology.lifecycle.gateAuthorityAssembly
           ./script/test-assembly-lifecycle.ps1 `
             -Configuration Release `
             -Profile $profile `
             -NoBuild `
             -ValidateForensics `
+            -SkipGateSelfTests:$skipGateSelfTests `
             -AssemblyPattern '${{ matrix.assembly }}' `
             -ResultsDirectory './artifacts/ci-evidence/lifecycle/${{ matrix.assembly }}'
       - name: Upload lifecycle reports and evidence

@@ -25,6 +25,26 @@ public sealed class CiEvidenceAggregatorBehaviorTests
         Assert.Equal(8, result.LifecycleAssemblyCount);
     }
 
+    [Fact]
+    public void MissingLifecycleGateEvidenceFailsClosed()
+    {
+        using var fixture = CiEvidenceFixture.Create();
+        fixture.RemoveLifecycleGateEvidence();
+
+        Assert.Throws<InvalidDataException>(() =>
+            CiEvidenceAggregator.Validate(fixture.CreateOptions()));
+    }
+
+    [Fact]
+    public void LifecycleGateEvidenceFromSecondAssemblyFailsClosed()
+    {
+        using var fixture = CiEvidenceFixture.Create();
+        fixture.CopyLifecycleGateEvidenceToNonAuthority();
+
+        Assert.Throws<InvalidDataException>(() =>
+            CiEvidenceAggregator.Validate(fixture.CreateOptions()));
+    }
+
     [Theory]
     [InlineData("delete-shard", "DOWNKYI_TEST_MUTATE_CI_DELETE_SHARD")]
     [InlineData("duplicate-shard", "DOWNKYI_TEST_MUTATE_CI_DUPLICATE_SHARD")]
@@ -192,6 +212,33 @@ public sealed class CiEvidenceAggregatorBehaviorTests
             }
         }
 
+        internal void RemoveLifecycleGateEvidence()
+        {
+            var authorityPath = FindLifecycleGateAuthorityReport();
+            var json = JsonNode.Parse(File.ReadAllText(authorityPath))!.AsObject();
+            var results = json["results"]!.AsArray();
+            var gate = results.First(result =>
+                result?["assembly"]?.GetValue<string>() == "Gate.Forensics");
+            results.Remove(gate);
+            File.WriteAllText(authorityPath, json.ToJsonString());
+        }
+
+        internal void CopyLifecycleGateEvidenceToNonAuthority()
+        {
+            var authorityPath = FindLifecycleGateAuthorityReport();
+            var authority = JsonNode.Parse(File.ReadAllText(authorityPath))!.AsObject();
+            var gate = authority["results"]!.AsArray().First(result =>
+                result?["assembly"]?.GetValue<string>() == "Gate.Forensics")!;
+            var nonAuthorityPath = Directory.GetFiles(
+                    Path.Combine(Root, "lifecycle"),
+                    "assembly-lifecycle-report.json",
+                    SearchOption.AllDirectories)
+                .First(path => !string.Equals(path, authorityPath, StringComparison.Ordinal));
+            var nonAuthority = JsonNode.Parse(File.ReadAllText(nonAuthorityPath))!.AsObject();
+            nonAuthority["results"]!.AsArray().Add(gate.DeepClone());
+            File.WriteAllText(nonAuthorityPath, nonAuthority.ToJsonString());
+        }
+
         public void Dispose()
         {
             if (Directory.Exists(Root))
@@ -337,6 +384,14 @@ public sealed class CiEvidenceAggregatorBehaviorTests
 
         private void WriteLifecycleEvidence()
         {
+            using var topology = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+                RepositoryRoot,
+                "docs",
+                "testing",
+                "ci-required-topology.json")));
+            var gateAuthorityAssembly = topology.RootElement.GetProperty("lifecycle")
+                .GetProperty("gateAuthorityAssembly")
+                .GetString();
             var allProjects = Directory.GetFiles(
                 Path.Combine(RepositoryRoot, "tests"),
                 "*.Tests.csproj",
@@ -346,13 +401,17 @@ public sealed class CiEvidenceAggregatorBehaviorTests
                 .ToArray();
             foreach (var assembly in assemblies)
             {
-                var results = LifecycleGateResults.Select(gate => (object)new
+                var results = new List<object>();
+                if (string.Equals(assembly, gateAuthorityAssembly, StringComparison.Ordinal))
                 {
-                    assembly = gate.Assembly,
-                    iteration = 1,
-                    phase = gate.Phase,
-                    success = true
-                }).ToList();
+                    results.AddRange(LifecycleGateResults.Select(gate => (object)new
+                    {
+                        assembly = gate.Assembly,
+                        iteration = 1,
+                        phase = gate.Phase,
+                        success = true
+                    }));
+                }
                 for (var iteration = 1; iteration <= 3; iteration++)
                 {
                     results.AddRange(LifecyclePhases.Select(phase => new
@@ -380,6 +439,18 @@ public sealed class CiEvidenceAggregatorBehaviorTests
                     });
             }
         }
+
+        private string FindLifecycleGateAuthorityReport() =>
+            Directory.GetFiles(
+                    Path.Combine(Root, "lifecycle"),
+                    "assembly-lifecycle-report.json",
+                    SearchOption.AllDirectories)
+                .Single(path =>
+                {
+                    var json = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+                    return json["results"]!.AsArray().Any(result =>
+                        result?["assembly"]?.GetValue<string>() == "Gate.Forensics");
+                });
 
         private static Dictionary<string, IReadOnlyList<string>> ReadNormalClasses()
         {

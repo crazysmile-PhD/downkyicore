@@ -38,6 +38,7 @@
   "lifecycle": {
     "platform": "Windows",
     "runner": "windows-latest",
+    "gateAuthorityAssembly": "DownKyi.Architecture.Tests",
     "profiles": {
       "PR": 3,
       "Main": 5

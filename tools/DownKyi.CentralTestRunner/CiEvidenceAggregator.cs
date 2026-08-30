@@ -457,6 +457,7 @@ public static class CiEvidenceAggregator
         var phases = lifecycle.GetProperty("phases").EnumerateArray()
             .Select(item => item.GetString() ?? string.Empty)
             .ToArray();
+        var gateAuthorityAssembly = ReadRequiredString(lifecycle, "gateAuthorityAssembly");
         var expectedGateResults = lifecycle.GetProperty("gateResults")
             .EnumerateArray()
             .Select(item => $"{ReadRequiredString(item, "assembly")}|{ReadRequiredString(item, "phase")}")
@@ -475,6 +476,10 @@ public static class CiEvidenceAggregator
             .Select(path => Path.GetFileNameWithoutExtension(path) ??
                             throw new InvalidDataException("A lifecycle test project has no assembly name."))
             .ToHashSet(StringComparer.Ordinal);
+        if (!expectedAssemblies.Contains(gateAuthorityAssembly))
+        {
+            throw new InvalidDataException("The lifecycle gate authority is not a required test assembly.");
+        }
         var reportPaths = Directory.GetFiles(
             options.EvidenceRoot,
             "assembly-lifecycle-report.json",
@@ -484,6 +489,7 @@ public static class CiEvidenceAggregator
             throw new InvalidDataException("Lifecycle evidence has a missing or duplicate assembly report.");
         }
         var seenAssemblies = new HashSet<string>(StringComparer.Ordinal);
+        var observedGateResults = new HashSet<string>(StringComparer.Ordinal);
         foreach (var reportPath in reportPaths)
         {
             using var document = ReadJson(reportPath);
@@ -512,7 +518,10 @@ public static class CiEvidenceAggregator
                 throw new InvalidDataException("Lifecycle report assembly identity is missing, duplicate or unexpected.");
             }
             var observed = new HashSet<string>(StringComparer.Ordinal);
-            var observedGateResults = new HashSet<string>(StringComparer.Ordinal);
+            var isGateAuthority = string.Equals(
+                assemblies[0],
+                gateAuthorityAssembly,
+                StringComparison.Ordinal);
             foreach (var result in results)
             {
                 var assembly = ReadRequiredString(result, "assembly");
@@ -521,7 +530,8 @@ public static class CiEvidenceAggregator
                 if (!string.Equals(assembly, assemblies[0], StringComparison.Ordinal))
                 {
                     var gateIdentity = $"{assembly}|{phase}";
-                    if (iteration != 1 || !ReadRequiredBoolean(result, "success") ||
+                    if (!isGateAuthority || iteration != 1 ||
+                        !ReadRequiredBoolean(result, "success") ||
                         !expectedGateResults.Contains(gateIdentity) ||
                         !observedGateResults.Add(gateIdentity))
                     {
@@ -541,14 +551,15 @@ public static class CiEvidenceAggregator
             {
                 throw new InvalidDataException("Lifecycle evidence has a missing iteration or phase.");
             }
-            if (!observedGateResults.SetEquals(expectedGateResults))
-            {
-                throw new InvalidDataException("Lifecycle evidence has a missing or duplicate gate self-test.");
-            }
         }
         if (!seenAssemblies.SetEquals(expectedAssemblies))
         {
             throw new InvalidDataException("Lifecycle evidence does not contain every expected assembly exactly once.");
+        }
+        if (!observedGateResults.SetEquals(expectedGateResults))
+        {
+            throw new InvalidDataException(
+                "Lifecycle evidence has a missing, duplicate or unauthorized gate self-test.");
         }
         return seenAssemblies.Count;
     }

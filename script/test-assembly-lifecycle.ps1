@@ -16,6 +16,7 @@ param(
     [string]$ResultsDirectory = "artifacts/assembly-lifecycle",
     [string]$DiagnosticsToolPath,
     [switch]$ValidateForensics,
+    [switch]$SkipGateSelfTests,
     [switch]$NoBuild
 )
 
@@ -84,15 +85,18 @@ $forensicsCollectorCleanupReportSelfTestPassed = $false
 $forensicsCollectorCleanupReportSelfTest = $null
 $forensicsCollectorInterruptedStackSelfTestPassed = $false
 $forensicsCollectorInterruptedStackSelfTest = $null
-$dotnetStackAttachStallSelfTestRequired = [bool]($ValidateForensics -and $IsWindows)
+$gateSelfTestsRequired = [bool]($ValidateForensics -and -not $SkipGateSelfTests)
+$dotnetStackAttachStallSelfTestRequired = [bool]($gateSelfTestsRequired -and $IsWindows)
 $dotnetStackAttachStallSelfTestPassed = $false
 $dotnetStackAttachStallSelfTest = $null
-$markerReaderSelfTestRequired = $IsWindows -and
+$formalWindowsLifecycleProfile = $IsWindows -and
     @("PR", "Main", "Rehearsal", "Flaky").Contains($Profile)
+$markerReaderSelfTestRequired = $gateSelfTestsRequired -and
+    $formalWindowsLifecycleProfile
 $markerReaderSelfTestComplete = $false
 $processLeaseSelfTestComplete = $false
 $processLeaseSelfTest = [ordered]@{
-    required = [bool]$ValidateForensics
+    required = $gateSelfTestsRequired
     executed = $false
     passed = $false
     parentExited = $false
@@ -125,8 +129,11 @@ $markerReaderSelfTest = [ordered]@{
 New-Item -ItemType Directory -Force -Path $rawRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
 
-if ($markerReaderSelfTestRequired -and -not $ValidateForensics) {
+if ($formalWindowsLifecycleProfile -and -not $ValidateForensics) {
     throw "Formal Windows lifecycle profiles require -ValidateForensics."
+}
+if ($SkipGateSelfTests -and -not $ValidateForensics) {
+    throw "Skipping lifecycle gate self-tests still requires -ValidateForensics."
 }
 
 function Resolve-DiagnosticsTool {
@@ -3352,7 +3359,7 @@ if (-not (Test-Path -LiteralPath $processSupervisionAssembly -PathType Leaf)) {
     throw "Process supervision assembly was not built: $processSupervisionAssembly"
 }
 [Reflection.Assembly]::LoadFrom($processSupervisionAssembly) | Out-Null
-if ($ValidateForensics) {
+if ($gateSelfTestsRequired) {
     $forensicsCollectorCleanupReportSelfTest =
         Test-DiagnosticCollectorCleanupFailureReport
     $forensicsCollectorCleanupReportSelfTestPassed =
@@ -3453,7 +3460,7 @@ if ($testProjects.Count -eq 0) {
 }
 
 $phaseResults = @()
-if ($ValidateForensics) {
+if ($gateSelfTestsRequired) {
     if ([string]::IsNullOrWhiteSpace($script:diagnosticsTool)) {
         throw "Forensics validation requires dotnet-stack."
     }
@@ -4235,8 +4242,8 @@ $report = [ordered]@{
         $forensicsSelfTestReleaseOrderingMutationValidated
     forensicsSelfTestReleaseOrderingMutation =
         $forensicsSelfTestReleaseOrderingMutation
-    slowEvidenceOrderingSelfTestRequired = [bool]$ValidateForensics
-    slowEvidenceOrderingSelfTestPassed = if ($ValidateForensics) {
+    slowEvidenceOrderingSelfTestRequired = $gateSelfTestsRequired
+    slowEvidenceOrderingSelfTestPassed = if ($gateSelfTestsRequired) {
         $slowEvidenceOrderingSelfTestPassed
     }
     else {
@@ -4244,17 +4251,17 @@ $report = [ordered]@{
     }
     slowEvidenceOrderingSelfTest = $slowEvidenceOrderingSelfTest
     reporterContractSelfTestPassed = $reporterContractSelfTestPassed
-    forensicsCollectorCaptureWindowSelfTestRequired = [bool]$ValidateForensics
+    forensicsCollectorCaptureWindowSelfTestRequired = $gateSelfTestsRequired
     forensicsCollectorCaptureWindowSelfTestPassed =
         $forensicsCollectorCaptureWindowSelfTestPassed
     forensicsCollectorCaptureWindowSelfTest =
         $forensicsCollectorCaptureWindowSelfTest
-    forensicsCollectorCleanupReportSelfTestRequired = [bool]$ValidateForensics
+    forensicsCollectorCleanupReportSelfTestRequired = $gateSelfTestsRequired
     forensicsCollectorCleanupReportSelfTestPassed =
         $forensicsCollectorCleanupReportSelfTestPassed
     forensicsCollectorCleanupReportSelfTest =
         $forensicsCollectorCleanupReportSelfTest
-    forensicsCollectorInterruptedStackSelfTestRequired = [bool]$ValidateForensics
+    forensicsCollectorInterruptedStackSelfTestRequired = $gateSelfTestsRequired
     forensicsCollectorInterruptedStackSelfTestPassed =
         $forensicsCollectorInterruptedStackSelfTestPassed
     forensicsCollectorInterruptedStackSelfTest =
@@ -4347,7 +4354,7 @@ $markdown.Add(
     "positive threshold=" +
     "$forensicsSelfTestPositiveCaptureThresholdSeconds s")
 $markdown.Add(
-    "- Slow-evidence ordering self-test: required=$([bool]$ValidateForensics), " +
+    "- Slow-evidence ordering self-test: required=$gateSelfTestsRequired, " +
     "passed=$slowEvidenceOrderingSelfTestPassed")
 $markdown.Add(
     "- Supervisor-owned evidence-hold self-test: " +

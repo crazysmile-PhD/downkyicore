@@ -128,10 +128,11 @@ runs iteration 1, then 2, then 3. Each shard builds the lifecycle probe, the
 central runner (and its transitive process-supervision dependency) and the
 selected test-project closure, not the whole solution. The aggregator requires
 all eight Windows assemblies, every one of the six phases for every iteration,
-and the three schema-v4 gate self-tests. Missing or duplicate assemblies,
-iterations, phases or gate results fail closed. Rehearsal remains 100 sequential
-iterations per assembly on tag or manual release execution; it is not ordinary
-PR work.
+and the three schema-v4 gate self-tests exactly once from the topology's named
+`gateAuthorityAssembly`. Missing or duplicate assemblies, iterations, phases or
+gate results fail closed; a non-authority assembly that supplies gate results is
+also rejected. Rehearsal remains 100 sequential iterations per assembly on tag
+or manual release execution; it is not ordinary PR work.
 
 ## Evidence Authority
 
@@ -157,7 +158,7 @@ iteration.
 Local evidence established the implementation before the remote measurement:
 
 - strict Architecture project build: zero warnings and zero errors;
-- full Architecture suite through the central owner: 397 executed, zero
+- full Architecture suite through the central owner: 399 executed, zero
   failures after contract migration;
 - Windows repository suite: all 8 platform-owned projects green;
 - review invariant gate: 14 invariants, 7 projects, 424 normal tests and all
@@ -170,6 +171,11 @@ Local evidence established the implementation before the remote measurement:
 - actionlint 1.7.12: every workflow file passed;
 - `dotnet format --verify-no-changes`: 0 of 1,011 files required changes;
 - `git diff --check`: clean apart from line-ending conversion notices.
+- unique gate-authority contract tests: 56 executed across four classes, zero
+  failures, including missing and unauthorized duplicate gate evidence;
+- non-authority Domain lifecycle: three PR iterations, 18 assembly phases,
+  zero gate results and zero failures; authority smoke: one iteration, all six
+  assembly phases, all three gate results and zero failures.
 
 Draft PR #203 then exercised the topology against GitHub's generated PR merge
 SHA. Early natural failures exposed and fixed only topology defects: actionlint
@@ -188,6 +194,16 @@ same head. That evidence covers all six repository shards, all 12 review
 mutation shards, all eight lifecycle assemblies with three sequential
 iterations, all Release/Debug lanes, all six aria2 RIDs, package audit and
 semantic aggregation.
+
+A documentation-only follow-up head `d70522d77052fde222dfe44776dc2b30f562eded`
+then exposed a real duplicate-execution defect in run `33293271874`: all eight
+assembly shards repeated the same global forensics gate self-tests, and the
+Domain copy exhausted the parent budget in the dotnet-stack attach-stall proof.
+The final verdict rejected the failed upstream as designed. The topology now
+names one gate authority assembly; the other seven shards retain all assembly
+phases and iterations but cannot emit global gate evidence. This removes an
+exact duplicate rather than reducing a proof, and leaves release Rehearsal
+semantics unchanged.
 
 Because this isolation PR targets the Stage 5 branch rather than `main`, the
 existing `Build` workflow pull-request branch filter did not trigger on PR #203.
