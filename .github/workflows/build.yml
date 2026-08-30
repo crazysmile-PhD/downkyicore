@@ -1,5 +1,9 @@
 name: Build
 
+concurrency:
+  group: downkyi-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   pull-requests: read
@@ -9,6 +13,7 @@ on:
     tags:
       - 'v*'
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
       - release/v1.1.1-integration
@@ -135,55 +140,88 @@ jobs:
       - name: Test
         uses: ./.github/actions/test-solution
 
-  assembly-lifecycle-release:
+  assembly-lifecycle-preflight:
+    name: Assembly lifecycle lock preflight
+    if: ${{ !inputs.update_ffmpeg_assets }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact lifecycle commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
+      - name: Inspect both lifecycle locks once
+        shell: pwsh
+        run: >
+          ./script/test-assembly-lifecycle-lock-preflight.ps1
+          -ExpectedCommitSha '${{ github.event.pull_request.head.sha || github.sha }}'
+          -ResultsDirectory ./artifacts/assembly-lifecycle/preflight
+      - name: Upload lifecycle lock evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: assembly-lifecycle-lock-preflight-${{ github.run_attempt }}
+          path: artifacts/assembly-lifecycle/preflight
+          if-no-files-found: error
+
+  assembly-lifecycle-release-standard:
     name: Assembly lifecycle release gate (${{ matrix.assembly }})
+    needs: [release-gate, assembly-lifecycle-preflight]
+    if: ${{ !inputs.update_ffmpeg_assets && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'assembly-lifecycle-release-ready')) }}
     runs-on: windows-latest
     timeout-minutes: 180
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
         assembly:
           - DownKyi.Application.Tests
-          - DownKyi.Architecture.Tests
           - DownKyi.Core.Tests
           - DownKyi.Desktop.Tests
           - DownKyi.Domain.Tests
           - DownKyi.Infrastructure.Tests
           - DownKyi.Tests
-          - DownKyi.Windows.Tests
     steps:
-      - name: Checkout
+      - name: Checkout exact lifecycle commit
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
       - name: Install lifecycle diagnostics
         run: dotnet tool install dotnet-stack --tool-path ./.tools --version 9.0.661903
-      - name: Restore
-        run: dotnet restore ./DownKyi.sln
-      - name: Strict Release build
-        run: >
-          dotnet build ./DownKyi.sln
-          -c Release
-          --no-restore
-          --no-incremental
-          -p:TreatWarningsAsErrors=true
-          -p:CodeAnalysisTreatWarningsAsErrors=true
-          -p:EnableNETAnalyzers=true
-          -p:AnalysisMode=All
-          -p:EnforceCodeStyleInBuild=true
-          -p:UseSharedCompilation=false
-      - name: Run repeated assembly lifecycle gate
+      - name: Run exact 100-round standard assembly shard
         shell: pwsh
         run: >
-          ./script/test-assembly-lifecycle.ps1
-          -Configuration Release
-          -Profile Rehearsal
-          -NoBuild
-          -ValidateForensics
-          -AssemblyPattern ${{ matrix.assembly }}
-          -ResultsDirectory ./artifacts/assembly-lifecycle/release/${{ matrix.assembly }}
+          ./script/run-assembly-lifecycle-release-shard.ps1
+          -Assembly ${{ matrix.assembly }}
+          -ShardIndex 0
+          -ExpectedCommitSha '${{ github.event.pull_request.head.sha || github.sha }}'
+          -ResultsDirectory ./artifacts/assembly-lifecycle/release/${{ matrix.assembly }}/shard-00
+      - name: Validate standard assembly evidence
+        shell: pwsh
+        run: >
+          ./script/assert-assembly-lifecycle-release-evidence.ps1
+          -EvidenceRoot ./artifacts/assembly-lifecycle/release/${{ matrix.assembly }}
+          -ExpectedAssembly ${{ matrix.assembly }}
+          -ExpectedCommitSha '${{ github.event.pull_request.head.sha || github.sha }}'
+          -OutputPath ./artifacts/assembly-lifecycle/release/${{ matrix.assembly }}/aggregate-manifest.json
       - name: Upload lifecycle reports and evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -191,6 +229,178 @@ jobs:
           name: assembly-lifecycle-release-${{ matrix.assembly }}-${{ github.run_attempt }}
           path: artifacts/assembly-lifecycle/release/${{ matrix.assembly }}
           if-no-files-found: error
+
+  assembly-lifecycle-release-architecture:
+    name: Assembly lifecycle Architecture shard ${{ matrix.shard }} of 16
+    needs: [release-gate, assembly-lifecycle-preflight]
+    if: ${{ !inputs.update_ffmpeg_assets && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'assembly-lifecycle-release-ready')) }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - name: Checkout exact lifecycle commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
+      - name: Install lifecycle diagnostics
+        run: dotnet tool install dotnet-stack --tool-path ./.tools --version 9.0.661903
+      - name: Run Architecture Rehearsal shard
+        shell: pwsh
+        run: >
+          ./script/run-assembly-lifecycle-release-shard.ps1
+          -Assembly DownKyi.Architecture.Tests
+          -ShardIndex ${{ matrix.shard }}
+          -ExpectedCommitSha '${{ github.event.pull_request.head.sha || github.sha }}'
+          -ResultsDirectory ./artifacts/assembly-lifecycle/release/DownKyi.Architecture.Tests/shard-${{ matrix.shard }}
+      - name: Upload Architecture shard evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: assembly-lifecycle-release-architecture-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: artifacts/assembly-lifecycle/release/DownKyi.Architecture.Tests/shard-${{ matrix.shard }}
+          if-no-files-found: error
+
+  assembly-lifecycle-release-architecture-evidence:
+    name: Assembly lifecycle Architecture 100-round evidence
+    needs: assembly-lifecycle-release-architecture
+    if: ${{ always() && !cancelled() && !inputs.update_ffmpeg_assets && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'assembly-lifecycle-release-ready')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact lifecycle commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Download Architecture shard evidence
+        uses: actions/download-artifact@v8
+        with:
+          pattern: assembly-lifecycle-release-architecture-*-${{ github.run_attempt }}
+          path: artifacts/assembly-lifecycle/downloaded/architecture
+      - name: Aggregate Architecture exact-head evidence
+        shell: pwsh
+        run: >
+          ./script/assert-assembly-lifecycle-release-evidence.ps1
+          -EvidenceRoot ./artifacts/assembly-lifecycle/downloaded/architecture
+          -ExpectedAssembly DownKyi.Architecture.Tests
+          -ExpectedCommitSha '${{ github.event.pull_request.head.sha || github.sha }}'
+          -OutputPath ./artifacts/assembly-lifecycle/aggregate/architecture/aggregate-manifest.json
+          -ValidateMutationSelfTests
+      - name: Upload Architecture aggregate evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: assembly-lifecycle-release-architecture-aggregate-${{ github.run_attempt }}
+          path: artifacts/assembly-lifecycle/aggregate/architecture
+          if-no-files-found: error
+
+  assembly-lifecycle-release-windows:
+    name: Assembly lifecycle Windows shard ${{ matrix.shard }} of 20
+    needs: [assembly-lifecycle-release-standard, assembly-lifecycle-release-architecture-evidence]
+    if: ${{ !cancelled() && !inputs.update_ffmpeg_assets && needs.assembly-lifecycle-release-standard.result == 'success' && needs.assembly-lifecycle-release-architecture-evidence.result == 'success' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'assembly-lifecycle-release-ready')) }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - name: Checkout exact lifecycle commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
+      - name: Install lifecycle diagnostics
+        run: dotnet tool install dotnet-stack --tool-path ./.tools --version 9.0.661903
+      - name: Run Windows Rehearsal shard
+        shell: pwsh
+        run: >
+          ./script/run-assembly-lifecycle-release-shard.ps1
+          -Assembly DownKyi.Windows.Tests
+          -ShardIndex ${{ matrix.shard }}
+          -ExpectedCommitSha '${{ github.event.pull_request.head.sha || github.sha }}'
+          -ResultsDirectory ./artifacts/assembly-lifecycle/release/DownKyi.Windows.Tests/shard-${{ matrix.shard }}
+      - name: Upload Windows shard evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: assembly-lifecycle-release-windows-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: artifacts/assembly-lifecycle/release/DownKyi.Windows.Tests/shard-${{ matrix.shard }}
+          if-no-files-found: error
+
+  assembly-lifecycle-release-windows-evidence:
+    name: Assembly lifecycle Windows 100-round evidence
+    needs: assembly-lifecycle-release-windows
+    if: ${{ always() && !cancelled() && !inputs.update_ffmpeg_assets && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'assembly-lifecycle-release-ready')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact lifecycle commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Download Windows shard evidence
+        uses: actions/download-artifact@v8
+        with:
+          pattern: assembly-lifecycle-release-windows-*-${{ github.run_attempt }}
+          path: artifacts/assembly-lifecycle/downloaded/windows
+      - name: Aggregate Windows exact-head evidence
+        shell: pwsh
+        run: >
+          ./script/assert-assembly-lifecycle-release-evidence.ps1
+          -EvidenceRoot ./artifacts/assembly-lifecycle/downloaded/windows
+          -ExpectedAssembly DownKyi.Windows.Tests
+          -ExpectedCommitSha '${{ github.event.pull_request.head.sha || github.sha }}'
+          -OutputPath ./artifacts/assembly-lifecycle/aggregate/windows/aggregate-manifest.json
+          -ValidateMutationSelfTests
+      - name: Upload Windows aggregate evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: assembly-lifecycle-release-windows-aggregate-${{ github.run_attempt }}
+          path: artifacts/assembly-lifecycle/aggregate/windows
+          if-no-files-found: error
+
+  assembly-lifecycle-release:
+    name: Assembly lifecycle release gate
+    needs:
+      - assembly-lifecycle-release-standard
+      - assembly-lifecycle-release-architecture-evidence
+      - assembly-lifecycle-release-windows-evidence
+    if: ${{ always() && !cancelled() && !inputs.update_ffmpeg_assets && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'assembly-lifecycle-release-ready')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every lifecycle release wave
+        shell: pwsh
+        env:
+          STANDARD_RESULT: ${{ needs.assembly-lifecycle-release-standard.result }}
+          ARCHITECTURE_RESULT: ${{ needs.assembly-lifecycle-release-architecture-evidence.result }}
+          WINDOWS_RESULT: ${{ needs.assembly-lifecycle-release-windows-evidence.result }}
+        run: |
+          $results = @($env:STANDARD_RESULT, $env:ARCHITECTURE_RESULT, $env:WINDOWS_RESULT)
+          if (@($results | Where-Object { $_ -ne 'success' }).Count -ne 0) {
+            throw "Lifecycle release waves did not all succeed: $($results -join ', ')."
+          }
+          Write-Host 'All exact-head lifecycle release waves passed.'
 
   changelog:
     name: Generate changelog

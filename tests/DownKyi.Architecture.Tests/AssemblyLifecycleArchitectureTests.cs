@@ -477,6 +477,8 @@ public sealed class AssemblyLifecycleArchitectureTests
         var lifecycle = Read("script/test-assembly-lifecycle.ps1");
         var quality = Read(".github/workflows/quality.yml");
         var release = Read(".github/workflows/build.yml");
+        var releaseShard = Read("script/invoke-assembly-lifecycle-release-shard.ps1");
+        var releaseTopology = Read("script/assembly-lifecycle-release-topology.json");
         var activeReleaseContract = Read(
             "docs/product-specs/v1.1.1-corrective-release-gate.md");
         var expectedProfiles = new Dictionary<string, int>(StringComparer.Ordinal)
@@ -524,8 +526,13 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.DoesNotContain("-Profile Flaky", quality, StringComparison.Ordinal);
 
         Assert.Contains("assembly-lifecycle-release:", release, StringComparison.Ordinal);
-        Assert.Contains("-Profile Rehearsal", release, StringComparison.Ordinal);
-        Assert.Contains("-ValidateForensics", release, StringComparison.Ordinal);
+        Assert.Contains("assembly-lifecycle-preflight:", release, StringComparison.Ordinal);
+        Assert.Contains("assembly-lifecycle-release-architecture:", release, StringComparison.Ordinal);
+        Assert.Contains("assembly-lifecycle-release-windows:", release, StringComparison.Ordinal);
+        Assert.Contains("assembly-lifecycle-release-ready", release, StringComparison.Ordinal);
+        Assert.Contains("-Profile Rehearsal", releaseShard, StringComparison.Ordinal);
+        Assert.Contains("-ValidateForensics", releaseShard, StringComparison.Ordinal);
+        Assert.Contains("\"totalIterations\": 100", releaseTopology, StringComparison.Ordinal);
         Assert.Contains(
             "needs.assembly-lifecycle-release.result == 'success'",
             release,
