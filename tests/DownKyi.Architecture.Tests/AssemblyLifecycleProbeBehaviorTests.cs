@@ -23,6 +23,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_DIAGNOSTIC_OWNER_JOURNAL";
     private const string DiagnosticProjectionMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_DIAGNOSTIC_OWNER_PROJECTION";
+    private const string DiagnosticStartupCancellationMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_DIAGNOSTIC_STARTUP_CANCELLATION";
     private const string CaptureBudgetSelfTestRejection =
         "Forensics collector capture-window self-test did not fail closed.";
     private const string CleanupReportSelfTestRejection =
@@ -98,11 +100,33 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
     [Fact]
     public void CompiledCollectorBoundaryOwnsStartWaitTerminateReapAndDrain()
     {
-        var collector = ReadFunction(ReadLifecycleGate(), "Invoke-OwnedDiagnosticCollector");
+        var source = ReadLifecycleGate();
+        var collector = ReadFunction(source, "Invoke-OwnedDiagnosticCollector");
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(
+                    DiagnosticStartupCancellationMutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            collector = collector.Replace(
+                "$StartupCancellationToken",
+                "$CancellationToken",
+                StringComparison.Ordinal);
+        }
+        var isolatedProcess = ReadFunction(source, "Invoke-IsolatedProcess");
 
         Assert.Contains("DiagnosticCollectorRequest]::new", collector, StringComparison.Ordinal);
         Assert.Contains("OwnedDiagnosticCollector]::CollectAsync", collector, StringComparison.Ordinal);
+        Assert.Contains("$StartupCancellationToken", collector, StringComparison.Ordinal);
         Assert.Contains("$CancellationToken", collector, StringComparison.Ordinal);
+        Assert.Contains(
+            "-CollectorStartupCancellationToken $CancellationToken",
+            isolatedProcess,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "-CancellationToken $observerCancellation.Token",
+            isolatedProcess,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("ProcessStartInfo", collector, StringComparison.Ordinal);
         Assert.DoesNotContain("[System.Diagnostics.Process]", collector, StringComparison.Ordinal);
         Assert.DoesNotContain(".Start(", collector, StringComparison.Ordinal);
@@ -158,7 +182,7 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             leaseSource,
             StringComparison.Ordinal);
         Assert.Contains(
-            "OwnedProcessStartTimeline(budget)",
+            "new OwnedProcessStartTimeline(",
             collectorSource,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -199,6 +223,22 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             StringComparison.Ordinal);
         Assert.Contains(
             "OwnerJournalSurvivesPrimaryTimelineBlackoutAtStartupBoundary",
+            regressionSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TargetExitCancellationAtStatusConnectionDoesNotCancelOwnershipStartup",
+            regressionSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TargetExitCancellationAtLaunchAuthorizationDoesNotCancelTargetStart",
+            regressionSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "LinkedStartupCancellationMutationReproducesCoreOwnershipAckFailure",
+            regressionSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "LinkedStartupCancellationMutationReproducesDesktopTargetAckFailure",
             regressionSource,
             StringComparison.Ordinal);
     }

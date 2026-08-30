@@ -11,12 +11,25 @@ public static class OwnedDiagnosticCollector
         DiagnosticCollectorRequest request,
         CancellationToken cancellationToken = default)
     {
+        return CollectAsync(
+            request,
+            cancellationToken,
+            cancellationToken);
+    }
+
+    public static Task<DiagnosticCollectorOutcome> CollectAsync(
+        DiagnosticCollectorRequest request,
+        CancellationToken startupCancellationToken,
+        CancellationToken executionCancellationToken)
+    {
         return CollectCoreAsync(
             request,
             DiagnosticCollectorMutation.None,
             startFailureObservedForTesting: null,
             collectorStartedForTesting: null,
-            cancellationToken);
+            startTransitionObservedForTesting: null,
+            startupCancellationToken,
+            executionCancellationToken);
     }
 
     internal static Task<DiagnosticCollectorOutcome> CollectForTestingAsync(
@@ -29,6 +42,8 @@ public static class OwnedDiagnosticCollector
             mutation,
             startFailureObservedForTesting: null,
             collectorStartedForTesting: null,
+            startTransitionObservedForTesting: null,
+            cancellationToken,
             cancellationToken);
     }
 
@@ -44,6 +59,8 @@ public static class OwnedDiagnosticCollector
             mutation,
             startFailureObservedForTesting,
             collectorStartedForTesting: null,
+            startTransitionObservedForTesting: null,
+            cancellationToken,
             cancellationToken);
     }
 
@@ -58,7 +75,27 @@ public static class OwnedDiagnosticCollector
             DiagnosticCollectorMutation.None,
             startFailureObservedForTesting: null,
             collectorStartedForTesting,
+            startTransitionObservedForTesting: null,
+            cancellationToken,
             cancellationToken);
+    }
+
+    internal static Task<DiagnosticCollectorOutcome> CollectForTestingAsync(
+        DiagnosticCollectorRequest request,
+        DiagnosticCollectorMutation mutation,
+        Action<OwnedProcessStartTransition> startTransitionObservedForTesting,
+        CancellationToken startupCancellationToken,
+        CancellationToken executionCancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(startTransitionObservedForTesting);
+        return CollectCoreAsync(
+            request,
+            mutation,
+            startFailureObservedForTesting: null,
+            collectorStartedForTesting: null,
+            startTransitionObservedForTesting,
+            startupCancellationToken,
+            executionCancellationToken);
     }
 
     [SuppressMessage(
@@ -70,12 +107,14 @@ public static class OwnedDiagnosticCollector
         DiagnosticCollectorMutation mutation,
         Action? startFailureObservedForTesting,
         TaskCompletionSource? collectorStartedForTesting,
-        CancellationToken cancellationToken)
+        Action<OwnedProcessStartTransition>? startTransitionObservedForTesting,
+        CancellationToken startupCancellationToken,
+        CancellationToken executionCancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         var timeline = new DiagnosticCollectorTimelineBuilder(request);
         timeline.Mark(DiagnosticCollectorTransition.CollectorDispatchRequested);
-        if (cancellationToken.IsCancellationRequested)
+        if (startupCancellationToken.IsCancellationRequested)
         {
             timeline.MarkTypedOutcomeReturned();
             var kind = DiagnosticCollectorFailureKind.CallerCancelled;
@@ -84,7 +123,7 @@ public static class OwnedDiagnosticCollector
                 CreateNotStartedEvidence(
                     timedOut: false,
                     timeline.BuildPrimaryTimeline(mutation)),
-                new OperationCanceledException(cancellationToken),
+                new OperationCanceledException(startupCancellationToken),
                 Array.Empty<DiagnosticCollectorCleanupFailure>(),
                 timeline.BuildOwnerJournal(
                     kind,
@@ -111,7 +150,14 @@ public static class OwnedDiagnosticCollector
             ? request.Window.ParentBudget
             : request.Window.Budget;
         var processMutation = MapMutation(mutation);
-        var processStartTimeline = new OwnedProcessStartTimeline(budget);
+        var processStartTimeline = new OwnedProcessStartTimeline(
+            budget,
+            startTransitionObservedForTesting);
+        var effectiveStartupCancellationToken =
+            mutation.HasFlag(
+                DiagnosticCollectorMutation.LinkExecutionCancellationIntoStartup)
+                ? executionCancellationToken
+                : startupCancellationToken;
         OwnedProcessLease lease;
         try
         {
@@ -122,7 +168,7 @@ public static class OwnedDiagnosticCollector
                     processMutation,
                     processStartTimeline,
                     startFailureObservedForTesting,
-                    cancellationToken)
+                    effectiveStartupCancellationToken)
                 .ConfigureAwait(false);
             timeline.ObserveOwnedProcessStart(processStartTimeline);
             timeline.Mark(DiagnosticCollectorTransition.ProcessStarted);
@@ -152,7 +198,7 @@ public static class OwnedDiagnosticCollector
         await using var leaseScope = lease.ConfigureAwait(false);
         try
         {
-            var outcome = await lease.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var outcome = await lease.WaitAsync(executionCancellationToken).ConfigureAwait(false);
             timeline.ObserveOwnedProcess(lease, outcome.TargetExitedAfter);
             timeline.MarkTypedOutcomeReturned();
             var ownerJournal = timeline.BuildOwnerJournal(

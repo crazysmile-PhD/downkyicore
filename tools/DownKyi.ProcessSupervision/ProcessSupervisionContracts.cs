@@ -206,14 +206,18 @@ internal sealed class OwnedProcessStartTimeline
 {
     private readonly TransitionBudget _budget;
     private readonly TimeSpan _operationDeadlineElapsed;
+    private readonly Action<OwnedProcessStartTransition>? _transitionObserverForTesting;
     private readonly Dictionary<OwnedProcessStartTransition, TimeSpan> _transitions = new();
     private readonly object _sync = new();
     private int? _supervisorProcessId;
     private int? _targetProcessId;
 
-    public OwnedProcessStartTimeline(TransitionBudget budget)
+    public OwnedProcessStartTimeline(
+        TransitionBudget budget,
+        Action<OwnedProcessStartTransition>? transitionObserverForTesting = null)
     {
         _budget = budget ?? throw new ArgumentNullException(nameof(budget));
+        _transitionObserverForTesting = transitionObserverForTesting;
         var observation = budget.Observe();
         _operationDeadlineElapsed = checked(
             observation.Elapsed + observation.RemainingOperation);
@@ -221,9 +225,15 @@ internal sealed class OwnedProcessStartTimeline
 
     public void Mark(OwnedProcessStartTransition transition)
     {
+        bool added;
         lock (_sync)
         {
-            _transitions.TryAdd(transition, _budget.Elapsed);
+            added = _transitions.TryAdd(transition, _budget.Elapsed);
+        }
+
+        if (added)
+        {
+            _transitionObserverForTesting?.Invoke(transition);
         }
     }
 

@@ -242,6 +242,8 @@ function Invoke-OwnedDiagnosticCollector {
         [Parameter(Mandatory)]
         [object]$CaptureWindow,
         [hashtable]$Environment = @{},
+        [Threading.CancellationToken]$StartupCancellationToken =
+            [Threading.CancellationToken]::None,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
@@ -262,6 +264,7 @@ function Invoke-OwnedDiagnosticCollector {
         $CaptureWindow)
     return [DownKyi.ProcessSupervision.OwnedDiagnosticCollector]::CollectAsync(
             $request,
+            $StartupCancellationToken,
             $CancellationToken).
         GetAwaiter().GetResult()
 }
@@ -1568,6 +1571,8 @@ function Save-ManagedStack {
         [string]$Destination,
         [Parameter(Mandatory)]
         [object]$CaptureWindow,
+        [Threading.CancellationToken]$CollectorStartupCancellationToken =
+            [Threading.CancellationToken]::None,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
@@ -1598,6 +1603,7 @@ function Save-ManagedStack {
                 $TargetProcessId.ToString(
                     [System.Globalization.CultureInfo]::InvariantCulture)) `
             -CaptureWindow $CaptureWindow `
+            -StartupCancellationToken $CollectorStartupCancellationToken `
             -CancellationToken $CancellationToken
         $collector = $collectorOutcome.Evidence
         $collectorOwnerJournal = $collectorOutcome.OwnerJournal
@@ -1670,6 +1676,8 @@ function Save-ProcessEvidence {
         [string]$Reason,
         [Parameter(Mandatory)]
         [object]$CaptureWindow,
+        [Threading.CancellationToken]$CollectorStartupCancellationToken =
+            [Threading.CancellationToken]::None,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None,
         [switch]$SkipManagedStack,
@@ -1731,6 +1739,7 @@ function Save-ProcessEvidence {
             -TargetProcessId $Process.Id `
             -Destination (Join-Path $directory "managed-stack.txt") `
             -CaptureWindow $CaptureWindow `
+            -CollectorStartupCancellationToken $CollectorStartupCancellationToken `
             -CancellationToken $CancellationToken
     }
     $evidence = [ordered]@{
@@ -1772,6 +1781,8 @@ function Invoke-ForensicsObserverCapture {
         [string]$Reason,
         [Parameter(Mandatory)]
         [object]$CaptureWindow,
+        [Threading.CancellationToken]$CollectorStartupCancellationToken =
+            [Threading.CancellationToken]::None,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None,
         [ValidateRange(0, 5000)]
@@ -1831,6 +1842,8 @@ function Invoke-ForensicsObserverCapture {
                 -Phase $Phase `
                 -Reason $Reason `
                 -CaptureWindow $CaptureWindow `
+                -CollectorStartupCancellationToken `
+                    $CollectorStartupCancellationToken `
                 -CancellationToken $CancellationToken `
                 -SkipManagedStack:$SkipManagedStack `
                 -InjectEvidencePersistenceFailure:$InjectEvidencePersistenceFailure
@@ -2314,6 +2327,7 @@ function Invoke-IsolatedProcess {
                         -Phase $Phase `
                         -Reason "slow-phase" `
                         -CaptureWindow $captureWindow `
+                        -CollectorStartupCancellationToken $CancellationToken `
                         -CancellationToken $observerCancellation.Token `
                         -CaptureDelayMilliseconds $EvidenceCaptureDelayMilliseconds `
                         -InjectedPostCaptureDelayMilliseconds `
@@ -2450,6 +2464,7 @@ function Invoke-IsolatedProcess {
                             -Phase $Phase `
                             -Reason "slow-exit-after-teardown" `
                             -CaptureWindow $captureWindow `
+                            -CollectorStartupCancellationToken $CancellationToken `
                             -CancellationToken $observerCancellation.Token `
                             -InjectFailure:$InjectForensicsObserverFailure
                         $exitEvidenceStatus = $capture.status

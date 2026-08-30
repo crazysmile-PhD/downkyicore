@@ -218,6 +218,94 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     }
 
     [Fact]
+    public async Task TargetExitCancellationAtStatusConnectionDoesNotCancelOwnershipStartup()
+    {
+        var failure = await RunStartupCancellationBoundaryCaseAsync(
+                OwnedProcessStartTransition.StatusPipeConnectionCompleted,
+                cancelStartup: false,
+                linkExecutionCancellationIntoStartup: false)
+            .ConfigureAwait(true);
+
+        AssertStartedCancellationSettlement(failure);
+    }
+
+    [Fact]
+    public async Task TargetExitCancellationAtLaunchAuthorizationDoesNotCancelTargetStart()
+    {
+        var failure = await RunStartupCancellationBoundaryCaseAsync(
+                OwnedProcessStartTransition.LaunchAuthorizationWritten,
+                cancelStartup: false,
+                linkExecutionCancellationIntoStartup: false)
+            .ConfigureAwait(true);
+
+        AssertStartedCancellationSettlement(failure);
+    }
+
+    [Fact]
+    public async Task LinkedStartupCancellationMutationReproducesCoreOwnershipAckFailure()
+    {
+        var failure = await RunStartupCancellationBoundaryCaseAsync(
+                OwnedProcessStartTransition.StatusPipeConnectionCompleted,
+                cancelStartup: false,
+                linkExecutionCancellationIntoStartup: true)
+            .ConfigureAwait(true);
+
+        AssertStartupCancellationInterval(
+            failure,
+            DiagnosticCollectorTransition.StatusPipeConnectionCompleted,
+            DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
+            DiagnosticCollectorFailureBoundary.OwnershipHandshake);
+    }
+
+    [Fact]
+    public async Task LinkedStartupCancellationMutationReproducesDesktopTargetAckFailure()
+    {
+        var failure = await RunStartupCancellationBoundaryCaseAsync(
+                OwnedProcessStartTransition.LaunchAuthorizationWritten,
+                cancelStartup: false,
+                linkExecutionCancellationIntoStartup: true)
+            .ConfigureAwait(true);
+
+        AssertStartupCancellationInterval(
+            failure,
+            DiagnosticCollectorTransition.LaunchAuthorizationWritten,
+            DiagnosticCollectorTransition.TargetStartAcknowledgementReceived,
+            DiagnosticCollectorFailureBoundary.TargetLaunch);
+    }
+
+    [Fact]
+    public async Task CallerCancellationAtStatusConnectionStillCancelsOwnershipStartup()
+    {
+        var failure = await RunStartupCancellationBoundaryCaseAsync(
+                OwnedProcessStartTransition.StatusPipeConnectionCompleted,
+                cancelStartup: true,
+                linkExecutionCancellationIntoStartup: false)
+            .ConfigureAwait(true);
+
+        AssertStartupCancellationInterval(
+            failure,
+            DiagnosticCollectorTransition.StatusPipeConnectionCompleted,
+            DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
+            DiagnosticCollectorFailureBoundary.OwnershipHandshake);
+    }
+
+    [Fact]
+    public async Task CallerCancellationAtLaunchAuthorizationStillCancelsTargetStartup()
+    {
+        var failure = await RunStartupCancellationBoundaryCaseAsync(
+                OwnedProcessStartTransition.LaunchAuthorizationWritten,
+                cancelStartup: true,
+                linkExecutionCancellationIntoStartup: false)
+            .ConfigureAwait(true);
+
+        AssertStartupCancellationInterval(
+            failure,
+            DiagnosticCollectorTransition.LaunchAuthorizationWritten,
+            DiagnosticCollectorTransition.TargetStartAcknowledgementReceived,
+            DiagnosticCollectorFailureBoundary.TargetLaunch);
+    }
+
+    [Fact]
     public async Task OperationDeadlineRemainsPrimaryAfterCleanCleanup()
     {
         var failure = await CollectBlockedFailureAsync(
@@ -718,6 +806,118 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             observed.Zip(observed.Skip(1)),
             pair => Assert.True(
                 pair.First.ElapsedMilliseconds <= pair.Second.ElapsedMilliseconds));
+    }
+
+    private static async Task<DiagnosticCollectorExecutionException>
+        RunStartupCancellationBoundaryCaseAsync(
+            OwnedProcessStartTransition cancellationTransition,
+            bool cancelStartup,
+            bool linkExecutionCancellationIntoStartup)
+    {
+        var readyPath = CreateReadyPath("startup-cancellation-boundary");
+        using var startupCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        using var executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        try
+        {
+            var failure = await Assert.ThrowsAsync<DiagnosticCollectorExecutionException>(
+                    () => OwnedDiagnosticCollector.CollectForTestingAsync(
+                        CreateRequest(
+                            SupervisorHost.CollectorBlockWithReadyArgument,
+                            TimeSpan.FromSeconds(5),
+                            TimeSpan.FromSeconds(2),
+                            readyPath),
+                        linkExecutionCancellationIntoStartup
+                            ? DiagnosticCollectorMutation.LinkExecutionCancellationIntoStartup
+                            : DiagnosticCollectorMutation.None,
+                        transition =>
+                        {
+                            if (transition != cancellationTransition)
+                            {
+                                return;
+                            }
+
+                            if (cancelStartup)
+                            {
+                                startupCancellation.Cancel();
+                            }
+                            else
+                            {
+                                executionCancellation.Cancel();
+                            }
+                        },
+                        startupCancellation.Token,
+                        executionCancellation.Token))
+                .ConfigureAwait(true);
+
+            var cancellation = Assert.IsAssignableFrom<OperationCanceledException>(
+                failure.Failure.Cause);
+            Assert.Equal(
+                cancelStartup ? startupCancellation.Token : executionCancellation.Token,
+                cancellation.CancellationToken);
+            Assert.Equal(
+                cancelStartup,
+                startupCancellation.IsCancellationRequested);
+            Assert.Equal(
+                !cancelStartup,
+                executionCancellation.IsCancellationRequested);
+            return failure;
+        }
+        finally
+        {
+            File.Delete(readyPath);
+        }
+    }
+
+    private static void AssertStartedCancellationSettlement(
+        DiagnosticCollectorExecutionException failure)
+    {
+        Assert.Equal(DiagnosticCollectorFailureKind.CallerCancelled, failure.Failure.Kind);
+        Assert.True(failure.Failure.Evidence.Started);
+        Assert.True(failure.Failure.Evidence.Reaped);
+        Assert.True(failure.Failure.Evidence.StreamsDrained);
+        Assert.Empty(failure.CleanupFailures);
+        var journal = Assert.IsType<DiagnosticCollectorOwnerJournal>(
+            failure.Failure.OwnerJournal);
+        Assert.False(journal.DeadlineExhausted);
+        Assert.True(journal.TargetStarted);
+        Assert.True(journal.TerminationStarted);
+        Assert.True(journal.TerminationCompleted);
+        Assert.True(journal.ReapCompleted);
+        Assert.True(journal.StreamsDrained);
+        Assert.Contains(
+            journal.Transitions,
+            item => item.Transition ==
+                DiagnosticCollectorTransition.OwnershipAcknowledgementReceived);
+        Assert.Contains(
+            journal.Transitions,
+            item => item.Transition ==
+                DiagnosticCollectorTransition.TargetStartAcknowledgementReceived);
+    }
+
+    private static void AssertStartupCancellationInterval(
+        DiagnosticCollectorExecutionException failure,
+        DiagnosticCollectorTransition lastKnownGood,
+        DiagnosticCollectorTransition firstMissingRequired,
+        DiagnosticCollectorFailureBoundary boundary)
+    {
+        Assert.Equal(DiagnosticCollectorFailureKind.CallerCancelled, failure.Failure.Kind);
+        Assert.False(failure.Failure.Evidence.Started);
+        Assert.Empty(failure.CleanupFailures);
+        var journal = Assert.IsType<DiagnosticCollectorOwnerJournal>(
+            failure.Failure.OwnerJournal);
+        var interval = Assert.IsType<DiagnosticCollectorFailureInterval>(
+            journal.FailureInterval);
+        Assert.Equal(lastKnownGood, interval.LastKnownGood);
+        Assert.Equal(firstMissingRequired, interval.FirstMissingRequired);
+        Assert.Equal(boundary, interval.Boundary);
+        Assert.False(journal.DeadlineExhausted);
+        Assert.False(journal.TargetStarted);
+        Assert.True(journal.TerminationStarted);
+        Assert.True(journal.TerminationCompleted);
+        Assert.True(journal.ReapCompleted);
+        Assert.True(journal.StreamsDrained);
     }
 
     private static async Task<TargetExitCancellationCaseResult>
