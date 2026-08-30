@@ -682,14 +682,45 @@ function New-DiagnosticEvidencePersistenceFailure {
         [AllowNull()]
         [object]$OwnerJournal,
         [Parameter(Mandatory)]
-        [bool]$EvidenceCaptured
+        [bool]$EvidenceCaptured,
+        [AllowNull()]
+        [System.Exception]$Cause = $null
     )
 
-    $failure = [System.IO.IOException]::new(
-        "Injected diagnostic evidence persistence failure.")
+    $failure = if ($null -eq $Cause) {
+        [System.IO.IOException]::new(
+            "Diagnostic evidence persistence failed.")
+    }
+    else {
+        [System.IO.IOException]::new(
+            "Diagnostic evidence persistence failed.",
+            $Cause)
+    }
     $failure.Data["DownKyi.Diagnostic.OwnerJournal"] = $OwnerJournal
     $failure.Data["DownKyi.Diagnostic.EvidenceCaptured"] = $EvidenceCaptured
+    $failure.Data["DownKyi.Diagnostic.EvidencePersistenceFailure"] = $true
     return $failure
+}
+
+function Invoke-DiagnosticEvidencePersistence {
+    param(
+        [AllowNull()]
+        [object]$OwnerJournal,
+        [Parameter(Mandatory)]
+        [bool]$EvidenceCaptured,
+        [Parameter(Mandatory)]
+        [scriptblock]$WriteAction
+    )
+
+    try {
+        return & $WriteAction
+    }
+    catch {
+        throw (New-DiagnosticEvidencePersistenceFailure `
+            -OwnerJournal $OwnerJournal `
+            -EvidenceCaptured $EvidenceCaptured `
+            -Cause $_.Exception)
+    }
 }
 
 function Test-DiagnosticEvidencePersistenceFailureReport {
@@ -713,9 +744,19 @@ function Test-DiagnosticEvidencePersistenceFailureReport {
         $true,
         4101,
         4201)
-    $failure = New-DiagnosticEvidencePersistenceFailure `
-        -OwnerJournal $journal `
-        -EvidenceCaptured $true
+    $failure = try {
+        $null = Invoke-DiagnosticEvidencePersistence `
+            -OwnerJournal $journal `
+            -EvidenceCaptured $true `
+            -WriteAction {
+                throw [System.IO.IOException]::new(
+                    "Deterministic artifact write failure.")
+            }
+        $null
+    }
+    catch {
+        $_.Exception
+    }
     $startupLocalization = Get-DiagnosticCollectorStructuralLocalization `
         -OwnerJournal $failure.Data["DownKyi.Diagnostic.OwnerJournal"] `
         -EvidenceCaptured $false `
@@ -739,6 +780,9 @@ function Test-DiagnosticEvidencePersistenceFailureReport {
     $serializedCleanupFailures = @($serialized.collectorCleanupFailures)
     $passed =
         $failure -is [System.IO.IOException] -and
+        $failure.InnerException -is [System.IO.IOException] -and
+        [bool]$failure.Data[
+            "DownKyi.Diagnostic.EvidencePersistenceFailure"] -and
         [object]::ReferenceEquals(
             $journal,
             $failure.Data["DownKyi.Diagnostic.OwnerJournal"]) -and
@@ -1186,6 +1230,19 @@ function Wait-DiagnosticFixturePublication {
     }
 }
 
+function Get-DiagnosticFixturePublicationAfterCollector {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+
+    return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+}
+
 function Get-DiagnosticCollectorTransition {
     param(
         [Parameter(Mandatory)]
@@ -1230,6 +1287,7 @@ function Test-DotnetStackAttachStall {
         $true)
     $targetLease = $null
     $failure = $null
+    $ownerJournal = $null
     $unexpectedFailureType = $null
     $targetCleanupErrorType = $null
     $ready = $null
@@ -1269,12 +1327,14 @@ function Test-DotnetStackAttachStall {
             if ($null -eq $failure) {
                 $unexpectedFailureType = $_.Exception.GetType().Name
             }
+            else {
+                $ownerJournal = $failure.Failure.OwnerJournal
+            }
         }
         $typedOutcomeReturnedAtUnixMilliseconds =
             [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-        $connected = Wait-DiagnosticFixturePublication `
-            -Path $connectedPath `
-            -Budget $budget
+        $connected = Get-DiagnosticFixturePublicationAfterCollector `
+            -Path $connectedPath
     }
     catch {
         if ($null -eq $unexpectedFailureType) {
@@ -1354,6 +1414,7 @@ function Test-DotnetStackAttachStall {
         collectorReaped = $null -ne $evidence -and $evidence.Reaped
         streamsDrained = $null -ne $evidence -and $evidence.StreamsDrained
         cleanupSucceeded = $null -ne $failure -and $failure.CleanupFailures.Count -eq 0
+        ownerJournalPreserved = $null -ne $ownerJournal
         attachOwnerBoundaryRecorded = $null -ne $targetAttach -and
             $targetAttach.State.ToString() -eq "NotObservable"
         connectionAcceptedDuringCollector = $null -ne $connected -and
@@ -1392,6 +1453,11 @@ function Test-DotnetStackAttachStall {
         connected = $connected
         failureKind = $failureKind
         evidence = $evidence
+        ownerJournal = $ownerJournal
+        diagnosticLocalization = Get-DiagnosticCollectorStructuralLocalization `
+            -OwnerJournal $ownerJournal `
+            -EvidenceCaptured $false `
+            -EvidencePersisted $false
         cleanupFailures = @(
             if ($null -ne $failure) {
                 $failure.CleanupFailures
@@ -1438,10 +1504,13 @@ function Get-DiagnosticProcessTreeSnapshot {
         [DateTimeOffset]$NotBeforeUtc = [DateTimeOffset]::MinValue,
         [Parameter(Mandatory)]
         [object]$CaptureWindow,
+        [Threading.CancellationToken]$CollectorStartupCancellationToken =
+            [Threading.CancellationToken]::None,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None
     )
 
+    $CollectorStartupCancellationToken.ThrowIfCancellationRequested()
     if ($IsWindows) {
         $pending = [System.Collections.Generic.Queue[object]]::new()
         $pending.Enqueue([pscustomobject]@{
@@ -1456,6 +1525,7 @@ function Get-DiagnosticProcessTreeSnapshot {
                 continue
             }
 
+            $CollectorStartupCancellationToken.ThrowIfCancellationRequested()
             $remainingMilliseconds = $CaptureWindow.RemainingOperation.TotalMilliseconds
             if ($remainingMilliseconds -lt 1000) {
                 throw [TimeoutException]::new(
@@ -1508,6 +1578,7 @@ function Get-DiagnosticProcessTreeSnapshot {
         -FileName "ps" `
         -Arguments @("-eo", "pid=,ppid=,comm=") `
         -CaptureWindow $CaptureWindow `
+        -StartupCancellationToken $CollectorStartupCancellationToken `
         -CancellationToken $CancellationToken).Evidence
     if ($collector.TimedOut -or $collector.ExitCode -ne 0) {
         throw "Diagnostic process snapshot collector failed."
@@ -1620,20 +1691,26 @@ function Save-ManagedStack {
         $collector = $collectorFailure.Failure.Evidence
         $collectorOwnerJournal = $collectorFailure.Failure.OwnerJournal
     }
-    [System.IO.File]::WriteAllText(
-        $Destination,
-        $collector.StandardOutput + $collector.StandardError,
-        [System.Text.UTF8Encoding]::new($false))
+    $captured = if ($null -ne $collectorFailure) {
+        $true
+    }
+    else {
+        -not $collector.TimedOut -and
+            $collector.ExitCode -eq 0 -and
+            -not [string]::IsNullOrWhiteSpace($collector.StandardOutput)
+    }
+    $null = Invoke-DiagnosticEvidencePersistence `
+        -OwnerJournal $collectorOwnerJournal `
+        -EvidenceCaptured $captured `
+        -WriteAction {
+            [System.IO.File]::WriteAllText(
+                $Destination,
+                $collector.StandardOutput + $collector.StandardError,
+                [System.Text.UTF8Encoding]::new($false))
+        }
     return [pscustomobject]@{
         available = $true
-        captured = if ($null -ne $collectorFailure) {
-            $true
-        }
-        else {
-            -not $collector.TimedOut -and
-                $collector.ExitCode -eq 0 -and
-                -not [string]::IsNullOrWhiteSpace($collector.StandardOutput)
-        }
+        captured = $captured
         exitCode = $collector.ExitCode
         timedOut = $collector.TimedOut
         collectorFailureKind = if ($null -eq $collectorFailure) {
@@ -1689,39 +1766,6 @@ function Save-ProcessEvidence {
         "$AssemblyName/iteration-{0:D4}/{1}-{2}" -f $Iteration, $Phase, $safeReason)
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
 
-    $threadSnapshot = @()
-    if ($IsWindows -and -not $Process.HasExited) {
-        try {
-            $Process.Refresh()
-            foreach ($thread in @($Process.Threads)) {
-                $waitReason = $null
-                if ($thread.ThreadState -eq [System.Diagnostics.ThreadState]::Wait) {
-                    try {
-                        $waitReason = $thread.WaitReason.ToString()
-                    }
-                    catch [System.InvalidOperationException] {
-                        $waitReason = "unavailable"
-                    }
-                }
-
-                $threadSnapshot += [pscustomobject]@{
-                    id = $thread.Id
-                    state = $thread.ThreadState.ToString()
-                    waitReason = $waitReason
-                    totalProcessorTimeMs = $thread.TotalProcessorTime.TotalMilliseconds
-                }
-            }
-        }
-        catch [System.InvalidOperationException] {
-            $threadSnapshot = @()
-        }
-    }
-
-    $processTree = @(
-        Get-DiagnosticProcessTreeSnapshot `
-            -RootProcessId $Process.Id `
-            -CaptureWindow $CaptureWindow `
-            -CancellationToken $CancellationToken)
     $stackResult = if ($Process.HasExited -or $SkipManagedStack) {
         [pscustomobject]@{
             available = $false
@@ -1742,6 +1786,49 @@ function Save-ProcessEvidence {
             -CollectorStartupCancellationToken $CollectorStartupCancellationToken `
             -CancellationToken $CancellationToken
     }
+
+    $CollectorStartupCancellationToken.ThrowIfCancellationRequested()
+    $threadSnapshot = @()
+    $processTree = @()
+    $captureSupplementalSnapshots =
+        [string]::IsNullOrWhiteSpace($stackResult.collectorFailureKind) -and
+        -not $Process.HasExited
+    if ($captureSupplementalSnapshots) {
+        if ($IsWindows) {
+            try {
+                $Process.Refresh()
+                foreach ($thread in @($Process.Threads)) {
+                    $waitReason = $null
+                    if ($thread.ThreadState -eq [System.Diagnostics.ThreadState]::Wait) {
+                        try {
+                            $waitReason = $thread.WaitReason.ToString()
+                        }
+                        catch [System.InvalidOperationException] {
+                            $waitReason = "unavailable"
+                        }
+                    }
+
+                    $threadSnapshot += [pscustomobject]@{
+                        id = $thread.Id
+                        state = $thread.ThreadState.ToString()
+                        waitReason = $waitReason
+                        totalProcessorTimeMs = $thread.TotalProcessorTime.TotalMilliseconds
+                    }
+                }
+            }
+            catch [System.InvalidOperationException] {
+                $threadSnapshot = @()
+            }
+        }
+
+        $processTree = @(
+            Get-DiagnosticProcessTreeSnapshot `
+                -RootProcessId $Process.Id `
+                -CaptureWindow $CaptureWindow `
+                -CollectorStartupCancellationToken `
+                    $CollectorStartupCancellationToken `
+                -CancellationToken $CancellationToken)
+    }
     $evidence = [ordered]@{
         capturedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
         reason = $Reason
@@ -1752,14 +1839,19 @@ function Save-ProcessEvidence {
         processTree = $processTree
         managedStack = $stackResult
     }
-    if ($InjectEvidencePersistenceFailure) {
-        throw (New-DiagnosticEvidencePersistenceFailure `
-            -OwnerJournal $stackResult.collectorOwnerJournal `
-            -EvidenceCaptured $true)
-    }
-    $evidence |
-        ConvertTo-Json -Depth 8 |
-        Set-Content -LiteralPath (Join-Path $directory "process-evidence.json") -Encoding utf8
+    $null = Invoke-DiagnosticEvidencePersistence `
+        -OwnerJournal $stackResult.collectorOwnerJournal `
+        -EvidenceCaptured $stackResult.captured `
+        -WriteAction {
+            if ($InjectEvidencePersistenceFailure) {
+                throw [System.IO.IOException]::new(
+                    "Injected diagnostic evidence persistence failure.")
+            }
+            $evidence |
+                ConvertTo-Json -Depth 8 |
+                Set-Content -LiteralPath (
+                    Join-Path $directory "process-evidence.json") -Encoding utf8
+        }
     return [pscustomobject]@{
         evidencePath = [System.IO.Path]::GetRelativePath($runRoot, $directory).
             Replace([System.IO.Path]::DirectorySeparatorChar, '/')
@@ -1902,8 +1994,11 @@ function Invoke-ForensicsObserverCapture {
         else {
             $false
         }
-        $persistenceFailed = $InjectEvidencePersistenceFailure -and
-            $_.Exception -is [System.IO.IOException]
+        $persistenceFailed =
+            $_.Exception.Data.Contains(
+                "DownKyi.Diagnostic.EvidencePersistenceFailure") -and
+            [bool]$_.Exception.Data[
+                "DownKyi.Diagnostic.EvidencePersistenceFailure"]
         return [pscustomobject]@{
             status = "capture-failed"
             evidencePath = $null

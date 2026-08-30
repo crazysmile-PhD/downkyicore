@@ -114,6 +114,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
                 StringComparison.Ordinal);
         }
         var isolatedProcess = ReadFunction(source, "Invoke-IsolatedProcess");
+        var processTreeSnapshot = ReadFunction(
+            source,
+            "Get-DiagnosticProcessTreeSnapshot");
+        var saveProcessEvidence = ReadFunction(source, "Save-ProcessEvidence");
 
         Assert.Contains("DiagnosticCollectorRequest]::new", collector, StringComparison.Ordinal);
         Assert.Contains("OwnedDiagnosticCollector]::CollectAsync", collector, StringComparison.Ordinal);
@@ -126,6 +130,18 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.Contains(
             "-CancellationToken $observerCancellation.Token",
             isolatedProcess,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "-StartupCancellationToken $CollectorStartupCancellationToken",
+            processTreeSnapshot,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$CollectorStartupCancellationToken.ThrowIfCancellationRequested()",
+            processTreeSnapshot,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "-CollectorStartupCancellationToken $CollectorStartupCancellationToken",
+            saveProcessEvidence,
             StringComparison.Ordinal);
         Assert.DoesNotContain("ProcessStartInfo", collector, StringComparison.Ordinal);
         Assert.DoesNotContain("[System.Diagnostics.Process]", collector, StringComparison.Ordinal);
@@ -230,6 +246,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             regressionSource,
             StringComparison.Ordinal);
         Assert.Contains(
+            "TargetExitCancellationBeforeDispatchDoesNotLaunchCollector",
+            regressionSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "TargetExitCancellationAtLaunchAuthorizationDoesNotCancelTargetStart",
             regressionSource,
             StringComparison.Ordinal);
@@ -306,6 +326,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         var persistenceSelfTest = ReadFunction(
             source,
             "Test-DiagnosticEvidencePersistenceFailureReport");
+        var persistenceBoundary = ReadFunction(
+            source,
+            "Invoke-DiagnosticEvidencePersistence");
+        var saveProcessEvidence = ReadFunction(source, "Save-ProcessEvidence");
 
         Assert.Contains(
             "Get-DiagnosticCollectorExecutionFailure",
@@ -363,8 +387,28 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
+            "Invoke-DiagnosticEvidencePersistence",
+            saveProcessEvidence,
+            StringComparison.Ordinal);
+        var managedStackDispatch = saveProcessEvidence.IndexOf(
+            "Save-ManagedStack",
+            StringComparison.Ordinal);
+        var supplementalSnapshot = saveProcessEvidence.IndexOf(
+            "Get-DiagnosticProcessTreeSnapshot",
+            StringComparison.Ordinal);
+        Assert.True(managedStackDispatch >= 0);
+        Assert.True(supplementalSnapshot > managedStackDispatch);
+        Assert.Contains(
+            "$captureSupplementalSnapshots",
+            saveProcessEvidence,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Invoke-DiagnosticEvidencePersistence",
+            managedStack,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "New-DiagnosticEvidencePersistenceFailure",
-            ReadFunction(source, "Save-ProcessEvidence"),
+            persistenceBoundary,
             StringComparison.Ordinal);
         Assert.Contains(
             "EvidencePersistenceFailure",
@@ -381,6 +425,11 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.Contains("collectorCleanupFailures", persistenceSelfTest, StringComparison.Ordinal);
         Assert.Contains("ConvertTo-Json", persistenceSelfTest, StringComparison.Ordinal);
         Assert.Contains("ConvertFrom-Json", persistenceSelfTest, StringComparison.Ordinal);
+        Assert.Contains(
+            "Deterministic artifact write failure",
+            persistenceSelfTest,
+            StringComparison.Ordinal);
+        Assert.Contains("InnerException", persistenceSelfTest, StringComparison.Ordinal);
         Assert.Contains(
             "Test-DiagnosticCollectorFailureHasCapturedStack",
             managedStack,
@@ -481,6 +530,9 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             source,
             "Test-OwnedDiagnosticCollectorCaptureWindow");
         var attachStall = ReadFunction(source, "Test-DotnetStackAttachStall");
+        var postCollectorPublication = ReadFunction(
+            source,
+            "Get-DiagnosticFixturePublicationAfterCollector");
 
         Assert.Contains(
             "$forensicsCaptureWindowMilliseconds = 15000",
@@ -515,6 +567,20 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             "$typedOutcome.ElapsedMilliseconds -ge 2900",
             attachStall,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "Get-DiagnosticFixturePublicationAfterCollector",
+            attachStall,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "$connected = Wait-DiagnosticFixturePublication",
+            attachStall,
+            StringComparison.Ordinal);
+        Assert.Contains("Test-Path", postCollectorPublication, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "TransitionBudget",
+            postCollectorPublication,
+            StringComparison.Ordinal);
+        Assert.Contains("ownerJournal", attachStall, StringComparison.Ordinal);
         Assert.Contains(
             "Test-OwnedDiagnosticCollectorCaptureWindow",
             source,
