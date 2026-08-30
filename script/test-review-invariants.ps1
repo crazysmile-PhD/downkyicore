@@ -7,7 +7,19 @@ param(
 
     [switch]$NoBuild,
 
-    [string]$ResultsDirectory = "artifacts/review-invariants"
+    [string]$ResultsDirectory = "artifacts/review-invariants",
+
+    [switch]$SkipNormal,
+
+    [ValidateRange(0, 63)]
+    [int]$AdversarialShardIndex = 0,
+
+    [ValidateRange(1, 64)]
+    [int]$AdversarialShardCount = 1,
+
+    [string]$EvidencePath,
+
+    [string]$ExpectedCommitSha
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,7 +91,8 @@ $adversarialProofs = @(
             throw "Review invariant '$($invariant.id)' requires an adversarial mutation proof but declares no executable profile."
         }
 
-        foreach ($proof in $proofs) {
+        for ($proofIndex = 0; $proofIndex -lt $proofs.Count; $proofIndex++) {
+            $proof = $proofs[$proofIndex]
             if ($proof.kind -ne "adversarial-mutation" -or
                 $proof.kind -notin $requirements -or
                 [string]::IsNullOrWhiteSpace($proof.project) -or
@@ -92,16 +105,84 @@ $adversarialProofs = @(
                 throw "Review invariant '$($invariant.id)' contains an incomplete adversarial proof."
             }
 
-            $proof
+            [pscustomobject]@{
+                proofId = "$($invariant.id)/$($proof.environmentVariable)"
+                invariantId = [string]$invariant.id
+                project = [string]$proof.project
+                class = [string]$proof.class
+                environmentVariable = [string]$proof.environmentVariable
+                environmentValue = [string]$proof.environmentValue
+                expectedOutcome = [string]$proof.expectedOutcome
+                expectedFailedTests = if ($null -eq $proof.expectedFailedTests) {
+                    $null
+                }
+                else {
+                    [int]$proof.expectedFailedTests
+                }
+                ordinal = $proofIndex
+            }
         }
     }
 )
+$duplicateProofIds = @(
+    $adversarialProofs |
+        Group-Object proofId |
+        Where-Object Count -gt 1 |
+        Select-Object -ExpandProperty Name
+)
+if ($duplicateProofIds.Count -gt 0) {
+    throw "Duplicate adversarial proof identities: $($duplicateProofIds -join ', ')"
+}
+if ($AdversarialShardIndex -ge $AdversarialShardCount) {
+    throw "Adversarial shard index must be less than shard count."
+}
+$selectedAdversarialProofs = @(
+    $orderedProofs = @($adversarialProofs | Sort-Object proofId)
+    for ($proofIndex = 0; $proofIndex -lt $orderedProofs.Count; $proofIndex++) {
+        if ($proofIndex % $AdversarialShardCount -eq $AdversarialShardIndex) {
+            $orderedProofs[$proofIndex]
+        }
+    }
+)
+if ($selectedAdversarialProofs.Count -eq 0) {
+    throw "Adversarial shard $AdversarialShardIndex of $AdversarialShardCount owns no proofs."
+}
 
 New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
 $projectGroups = @($testClasses | Group-Object project | Sort-Object Name)
 $totalPassed = 0
 
-foreach ($projectGroup in $projectGroups) {
+if (-not $NoBuild) {
+    $requiredProjects = @(
+        @($selectedAdversarialProofs.project) +
+        $(if ($SkipNormal) { @() } else { @($projectGroups.Name) }) |
+            Sort-Object -Unique
+    )
+    foreach ($requiredProject in $requiredProjects) {
+        $buildArguments = @(
+            "build"
+            (Join-Path $repositoryRoot $requiredProject)
+            "-c"
+            $Configuration
+            "--no-incremental"
+            "-p:TreatWarningsAsErrors=true"
+            "-p:CodeAnalysisTreatWarningsAsErrors=true"
+            "-p:EnableNETAnalyzers=true"
+            "-p:AnalysisMode=All"
+            "-p:EnforceCodeStyleInBuild=true"
+            "-p:UseSharedCompilation=false"
+        )
+        if ($NoRestore) {
+            $buildArguments += "--no-restore"
+        }
+        & dotnet @buildArguments | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "Review invariant project build failed: $requiredProject"
+        }
+    }
+}
+
+foreach ($projectGroup in @($projectGroups | Where-Object { -not $SkipNormal })) {
     $projectPath = Join-Path $repositoryRoot $projectGroup.Name
     if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
         throw "Review invariant test project is missing: $($projectGroup.Name)"
@@ -115,8 +196,8 @@ foreach ($projectGroup in $projectGroups) {
         -RepositoryRoot $repositoryRoot `
         -ProjectPath $projectPath `
         -Configuration $Configuration `
-        -NoRestore:$NoRestore `
-        -NoBuild:$NoBuild `
+        -NoRestore `
+        -NoBuild `
         -ResultsDirectory $resultRoot `
         -TrxName $trxName `
         -ClassNames $classNames
@@ -149,40 +230,31 @@ foreach ($projectGroup in $projectGroups) {
     $totalPassed += $passed
 }
 
-foreach ($proof in $adversarialProofs) {
+$proofEvidence = @()
+foreach ($proof in $selectedAdversarialProofs) {
     $projectPath = Join-Path $repositoryRoot $proof.project
     if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
         throw "Adversarial proof project is missing: $($proof.project)"
     }
 
-    $safeName = [IO.Path]::GetFileNameWithoutExtension($projectPath)
-    $trxName = "$safeName.adversarial.trx"
-    $previousValue = [Environment]::GetEnvironmentVariable(
-        $proof.environmentVariable,
-        [EnvironmentVariableTarget]::Process)
-    try {
-        [Environment]::SetEnvironmentVariable(
-            $proof.environmentVariable,
-            $proof.environmentValue,
-            [EnvironmentVariableTarget]::Process)
-        Write-Host "Running adversarial proof: $($proof.kind) in $($proof.project)"
-        $result = Invoke-DownKyiTestProject `
-            -RepositoryRoot $repositoryRoot `
-            -ProjectPath $projectPath `
-            -Configuration $Configuration `
-            -NoRestore:$NoRestore `
-            -NoBuild:$NoBuild `
-            -ResultsDirectory $resultRoot `
-            -TrxName $trxName `
-            -ClassNames @($proof.class)
-        $mutationExitCode = $result.ExitCode
+    $safeProofId = $proof.proofId -replace '[^A-Za-z0-9_.-]', '-'
+    $proofResultRoot = Join-Path $resultRoot "proofs/$safeProofId"
+    $trxName = "result.trx"
+    $childEnvironment = @{
+        $proof.environmentVariable = $proof.environmentValue
     }
-    finally {
-        [Environment]::SetEnvironmentVariable(
-            $proof.environmentVariable,
-            $previousValue,
-            [EnvironmentVariableTarget]::Process)
-    }
+    Write-Host "Running adversarial proof: $($proof.proofId) in $($proof.project)"
+    $result = Invoke-DownKyiTestProject `
+        -RepositoryRoot $repositoryRoot `
+        -ProjectPath $projectPath `
+        -Configuration $Configuration `
+        -NoRestore `
+        -NoBuild `
+        -ResultsDirectory $proofResultRoot `
+        -TrxName $trxName `
+        -ClassNames @($proof.class) `
+        -EnvironmentVariables $childEnvironment
+    $mutationExitCode = $result.ExitCode
 
     $trxPath = $result.TrxPath
     if (-not (Test-Path -LiteralPath $trxPath -PathType Leaf)) {
@@ -204,9 +276,43 @@ foreach ($proof in $adversarialProofs) {
     }
 
     Write-Host "Adversarial proof rejected the injected mutation: executed=$executed failed=$failed."
+    $proofEvidence += [pscustomobject]@{
+        proofId = [string]$proof.proofId
+        invariantId = [string]$proof.invariantId
+        project = [string]$proof.project
+        class = [string]$proof.class
+        environmentVariable = [string]$proof.environmentVariable
+        environmentValue = [string]$proof.environmentValue
+        trxFile = "proofs/$safeProofId/$trxName"
+        runnerExitCode = [int]$mutationExitCode
+        executed = [int]$executed
+        failed = [int]$failed
+        expectedFailedTests = $proof.expectedFailedTests
+    }
 }
 
-Write-Host "Review invariant gate passed: $($invariants.Count) root-cause invariants, $($projectGroups.Count) test projects, $totalPassed tests, $($adversarialProofs.Count) adversarial proofs."
+if (-not [string]::IsNullOrWhiteSpace($EvidencePath)) {
+    . (Join-Path $PSScriptRoot "ci-evidence.ps1")
+    $head = Assert-DownKyiCiEvidenceAuthority `
+        -RepositoryRoot $repositoryRoot `
+        -ExpectedCommitSha $ExpectedCommitSha
+    $platform = Get-DownKyiCurrentTestPlatform `
+        -RepositoryRoot $repositoryRoot `
+        -Configuration $Configuration
+    Write-DownKyiJsonEvidence -EvidencePath $EvidencePath -Evidence ([ordered]@{
+        schemaVersion = 1
+        kind = "review-mutations"
+        identity = "review/$platform/$AdversarialShardIndex-of-$AdversarialShardCount"
+        commitSha = $head
+        platform = $platform
+        shardIndex = $AdversarialShardIndex
+        shardCount = $AdversarialShardCount
+        proofs = $proofEvidence
+        successful = $true
+    })
+}
+
+Write-Host "Review invariant gate passed: $($invariants.Count) root-cause invariants, $($projectGroups.Count) declared test projects, $totalPassed normal tests, $($selectedAdversarialProofs.Count) of $($adversarialProofs.Count) adversarial proofs in shard $AdversarialShardIndex/$AdversarialShardCount."
 
 # Expected mutation failures leave the native exit code nonzero on Unix hosts.
 exit 0

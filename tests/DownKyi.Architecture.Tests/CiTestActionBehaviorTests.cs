@@ -57,6 +57,9 @@ public sealed class CiTestActionBehaviorTests
         Assert.True(capture.GetProperty("noRestore").GetBoolean());
         Assert.True(capture.GetProperty("noBuild").GetBoolean());
         Assert.Equal("action-results", capture.GetProperty("resultsDirectory").GetString());
+        Assert.Equal(0, capture.GetProperty("shardIndex").GetInt32());
+        Assert.Equal(1, capture.GetProperty("shardCount").GetInt32());
+        Assert.Equal(2, capture.GetProperty("maxParallelProjects").GetInt32());
     }
 
     [Fact]
@@ -296,18 +299,26 @@ public sealed class CiTestActionBehaviorTests
                     [string]$Configuration,
                     [switch]$NoRestore,
                     [switch]$NoBuild,
-                    [string]$ResultsDirectory
+                    [string]$ResultsDirectory,
+                    [int]$ShardIndex,
+                    [int]$ShardCount,
+                    [int]$MaxParallelProjects
                 )
                 @{
                     configuration = $Configuration
                     noRestore = [bool]$NoRestore
                     noBuild = [bool]$NoBuild
                     resultsDirectory = $ResultsDirectory
+                    shardIndex = $ShardIndex
+                    shardCount = $ShardCount
+                    maxParallelProjects = $MaxParallelProjects
                 } | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:DOWNKYI_CAPTURE
                 """);
 
             var startInfo = CreateActionStartInfo(actionPath, "Solution");
             startInfo.Environment["DOWNKYI_TEST_RESULTS_DIRECTORY"] = "action-results";
+            startInfo.Environment["DOWNKYI_TEST_NO_RESTORE"] = "true";
+            startInfo.Environment["DOWNKYI_TEST_NO_BUILD"] = "true";
             startInfo.Environment["DOWNKYI_CAPTURE"] = capturePath;
             var result = BoundedProcessRunner.Run(
                 startInfo,

@@ -17,6 +17,33 @@ public sealed class CentralTestProjectOptions
         IEnumerable<string>? classNames,
         string? filter,
         int executionTimeoutSeconds)
+        : this(
+            repositoryRoot,
+            projectPath,
+            configuration,
+            noRestore,
+            noBuild,
+            resultsDirectory,
+            trxName,
+            classNames,
+            filter,
+            executionTimeoutSeconds,
+            environmentVariables: null)
+    {
+    }
+
+    public CentralTestProjectOptions(
+        string repositoryRoot,
+        string projectPath,
+        string configuration,
+        bool noRestore,
+        bool noBuild,
+        string? resultsDirectory,
+        string? trxName,
+        IEnumerable<string>? classNames,
+        string? filter,
+        int executionTimeoutSeconds,
+        IReadOnlyDictionary<string, string?>? environmentVariables)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(repositoryRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectPath);
@@ -37,6 +64,23 @@ public sealed class CentralTestProjectOptions
             (classNames ?? []).Order(StringComparer.Ordinal).Distinct(StringComparer.Ordinal).ToArray());
         Filter = filter;
         ExecutionTimeoutSeconds = executionTimeoutSeconds;
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var pair in environmentVariables ?? new Dictionary<string, string?>())
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(pair.Key);
+            if (pair.Key.StartsWith("DOWNKYI_CENTRAL_TEST_", StringComparison.Ordinal) ||
+                pair.Key is "DOWNKYI_LIFECYCLE_MARKER" or "DOWNKYI_LIFECYCLE_MARKER_OWNER")
+            {
+                throw new InvalidOperationException(
+                    $"The central runner owns reserved environment variable '{pair.Key}'.");
+            }
+            if (!environment.TryAdd(pair.Key, pair.Value))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate child environment variable '{pair.Key}'.");
+            }
+        }
+        EnvironmentVariables = new ReadOnlyDictionary<string, string?>(environment);
     }
 
     public string RepositoryRoot { get; }
@@ -58,6 +102,8 @@ public sealed class CentralTestProjectOptions
     public string? Filter { get; }
 
     public int ExecutionTimeoutSeconds { get; }
+
+    public IReadOnlyDictionary<string, string?> EnvironmentVariables { get; }
 }
 
 public sealed record CentralTestRunResult(
@@ -76,11 +122,39 @@ public sealed class CentralTestSolutionOptions
         bool noBuild,
         string? resultsDirectory,
         int executionTimeoutSeconds)
+        : this(
+            repositoryRoot,
+            configuration,
+            noRestore,
+            noBuild,
+            resultsDirectory,
+            executionTimeoutSeconds,
+            shardIndex: 0,
+            shardCount: 1,
+            maxParallelProjects: 2)
+    {
+    }
+
+    public CentralTestSolutionOptions(
+        string repositoryRoot,
+        string configuration,
+        bool noRestore,
+        bool noBuild,
+        string? resultsDirectory,
+        int executionTimeoutSeconds,
+        int shardIndex,
+        int shardCount,
+        int maxParallelProjects)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(repositoryRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(configuration);
         ArgumentOutOfRangeException.ThrowIfLessThan(executionTimeoutSeconds, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(executionTimeoutSeconds, 3600);
+        ArgumentOutOfRangeException.ThrowIfLessThan(shardCount, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(shardIndex, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(shardIndex, shardCount);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxParallelProjects, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maxParallelProjects, 8);
         RepositoryRoot = Path.GetFullPath(repositoryRoot);
         Configuration = configuration;
         NoRestore = noRestore;
@@ -89,6 +163,9 @@ public sealed class CentralTestSolutionOptions
             ? null
             : Path.GetFullPath(resultsDirectory, RepositoryRoot);
         ExecutionTimeoutSeconds = executionTimeoutSeconds;
+        ShardIndex = shardIndex;
+        ShardCount = shardCount;
+        MaxParallelProjects = maxParallelProjects;
     }
 
     public string RepositoryRoot { get; }
@@ -102,12 +179,24 @@ public sealed class CentralTestSolutionOptions
     public string? ResultsDirectory { get; }
 
     public int ExecutionTimeoutSeconds { get; }
+
+    public int ShardIndex { get; }
+
+    public int ShardCount { get; }
+
+    public int MaxParallelProjects { get; }
 }
+
+public sealed record CentralTestProjectRunResult(
+    string ProjectPath,
+    CentralTestRunResult Result);
 
 public sealed record CentralTestSolutionResult(
     string Platform,
     int SelectedProjectCount,
-    IReadOnlyList<CentralTestRunResult> ProjectResults);
+    int ShardIndex,
+    int ShardCount,
+    IReadOnlyList<CentralTestProjectRunResult> ProjectResults);
 
 public sealed record CentralTestExecutionReport(
     int Executed,

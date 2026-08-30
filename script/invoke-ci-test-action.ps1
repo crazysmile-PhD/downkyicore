@@ -41,11 +41,35 @@ if (Test-DownKyiDelegatedCgroupScopeRequired) {
 if ($Mode -eq "Solution") {
     $solutionParameters = @{
         Configuration = "Release"
-        NoRestore = $true
-        NoBuild = $true
+    }
+    if (ConvertFrom-DownKyiActionBoolean `
+            -Name "no-restore" `
+            -Value $env:DOWNKYI_TEST_NO_RESTORE) {
+        $solutionParameters.NoRestore = $true
+    }
+    if (ConvertFrom-DownKyiActionBoolean `
+            -Name "no-build" `
+            -Value $env:DOWNKYI_TEST_NO_BUILD) {
+        $solutionParameters.NoBuild = $true
     }
     if (-not [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_RESULTS_DIRECTORY)) {
         $solutionParameters.ResultsDirectory = $env:DOWNKYI_TEST_RESULTS_DIRECTORY
+    }
+    $solutionParameters.ShardIndex = if (
+        [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_SHARD_INDEX)) { 0 } else {
+        [int]$env:DOWNKYI_TEST_SHARD_INDEX
+    }
+    $solutionParameters.ShardCount = if (
+        [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_SHARD_COUNT)) { 1 } else {
+        [int]$env:DOWNKYI_TEST_SHARD_COUNT
+    }
+    $solutionParameters.MaxParallelProjects = if (
+        [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_MAX_PARALLEL_PROJECTS)) { 2 } else {
+        [int]$env:DOWNKYI_TEST_MAX_PARALLEL_PROJECTS
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_EVIDENCE_PATH)) {
+        $solutionParameters.EvidencePath = $env:DOWNKYI_TEST_EVIDENCE_PATH
+        $solutionParameters.ExpectedCommitSha = $env:DOWNKYI_TEST_EXPECTED_COMMIT_SHA
     }
 
     & (Join-Path $PSScriptRoot "test-solution.ps1") @solutionParameters

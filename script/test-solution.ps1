@@ -4,7 +4,15 @@ param(
     [string]$Configuration = "Release",
     [switch]$NoRestore,
     [switch]$NoBuild,
-    [string]$ResultsDirectory
+    [string]$ResultsDirectory,
+    [ValidateRange(0, 63)]
+    [int]$ShardIndex = 0,
+    [ValidateRange(1, 64)]
+    [int]$ShardCount = 1,
+    [ValidateRange(1, 8)]
+    [int]$MaxParallelProjects = 2,
+    [string]$EvidencePath,
+    [string]$ExpectedCommitSha
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,9 +27,21 @@ if (Test-DownKyiDelegatedCgroupScopeRequired) {
 
 . (Join-Path $PSScriptRoot "test-project-runner.ps1")
 & (Join-Path $PSScriptRoot "test-platform-selector.ps1")
-$null = Invoke-DownKyiTestSolution `
+$result = Invoke-DownKyiTestSolution `
     -RepositoryRoot $repositoryRoot `
     -Configuration $Configuration `
     -NoRestore:$NoRestore `
     -NoBuild:$NoBuild `
-    -ResultsDirectory $ResultsDirectory
+    -ResultsDirectory $ResultsDirectory `
+    -ShardIndex $ShardIndex `
+    -ShardCount $ShardCount `
+    -MaxParallelProjects $MaxParallelProjects
+
+if (-not [string]::IsNullOrWhiteSpace($EvidencePath)) {
+    . (Join-Path $PSScriptRoot "ci-evidence.ps1")
+    Write-DownKyiRepositorySuiteEvidence `
+        -RepositoryRoot $repositoryRoot `
+        -ExpectedCommitSha $ExpectedCommitSha `
+        -EvidencePath $EvidencePath `
+        -SolutionResult $result
+}

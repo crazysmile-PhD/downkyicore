@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "repositoryShardCount": 2,
+  "repositoryMaxParallelProjects": 2,
+  "reviewMutationShardCount": 4,
+  "lanes": [
+    {
+      "platform": "Windows",
+      "runner": "windows-latest"
+    },
+    {
+      "platform": "Linux",
+      "runner": "ubuntu-latest"
+    },
+    {
+      "platform": "macOS",
+      "runner": "macos-latest"
+    }
+  ],
+  "builds": [
+    {
+      "platform": "Windows",
+      "configuration": "Release"
+    },
+    {
+      "platform": "Linux",
+      "configuration": "Release"
+    },
+    {
+      "platform": "macOS",
+      "configuration": "Release"
+    },
+    {
+      "platform": "Windows",
+      "configuration": "Debug"
+    }
+  ],
+  "lifecycle": {
+    "platform": "Windows",
+    "runner": "windows-latest",
+    "profiles": {
+      "PR": 3,
+      "Main": 5
+    },
+    "phases": [
+      "load",
+      "assembly-info",
+      "discovery",
+      "execution",
+      "assembly-teardown",
+      "process-exit"
+    ],
+    "gateResults": [
+      {
+        "assembly": "Gate.Forensics",
+        "phase": "forensics-self-test"
+      },
+      {
+        "assembly": "Gate.ProcessLease",
+        "phase": "owned-tree-self-test"
+      },
+      {
+        "assembly": "Gate.MarkerReader",
+        "phase": "marker-reader-self-test"
+      }
+    ]
+  },
+  "requiredUpstreamJobs": [
+    "release-build",
+    "debug-build",
+    "repository-suite",
+    "review-mutations",
+    "assembly-lifecycle",
+    "format",
+    "aria2-tls-security",
+    "package-audit"
+  ]
+}

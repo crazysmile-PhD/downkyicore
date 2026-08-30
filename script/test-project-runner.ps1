@@ -377,6 +377,7 @@ function Invoke-DownKyiTestProject {
         [string]$TrxName,
         [string[]]$ClassNames = @(),
         [string]$Filter,
+        [Collections.IDictionary]$EnvironmentVariables,
         [ValidateRange(1, 3600)]
         [int]$ExecutionTimeoutSeconds = 300,
         [Threading.CancellationToken]$CancellationToken =
@@ -388,6 +389,17 @@ function Invoke-DownKyiTestProject {
         -Configuration $Configuration `
         -BuildIfMissing `
         -NoRestore:$NoRestore
+    $childEnvironment = [Collections.Generic.Dictionary[string, string]]::new(
+        [StringComparer]::Ordinal)
+    if ($null -ne $EnvironmentVariables) {
+        foreach ($entry in $EnvironmentVariables.GetEnumerator()) {
+            if (-not $childEnvironment.TryAdd(
+                    [string]$entry.Key,
+                    [string]$entry.Value)) {
+                throw "Duplicate child environment variable '$($entry.Key)'."
+            }
+        }
+    }
     $options = [DownKyi.CentralTestRunner.CentralTestProjectOptions]::new(
         $RepositoryRoot,
         $ProjectPath,
@@ -398,7 +410,8 @@ function Invoke-DownKyiTestProject {
         $TrxName,
         [string[]]$ClassNames,
         $Filter,
-        $ExecutionTimeoutSeconds)
+        $ExecutionTimeoutSeconds,
+        $childEnvironment)
     try {
         return [DownKyi.CentralTestRunner.CentralTestOrchestrator]::RunProjectAsync(
             $options,
@@ -419,6 +432,12 @@ function Invoke-DownKyiTestSolution {
         [switch]$NoRestore,
         [switch]$NoBuild,
         [string]$ResultsDirectory,
+        [ValidateRange(0, 63)]
+        [int]$ShardIndex = 0,
+        [ValidateRange(1, 64)]
+        [int]$ShardCount = 1,
+        [ValidateRange(1, 8)]
+        [int]$MaxParallelProjects = 2,
         [ValidateRange(1, 3600)]
         [int]$ExecutionTimeoutSeconds = 300,
         [Threading.CancellationToken]$CancellationToken =
@@ -436,7 +455,10 @@ function Invoke-DownKyiTestSolution {
         [bool]$NoRestore,
         [bool]$NoBuild,
         $ResultsDirectory,
-        $ExecutionTimeoutSeconds)
+        $ExecutionTimeoutSeconds,
+        $ShardIndex,
+        $ShardCount,
+        $MaxParallelProjects)
     try {
         return [DownKyi.CentralTestRunner.CentralTestOrchestrator]::RunSolutionAsync(
             $options,

@@ -511,7 +511,7 @@ public sealed class AssemblyLifecycleArchitectureTests
             quality.Replace("\r\n", "\n", StringComparison.Ordinal),
             StringComparison.Ordinal);
         Assert.Contains(
-            "$profile = if (\"${{ github.event_name }}\" -eq \"pull_request\") { \"PR\" } else { \"Main\" }",
+            "$profile = if ('${{ github.event_name }}' -eq 'pull_request') { 'PR' } else { 'Main' }",
             quality,
             StringComparison.Ordinal);
         Assert.Contains("-ValidateForensics", quality, StringComparison.Ordinal);

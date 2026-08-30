@@ -64,7 +64,10 @@ public sealed class AgentEnvironmentArchitectureTests
         Assert.Contains("macos-latest", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--no-incremental", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("AnalysisMode=All", qualityWorkflow, StringComparison.Ordinal);
-        Assert.Contains("Enforce architecture policy", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("Test required repository shard", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("Run immutable review mutation shard", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("Aggregate required exact-head evidence", qualityWorkflow, StringComparison.Ordinal);
+        Assert.Contains("raven-actions/actionlint@v2", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--vulnerable", qualityWorkflow, StringComparison.Ordinal);
         Assert.Contains("--deprecated", qualityWorkflow, StringComparison.Ordinal);
         Assert.DoesNotContain("LogFileName=test-results-${{ matrix.os }}.trx", qualityWorkflow, StringComparison.Ordinal);

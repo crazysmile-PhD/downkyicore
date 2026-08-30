@@ -446,6 +446,103 @@
           "expectedFailedTests": 1
         }
       ]
+    },
+    {
+      "id": "distributed-required-suite-topology",
+      "historicalRoots": ["PR #197 Stage 5", "CI PR five-minute topology"],
+      "guards": "Every required OS, project, mutation, lifecycle assembly and iteration produces unique exact-SHA evidence; missing, duplicate, malformed, zero-test or failed upstream evidence cannot be aggregated green.",
+      "testClasses": [
+        {
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CiEvidenceAggregatorBehaviorTests"
+        }
+      ],
+      "proofRequirements": [
+        "adversarial-mutation"
+      ],
+      "adversarialProofs": [
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CiEvidenceAggregatorBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CI_DELETE_SHARD",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CiEvidenceAggregatorBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CI_DUPLICATE_SHARD",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CiEvidenceAggregatorBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CI_WRONG_SHA",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CiEvidenceAggregatorBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CI_MALFORMED_EVIDENCE",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CiEvidenceAggregatorBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CI_ZERO_EXECUTED",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CiEvidenceAggregatorBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CI_SKIPPED_SHARD",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CiEvidenceAggregatorBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CI_AGGREGATOR_FALSE_GREEN",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CiEvidenceAggregatorBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CI_FAILURE_CARDINALITY",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.CiEvidenceAggregatorBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_CI_LIFECYCLE_ITERATION",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        }
+      ]
     }
   ],
   "mainRehearsalEvidence": [

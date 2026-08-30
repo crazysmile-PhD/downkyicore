@@ -39,6 +39,63 @@ public sealed class CentralTestRunnerOwnershipTests
         }
     }
 
+    [Fact]
+    public void SolutionShardsPartitionEveryPlatformOwnedProjectExactlyOnce()
+    {
+        var allProjects = Directory.GetFiles(
+            Path.Combine(RepositoryRoot, "tests"),
+            "*.Tests.csproj",
+            SearchOption.AllDirectories);
+        var platform = CentralTestPolicy.GetCurrentPlatform();
+        var expected = CentralTestPolicy.SelectProjects(allProjects, platform);
+        var first = CentralTestOrchestrator.SelectSolutionProjectsForTesting(
+            allProjects,
+            platform,
+            shardIndex: 0,
+            shardCount: 2);
+        var second = CentralTestOrchestrator.SelectSolutionProjectsForTesting(
+            allProjects,
+            platform,
+            shardIndex: 1,
+            shardCount: 2);
+
+        Assert.Empty(first.Intersect(second, StringComparer.Ordinal));
+        Assert.Equal(
+            expected,
+            first.Concat(second).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public void ChildEnvironmentCannotReplaceCentralAuthorizationOrLifecycleAuthority()
+    {
+        var reserved = new[]
+        {
+            "DOWNKYI_CENTRAL_TEST_TOKEN",
+            "DOWNKYI_CENTRAL_TEST_ENDPOINT",
+            "DOWNKYI_LIFECYCLE_MARKER",
+            "DOWNKYI_LIFECYCLE_MARKER_OWNER"
+        };
+        foreach (var variable in reserved)
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                new CentralTestProjectOptions(
+                    RepositoryRoot,
+                    ProjectPath,
+                    "Release",
+                    noRestore: true,
+                    noBuild: true,
+                    resultsDirectory: null,
+                    trxName: null,
+                    classNames: null,
+                    filter: null,
+                    executionTimeoutSeconds: 20,
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        [variable] = "forged"
+                    }));
+        }
+    }
+
     [Theory]
     [InlineData(
         (int)CentralTestRunnerMutation.FailAuthorizationBeforeCompletion,

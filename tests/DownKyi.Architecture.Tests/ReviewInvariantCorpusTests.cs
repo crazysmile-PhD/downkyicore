@@ -121,7 +121,9 @@ public sealed class ReviewInvariantCorpusTests
         Assert.Contains("windows-latest", quality, StringComparison.Ordinal);
         Assert.Contains("ubuntu-latest", quality, StringComparison.Ordinal);
         Assert.Contains("macos-latest", quality, StringComparison.Ordinal);
-        Assert.Contains("\"Main\"", quality, StringComparison.Ordinal);
+        Assert.Contains("-SkipNormal", quality, StringComparison.Ordinal);
+        Assert.Contains("-AdversarialShardCount 4", quality, StringComparison.Ordinal);
+        Assert.Contains("Aggregate required exact-head evidence", quality, StringComparison.Ordinal);
         Assert.Contains("-Profile Rehearsal", release, StringComparison.Ordinal);
     }
 

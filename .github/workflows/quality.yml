@@ -6,6 +6,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: downkyi-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -21,25 +25,39 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Validate GitHub Actions syntax
+        uses: raven-actions/actionlint@v2
+        with:
+          fail-on-error: true
+          pyflakes: true
+          shellcheck: true
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }}
       - name: Verify formatting
         run: dotnet format ${{ env.SOLUTION_FILE }} --verify-no-changes --no-restore --verbosity diagnostic
 
-  build-test:
-    name: Build and test (${{ matrix.os }})
+  release-build:
+    name: Strict Release build (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - windows-latest
-          - ubuntu-latest
-          - macos-latest
+        include:
+          - platform: Windows
+            os: windows-latest
+          - platform: Linux
+            os: ubuntu-latest
+          - platform: macOS
+            os: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -47,6 +65,11 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }}
       - name: Build with all warnings as errors
@@ -61,8 +84,42 @@ jobs:
           -p:AnalysisMode=All
           -p:EnforceCodeStyleInBuild=true
           -p:UseSharedCompilation=false
+      - name: Write exact-head build evidence
+        shell: pwsh
+        run: |
+          . ./script/ci-evidence.ps1
+          Write-DownKyiBuildEvidence `
+            -RepositoryRoot . `
+            -ExpectedCommitSha '${{ github.sha }}' `
+            -Platform '${{ matrix.platform }}' `
+            -Configuration Release `
+            -EvidencePath './artifacts/ci-evidence/build/${{ matrix.platform }}/Release/evidence.json'
+      - name: Upload exact-head build evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-evidence-build-${{ matrix.platform }}-Release
+          path: artifacts/ci-evidence
+          if-no-files-found: error
+
+  debug-build:
+    name: Debug ownership compile (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
       - name: Compile Debug ownership policy
-        if: runner.os == 'Windows'
         run: >
           dotnet build ${{ env.SOLUTION_FILE }}
           -c Debug
@@ -70,33 +127,129 @@ jobs:
           --no-incremental
           -p:TreatWarningsAsErrors=true
           -p:UseSharedCompilation=false
-      - name: Enforce architecture policy
-        uses: ./.github/actions/test-project
+      - name: Write exact-head build evidence
+        shell: pwsh
+        run: |
+          . ./script/ci-evidence.ps1
+          Write-DownKyiBuildEvidence `
+            -RepositoryRoot . `
+            -ExpectedCommitSha '${{ github.sha }}' `
+            -Platform Windows `
+            -Configuration Debug `
+            -EvidencePath './artifacts/ci-evidence/build/Windows/Debug/evidence.json'
+      - name: Upload exact-head build evidence
+        if: always()
+        uses: actions/upload-artifact@v7
         with:
-          project-path: ./tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj
-          no-restore: 'true'
-          no-build: 'true'
-      - name: Run review invariant failure corpus
+          name: ci-evidence-build-Windows-Debug
+          path: artifacts/ci-evidence
+          if-no-files-found: error
+
+  repository-suite:
+    name: Repository suite (${{ matrix.platform }}, shard ${{ matrix.shard }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows
+            os: windows-latest
+            shard: 0
+          - platform: Windows
+            os: windows-latest
+            shard: 1
+          - platform: Linux
+            os: ubuntu-latest
+            shard: 0
+          - platform: Linux
+            os: ubuntu-latest
+            shard: 1
+          - platform: macOS
+            os: macos-latest
+            shard: 0
+          - platform: macOS
+            os: macos-latest
+            shard: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
+      - name: Test required repository shard
+        uses: ./.github/actions/test-solution
+        with:
+          results-directory: ./artifacts/ci-evidence/repository/${{ matrix.platform }}/shard-${{ matrix.shard }}
+          no-restore: 'false'
+          no-build: 'false'
+          shard-index: '${{ matrix.shard }}'
+          shard-count: '2'
+          max-parallel-projects: '2'
+          evidence-path: ./artifacts/ci-evidence/repository/${{ matrix.platform }}/shard-${{ matrix.shard }}/evidence.json
+          expected-commit-sha: '${{ github.sha }}'
+      - name: Upload repository shard evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-evidence-repository-${{ matrix.platform }}-${{ matrix.shard }}
+          path: artifacts/ci-evidence
+          if-no-files-found: error
+
+  review-mutations:
+    name: Review mutations (${{ matrix.platform }}, shard ${{ matrix.shard }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: Windows, os: windows-latest, shard: 0 }
+          - { platform: Windows, os: windows-latest, shard: 1 }
+          - { platform: Windows, os: windows-latest, shard: 2 }
+          - { platform: Windows, os: windows-latest, shard: 3 }
+          - { platform: Linux, os: ubuntu-latest, shard: 0 }
+          - { platform: Linux, os: ubuntu-latest, shard: 1 }
+          - { platform: Linux, os: ubuntu-latest, shard: 2 }
+          - { platform: Linux, os: ubuntu-latest, shard: 3 }
+          - { platform: macOS, os: macos-latest, shard: 0 }
+          - { platform: macOS, os: macos-latest, shard: 1 }
+          - { platform: macOS, os: macos-latest, shard: 2 }
+          - { platform: macOS, os: macos-latest, shard: 3 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
+      - name: Run immutable review mutation shard
         shell: pwsh
         run: >
           ./script/test-review-invariants.ps1
           -Configuration Release
-          -NoRestore
-          -NoBuild
-          -ResultsDirectory ./TestResults/review-invariants
-      - name: Test
-        uses: ./.github/actions/test-solution
-        with:
-          results-directory: ./TestResults
-      - name: Upload test results
+          -SkipNormal
+          -AdversarialShardIndex ${{ matrix.shard }}
+          -AdversarialShardCount 4
+          -ResultsDirectory ./artifacts/ci-evidence/review/${{ matrix.platform }}/shard-${{ matrix.shard }}
+          -EvidencePath ./artifacts/ci-evidence/review/${{ matrix.platform }}/shard-${{ matrix.shard }}/evidence.json
+          -ExpectedCommitSha '${{ github.sha }}'
+      - name: Upload review mutation evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-${{ matrix.os }}
-          path: |
-            TestResults/*.trx
-            TestResults/review-invariants/*.trx
-          if-no-files-found: ignore
+          name: ci-evidence-review-${{ matrix.platform }}-${{ matrix.shard }}
+          path: artifacts/ci-evidence
+          if-no-files-found: error
 
   aria2-tls-security:
     name: aria2 TLS security (${{ matrix.rid }})
@@ -137,6 +290,11 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
       - name: Fetch and verify Windows aria2 asset
         if: startsWith(matrix.rid, 'win-')
         shell: pwsh
@@ -188,9 +346,21 @@ jobs:
           if-no-files-found: warn
 
   assembly-lifecycle:
-    name: Assembly lifecycle stability
+    name: Assembly lifecycle PR gate (${{ matrix.assembly }})
     runs-on: windows-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        assembly:
+          - DownKyi.Application.Tests
+          - DownKyi.Architecture.Tests
+          - DownKyi.Core.Tests
+          - DownKyi.Desktop.Tests
+          - DownKyi.Domain.Tests
+          - DownKyi.Infrastructure.Tests
+          - DownKyi.Tests
+          - DownKyi.Windows.Tests
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -198,38 +368,50 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
       - name: Install lifecycle diagnostics
         run: dotnet tool install dotnet-stack --tool-path ./.tools --version 9.0.661903
-      - name: Restore
-        run: dotnet restore ${{ env.SOLUTION_FILE }}
-      - name: Build lifecycle probe and test assemblies
-        run: >
-          dotnet build ${{ env.SOLUTION_FILE }}
-          -c Release
-          --no-restore
-          --no-incremental
-          -p:TreatWarningsAsErrors=true
-          -p:CodeAnalysisTreatWarningsAsErrors=true
-          -p:EnableNETAnalyzers=true
-          -p:AnalysisMode=All
-          -p:EnforceCodeStyleInBuild=true
-          -p:UseSharedCompilation=false
-      - name: Run assembly lifecycle stability gate
+      - name: Restore exact lifecycle closure
         shell: pwsh
         run: |
-          $profile = if ("${{ github.event_name }}" -eq "pull_request") { "PR" } else { "Main" }
+          dotnet restore ./tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet restore ./tests/${{ matrix.assembly }}/${{ matrix.assembly }}.csproj
+      - name: Build exact lifecycle closure
+        shell: pwsh
+        run: |
+          $strict = @(
+            '-c', 'Release', '--no-restore', '--no-incremental',
+            '-p:TreatWarningsAsErrors=true',
+            '-p:CodeAnalysisTreatWarningsAsErrors=true',
+            '-p:EnableNETAnalyzers=true',
+            '-p:AnalysisMode=All',
+            '-p:EnforceCodeStyleInBuild=true',
+            '-p:UseSharedCompilation=false')
+          dotnet build ./tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj @strict
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build ./tests/${{ matrix.assembly }}/${{ matrix.assembly }}.csproj @strict
+      - name: Run sequential iterations for exact assembly
+        shell: pwsh
+        run: |
+          $profile = if ('${{ github.event_name }}' -eq 'pull_request') { 'PR' } else { 'Main' }
           ./script/test-assembly-lifecycle.ps1 `
             -Configuration Release `
             -Profile $profile `
             -NoBuild `
             -ValidateForensics `
-            -ResultsDirectory ./artifacts/assembly-lifecycle/ci
+            -AssemblyPattern '${{ matrix.assembly }}' `
+            -ResultsDirectory './artifacts/ci-evidence/lifecycle/${{ matrix.assembly }}'
       - name: Upload lifecycle reports and evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: assembly-lifecycle-${{ github.event_name }}-${{ github.run_attempt }}
-          path: artifacts/assembly-lifecycle/ci
+          name: ci-evidence-lifecycle-${{ matrix.assembly }}
+          path: artifacts/ci-evidence
           if-no-files-found: error
 
   package-audit:
@@ -242,6 +424,11 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }}
       - name: Vulnerability audit
@@ -283,3 +470,54 @@ jobs:
             vulnerable-packages.json
             deprecated-packages.json
           if-no-files-found: ignore
+
+  required-verdict:
+    name: PR required verdict
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    needs:
+      - format
+      - release-build
+      - debug-build
+      - repository-suite
+      - review-mutations
+      - aria2-tls-security
+      - assembly-lifecycle
+      - package-audit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets', '**/*.csproj', '**/packages.lock.json') }}
+      - name: Download exact-head shard evidence
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-evidence-*
+          path: artifacts/ci-evidence-downloaded
+          merge-multiple: true
+      - name: Build semantic evidence validator
+        run: |
+          dotnet restore ./tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj
+          dotnet build ./tools/DownKyi.CentralTestRunner/DownKyi.CentralTestRunner.csproj -c Release --no-restore
+      - name: Aggregate required exact-head evidence
+        shell: pwsh
+        run: >
+          ./script/validate-ci-evidence.ps1
+          -EvidenceRoot ./artifacts/ci-evidence-downloaded
+          -ExpectedCommitSha '${{ github.sha }}'
+          -ExpectedLifecycleProfile ${{ github.event_name == 'pull_request' && 'PR' || 'Main' }}
+          -ReleaseBuildResult '${{ needs.release-build.result }}'
+          -DebugBuildResult '${{ needs.debug-build.result }}'
+          -RepositorySuiteResult '${{ needs.repository-suite.result }}'
+          -ReviewMutationsResult '${{ needs.review-mutations.result }}'
+          -AssemblyLifecycleResult '${{ needs.assembly-lifecycle.result }}'
+          -FormatResult '${{ needs.format.result }}'
+          -Aria2TlsSecurityResult '${{ needs.aria2-tls-security.result }}'
+          -PackageAuditResult '${{ needs.package-audit.result }}'

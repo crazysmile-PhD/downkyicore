@@ -11,7 +11,7 @@ public sealed class WorkflowTestOwnershipArchitectureTests
     private static readonly string[] ForbiddenWorkflowGateKeys = ["run", "if", "continue-on-error"];
     private static readonly string[] ForbiddenActionStepKeys = ["if", "continue-on-error"];
     private static readonly string[] ForbiddenRequiredJobKeys = ["if", "continue-on-error"];
-    private static readonly string[] ForbiddenRequiredSuiteJobKeys = ["if", "continue-on-error", "needs"];
+    private static readonly string[] RequiredPlatforms = ["Windows", "Linux", "macOS"];
     private static readonly string[] RequiredReleaseLifecycleAssemblies =
     [
         "DownKyi.Application.Tests",
@@ -24,28 +24,19 @@ public sealed class WorkflowTestOwnershipArchitectureTests
         "DownKyi.Windows.Tests"
     ];
 
-    [Theory]
-    [InlineData(".github/workflows/quality.yml", "build-test", "windows-latest,ubuntu-latest,macos-latest")]
-    [InlineData(".github/workflows/build.yml", "release-gate", "windows-latest,ubuntu-latest,macos-15")]
-    public void RequiredRepositorySuiteIsOwnedByTheStructuredTestAction(
-        string workflowPath,
-        string jobName,
-        string expectedRunners)
+    [Fact]
+    public void DistributedRequiredSuiteMatchesTheAuthoritativeTopology()
     {
-        ArgumentNullException.ThrowIfNull(expectedRunners);
-        var workflow = LoadYaml(Path.Combine(RepositoryRoot, workflowPath));
+        var workflow = LoadYaml(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "workflows",
+            "quality.yml"));
 
-        AssertRequiredSuiteGate(workflow, jobName, expectedRunners.Split(','));
+        AssertDistributedRequiredSuite(workflow);
     }
 
     [Theory]
-    [InlineData(
-        ".github/workflows/quality.yml",
-        "build-test",
-        "Enforce architecture policy",
-        TestProjectAction,
-        "./tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
-        null)]
     [InlineData(
         ".github/workflows/quality.yml",
         "aria2-tls-security",
@@ -94,17 +85,17 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             ".github",
             "workflows",
             "quality.yml"));
-        var step = FindUniqueStep(workflow, "build-test", "Test");
+        var step = FindUniqueStep(
+            workflow,
+            "repository-suite",
+            "Test required repository shard");
         step.Children.Remove(new YamlScalarNode("uses"));
         step.Add(
             "run",
             "${{ env.CLI }} ${{ env.VERB }} ${{ env.TEST_DLL }} || true");
 
         Assert.Throws<InvalidDataException>(() =>
-            AssertRequiredSuiteGate(
-                workflow,
-                "build-test",
-                ["windows-latest", "ubuntu-latest", "macos-latest"]));
+            AssertDistributedRequiredSuite(workflow));
     }
 
     [Fact]
@@ -143,14 +134,11 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             "workflows",
             "quality.yml"));
         var jobs = RequireMapping(workflow, "jobs");
-        var job = RequireMapping(jobs, "build-test");
+        var job = RequireMapping(jobs, "repository-suite");
         job.Add("if", "${{ false }}");
 
         Assert.Throws<InvalidDataException>(() =>
-            AssertRequiredSuiteGate(
-                workflow,
-                "build-test",
-                ["windows-latest", "ubuntu-latest", "macos-latest"]));
+            AssertDistributedRequiredSuite(workflow));
     }
 
     [Fact]
@@ -160,15 +148,12 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             RepositoryRoot,
             ".github",
             "workflows",
-            "build.yml"));
+            "quality.yml"));
         var jobs = RequireMapping(workflow, "jobs");
-        RequireMapping(jobs, "release-gate").Add("needs", "external-assets-preflight");
+        RequireMapping(jobs, "repository-suite").Add("needs", "release-build");
 
         Assert.Throws<InvalidDataException>(() =>
-            AssertRequiredSuiteGate(
-                workflow,
-                "release-gate",
-                ["windows-latest", "ubuntu-latest", "macos-15"]));
+            AssertDistributedRequiredSuite(workflow));
     }
 
     [Fact]
@@ -180,15 +165,12 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             "workflows",
             "quality.yml"));
         var jobs = RequireMapping(workflow, "jobs");
-        var job = RequireMapping(jobs, "build-test");
-        var runners = RequireSequence(RequireMapping(RequireMapping(job, "strategy"), "matrix"), "os");
-        runners.Children.RemoveAt(runners.Children.Count - 1);
+        var job = RequireMapping(jobs, "repository-suite");
+        var entries = RequireSequence(RequireMapping(RequireMapping(job, "strategy"), "matrix"), "include");
+        entries.Children.RemoveAt(entries.Children.Count - 1);
 
         Assert.Throws<InvalidDataException>(() =>
-            AssertRequiredSuiteGate(
-                workflow,
-                "build-test",
-                ["windows-latest", "ubuntu-latest", "macos-latest"]));
+            AssertDistributedRequiredSuite(workflow));
     }
 
     [Fact]
@@ -198,21 +180,167 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             RepositoryRoot,
             ".github",
             "workflows",
-            "build.yml"));
+            "quality.yml"));
         if (string.Equals(
                 Environment.GetEnvironmentVariable(
                     "DOWNKYI_TEST_MUTATE_CENTRAL_REQUIRED_SUITE_SCHEDULING"),
                 "1",
                 StringComparison.Ordinal))
         {
-            RequireMapping(RequireMapping(workflow, "jobs"), "release-gate")
-                .Add("needs", "external-assets-preflight");
+            RequireMapping(RequireMapping(workflow, "jobs"), "repository-suite")
+                .Add("continue-on-error", "true");
         }
 
-        AssertRequiredSuiteGate(
-            workflow,
-            "release-gate",
-            ["windows-latest", "ubuntu-latest", "macos-15"]);
+        AssertDistributedRequiredSuite(workflow);
+    }
+
+    [Fact]
+    public void ReleaseAndDebugBuildLanesStartWithoutSerialDependencies()
+    {
+        var workflow = LoadYaml(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "workflows",
+            "quality.yml"));
+        var jobs = RequireMapping(workflow, "jobs");
+        var release = RequireMapping(jobs, "release-build");
+        var debug = RequireMapping(jobs, "debug-build");
+        AssertNoBypassControls(release, ["if", "continue-on-error", "needs"]);
+        AssertNoBypassControls(debug, ["if", "continue-on-error", "needs"]);
+        if (!string.Equals(RequireScalar(release, "runs-on"), "${{ matrix.os }}", StringComparison.Ordinal) ||
+            !string.Equals(RequireScalar(debug, "runs-on"), "windows-latest", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Release and Debug compile lanes do not retain their exact runners.");
+        }
+
+        var releaseEntries = RequireSequence(
+                RequireMapping(RequireMapping(release, "strategy"), "matrix"),
+                "include")
+            .Children.OfType<YamlMappingNode>()
+            .Select(entry => RequireScalar(entry, "platform"))
+            .ToArray();
+        if (!releaseEntries.SequenceEqual(RequiredPlatforms, StringComparer.Ordinal))
+        {
+            throw new InvalidDataException("Strict Release compile coverage was reduced.");
+        }
+        var releaseBuild = NormalizeCommand(RequireScalar(
+            FindUniqueStep(workflow, "release-build", "Build with all warnings as errors"),
+            "run"));
+        var debugBuild = NormalizeCommand(RequireScalar(
+            FindUniqueStep(workflow, "debug-build", "Compile Debug ownership policy"),
+            "run"));
+        Assert.Contains("-c Release", releaseBuild, StringComparison.Ordinal);
+        Assert.Contains("-p:AnalysisMode=All", releaseBuild, StringComparison.Ordinal);
+        Assert.Contains("-c Debug", debugBuild, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PullRequestLifecycleIsShardedByAssemblyWithoutIterationParallelism()
+    {
+        var workflow = LoadYaml(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "workflows",
+            "quality.yml"));
+        var jobs = RequireMapping(workflow, "jobs");
+        var job = RequireMapping(jobs, "assembly-lifecycle");
+        AssertNoBypassControls(job, ["if", "continue-on-error", "needs"]);
+        var assemblies = RequireSequence(
+                RequireMapping(RequireMapping(job, "strategy"), "matrix"),
+                "assembly")
+            .Children.OfType<YamlScalarNode>()
+            .Select(item => item.Value ?? string.Empty)
+            .ToArray();
+        if (!assemblies.SequenceEqual(RequiredReleaseLifecycleAssemblies, StringComparer.Ordinal))
+        {
+            throw new InvalidDataException("PR lifecycle assembly coverage is missing or duplicated.");
+        }
+
+        var command = NormalizeCommand(RequireScalar(
+            FindUniqueStep(workflow, "assembly-lifecycle", "Run sequential iterations for exact assembly"),
+            "run"));
+        if (!command.Contains("-Profile $profile", StringComparison.Ordinal) ||
+            !command.Contains("-AssemblyPattern '${{ matrix.assembly }}'", StringComparison.Ordinal) ||
+            command.Contains("-Iterations", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "PR lifecycle shards must preserve profile-owned sequential iteration semantics.");
+        }
+        var build = NormalizeCommand(RequireScalar(
+            FindUniqueStep(workflow, "assembly-lifecycle", "Build exact lifecycle closure"),
+            "run"));
+        Assert.Contains(
+            "./tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj",
+            build,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "./tests/${{ matrix.assembly }}/${{ matrix.assembly }}.csproj",
+            build,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("./DownKyi.sln", build, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FinalVerdictConsumesEveryRequiredUpstreamAndExactHeadArtifact()
+    {
+        var workflow = LoadYaml(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "workflows",
+            "quality.yml"));
+        var jobs = RequireMapping(workflow, "jobs");
+        var verdict = RequireMapping(jobs, "required-verdict");
+        AssertNoBypassControls(verdict, ["continue-on-error"]);
+        if (!string.Equals(RequireScalar(verdict, "if"), "${{ always() }}", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The final verdict must run after failed or cancelled upstream work.");
+        }
+        var expectedNeeds = new[]
+        {
+            "format",
+            "release-build",
+            "debug-build",
+            "repository-suite",
+            "review-mutations",
+            "aria2-tls-security",
+            "assembly-lifecycle",
+            "package-audit"
+        };
+        var actualNeeds = RequireSequence(verdict, "needs").Children
+            .OfType<YamlScalarNode>()
+            .Select(item => item.Value ?? string.Empty)
+            .ToArray();
+        if (!actualNeeds.SequenceEqual(expectedNeeds, StringComparer.Ordinal))
+        {
+            throw new InvalidDataException("The final verdict has a missing or unexpected upstream owner.");
+        }
+        var aggregate = NormalizeCommand(RequireScalar(
+            FindUniqueStep(workflow, "required-verdict", "Aggregate required exact-head evidence"),
+            "run"));
+        Assert.Contains("-ExpectedCommitSha '${{ github.sha }}'", aggregate, StringComparison.Ordinal);
+        foreach (var dependency in expectedNeeds)
+        {
+            Assert.Contains($"${{{{ needs.{dependency}.result }}}}", aggregate, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void NuGetCacheContainsOnlyDependencyPackagesAndKeysEveryAuthoritativeInput()
+    {
+        var workflowText = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            ".github",
+            "workflows",
+            "quality.yml"));
+
+        Assert.Contains("path: ~/.nuget/packages", workflowText, StringComparison.Ordinal);
+        Assert.Contains("global.json", workflowText, StringComparison.Ordinal);
+        Assert.Contains("Directory.Packages.props", workflowText, StringComparison.Ordinal);
+        Assert.Contains("Directory.Build.props", workflowText, StringComparison.Ordinal);
+        Assert.Contains("Directory.Build.targets", workflowText, StringComparison.Ordinal);
+        Assert.Contains("**/*.csproj", workflowText, StringComparison.Ordinal);
+        Assert.DoesNotContain("path: bin", workflowText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("path: obj", workflowText, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -350,6 +478,19 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             action,
             "DOWNKYI_TEST_RESULTS_DIRECTORY",
             "${{ inputs.results-directory }}");
+        AssertActionEnvironment(action, "DOWNKYI_TEST_NO_RESTORE", "${{ inputs.no-restore }}");
+        AssertActionEnvironment(action, "DOWNKYI_TEST_NO_BUILD", "${{ inputs.no-build }}");
+        AssertActionEnvironment(action, "DOWNKYI_TEST_SHARD_INDEX", "${{ inputs.shard-index }}");
+        AssertActionEnvironment(action, "DOWNKYI_TEST_SHARD_COUNT", "${{ inputs.shard-count }}");
+        AssertActionEnvironment(
+            action,
+            "DOWNKYI_TEST_MAX_PARALLEL_PROJECTS",
+            "${{ inputs.max-parallel-projects }}");
+        AssertActionEnvironment(action, "DOWNKYI_TEST_EVIDENCE_PATH", "${{ inputs.evidence-path }}");
+        AssertActionEnvironment(
+            action,
+            "DOWNKYI_TEST_EXPECTED_COMMIT_SHA",
+            "${{ inputs.expected-commit-sha }}");
     }
 
     [Fact]
@@ -456,36 +597,73 @@ public sealed class WorkflowTestOwnershipArchitectureTests
             command.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 
-    private static void AssertRequiredSuiteGate(
-        YamlMappingNode workflow,
-        string jobName,
-        IReadOnlyList<string> expectedRunners)
+    private static void AssertDistributedRequiredSuite(YamlMappingNode workflow)
     {
-        var step = FindUniqueStep(workflow, jobName, "Test");
+        var step = FindUniqueStep(
+            workflow,
+            "repository-suite",
+            "Test required repository shard");
         AssertStructuredGate(step, TestSolutionAction);
         var jobs = RequireMapping(workflow, "jobs");
-        var job = RequireMapping(jobs, jobName);
-        AssertNoBypassControls(job, ForbiddenRequiredSuiteJobKeys);
+        var job = RequireMapping(jobs, "repository-suite");
+        AssertNoBypassControls(job, ["if", "continue-on-error", "needs"]);
         if (!string.Equals(RequireScalar(job, "runs-on"), "${{ matrix.os }}", StringComparison.Ordinal))
         {
-            throw new InvalidDataException("The required suite owner must run directly on matrix.os.");
+            throw new InvalidDataException("Each repository shard must run directly on matrix.os.");
         }
 
-        var matrix = RequireMapping(RequireMapping(job, "strategy"), "matrix");
-        if (matrix.Children.Count != 1)
+        var strategy = RequireMapping(job, "strategy");
+        if (!string.Equals(RequireScalar(strategy, "fail-fast"), "false", StringComparison.Ordinal))
         {
             throw new InvalidDataException(
-                "The required suite owner matrix may contain only the authoritative os axis.");
+                "Repository shards must retain sibling evidence after a failure.");
         }
-
-        var actualRunners = RequireSequence(matrix, "os").Children
-            .OfType<YamlScalarNode>()
-            .Select(node => node.Value ?? string.Empty)
+        var matrix = RequireMapping(strategy, "matrix");
+        var actualShards = RequireSequence(matrix, "include").Children
+            .OfType<YamlMappingNode>()
+            .Select(entry => string.Join(
+                "|",
+                RequireScalar(entry, "platform"),
+                RequireScalar(entry, "os"),
+                RequireScalar(entry, "shard")))
             .ToArray();
-        if (!actualRunners.SequenceEqual(expectedRunners, StringComparer.Ordinal))
+        var expectedShards = new[]
+        {
+            "Windows|windows-latest|0",
+            "Windows|windows-latest|1",
+            "Linux|ubuntu-latest|0",
+            "Linux|ubuntu-latest|1",
+            "macOS|macos-latest|0",
+            "macOS|macos-latest|1"
+        };
+        if (!actualShards.SequenceEqual(expectedShards, StringComparer.Ordinal))
         {
             throw new InvalidDataException(
-                "The required suite owner runner matrix was reduced or changed.");
+                "The distributed repository suite has a missing, duplicate or changed shard.");
+        }
+
+        var inputs = RequireMapping(step, "with");
+        var expectedInputs = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["results-directory"] = "./artifacts/ci-evidence/repository/${{ matrix.platform }}/shard-${{ matrix.shard }}",
+            ["no-restore"] = "false",
+            ["no-build"] = "false",
+            ["shard-index"] = "${{ matrix.shard }}",
+            ["shard-count"] = "2",
+            ["max-parallel-projects"] = "2",
+            ["evidence-path"] = "./artifacts/ci-evidence/repository/${{ matrix.platform }}/shard-${{ matrix.shard }}/evidence.json",
+            ["expected-commit-sha"] = "${{ github.sha }}"
+        };
+        foreach (var expected in expectedInputs)
+        {
+            if (!string.Equals(
+                    RequireScalar(inputs, expected.Key),
+                    expected.Value,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"Repository shard input '{expected.Key}' does not match the distributed contract.");
+            }
         }
     }
 
@@ -497,6 +675,8 @@ public sealed class WorkflowTestOwnershipArchitectureTests
         string projectPath,
         string? expectedClass)
     {
+        var jobs = RequireMapping(workflow, "jobs");
+        AssertNoBypassControls(RequireMapping(jobs, jobName), ForbiddenRequiredJobKeys);
         var step = FindUniqueStep(workflow, jobName, stepName);
         AssertStructuredGate(step, actionPath);
         var inputs = RequireMapping(step, "with");
@@ -523,10 +703,14 @@ public sealed class WorkflowTestOwnershipArchitectureTests
     {
         var jobs = RequireMapping(workflow, "jobs");
         var job = RequireMapping(jobs, "assembly-lifecycle-release");
-        AssertNoBypassControls(job, ForbiddenRequiredJobKeys);
+        AssertNoBypassControls(job, ["continue-on-error"]);
         if (!string.Equals(
                 RequireScalar(job, "name"),
                 "Assembly lifecycle release gate (${{ matrix.assembly }})",
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                RequireScalar(job, "if"),
+                "github.event_name != 'pull_request'",
                 StringComparison.Ordinal) ||
             !string.Equals(RequireScalar(job, "runs-on"), "windows-latest", StringComparison.Ordinal) ||
             !string.Equals(RequireScalar(job, "timeout-minutes"), "180", StringComparison.Ordinal))
@@ -670,7 +854,6 @@ public sealed class WorkflowTestOwnershipArchitectureTests
     {
         var jobs = RequireMapping(workflow, "jobs");
         var job = RequireMapping(jobs, jobName);
-        AssertNoBypassControls(job, ForbiddenRequiredJobKeys);
         var steps = RequireSequence(job, "steps");
         var matches = steps.Children
             .OfType<YamlMappingNode>()

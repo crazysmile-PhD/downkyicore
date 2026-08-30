@@ -6,6 +6,34 @@ inputs:
     description: Optional directory for TRX reports.
     required: false
     default: ''
+  no-restore:
+    description: Skip restore because the selected project closures are already restored.
+    required: false
+    default: 'true'
+  no-build:
+    description: Skip build because the selected project closures are already built.
+    required: false
+    default: 'true'
+  shard-index:
+    description: Zero-based deterministic project shard index.
+    required: false
+    default: '0'
+  shard-count:
+    description: Total deterministic project shard count.
+    required: false
+    default: '1'
+  max-parallel-projects:
+    description: Maximum concurrently owned test child processes inside this shard.
+    required: false
+    default: '2'
+  evidence-path:
+    description: Optional exact-head repository-suite evidence JSON path.
+    required: false
+    default: ''
+  expected-commit-sha:
+    description: Expected authoritative workflow SHA when evidence is requested.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -14,6 +42,13 @@ runs:
       shell: pwsh
       env:
         DOWNKYI_TEST_RESULTS_DIRECTORY: ${{ inputs.results-directory }}
+        DOWNKYI_TEST_NO_RESTORE: ${{ inputs.no-restore }}
+        DOWNKYI_TEST_NO_BUILD: ${{ inputs.no-build }}
+        DOWNKYI_TEST_SHARD_INDEX: ${{ inputs.shard-index }}
+        DOWNKYI_TEST_SHARD_COUNT: ${{ inputs.shard-count }}
+        DOWNKYI_TEST_MAX_PARALLEL_PROJECTS: ${{ inputs.max-parallel-projects }}
+        DOWNKYI_TEST_EVIDENCE_PATH: ${{ inputs.evidence-path }}
+        DOWNKYI_TEST_EXPECTED_COMMIT_SHA: ${{ inputs.expected-commit-sha }}
       run: >
         & (Join-Path '${{ github.action_path }}' '../../../script/invoke-ci-test-action.ps1')
         -Mode Solution

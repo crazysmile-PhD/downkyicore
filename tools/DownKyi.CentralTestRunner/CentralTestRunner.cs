@@ -116,7 +116,9 @@ public static class CentralTestOrchestrator
             CentralTestAuthorization? authorization = CentralTestAuthorization.Issue(
                 arguments,
                 options.RepositoryRoot);
-            var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+            var environment = new Dictionary<string, string?>(
+                options.EnvironmentVariables,
+                StringComparer.Ordinal)
             {
                 ["DOWNKYI_LIFECYCLE_MARKER"] = null
             };
@@ -230,6 +232,10 @@ public static class CentralTestOrchestrator
             ?? throw new InvalidOperationException("Central test execution produced no result.");
     }
 
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Every bounded project outcome is retained so sibling evidence can complete before the shard fails.")]
     public static async Task<CentralTestSolutionResult> RunSolutionAsync(
         CentralTestSolutionOptions options,
         CancellationToken cancellationToken = default)
@@ -250,47 +256,123 @@ public static class CentralTestOrchestrator
         }
 
         var platform = CentralTestPolicy.GetCurrentPlatform();
-        var selected = CentralTestPolicy.SelectProjects(allProjects, platform);
+        var selected = SelectSolutionProjects(
+            allProjects,
+            platform,
+            options.ShardIndex,
+            options.ShardCount);
         if (selected.Count == 0)
         {
             throw new InvalidOperationException(
-                $"No test projects are owned by '{platform}'.");
+                $"Test shard {options.ShardIndex} of {options.ShardCount} owns no '{platform}' projects.");
         }
 
         Console.WriteLine(
-            $"Selected {selected.Count} of {allProjects.Length} test projects for '{platform}'.");
-        var results = new List<CentralTestRunResult>();
-        foreach (var project in selected)
+            $"Selected {selected.Count} of {allProjects.Length} test projects for '{platform}' " +
+            $"shard {options.ShardIndex} of {options.ShardCount}.");
+        if (!options.NoBuild)
         {
-            var displayProject = FormatRepositoryPath(options.RepositoryRoot, project);
-            WriteProjectStart(options.RepositoryRoot, project);
-            var result = await RunProjectAsync(
-                    new CentralTestProjectOptions(
-                        options.RepositoryRoot,
-                        project,
-                        options.Configuration,
-                        options.NoRestore,
-                        options.NoBuild,
-                        options.ResultsDirectory,
-                        $"{Path.GetFileNameWithoutExtension(project)}.trx",
-                        classNames: null,
-                        filter: null,
-                        options.ExecutionTimeoutSeconds),
-                    cancellationToken)
-                .ConfigureAwait(false);
-            results.Add(result);
-            if (result.ExitCode != 0)
+            foreach (var project in selected)
             {
-                throw new InvalidOperationException($"Test project failed: {displayProject}");
+                await BuildProjectAsync(
+                        CreateSolutionProjectOptions(options, project, noBuild: false),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
 
-        Console.WriteLine($"Passed {results.Count} '{platform}' test projects.");
+        using var concurrency = new SemaphoreSlim(options.MaxParallelProjects);
+        var executions = selected.Select(async (project, index) =>
+        {
+            await concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                WriteProjectStart(options.RepositoryRoot, project);
+                var result = await RunProjectAsync(
+                        CreateSolutionProjectOptions(options, project, noBuild: true),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return (Index: index, Project: project, Result: result, Failure: (Exception?)null);
+            }
+            catch (Exception failure)
+            {
+                return (Index: index, Project: project, Result: (CentralTestRunResult?)null, Failure: failure);
+            }
+            finally
+            {
+                concurrency.Release();
+            }
+        }).ToArray();
+        var outcomes = await Task.WhenAll(executions).ConfigureAwait(false);
+        var failures = outcomes
+            .Where(outcome => outcome.Failure != null)
+            .OrderBy(outcome => outcome.Index)
+            .Select(outcome => new InvalidOperationException(
+                $"Test project failed: {FormatRepositoryPath(options.RepositoryRoot, outcome.Project)}",
+                outcome.Failure))
+            .ToList();
+        failures.AddRange(outcomes
+            .Where(outcome => outcome.Failure == null && outcome.Result?.ExitCode != 0)
+            .OrderBy(outcome => outcome.Index)
+            .Select(outcome => new InvalidOperationException(
+                $"Test project failed: {FormatRepositoryPath(options.RepositoryRoot, outcome.Project)}")));
+        if (failures.Count > 0)
+        {
+            throw new AggregateException("Repository test shard failed.", failures);
+        }
+
+        var results = outcomes
+            .OrderBy(outcome => outcome.Index)
+            .Select(outcome => new CentralTestProjectRunResult(
+                FormatRepositoryPath(options.RepositoryRoot, outcome.Project),
+                outcome.Result!))
+            .ToArray();
+        Console.WriteLine($"Passed {results.Length} '{platform}' test projects.");
         return new CentralTestSolutionResult(
             platform,
             selected.Count,
-            new ReadOnlyCollection<CentralTestRunResult>(results));
+            options.ShardIndex,
+            options.ShardCount,
+            new ReadOnlyCollection<CentralTestProjectRunResult>(results));
     }
+
+    internal static IReadOnlyList<string> SelectSolutionProjectsForTesting(
+        IEnumerable<string> projectPaths,
+        string platform,
+        int shardIndex,
+        int shardCount) =>
+        SelectSolutionProjects(projectPaths, platform, shardIndex, shardCount);
+
+    private static ReadOnlyCollection<string> SelectSolutionProjects(
+        IEnumerable<string> projectPaths,
+        string platform,
+        int shardIndex,
+        int shardCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(shardCount, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(shardIndex, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(shardIndex, shardCount);
+        var owned = CentralTestPolicy.SelectProjects(projectPaths, platform);
+        return new ReadOnlyCollection<string>(owned
+            .Where((_, index) => index % shardCount == shardIndex)
+            .ToArray());
+    }
+
+    private static CentralTestProjectOptions CreateSolutionProjectOptions(
+        CentralTestSolutionOptions options,
+        string project,
+        bool noBuild) =>
+        new(
+            options.RepositoryRoot,
+            project,
+            options.Configuration,
+            options.NoRestore || noBuild,
+            noBuild,
+            options.ResultsDirectory,
+            $"{Path.GetFileNameWithoutExtension(project)}.trx",
+            classNames: null,
+            filter: null,
+            options.ExecutionTimeoutSeconds);
 
     private static async Task BuildProjectAsync(
         CentralTestProjectOptions options,
@@ -301,7 +383,14 @@ public static class CentralTestOrchestrator
             "build",
             options.ProjectPath,
             "-c",
-            options.Configuration
+            options.Configuration,
+            "--no-incremental",
+            "-p:TreatWarningsAsErrors=true",
+            "-p:CodeAnalysisTreatWarningsAsErrors=true",
+            "-p:EnableNETAnalyzers=true",
+            "-p:AnalysisMode=All",
+            "-p:EnforceCodeStyleInBuild=true",
+            "-p:UseSharedCompilation=false"
         };
         if (options.NoRestore)
         {
