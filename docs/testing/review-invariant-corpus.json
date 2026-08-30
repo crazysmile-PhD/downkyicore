@@ -475,6 +475,15 @@
         {
           "kind": "adversarial-mutation",
           "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
+          "class": "DownKyi.Architecture.Tests.AssemblyLifecycleProbeBehaviorTests",
+          "environmentVariable": "DOWNKYI_TEST_MUTATE_DIAGNOSTIC_OWNER_PROJECTION",
+          "environmentValue": "1",
+          "expectedOutcome": "test-failure",
+          "expectedFailedTests": 1
+        },
+        {
+          "kind": "adversarial-mutation",
+          "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj",
           "class": "DownKyi.Architecture.Tests.WorkflowTestOwnershipArchitectureTests",
           "environmentVariable": "DOWNKYI_TEST_MUTATE_RELEASE_LIFECYCLE_SHARDS",
           "environmentValue": "1",

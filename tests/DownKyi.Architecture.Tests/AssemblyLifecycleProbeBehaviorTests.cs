@@ -21,10 +21,14 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_FORENSICS_SUPERVISOR_STARTUP";
     private const string DiagnosticJournalMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_DIAGNOSTIC_OWNER_JOURNAL";
+    private const string DiagnosticProjectionMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_DIAGNOSTIC_OWNER_PROJECTION";
     private const string CaptureBudgetSelfTestRejection =
         "Forensics collector capture-window self-test did not fail closed.";
     private const string CleanupReportSelfTestRejection =
         "Forensics collector cleanup-report self-test did not preserve evidence.";
+    private const string DiagnosticProjectionSelfTestRejection =
+        "Forensics evidence-persistence self-test lost its owner journal.";
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]
@@ -203,6 +207,30 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
     public void PowerShellReportPreservesTypedCollectorFailureEvidence()
     {
         if (string.Equals(
+                Environment.GetEnvironmentVariable(
+                    DiagnosticProjectionMutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            var mutation = TryExecuteLifecycleMutation(
+                DiagnosticProjectionMutationEnvironmentVariable,
+                "diagnostic-owner-projection",
+                DiagnosticProjectionSelfTestRejection);
+            if (mutation is null)
+            {
+                return;
+            }
+
+            Assert.False(
+                IsExpectedLifecycleMutationRejection(
+                    mutation,
+                    DiagnosticProjectionSelfTestRejection),
+                "The real lifecycle self-test rejected the old PowerShell nullable-member " +
+                "projection semantics.");
+            return;
+        }
+
+        if (string.Equals(
                 Environment.GetEnvironmentVariable(CleanupReportMutationEnvironmentVariable),
                 "1",
                 StringComparison.Ordinal))
@@ -232,6 +260,12 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         var interruptedStackPolicy = ReadFunction(
             source,
             "Test-DiagnosticCollectorFailureHasCapturedStack");
+        var localization = ReadFunction(
+            source,
+            "Get-DiagnosticCollectorStructuralLocalization");
+        var persistenceSelfTest = ReadFunction(
+            source,
+            "Test-DiagnosticEvidencePersistenceFailureReport");
 
         Assert.Contains(
             "Get-DiagnosticCollectorExecutionFailure",
@@ -294,8 +328,19 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             StringComparison.Ordinal);
         Assert.Contains(
             "EvidencePersistenceFailure",
-            ReadFunction(source, "Get-DiagnosticCollectorStructuralLocalization"),
+            localization,
             StringComparison.Ordinal);
+        Assert.Contains("${OwnerJournal}?.FailureInterval", localization, StringComparison.Ordinal);
+        Assert.Contains("${OwnerJournal}?.SupervisorProcessId", localization, StringComparison.Ordinal);
+        Assert.Contains("${OwnerJournal}?.TargetProcessId", localization, StringComparison.Ordinal);
+        Assert.DoesNotContain("$OwnerJournal?.FailureInterval", localization, StringComparison.Ordinal);
+        Assert.DoesNotContain("$OwnerJournal?.SupervisorProcessId", localization, StringComparison.Ordinal);
+        Assert.DoesNotContain("$OwnerJournal?.TargetProcessId", localization, StringComparison.Ordinal);
+        Assert.Contains("OwnershipAcknowledgementFailure", persistenceSelfTest, StringComparison.Ordinal);
+        Assert.Contains("collectorFailureKind", persistenceSelfTest, StringComparison.Ordinal);
+        Assert.Contains("collectorCleanupFailures", persistenceSelfTest, StringComparison.Ordinal);
+        Assert.Contains("ConvertTo-Json", persistenceSelfTest, StringComparison.Ordinal);
+        Assert.Contains("ConvertFrom-Json", persistenceSelfTest, StringComparison.Ordinal);
         Assert.Contains(
             "Test-DiagnosticCollectorFailureHasCapturedStack",
             managedStack,

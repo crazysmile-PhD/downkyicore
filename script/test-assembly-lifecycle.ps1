@@ -548,7 +548,20 @@ function Get-DiagnosticCollectorStructuralLocalization {
         [switch]$EvidencePersistenceFailed
     )
 
-    $interval = $OwnerJournal?.FailureInterval
+    $interval = ${OwnerJournal}?.FailureInterval
+    $supervisorProcessId = ${OwnerJournal}?.SupervisorProcessId
+    $targetProcessId = ${OwnerJournal}?.TargetProcessId
+    if ($env:DOWNKYI_TEST_MUTATE_DIAGNOSTIC_OWNER_PROJECTION -eq "1") {
+        # Reproduce the old `$OwnerJournal?.Member` parse, which reads a distinct
+        # variable named `OwnerJournal?` instead of applying null-conditional access.
+        $oldSyntaxOwnerJournal = Get-Variable `
+            -Name "OwnerJournal?" `
+            -ValueOnly `
+            -ErrorAction SilentlyContinue
+        $interval = ${oldSyntaxOwnerJournal}?.FailureInterval
+        $supervisorProcessId = ${oldSyntaxOwnerJournal}?.SupervisorProcessId
+        $targetProcessId = ${oldSyntaxOwnerJournal}?.TargetProcessId
+    }
     $boundary = if ($null -eq $interval) {
         $null
     }
@@ -653,8 +666,8 @@ function Get-DiagnosticCollectorStructuralLocalization {
         else {
             $OwnerJournal.StreamsDrained
         }
-        supervisorProcessId = $OwnerJournal?.SupervisorProcessId
-        targetProcessId = $OwnerJournal?.TargetProcessId
+        supervisorProcessId = $supervisorProcessId
+        targetProcessId = $targetProcessId
         evidenceCaptured = $EvidenceCaptured
         evidencePersisted = $EvidencePersisted
         evidencePersistenceFailed = [bool]$EvidencePersistenceFailed
@@ -677,11 +690,17 @@ function New-DiagnosticEvidencePersistenceFailure {
 }
 
 function Test-DiagnosticEvidencePersistenceFailureReport {
+    $failureInterval = [DownKyi.ProcessSupervision.DiagnosticCollectorFailureInterval]::new(
+        [DownKyi.ProcessSupervision.DiagnosticCollectorTransition]::StatusPipeConnectionCompleted,
+        [DownKyi.ProcessSupervision.DiagnosticCollectorTransition]::OwnershipAcknowledgementReceived,
+        [DownKyi.ProcessSupervision.DiagnosticCollectorFailureBoundary]::OwnershipHandshake)
     $journal = [DownKyi.ProcessSupervision.DiagnosticCollectorOwnerJournal]::new(
         [DownKyi.ProcessSupervision.DiagnosticCollectorTransitionEvidence[]]@(),
-        $null,
-        $null,
-        [DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailureKind[]]@(),
+        $failureInterval,
+        [DownKyi.ProcessSupervision.DiagnosticCollectorFailureKind]::CallerCancelled,
+        [DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailureKind[]]@(
+            [DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailureKind]::TerminateFailed,
+            [DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailureKind]::ReapFailed),
         $false,
         $true,
         $true,
@@ -694,32 +713,68 @@ function Test-DiagnosticEvidencePersistenceFailureReport {
     $failure = New-DiagnosticEvidencePersistenceFailure `
         -OwnerJournal $journal `
         -EvidenceCaptured $true
-    $localization = Get-DiagnosticCollectorStructuralLocalization `
+    $startupLocalization = Get-DiagnosticCollectorStructuralLocalization `
+        -OwnerJournal $failure.Data["DownKyi.Diagnostic.OwnerJournal"] `
+        -EvidenceCaptured $false `
+        -EvidencePersisted $false
+    $persistenceLocalization = Get-DiagnosticCollectorStructuralLocalization `
         -OwnerJournal $failure.Data["DownKyi.Diagnostic.OwnerJournal"] `
         -EvidenceCaptured (
             [bool]$failure.Data["DownKyi.Diagnostic.EvidenceCaptured"]) `
         -EvidencePersisted $false `
         -EvidencePersistenceFailed
+    $serialized = [pscustomobject]@{
+        collectorFailureKind = $journal.FailureKind.ToString()
+        collectorOwnerJournal = $journal
+        collectorCleanupFailures = @(
+            $journal.CleanupFailures | ForEach-Object { $_.ToString() })
+        diagnosticLocalization = $startupLocalization
+        persistenceLocalization = $persistenceLocalization
+    } |
+        ConvertTo-Json -Depth 8 -Compress |
+        ConvertFrom-Json
+    $serializedCleanupFailures = @($serialized.collectorCleanupFailures)
     $passed =
         $failure -is [System.IO.IOException] -and
         [object]::ReferenceEquals(
             $journal,
             $failure.Data["DownKyi.Diagnostic.OwnerJournal"]) -and
-        $localization.classification -eq "EvidencePersistenceFailure" -and
-        $localization.lastKnownGood -eq "EvidenceCaptured" -and
-        $localization.firstMissingRequired -eq "EvidencePersisted" -and
-        $localization.boundary -eq "EvidencePersistence" -and
-        $localization.evidenceCaptured -and
-        -not $localization.evidencePersisted -and
-        $localization.targetStarted -and
-        $localization.targetExited -and
-        $localization.reapCompleted -and
-        $localization.streamsDrained
+        $serialized.collectorFailureKind -eq "CallerCancelled" -and
+        $serialized.collectorOwnerJournal.FailureKindName -eq "CallerCancelled" -and
+        $serialized.collectorOwnerJournal.FailureInterval.LastKnownGoodName -eq
+            "StatusPipeConnectionCompleted" -and
+        $serialized.collectorOwnerJournal.FailureInterval.FirstMissingRequiredName -eq
+            "OwnershipAcknowledgementReceived" -and
+        $serialized.collectorOwnerJournal.FailureInterval.BoundaryName -eq
+            "OwnershipHandshake" -and
+        $serializedCleanupFailures.Count -eq 2 -and
+        $serializedCleanupFailures[0] -eq "TerminateFailed" -and
+        $serializedCleanupFailures[1] -eq "ReapFailed" -and
+        $serialized.diagnosticLocalization.classification -eq
+            "OwnershipAcknowledgementFailure" -and
+        $serialized.diagnosticLocalization.lastKnownGood -eq
+            "StatusPipeConnectionCompleted" -and
+        $serialized.diagnosticLocalization.firstMissingRequired -eq
+            "OwnershipAcknowledgementReceived" -and
+        $serialized.diagnosticLocalization.boundary -eq "OwnershipHandshake" -and
+        $serialized.diagnosticLocalization.supervisorProcessId -eq 4101 -and
+        $serialized.diagnosticLocalization.targetProcessId -eq 4201 -and
+        $serialized.persistenceLocalization.classification -eq
+            "EvidencePersistenceFailure" -and
+        $serialized.persistenceLocalization.lastKnownGood -eq "EvidenceCaptured" -and
+        $serialized.persistenceLocalization.firstMissingRequired -eq
+            "EvidencePersisted" -and
+        $serialized.persistenceLocalization.boundary -eq "EvidencePersistence" -and
+        $serialized.persistenceLocalization.evidenceCaptured -and
+        -not $serialized.persistenceLocalization.evidencePersisted -and
+        $serialized.persistenceLocalization.targetStarted -and
+        $serialized.persistenceLocalization.targetExited -and
+        $serialized.persistenceLocalization.reapCompleted -and
+        $serialized.persistenceLocalization.streamsDrained
     return [pscustomobject]@{
         passed = $passed
         failureType = $failure.GetType().Name
-        localization = $localization
-        ownerJournal = $journal
+        report = $serialized
     }
 }
 
