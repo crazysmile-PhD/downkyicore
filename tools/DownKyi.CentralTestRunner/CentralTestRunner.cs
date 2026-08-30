@@ -384,7 +384,6 @@ public static class CentralTestOrchestrator
             options.ProjectPath,
             "-c",
             options.Configuration,
-            "--no-incremental",
             "-p:TreatWarningsAsErrors=true",
             "-p:CodeAnalysisTreatWarningsAsErrors=true",
             "-p:EnableNETAnalyzers=true",

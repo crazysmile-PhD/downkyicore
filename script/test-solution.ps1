@@ -26,6 +26,11 @@ if (Test-DownKyiDelegatedCgroupScopeRequired) {
 }
 
 . (Join-Path $PSScriptRoot "test-project-runner.ps1")
+Import-DownKyiCentralTestRunner `
+    -RepositoryRoot $repositoryRoot `
+    -Configuration $Configuration `
+    -BuildIfMissing `
+    -NoRestore:$NoRestore
 & (Join-Path $PSScriptRoot "test-platform-selector.ps1")
 $result = Invoke-DownKyiTestSolution `
     -RepositoryRoot $repositoryRoot `

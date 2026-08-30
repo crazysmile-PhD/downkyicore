@@ -275,6 +275,30 @@ public sealed class TestRunnerPolicyArchitectureTests
     }
 
     [Fact]
+    public void SolutionBootstrapBuildsTheProviderBeforeSelectionWithoutRebuildingTheLoadedHost()
+    {
+        var solution = Read("script/test-solution.ps1");
+        var providerIndex = solution.IndexOf(
+            "Import-DownKyiCentralTestRunner `",
+            StringComparison.Ordinal);
+        var selectorIndex = solution.IndexOf(
+            "test-platform-selector.ps1",
+            StringComparison.Ordinal);
+
+        Assert.True(providerIndex >= 0 && providerIndex < selectorIndex);
+
+        var compiledRunner = Read("tools/DownKyi.CentralTestRunner/CentralTestRunner.cs");
+        var buildIndex = compiledRunner.IndexOf(
+            "private static async Task BuildProjectAsync",
+            StringComparison.Ordinal);
+        Assert.True(buildIndex >= 0);
+        var buildBoundary = compiledRunner[buildIndex..];
+        Assert.DoesNotContain("\"--no-incremental\"", buildBoundary, StringComparison.Ordinal);
+        Assert.Contains("-p:TreatWarningsAsErrors=true", buildBoundary, StringComparison.Ordinal);
+        Assert.Contains("-p:AnalysisMode=All", buildBoundary, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MacTermResistanceFixtureHasOneTestOwnedProcessRoot()
     {
         var fixture = Read("tests/DownKyi.MacOS.Tests/MacBundleLayoutTests.cs");
