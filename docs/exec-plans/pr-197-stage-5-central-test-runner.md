@@ -564,6 +564,57 @@ adversarial sequence. Its typed failure completed cleanup with no residual
 process; the isolated target-exit profile remained exactly 14/1, and the full
 prebuilt corpus then passed without changing or extending any deadline.
 
+The same natural Build run also supplied authoritative lifecycle evidence after
+its other required job had failed: assembly-lifecycle-release job
+`99114206673` reached the workflow's existing 180-minute boundary and was
+cancelled while the evidence upload still succeeded. The artifact proves this
+was accumulated workload rather than a stalled phase or cleanup replacement:
+seven Windows-eligible assemblies completed all 100 iterations, while
+`DownKyi.Windows.Tests` reached iteration 37. Per-test execution evidence from
+`DownKyi.Architecture.Tests` iteration 98 shows 49.8 seconds total, including
+two recovery trust proofs that independently repeated the same authoritative
+MSBuild derivation in one test process (about 5.6 and 8.2 seconds). The
+100-iteration/per-assembly contract, complete assembly set and existing
+workflow timeout remain unchanged. Those two proofs now share one process-local
+lazy derivation; every lifecycle iteration launches a new test process, so all
+100 iterations still execute the real MSBuild closure once and the transitive
+Git-diff adversarial proof remains executable. This removes only duplicated
+work inside an iteration and does not add a cache across iterations, a second
+trust owner, a retry or a deadline change.
+
+The subsequent exact head `09a2fff93819d1b6f1903f95b00dde5deca56668`
+confirmed the same accumulated-work cause: Build run `33261122454` passed its
+strict build and every release job, but assembly-lifecycle job `99123130763`
+again reached the unchanged 180-minute workflow boundary. That obsolete head
+was not rerun. The first local verification attempt after the process-local
+derivation change was not counted because the existing positive slow-evidence
+self-test completed 0.166 seconds after its target exited. A second attempt
+passed the self-tests but reached the unchanged 180-second Architecture
+execution boundary at 180.020 seconds while tests were still progressing; its
+typed report retained the execution failure, completed cleanup with no residual
+process and did not replace the primary failure with its dependent teardown
+results.
+
+That evidence isolated the remaining avoidable work in the transitive recovery
+proof: it started one Git process for every input in the MSBuild-derived
+compiled closure. The proof now gives that complete derived closure to one
+`git diff --name-only HEAD^ HEAD -- <inputs>` invocation. It still creates two
+real commit states and asserts that the actual compiled transitive input is the
+only changed path; it merely removes per-input Git startup plus redundant Git
+configuration and revision-resolution processes. The authoritative pathspec
+continues to come exclusively from the compiled closure, with no handwritten
+trust registry, timeout, retry or second deadline owner.
+
+Final local validation after that change produced focused policy 15/15 and a
+trust-closure mutation with exactly one expected failure out of 15 tests; full
+Architecture 378/378; and the complete 13-invariant / seven-project / 406-test /
+32-adversarial-proof corpus. Strict Architecture, macOS-test and solution
+Release builds completed with zero warnings and zero errors. The unchanged
+one-assembly lifecycle boundary then passed with 666 ownership matches, zero
+violations, one assembly, nine phase results and zero failures; Architecture
+execution completed in 158.362 seconds. The exact recovery
+workflow/project/trust set passed 49/49.
+
 ## Commits And Closure
 
 - `a768a9d86bba3b5bd0f0834a7997cf21a9ccd017` — compiled migration and

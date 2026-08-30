@@ -13,6 +13,12 @@ public sealed class TestRunnerPolicyArchitectureTests
         .Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
         .Order(StringComparer.Ordinal)
         .ToArray();
+    private static readonly Lazy<string[]> RecoveryTrustInputs = new(
+        DeriveRecoveryTrustInputs,
+        LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly string[] RecoveryDiffArgumentPrefix =
+        ["diff", "--name-only", "HEAD^", "HEAD", "--"];
+
     [Fact]
     public void EveryRepositoryTestProjectUsesTheCentralInProcessRunner()
     {
@@ -70,14 +76,7 @@ public sealed class TestRunnerPolicyArchitectureTests
     [Fact]
     public void RecoveryAnchorsTheRunnerProviderBeforeConsumingItsDependencyClosure()
     {
-        var result = RunPowerShell(
-            ". ./script/test-project-runner.ps1; " +
-            "@(Get-DownKyiTestRunnerTrustInputs -RepositoryRoot . " +
-            "-ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj) " +
-            "| ConvertTo-Json -Compress");
-        Assert.Equal(0, result.ExitCode);
-        var inputs = JsonSerializer.Deserialize<string[]>(result.Output.Trim())
-            ?? throw new InvalidDataException("Recovery trust derivation returned no inputs.");
+        var inputs = GetRecoveryTrustInputs();
         if (string.Equals(
                 Environment.GetEnvironmentVariable("DOWNKYI_TEST_MUTATE_CENTRAL_RECOVERY_TRUST_CLOSURE"),
                 "1",
@@ -112,14 +111,7 @@ public sealed class TestRunnerPolicyArchitectureTests
     {
         const string transitiveInput =
             "tools/DownKyi.ProcessSupervision/PlatformProcessContainment.cs";
-        var derivation = RunPowerShell(
-            ". ./script/test-project-runner.ps1; " +
-            "@(Get-DownKyiTestRunnerTrustInputs -RepositoryRoot . " +
-            "-ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj) " +
-            "| ConvertTo-Json -Compress");
-        Assert.Equal(0, derivation.ExitCode);
-        var inputs = JsonSerializer.Deserialize<string[]>(derivation.Output.Trim())
-            ?? throw new InvalidDataException("Recovery trust derivation returned no inputs.");
+        var inputs = GetRecoveryTrustInputs();
         Assert.Contains(transitiveInput, inputs);
 
         var repository = Path.Combine(
@@ -133,30 +125,35 @@ public sealed class TestRunnerPolicyArchitectureTests
         {
             File.Copy(Path.Combine(RepositoryRoot, transitiveInput), sourcePath);
             Assert.Equal(0, RunGit(repository, "init").ExitCode);
-            Assert.Equal(0, RunGit(repository, "config", "user.email", "recovery-proof@downkyi.invalid").ExitCode);
-            Assert.Equal(0, RunGit(repository, "config", "user.name", "Recovery Proof").ExitCode);
             Assert.Equal(0, RunGit(repository, "add", "--", transitiveInput).ExitCode);
-            Assert.Equal(0, RunGit(repository, "commit", "-m", "validated head").ExitCode);
-            var validatedHead = RunGit(repository, "rev-parse", "HEAD");
-            Assert.Equal(0, validatedHead.ExitCode);
+            Assert.Equal(
+                0,
+                RunGit(
+                    repository,
+                    "-c", "user.email=recovery-proof@downkyi.invalid",
+                    "-c", "user.name=Recovery Proof",
+                    "commit", "-m", "validated head").ExitCode);
 
             File.AppendAllText(sourcePath, Environment.NewLine + "// adversarial post-validation change");
             Assert.Equal(0, RunGit(repository, "add", "--", transitiveInput).ExitCode);
-            Assert.Equal(0, RunGit(repository, "commit", "-m", "post-validation mutation").ExitCode);
-            var recoveryHead = RunGit(repository, "rev-parse", "HEAD");
-            Assert.Equal(0, recoveryHead.ExitCode);
+            Assert.Equal(
+                0,
+                RunGit(
+                    repository,
+                    "-c", "user.email=recovery-proof@downkyi.invalid",
+                    "-c", "user.name=Recovery Proof",
+                    "commit", "-m", "post-validation mutation").ExitCode);
 
-            var rejected = inputs.Where(input =>
-                    RunGit(
-                        repository,
-                        "diff",
-                        "--quiet",
-                        validatedHead.Output.Trim(),
-                        recoveryHead.Output.Trim(),
-                        "--",
-                        input).ExitCode != 0)
+            var diffArguments = RecoveryDiffArgumentPrefix
+                .Concat(inputs)
                 .ToArray();
-            Assert.Equal([transitiveInput], rejected);
+            var diff = RunGit(repository, diffArguments);
+            Assert.Equal(0, diff.ExitCode);
+            var rejected = diff.Output.Split(
+                '\n',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            Assert.Single(rejected);
+            Assert.Equal(transitiveInput, rejected[0]);
         }
         finally
         {
@@ -495,6 +492,21 @@ public sealed class TestRunnerPolicyArchitectureTests
         return BoundedProcessRunner.Run(
             startInfo,
             TestContext.Current.CancellationToken);
+    }
+
+    private static string[] GetRecoveryTrustInputs() => [.. RecoveryTrustInputs.Value];
+
+    private static string[] DeriveRecoveryTrustInputs()
+    {
+        var derivation = RunPowerShell(
+            ". ./script/test-project-runner.ps1; " +
+            "@(Get-DownKyiTestRunnerTrustInputs -RepositoryRoot . " +
+            "-ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj) " +
+            "| ConvertTo-Json -Compress");
+        Assert.Equal(0, derivation.ExitCode);
+        return JsonSerializer.Deserialize<string[]>(derivation.Output.Trim())
+               ?? throw new InvalidDataException(
+                   "Recovery trust derivation returned no inputs.");
     }
 
     private static BoundedProcessResult RunGit(string workingDirectory, params string[] arguments)
