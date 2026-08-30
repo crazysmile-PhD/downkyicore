@@ -42,6 +42,31 @@ public sealed class CentralTestAuthorizationTests
     public Task PartialAuthorizationFailsClosed() =>
         AssertInvalidAuthorizationAsync(CentralTestAuthorizationMutation.Partial);
 
+    [Fact]
+    public async Task CallerCancellationPreservesTheOriginalAuthorizationToken()
+    {
+        var paths = CreateInvocation();
+        using var resultCleanup = new ResultDirectoryCleanup(paths.TrxPath);
+        var authorization = CentralTestAuthorization.IssueForTesting(
+            paths.Arguments,
+            RepositoryRoot,
+            CentralTestAuthorizationMutation.None);
+        await using var authorizationScope = authorization.ConfigureAwait(false);
+        var budget = TransitionBudget.Start(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(1));
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        await cancellation.CancelAsync().ConfigureAwait(true);
+
+        var failure = await Assert.ThrowsAsync<OperationCanceledException>(
+                () => authorization.CompleteAsync(
+                    budget,
+                    CancellationToken.None,
+                    cancellation.Token))
+            .ConfigureAwait(true);
+
+        Assert.Equal(cancellation.Token, failure.CancellationToken);
+    }
+
     private static async Task AssertInvalidAuthorizationAsync(
         CentralTestAuthorizationMutation mutation)
     {

@@ -134,6 +134,14 @@ public sealed class CentralTestAuthorization : IAsyncDisposable, IDisposable
             }
         }
         catch (OperationCanceledException failure) when (
+            cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(
+                "Repository test authorization was cancelled by its caller.",
+                failure,
+                cancellationToken);
+        }
+        catch (OperationCanceledException failure) when (
             targetExitedToken.IsCancellationRequested &&
             !cancellationToken.IsCancellationRequested)
         {
