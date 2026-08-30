@@ -325,6 +325,9 @@ public sealed class CiTestActionBehaviorTests
             startInfo.Environment["DOWNKYI_TEST_RESULTS_DIRECTORY"] = "action-results";
             startInfo.Environment["DOWNKYI_TEST_NO_RESTORE"] = "true";
             startInfo.Environment["DOWNKYI_TEST_NO_BUILD"] = "true";
+            startInfo.Environment["DOWNKYI_TEST_SHARD_INDEX"] = "0";
+            startInfo.Environment["DOWNKYI_TEST_SHARD_COUNT"] = "1";
+            startInfo.Environment["DOWNKYI_TEST_MAX_PARALLEL_PROJECTS"] = "2";
             startInfo.Environment["DOWNKYI_TEST_EVIDENCE_PATH"] = "action-evidence.json";
             startInfo.Environment["DOWNKYI_TEST_EXPECTED_COMMIT_SHA"] = "expected-action-sha";
             startInfo.Environment["DOWNKYI_CAPTURE"] = capturePath;
