@@ -39,9 +39,9 @@ $result = Invoke-DownKyiTestProject `
     -ExecutionTimeoutSeconds $ExecutionTimeoutSeconds
 
 if ($ClassNames.Count -gt 0) {
-    $null = Assert-DownKyiExpectedTestExecution `
+    $null = Assert-DownKyiExpectedTestExecutionReport `
         -RunnerExitCode $result.ExitCode `
-        -TrxPath $result.TrxPath `
+        -Report $result.Report `
         -ExpectedClassNames $ClassNames `
         -RepositoryRoot $RepositoryRoot `
         -Configuration $Configuration

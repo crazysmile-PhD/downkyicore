@@ -46,8 +46,9 @@ public static class CentralTestPolicy
         var declarations = project
             .Descendants()
             .Where(element => element.Name.LocalName == "DownKyiTestPlatforms" &&
-                              element.Attribute("Condition") == null &&
-                              element.Parent?.Attribute("Condition") == null)
+                              !element
+                                  .AncestorsAndSelf()
+                                  .Any(ancestor => ancestor.Attribute("Condition") != null))
             .ToArray();
         if (declarations.Length != 1)
         {

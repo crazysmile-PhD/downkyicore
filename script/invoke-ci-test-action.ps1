@@ -92,8 +92,8 @@ if ([string]::IsNullOrWhiteSpace($env:DOWNKYI_TEST_EXPECTED_CLASS)) {
     }
 }
 else {
-    Assert-DownKyiExpectedTestExecution `
+    Assert-DownKyiExpectedTestExecutionReport `
         -RunnerExitCode $result.ExitCode `
-        -TrxPath $result.TrxPath `
+        -Report $result.Report `
         -ExpectedClassNames @($env:DOWNKYI_TEST_EXPECTED_CLASS)
 }

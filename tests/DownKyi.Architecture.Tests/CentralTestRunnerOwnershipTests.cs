@@ -21,6 +21,11 @@ public sealed class CentralTestRunnerOwnershipTests
     public async Task NormalTestChildCompletesUnderOwnedProcessLease()
     {
         var paths = CreateResultPaths();
+        await File.WriteAllTextAsync(
+                paths.TrxPath,
+                "previous report must be replaced only on success",
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
         try
         {
             var result = await CentralTestOrchestrator.RunProjectAsync(
@@ -32,6 +37,132 @@ public sealed class CentralTestRunnerOwnershipTests
             Assert.True(result.Ownership.OwnershipEstablished);
             Assert.Equal(1, result.Report.PassedExpectedClasses);
             Assert.Equal(paths.TrxPath, result.Report.ReportPath);
+        }
+        finally
+        {
+            DeleteResultDirectory(paths.Directory);
+        }
+    }
+
+    [Fact]
+    public void NestedConditionalPlatformDeclarationIsRejected()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-platform-condition-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var projectPath = Path.Combine(directory, "Conditional.Tests.csproj");
+        try
+        {
+            File.WriteAllText(
+                projectPath,
+                """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <Choose>
+                    <When Condition="'$(OS)' != ''">
+                      <PropertyGroup>
+                        <DownKyiTestPlatforms>Windows;Linux;macOS</DownKyiTestPlatforms>
+                      </PropertyGroup>
+                    </When>
+                  </Choose>
+                </Project>
+                """);
+
+            var failure = Assert.Throws<InvalidOperationException>(
+                () => CentralTestPolicy.ReadProjectPlatforms(projectPath));
+
+            Assert.Contains("unconditional", failure.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteResultDirectory(directory);
+        }
+    }
+
+    [Fact]
+    public void ProjectBuildCannotRetainMsBuildOrSharedCompilerServers()
+    {
+        var options = new CentralTestProjectOptions(
+            RepositoryRoot,
+            ProjectPath,
+            "Release",
+            noRestore: true,
+            noBuild: false,
+            resultsDirectory: null,
+            trxName: null,
+            classNames: null,
+            filter: null,
+            executionTimeoutSeconds: 20);
+
+        var arguments = CentralTestOrchestrator.CreateBuildArgumentsForTesting(options);
+
+        Assert.Contains("-nodeReuse:false", arguments);
+        Assert.Contains("-p:UseSharedCompilation=false", arguments);
+        Assert.DoesNotContain("build-server", arguments);
+    }
+
+    [Fact]
+    public async Task FocusedTemporaryRunReturnsAUsableValidatedReport()
+    {
+        var options = new CentralTestProjectOptions(
+            RepositoryRoot,
+            ProjectPath,
+            "Release",
+            noRestore: true,
+            noBuild: true,
+            resultsDirectory: null,
+            trxName: null,
+            [typeof(CentralTestRunnerBlockingFixture).FullName!],
+            filter: null,
+            executionTimeoutSeconds: 20);
+
+        var result = await CentralTestOrchestrator.RunProjectAsync(
+                options,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Null(result.TrxPath);
+        Assert.Null(result.Report.ReportPath);
+        Assert.Equal(1, result.Report.ExecutedExpectedClasses);
+        Assert.Equal(1, result.Report.PassedExpectedClasses);
+        Assert.Equal(
+            result.Report,
+            CentralTestExecutionValidator.ValidateExpectedExecutionReport(
+                result.ExitCode,
+                result.Report,
+                [typeof(CentralTestRunnerBlockingFixture).FullName!]));
+    }
+
+    [Fact]
+    public async Task FailedRunPreservesThePreviouslyCommittedTrx()
+    {
+        var paths = CreateResultPaths();
+        const string previousReport = "previous authoritative report";
+        await File.WriteAllTextAsync(
+                paths.TrxPath,
+                previousReport,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        try
+        {
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(
+                    () => CentralTestOrchestrator.RunProjectForTestingAsync(
+                        CreateOptions(paths, executionTimeoutSeconds: 20),
+                        CentralTestRunnerMutation.FailAuthorizationBeforeCompletion,
+                        TestContext.Current.CancellationToken))
+                .ConfigureAwait(true);
+
+            Assert.Contains(
+                "Injected central test authorization failure.",
+                failure.Message,
+                StringComparison.Ordinal);
+            Assert.Equal(
+                previousReport,
+                await File.ReadAllTextAsync(
+                        paths.TrxPath,
+                        TestContext.Current.CancellationToken)
+                    .ConfigureAwait(true));
         }
         finally
         {

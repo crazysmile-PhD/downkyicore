@@ -116,7 +116,7 @@ public sealed record CentralTestExecutionReport(
     int PassedExpected,
     int PassedExpectedClasses,
     int Failed,
-    string ReportPath);
+    string? ReportPath);
 
 internal enum CentralTestValidatorMutation
 {

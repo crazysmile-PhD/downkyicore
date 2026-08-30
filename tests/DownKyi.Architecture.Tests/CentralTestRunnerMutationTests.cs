@@ -59,7 +59,7 @@ public sealed class CentralTestRunnerMutationTests
             Path.GetTempPath(),
             $"downkyi-stage5-guard-mutation-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
-        try
+        var primaryFailure = Record.Exception(() =>
         {
             var startInfo = CentralTestAuthorizationTests.CreateDirectStartInfo(
                 Path.Combine(directory, "direct.trx"));
@@ -74,10 +74,10 @@ public sealed class CentralTestRunnerMutationTests
                 productionResult.Output,
                 StringComparison.OrdinalIgnoreCase);
 
-            var guardSource = Read("tests/CentralTestExecutionGuard.cs")
-                .Replace("\r\n", "\n", StringComparison.Ordinal);
             if (MutationIsActive("DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS_PROOF"))
             {
+                var guardSource = Read("tests/CentralTestExecutionGuard.cs")
+                    .Replace("\r\n", "\n", StringComparison.Ordinal);
                 const string initializerBoundary =
                     "internal static void RequireInProcessTestHost()\n" +
                     "    {\n" +
@@ -89,24 +89,40 @@ public sealed class CentralTestRunnerMutationTests
                     "    {\n" +
                     "        return;",
                     StringComparison.Ordinal);
-            }
 
-            var fixtureStartInfo = CompileGuardFixture(directory, guardSource);
-            fixtureStartInfo.Environment[
-                "DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS"] = "1";
-            var fixtureResult = BoundedProcessRunner.Run(
-                fixtureStartInfo,
-                TestContext.Current.CancellationToken);
+                var fixtureStartInfo = CompileGuardFixture(directory, guardSource);
+                fixtureStartInfo.Environment[
+                    "DOWNKYI_TEST_MUTATE_CENTRAL_GUARD_BYPASS"] = "1";
+                var fixtureResult = BoundedProcessRunner.Run(
+                    fixtureStartInfo,
+                    TestContext.Current.CancellationToken);
 
-            Assert.NotEqual(0, fixtureResult.ExitCode);
-            Assert.Contains(
-                "must execute through the central in-process test runner",
-                fixtureResult.Output,
+                Assert.NotEqual(0, fixtureResult.ExitCode);
+                Assert.Contains(
+                    "must execute through the central in-process test runner",
+                    fixtureResult.Output,
                 StringComparison.OrdinalIgnoreCase);
-        }
-        finally
+            }
+        });
+
+        var cleanupFailure = Record.Exception(
+            () => Directory.Delete(directory, recursive: true));
+
+        if (primaryFailure is not null && cleanupFailure is not null)
         {
-            Directory.Delete(directory, recursive: true);
+            throw new AggregateException(primaryFailure, cleanupFailure);
+        }
+        if (primaryFailure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                .Capture(primaryFailure)
+                .Throw();
+        }
+        if (cleanupFailure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                .Capture(cleanupFailure)
+                .Throw();
         }
     }
 

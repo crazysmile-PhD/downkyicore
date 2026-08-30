@@ -362,6 +362,33 @@ function Assert-DownKyiExpectedTestExecution {
     }
 }
 
+function Assert-DownKyiExpectedTestExecutionReport {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [int]$RunnerExitCode,
+        [Parameter(Mandatory)]
+        [object]$Report,
+        [Parameter(Mandatory)]
+        [string[]]$ExpectedClassNames,
+        [string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot),
+        [ValidateSet("Debug", "Release")]
+        [string]$Configuration = "Release"
+    )
+
+    Import-DownKyiCentralTestRunner -RepositoryRoot $RepositoryRoot -Configuration $Configuration
+    try {
+        return [DownKyi.CentralTestRunner.CentralTestExecutionValidator]::
+            ValidateExpectedExecutionReport(
+                $RunnerExitCode,
+                $Report,
+                [string[]]$ExpectedClassNames)
+    }
+    catch {
+        throw
+    }
+}
+
 function Invoke-DownKyiTestProject {
     [CmdletBinding()]
     param(

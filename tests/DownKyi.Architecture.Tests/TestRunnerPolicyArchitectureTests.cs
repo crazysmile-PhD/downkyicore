@@ -341,6 +341,21 @@ public sealed class TestRunnerPolicyArchitectureTests
         Assert.DoesNotContain("FullyQualifiedName~", corpus, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void FocusedWrappersUseTheValidatedInMemoryReportContract()
+    {
+        var project = Read("script/test-project.ps1");
+        var action = Read("script/invoke-ci-test-action.ps1");
+        var runner = Read("script/test-project-runner.ps1");
+
+        Assert.Contains("Assert-DownKyiExpectedTestExecutionReport", project, StringComparison.Ordinal);
+        Assert.Contains("Assert-DownKyiExpectedTestExecutionReport", action, StringComparison.Ordinal);
+        Assert.Contains("ValidateExpectedExecutionReport", runner, StringComparison.Ordinal);
+        Assert.Contains("-Report $result.Report", project, StringComparison.Ordinal);
+        Assert.Contains("-Report $result.Report", action, StringComparison.Ordinal);
+        Assert.DoesNotContain("-TrxPath $result.TrxPath", project + action, StringComparison.Ordinal);
+    }
+
     internal static void AssertSupervisorTransportOnly(string source)
     {
         foreach (var forbidden in new[]

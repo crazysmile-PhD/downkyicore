@@ -105,11 +105,6 @@ public static class CentralTestOrchestrator
         CentralTestRunResult? result = null;
         try
         {
-            if (File.Exists(validationTrxPath))
-            {
-                File.Delete(validationTrxPath);
-            }
-
             var budget = TransitionBudget.Start(
                 TimeSpan.FromSeconds(options.ExecutionTimeoutSeconds),
                 CleanupGrace);
@@ -154,20 +149,19 @@ public static class CentralTestOrchestrator
                 lease = null;
 
                 WriteCapturedOutput(outcome.StandardOutput, outcome.StandardError);
-                var report = CentralTestExecutionValidator.ValidateReport(
+                var validatedReport = CentralTestExecutionValidator.ValidateReport(
                     validationTrxPath,
                     options.ClassNames);
-                if (outcome.ExitCode == 0 && report.Failed > 0)
+                if (outcome.ExitCode == 0 && validatedReport.Failed > 0)
                 {
                     throw new InvalidDataException(
                         "A successful runner report cannot contain failed test results.");
                 }
-
                 result = new CentralTestRunResult(
                     outcome.ExitCode,
                     policy.Runner,
                     reportedTrxPath,
-                    report,
+                    validatedReport,
                     outcome.Ownership);
             }
             catch (OwnedProcessExecutionException failure)
@@ -204,25 +198,82 @@ public static class CentralTestOrchestrator
         {
             primaryFailure = failure;
         }
-        finally
+
+        string? reportCandidatePath = null;
+        if (primaryFailure == null && cleanupFailures.Count == 0 && result != null)
         {
-            if (temporaryResultsDirectory != null && Directory.Exists(temporaryResultsDirectory))
+            if (reportedTrxPath != null)
             {
                 try
                 {
-                    Directory.Delete(temporaryResultsDirectory, recursive: true);
+                    reportCandidatePath = reportedTrxPath +
+                        $".candidate-{Guid.NewGuid():N}";
+                    File.Move(validationTrxPath, reportCandidatePath);
                 }
-                catch (Exception cleanupFailure)
+                catch (Exception failure)
                 {
-                    cleanupFailures.Add(cleanupFailure);
+                    primaryFailure = failure;
                 }
             }
-            if (temporaryResultsDirectory != null &&
-                mutation.HasFlag(CentralTestRunnerMutation.FailTemporaryResultsCleanup))
+
+            if (primaryFailure == null)
+            {
+                await CaptureCleanupFailureAsync(
+                        () => DeleteDirectoryIfPresentAsync(temporaryResultsDirectory),
+                        cleanupFailures)
+                    .ConfigureAwait(false);
+                if (mutation.HasFlag(CentralTestRunnerMutation.FailTemporaryResultsCleanup))
+                {
+                    cleanupFailures.Add(new IOException(
+                        "Injected temporary TRX directory cleanup failure."));
+                }
+            }
+
+            if (primaryFailure == null && cleanupFailures.Count == 0)
+            {
+                try
+                {
+                    var report = result.Report with { ReportPath = reportedTrxPath };
+                    if (reportedTrxPath != null)
+                    {
+                        File.Move(reportCandidatePath!, reportedTrxPath, overwrite: true);
+                        reportCandidatePath = null;
+                    }
+                    result = result with { Report = report };
+                }
+                catch (Exception failure)
+                {
+                    primaryFailure = failure;
+                }
+            }
+        }
+        else
+        {
+            await CaptureCleanupFailureAsync(
+                    () => DeleteDirectoryIfPresentAsync(temporaryResultsDirectory),
+                    cleanupFailures)
+                .ConfigureAwait(false);
+            if (mutation.HasFlag(CentralTestRunnerMutation.FailTemporaryResultsCleanup))
             {
                 cleanupFailures.Add(new IOException(
                     "Injected temporary TRX directory cleanup failure."));
             }
+        }
+
+        if (Directory.Exists(temporaryResultsDirectory))
+        {
+            await CaptureCleanupFailureAsync(
+                    () => DeleteDirectoryIfPresentAsync(temporaryResultsDirectory),
+                    cleanupFailures)
+                .ConfigureAwait(false);
+        }
+
+        if (reportCandidatePath != null)
+        {
+            await CaptureCleanupFailureAsync(
+                    () => DeleteFileIfPresentAsync(reportCandidatePath),
+                    cleanupFailures)
+                .ConfigureAwait(false);
         }
 
         ThrowPreservingPrimaryFailure(primaryFailure, cleanupFailures);
@@ -296,17 +347,7 @@ public static class CentralTestOrchestrator
         CentralTestProjectOptions options,
         CancellationToken cancellationToken)
     {
-        var arguments = new List<string>
-        {
-            "build",
-            options.ProjectPath,
-            "-c",
-            options.Configuration
-        };
-        if (options.NoRestore)
-        {
-            arguments.Add("--no-restore");
-        }
+        var arguments = CreateBuildArguments(options);
 
         var budget = TransitionBudget.Start(
             TimeSpan.FromSeconds(options.ExecutionTimeoutSeconds),
@@ -331,11 +372,35 @@ public static class CentralTestOrchestrator
         }
     }
 
+    internal static IReadOnlyList<string> CreateBuildArgumentsForTesting(
+        CentralTestProjectOptions options) =>
+        CreateBuildArguments(options);
+
+    private static ReadOnlyCollection<string> CreateBuildArguments(
+        CentralTestProjectOptions options)
+    {
+        var arguments = new List<string>
+        {
+            "build",
+            options.ProjectPath,
+            "-c",
+            options.Configuration,
+            "-nodeReuse:false",
+            "-p:UseSharedCompilation=false"
+        };
+        if (options.NoRestore)
+        {
+            arguments.Add("--no-restore");
+        }
+
+        return new ReadOnlyCollection<string>(arguments);
+    }
+
     private static ReadOnlyCollection<string> CreateCanonicalArguments(
         string assemblyPath,
         CentralTestProjectPolicy policy,
         IReadOnlyList<string> classNames,
-        out string? temporaryResultsDirectory,
+        out string temporaryResultsDirectory,
         string? resultsDirectory,
         string? trxName,
         out string validationTrxPath,
@@ -358,32 +423,50 @@ public static class CentralTestOrchestrator
             arguments.Add(className);
         }
 
-        temporaryResultsDirectory = null;
+        var stagingName = $".downkyi-test-{Guid.NewGuid():N}";
         reportedTrxPath = null;
-        var validationDirectory = resultsDirectory;
-        if (validationDirectory == null)
+        if (resultsDirectory == null)
         {
             temporaryResultsDirectory = Path.Combine(
                 Path.GetTempPath(),
-                $"downkyi-test-{Guid.NewGuid():N}");
-            validationDirectory = temporaryResultsDirectory;
+                stagingName);
         }
         else
         {
+            Directory.CreateDirectory(resultsDirectory);
+            temporaryResultsDirectory = Path.Combine(resultsDirectory, stagingName);
             reportedTrxPath = Path.Combine(
-                validationDirectory,
+                resultsDirectory,
                 string.IsNullOrWhiteSpace(trxName)
                     ? $"{Path.GetFileNameWithoutExtension(assemblyPath)}.trx"
                     : trxName);
         }
 
-        Directory.CreateDirectory(validationDirectory);
-        validationTrxPath = reportedTrxPath ?? Path.Combine(
-            validationDirectory,
+        Directory.CreateDirectory(temporaryResultsDirectory);
+        validationTrxPath = Path.Combine(
+            temporaryResultsDirectory,
             $"{Path.GetFileNameWithoutExtension(assemblyPath)}.trx");
         arguments.Add("-trx");
         arguments.Add(validationTrxPath);
         return new ReadOnlyCollection<string>(arguments);
+    }
+
+    private static Task DeleteDirectoryIfPresentAsync(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static Task DeleteFileIfPresentAsync(string path)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+        return Task.CompletedTask;
     }
 
     private static void WriteCapturedOutput(string standardOutput, string standardError)

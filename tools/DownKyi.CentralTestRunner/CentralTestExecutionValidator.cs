@@ -31,6 +31,35 @@ public static class CentralTestExecutionValidator
             CentralTestValidatorMutation.None);
     }
 
+    public static CentralTestExecutionReport ValidateExpectedExecutionReport(
+        int runnerExitCode,
+        CentralTestExecutionReport report,
+        IEnumerable<string> expectedClassNames)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        ArgumentNullException.ThrowIfNull(expectedClassNames);
+        var expected = expectedClassNames.Distinct(StringComparer.Ordinal).ToArray();
+        if (expected.Length == 0)
+        {
+            throw new InvalidOperationException("At least one expected test class is required.");
+        }
+        if (runnerExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"The test runner failed with exit code {runnerExitCode}.");
+        }
+        if (report.Executed < 1 ||
+            report.Failed > 0 ||
+            report.ExecutedExpectedClasses != expected.Length ||
+            report.PassedExpectedClasses != expected.Length)
+        {
+            throw new InvalidOperationException(
+                "The validated test result did not preserve every expected class.");
+        }
+
+        return report;
+    }
+
     internal static CentralTestExecutionReport ValidateExpectedExecutionForTesting(
         int runnerExitCode,
         string trxPath,
