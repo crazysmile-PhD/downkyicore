@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <DownKyiTestPlatforms>Linux</DownKyiTestPlatforms>
+    <DefineConstants>$(DefineConstants);DOWNKYI_LINUX_RELEASE_TEST_CASES</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,7 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj" />
-    <ProjectReference Include="..\DownKyi.Architecture.Tests\DownKyi.Architecture.Tests.csproj" />
+    <Compile Include="..\DownKyi.Architecture.Tests\V113ReleaseSafetyRegressionTests.cs" Link="V113ReleaseSafetyRegressionTests.cs" />
     <Compile Include="..\ProcessSupervisionTestCases\OwnedDiagnosticCollectorPlatformTests.cs" Link="OwnedDiagnosticCollectorPlatformTests.cs" />
     <Compile Include="..\ProcessSupervisionTestCases\OwnedProcessLeasePlatformTests.cs" Link="OwnedProcessLeasePlatformTests.cs" />
     <Compile Include="..\ProcessSupervisionTestCases\IpcEndpointNameTests.cs" Link="IpcEndpointNameTests.cs" />

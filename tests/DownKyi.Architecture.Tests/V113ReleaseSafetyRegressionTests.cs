@@ -4,10 +4,15 @@ using System.IO.Compression;
 
 namespace DownKyi.Architecture.Tests;
 
+#if DOWNKYI_LINUX_RELEASE_TEST_CASES
+internal static class V113ReleaseSafetyRegressionTests
+#else
 public sealed class V113ReleaseSafetyRegressionTests
+#endif
 {
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
+#if !DOWNKYI_LINUX_RELEASE_TEST_CASES
     [Fact]
     public void GenericReleaseWorkflowInvokesFailClosedReleaseGates()
     {
@@ -289,6 +294,7 @@ public sealed class V113ReleaseSafetyRegressionTests
             DeleteTemporaryDirectory(root);
         }
     }
+#endif
 
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
