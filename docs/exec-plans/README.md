@@ -21,6 +21,9 @@ PR #197 的 OS-backed process lease、lifecycle、forensics、restart 與 runner
 migration 位於 `pr-197-process-lease-migration.md`。
 Stage 4A 的 restart successor、exact-parent watcher 與 cross-process deadline
 feasibility 位於 `pr-197-stage-4a-restart-handoff-feasibility.md`。
+PR #197 的獨立 Stage 5 Rehearsal capacity 量測、matrix scheduling contract、
+驗證與回滾位於 `pr-197-stage-5-rehearsal-capacity.md`；此 checkpoint 不屬於
+Stage 5 lifecycle remediation，也不開始 Stage 6。
 
 每個 work item 必須包含：
 

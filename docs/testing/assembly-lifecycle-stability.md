@@ -289,6 +289,15 @@ Formal local Verification overrides the profile with `-Iterations 5` and runs
 `-ValidateForensics`. Normal main validation runs five complete iterations;
 tag release evidence uses the `Rehearsal` profile and deliberately runs 100.
 
+The release workflow owns `Rehearsal` as one required matrix cell per exact
+Windows-owned test assembly. Every cell still executes all 100 iterations and
+the complete `-ValidateForensics` self-test contract; sharding changes only
+scheduling, not lifecycle policy or sample count. `fail-fast: false` preserves
+evidence from sibling cells after a failure, while the aggregate matrix job
+must be successful before changelog or later release work can start. Each cell
+writes and uploads an assembly-qualified artifact directory, so reports from
+different assemblies cannot share or replace an output owner.
+
 Use `-AssemblyPattern` to isolate one or more suspect assemblies without
 weakening the normal PR or release profiles:
 

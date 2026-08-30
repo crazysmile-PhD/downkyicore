@@ -136,9 +136,21 @@ jobs:
         uses: ./.github/actions/test-solution
 
   assembly-lifecycle-release:
-    name: Assembly lifecycle release gate
+    name: Assembly lifecycle release gate (${{ matrix.assembly }})
     runs-on: windows-latest
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        assembly:
+          - DownKyi.Application.Tests
+          - DownKyi.Architecture.Tests
+          - DownKyi.Core.Tests
+          - DownKyi.Desktop.Tests
+          - DownKyi.Domain.Tests
+          - DownKyi.Infrastructure.Tests
+          - DownKyi.Tests
+          - DownKyi.Windows.Tests
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -170,13 +182,14 @@ jobs:
           -Profile Rehearsal
           -NoBuild
           -ValidateForensics
-          -ResultsDirectory ./artifacts/assembly-lifecycle/release
+          -AssemblyPattern ${{ matrix.assembly }}
+          -ResultsDirectory ./artifacts/assembly-lifecycle/release/${{ matrix.assembly }}
       - name: Upload lifecycle reports and evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: assembly-lifecycle-release-${{ github.run_attempt }}
-          path: artifacts/assembly-lifecycle/release
+          name: assembly-lifecycle-release-${{ matrix.assembly }}-${{ github.run_attempt }}
+          path: artifacts/assembly-lifecycle/release/${{ matrix.assembly }}
           if-no-files-found: error
 
   changelog:
