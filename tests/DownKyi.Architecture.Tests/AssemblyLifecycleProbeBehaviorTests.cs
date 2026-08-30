@@ -19,6 +19,8 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         "DOWNKYI_TEST_MUTATE_FORENSICS_CLEANUP_REPORT";
     private const string SupervisorStartupMutationEnvironmentVariable =
         "DOWNKYI_TEST_MUTATE_FORENSICS_SUPERVISOR_STARTUP";
+    private const string DiagnosticJournalMutationEnvironmentVariable =
+        "DOWNKYI_TEST_MUTATE_DIAGNOSTIC_OWNER_JOURNAL";
     private const string CaptureBudgetSelfTestRejection =
         "Forensics collector capture-window self-test did not fail closed.";
     private const string CleanupReportSelfTestRejection =
@@ -156,7 +158,11 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             collectorSource,
             StringComparison.Ordinal);
         Assert.Contains(
-            "ControlStatusPipeConnectionsCompleted",
+            "ControlPipeConnectionCompleted",
+            contractSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "StatusPipeConnectionCompleted",
             contractSource,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -165,6 +171,14 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             StringComparison.Ordinal);
         Assert.Contains(
             "OperationDeadlineExhaustionObserved",
+            contractSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "DiagnosticCollectorOwnerJournal",
+            contractSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "DiagnosticCollectorFailureInterval",
             contractSource,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -177,6 +191,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             StringComparison.Ordinal);
         Assert.Contains(
             "SupervisorConnectionStallIdentifiesTheLastOwnedStartupTransition",
+            regressionSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "OwnerJournalSurvivesPrimaryTimelineBlackoutAtStartupBoundary",
             regressionSource,
             StringComparison.Ordinal);
     }
@@ -225,6 +243,10 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             StringComparison.Ordinal);
         Assert.Contains("collectorFailureKind", observer, StringComparison.Ordinal);
         Assert.Contains("collectorEvidence", observer, StringComparison.Ordinal);
+        Assert.Contains("collectorOwnerJournal", observer, StringComparison.Ordinal);
+        Assert.Contains("diagnosticLocalization", observer, StringComparison.Ordinal);
+        Assert.Contains("evidenceCaptured", observer, StringComparison.Ordinal);
+        Assert.Contains("evidencePersisted", observer, StringComparison.Ordinal);
         Assert.Contains("collectorCleanupFailures", observer, StringComparison.Ordinal);
         Assert.Contains(
             "ConvertTo-DiagnosticCollectorFailureReport",
@@ -259,6 +281,22 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
+            "forensicsEvidencePersistenceSelfTestPassed =",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Test-DiagnosticEvidencePersistenceFailureReport",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "New-DiagnosticEvidencePersistenceFailure",
+            ReadFunction(source, "Save-ProcessEvidence"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EvidencePersistenceFailure",
+            ReadFunction(source, "Get-DiagnosticCollectorStructuralLocalization"),
+            StringComparison.Ordinal);
+        Assert.Contains(
             "Test-DiagnosticCollectorFailureHasCapturedStack",
             managedStack,
             StringComparison.Ordinal);
@@ -270,6 +308,49 @@ public sealed class AssemblyLifecycleProbeBehaviorTests
         Assert.Contains("^Thread", interruptedStackPolicy, StringComparison.Ordinal);
         Assert.Contains("emptyCancellationRejected", source, StringComparison.Ordinal);
         Assert.Contains("unrelatedFailureRejected", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DiagnosticOwnerJournalSurvivesPrimaryEvidenceFailure()
+    {
+        var collector = ReadRepositoryFile(
+            "tools",
+            "DownKyi.ProcessSupervision",
+            "OwnedDiagnosticCollector.cs");
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(
+                    DiagnosticJournalMutationEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            collector = collector.Replace(
+                "OwnerJournal = ownerJournal",
+                "OwnerJournal = null",
+                StringComparison.Ordinal);
+        }
+
+        var lifecycle = ReadLifecycleGate();
+        var regression = ReadRepositoryFile(
+            "tests",
+            "ProcessSupervisionTestCases",
+            "OwnedDiagnosticCollectorPlatformTests.cs");
+        Assert.Contains("OwnerJournal = ownerJournal", collector, StringComparison.Ordinal);
+        Assert.Contains("BuildOwnerJournal", collector, StringComparison.Ordinal);
+        Assert.Contains("SuppressPrimaryTimeline", collector, StringComparison.Ordinal);
+        Assert.Contains("collectorOwnerJournal", lifecycle, StringComparison.Ordinal);
+        Assert.Contains("EvidencePersistenceFailure", lifecycle, StringComparison.Ordinal);
+        Assert.Contains(
+            "OwnerJournalSurvivesPrimaryTimelineBlackoutAtStartupBoundary",
+            regression,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EvidenceCaptured",
+            ReadFunction(lifecycle, "Test-DiagnosticEvidencePersistenceFailureReport"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EvidencePersisted",
+            ReadFunction(lifecycle, "Test-DiagnosticEvidencePersistenceFailureReport"),
+            StringComparison.Ordinal);
     }
 
     [Fact]

@@ -184,7 +184,8 @@ internal enum OwnedProcessStartTransition
     SupervisorProcessStartReturned,
     ContainmentPrepared,
     ContainmentEstablished,
-    ControlStatusPipeConnectionsCompleted,
+    ControlPipeConnectionCompleted,
+    StatusPipeConnectionCompleted,
     OwnershipAcknowledgementReceived,
     LaunchAuthorizationWritten,
     TargetStartAcknowledgementReceived,
@@ -206,6 +207,9 @@ internal sealed class OwnedProcessStartTimeline
     private readonly TransitionBudget _budget;
     private readonly TimeSpan _operationDeadlineElapsed;
     private readonly Dictionary<OwnedProcessStartTransition, TimeSpan> _transitions = new();
+    private readonly object _sync = new();
+    private int? _supervisorProcessId;
+    private int? _targetProcessId;
 
     public OwnedProcessStartTimeline(TransitionBudget budget)
     {
@@ -217,31 +221,83 @@ internal sealed class OwnedProcessStartTimeline
 
     public void Mark(OwnedProcessStartTransition transition)
     {
-        _transitions.TryAdd(transition, _budget.Elapsed);
+        lock (_sync)
+        {
+            _transitions.TryAdd(transition, _budget.Elapsed);
+        }
     }
 
     public void MarkOperationDeadlineExhausted()
     {
-        _transitions.TryAdd(
-            OwnedProcessStartTransition.OperationDeadlineExhausted,
-            _operationDeadlineElapsed);
+        lock (_sync)
+        {
+            _transitions.TryAdd(
+                OwnedProcessStartTransition.OperationDeadlineExhausted,
+                _operationDeadlineElapsed);
+        }
     }
 
     public void MarkOperationDeadlineExhaustionObserved()
     {
         var observedAt = _budget.Elapsed;
-        _transitions.TryAdd(
-            OwnedProcessStartTransition.OperationDeadlineExhaustionObserved,
-            observedAt < _operationDeadlineElapsed
-                ? _operationDeadlineElapsed
-                : observedAt);
+        lock (_sync)
+        {
+            _transitions.TryAdd(
+                OwnedProcessStartTransition.OperationDeadlineExhaustionObserved,
+                observedAt < _operationDeadlineElapsed
+                    ? _operationDeadlineElapsed
+                    : observedAt);
+        }
+    }
+
+    public void SetSupervisorProcessId(int processId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processId);
+        lock (_sync)
+        {
+            _supervisorProcessId ??= processId;
+        }
+    }
+
+    public void SetTargetProcessId(int processId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processId);
+        lock (_sync)
+        {
+            _targetProcessId ??= processId;
+        }
+    }
+
+    public int? SupervisorProcessId
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _supervisorProcessId;
+            }
+        }
+    }
+
+    public int? TargetProcessId
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _targetProcessId;
+            }
+        }
     }
 
     public bool TryGetElapsed(
         OwnedProcessStartTransition transition,
         out TimeSpan elapsed)
     {
-        return _transitions.TryGetValue(transition, out elapsed);
+        lock (_sync)
+        {
+            return _transitions.TryGetValue(transition, out elapsed);
+        }
     }
 }
 

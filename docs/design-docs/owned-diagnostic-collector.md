@@ -118,19 +118,21 @@ between languages and is forbidden.
 
 ### Diagnostic Transition Timeline
 
-`DiagnosticCollectorEvidence` carries ordered diagnostic transitions on the
-same monotonic collector window. Startup records request creation, process-start
-request, supervisor `Process.Start()` return, containment preparation and
-establishment, both control/status pipe connections, ownership acknowledgment,
-launch-authorization write, target-start acknowledgment and the public
-`ProcessStarted` boundary. A failed start additionally records the exact
+`DiagnosticCollectorEvidence` carries diagnostic transitions on the same
+monotonic collector window. Startup records request creation, collector
+dispatch, process-start request, supervisor `Process.Start()` return,
+containment preparation and establishment, independently completed control and
+status pipe connections, ownership acknowledgment, launch-authorization write,
+target-start acknowledgment and the public `ProcessStarted` boundary. A failed
+start additionally records the exact
 existing operation-deadline boundary, when the owner observed that boundary,
 and begin/settled evidence for termination, tree quiescence, supervisor reap
 and stream drain. Runtime observation then retains target attach, first
 observable progress, stack capture, first stack byte, target exit, reap, drain
 and typed return. Each item is `Observed`, `NotObserved` or `NotObservable`.
 
-The exact deadline entry is captured from one `TransitionBudget` observation;
+Observed entries are serialized in monotonic elapsed order. The exact deadline
+entry is captured from one `TransitionBudget` observation;
 it is not a second timer. Separating it from the owner's later observation
 makes a synchronous Windows startup or cleanup call which crosses the assigned
 boundary visible without using UTC or changing correctness.
@@ -142,6 +144,25 @@ tool itself publishes a typed signal. Empty stdout/stderr before timeout is
 evidence of no owner-visible progress, not permission to infer target identity,
 runtime state or a correctness outcome. Timeline values never select a process,
 extend a deadline or convert failure into success.
+
+Every production outcome and typed failure also carries a bounded
+`DiagnosticCollectorOwnerJournal`. It is an observational projection of the
+same owner events, not a second observer or process owner. It retains only
+observed transition records, typed failure and cleanup kinds, authoritative
+supervisor/target identities where available, deadline/target/termination/
+reap/drain state, and an automatically classified
+`LastKnownGood -> FirstMissingRequired` interval. It contains no stack, stdout
+or stderr payload. The normal evidence timeline can therefore be rejected or
+lost while the low-volume journal still localizes the owner boundary.
+
+Lifecycle artifact persistence is a separate transition. The PowerShell
+observer copies the owner journal out of the typed collector result before it
+writes the process-evidence artifact. A write failure reports
+`EvidenceCaptured -> EvidencePersisted` as `EvidencePersistenceFailure`; it
+does not rewrite that state as `SlowEvidenceMissing` alone. The final lifecycle
+row preserves both its ordinary fail-closed label and the structural
+localization. No UTC value, new deadline, retry or sleep participates in this
+classification.
 
 On Windows, `OwnedProcessLease` launches the already-built
 `DownKyi.ProcessSupervision.exe` apphost as its inert supervisor. The apphost is

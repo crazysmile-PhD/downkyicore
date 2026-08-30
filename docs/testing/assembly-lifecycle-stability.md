@@ -193,13 +193,29 @@ evidence errors cannot overwrite the process owner's causal failure.
   typed `OperationDeadlineExceeded` failure, collector evidence and cleanup
   list in `forensicsCollectorCaptureWindowSelfTest`; a Boolean summary alone is
   not accepted as proof.
-- Every collector result carries an ordered 11-transition diagnostic timeline:
-  request creation, process-start request, process start, target attach,
-  first observable progress, stack-capture start, first stack-output byte,
-  process exit, reap, stream drain and typed return. Boundaries inside an
-  external tool are explicitly `NotObservable`; absent owner-visible events are
-  `NotObserved`. These timestamps describe evidence only and never decide
-  ownership, success or deadline renewal.
+- Every collector result carries a bounded monotonic diagnostic timeline and a
+  separate low-volume owner journal. The startup inventory distinguishes
+  dispatch, `Process.Start()` return, containment prepare/establish, control
+  connection, status connection, ownership acknowledgment, launch
+  authorization and target-start acknowledgment. Runtime and cleanup retain
+  progress, first stack byte, exact deadline/observation, target exit,
+  termination, tree quiescence, reap, stream drain and typed return. Boundaries
+  inside an external tool remain explicitly `NotObservable`; absent
+  owner-visible events are `NotObserved`. The owner journal excludes stack and
+  stream payload, adds authoritative identities where available, and derives a
+  typed `LastKnownGood -> FirstMissingRequired` interval from transition state
+  rather than absolute elapsed thresholds.
+- The lifecycle row copies `collectorOwnerJournal` independently of
+  `collectorEvidence` and records `evidenceCaptured`, `evidencePersisted` plus
+  `diagnosticLocalization`. A deterministic mutation throws after capture but
+  before artifact persistence; the self-test requires
+  `EvidenceCaptured -> EvidencePersisted`, classification
+  `EvidencePersistenceFailure`, captured true and persisted false. A separate
+  primary-timeline blackout holds the supervisor before pipe connection and
+  requires the owner journal to retain
+  `ContainmentEstablished -> ControlPipeConnectionCompleted`, deadline and
+  cleanup state. Neither proof uses runner latency, CPU contention, retry or
+  sleep as the fault mechanism.
 - Target exit can cancel an already-started collector after `dotnet-stack` has
   emitted useful stack rows. That capture is `captured`, rather than
   `SlowEvidenceMissing`, only when typed evidence reports `CallerCancelled`, no

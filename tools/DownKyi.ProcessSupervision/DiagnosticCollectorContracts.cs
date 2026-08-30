@@ -93,7 +93,7 @@ public enum DiagnosticCollectorTransition
     SupervisorProcessStartReturned = 11,
     ContainmentPrepared = 12,
     ContainmentEstablished = 13,
-    ControlStatusPipeConnectionsCompleted = 14,
+    ControlPipeConnectionCompleted = 14,
     OwnershipAcknowledgementReceived = 15,
     LaunchAuthorizationWritten = 16,
     TargetStartAcknowledgementReceived = 17,
@@ -107,7 +107,17 @@ public enum DiagnosticCollectorTransition
     StartFailureSupervisorReapBegan = 25,
     StartFailureSupervisorReapCompleted = 26,
     StartFailureStreamDrainBegan = 27,
-    StartFailureStreamDrainCompleted = 28
+    StartFailureStreamDrainCompleted = 28,
+    CollectorDispatchRequested = 29,
+    StatusPipeConnectionCompleted = 30,
+    FailureTerminationBegan = 31,
+    FailureTerminationCompleted = 32,
+    FailureTreeQuiescenceBegan = 33,
+    FailureTreeQuiescenceCompleted = 34,
+    FailureSupervisorReapBegan = 35,
+    FailureSupervisorReapCompleted = 36,
+    FailureStreamDrainBegan = 37,
+    FailureStreamDrainCompleted = 38
 }
 
 public enum DiagnosticCollectorTransitionState
@@ -131,6 +141,52 @@ public sealed record DiagnosticCollectorTransitionEvidence(
 public sealed record DiagnosticCollectorTimeline(
     IReadOnlyList<DiagnosticCollectorTransitionEvidence> Transitions);
 
+public enum DiagnosticCollectorFailureBoundary
+{
+    CollectorDispatch,
+    ProcessStart,
+    ContainmentPreparation,
+    ContainmentEstablishment,
+    ControlChannelStartup,
+    StatusChannelStartup,
+    OwnershipHandshake,
+    TargetLaunch,
+    EvidenceCapture,
+    TargetCompletion,
+    Cleanup,
+    OutcomeAggregation
+}
+
+public sealed record DiagnosticCollectorFailureInterval(
+    DiagnosticCollectorTransition LastKnownGood,
+    DiagnosticCollectorTransition FirstMissingRequired,
+    DiagnosticCollectorFailureBoundary Boundary)
+{
+    public string LastKnownGoodName => LastKnownGood.ToString();
+
+    public string FirstMissingRequiredName => FirstMissingRequired.ToString();
+
+    public string BoundaryName => Boundary.ToString();
+}
+
+public sealed record DiagnosticCollectorOwnerJournal(
+    IReadOnlyList<DiagnosticCollectorTransitionEvidence> Transitions,
+    DiagnosticCollectorFailureInterval? FailureInterval,
+    DiagnosticCollectorFailureKind? FailureKind,
+    IReadOnlyList<DiagnosticCollectorCleanupFailureKind> CleanupFailures,
+    bool DeadlineExhausted,
+    bool TargetStarted,
+    bool TargetExited,
+    bool TerminationStarted,
+    bool TerminationCompleted,
+    bool ReapCompleted,
+    bool StreamsDrained,
+    int? SupervisorProcessId,
+    int? TargetProcessId)
+{
+    public string? FailureKindName => FailureKind?.ToString();
+}
+
 public sealed record DiagnosticCollectorEvidence(
     bool Started,
     bool Exited,
@@ -142,7 +198,10 @@ public sealed record DiagnosticCollectorEvidence(
     string StandardError,
     DiagnosticCollectorTimeline Timeline);
 
-public sealed record DiagnosticCollectorOutcome(DiagnosticCollectorEvidence Evidence);
+public sealed record DiagnosticCollectorOutcome(DiagnosticCollectorEvidence Evidence)
+{
+    public DiagnosticCollectorOwnerJournal? OwnerJournal { get; init; }
+}
 
 public enum DiagnosticCollectorFailureKind
 {
@@ -172,7 +231,10 @@ public sealed record DiagnosticCollectorCleanupFailure(
 public sealed record DiagnosticCollectorFailure(
     DiagnosticCollectorFailureKind Kind,
     DiagnosticCollectorEvidence Evidence,
-    Exception Cause);
+    Exception Cause)
+{
+    public DiagnosticCollectorOwnerJournal? OwnerJournal { get; init; }
+}
 
 [SuppressMessage(
     "Design",
@@ -213,5 +275,6 @@ internal enum DiagnosticCollectorMutation
     FailAfterTerminate = 2,
     StallReap = 4,
     StallStreamDrain = 8,
-    StallBeforeSupervisorPipeConnection = 16
+    StallBeforeSupervisorPipeConnection = 16,
+    SuppressPrimaryTimeline = 32
 }

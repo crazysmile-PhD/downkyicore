@@ -1352,13 +1352,65 @@ marked assembly, so only compilation—not native execution—is claimed for the
 Linux and macOS assemblies at this checkpoint.
 
 No tested single or pairwise fault collapsed into an ambiguous generic result.
-The deliberate remaining boundary is prototype-to-production mapping: none of
-these observations is yet emitted by `OwnedProcessLease`,
-`OwnedDiagnosticCollector`, the lifecycle observer or persisted lifecycle
-artifacts. Production integration must reuse the blocker-remediation
-transitions, keep the journal observational, and preserve `OwnedProcessLease`
-as the sole correctness/containment/termination/reap/quiescence/drain owner.
-That integration starts only after this prototype checkpoint is reported.
+This test-only proof is checkpoint commit
+`47d7a2db76f1b97cc5d344d0f43285da96378897`. It was reported before the
+production mapping below began.
+
+### Production integration evidence
+
+The production mapping reuses the blocker-remediation timeline and remains
+observational. `OwnedProcessLease` is still the sole correctness, containment,
+termination, reap, quiescence and stream-drain owner. It now records the two
+pipe connections separately and exposes its existing failure-cleanup transition
+times to its collector caller. `OwnedDiagnosticCollector` projects those
+observations, the existing collector observations and process identities into
+one bounded `DiagnosticCollectorOwnerJournal`; it creates no process, deadline,
+timer or cleanup operation. The journal freezes the causal interval before
+cleanup settlement, sorts concurrent pipe observations by their monotonic
+elapsed values, and carries cleanup failures as secondary typed evidence.
+
+The lifecycle observer persists that bounded journal beside—not inside—the
+primary stack evidence and derives `lastKnownGood`, `firstMissingRequired`,
+boundary, deadline, target and cleanup state. A deterministic persistence
+mutation proves that a successfully captured diagnostic followed by artifact
+write failure becomes `EvidencePersistenceFailure` with
+`EvidenceCaptured -> EvidencePersisted`, rather than `SlowEvidenceMissing`.
+An independent primary-timeline-suppression mutation proves the owner journal
+still localizes the failure; the review corpus accepts only the expected owning
+invariant failure.
+
+Production integration changes 11 files: the process-supervision contracts and
+two owners, their two shared platform-test files, the lifecycle PowerShell
+observer, its Architecture behavior test and invariant-corpus entry, and the two
+diagnostic/lifecycle design documents. No timeout, 3000 ms lead, five-second
+threshold, retry or sleep changed. The fail-closed slow-evidence predicate and
+all collector started, ready, reap, drain and positive-parent-budget predicates
+remain intact.
+
+Local Windows production-integration evidence is:
+
+- affected/native ProcessSupervision plus toy: 75/75 (20 collector, 28 process
+  lease and 27 toy);
+- affected lifecycle Architecture classes: 22/22;
+- complete Architecture suite: 390/390;
+- owner-journal behavior mutation: 11 executed, 10 passed and exactly the one
+  owning invariant failed;
+- review invariant gate: 13 root-cause invariants, seven projects, 416 normal
+  tests and 37 adversarial proofs;
+- one-assembly Infrastructure lifecycle: one assembly, nine phase results, zero
+  failures, ownership 676 matches/zero violations, capture-window contract,
+  evidence-persistence mutation and slow-evidence ordering all passed;
+- the capture-window outcome preserved a positive parent operation remainder,
+  all 13 contract checks, one operation-deadline transition, termination,
+  quiescence, supervisor reap and stream-drain begin/end observations;
+- a representative configured slow phase persisted a successful
+  `dotnet-stack` managed-stack artifact and its owner journal;
+- strict full-solution Release build: zero warnings and zero errors.
+
+Native Linux and macOS execution remains CI-only; their projects compile in the
+strict solution build, but this Windows checkpoint does not claim native runtime
+proof for those operating systems. Push, PR update, merge, release and Stage 6
+remain outside this local checkpoint.
 
 ## Stage 3 Assembly Lifecycle Slow-Evidence Self-Test Blocker Checkpoint
 

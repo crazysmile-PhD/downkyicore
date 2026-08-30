@@ -39,6 +39,14 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     private int _ownerLifetimeClosed;
     private int _reapFailureInjected;
     private TimeSpan? _reapedAfter;
+    private TimeSpan? _failureTerminationBeganAfter;
+    private TimeSpan? _failureTerminationCompletedAfter;
+    private TimeSpan? _failureTreeQuiescenceBeganAfter;
+    private TimeSpan? _failureTreeQuiescenceCompletedAfter;
+    private TimeSpan? _failureSupervisorReapBeganAfter;
+    private TimeSpan? _failureSupervisorReapCompletedAfter;
+    private TimeSpan? _failureStreamDrainBeganAfter;
+    private TimeSpan? _failureStreamDrainCompletedAfter;
 
     private OwnedProcessLease(
         Process supervisor,
@@ -95,6 +103,30 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         _standardErrorObservation.DrainedAfter;
 
     internal TimeSpan? ReapedAfter => _reapedAfter;
+
+    internal TimeSpan? FailureTerminationBeganAfter =>
+        _failureTerminationBeganAfter;
+
+    internal TimeSpan? FailureTerminationCompletedAfter =>
+        _failureTerminationCompletedAfter;
+
+    internal TimeSpan? FailureTreeQuiescenceBeganAfter =>
+        _failureTreeQuiescenceBeganAfter;
+
+    internal TimeSpan? FailureTreeQuiescenceCompletedAfter =>
+        _failureTreeQuiescenceCompletedAfter;
+
+    internal TimeSpan? FailureSupervisorReapBeganAfter =>
+        _failureSupervisorReapBeganAfter;
+
+    internal TimeSpan? FailureSupervisorReapCompletedAfter =>
+        _failureSupervisorReapCompletedAfter;
+
+    internal TimeSpan? FailureStreamDrainBeganAfter =>
+        _failureStreamDrainBeganAfter;
+
+    internal TimeSpan? FailureStreamDrainCompletedAfter =>
+        _failureStreamDrainCompletedAfter;
 
     internal TimeSpan? ObservedTargetExitedAfter =>
         _targetExitReport.IsCompletedSuccessfully
@@ -517,6 +549,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             }
 
             started = true;
+            startTimeline?.SetSupervisorProcessId(supervisor.Id);
             evidenceHold?.ReleaseLocalClientHandles();
             standardOutput = ReadToEndObservedAsync(
                 supervisor.StandardOutput,
@@ -538,16 +571,20 @@ public sealed class OwnedProcessLease : IAsyncDisposable
             containment = PlatformProcessContainment.ApplyFailureMutations(
                 containment,
                 mutation);
+            var controlConnection = ObservePipeConnectionAsync(
+                control.WaitForConnectionAsync(cancellationToken),
+                startTimeline,
+                OwnedProcessStartTransition.ControlPipeConnectionCompleted);
+            var statusConnection = ObservePipeConnectionAsync(
+                status.WaitForConnectionAsync(cancellationToken),
+                startTimeline,
+                OwnedProcessStartTransition.StatusPipeConnectionCompleted);
             await WaitWithBudgetAsync(
-                    Task.WhenAll(
-                        control.WaitForConnectionAsync(cancellationToken),
-                        status.WaitForConnectionAsync(cancellationToken)),
+                    Task.WhenAll(controlConnection, statusConnection),
                     budget.RemainingOperation,
                     "The process supervisor did not connect its control channels before the deadline.",
                     cancellationToken)
                 .ConfigureAwait(false);
-            startTimeline?.Mark(
-                OwnedProcessStartTransition.ControlStatusPipeConnectionsCompleted);
 
             var attachment = JsonSerializer.SerializeToUtf8Bytes(
                 new OwnershipAttachmentPayload(
@@ -601,6 +638,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     budget,
                     cancellationToken)
                 .ConfigureAwait(false);
+            startTimeline?.SetTargetProcessId(targetProcessId);
             startTimeline?.Mark(OwnedProcessStartTransition.TargetStartAcknowledgementReceived);
             evidenceHold?.Grant();
             var targetExitReport = ReadTargetExitReportAsync(
@@ -811,6 +849,15 @@ public sealed class OwnedProcessLease : IAsyncDisposable
         }
     }
 
+    private static async Task ObservePipeConnectionAsync(
+        Task connection,
+        OwnedProcessStartTimeline? startTimeline,
+        OwnedProcessStartTransition transition)
+    {
+        await connection.ConfigureAwait(false);
+        startTimeline?.Mark(transition);
+    }
+
     internal static ProcessStartInfo CreateSupervisorStartInfo(
         string controlPipeName,
         string statusPipeName,
@@ -988,6 +1035,7 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     {
         var failures = new Collection<Exception>();
         var ownershipEstablished = Ownership.OwnershipEstablished;
+        _failureTerminationBeganAfter ??= _budget.Elapsed;
         if (ownershipEstablished)
         {
             try
@@ -1016,6 +1064,8 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 }
             }
 
+            _failureTerminationCompletedAfter ??= _budget.Elapsed;
+            _failureTreeQuiescenceBeganAfter ??= _budget.Elapsed;
             try
             {
                 await WaitForTreeQuiescenceAsync(
@@ -1029,6 +1079,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     failures,
                     OwnedProcessCleanupStage.TreeQuiescence,
                     failure);
+            }
+            finally
+            {
+                _failureTreeQuiescenceCompletedAfter ??= _budget.Elapsed;
             }
         }
         else
@@ -1047,8 +1101,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                     OwnedProcessCleanupStage.Terminate,
                     failure);
             }
+            _failureTerminationCompletedAfter ??= _budget.Elapsed;
         }
 
+        _failureSupervisorReapBeganAfter ??= _budget.Elapsed;
         try
         {
             CloseOwnerLifetime(failures);
@@ -1064,7 +1120,12 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 OwnedProcessCleanupStage.Reap,
                 failure);
         }
+        finally
+        {
+            _failureSupervisorReapCompletedAfter ??= _budget.Elapsed;
+        }
 
+        _failureStreamDrainBeganAfter ??= _budget.Elapsed;
         try
         {
             await WaitWithBudgetAsync(
@@ -1080,6 +1141,10 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 failures,
                 OwnedProcessCleanupStage.StreamDrain,
                 failure);
+        }
+        finally
+        {
+            _failureStreamDrainCompletedAfter ??= _budget.Elapsed;
         }
 
         try

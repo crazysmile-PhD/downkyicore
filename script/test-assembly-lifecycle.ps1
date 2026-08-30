@@ -82,6 +82,8 @@ $forensicsCollectorCaptureWindowSelfTestPassed = $false
 $forensicsCollectorCaptureWindowSelfTest = $null
 $forensicsCollectorCleanupReportSelfTestPassed = $false
 $forensicsCollectorCleanupReportSelfTest = $null
+$forensicsEvidencePersistenceSelfTestPassed = $false
+$forensicsEvidencePersistenceSelfTest = $null
 $forensicsCollectorInterruptedStackSelfTestPassed = $false
 $forensicsCollectorInterruptedStackSelfTest = $null
 $dotnetStackAttachStallSelfTestRequired = [bool]($ValidateForensics -and $IsWindows)
@@ -517,13 +519,207 @@ function ConvertTo-DiagnosticCollectorFailureReport {
         $cleanupFailures = @()
     }
 
+    $ownerJournal = $Exception.Failure.OwnerJournal
     return [pscustomobject]@{
         status = "capture-failed"
         evidencePath = $null
         errorType = $Exception.GetType().Name
         collectorFailureKind = $Exception.Failure.Kind.ToString()
         collectorEvidence = $Exception.Failure.Evidence
+        collectorOwnerJournal = $ownerJournal
         collectorCleanupFailures = $cleanupFailures
+        evidenceCaptured = $false
+        evidencePersisted = $false
+        diagnosticLocalization = Get-DiagnosticCollectorStructuralLocalization `
+            -OwnerJournal $ownerJournal `
+            -EvidenceCaptured $false `
+            -EvidencePersisted $false
+    }
+}
+
+function Get-DiagnosticCollectorStructuralLocalization {
+    param(
+        [AllowNull()]
+        [object]$OwnerJournal,
+        [Parameter(Mandatory)]
+        [bool]$EvidenceCaptured,
+        [Parameter(Mandatory)]
+        [bool]$EvidencePersisted,
+        [switch]$EvidencePersistenceFailed
+    )
+
+    $interval = $OwnerJournal?.FailureInterval
+    $boundary = if ($null -eq $interval) {
+        $null
+    }
+    else {
+        $interval.Boundary.ToString()
+    }
+    $classification = if ($EvidencePersistenceFailed) {
+        "EvidencePersistenceFailure"
+    }
+    elseif ($EvidencePersisted) {
+        $null
+    }
+    elseif ($null -eq $interval) {
+        if ($null -eq $OwnerJournal) { "EvidenceSystemFailure" } else { $null }
+    }
+    else {
+        switch ($boundary) {
+            "CollectorDispatch" { "CollectorDispatchFailure" }
+            "ProcessStart" { "ProcessStartBoundaryFailure" }
+            "ContainmentPreparation" { "ContainmentPreparationFailure" }
+            "ContainmentEstablishment" { "ContainmentEstablishmentFailure" }
+            "ControlChannelStartup" { "ControlChannelFailure" }
+            "StatusChannelStartup" { "StatusChannelFailure" }
+            "OwnershipHandshake" { "OwnershipAcknowledgementFailure" }
+            "TargetLaunch" { "TargetLaunchFailure" }
+            "EvidenceCapture" { "EvidenceCaptureFailure" }
+            "TargetCompletion" { "TargetCompletionFailure" }
+            "Cleanup" { "DiagnosticCleanupFailure" }
+            default { "DiagnosticOutcomeFailure" }
+        }
+    }
+
+    return [pscustomobject]@{
+        classification = $classification
+        lastKnownGood = if ($EvidencePersistenceFailed) {
+            "EvidenceCaptured"
+        }
+        else {
+            if ($null -eq $interval) {
+                $null
+            }
+            else {
+                $interval.LastKnownGood.ToString()
+            }
+        }
+        firstMissingRequired = if ($EvidencePersistenceFailed) {
+            "EvidencePersisted"
+        }
+        else {
+            if ($null -eq $interval) {
+                $null
+            }
+            else {
+                $interval.FirstMissingRequired.ToString()
+            }
+        }
+        boundary = if ($EvidencePersistenceFailed) {
+            "EvidencePersistence"
+        }
+        else {
+            $boundary
+        }
+        deadlineExhausted = if ($null -eq $OwnerJournal) {
+            $false
+        }
+        else {
+            $OwnerJournal.DeadlineExhausted
+        }
+        targetStarted = if ($null -eq $OwnerJournal) {
+            $false
+        }
+        else {
+            $OwnerJournal.TargetStarted
+        }
+        targetExited = if ($null -eq $OwnerJournal) {
+            $false
+        }
+        else {
+            $OwnerJournal.TargetExited
+        }
+        terminationStarted = if ($null -eq $OwnerJournal) {
+            $false
+        }
+        else {
+            $OwnerJournal.TerminationStarted
+        }
+        terminationCompleted = if ($null -eq $OwnerJournal) {
+            $false
+        }
+        else {
+            $OwnerJournal.TerminationCompleted
+        }
+        reapCompleted = if ($null -eq $OwnerJournal) {
+            $false
+        }
+        else {
+            $OwnerJournal.ReapCompleted
+        }
+        streamsDrained = if ($null -eq $OwnerJournal) {
+            $false
+        }
+        else {
+            $OwnerJournal.StreamsDrained
+        }
+        supervisorProcessId = $OwnerJournal?.SupervisorProcessId
+        targetProcessId = $OwnerJournal?.TargetProcessId
+        evidenceCaptured = $EvidenceCaptured
+        evidencePersisted = $EvidencePersisted
+        evidencePersistenceFailed = [bool]$EvidencePersistenceFailed
+    }
+}
+
+function New-DiagnosticEvidencePersistenceFailure {
+    param(
+        [AllowNull()]
+        [object]$OwnerJournal,
+        [Parameter(Mandatory)]
+        [bool]$EvidenceCaptured
+    )
+
+    $failure = [System.IO.IOException]::new(
+        "Injected diagnostic evidence persistence failure.")
+    $failure.Data["DownKyi.Diagnostic.OwnerJournal"] = $OwnerJournal
+    $failure.Data["DownKyi.Diagnostic.EvidenceCaptured"] = $EvidenceCaptured
+    return $failure
+}
+
+function Test-DiagnosticEvidencePersistenceFailureReport {
+    $journal = [DownKyi.ProcessSupervision.DiagnosticCollectorOwnerJournal]::new(
+        [DownKyi.ProcessSupervision.DiagnosticCollectorTransitionEvidence[]]@(),
+        $null,
+        $null,
+        [DownKyi.ProcessSupervision.DiagnosticCollectorCleanupFailureKind[]]@(),
+        $false,
+        $true,
+        $true,
+        $false,
+        $false,
+        $true,
+        $true,
+        4101,
+        4201)
+    $failure = New-DiagnosticEvidencePersistenceFailure `
+        -OwnerJournal $journal `
+        -EvidenceCaptured $true
+    $localization = Get-DiagnosticCollectorStructuralLocalization `
+        -OwnerJournal $failure.Data["DownKyi.Diagnostic.OwnerJournal"] `
+        -EvidenceCaptured (
+            [bool]$failure.Data["DownKyi.Diagnostic.EvidenceCaptured"]) `
+        -EvidencePersisted $false `
+        -EvidencePersistenceFailed
+    $passed =
+        $failure -is [System.IO.IOException] -and
+        [object]::ReferenceEquals(
+            $journal,
+            $failure.Data["DownKyi.Diagnostic.OwnerJournal"]) -and
+        $localization.classification -eq "EvidencePersistenceFailure" -and
+        $localization.lastKnownGood -eq "EvidenceCaptured" -and
+        $localization.firstMissingRequired -eq "EvidencePersisted" -and
+        $localization.boundary -eq "EvidencePersistence" -and
+        $localization.evidenceCaptured -and
+        -not $localization.evidencePersisted -and
+        $localization.targetStarted -and
+        $localization.targetExited -and
+        $localization.reapCompleted -and
+        $localization.streamsDrained
+    return [pscustomobject]@{
+        passed = $passed
+        failureType = $failure.GetType().Name
+        localization = $localization
+        ownerJournal = $journal
     }
 }
 
@@ -789,6 +985,12 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
         [DownKyi.ProcessSupervision.DiagnosticCollectorFailureKind]::OperationDeadlineExceeded
     $collectorRemainingOperation = $captureWindow.RemainingOperation
     $parentRemainingOperation = $budget.RemainingOperation
+    $ownerJournal = if ($null -eq $failure) {
+        $null
+    }
+    else {
+        $failure.Failure.OwnerJournal
+    }
     $contractChecks = [ordered]@{
         typedFailureObserved = $null -ne $failure
         operationDeadlinePreserved = $null -ne $failure -and
@@ -811,6 +1013,12 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
             $failure.Failure.Evidence.StreamsDrained
         cleanupSucceeded = $null -ne $failure -and
             $failure.CleanupFailures.Count -eq 0
+        ownerJournalPreserved = $null -ne $ownerJournal -and
+            $null -ne $ownerJournal.FailureInterval -and
+            $ownerJournal.DeadlineExhausted -and
+            $ownerJournal.TargetStarted -and
+            $ownerJournal.ReapCompleted -and
+            $ownerJournal.StreamsDrained
         collectorWindowOperationExhausted =
             $collectorRemainingOperation -eq [TimeSpan]::Zero
         parentBudgetPreserved =
@@ -831,6 +1039,7 @@ function Test-OwnedDiagnosticCollectorCaptureWindow {
             $failure.Failure.Kind.ToString()
         }
         evidence = if ($null -eq $failure) { $null } else { $failure.Failure.Evidence }
+        ownerJournal = $ownerJournal
         cleanupFailures = @(
             if ($null -ne $failure) {
                 $failure.CleanupFailures | ForEach-Object {
@@ -1318,13 +1527,15 @@ function Save-ManagedStack {
             timedOut = $false
             collectorFailureKind = $null
             collectorEvidence = $null
+            collectorOwnerJournal = $null
             collectorCleanupFailures = @()
         }
     }
 
     $collectorFailure = $null
+    $collectorOwnerJournal = $null
     try {
-        $collector = (Invoke-OwnedDiagnosticCollector `
+        $collectorOutcome = Invoke-OwnedDiagnosticCollector `
             -FileName $script:diagnosticsTool `
             -Arguments @(
                 "report",
@@ -1332,7 +1543,9 @@ function Save-ManagedStack {
                 $TargetProcessId.ToString(
                     [System.Globalization.CultureInfo]::InvariantCulture)) `
             -CaptureWindow $CaptureWindow `
-            -CancellationToken $CancellationToken).Evidence
+            -CancellationToken $CancellationToken
+        $collector = $collectorOutcome.Evidence
+        $collectorOwnerJournal = $collectorOutcome.OwnerJournal
     }
     catch {
         $collectorFailure = Get-DiagnosticCollectorExecutionFailure `
@@ -1344,6 +1557,7 @@ function Save-ManagedStack {
         }
 
         $collector = $collectorFailure.Failure.Evidence
+        $collectorOwnerJournal = $collectorFailure.Failure.OwnerJournal
     }
     [System.IO.File]::WriteAllText(
         $Destination,
@@ -1373,6 +1587,7 @@ function Save-ManagedStack {
         else {
             $collectorFailure.Failure.Evidence
         }
+        collectorOwnerJournal = $collectorOwnerJournal
         collectorCleanupFailures = @(
             if ($null -ne $collectorFailure) {
                 $collectorFailure.CleanupFailures | ForEach-Object {
@@ -1402,7 +1617,8 @@ function Save-ProcessEvidence {
         [object]$CaptureWindow,
         [Threading.CancellationToken]$CancellationToken =
             [Threading.CancellationToken]::None,
-        [switch]$SkipManagedStack
+        [switch]$SkipManagedStack,
+        [switch]$InjectEvidencePersistenceFailure
     )
 
     $safeReason = $Reason -replace '[^A-Za-z0-9_.-]', '-'
@@ -1451,6 +1667,7 @@ function Save-ProcessEvidence {
             timedOut = $false
             collectorFailureKind = $null
             collectorEvidence = $null
+            collectorOwnerJournal = $null
             collectorCleanupFailures = @()
         }
     }
@@ -1470,6 +1687,11 @@ function Save-ProcessEvidence {
         threads = $threadSnapshot
         processTree = $processTree
         managedStack = $stackResult
+    }
+    if ($InjectEvidencePersistenceFailure) {
+        throw (New-DiagnosticEvidencePersistenceFailure `
+            -OwnerJournal $stackResult.collectorOwnerJournal `
+            -EvidenceCaptured $true)
     }
     $evidence |
         ConvertTo-Json -Depth 8 |
@@ -1502,7 +1724,8 @@ function Invoke-ForensicsObserverCapture {
         [ValidateRange(0, 5000)]
         [int]$InjectedPostCaptureDelayMilliseconds = 0,
         [switch]$InjectFailure,
-        [switch]$SkipManagedStack
+        [switch]$SkipManagedStack,
+        [switch]$InjectEvidencePersistenceFailure
     )
 
     if ($InjectFailure) {
@@ -1512,7 +1735,14 @@ function Invoke-ForensicsObserverCapture {
             errorType = "InjectedForensicsObserverFailure"
             collectorFailureKind = $null
             collectorEvidence = $null
+            collectorOwnerJournal = $null
             collectorCleanupFailures = @()
+            evidenceCaptured = $false
+            evidencePersisted = $false
+            diagnosticLocalization = Get-DiagnosticCollectorStructuralLocalization `
+                -OwnerJournal $null `
+                -EvidenceCaptured $false `
+                -EvidencePersisted $false
         }
     }
 
@@ -1530,7 +1760,11 @@ function Invoke-ForensicsObserverCapture {
             errorType = $null
             collectorFailureKind = $null
             collectorEvidence = $null
+            collectorOwnerJournal = $null
             collectorCleanupFailures = @()
+            evidenceCaptured = $false
+            evidencePersisted = $false
+            diagnosticLocalization = $null
         }
     }
 
@@ -1543,7 +1777,8 @@ function Invoke-ForensicsObserverCapture {
                 -Reason $Reason `
                 -CaptureWindow $CaptureWindow `
                 -CancellationToken $CancellationToken `
-                -SkipManagedStack:$SkipManagedStack
+                -SkipManagedStack:$SkipManagedStack `
+                -InjectEvidencePersistenceFailure:$InjectEvidencePersistenceFailure
         if ($InjectedPostCaptureDelayMilliseconds -gt 0) {
             $null = $CaptureWindow.DelayAsync(
                     [TimeSpan]::FromMilliseconds(
@@ -1565,8 +1800,16 @@ function Invoke-ForensicsObserverCapture {
             collectorFailureKind =
                 $evidenceCapture.managedStack.collectorFailureKind
             collectorEvidence = $evidenceCapture.managedStack.collectorEvidence
+            collectorOwnerJournal =
+                $evidenceCapture.managedStack.collectorOwnerJournal
             collectorCleanupFailures = @(
                 $evidenceCapture.managedStack.collectorCleanupFailures)
+            evidenceCaptured = $evidenceCapture.managedStack.captured
+            evidencePersisted = $true
+            diagnosticLocalization = Get-DiagnosticCollectorStructuralLocalization `
+                -OwnerJournal $evidenceCapture.managedStack.collectorOwnerJournal `
+                -EvidenceCaptured $evidenceCapture.managedStack.captured `
+                -EvidencePersisted $true
         }
     }
     catch {
@@ -1577,13 +1820,37 @@ function Invoke-ForensicsObserverCapture {
                 -Exception $collectorFailure
         }
 
+        $ownerJournal = if (
+            $_.Exception.Data.Contains("DownKyi.Diagnostic.OwnerJournal")) {
+            $_.Exception.Data["DownKyi.Diagnostic.OwnerJournal"]
+        }
+        else {
+            $null
+        }
+        $evidenceCaptured = if (
+            $_.Exception.Data.Contains("DownKyi.Diagnostic.EvidenceCaptured")) {
+            [bool]$_.Exception.Data["DownKyi.Diagnostic.EvidenceCaptured"]
+        }
+        else {
+            $false
+        }
+        $persistenceFailed = $InjectEvidencePersistenceFailure -and
+            $_.Exception -is [System.IO.IOException]
         return [pscustomobject]@{
             status = "capture-failed"
             evidencePath = $null
             errorType = $_.Exception.GetType().Name
             collectorFailureKind = $null
             collectorEvidence = $null
+            collectorOwnerJournal = $ownerJournal
             collectorCleanupFailures = @()
+            evidenceCaptured = $evidenceCaptured
+            evidencePersisted = $false
+            diagnosticLocalization = Get-DiagnosticCollectorStructuralLocalization `
+                -OwnerJournal $ownerJournal `
+                -EvidenceCaptured $evidenceCaptured `
+                -EvidencePersisted $false `
+                -EvidencePersistenceFailed:$persistenceFailed
         }
     }
     finally {
@@ -1775,6 +2042,7 @@ function Invoke-IsolatedProcess {
         [switch]$InjectCaptureCompletionAfterEvidenceHoldRelease,
         [switch]$SkipSlowEvidenceManagedStack,
         [switch]$InjectForensicsObserverFailure,
+        [switch]$InjectDiagnosticEvidencePersistenceFailure,
         [switch]$AuthorizeRepositoryTestAssembly,
         [ValidateRange(1, 3600)]
         [int]$OperationTimeoutSeconds = $PhaseTimeoutSeconds,
@@ -1868,7 +2136,11 @@ function Invoke-IsolatedProcess {
     $slowEvidenceErrorType = $null
     $slowEvidenceCollectorFailureKind = $null
     $slowEvidenceCollectorEvidence = $null
+    $slowEvidenceCollectorOwnerJournal = $null
     $slowEvidenceCollectorCleanupFailures = @()
+    $slowEvidenceDiagnosticLocalization = $null
+    $slowDiagnosticEvidenceCaptured = $false
+    $slowDiagnosticEvidencePersisted = $false
     $slowEvidenceTriggeredBeforeThreshold = $false
     $slowEvidenceCaptureArmedAfterMilliseconds = $null
     $slowEvidenceCaptureArmedAtUnixMilliseconds = $null
@@ -1881,7 +2153,11 @@ function Invoke-IsolatedProcess {
     $exitEvidenceErrorType = $null
     $exitEvidenceCollectorFailureKind = $null
     $exitEvidenceCollectorEvidence = $null
+    $exitEvidenceCollectorOwnerJournal = $null
     $exitEvidenceCollectorCleanupFailures = @()
+    $exitEvidenceDiagnosticLocalization = $null
+    $exitDiagnosticEvidenceCaptured = $false
+    $exitDiagnosticEvidencePersisted = $false
     $exitEvidenceCaptured = $false
     $teardownObservedAt = $null
     $evidenceCaptureThresholdSeconds = [Math]::Max(
@@ -1988,7 +2264,8 @@ function Invoke-IsolatedProcess {
                         -InjectedPostCaptureDelayMilliseconds `
                             $InjectedPostCaptureDelayMilliseconds `
                         -SkipManagedStack:$SkipSlowEvidenceManagedStack `
-                        -InjectFailure:$InjectForensicsObserverFailure
+                        -InjectFailure:$InjectForensicsObserverFailure `
+                        -InjectEvidencePersistenceFailure:$InjectDiagnosticEvidencePersistenceFailure
                     if (-not $InjectCaptureCompletionAfterEvidenceHoldRelease) {
                         $slowEvidenceCaptureCompletedAfterMilliseconds = [Math]::Round(
                             [Math]::Max(
@@ -2005,8 +2282,14 @@ function Invoke-IsolatedProcess {
                     $slowEvidenceErrorType = $capture.errorType
                     $slowEvidenceCollectorFailureKind = $capture.collectorFailureKind
                     $slowEvidenceCollectorEvidence = $capture.collectorEvidence
+                    $slowEvidenceCollectorOwnerJournal =
+                        $capture.collectorOwnerJournal
                     $slowEvidenceCollectorCleanupFailures = @(
                         $capture.collectorCleanupFailures)
+                    $slowEvidenceDiagnosticLocalization =
+                        $capture.diagnosticLocalization
+                    $slowDiagnosticEvidenceCaptured = $capture.evidenceCaptured
+                    $slowDiagnosticEvidencePersisted = $capture.evidencePersisted
                     if (-not [string]::IsNullOrWhiteSpace($capture.evidencePath)) {
                         $evidence += $capture.evidencePath
                         $slowEvidence += $capture.evidencePath
@@ -2118,8 +2401,14 @@ function Invoke-IsolatedProcess {
                         $exitEvidenceErrorType = $capture.errorType
                         $exitEvidenceCollectorFailureKind = $capture.collectorFailureKind
                         $exitEvidenceCollectorEvidence = $capture.collectorEvidence
+                        $exitEvidenceCollectorOwnerJournal =
+                            $capture.collectorOwnerJournal
                         $exitEvidenceCollectorCleanupFailures = @(
                             $capture.collectorCleanupFailures)
+                        $exitEvidenceDiagnosticLocalization =
+                            $capture.diagnosticLocalization
+                        $exitDiagnosticEvidenceCaptured = $capture.evidenceCaptured
+                        $exitDiagnosticEvidencePersisted = $capture.evidencePersisted
                         if (-not [string]::IsNullOrWhiteSpace($capture.evidencePath)) {
                             $evidence += $capture.evidencePath
                             $exitEvidence += $capture.evidencePath
@@ -2294,8 +2583,14 @@ function Invoke-IsolatedProcess {
             exitEvidenceErrorType = $exitEvidenceErrorType
             exitEvidenceCollectorFailureKind = $exitEvidenceCollectorFailureKind
             exitEvidenceCollectorEvidence = $exitEvidenceCollectorEvidence
+            exitEvidenceCollectorOwnerJournal =
+                $exitEvidenceCollectorOwnerJournal
             exitEvidenceCollectorCleanupFailures = @(
                 $exitEvidenceCollectorCleanupFailures)
+            exitEvidenceDiagnosticLocalization =
+                $exitEvidenceDiagnosticLocalization
+            exitDiagnosticEvidenceCaptured = $exitDiagnosticEvidenceCaptured
+            exitDiagnosticEvidencePersisted = $exitDiagnosticEvidencePersisted
             timeoutEvidence = $timeoutEvidence
             diagnosticCaptureDurationMs = [Math]::Round($diagnosticCaptureDurationMs, 3)
             slowThresholdExceeded = $slowThresholdExceeded
@@ -2303,8 +2598,14 @@ function Invoke-IsolatedProcess {
             slowEvidenceErrorType = $slowEvidenceErrorType
             slowEvidenceCollectorFailureKind = $slowEvidenceCollectorFailureKind
             slowEvidenceCollectorEvidence = $slowEvidenceCollectorEvidence
+            slowEvidenceCollectorOwnerJournal =
+                $slowEvidenceCollectorOwnerJournal
             slowEvidenceCollectorCleanupFailures = @(
                 $slowEvidenceCollectorCleanupFailures)
+            slowEvidenceDiagnosticLocalization =
+                $slowEvidenceDiagnosticLocalization
+            slowDiagnosticEvidenceCaptured = $slowDiagnosticEvidenceCaptured
+            slowDiagnosticEvidencePersisted = $slowDiagnosticEvidencePersisted
             slowEvidenceTriggeredBeforeThreshold =
                 $slowEvidenceTriggeredBeforeThreshold
             slowEvidenceCaptureArmedAfterMilliseconds =
@@ -2694,8 +2995,16 @@ function New-ProcessPhaseResult {
         exitEvidenceCollectorFailureKind =
             $ProcessResult.exitEvidenceCollectorFailureKind
         exitEvidenceCollectorEvidence = $ProcessResult.exitEvidenceCollectorEvidence
+        exitEvidenceCollectorOwnerJournal =
+            $ProcessResult.exitEvidenceCollectorOwnerJournal
         exitEvidenceCollectorCleanupFailures = @(
             $ProcessResult.exitEvidenceCollectorCleanupFailures)
+        exitEvidenceDiagnosticLocalization =
+            $ProcessResult.exitEvidenceDiagnosticLocalization
+        exitDiagnosticEvidenceCaptured =
+            $ProcessResult.exitDiagnosticEvidenceCaptured
+        exitDiagnosticEvidencePersisted =
+            $ProcessResult.exitDiagnosticEvidencePersisted
         timeoutEvidence = $ProcessResult.timeoutEvidence
         diagnosticCaptureDurationMs = $ProcessResult.diagnosticCaptureDurationMs
         slowThresholdExceeded = $ProcessResult.slowThresholdExceeded
@@ -2704,8 +3013,16 @@ function New-ProcessPhaseResult {
         slowEvidenceCollectorFailureKind =
             $ProcessResult.slowEvidenceCollectorFailureKind
         slowEvidenceCollectorEvidence = $ProcessResult.slowEvidenceCollectorEvidence
+        slowEvidenceCollectorOwnerJournal =
+            $ProcessResult.slowEvidenceCollectorOwnerJournal
         slowEvidenceCollectorCleanupFailures = @(
             $ProcessResult.slowEvidenceCollectorCleanupFailures)
+        slowEvidenceDiagnosticLocalization =
+            $ProcessResult.slowEvidenceDiagnosticLocalization
+        slowDiagnosticEvidenceCaptured =
+            $ProcessResult.slowDiagnosticEvidenceCaptured
+        slowDiagnosticEvidencePersisted =
+            $ProcessResult.slowDiagnosticEvidencePersisted
         slowEvidenceTriggeredBeforeThreshold =
             $ProcessResult.slowEvidenceTriggeredBeforeThreshold
         slowEvidenceCaptureArmedAfterMilliseconds =
@@ -3359,6 +3676,18 @@ if ($ValidateForensics) {
         $forensicsCollectorCleanupReportSelfTest.passed
     if (-not $forensicsCollectorCleanupReportSelfTestPassed) {
         throw "Forensics collector cleanup-report self-test did not preserve evidence."
+    }
+    $forensicsEvidencePersistenceSelfTest =
+        Test-DiagnosticEvidencePersistenceFailureReport
+    $forensicsEvidencePersistenceSelfTestPassed =
+        $forensicsEvidencePersistenceSelfTest.passed
+    $forensicsEvidencePersistenceSelfTest |
+        ConvertTo-Json -Depth 8 |
+        Set-Content -LiteralPath (
+            Join-Path $runRoot "forensics-evidence-persistence-self-test.json") `
+            -Encoding utf8
+    if (-not $forensicsEvidencePersistenceSelfTestPassed) {
+        throw "Forensics evidence-persistence self-test lost its owner journal."
     }
     $forensicsCollectorInterruptedStackSelfTest =
         Test-DiagnosticCollectorInterruptedStackPolicy
@@ -4254,6 +4583,11 @@ $report = [ordered]@{
         $forensicsCollectorCleanupReportSelfTestPassed
     forensicsCollectorCleanupReportSelfTest =
         $forensicsCollectorCleanupReportSelfTest
+    forensicsEvidencePersistenceSelfTestRequired = [bool]$ValidateForensics
+    forensicsEvidencePersistenceSelfTestPassed =
+        $forensicsEvidencePersistenceSelfTestPassed
+    forensicsEvidencePersistenceSelfTest =
+        $forensicsEvidencePersistenceSelfTest
     forensicsCollectorInterruptedStackSelfTestRequired = [bool]$ValidateForensics
     forensicsCollectorInterruptedStackSelfTestPassed =
         $forensicsCollectorInterruptedStackSelfTestPassed

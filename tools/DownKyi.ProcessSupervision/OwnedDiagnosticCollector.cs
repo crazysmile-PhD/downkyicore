@@ -74,24 +74,37 @@ public static class OwnedDiagnosticCollector
     {
         ArgumentNullException.ThrowIfNull(request);
         var timeline = new DiagnosticCollectorTimelineBuilder(request);
+        timeline.Mark(DiagnosticCollectorTransition.CollectorDispatchRequested);
         if (cancellationToken.IsCancellationRequested)
         {
             timeline.MarkTypedOutcomeReturned();
+            var kind = DiagnosticCollectorFailureKind.CallerCancelled;
             throw CreateFailure(
-                DiagnosticCollectorFailureKind.CallerCancelled,
-                CreateNotStartedEvidence(timedOut: false, timeline.Build()),
+                kind,
+                CreateNotStartedEvidence(
+                    timedOut: false,
+                    timeline.BuildPrimaryTimeline(mutation)),
                 new OperationCanceledException(cancellationToken),
-                Array.Empty<DiagnosticCollectorCleanupFailure>());
+                Array.Empty<DiagnosticCollectorCleanupFailure>(),
+                timeline.BuildOwnerJournal(
+                    kind,
+                    Array.Empty<DiagnosticCollectorCleanupFailure>()));
         }
         if (request.Window.RemainingOperation <= TimeSpan.Zero)
         {
             timeline.MarkTypedOutcomeReturned();
+            var kind = DiagnosticCollectorFailureKind.OperationDeadlineExceeded;
             throw CreateFailure(
-                DiagnosticCollectorFailureKind.OperationDeadlineExceeded,
-                CreateNotStartedEvidence(timedOut: true, timeline.Build()),
+                kind,
+                CreateNotStartedEvidence(
+                    timedOut: true,
+                    timeline.BuildPrimaryTimeline(mutation)),
                 new TimeoutException(
                     "The diagnostic collector window was exhausted before launch."),
-                Array.Empty<DiagnosticCollectorCleanupFailure>());
+                Array.Empty<DiagnosticCollectorCleanupFailure>(),
+                timeline.BuildOwnerJournal(
+                    kind,
+                    Array.Empty<DiagnosticCollectorCleanupFailure>()));
         }
 
         var budget = mutation.HasFlag(DiagnosticCollectorMutation.IgnoreAllocatedWindow)
@@ -124,14 +137,16 @@ public static class OwnedDiagnosticCollector
                 : primary is TimeoutException
                     ? DiagnosticCollectorFailureKind.OperationDeadlineExceeded
                     : DiagnosticCollectorFailureKind.StartFailed;
+            timeline.RecordFailureInterval();
             timeline.MarkTypedOutcomeReturned();
             throw CreateFailure(
                 kind,
                 CreateNotStartedEvidence(
                     timedOut: kind == DiagnosticCollectorFailureKind.OperationDeadlineExceeded,
-                    timeline.Build()),
+                    timeline.BuildPrimaryTimeline(mutation)),
                 primary,
-                cleanupFailures);
+                cleanupFailures,
+                timeline.BuildOwnerJournal(kind, cleanupFailures));
         }
 
         await using var leaseScope = lease.ConfigureAwait(false);
@@ -140,6 +155,9 @@ public static class OwnedDiagnosticCollector
             var outcome = await lease.WaitAsync(cancellationToken).ConfigureAwait(false);
             timeline.ObserveOwnedProcess(lease, outcome.TargetExitedAfter);
             timeline.MarkTypedOutcomeReturned();
+            var ownerJournal = timeline.BuildOwnerJournal(
+                failureKind: null,
+                Array.Empty<DiagnosticCollectorCleanupFailure>());
             return new DiagnosticCollectorOutcome(
                 new DiagnosticCollectorEvidence(
                     Started: true,
@@ -150,7 +168,10 @@ public static class OwnedDiagnosticCollector
                     outcome.ExitCode,
                     outcome.StandardOutput,
                     outcome.StandardError,
-                    timeline.Build()));
+                    timeline.BuildPrimaryTimeline(mutation)))
+            {
+                OwnerJournal = ownerJournal
+            };
         }
         catch (OwnedProcessExecutionException failure)
         {
@@ -161,7 +182,15 @@ public static class OwnedDiagnosticCollector
                 DiagnosticCollectorCleanupFailureKind.ReapFailed);
             var drainFailed = cleanupFailures.Any(item =>
                 item.Kind == DiagnosticCollectorCleanupFailureKind.StreamDrainDeadlineExceeded);
-            timeline.ObserveOwnedProcess(lease, failure.Failure.TargetExitedAfter);
+            timeline.ObserveOwnedProcessProgress(lease);
+            if (kind == DiagnosticCollectorFailureKind.OperationDeadlineExceeded)
+            {
+                timeline.MarkOperationDeadlineExhausted();
+            }
+            timeline.RecordFailureInterval();
+            timeline.ObserveOwnedProcessSettlement(
+                lease,
+                failure.Failure.TargetExitedAfter);
             timeline.MarkTypedOutcomeReturned();
             var evidence = new DiagnosticCollectorEvidence(
                 Started: true,
@@ -176,12 +205,13 @@ public static class OwnedDiagnosticCollector
                 ExitCode: null,
                 failure.Failure.StandardOutput,
                 failure.Failure.StandardError,
-                timeline.Build());
+                timeline.BuildPrimaryTimeline(mutation));
             throw CreateFailure(
                 kind,
                 evidence,
                 failure.InnerException ?? failure,
-                cleanupFailures);
+                cleanupFailures,
+                timeline.BuildOwnerJournal(kind, cleanupFailures));
         }
         catch (Exception failure)
         {
@@ -191,7 +221,9 @@ public static class OwnedDiagnosticCollector
                     DiagnosticCollectorCleanupFailureKind.DisposeFailed,
                     failure)
             };
-            timeline.ObserveOwnedProcess(lease, targetExitedAfter: null);
+            timeline.ObserveOwnedProcessProgress(lease);
+            timeline.RecordFailureInterval();
+            timeline.ObserveOwnedProcessSettlement(lease, targetExitedAfter: null);
             timeline.MarkTypedOutcomeReturned();
             throw CreateFailure(
                 DiagnosticCollectorFailureKind.CleanupFailed,
@@ -204,9 +236,12 @@ public static class OwnedDiagnosticCollector
                     ExitCode: null,
                     StandardOutput: string.Empty,
                     StandardError: string.Empty,
-                    timeline.Build()),
+                    timeline.BuildPrimaryTimeline(mutation)),
                 failure,
-                cleanupFailures);
+                cleanupFailures,
+                timeline.BuildOwnerJournal(
+                    DiagnosticCollectorFailureKind.CleanupFailed,
+                    cleanupFailures));
         }
     }
 
@@ -321,10 +356,14 @@ public static class OwnedDiagnosticCollector
         DiagnosticCollectorFailureKind kind,
         DiagnosticCollectorEvidence evidence,
         Exception cause,
-        IReadOnlyList<DiagnosticCollectorCleanupFailure> cleanupFailures)
+        IReadOnlyList<DiagnosticCollectorCleanupFailure> cleanupFailures,
+        DiagnosticCollectorOwnerJournal ownerJournal)
     {
         return new DiagnosticCollectorExecutionException(
-            new DiagnosticCollectorFailure(kind, evidence, cause),
+            new DiagnosticCollectorFailure(kind, evidence, cause)
+            {
+                OwnerJournal = ownerJournal
+            },
             cleanupFailures);
     }
 
@@ -333,11 +372,13 @@ public static class OwnedDiagnosticCollector
         private static readonly DiagnosticCollectorTransition[] OrderedTransitions =
         [
             DiagnosticCollectorTransition.RequestCreated,
+            DiagnosticCollectorTransition.CollectorDispatchRequested,
             DiagnosticCollectorTransition.ProcessStartRequested,
             DiagnosticCollectorTransition.SupervisorProcessStartReturned,
             DiagnosticCollectorTransition.ContainmentPrepared,
             DiagnosticCollectorTransition.ContainmentEstablished,
-            DiagnosticCollectorTransition.ControlStatusPipeConnectionsCompleted,
+            DiagnosticCollectorTransition.ControlPipeConnectionCompleted,
+            DiagnosticCollectorTransition.StatusPipeConnectionCompleted,
             DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
             DiagnosticCollectorTransition.LaunchAuthorizationWritten,
             DiagnosticCollectorTransition.TargetStartAcknowledgementReceived,
@@ -353,6 +394,14 @@ public static class OwnedDiagnosticCollector
             DiagnosticCollectorTransition.StartFailureSupervisorReapCompleted,
             DiagnosticCollectorTransition.StartFailureStreamDrainBegan,
             DiagnosticCollectorTransition.StartFailureStreamDrainCompleted,
+            DiagnosticCollectorTransition.FailureTerminationBegan,
+            DiagnosticCollectorTransition.FailureTerminationCompleted,
+            DiagnosticCollectorTransition.FailureTreeQuiescenceBegan,
+            DiagnosticCollectorTransition.FailureTreeQuiescenceCompleted,
+            DiagnosticCollectorTransition.FailureSupervisorReapBegan,
+            DiagnosticCollectorTransition.FailureSupervisorReapCompleted,
+            DiagnosticCollectorTransition.FailureStreamDrainBegan,
+            DiagnosticCollectorTransition.FailureStreamDrainCompleted,
             DiagnosticCollectorTransition.TargetAttachBegan,
             DiagnosticCollectorTransition.FirstObservableProgress,
             DiagnosticCollectorTransition.StackCaptureBegan,
@@ -362,13 +411,35 @@ public static class OwnedDiagnosticCollector
             DiagnosticCollectorTransition.StreamsDrained,
             DiagnosticCollectorTransition.TypedOutcomeReturned
         ];
+        private static readonly DiagnosticCollectorTransition[] RequiredStartupTransitions =
+        [
+            DiagnosticCollectorTransition.RequestCreated,
+            DiagnosticCollectorTransition.CollectorDispatchRequested,
+            DiagnosticCollectorTransition.ProcessStartRequested,
+            DiagnosticCollectorTransition.SupervisorProcessStartReturned,
+            DiagnosticCollectorTransition.ContainmentPrepared,
+            DiagnosticCollectorTransition.ContainmentEstablished,
+            DiagnosticCollectorTransition.ControlPipeConnectionCompleted,
+            DiagnosticCollectorTransition.StatusPipeConnectionCompleted,
+            DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
+            DiagnosticCollectorTransition.LaunchAuthorizationWritten,
+            DiagnosticCollectorTransition.TargetStartAcknowledgementReceived,
+            DiagnosticCollectorTransition.ProcessStarted
+        ];
         private readonly DiagnosticCollectorRequest _request;
+        private readonly TimeSpan _operationDeadlineElapsed;
         private readonly Dictionary<DiagnosticCollectorTransition, DiagnosticCollectorTransitionEvidence>
             _transitions = new();
+        private int? _supervisorProcessId;
+        private int? _targetProcessId;
+        private DiagnosticCollectorFailureInterval? _failureInterval;
 
         public DiagnosticCollectorTimelineBuilder(DiagnosticCollectorRequest request)
         {
             _request = request;
+            var observation = request.Window.Budget.Observe();
+            _operationDeadlineElapsed = checked(
+                observation.Elapsed + observation.RemainingOperation);
             Mark(
                 DiagnosticCollectorTransition.RequestCreated,
                 request.CreatedAfterWindowStart,
@@ -385,6 +456,13 @@ public static class OwnedDiagnosticCollector
         public void ObserveOwnedProcess(
             OwnedProcessLease lease,
             TimeSpan? targetExitedAfter)
+        {
+            ArgumentNullException.ThrowIfNull(lease);
+            ObserveOwnedProcessProgress(lease);
+            ObserveOwnedProcessSettlement(lease, targetExitedAfter);
+        }
+
+        public void ObserveOwnedProcessProgress(OwnedProcessLease lease)
         {
             ArgumentNullException.ThrowIfNull(lease);
             MarkNotObservable(
@@ -413,6 +491,13 @@ public static class OwnedDiagnosticCollector
                     "The owner observed the first stdout data.");
             }
 
+        }
+
+        public void ObserveOwnedProcessSettlement(
+            OwnedProcessLease lease,
+            TimeSpan? targetExitedAfter)
+        {
+            ArgumentNullException.ThrowIfNull(lease);
             var observedTargetExitedAfter =
                 targetExitedAfter ?? lease.ObservedTargetExitedAfter;
             if (observedTargetExitedAfter.HasValue)
@@ -441,11 +526,66 @@ public static class OwnedDiagnosticCollector
                     streamsDrained.Value,
                     "Both owned collector streams reached EOF.");
             }
+
+            MarkIfObserved(
+                DiagnosticCollectorTransition.FailureTerminationBegan,
+                lease.FailureTerminationBeganAfter,
+                "Failure cleanup termination began under the process owner.");
+            MarkIfObserved(
+                DiagnosticCollectorTransition.FailureTerminationCompleted,
+                lease.FailureTerminationCompletedAfter,
+                "Failure cleanup termination settled under the process owner.");
+            MarkIfObserved(
+                DiagnosticCollectorTransition.FailureTreeQuiescenceBegan,
+                lease.FailureTreeQuiescenceBeganAfter,
+                "Failure cleanup tree-quiescence observation began.");
+            MarkIfObserved(
+                DiagnosticCollectorTransition.FailureTreeQuiescenceCompleted,
+                lease.FailureTreeQuiescenceCompletedAfter,
+                "Failure cleanup tree-quiescence observation settled.");
+            MarkIfObserved(
+                DiagnosticCollectorTransition.FailureSupervisorReapBegan,
+                lease.FailureSupervisorReapBeganAfter,
+                "Failure cleanup supervisor reap began.");
+            MarkIfObserved(
+                DiagnosticCollectorTransition.FailureSupervisorReapCompleted,
+                lease.FailureSupervisorReapCompletedAfter,
+                "Failure cleanup supervisor reap settled.");
+            MarkIfObserved(
+                DiagnosticCollectorTransition.FailureStreamDrainBegan,
+                lease.FailureStreamDrainBeganAfter,
+                "Failure cleanup stream drain began.");
+            MarkIfObserved(
+                DiagnosticCollectorTransition.FailureStreamDrainCompleted,
+                lease.FailureStreamDrainCompletedAfter,
+                "Failure cleanup stream drain settled.");
+        }
+
+        public void MarkOperationDeadlineExhausted()
+        {
+            Mark(
+                DiagnosticCollectorTransition.OperationDeadlineExhausted,
+                _operationDeadlineElapsed,
+                "The existing operation deadline was exhausted on the shared monotonic timeline.");
+            var observedAt = _request.Window.Budget.Elapsed;
+            Mark(
+                DiagnosticCollectorTransition.OperationDeadlineExhaustionObserved,
+                observedAt < _operationDeadlineElapsed
+                    ? _operationDeadlineElapsed
+                    : observedAt,
+                "The collector owner observed operation-deadline exhaustion.");
+        }
+
+        public void RecordFailureInterval()
+        {
+            _failureInterval ??= BuildFailureInterval();
         }
 
         public void ObserveOwnedProcessStart(OwnedProcessStartTimeline startTimeline)
         {
             ArgumentNullException.ThrowIfNull(startTimeline);
+            _supervisorProcessId = startTimeline.SupervisorProcessId;
+            _targetProcessId = startTimeline.TargetProcessId;
             foreach (var transition in Enum.GetValues<OwnedProcessStartTransition>())
             {
                 if (startTimeline.TryGetElapsed(transition, out var elapsed))
@@ -465,8 +605,15 @@ public static class OwnedDiagnosticCollector
                 "The collector boundary returned or threw its typed result.");
         }
 
-        public DiagnosticCollectorTimeline Build()
+        public DiagnosticCollectorTimeline BuildPrimaryTimeline(
+            DiagnosticCollectorMutation mutation)
         {
+            if (mutation.HasFlag(DiagnosticCollectorMutation.SuppressPrimaryTimeline))
+            {
+                return new DiagnosticCollectorTimeline(
+                    Array.Empty<DiagnosticCollectorTransitionEvidence>());
+            }
+
             if (_transitions.ContainsKey(DiagnosticCollectorTransition.ProcessStarted))
             {
                 MarkNotObservable(
@@ -485,9 +632,161 @@ public static class OwnedDiagnosticCollector
                         DiagnosticCollectorTransitionState.NotObserved,
                         ElapsedMilliseconds: null,
                         Detail: "The transition was not observed before the typed result."))
+                .OrderBy(entry =>
+                    entry.State == DiagnosticCollectorTransitionState.Observed ? 0 : 1)
+                .ThenBy(entry => entry.ElapsedMilliseconds ?? double.MaxValue)
+                .ThenBy(entry => (int)entry.Transition)
                 .ToArray();
             return new DiagnosticCollectorTimeline(
                 new ReadOnlyCollection<DiagnosticCollectorTransitionEvidence>(entries));
+        }
+
+        public DiagnosticCollectorOwnerJournal BuildOwnerJournal(
+            DiagnosticCollectorFailureKind? failureKind,
+            IReadOnlyList<DiagnosticCollectorCleanupFailure> cleanupFailures)
+        {
+            ArgumentNullException.ThrowIfNull(cleanupFailures);
+            var entries = OrderedTransitions
+                .Where(_transitions.ContainsKey)
+                .Select(transition => _transitions[transition])
+                .Where(entry =>
+                    entry.State == DiagnosticCollectorTransitionState.Observed)
+                .OrderBy(entry => entry.ElapsedMilliseconds)
+                .ThenBy(entry => (int)entry.Transition)
+                .ToArray();
+            var cleanupKinds = cleanupFailures
+                .Select(failure => failure.Kind)
+                .ToArray();
+            var reapFailed = cleanupKinds.Any(kind => kind is
+                DiagnosticCollectorCleanupFailureKind.ReapDeadlineExceeded or
+                DiagnosticCollectorCleanupFailureKind.ReapFailed);
+            var drainFailed = cleanupKinds.Contains(
+                DiagnosticCollectorCleanupFailureKind.StreamDrainDeadlineExceeded);
+            var terminateFailed = cleanupKinds.Contains(
+                DiagnosticCollectorCleanupFailureKind.TerminateFailed);
+            return new DiagnosticCollectorOwnerJournal(
+                new ReadOnlyCollection<DiagnosticCollectorTransitionEvidence>(entries),
+                failureKind.HasValue
+                    ? _failureInterval ?? BuildFailureInterval()
+                    : null,
+                failureKind,
+                new ReadOnlyCollection<DiagnosticCollectorCleanupFailureKind>(cleanupKinds),
+                Contains(DiagnosticCollectorTransition.OperationDeadlineExhausted),
+                Contains(DiagnosticCollectorTransition.ProcessStarted),
+                Contains(DiagnosticCollectorTransition.ProcessExitObserved),
+                Contains(DiagnosticCollectorTransition.StartFailureTerminationBegan) ||
+                    Contains(DiagnosticCollectorTransition.FailureTerminationBegan),
+                (Contains(
+                        DiagnosticCollectorTransition.StartFailureTerminationCompleted) ||
+                    Contains(DiagnosticCollectorTransition.FailureTerminationCompleted)) &&
+                    !terminateFailed,
+                (Contains(DiagnosticCollectorTransition.ReapCompleted) ||
+                    Contains(
+                        DiagnosticCollectorTransition.StartFailureSupervisorReapCompleted) ||
+                    Contains(
+                        DiagnosticCollectorTransition.FailureSupervisorReapCompleted)) &&
+                    !reapFailed,
+                (Contains(DiagnosticCollectorTransition.StreamsDrained) ||
+                    Contains(
+                        DiagnosticCollectorTransition.StartFailureStreamDrainCompleted) ||
+                    Contains(
+                        DiagnosticCollectorTransition.FailureStreamDrainCompleted)) &&
+                    !drainFailed,
+                _supervisorProcessId,
+                _targetProcessId);
+        }
+
+        private DiagnosticCollectorFailureInterval BuildFailureInterval()
+        {
+            for (var index = 1; index < RequiredStartupTransitions.Length; index++)
+            {
+                var transition = RequiredStartupTransitions[index];
+                if (!Contains(transition))
+                {
+                    return new DiagnosticCollectorFailureInterval(
+                        RequiredStartupTransitions[index - 1],
+                        transition,
+                        ClassifyBoundary(transition));
+                }
+            }
+
+            if (!Contains(DiagnosticCollectorTransition.FirstObservableProgress))
+            {
+                return new DiagnosticCollectorFailureInterval(
+                    DiagnosticCollectorTransition.ProcessStarted,
+                    DiagnosticCollectorTransition.FirstObservableProgress,
+                    DiagnosticCollectorFailureBoundary.EvidenceCapture);
+            }
+            if (!Contains(DiagnosticCollectorTransition.StackOutputFirstByte))
+            {
+                return new DiagnosticCollectorFailureInterval(
+                    DiagnosticCollectorTransition.FirstObservableProgress,
+                    DiagnosticCollectorTransition.StackOutputFirstByte,
+                    DiagnosticCollectorFailureBoundary.EvidenceCapture);
+            }
+            if (!Contains(DiagnosticCollectorTransition.ProcessExitObserved))
+            {
+                return new DiagnosticCollectorFailureInterval(
+                    DiagnosticCollectorTransition.StackOutputFirstByte,
+                    DiagnosticCollectorTransition.ProcessExitObserved,
+                    DiagnosticCollectorFailureBoundary.TargetCompletion);
+            }
+            if (!Contains(DiagnosticCollectorTransition.ReapCompleted))
+            {
+                return new DiagnosticCollectorFailureInterval(
+                    DiagnosticCollectorTransition.ProcessExitObserved,
+                    DiagnosticCollectorTransition.ReapCompleted,
+                    DiagnosticCollectorFailureBoundary.Cleanup);
+            }
+            if (!Contains(DiagnosticCollectorTransition.StreamsDrained))
+            {
+                return new DiagnosticCollectorFailureInterval(
+                    DiagnosticCollectorTransition.ReapCompleted,
+                    DiagnosticCollectorTransition.StreamsDrained,
+                    DiagnosticCollectorFailureBoundary.Cleanup);
+            }
+
+            return new DiagnosticCollectorFailureInterval(
+                DiagnosticCollectorTransition.StreamsDrained,
+                DiagnosticCollectorTransition.TypedOutcomeReturned,
+                DiagnosticCollectorFailureBoundary.OutcomeAggregation);
+        }
+
+        private bool Contains(DiagnosticCollectorTransition transition)
+        {
+            return _transitions.TryGetValue(transition, out var evidence) &&
+                evidence.State == DiagnosticCollectorTransitionState.Observed;
+        }
+
+        private static DiagnosticCollectorFailureBoundary ClassifyBoundary(
+            DiagnosticCollectorTransition firstMissingRequired)
+        {
+            return firstMissingRequired switch
+            {
+                DiagnosticCollectorTransition.CollectorDispatchRequested =>
+                    DiagnosticCollectorFailureBoundary.CollectorDispatch,
+                DiagnosticCollectorTransition.ProcessStartRequested or
+                DiagnosticCollectorTransition.SupervisorProcessStartReturned =>
+                    DiagnosticCollectorFailureBoundary.ProcessStart,
+                DiagnosticCollectorTransition.ContainmentPrepared =>
+                    DiagnosticCollectorFailureBoundary.ContainmentPreparation,
+                DiagnosticCollectorTransition.ContainmentEstablished =>
+                    DiagnosticCollectorFailureBoundary.ContainmentEstablishment,
+                DiagnosticCollectorTransition.ControlPipeConnectionCompleted =>
+                    DiagnosticCollectorFailureBoundary.ControlChannelStartup,
+                DiagnosticCollectorTransition.StatusPipeConnectionCompleted =>
+                    DiagnosticCollectorFailureBoundary.StatusChannelStartup,
+                DiagnosticCollectorTransition.OwnershipAcknowledgementReceived =>
+                    DiagnosticCollectorFailureBoundary.OwnershipHandshake,
+                DiagnosticCollectorTransition.LaunchAuthorizationWritten or
+                DiagnosticCollectorTransition.TargetStartAcknowledgementReceived or
+                DiagnosticCollectorTransition.ProcessStarted =>
+                    DiagnosticCollectorFailureBoundary.TargetLaunch,
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(firstMissingRequired),
+                    firstMissingRequired,
+                    null)
+            };
         }
 
         private void Mark(
@@ -516,6 +815,17 @@ public static class OwnedDiagnosticCollector
                     detail));
         }
 
+        private void MarkIfObserved(
+            DiagnosticCollectorTransition transition,
+            TimeSpan? elapsed,
+            string detail)
+        {
+            if (elapsed.HasValue)
+            {
+                Mark(transition, elapsed.Value, detail);
+            }
+        }
+
         private static DiagnosticCollectorTransition MapStartTransition(
             OwnedProcessStartTransition transition)
         {
@@ -527,8 +837,10 @@ public static class OwnedDiagnosticCollector
                     DiagnosticCollectorTransition.ContainmentPrepared,
                 OwnedProcessStartTransition.ContainmentEstablished =>
                     DiagnosticCollectorTransition.ContainmentEstablished,
-                OwnedProcessStartTransition.ControlStatusPipeConnectionsCompleted =>
-                    DiagnosticCollectorTransition.ControlStatusPipeConnectionsCompleted,
+                OwnedProcessStartTransition.ControlPipeConnectionCompleted =>
+                    DiagnosticCollectorTransition.ControlPipeConnectionCompleted,
+                OwnedProcessStartTransition.StatusPipeConnectionCompleted =>
+                    DiagnosticCollectorTransition.StatusPipeConnectionCompleted,
                 OwnedProcessStartTransition.OwnershipAcknowledgementReceived =>
                     DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
                 OwnedProcessStartTransition.LaunchAuthorizationWritten =>
@@ -571,8 +883,10 @@ public static class OwnedDiagnosticCollector
                     "The platform containment owner was prepared.",
                 OwnedProcessStartTransition.ContainmentEstablished =>
                     "The supervisor was placed under platform containment.",
-                OwnedProcessStartTransition.ControlStatusPipeConnectionsCompleted =>
-                    "Both supervisor control and status channels connected.",
+                OwnedProcessStartTransition.ControlPipeConnectionCompleted =>
+                    "The supervisor control channel connected.",
+                OwnedProcessStartTransition.StatusPipeConnectionCompleted =>
+                    "The supervisor status channel connected.",
                 OwnedProcessStartTransition.OwnershipAcknowledgementReceived =>
                     "The supervisor acknowledged its containment ownership.",
                 OwnedProcessStartTransition.LaunchAuthorizationWritten =>

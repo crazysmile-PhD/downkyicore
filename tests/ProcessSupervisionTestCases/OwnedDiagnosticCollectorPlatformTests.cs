@@ -45,7 +45,8 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
                 DiagnosticCollectorTransition.SupervisorProcessStartReturned,
                 DiagnosticCollectorTransition.ContainmentPrepared,
                 DiagnosticCollectorTransition.ContainmentEstablished,
-                DiagnosticCollectorTransition.ControlStatusPipeConnectionsCompleted,
+                DiagnosticCollectorTransition.ControlPipeConnectionCompleted,
+                DiagnosticCollectorTransition.StatusPipeConnectionCompleted,
                 DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
                 DiagnosticCollectorTransition.LaunchAuthorizationWritten,
                 DiagnosticCollectorTransition.TargetStartAcknowledgementReceived,
@@ -60,6 +61,11 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             transition => Assert.Equal(
                 DiagnosticCollectorTransitionState.Observed,
                 GetTransition(outcome.Evidence, transition).State));
+        AssertMonotonic(outcome.Evidence.Timeline.Transitions);
+        var journal = Assert.IsType<DiagnosticCollectorOwnerJournal>(
+            outcome.OwnerJournal);
+        Assert.InRange(journal.Transitions.Count, 1, 40);
+        AssertMonotonic(journal.Transitions);
     }
 
     [Fact]
@@ -233,6 +239,39 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             GetTransition(
                 failure.Failure.Evidence,
                 DiagnosticCollectorTransition.FirstObservableProgress).State);
+        var journal = Assert.IsType<DiagnosticCollectorOwnerJournal>(
+            failure.Failure.OwnerJournal);
+        var interval = Assert.IsType<DiagnosticCollectorFailureInterval>(
+            journal.FailureInterval);
+        Assert.True(journal.DeadlineExhausted);
+        Assert.Equal(
+            DiagnosticCollectorTransition.StackOutputFirstByte,
+            interval.LastKnownGood);
+        Assert.Equal(
+            DiagnosticCollectorTransition.ProcessExitObserved,
+            interval.FirstMissingRequired);
+        Assert.Equal(
+            DiagnosticCollectorFailureBoundary.TargetCompletion,
+            interval.Boundary);
+        Assert.True(journal.TerminationStarted);
+        Assert.True(journal.TerminationCompleted);
+        Assert.True(journal.ReapCompleted);
+        Assert.True(journal.StreamsDrained);
+        Assert.All(
+            new[]
+            {
+                DiagnosticCollectorTransition.FailureTerminationBegan,
+                DiagnosticCollectorTransition.FailureTerminationCompleted,
+                DiagnosticCollectorTransition.FailureTreeQuiescenceBegan,
+                DiagnosticCollectorTransition.FailureTreeQuiescenceCompleted,
+                DiagnosticCollectorTransition.FailureSupervisorReapBegan,
+                DiagnosticCollectorTransition.FailureSupervisorReapCompleted,
+                DiagnosticCollectorTransition.FailureStreamDrainBegan,
+                DiagnosticCollectorTransition.FailureStreamDrainCompleted
+            },
+            transition => Assert.Contains(
+                journal.Transitions,
+                entry => entry.Transition == transition));
     }
 
     [Fact]
@@ -343,7 +382,8 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         Assert.All(
             new[]
             {
-                DiagnosticCollectorTransition.ControlStatusPipeConnectionsCompleted,
+                DiagnosticCollectorTransition.ControlPipeConnectionCompleted,
+                DiagnosticCollectorTransition.StatusPipeConnectionCompleted,
                 DiagnosticCollectorTransition.OwnershipAcknowledgementReceived,
                 DiagnosticCollectorTransition.LaunchAuthorizationWritten,
                 DiagnosticCollectorTransition.TargetStartAcknowledgementReceived,
@@ -366,6 +406,50 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             DiagnosticCollectorTransition.StartFailureTerminationBegan);
         Assert.True(deadline.ElapsedMilliseconds <= deadlineObservation.ElapsedMilliseconds);
         Assert.True(deadlineObservation.ElapsedMilliseconds <= cleanupBegin.ElapsedMilliseconds);
+    }
+
+    [Fact]
+    public async Task OwnerJournalSurvivesPrimaryTimelineBlackoutAtStartupBoundary()
+    {
+        var failure = await CollectFailureAsync(
+                CreateRequest(
+                    SupervisorHost.CollectorOutputArgument,
+                    TimeSpan.FromSeconds(1),
+                    TimeSpan.FromSeconds(1)),
+                DiagnosticCollectorMutation.StallBeforeSupervisorPipeConnection |
+                DiagnosticCollectorMutation.SuppressPrimaryTimeline)
+            .ConfigureAwait(true);
+
+        Assert.Empty(failure.Failure.Evidence.Timeline.Transitions);
+        var journal = Assert.IsType<DiagnosticCollectorOwnerJournal>(
+            failure.Failure.OwnerJournal);
+        var interval = Assert.IsType<DiagnosticCollectorFailureInterval>(
+            journal.FailureInterval);
+        Assert.Equal(
+            DiagnosticCollectorTransition.ContainmentEstablished,
+            interval.LastKnownGood);
+        Assert.Equal(
+            DiagnosticCollectorTransition.ControlPipeConnectionCompleted,
+            interval.FirstMissingRequired);
+        Assert.Equal(
+            DiagnosticCollectorFailureBoundary.ControlChannelStartup,
+            interval.Boundary);
+        Assert.Equal(
+            DiagnosticCollectorFailureKind.OperationDeadlineExceeded,
+            journal.FailureKind);
+        Assert.True(journal.DeadlineExhausted);
+        Assert.False(journal.TargetStarted);
+        Assert.False(journal.TargetExited);
+        Assert.True(journal.TerminationStarted);
+        Assert.True(journal.TerminationCompleted);
+        Assert.True(journal.ReapCompleted);
+        Assert.True(journal.StreamsDrained);
+        Assert.True(journal.SupervisorProcessId > 0);
+        Assert.Null(journal.TargetProcessId);
+        Assert.Empty(journal.CleanupFailures);
+        Assert.Null(typeof(DiagnosticCollectorOwnerJournal).GetProperty("StandardOutput"));
+        Assert.Null(typeof(DiagnosticCollectorOwnerJournal).GetProperty("StandardError"));
+        AssertMonotonic(journal.Transitions);
     }
 
     [Fact]
@@ -621,6 +705,19 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
         return Assert.Single(
             evidence.Timeline.Transitions,
             item => item.Transition == transition);
+    }
+
+    private static void AssertMonotonic(
+        IReadOnlyList<DiagnosticCollectorTransitionEvidence> transitions)
+    {
+        var observed = transitions
+            .Where(transition =>
+                transition.State == DiagnosticCollectorTransitionState.Observed)
+            .ToArray();
+        Assert.All(
+            observed.Zip(observed.Skip(1)),
+            pair => Assert.True(
+                pair.First.ElapsedMilliseconds <= pair.Second.ElapsedMilliseconds));
     }
 
     private static async Task<TargetExitCancellationCaseResult>
