@@ -1252,6 +1252,114 @@ The checkpoint commit is the commit containing this section. Push, CI closure,
 same-head review, merge, release and user delivery remain pending and out of
 this local checkpoint.
 
+## Stage 3 Diagnostic Chain Adversarial Prototype
+
+This isolated test-only checkpoint starts after blocker-remediation commit
+`e512d08c2a56a57366ee881521669cfa3bc86f91`. It proves the observability model
+before any production integration. No production lifecycle, timeout, retry,
+sleep, Stage 4 restart handoff, Stage 5 central runner or Stage 6 file is in the
+prototype diff.
+
+The toy has two shared test files: a 650-line model and a 278-line test suite.
+The three native ProcessSupervision test projects link those files rather than
+copying the model. The toy owns no operating-system process. It uses the real
+`TransitionBudget` with one manual monotonic `TimeProvider`; fault injection
+advances that provider to the existing operation boundary when exhaustion is
+part of the scenario. The provider counts UTC reads and every test requires
+that count to remain zero. There is no sleep, runner-load assumption, retry or
+absolute elapsed-millisecond classification.
+
+The primary path is a deliberately small captured/structured/persisted evidence
+record. The independent owner-side path is a bounded journal of at most 22
+unique transition entries and four typed secondary failures. Its entries carry
+only transition identity, monotonic elapsed order and authoritative supervisor
+or target identity when available. The journal does not retain stack, stdout,
+stderr or another forensic payload. The primary causal failure is immutable;
+termination, reap, drain and evidence-system failures are appended separately.
+
+The 22 transitions are:
+
+1. `RequestCreated`
+2. `CollectorDispatchRequested`
+3. `ProcessStartRequested`
+4. `ProcessStartReturned`
+5. `ContainmentPrepared`
+6. `ContainmentEstablished`
+7. `ControlChannelConnected`
+8. `StatusChannelConnected`
+9. `OwnershipAcknowledged`
+10. `TargetLaunchAuthorized`
+11. `TargetStarted`
+12. `FirstObservableProgress`
+13. `EvidenceCaptured`
+14. `EvidencePersisted`
+15. `TargetExited`
+16. `OperationDeadlineExhausted`
+17. `OwnerObservedDeadlineExhaustion`
+18. `TerminationStarted`
+19. `TerminationCompleted`
+20. `ReapCompleted`
+21. `StreamsDrained`
+22. `DiagnosticOutcomeReturned`
+
+The single-node results below are the expected and actual classifications from
+the deterministic Windows run. Cleanup injections use one cleanup mutation;
+the toy supplies the primary operation failure needed to enter cleanup, then
+checks that the injected cleanup result remains secondary.
+
+| Injected boundary | Last known good -> first missing | Expected and actual result |
+|---|---|---|
+| dispatch | `RequestCreated` -> `CollectorDispatchRequested` | `CollectorDispatchFailure` |
+| process-start stall | `ProcessStartRequested` -> `ProcessStartReturned` | `ProcessStartBoundaryFailure`; deadline exhausted |
+| containment preparation | `ProcessStartReturned` -> `ContainmentPrepared` | `ContainmentPreparationFailure` |
+| containment establishment | `ContainmentPrepared` -> `ContainmentEstablished` | `ContainmentEstablishmentFailure` |
+| control channel | `ContainmentEstablished` -> `ControlChannelConnected` | `ControlChannelFailure`; deadline exhausted |
+| status channel | `ControlChannelConnected` -> `StatusChannelConnected` | `StatusChannelFailure`; deadline exhausted |
+| ownership acknowledgment | `StatusChannelConnected` -> `OwnershipAcknowledged` | `OwnershipAcknowledgementFailure`; deadline exhausted |
+| target-start acknowledgment | `TargetLaunchAuthorized` -> `TargetStarted` | `TargetLaunchFailure`; deadline exhausted |
+| capture makes no progress | `TargetStarted` -> `FirstObservableProgress` | `EvidenceCaptureFailure`, not startup failure |
+| capture succeeds, persistence fails | `EvidenceCaptured` -> `EvidencePersisted` | `EvidencePersistenceFailure`; captured true, persisted false |
+| structured evidence is rejected | `EvidenceCaptured` -> `EvidencePersisted` | `EvidenceSystemFailure` from the fallback journal |
+| termination fails | `EvidencePersisted` -> `TargetExited` | primary `PrimaryOperationFailure`; secondary `TerminationFailure` |
+| reap fails | `EvidencePersisted` -> `TargetExited` | primary `PrimaryOperationFailure`; secondary `ReapFailure` |
+| stream drain fails | `EvidencePersisted` -> `TargetExited` | primary `PrimaryOperationFailure`; secondary `StreamDrainFailure` |
+
+The diagnostic-blackout scenario removes the stack payload and rejects both
+normal structured and persisted evidence. The fallback journal still returns
+`ContainmentEstablished -> ControlChannelConnected`, deadline exhausted,
+supervisor identity available, target not started/exited, termination started
+and reap completed. Its primary classification is `ControlChannelFailure`; the
+lost normal evidence remains the secondary `EvidenceSystemFailure`. It does not
+collapse to `SlowEvidenceMissing`, `OperationDeadlineExceeded` alone or
+`AmbiguousMissingEvidence`.
+
+Four bounded pairwise proofs passed:
+
+| Pair | Preserved primary | Preserved secondary |
+|---|---|---|
+| process-start stall + primary evidence corruption | `ProcessStartBoundaryFailure` | `EvidenceSystemFailure` |
+| primary operation failure + reap failure | `PrimaryOperationFailure` | `ReapFailure` |
+| evidence persistence failure + stream-drain failure | `EvidencePersistenceFailure` | `StreamDrainFailure` |
+| ownership-ack deadline + termination failure | `OwnershipAcknowledgementFailure` | `TerminationFailure` |
+
+The Windows toy class executed 27/27 through the central runner: one transition
+inventory, one healthy primary-path proof, 14 single-node attacks, one explicit
+capture-versus-persistence proof, one blackout, four pairwise cases, one bounded
+journal proof and four interval-classification cases. Strict Release builds of
+the Windows, Linux and macOS test projects each completed with zero warnings and
+zero errors. The local Windows host correctly refused to execute the Linux-
+marked assembly, so only compilation—not native execution—is claimed for the
+Linux and macOS assemblies at this checkpoint.
+
+No tested single or pairwise fault collapsed into an ambiguous generic result.
+The deliberate remaining boundary is prototype-to-production mapping: none of
+these observations is yet emitted by `OwnedProcessLease`,
+`OwnedDiagnosticCollector`, the lifecycle observer or persisted lifecycle
+artifacts. Production integration must reuse the blocker-remediation
+transitions, keep the journal observational, and preserve `OwnedProcessLease`
+as the sole correctness/containment/termination/reap/quiescence/drain owner.
+That integration starts only after this prototype checkpoint is reported.
+
 ## Stage 3 Assembly Lifecycle Slow-Evidence Self-Test Blocker Checkpoint
 
 This independent checkpoint starts from exact head

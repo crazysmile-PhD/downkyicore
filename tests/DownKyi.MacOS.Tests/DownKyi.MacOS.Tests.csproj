@@ -20,6 +20,8 @@
     <ProjectReference Include="..\..\tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj" />
     <ProjectReference Include="..\..\tools\DownKyi.RestartHandoff.FeasibilityFixture\DownKyi.RestartHandoff.FeasibilityFixture.csproj" />
     <ProjectReference Include="..\..\tools\DownKyi.RestartHandoff.ProductionFixture\DownKyi.RestartHandoff.ProductionFixture.csproj" />
+    <Compile Include="..\ProcessSupervisionTestCases\DiagnosticChainAdversarialPrototype.cs" Link="DiagnosticChainAdversarialPrototype.cs" />
+    <Compile Include="..\ProcessSupervisionTestCases\DiagnosticChainAdversarialPrototypeTests.cs" Link="DiagnosticChainAdversarialPrototypeTests.cs" />
     <Compile Include="..\ProcessSupervisionTestCases\OwnedDiagnosticCollectorPlatformTests.cs" Link="OwnedDiagnosticCollectorPlatformTests.cs" />
     <Compile Include="..\ProcessSupervisionTestCases\OwnedProcessLeasePlatformTests.cs" Link="OwnedProcessLeasePlatformTests.cs" />
     <Compile Include="..\ProcessSupervisionTestCases\IpcEndpointNameTests.cs" Link="IpcEndpointNameTests.cs" />
