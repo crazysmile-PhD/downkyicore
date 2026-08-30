@@ -894,6 +894,9 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
             TestContext.Current.CancellationToken);
         using var executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);
+        var observedStartupTransitions = new HashSet<OwnedProcessStartTransition>();
+        var startupTransitionSync = new object();
+        var cancellationIssued = false;
         try
         {
             var failure = await Assert.ThrowsAsync<DiagnosticCollectorExecutionException>(
@@ -908,7 +911,22 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
                             : DiagnosticCollectorMutation.None,
                         transition =>
                         {
-                            if (transition != cancellationTransition)
+                            bool shouldCancel;
+                            lock (startupTransitionSync)
+                            {
+                                observedStartupTransitions.Add(transition);
+                                shouldCancel = !cancellationIssued &&
+                                    (cancellationTransition ==
+                                        OwnedProcessStartTransition.StatusPipeConnectionCompleted
+                                        ? observedStartupTransitions.Contains(
+                                                OwnedProcessStartTransition.ControlPipeConnectionCompleted) &&
+                                            observedStartupTransitions.Contains(
+                                                OwnedProcessStartTransition.StatusPipeConnectionCompleted)
+                                        : transition == cancellationTransition);
+                                cancellationIssued |= shouldCancel;
+                            }
+
+                            if (!shouldCancel)
                             {
                                 return;
                             }
@@ -1183,6 +1201,37 @@ public sealed class DiagnosticCollectorWindowTests
         Assert.Equal(TimeSpan.Zero, window.RemainingCleanup);
         Assert.Equal(TimeSpan.FromSeconds(2), parent.RemainingOperation);
         Assert.Equal(TimeSpan.FromSeconds(4), parent.RemainingCleanup);
+    }
+
+    [Fact]
+    public void EarlyOwnerTimeoutEvidenceCannotSortAfterCleanupBegins()
+    {
+        var timeProvider = new ManualTimeProvider();
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(1),
+            timeProvider);
+        var timeline = new OwnedProcessStartTimeline(budget);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        timeline.MarkOperationDeadlineExhausted();
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        timeline.MarkOperationDeadlineExhaustionObserved();
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        timeline.Mark(OwnedProcessStartTransition.StartFailureTerminationBegan);
+
+        Assert.True(timeline.TryGetElapsed(
+            OwnedProcessStartTransition.OperationDeadlineExhausted,
+            out var deadline));
+        Assert.True(timeline.TryGetElapsed(
+            OwnedProcessStartTransition.OperationDeadlineExhaustionObserved,
+            out var deadlineObservation));
+        Assert.True(timeline.TryGetElapsed(
+            OwnedProcessStartTransition.StartFailureTerminationBegan,
+            out var cleanupBegin));
+        Assert.Equal(TimeSpan.FromSeconds(4), deadline);
+        Assert.True(deadline <= deadlineObservation);
+        Assert.True(deadlineObservation <= cleanupBegin);
     }
 
     private sealed class ManualTimeProvider : TimeProvider

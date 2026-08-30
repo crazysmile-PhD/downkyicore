@@ -239,11 +239,14 @@ internal sealed class OwnedProcessStartTimeline
 
     public void MarkOperationDeadlineExhausted()
     {
+        var observedAt = _budget.Elapsed;
         lock (_sync)
         {
             _transitions.TryAdd(
                 OwnedProcessStartTransition.OperationDeadlineExhausted,
-                _operationDeadlineElapsed);
+                observedAt < _operationDeadlineElapsed
+                    ? observedAt
+                    : _operationDeadlineElapsed);
         }
     }
 
@@ -252,10 +255,15 @@ internal sealed class OwnedProcessStartTimeline
         var observedAt = _budget.Elapsed;
         lock (_sync)
         {
+            var exhaustionAt = _transitions.TryGetValue(
+                OwnedProcessStartTransition.OperationDeadlineExhausted,
+                out var recordedExhaustion)
+                    ? recordedExhaustion
+                    : _operationDeadlineElapsed;
             _transitions.TryAdd(
                 OwnedProcessStartTransition.OperationDeadlineExhaustionObserved,
-                observedAt < _operationDeadlineElapsed
-                    ? _operationDeadlineElapsed
+                observedAt < exhaustionAt
+                    ? exhaustionAt
                     : observedAt);
         }
     }
