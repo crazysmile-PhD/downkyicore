@@ -194,6 +194,10 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Validate exact v1.1.3 release subject
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: ./script/validate-v113-release-subject.ps1 -SubjectDirectory . -ReleaseVersion '${{ github.ref_name }}' -SubjectSha '${{ github.sha }}'
       - name: Generate a changelog
         uses: orhun/git-cliff-action@v4
         id: git-cliff
@@ -258,8 +262,14 @@ jobs:
             -PublishDirectory "artifacts/publish/win-${{ matrix.cpu }}" `
             -RuntimeIdentifier "win-${{ matrix.cpu }}" `
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
-            -OutputPath "script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json"
+            -OutputPath "script/pupnet/output/expected-publish-manifest-win-${{ matrix.cpu }}.json"
           $package = "script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}"
+          ./script/validate-v113-release-package.ps1 `
+            -PackagePath $package `
+            -PackageKind "${{ matrix.kind }}" `
+            -RuntimeIdentifier "win-${{ matrix.cpu }}" `
+            -ExpectedManifestPath "script/pupnet/output/expected-publish-manifest-win-${{ matrix.cpu }}.json" `
+            -OutputPath "script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json"
           $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($package))" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
       - name: Upload build artifacts ${{ matrix.kind }}
@@ -271,7 +281,7 @@ jobs:
             script/pupnet/output/DownKyi-${{ steps.version.outputs.content }}-1.win-${{ matrix.cpu }}.${{ matrix.kind }}.sha256
             script/pupnet/output/publish-manifest-win-${{ matrix.cpu }}.json
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
     needs: changelog
     strategy:
       fail-fast: false
@@ -282,22 +292,27 @@ jobs:
         include:
           - kind: AppImage
             cpu: x64
+            os: ubuntu-22.04
             package-tail: .x86_64
             package-head: DownKyi-
           - kind: deb
             cpu: x64
+            os: ubuntu-22.04
             package-tail: _amd64
             package-head: downkyi_
           - kind: rpm
             cpu: x64
+            os: ubuntu-22.04
             package-tail: .x86_64
             package-head: downkyi_
           - kind: AppImage
             cpu: arm64
+            os: ubuntu-24.04-arm
             package-tail: .aarch64
             package-head: DownKyi-
           - kind: deb
             cpu: arm64
+            os: ubuntu-24.04-arm
             package-tail: _arm64
             package-head: downkyi_
         exclude:
@@ -322,7 +337,9 @@ jobs:
         run: |
           dotnet tool install --tool-path ./.tools KuiperZone.PupNet --version 1.8.0
           sudo apt-get update
-          sudo apt-get install -y libfuse2
+          fuse_package=libfuse2
+          if ! apt-cache show "$fuse_package" >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
+          sudo apt-get install -y cpio "$fuse_package" p7zip-full rpm rpm2cpio xauth xvfb
       - name: Get Deps
         run: |
           chmod +x ffmpeg.sh
@@ -354,13 +371,27 @@ jobs:
             -PublishDirectory "artifacts/publish/linux-${{ matrix.cpu }}" `
             -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
             -ExpectedVersion "${{ steps.version.outputs.content }}" `
-            -OutputPath "script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
+            -OutputPath "script/pupnet/output/expected-publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
           $package = Get-ChildItem "script/pupnet/output" -File -Filter "*${{ matrix.package-tail }}.${{ matrix.kind }}" |
             Select-Object -First 1
           if ($null -eq $package) { throw "Expected Linux package was not produced." }
+          ./script/validate-v113-release-package.ps1 `
+            -PackagePath $package.FullName `
+            -PackageKind "${{ matrix.kind }}" `
+            -RuntimeIdentifier "linux-${{ matrix.cpu }}" `
+            -ExpectedManifestPath "script/pupnet/output/expected-publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json" `
+            -OutputPath "script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
           $hash = (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($package.Name)" | Set-Content -LiteralPath "$($package.FullName).sha256" -Encoding ascii
+      - name: Create permission-preserving AppImage transport
+        if: ${{ matrix.kind == 'AppImage' }}
+        run: |
+          tar -C script/pupnet/output -cf "appimage-${{ matrix.cpu }}.transport.tar" \
+            "${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}" \
+            "${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}.sha256" \
+            "publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json"
       - name: Upload build artifacts ${{ matrix.kind }}
+        if: ${{ matrix.kind != 'AppImage' }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
@@ -368,11 +399,15 @@ jobs:
             script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}
             script/pupnet/output/${{ matrix.package-head }}${{ steps.version.outputs.content }}_linux_${{ matrix.type }}${{ matrix.package-tail }}.${{ matrix.kind }}.sha256
             script/pupnet/output/publish-manifest-linux-${{ matrix.cpu }}-${{ matrix.kind }}.json
+      - name: Upload permission-preserving AppImage transport
+        if: ${{ matrix.kind == 'AppImage' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: appimage-${{ matrix.cpu }}-transport
+          path: appimage-${{ matrix.cpu }}.transport.tar
   build-macos:
     runs-on: ${{ matrix.os }}
     needs: changelog
-    env:
-      HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PWD != '' && secrets.APPLE_ID != '' && secrets.TEAM_ID != '' && secrets.APP_SPECIFIC_PASSWORD != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -384,6 +419,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Resolve macOS release trust mode
+        shell: pwsh
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
+        run: |
+          $resultPath = Join-Path $env:RUNNER_TEMP "macos-release-trust.json"
+          ./script/resolve-v112-macos-trust.ps1 -OutputPath $resultPath
+          $trust = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+          "HAS_MACOS_SIGNING=$($trust.hasMacosSigning.ToString().ToLowerInvariant())" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          "MACOS_TRUST_MODE=$($trust.macosTrustMode)" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
       - name: Import certificate
         if: ${{ env.HAS_MACOS_SIGNING == 'true' }}
         uses: apple-actions/import-codesign-certs@v7
@@ -431,8 +480,8 @@ jobs:
           dotnet publish DownKyi/DownKyi.csproj --no-restore --self-contained -r osx-${{ matrix.cpu }} -c Release -p:DebugType=None -p:DebugSymbols=false
       - name: Package app
         run: |
-          chmod +x package.sh
-          ./package.sh ${{ matrix.cpu }}
+          chmod +x package.sh set-bundle-version.sh
+          ./package.sh ${{ matrix.cpu }} ${{ steps.version.outputs.content }}
         working-directory: ./script/macos
       - name: Validate packaged runtime
         shell: pwsh
@@ -444,7 +493,7 @@ jobs:
             -OutputPath "script/macos/publish-manifest-osx-${{ matrix.cpu }}.json"
       - name: Sign app
         run: |
-          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh
+          chmod +x codesign-common.sh prepare-app-layout.sh sign.sh verify-app.sh verify-app-launch.sh sign-dmg.sh verify-dmg.sh verify-dmg-contents.sh verify-runtime-architecture.sh
           ./sign.sh
         working-directory: ./script/macos
         env:
@@ -503,7 +552,7 @@ jobs:
           MACOS_VERIFY_NOTARIZATION: true
       - name: Verify packaged DMG contents and launch app
         run: |
-          ./verify-dmg-contents.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg
+          ./verify-dmg-contents.sh DownKyi-${{ steps.version.outputs.content }}-osx-${{ matrix.cpu }}.dmg ${{ steps.version.outputs.content }} osx-${{ matrix.cpu }}
         working-directory: ./script/macos
         env:
           MACOS_VERIFY_GATEKEEPER: ${{ env.HAS_MACOS_SIGNING == 'true' }}
@@ -529,11 +578,39 @@ jobs:
     needs: [changelog, build-windows, build-linux, build-macos]
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:
+      - name: Checkout release validators
+        uses: actions/checkout@v7
       - name: Download build artifacts
         uses: actions/download-artifact@v7
         with:
           path: artifacts
           merge-multiple: true
+      - name: Restore and verify validated AppImages
+        shell: pwsh
+        run: |
+          $archives = @(Get-ChildItem artifacts -File -Filter 'appimage-*.transport.tar')
+          if ($archives.Count -ne 2) { throw "Expected exactly two AppImage transport archives, found $($archives.Count)." }
+          foreach ($archive in $archives) {
+            & tar -xf $archive.FullName -C artifacts
+            if ($LASTEXITCODE -ne 0) { throw "Failed to extract $($archive.Name)." }
+            Remove-Item -LiteralPath $archive.FullName
+          }
+
+          $appImages = @(Get-ChildItem artifacts -File -Filter '*.AppImage')
+          if ($appImages.Count -ne 2) { throw "Expected exactly two transported AppImages, found $($appImages.Count)." }
+          foreach ($appImage in $appImages) {
+            $mode = [IO.File]::GetUnixFileMode($appImage.FullName)
+            if (($mode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
+              throw "Transported AppImage lost non-owner execute permission: $($appImage.Name)"
+            }
+            $sidecar = "$($appImage.FullName).sha256"
+            $expectedHash = ((Get-Content -LiteralPath $sidecar -Raw).Trim() -split '\s+')[0]
+            if ($expectedHash -notmatch '^[a-fA-F0-9]{64}$') { throw "Malformed AppImage checksum: $sidecar" }
+            $actualHash = (Get-FileHash -LiteralPath $appImage.FullName -Algorithm SHA256).Hash
+            if (-not [String]::Equals($actualHash, $expectedHash, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "Transported AppImage does not match its validated checksum: $($appImage.Name)"
+            }
+          }
       - name: Release
         uses: ncipollo/release-action@v1
         with:

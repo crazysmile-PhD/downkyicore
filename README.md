@@ -9,7 +9,7 @@
 
 </div>
 
-DownKyi Core 是基于哔哩下载姬 Windows 版与 Avalonia 的跨平台 B 站视频下载工具。v1.1.2 使用 .NET 10、Avalonia 12、Microsoft Generic Host、Microsoft DI 与 CommunityToolkit MVVM，并重构了导航、下载状态、SQLite、HTTP、日志、aria2、FFmpeg 和应用生命周期。
+DownKyi Core 是基于哔哩下载姬 Windows 版与 Avalonia 的跨平台 B 站视频下载工具。v1.1.3 使用 .NET 10、Avalonia 12、Microsoft Generic Host、Microsoft DI 与 CommunityToolkit MVVM，并重构了导航、下载状态、SQLite、HTTP、日志、aria2、FFmpeg 和应用生命周期。
 
 ## 下载
 

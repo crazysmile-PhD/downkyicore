@@ -38,6 +38,12 @@ $ariaChecksum = Resolve-RequiredFile "aria2 binary checksum" @("aria2/aria2c.exe
 $ffmpegExecutable = Resolve-RequiredFile "FFmpeg executable" @("ffmpeg/ffmpeg.exe", "ffmpeg/ffmpeg")
 $ffprobeExecutable = Resolve-RequiredFile "ffprobe executable" @("ffmpeg/ffprobe.exe", "ffmpeg/ffprobe")
 $depsFile = Resolve-RequiredFile "DownKyi dependency manifest" @("DownKyi.deps.json")
+$fluentTheme = Resolve-RequiredFile "Avalonia Fluent theme assembly" @("Avalonia.Themes.Fluent.dll")
+
+$simpleTheme = Join-Path $PublishDirectory "Avalonia.Themes.Simple.dll"
+if (Test-Path -LiteralPath $simpleTheme -PathType Leaf) {
+    throw "Published output still contains Avalonia.Themes.Simple.dll."
+}
 
 $actualVersion = [Reflection.AssemblyName]::GetAssemblyName($downKyiAssembly).Version
 $expected = [Version]$ExpectedVersion
@@ -64,24 +70,17 @@ if (-not [String]::Equals($actualAriaHash, $expectedAriaHash, [StringComparison]
     throw "Published aria2 executable does not match its checksum sidecar."
 }
 
-$requiredFiles = @(
-    $downKyiAssembly,
-    $downKyiExecutable,
-    $ariaExecutable,
-    $ariaChecksum,
-    $ffmpegExecutable,
-    $ffprobeExecutable,
-    $depsFile
-)
 $manifestFiles = @(
-    foreach ($path in $requiredFiles) {
-        $item = Get-Item -LiteralPath $path
-        [ordered]@{
-            path = [IO.Path]::GetRelativePath($PublishDirectory, $item.FullName).Replace('\', '/')
-            bytes = $item.Length
-            sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        }
-    }
+    Get-ChildItem -LiteralPath $PublishDirectory -Recurse -Force -File |
+        ForEach-Object {
+            $item = $_
+            [ordered]@{
+                path = [IO.Path]::GetRelativePath($PublishDirectory, $item.FullName).Replace('\', '/')
+                bytes = $item.Length
+                sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+        } |
+        Sort-Object -Property path
 )
 
 $manifest = [ordered]@{
