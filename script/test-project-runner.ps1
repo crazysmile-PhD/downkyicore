@@ -149,7 +149,13 @@ function Import-DownKyiCentralTestRunner {
         "tools/DownKyi.CentralTestRunner/bin/$Configuration/net10.0/" +
         "DownKyi.CentralTestRunner.dll")
     if (-not (Test-Path -LiteralPath $assemblyPath -PathType Leaf) -and $BuildIfMissing) {
-        $buildArguments = @("build", $projectPath, "-c", $Configuration)
+        $buildArguments = @(
+            "build",
+            $projectPath,
+            "-c",
+            $Configuration,
+            "-nodeReuse:false",
+            "-p:UseSharedCompilation=false")
         if ($NoRestore) {
             $buildArguments += "--no-restore"
         }

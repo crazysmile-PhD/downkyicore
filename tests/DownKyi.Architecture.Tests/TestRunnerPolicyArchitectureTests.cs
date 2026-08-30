@@ -294,8 +294,11 @@ public sealed class TestRunnerPolicyArchitectureTests
         Assert.True(buildIndex >= 0);
         var buildBoundary = compiledRunner[buildIndex..];
         Assert.DoesNotContain("\"--no-incremental\"", buildBoundary, StringComparison.Ordinal);
+        Assert.Contains("\"-nodeReuse:false\"", buildBoundary, StringComparison.Ordinal);
         Assert.Contains("-p:TreatWarningsAsErrors=true", buildBoundary, StringComparison.Ordinal);
         Assert.Contains("-p:AnalysisMode=All", buildBoundary, StringComparison.Ordinal);
+        Assert.Contains("catch (OwnedProcessExecutionException failure)", buildBoundary, StringComparison.Ordinal);
+        Assert.Contains("failure.Failure.StandardOutput", buildBoundary, StringComparison.Ordinal);
     }
 
     [Fact]

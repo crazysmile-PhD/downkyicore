@@ -384,6 +384,7 @@ public static class CentralTestOrchestrator
             options.ProjectPath,
             "-c",
             options.Configuration,
+            "-nodeReuse:false",
             "-p:TreatWarningsAsErrors=true",
             "-p:CodeAnalysisTreatWarningsAsErrors=true",
             "-p:EnableNETAnalyzers=true",
@@ -410,12 +411,22 @@ public static class CentralTestOrchestrator
                 cancellationToken)
             .ConfigureAwait(false);
         await using var leaseScope = lease.ConfigureAwait(false);
-        var outcome = await lease.WaitAsync(cancellationToken).ConfigureAwait(false);
-        WriteCapturedOutput(outcome.StandardOutput, outcome.StandardError);
-        if (outcome.ExitCode != 0)
+        try
         {
-            throw new InvalidOperationException(
-                $"The repository test project build failed with exit code {outcome.ExitCode}.");
+            var outcome = await lease.WaitAsync(cancellationToken).ConfigureAwait(false);
+            WriteCapturedOutput(outcome.StandardOutput, outcome.StandardError);
+            if (outcome.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    $"The repository test project build failed with exit code {outcome.ExitCode}.");
+            }
+        }
+        catch (OwnedProcessExecutionException failure)
+        {
+            WriteCapturedOutput(
+                failure.Failure.StandardOutput,
+                failure.Failure.StandardError);
+            throw;
         }
     }
 

@@ -60,6 +60,8 @@ public sealed class CiTestActionBehaviorTests
         Assert.Equal(0, capture.GetProperty("shardIndex").GetInt32());
         Assert.Equal(1, capture.GetProperty("shardCount").GetInt32());
         Assert.Equal(2, capture.GetProperty("maxParallelProjects").GetInt32());
+        Assert.Equal("action-evidence.json", capture.GetProperty("evidencePath").GetString());
+        Assert.Equal("expected-action-sha", capture.GetProperty("expectedCommitSha").GetString());
     }
 
     [Fact]
@@ -302,7 +304,9 @@ public sealed class CiTestActionBehaviorTests
                     [string]$ResultsDirectory,
                     [int]$ShardIndex,
                     [int]$ShardCount,
-                    [int]$MaxParallelProjects
+                    [int]$MaxParallelProjects,
+                    [string]$EvidencePath,
+                    [string]$ExpectedCommitSha
                 )
                 @{
                     configuration = $Configuration
@@ -312,6 +316,8 @@ public sealed class CiTestActionBehaviorTests
                     shardIndex = $ShardIndex
                     shardCount = $ShardCount
                     maxParallelProjects = $MaxParallelProjects
+                    evidencePath = $EvidencePath
+                    expectedCommitSha = $ExpectedCommitSha
                 } | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:DOWNKYI_CAPTURE
                 """);
 
@@ -319,6 +325,8 @@ public sealed class CiTestActionBehaviorTests
             startInfo.Environment["DOWNKYI_TEST_RESULTS_DIRECTORY"] = "action-results";
             startInfo.Environment["DOWNKYI_TEST_NO_RESTORE"] = "true";
             startInfo.Environment["DOWNKYI_TEST_NO_BUILD"] = "true";
+            startInfo.Environment["DOWNKYI_TEST_EVIDENCE_PATH"] = "action-evidence.json";
+            startInfo.Environment["DOWNKYI_TEST_EXPECTED_COMMIT_SHA"] = "expected-action-sha";
             startInfo.Environment["DOWNKYI_CAPTURE"] = capturePath;
             var result = BoundedProcessRunner.Run(
                 startInfo,
