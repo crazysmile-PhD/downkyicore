@@ -277,5 +277,6 @@ internal enum DiagnosticCollectorMutation
     StallStreamDrain = 8,
     StallBeforeSupervisorPipeConnection = 16,
     SuppressPrimaryTimeline = 32,
-    LinkExecutionCancellationIntoStartup = 64
+    LinkExecutionCancellationIntoStartup = 64,
+    FailResourceRelease = 128
 }

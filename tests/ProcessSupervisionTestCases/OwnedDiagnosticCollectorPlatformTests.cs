@@ -69,6 +69,46 @@ public sealed class OwnedDiagnosticCollectorPlatformTests
     }
 
     [Fact]
+    public async Task SuccessfulCaptureWithResourceReleaseFailurePreservesEvidenceAndCleanup()
+    {
+        var failure = await Assert.ThrowsAsync<DiagnosticCollectorExecutionException>(
+                () => OwnedDiagnosticCollector.CollectForTestingAsync(
+                    CreateRequest(
+                        SupervisorHost.CollectorOutputArgument,
+                        TimeSpan.FromSeconds(5),
+                        TimeSpan.FromSeconds(2)),
+                    DiagnosticCollectorMutation.FailResourceRelease,
+                    TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+
+        Assert.True(
+            failure.Failure.Kind == DiagnosticCollectorFailureKind.CleanupFailed,
+            $"Kind={failure.Failure.Kind}; Cause={failure.Failure.Cause}; " +
+            "Timeline=" + string.Join(
+                ", ",
+                failure.Failure.Evidence.Timeline.Transitions.Select(
+                    item => $"{item.TransitionName}:{item.StateName}:" +
+                            $"{item.ElapsedMilliseconds}")));
+        Assert.True(failure.Failure.Evidence.Started);
+        Assert.True(failure.Failure.Evidence.Exited);
+        Assert.True(failure.Failure.Evidence.Reaped);
+        Assert.True(failure.Failure.Evidence.StreamsDrained);
+        Assert.Equal("collector-stdout", failure.Failure.Evidence.StandardOutput);
+        Assert.Equal("collector-stderr", failure.Failure.Evidence.StandardError);
+        var cleanup = Assert.Single(failure.CleanupFailures);
+        Assert.Equal(DiagnosticCollectorCleanupFailureKind.DisposeFailed, cleanup.Kind);
+        Assert.Contains(
+            "Injected owned process resource release failure.",
+            cleanup.Cause.Message,
+            StringComparison.Ordinal);
+        var journal = Assert.IsType<DiagnosticCollectorOwnerJournal>(
+            failure.Failure.OwnerJournal);
+        Assert.Contains(
+            DiagnosticCollectorCleanupFailureKind.DisposeFailed,
+            journal.CleanupFailures);
+    }
+
+    [Fact]
     public async Task NonzeroExitIsACompletedCollectorOutcome()
     {
         var outcome = await OwnedDiagnosticCollector.CollectAsync(

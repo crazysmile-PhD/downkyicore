@@ -435,7 +435,8 @@ public enum OwnedProcessFailureKind
     OwnedTreeNotQuiescent,
     StreamDrainDeadlineExceeded,
     CallerCancelled,
-    ExecutionFailed
+    ExecutionFailed,
+    CleanupFailed
 }
 
 public sealed record OwnedProcessFailure(
@@ -586,5 +587,6 @@ internal enum ProcessOwnershipMutation
     StallStreamDrain = 1024,
     StallRootReap = 2048,
     SkipTargetStreamForwarding = 4096,
-    StallBeforeSupervisorPipeConnection = 8192
+    StallBeforeSupervisorPipeConnection = 8192,
+    FailResourceRelease = 16384
 }

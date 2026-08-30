@@ -181,7 +181,8 @@ internal static class SupervisorHost
             ProcessOwnershipMutation.StallStreamDrain |
             ProcessOwnershipMutation.StallRootReap |
             ProcessOwnershipMutation.SkipTargetStreamForwarding |
-            ProcessOwnershipMutation.StallBeforeSupervisorPipeConnection;
+            ProcessOwnershipMutation.StallBeforeSupervisorPipeConnection |
+            ProcessOwnershipMutation.FailResourceRelease;
         if (arguments.Count != 5 ||
             !string.Equals(arguments[0], HostArgument, StringComparison.Ordinal) ||
             !int.TryParse(arguments[4], NumberStyles.None, CultureInfo.InvariantCulture, out var mutationValue) ||

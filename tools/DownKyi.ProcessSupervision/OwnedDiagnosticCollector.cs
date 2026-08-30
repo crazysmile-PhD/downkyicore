@@ -314,6 +314,10 @@ public static class OwnedDiagnosticCollector
         {
             processMutation |= ProcessOwnershipMutation.StallBeforeSupervisorPipeConnection;
         }
+        if (mutation.HasFlag(DiagnosticCollectorMutation.FailResourceRelease))
+        {
+            processMutation |= ProcessOwnershipMutation.FailResourceRelease;
+        }
 
         return processMutation;
     }
@@ -331,6 +335,8 @@ public static class OwnedDiagnosticCollector
                 DiagnosticCollectorFailureKind.StreamDrainDeadlineExceeded,
             OwnedProcessFailureKind.CallerCancelled =>
                 DiagnosticCollectorFailureKind.CallerCancelled,
+            OwnedProcessFailureKind.CleanupFailed =>
+                DiagnosticCollectorFailureKind.CleanupFailed,
             _ => DiagnosticCollectorFailureKind.ExecutionFailed
         };
     }

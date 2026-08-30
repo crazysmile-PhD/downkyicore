@@ -38,6 +38,42 @@ public sealed class OwnedProcessLeasePlatformTests
     }
 
     [Fact]
+    public async Task SuccessfulExecutionResourceReleaseFailurePreservesOutputAndCleanupStage()
+    {
+        var assemblyPath = typeof(OwnedProcessLease).Assembly.Location;
+        var launchSpec = new LaunchSpec(
+            "dotnet",
+            new[] { assemblyPath, "--collector-output" },
+            Path.GetDirectoryName(assemblyPath)
+                ?? throw new InvalidOperationException("The probe directory is unavailable."));
+        var budget = TransitionBudget.Start(
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(3));
+        var lease = await OwnedProcessLease.StartForTestingAsync(
+                launchSpec,
+                budget,
+                ProcessOwnershipMutation.FailResourceRelease,
+                TestContext.Current.CancellationToken)
+            .ConfigureAwait(true);
+        await using var leaseScope = lease.ConfigureAwait(false);
+
+        var failure = await Assert.ThrowsAsync<OwnedProcessExecutionException>(
+                () => lease.WaitAsync(TestContext.Current.CancellationToken))
+            .ConfigureAwait(true);
+
+        Assert.Equal(OwnedProcessFailureKind.CleanupFailed, failure.Failure.Kind);
+        Assert.True(failure.Failure.TreeQuiescent);
+        Assert.Contains("collector-stdout", failure.Failure.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("collector-stderr", failure.Failure.StandardError, StringComparison.Ordinal);
+        var cleanup = Assert.Single(failure.CleanupStageFailures);
+        Assert.Equal(OwnedProcessCleanupStage.Dispose, cleanup.Stage);
+        Assert.Contains(
+            "Injected owned process resource release failure.",
+            cleanup.Cause.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task LaunchTimeOwnershipMutationFailsTheBehavioralProof()
     {
         var outcome = await RunProbeAsync(

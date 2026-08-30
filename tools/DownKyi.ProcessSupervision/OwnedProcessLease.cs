@@ -463,9 +463,32 @@ public sealed class OwnedProcessLease : IAsyncDisposable
                 cleanupFailures);
         }
 
-        ReleaseResources();
-        return outcome
+        var completedOutcome = outcome
             ?? throw new InvalidOperationException("The owned process outcome is unavailable.");
+        try
+        {
+            ReleaseResources();
+        }
+        catch (Exception failure)
+        {
+            var cleanupFailures = FlattenFailures(failure).ToArray();
+            throw new OwnedProcessExecutionException(
+                new OwnedProcessFailure(
+                    OwnedProcessFailureKind.CleanupFailed,
+                    supervisorProcessId,
+                    TargetProcessId,
+                    completedOutcome.StandardOutput,
+                    completedOutcome.StandardError,
+                    completedOutcome.TargetExitedAtUnixMilliseconds,
+                    completedOutcome.TargetExitedAfter,
+                    TreeQuiescent: true,
+                    Ownership,
+                    completedOutcome.EvidenceHold),
+                new InvalidOperationException(
+                    "Owned process execution completed but final resource release failed."),
+                cleanupFailures);
+        }
+        return completedOutcome;
     }
 
     public async ValueTask DisposeAsync()
@@ -1192,6 +1215,13 @@ public sealed class OwnedProcessLease : IAsyncDisposable
     private void ReleaseResources()
     {
         var failures = new Collection<Exception>();
+        if (_mutation.HasFlag(ProcessOwnershipMutation.FailResourceRelease))
+        {
+            AddCleanupFailure(
+                failures,
+                OwnedProcessCleanupStage.Dispose,
+                new IOException("Injected owned process resource release failure."));
+        }
         CloseOwnerLifetime(failures);
         foreach (var resource in new IDisposable?[]
                  {
