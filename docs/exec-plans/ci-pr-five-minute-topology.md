@@ -1,7 +1,8 @@
 # CI PR Five-Minute Execution Topology
 
-Status: independent checkpoint validated on a real draft PR; correctness is
-green, but the five-minute performance acceptance is not met and integration
+Status: independent checkpoint validated on a real draft PR; the latest
+gate-authority head is blocked by an independent Stage 5 `SlowEvidenceMissing`
+result, the five-minute performance acceptance is not met, and integration
 remains pending Stage 5 closure
 
 ## Boundary
@@ -20,11 +21,14 @@ lifecycle profile, strict Release analysis and Windows Debug compilation remain
 required.
 
 On 2026-08-30 the independent Stage 5 branch advanced during this work from the
-starting head to `75bd15efb425ac9b652b1efdbe4b0952a73b62fc`. Its worktree later
-contained 12 uncommitted Stage 5 files, which this checkpoint did not read as
-inputs, modify, discard or absorb. This checkpoint overlaps the committed
-Stage 5 changes since the starting head in six files:
+starting head to remote head `75bd15efb425ac9b652b1efdbe4b0952a73b62fc`.
+Its separate worktree later contained 12 uncommitted Stage 5 files and then
+committed them locally as `e512d08c2a56a57366ee881521669cfa3bc86f91`; that commit
+was not pushed by this checkpoint. This work did not modify, discard or absorb
+those changes. It overlaps the Stage 5 changes since the starting head in seven
+files:
 `docs/ai-knowledge-graph.md`, `docs/testing/README.md`,
+`docs/testing/assembly-lifecycle-stability.md`,
 `docs/testing/review-invariant-corpus.json`, `script/test-project-runner.ps1`,
 `AssemblyLifecycleArchitectureTests.cs` and `CiTestActionBehaviorTests.cs`.
 Integration therefore requires a post-closure rebase and full proof rerun, not
@@ -170,7 +174,7 @@ Local evidence established the implementation before the remote measurement:
 - Windows Debug solution compile: zero warnings/errors in 71.08 seconds;
 - actionlint 1.7.12: every workflow file passed;
 - `dotnet format --verify-no-changes`: 0 of 1,011 files required changes;
-- `git diff --check`: clean apart from line-ending conversion notices.
+- `git diff --check`: clean apart from line-ending conversion notices;
 - unique gate-authority contract tests: 56 executed across four classes, zero
   failures, including missing and unauthorized duplicate gate evidence;
 - non-authority Domain lifecycle: three PR iterations, 18 assembly phases,
@@ -205,6 +209,18 @@ phases and iterations but cannot emit global gate evidence. This removes an
 exact duplicate rather than reducing a proof, and leaves release Rehearsal
 semantics unchanged.
 
+Run `33294254940` then exercised that correction on head
+`7563dd5622a0c8b3d1bd5f2b9c81ccc8e626fb5e` and generated merge SHA
+`5b6c2dea7ac340488973a6b9c9977930cf56f2dc`. The Architecture authority and six
+other lifecycle producers passed; the non-authority reports contained all 18
+expected assembly-phase results and no gate results. The Application producer
+alone failed when iteration-1 `load` completed successfully in 5.548 seconds
+but crossed the slow threshold before evidence capture, producing
+`SlowEvidenceMissing / process-exited-before-capture`. The final verdict
+rejected the failed upstream. This is the independent Stage 5 slow-evidence
+contract, not a missing/duplicate shard or gate-authority failure, so this
+checkpoint does not absorb it.
+
 Because this isolation PR targets the Stage 5 branch rather than `main`, the
 existing `Build` workflow pull-request branch filter did not trigger on PR #203.
 Its ordinary-PR skip and release/Rehearsal preservation contracts are covered
@@ -216,29 +232,31 @@ Build evidence.
 
 The optimized topology is materially faster than the old 668-second stable
 first-attempt lifecycle critical job, but it does not meet the requested budget.
-In the one complete exact-head sample, the 38 producer job execution durations
-ranged from 63 to 416 seconds; median was 146 seconds and the per-job p95 was
-400 seconds. Maximum runner queue/provisioning delay was 258 seconds. The last
-producer completed 638 seconds after workflow creation and the 37-second
-semantic verdict completed at 677 seconds (11 minutes 17 seconds).
+The latest gate-authority run had 38 producer durations from 52 to 365 seconds;
+median was 130 seconds and the per-job p95 was 305 seconds. Maximum runner
+queue/provisioning delay was 204 seconds. The last producer completed 569
+seconds after workflow creation and the 41-second fail-closed verdict completed
+at 612 seconds (10 minutes 12 seconds).
 
-Ignoring queue delay, the slowest producer plus the required verdict is 453
-seconds (7 minutes 33 seconds), a 32.2 percent reduction from the former
+Ignoring queue delay, the slowest producer plus the required verdict is 406
+seconds (6 minutes 46 seconds), a 39.2 percent reduction from the former
 668-second critical job but still above both the four-minute repository budget
-and five-minute goal. `DownKyi.Windows.Tests` was the longest producer: 85
-seconds to build its exact closure and 279 seconds for the required three
-sequential lifecycle iterations. `DownKyi.Desktop.Tests` took 400 seconds on a
-slow runner, including 58 seconds to install diagnostics, 71 seconds to restore,
-159 seconds to build and 61 seconds for iterations. These step results separate
-repository execution from infrastructure/network variance.
+and five-minute goal. `DownKyi.Windows.Tests` remained the longest producer at
+365 seconds: 71 seconds to build its exact closure and 238 seconds for the
+required three sequential lifecycle iterations. It therefore exceeds the
+five-minute goal even without the final verdict. Non-authority lifecycle jobs
+that did not hit a Stage 5 slow-evidence failure fell as low as 87 seconds;
+runner and test behavior still varied materially.
 
-Only one fully green exact-head topology run exists, so no statistically stable
-cross-run median or p95 can be claimed. The per-job distribution above is a
-diagnostic sample, not a hosted-runner SLO measurement. Meeting the four-minute
-repository budget now requires either reducing the Stage 5 lifecycle execution
-cost or changing its evidence contract; this checkpoint is not authorized to
-do either while Stage 5 is under final review. It therefore remains a validated
-independent checkpoint rather than a completed performance closure.
+Only one earlier fully green exact-head topology run exists, and the corrected
+gate-authority run is red for the independent Stage 5 result above, so no
+statistically stable cross-run median or p95 can be claimed. The per-job
+distribution is a diagnostic sample, not a hosted-runner SLO measurement.
+Meeting the four-minute repository budget now requires reducing the Stage 5
+lifecycle execution cost or changing its evidence contract; this checkpoint is
+not authorized to do either while Stage 5 is under final review. It therefore
+remains a validated independent checkpoint rather than a completed performance
+closure.
 
 ## Completion And Rollback
 
@@ -246,8 +264,9 @@ Completion requires repeated exact ending HEADs with every naturally triggered
 workflow green, the final semantic verdict green, a statistically meaningful
 hosted-runner p95 at or below five minutes and a repository-controlled critical
 path at or below four minutes. No failed run is made green by rerun. The current
-checkpoint satisfies correctness on one exact-head run, but not these
-performance and sampling conditions.
+checkpoint satisfies correctness on one earlier exact-head run, while its
+latest head remains red for an external Stage 5 lifecycle result and does not
+satisfy the performance or sampling conditions.
 
 Rollback is one revert of this independent checkpoint. It restores the former
 single-lane quality workflow and central-runner sequential solution behavior.
