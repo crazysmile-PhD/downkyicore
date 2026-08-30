@@ -397,6 +397,7 @@
         { "project": "tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj", "class": "DownKyi.Desktop.Tests.UiSmokeTests" },
         { "project": "tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", "class": "DownKyi.Infrastructure.Tests.ApplicationLogProviderTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests" },
+        { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleReleaseEvidenceTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.AssemblyLifecycleProbeBehaviorTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.BoundedProcessRunnerTests" },
         { "project": "tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", "class": "DownKyi.Architecture.Tests.WorkflowTestOwnershipArchitectureTests" },

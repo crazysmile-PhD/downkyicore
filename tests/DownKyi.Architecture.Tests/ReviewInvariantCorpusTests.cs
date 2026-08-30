@@ -116,13 +116,28 @@ public sealed class ReviewInvariantCorpusTests
             ".github",
             "workflows",
             "build.yml"));
+        var releaseShard = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "script",
+            "invoke-assembly-lifecycle-release-shard.ps1"));
+        using var topology = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "docs",
+            "testing",
+            "assembly-lifecycle-release-topology.json")));
 
         Assert.Contains("test-review-invariants.ps1", quality, StringComparison.Ordinal);
         Assert.Contains("windows-latest", quality, StringComparison.Ordinal);
         Assert.Contains("ubuntu-latest", quality, StringComparison.Ordinal);
         Assert.Contains("macos-latest", quality, StringComparison.Ordinal);
         Assert.Contains("\"Main\"", quality, StringComparison.Ordinal);
-        Assert.Contains("-Profile Rehearsal", release, StringComparison.Ordinal);
+        Assert.Contains(
+            "run-assembly-lifecycle-release-shard.ps1",
+            release,
+            StringComparison.Ordinal);
+        Assert.Contains("-Profile Rehearsal", releaseShard, StringComparison.Ordinal);
+        Assert.Contains("-ValidateForensics", releaseShard, StringComparison.Ordinal);
+        Assert.Equal(100, topology.RootElement.GetProperty("totalIterations").GetInt32());
     }
 
     private static string FindRepositoryRoot()

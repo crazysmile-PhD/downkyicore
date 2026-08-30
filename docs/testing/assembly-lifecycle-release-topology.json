@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "readyLabel": "assembly-lifecycle-release-ready",
+  "profile": "Rehearsal",
+  "totalIterations": 100,
+  "preflightAssemblies": [
+    "DownKyi.Architecture.Tests",
+    "DownKyi.Windows.Tests"
+  ],
+  "waveOneMaximumJobs": 20,
+  "waveTwoMaximumJobs": 20,
+  "assemblies": [
+    {
+      "name": "DownKyi.Application.Tests",
+      "wave": 1,
+      "shardCount": 1
+    },
+    {
+      "name": "DownKyi.Architecture.Tests",
+      "wave": 1,
+      "shardCount": 16
+    },
+    {
+      "name": "DownKyi.Core.Tests",
+      "wave": 1,
+      "shardCount": 1
+    },
+    {
+      "name": "DownKyi.Desktop.Tests",
+      "wave": 1,
+      "shardCount": 1
+    },
+    {
+      "name": "DownKyi.Domain.Tests",
+      "wave": 1,
+      "shardCount": 1
+    },
+    {
+      "name": "DownKyi.Infrastructure.Tests",
+      "wave": 1,
+      "shardCount": 1
+    },
+    {
+      "name": "DownKyi.Tests",
+      "wave": 1,
+      "shardCount": 1
+    },
+    {
+      "name": "DownKyi.Windows.Tests",
+      "wave": 2,
+      "shardCount": 20
+    }
+  ]
+}

@@ -321,15 +321,14 @@ function ConvertTo-ExceptionEvidence {
             })
         }
 
-        $children = if ($candidate -is [AggregateException]) {
-            @($candidate.InnerExceptions)
-        }
-        elseif ($null -ne $candidate.InnerException) {
-            @($candidate.InnerException)
-        }
-        else {
-            @()
-        }
+        $children = @(
+            if ($candidate -is [AggregateException]) {
+                $candidate.InnerExceptions
+            }
+            elseif ($null -ne $candidate.InnerException) {
+                $candidate.InnerException
+            }
+        )
         if ($children.Count -gt 0) {
             for ($index = 0; $index -lt $children.Count; $index++) {
                 $pending.Enqueue([pscustomobject]@{
@@ -347,13 +346,11 @@ function ConvertTo-ExceptionEvidence {
     else {
         $Exception
     }
-    $cleanupExceptions = if (
-        $Exception.Data.Contains("DownKyi.Lifecycle.CleanupFailures")) {
-        @($Exception.Data["DownKyi.Lifecycle.CleanupFailures"])
-    }
-    else {
-        @()
-    }
+    $cleanupExceptions = @(
+        if ($Exception.Data.Contains("DownKyi.Lifecycle.CleanupFailures")) {
+            $Exception.Data["DownKyi.Lifecycle.CleanupFailures"]
+        }
+    )
     $firstCausalException = if ($null -ne $primaryException) {
         $primaryException
     }
@@ -364,15 +361,14 @@ function ConvertTo-ExceptionEvidence {
         $Exception
     }
     while ($true) {
-        $causalChildren = if ($firstCausalException -is [AggregateException]) {
-            @($firstCausalException.InnerExceptions)
-        }
-        elseif ($null -ne $firstCausalException.InnerException) {
-            @($firstCausalException.InnerException)
-        }
-        else {
-            @()
-        }
+        $causalChildren = @(
+            if ($firstCausalException -is [AggregateException]) {
+                $firstCausalException.InnerExceptions
+            }
+            elseif ($null -ne $firstCausalException.InnerException) {
+                $firstCausalException.InnerException
+            }
+        )
         if ($causalChildren.Count -eq 0) {
             break
         }
