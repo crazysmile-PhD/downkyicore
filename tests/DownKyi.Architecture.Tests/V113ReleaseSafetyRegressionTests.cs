@@ -12,16 +12,111 @@ public sealed class V113ReleaseSafetyRegressionTests
     public void GenericReleaseWorkflowInvokesFailClosedReleaseGates()
     {
         var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var packageValidator = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1"));
 
         Assert.Contains("validate-v113-release-subject.ps1", workflow, StringComparison.Ordinal);
         Assert.Contains("resolve-v112-macos-trust.ps1", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("HAS_MACOS_SIGNING: ${{ secrets.", workflow, StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(workflow, "validate-v113-release-package.ps1"));
-        Assert.Equal(2, CountOccurrences(workflow, "-ExpectedManifestPath"));
+        Assert.Equal(3, CountOccurrences(workflow, "validate-v113-release-package.ps1"));
+        Assert.Equal(3, CountOccurrences(workflow, "-ExpectedManifestPath"));
         Assert.Contains("verify-dmg-contents.sh DownKyi-", workflow, StringComparison.Ordinal);
         Assert.Contains("ubuntu-24.04-arm", workflow, StringComparison.Ordinal);
+        Assert.Contains("validate-linux-arm64:", workflow, StringComparison.Ordinal);
+        Assert.Contains("linux-arm64-${{ matrix.kind }}.candidate.transport.tar", workflow, StringComparison.Ordinal);
         Assert.Contains("appimage-${{ matrix.cpu }}.transport.tar", workflow, StringComparison.Ordinal);
         Assert.Contains("Transported AppImage lost non-owner execute permission", workflow, StringComparison.Ordinal);
+        Assert.Contains("'--appimage-extract'", packageValidator, StringComparison.Ordinal);
+        Assert.Contains("LinkType -ceq 'SymbolicLink'", packageValidator, StringComparison.Ordinal);
+        Assert.Contains("usr/bin/DownKyi", packageValidator, StringComparison.Ordinal);
+        Assert.DoesNotContain("& 7z", packageValidator, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PupNetStandalonePackagingStagesOnlyTheCanonicalValidatedPayload()
+    {
+        var configuration = File.ReadAllText(
+            Path.Combine(RepositoryRoot, "script", "pupnet", "DownKyi.pupnet.conf"));
+        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml"));
+        var root = CreateTemporaryDirectory();
+        var source = Path.Combine(root, "canonical");
+        var destination = Path.Combine(root, "pupnet-staging");
+
+        Assert.Contains("DotnetProjectPath = NONE", configuration, StringComparison.Ordinal);
+        Assert.Contains("DotnetPostPublish = stage-canonical-publish.sh", configuration, StringComparison.Ordinal);
+        Assert.Contains("DotnetPostPublishOnWindows = stage-canonical-publish.cmd", configuration, StringComparison.Ordinal);
+        Assert.DoesNotContain("DotnetPublishArgs", configuration, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(workflow, "- name: Build canonical publish"));
+        Assert.Equal(2, CountOccurrences(workflow, "- name: Finalize and validate canonical publish payload"));
+        Assert.Equal(2, CountOccurrences(workflow, "CANONICAL_PUBLISH_DIRECTORY:"));
+        Assert.Equal(5, CountOccurrences(workflow, "os: ubuntu-22.04"));
+        Assert.Contains("tools/linux_x64/protoc", workflow, StringComparison.Ordinal);
+        Assert.Contains("file artifacts/publish/linux-arm64/DownKyi | grep -qi 'ELF.*aarch64'", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("p7zip-full", workflow, StringComparison.Ordinal);
+
+        try
+        {
+            Directory.CreateDirectory(source);
+            Directory.CreateDirectory(destination);
+            Directory.CreateDirectory(Path.Combine(source, "nested"));
+            File.WriteAllBytes(Path.Combine(source, "payload.bin"), [0, 1, 2, 3, 255]);
+            File.WriteAllText(Path.Combine(source, "nested", "LICENSE"), "canonical-license");
+
+            IReadOnlyDictionary<string, string> environment = new Dictionary<string, string>
+            {
+                ["CANONICAL_PUBLISH_DIRECTORY"] = source,
+                ["BUILD_APP_BIN"] = destination
+            };
+            ProcessResult result;
+            if (OperatingSystem.IsWindows())
+            {
+                result = RunProcess(
+                    "cmd.exe",
+                    ["/c", Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.cmd")],
+                    root,
+                    environment);
+            }
+            else
+            {
+                result = RunProcess(
+                    Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.sh"),
+                    [],
+                    root,
+                    environment);
+            }
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal(
+                File.ReadAllBytes(Path.Combine(source, "payload.bin")),
+                File.ReadAllBytes(Path.Combine(destination, "payload.bin")));
+            Assert.Equal(
+                "canonical-license",
+                File.ReadAllText(Path.Combine(destination, "nested", "LICENSE")));
+
+            ProcessResult secondResult;
+            if (OperatingSystem.IsWindows())
+            {
+                secondResult = RunProcess(
+                    "cmd.exe",
+                    ["/c", Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.cmd")],
+                    root,
+                    environment);
+            }
+            else
+            {
+                secondResult = RunProcess(
+                    Path.Combine(RepositoryRoot, "script", "pupnet", "stage-canonical-publish.sh"),
+                    [],
+                    root,
+                    environment);
+            }
+            Assert.NotEqual(0, secondResult.ExitCode);
+            Assert.Contains("must be empty", NormalizeDiagnostic(secondResult), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
     }
 
     [Fact]
@@ -430,7 +525,7 @@ public sealed class V113ReleaseSafetyRegressionTests
             var validator = Path.Combine(RepositoryRoot, "script", "validate-v113-release-package.ps1");
             var brokenAppRunFixture = CreateLinuxAppImageFixture(
                 Path.Combine(root, "broken-app-run"),
-                "#!/bin/sh\nexit 0\n");
+                AppRunFixtureKind.RegularExitsImmediately);
             var brokenAppRun = RunPowerShell(
                 validator,
                 [
@@ -446,7 +541,8 @@ public sealed class V113ReleaseSafetyRegressionTests
 
             var wrongStubFixture = CreateLinuxAppImageFixture(
                 Path.Combine(root, "wrong-stub"),
-                "#!/bin/sh\nsleep 30\n");
+                AppRunFixtureKind.ValidSymlink,
+                outerRuntimeStaysRunning: false);
             var wrongStub = RunPowerShell(
                 validator,
                 [
@@ -460,7 +556,9 @@ public sealed class V113ReleaseSafetyRegressionTests
             Assert.NotEqual(0, wrongStub.ExitCode);
             Assert.Contains("AppImage runtime launch smoke exited", NormalizeDiagnostic(wrongStub), StringComparison.Ordinal);
 
-            var mutatedFixture = CreateLinuxAppImageFixture(Path.Combine(root, "missing"), appRunBody: null);
+            var mutatedFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "missing"),
+                AppRunFixtureKind.Missing);
             var mutated = RunPowerShell(
                 validator,
                 [
@@ -473,6 +571,69 @@ public sealed class V113ReleaseSafetyRegressionTests
                 root);
             Assert.NotEqual(0, mutated.ExitCode);
             Assert.Contains("entrypoint AppRun is missing", NormalizeDiagnostic(mutated), StringComparison.Ordinal);
+
+            var missingTargetFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "missing-target"),
+                AppRunFixtureKind.MissingTarget);
+            var missingTarget = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", missingTargetFixture.Package,
+                    "-PackageKind", "AppImage",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", missingTargetFixture.ExpectedManifest,
+                    "-OutputPath", Path.Combine(root, "missing-target-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, missingTarget.ExitCode);
+            Assert.Contains("symlink target does not exist", NormalizeDiagnostic(missingTarget), StringComparison.Ordinal);
+
+            var wrongTargetFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "wrong-target"),
+                AppRunFixtureKind.WrongTarget);
+            var wrongTarget = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", wrongTargetFixture.Package,
+                    "-PackageKind", "AppImage",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", wrongTargetFixture.ExpectedManifest,
+                    "-OutputPath", Path.Combine(root, "wrong-target-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, wrongTarget.ExitCode);
+            Assert.Contains("symlink target is incorrect", NormalizeDiagnostic(wrongTarget), StringComparison.Ordinal);
+
+            var nonExecutableTargetFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "non-executable-target"),
+                AppRunFixtureKind.NonExecutableTarget);
+            var nonExecutableTarget = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", nonExecutableTargetFixture.Package,
+                    "-PackageKind", "AppImage",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", nonExecutableTargetFixture.ExpectedManifest,
+                    "-OutputPath", Path.Combine(root, "non-executable-target-manifest.json")
+                ],
+                root);
+            Assert.NotEqual(0, nonExecutableTarget.ExitCode);
+            Assert.Contains("symlink target is not executable", NormalizeDiagnostic(nonExecutableTarget), StringComparison.Ordinal);
+
+            var validFixture = CreateLinuxAppImageFixture(
+                Path.Combine(root, "valid"),
+                AppRunFixtureKind.ValidSymlink);
+            var valid = RunPowerShell(
+                validator,
+                [
+                    "-PackagePath", validFixture.Package,
+                    "-PackageKind", "AppImage",
+                    "-RuntimeIdentifier", "linux-x64",
+                    "-ExpectedManifestPath", validFixture.ExpectedManifest,
+                    "-OutputPath", Path.Combine(root, "valid-appimage-manifest.json")
+                ],
+                root);
+            Assert.Equal(0, valid.ExitCode);
         }
         finally
         {
@@ -778,38 +939,109 @@ public sealed class V113ReleaseSafetyRegressionTests
         return package;
     }
 
+    private enum AppRunFixtureKind
+    {
+        Missing,
+        RegularExitsImmediately,
+        ValidSymlink,
+        MissingTarget,
+        WrongTarget,
+        NonExecutableTarget
+    }
+
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     private static (string Package, string ExpectedManifest) CreateLinuxAppImageFixture(
         string root,
-        string? appRunBody)
+        AppRunFixtureKind appRunKind,
+        bool outerRuntimeStaysRunning = true)
     {
         Directory.CreateDirectory(root);
-        var debPackage = CreateLinuxDebPackage(root, "amd64", includeExecuteBits: true);
         var appRoot = Path.Combine(root, "app-root");
-        RunRequired("dpkg-deb", ["--extract", debPackage, appRoot], root);
-        var runtime = Path.Combine(appRoot, "usr", "lib", "downkyi");
+        var runtime = Path.Combine(appRoot, "usr", "bin");
+        Directory.CreateDirectory(Path.Combine(runtime, "aria2"));
+        Directory.CreateDirectory(Path.Combine(runtime, "ffmpeg"));
+
+        File.Copy(typeof(V113ReleaseSafetyRegressionTests).Assembly.Location, Path.Combine(runtime, "DownKyi.dll"));
+        var downKyiSource = Path.Combine(root, "downkyi-fixture.c");
+        File.WriteAllText(
+            downKyiSource,
+            "#include <unistd.h>\nint main(void) { sleep(30); return 0; }\n");
+        RunRequired("gcc", ["-O2", "-o", Path.Combine(runtime, "DownKyi"), downKyiSource], root);
+        var aria = Path.Combine(runtime, "aria2", "aria2c");
+        File.Copy("/bin/true", aria);
+        File.Copy("/bin/true", Path.Combine(runtime, "ffmpeg", "ffmpeg"));
+        File.Copy("/bin/true", Path.Combine(runtime, "ffmpeg", "ffprobe"));
+        var ariaHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(aria)));
+        File.WriteAllText(Path.Combine(runtime, "aria2", "aria2c.sha256"), ariaHash);
+        File.WriteAllText(Path.Combine(runtime, "DownKyi.deps.json"), "{\"libraries\":{\"Avalonia.Themes.Fluent/fixture\":{}}}");
+        WriteNonEmptyFile(Path.Combine(runtime, "Avalonia.Themes.Fluent.dll"));
+
         var expectedManifest = Path.Combine(root, "appimage-expected.json");
         WriteExpectedManifest(runtime, "linux-x64", expectedManifest, root);
 
-        if (appRunBody is not null)
+        var appRun = Path.Combine(appRoot, "AppRun");
+        switch (appRunKind)
         {
-            var appRun = Path.Combine(appRoot, "AppRun");
-            File.WriteAllText(appRun, appRunBody);
-            File.SetUnixFileMode(
-                appRun,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
-                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            case AppRunFixtureKind.RegularExitsImmediately:
+                File.WriteAllText(appRun, "#!/bin/sh\nexit 0\n");
+                File.SetUnixFileMode(
+                    appRun,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+                break;
+            case AppRunFixtureKind.ValidSymlink:
+                File.CreateSymbolicLink(appRun, "usr/bin/DownKyi");
+                break;
+            case AppRunFixtureKind.MissingTarget:
+                File.Delete(Path.Combine(runtime, "DownKyi"));
+                File.CreateSymbolicLink(appRun, "usr/bin/DownKyi");
+                break;
+            case AppRunFixtureKind.WrongTarget:
+                File.CreateSymbolicLink(appRun, "usr/bin/OtherApp");
+                break;
+            case AppRunFixtureKind.NonExecutableTarget:
+                File.SetUnixFileMode(
+                    Path.Combine(runtime, "DownKyi"),
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite |
+                    UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+                File.CreateSymbolicLink(appRun, "usr/bin/DownKyi");
+                break;
+            case AppRunFixtureKind.Missing:
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(appRunKind));
         }
 
-        var archive = Path.Combine(root, "payload.zip");
-        ZipFile.CreateFromDirectory(appRoot, archive);
-        var package = Path.Combine(root, appRunBody is null ? "missing-app-run.AppImage" : "fixture.AppImage");
-        using (var output = File.Create(package))
-        {
-            output.Write(File.ReadAllBytes("/bin/true"));
-            output.Write(File.ReadAllBytes(archive));
-        }
+        var escapedAppRoot = appRoot.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+        var outerBehavior = outerRuntimeStaysRunning ? "sleep(30); return 0;" : "return 0;";
+        var runtimeSource = """
+            #include <stdio.h>
+            #include <stdlib.h>
+            #include <string.h>
+            #include <sys/stat.h>
+            #include <unistd.h>
+
+            int main(int argc, char **argv) {
+                if (argc > 1 && strcmp(argv[1], "--appimage-extract") == 0) {
+                    if (mkdir("squashfs-root", 0755) != 0) return 2;
+                    char command[8192];
+                    int length = snprintf(command, sizeof(command), "cp -a -- \"%s/.\" squashfs-root/", "__APP_ROOT__");
+                    if (length < 0 || length >= (int)sizeof(command)) return 3;
+                    return system(command) == 0 ? 0 : 4;
+                }
+                if (argc > 1 && strcmp(argv[1], "--appimage-extract-and-run") == 0) {
+                    __OUTER_BEHAVIOR__
+                }
+                return 1;
+            }
+            """
+            .Replace("__APP_ROOT__", escapedAppRoot, StringComparison.Ordinal)
+            .Replace("__OUTER_BEHAVIOR__", outerBehavior, StringComparison.Ordinal);
+        var runtimeSourcePath = Path.Combine(root, "appimage-runtime-fixture.c");
+        File.WriteAllText(runtimeSourcePath, runtimeSource);
+        var package = Path.Combine(root, appRunKind == AppRunFixtureKind.Missing ? "missing-app-run.AppImage" : "fixture.AppImage");
+        RunRequired("gcc", ["-O2", "-o", package, runtimeSourcePath], root);
         using (var stream = File.Open(package, FileMode.Open, FileAccess.Write, FileShare.None))
         {
             stream.Position = 8;
@@ -862,9 +1094,12 @@ public sealed class V113ReleaseSafetyRegressionTests
 
     private static void DeleteTemporaryDirectory(string path)
     {
-        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+        if (OperatingSystem.IsWindows())
         {
-            File.SetAttributes(file, FileAttributes.Normal);
+            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
         }
         Directory.Delete(path, recursive: true);
     }

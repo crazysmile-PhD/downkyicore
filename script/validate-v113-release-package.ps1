@@ -31,7 +31,7 @@ if ([String]::Equals($expectedManifestPath, $approvedManifestPath, [StringCompar
 }
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "downkyi-release-package-$([Guid]::NewGuid().ToString('N'))"
 $extractDirectory = Join-Path $temporaryRoot 'extracted'
-New-Item -ItemType Directory -Path $extractDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 
 function ConvertTo-ComparableManifestJson {
     param([string]$Path)
@@ -179,6 +179,10 @@ function Assert-WindowsBinaryArchitecture {
 }
 
 try {
+    if ($PackageKind -cne 'AppImage') {
+        New-Item -ItemType Directory -Path $extractDirectory -Force | Out-Null
+    }
+
     switch ($PackageKind) {
         'zip' {
             Expand-Archive -LiteralPath $package -DestinationPath $extractDirectory
@@ -190,8 +194,18 @@ try {
             if (($packageMode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
                 throw "AppImage is not executable by a non-owner: $package"
             }
-            & 7z x -y "-o$extractDirectory" $package | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'AppImage extraction failed.' }
+            Push-Location $temporaryRoot
+            try {
+                & $package '--appimage-extract' *> $null
+                if ($LASTEXITCODE -ne 0) { throw 'AppImage-native extraction failed.' }
+            }
+            finally {
+                Pop-Location
+            }
+            $extractDirectory = Join-Path $temporaryRoot 'squashfs-root'
+            if (-not (Test-Path -LiteralPath $extractDirectory -PathType Container)) {
+                throw 'AppImage-native extraction did not produce squashfs-root.'
+            }
         }
         'deb' {
             & dpkg-deb --extract $package $extractDirectory
@@ -211,13 +225,43 @@ try {
 
     if ($PackageKind -ceq 'AppImage') {
         $appRun = Join-Path $extractDirectory 'AppRun'
-        if (-not (Test-Path -LiteralPath $appRun -PathType Leaf) -or
-            (Get-Item -LiteralPath $appRun).Length -eq 0) {
+        $appRunItem = Get-Item -LiteralPath $appRun -Force -ErrorAction SilentlyContinue
+        if ($null -eq $appRunItem -or $appRunItem.PSIsContainer) {
             throw 'AppImage entrypoint AppRun is missing or empty.'
         }
-        $appRunMode = [IO.File]::GetUnixFileMode($appRun)
-        if (($appRunMode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
-            throw 'AppImage entrypoint AppRun is not executable by a non-owner.'
+
+        if ($appRunItem.LinkType -ceq 'SymbolicLink') {
+            $linkTargets = @($appRunItem.Target)
+            if ($linkTargets.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$linkTargets[0])) {
+                throw 'AppImage entrypoint AppRun symlink has no unambiguous target.'
+            }
+            $linkTarget = ([string]$linkTargets[0]).Replace('\', '/')
+            if ($linkTarget -cne 'usr/bin/DownKyi') {
+                throw "AppImage entrypoint AppRun symlink target is incorrect: $linkTarget"
+            }
+            $resolvedTarget = [IO.Path]::GetFullPath((Join-Path $extractDirectory $linkTarget))
+            $trimSeparators = [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+            $extractRoot = [IO.Path]::GetFullPath($extractDirectory).TrimEnd($trimSeparators) +
+                [IO.Path]::DirectorySeparatorChar
+            if (-not $resolvedTarget.StartsWith($extractRoot, [StringComparison]::Ordinal)) {
+                throw 'AppImage entrypoint AppRun symlink escapes the extracted AppImage root.'
+            }
+            if (-not (Test-Path -LiteralPath $resolvedTarget -PathType Leaf)) {
+                throw 'AppImage entrypoint AppRun symlink target does not exist.'
+            }
+            $targetMode = [IO.File]::GetUnixFileMode($resolvedTarget)
+            if (($targetMode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
+                throw 'AppImage entrypoint AppRun symlink target is not executable by a non-owner.'
+            }
+        }
+        else {
+            if ($appRunItem.Length -eq 0) {
+                throw 'AppImage entrypoint AppRun is missing or empty.'
+            }
+            $appRunMode = [IO.File]::GetUnixFileMode($appRun)
+            if (($appRunMode -band [IO.UnixFileMode]::OtherExecute) -eq 0) {
+                throw 'AppImage entrypoint AppRun is not executable by a non-owner.'
+            }
         }
 
         $launchHome = Join-Path $temporaryRoot 'launch-home'
