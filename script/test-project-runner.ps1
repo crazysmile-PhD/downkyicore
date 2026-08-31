@@ -47,7 +47,7 @@ function Import-DownKyiCentralTestRunner {
     $assemblyPath = Join-Path $RepositoryRoot (
         "tools/DownKyi.CentralTestRunner/bin/$Configuration/net10.0/" +
         "DownKyi.CentralTestRunner.dll")
-    if (-not (Test-Path -LiteralPath $assemblyPath -PathType Leaf) -and $BuildIfMissing) {
+    if ($BuildIfMissing) {
         $buildArguments = Get-DownKyiCentralTestRunnerBuildArguments `
             -ProjectPath $projectPath `
             -Configuration $Configuration `
