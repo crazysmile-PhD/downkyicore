@@ -13,6 +13,15 @@ This document records the project maintenance routine for dependencies, external
 
 Avoid mixing package updates with large refactors unless the refactor is required by the dependency change.
 
+Solution builds set `CompileUsingReferenceAssemblies=false`. Consumers compile
+against completed implementation assemblies instead of the SDK's transient
+`obj/<configuration>/<framework>/ref` copies. This keeps a producer's successful
+implementation output authoritative and prevents an intermittently invalid
+reference assembly from cascading into `CS0009`, `CS0234`, and `CS0246` on
+hosted builds. Keep this policy unconditional across platforms; removal requires
+an exact-SDK cross-platform stress proof that consumers can safely return to the
+generated reference-assembly path.
+
 ## CI Policy
 
 ### Test Platform Ownership

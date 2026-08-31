@@ -29,6 +29,28 @@ public sealed class ReleaseWorkflowArchitectureTests
     }
 
     [Fact]
+    public void SolutionBuildConsumersUseCompletedImplementationAssemblies()
+    {
+        var props = XDocument.Load(Path.Combine(RepositoryRoot, "Directory.Build.props"));
+
+        Assert.True(HasSafeReferenceAssemblyConsumerPolicy(props));
+
+        var enabledMutation = new XDocument(props);
+        enabledMutation
+            .Descendants()
+            .Single(element => element.Name.LocalName == "CompileUsingReferenceAssemblies")
+            .Value = "true";
+        Assert.False(HasSafeReferenceAssemblyConsumerPolicy(enabledMutation));
+
+        var conditionalMutation = new XDocument(props);
+        conditionalMutation
+            .Descendants()
+            .Single(element => element.Name.LocalName == "CompileUsingReferenceAssemblies")
+            .SetAttributeValue("Condition", "'$(OS)' == 'Windows_NT'");
+        Assert.False(HasSafeReferenceAssemblyConsumerPolicy(conditionalMutation));
+    }
+
+    [Fact]
     public void TagReleaseDependencyChainDoesNotStartFromASkippedPullRequestOnlyJob()
     {
         var workflow = File.ReadAllText(
@@ -630,6 +652,18 @@ public sealed class ReleaseWorkflowArchitectureTests
     private static int CountOccurrences(string source, string value)
     {
         return source.Split(value, StringSplitOptions.None).Length - 1;
+    }
+
+    private static bool HasSafeReferenceAssemblyConsumerPolicy(XDocument props)
+    {
+        var settings = props
+            .Descendants()
+            .Where(element => element.Name.LocalName == "CompileUsingReferenceAssemblies")
+            .ToArray();
+
+        return settings.Length == 1 &&
+               settings[0].Attribute("Condition") is null &&
+               string.Equals(settings[0].Value.Trim(), "false", StringComparison.OrdinalIgnoreCase);
     }
 
     private static PowerShellResult RunPowerShellScript(
