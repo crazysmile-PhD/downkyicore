@@ -300,8 +300,8 @@
       ],
       "owner": "Assembly lifecycle gate child process",
       "start": "The probe creates one collectible AssemblyLoadContext or, only for the forensics self-test, one bounded residual child.",
-      "stop": "The probe unloads the context; the lifecycle gate identifies and stops the synthetic residual tree.",
-      "teardown": "A retained context fails the load phase. Residual-child self-test cleanup matches PID and creation time, kills the synthetic tree and performs a bounded wait.",
+      "stop": "The probe unloads the context or emits a synthetic residual-tree scenario; OwnedProcessLease terminates and reaps the contained tree.",
+      "teardown": "A retained context fails the load phase. Residual-child self-test cleanup and quiescence use only the OwnedProcessLease containment authority.",
       "allowedMechanisms": [
         "static_initialization",
         "external_process",

@@ -70,7 +70,8 @@ function Invoke-IsolatedProcess {
 
         $processId = $lease.TargetProcessId
         $waitTask = $lease.WaitAsync()
-        while (-not $waitTask.Wait(25)) {
+        $waitHandle = ([System.IAsyncResult]$waitTask).AsyncWaitHandle
+        while (-not $waitHandle.WaitOne(25)) {
             if (-not $slowEvidenceAttempted -and
                 $stopwatch.Elapsed.TotalSeconds -ge $evidenceCaptureThresholdSeconds) {
                 $slowEvidenceTriggeredBeforeThreshold =
@@ -166,6 +167,9 @@ function Invoke-IsolatedProcess {
         }
         catch [DownKyi.ProcessSupervision.OwnedProcessExecutionException] {
             $ownedFailure = $_.Exception
+        }
+        finally {
+            $waitTask.Dispose()
         }
 
         $processExitedAtUnixMs = if ($null -ne $outcome) {
@@ -279,10 +283,22 @@ function Invoke-IsolatedProcess {
                 $slowEvidenceTriggeredBeforeThreshold
             ownedTreeQuiescent = $ownedTreeQuiescent
             ownedProcessFailureKind = $ownedFailureKind
+            ownedProcessPrimaryFailure = if ($null -eq $ownedFailure) {
+                $null
+            }
+            else {
+                [pscustomobject]@{
+                    type = $ownedFailure.InnerException.GetType().Name
+                    message = $ownedFailure.InnerException.Message
+                }
+            }
             ownedProcessCleanupFailures = @(
                 if ($null -ne $ownedFailure) {
                     $ownedFailure.CleanupFailures | ForEach-Object {
-                        $_.GetType().Name
+                        [pscustomobject]@{
+                            type = $_.GetType().Name
+                            message = $_.Message
+                        }
                     }
                 }
             )
@@ -303,7 +319,7 @@ function Invoke-IsolatedProcess {
     $cleanupFailures = [Collections.Generic.List[Exception]]::new()
     try {
         if ($null -ne $lease) {
-            $lease.DisposeAsync().AsTask().GetAwaiter().GetResult()
+            [void]($lease.DisposeAsync().AsTask().GetAwaiter().GetResult())
         }
     }
     catch {
