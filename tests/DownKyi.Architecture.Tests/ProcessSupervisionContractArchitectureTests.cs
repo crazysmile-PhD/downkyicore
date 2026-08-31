@@ -39,12 +39,42 @@ public sealed class ProcessSupervisionContractArchitectureTests
             "System.Diagnostics.Process",
             "System.IO.Pipes",
             "System.Runtime.InteropServices",
+            "System.Net.Sockets",
+            "Microsoft.Extensions.Hosting",
             "OwnedProcessLease",
             "ProcessStartInfo"
         ];
         foreach (var forbidden in forbiddenCapabilities)
         {
             Assert.DoesNotContain(forbidden, source, StringComparison.Ordinal);
+        }
+
+        var containmentSource = string.Join(
+            Environment.NewLine,
+            Directory.EnumerateFiles(
+                    Path.GetDirectoryName(projectPath)!,
+                    "*Containment*.cs",
+                    SearchOption.TopDirectoryOnly)
+                .Select(File.ReadAllText));
+        string[] forbiddenContainmentOperations =
+        [
+            "OperatingSystem.",
+            "Task.Delay",
+            "Thread.Sleep",
+            "StartAsync(",
+            "WaitAsync(",
+            "Terminate(",
+            "Kill(",
+            "NamedPipe",
+            "Socket",
+            "HostBuilder"
+        ];
+        foreach (var forbidden in forbiddenContainmentOperations)
+        {
+            Assert.DoesNotContain(
+                forbidden,
+                containmentSource,
+                StringComparison.Ordinal);
         }
 
         var activeExecutionScripts = Directory.EnumerateFiles(
@@ -73,6 +103,20 @@ public sealed class ProcessSupervisionContractArchitectureTests
                 File.ReadAllText(script),
                 StringComparison.Ordinal);
         }
+
+        var processExecution = File.ReadAllText(Path.Combine(
+            RepositoryRoot,
+            "script",
+            "assembly-lifecycle",
+            "process-execution.ps1"));
+        Assert.Contains(
+            "function Invoke-IsolatedProcess",
+            processExecution,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[System.Diagnostics.ProcessStartInfo]::new()",
+            processExecution,
+            StringComparison.Ordinal);
 
         var supervisionProjectPath = Path.GetFullPath(projectPath);
         var productionReferences = Directory.EnumerateFiles(
@@ -127,6 +171,49 @@ public sealed class ProcessSupervisionContractArchitectureTests
                     property.SetMethod is null || !property.SetMethod.IsPublic,
                     $"{type.Name}.{property.Name} exposes a public setter."));
         }
+    }
+
+    [Fact]
+    public void ContainmentCapabilitySelectionAndRuntimeFactsRemainSeparate()
+    {
+        var assembly = typeof(ProcessSupervisionProof).Assembly;
+        Assert.DoesNotContain(assembly.GetTypes(), type =>
+            type.IsClass &&
+            !type.IsAbstract &&
+            typeof(IProcessContainmentBackend).IsAssignableFrom(type));
+        Assert.DoesNotContain(assembly.GetTypes(), type =>
+            type.IsClass &&
+            !type.IsAbstract &&
+            typeof(IProcessContainmentCapabilityProvider).IsAssignableFrom(type));
+
+        Type[] capabilityAndSelectionTypes =
+        [
+            typeof(ProcessContainmentBackendIdentity),
+            typeof(ProcessContainmentCapabilityEvidence),
+            typeof(ProcessContainmentCapabilityDiscovery),
+            typeof(ProcessContainmentBackendDiscovery),
+            typeof(ProcessContainmentBackendSelected),
+            typeof(ProcessContainmentSelectionFailure),
+            typeof(ProcessContainmentBackendRejected),
+            typeof(EstablishedProcessContainmentFact)
+        ];
+        Assert.All(capabilityAndSelectionTypes, type =>
+        {
+            Assert.False(typeof(ProcessInvariantEvidence).IsAssignableFrom(type));
+            Assert.False(typeof(ProcessSupervisionProof).IsAssignableFrom(type));
+            if (type != typeof(EstablishedProcessContainmentFact))
+            {
+                Assert.False(typeof(EstablishedProcessContainmentFact)
+                    .IsAssignableFrom(type));
+            }
+
+            Assert.Empty(type.GetConstructors());
+            Assert.All(
+                type.GetProperties(BindingFlags.Instance | BindingFlags.Public),
+                property => Assert.True(
+                    property.SetMethod is null || !property.SetMethod.IsPublic,
+                    $"{type.Name}.{property.Name} exposes a public setter."));
+        });
     }
 
     [Fact]
