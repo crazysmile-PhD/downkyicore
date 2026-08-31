@@ -15,7 +15,8 @@ param(
     [string[]]$AssemblyPattern = @("*"),
     [string]$ResultsDirectory = "artifacts/assembly-lifecycle",
     [string]$DiagnosticsToolPath,
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [switch]$ValidateTargetExitDuringCapture
 )
 
 $ErrorActionPreference = "Stop"
@@ -233,6 +234,34 @@ function Get-DiagnosticCollectorExecutionFailure {
     return $null
 }
 
+function Test-DiagnosticCollectorFailureHasCapturedStack {
+    param(
+        [Parameter(Mandatory)]
+        [DownKyi.ProcessSupervision.DiagnosticCollectorExecutionException]$Exception
+    )
+
+    $evidence = $Exception.Failure.Evidence
+    $stackOutputTransition = @(
+        $evidence.Timeline.Transitions |
+            Where-Object {
+                $_.Transition -eq
+                    [DownKyi.ProcessSupervision.DiagnosticCollectorTransition]::StackOutputFirstByte
+            }
+    ) | Select-Object -First 1
+    return $Exception.Failure.Kind -eq
+            [DownKyi.ProcessSupervision.DiagnosticCollectorFailureKind]::CallerCancelled -and
+        $Exception.CleanupFailures.Count -eq 0 -and
+        $evidence.Started -and
+        $evidence.Exited -and
+        $evidence.Reaped -and
+        $evidence.StreamsDrained -and
+        -not $evidence.TimedOut -and
+        $null -ne $stackOutputTransition -and
+        $stackOutputTransition.State -eq
+            [DownKyi.ProcessSupervision.DiagnosticCollectorTransitionState]::Observed -and
+        $evidence.StandardOutput -match '(?m)^Thread \(0x[0-9A-Fa-f]+\):\r?$'
+}
+
 function ConvertTo-ExceptionEvidence {
     param(
         [Parameter(Mandatory)]
@@ -427,6 +456,8 @@ function ConvertTo-DiagnosticCollectorFailureReport {
         status = "capture-failed"
         evidencePath = $null
         errorType = $Exception.GetType().Name
+        errorMessage = $Exception.Message
+        exceptionEvidence = ConvertTo-ExceptionEvidence -Exception $Exception
         collectorFailureKind = $Exception.Failure.Kind.ToString()
         collectorEvidence = $Exception.Failure.Evidence
         collectorOwnerJournal = $ownerJournal
@@ -1012,6 +1043,8 @@ function Invoke-ForensicsObserverCapture {
             status = "capture-failed"
             evidencePath = $null
             errorType = "InjectedForensicsObserverFailure"
+            errorMessage = "Injected forensics observer failure."
+            exceptionEvidence = $null
             collectorFailureKind = $null
             collectorEvidence = $null
             collectorOwnerJournal = $null
@@ -1037,6 +1070,8 @@ function Invoke-ForensicsObserverCapture {
             status = "process-exited-before-capture"
             evidencePath = $null
             errorType = $null
+            errorMessage = $null
+            exceptionEvidence = $null
             collectorFailureKind = $null
             collectorEvidence = $null
             collectorOwnerJournal = $null
@@ -1078,6 +1113,8 @@ function Invoke-ForensicsObserverCapture {
             else {
                 "DiagnosticCollectorExecutionException"
             }
+            errorMessage = $null
+            exceptionEvidence = $null
             collectorFailureKind =
                 $evidenceCapture.managedStack.collectorFailureKind
             collectorEvidence = $evidenceCapture.managedStack.collectorEvidence
@@ -1124,6 +1161,9 @@ function Invoke-ForensicsObserverCapture {
             status = "capture-failed"
             evidencePath = $null
             errorType = $_.Exception.GetType().Name
+            errorMessage = $_.Exception.Message
+            exceptionEvidence = ConvertTo-ExceptionEvidence `
+                -Exception $_.Exception
             collectorFailureKind = $null
             collectorEvidence = $null
             collectorOwnerJournal = $ownerJournal
@@ -1403,6 +1443,8 @@ function Invoke-IsolatedProcess {
     $slowEvidenceCaptured = $false
     $slowEvidenceStatus = "not-triggered"
     $slowEvidenceErrorType = $null
+    $slowEvidenceErrorMessage = $null
+    $slowEvidenceExceptionEvidence = $null
     $slowEvidenceCollectorFailureKind = $null
     $slowEvidenceCollectorEvidence = $null
     $slowEvidenceCollectorOwnerJournal = $null
@@ -1550,6 +1592,8 @@ function Invoke-IsolatedProcess {
                     }
                     $slowEvidenceStatus = $capture.status
                     $slowEvidenceErrorType = $capture.errorType
+                    $slowEvidenceErrorMessage = $capture.errorMessage
+                    $slowEvidenceExceptionEvidence = $capture.exceptionEvidence
                     $slowEvidenceCollectorFailureKind = $capture.collectorFailureKind
                     $slowEvidenceCollectorEvidence = $capture.collectorEvidence
                     $slowEvidenceCollectorOwnerJournal =
@@ -1581,6 +1625,9 @@ function Invoke-IsolatedProcess {
                     }
                     $slowEvidenceStatus = "capture-failed"
                     $slowEvidenceErrorType = $_.Exception.GetType().Name
+                    $slowEvidenceErrorMessage = $_.Exception.Message
+                    $slowEvidenceExceptionEvidence = ConvertTo-ExceptionEvidence `
+                        -Exception $_.Exception
                 }
                 finally {
                     if ($null -ne $evidenceHoldRequest) {
@@ -1740,6 +1787,25 @@ function Invoke-IsolatedProcess {
             $null -ne $targetExitedAfter -and
             $slowEvidenceCaptureCompletedAfterMilliseconds -lt
                 $targetExitedAfter.TotalMilliseconds
+        $targetExitedDuringSlowEvidenceCapture =
+            $slowEvidenceAttempted -and
+            -not $slowEvidenceCaptured -and
+            $slowEvidenceStatus -eq "capture-failed" -and
+            $slowEvidenceCollectorFailureKind -eq "CallerCancelled" -and
+            $null -ne $slowEvidenceCaptureCompletedAfterMilliseconds -and
+            $null -ne $targetExitedAfter -and
+            $slowEvidenceCaptureCompletedAfterMilliseconds -ge
+                $targetExitedAfter.TotalMilliseconds
+        if ($targetExitedDuringSlowEvidenceCapture) {
+            $slowEvidenceStatus = "target-exited-during-capture"
+            $slowEvidenceErrorType = "TargetExitedDuringCapture"
+            $slowEvidenceErrorMessage = (
+                "TargetExitedDuringCapture: slow-evidence capture armed at " +
+                "$slowEvidenceCaptureArmedAfterMilliseconds ms; target exited at " +
+                "$([Math]::Round($targetExitedAfter.TotalMilliseconds, 3)) ms before " +
+                "capture completed at $slowEvidenceCaptureCompletedAfterMilliseconds ms; " +
+                "collector outcome was CallerCancelled.")
+        }
         $phaseDurationMs = if ($null -ne $targetExitedAfter) {
             $targetExitedAfter.TotalMilliseconds
         }
@@ -1893,6 +1959,8 @@ function Invoke-IsolatedProcess {
             slowThresholdExceeded = $slowThresholdExceeded
             slowEvidenceStatus = $slowEvidenceStatus
             slowEvidenceErrorType = $slowEvidenceErrorType
+            slowEvidenceErrorMessage = $slowEvidenceErrorMessage
+            slowEvidenceExceptionEvidence = $slowEvidenceExceptionEvidence
             slowEvidenceCollectorFailureKind = $slowEvidenceCollectorFailureKind
             slowEvidenceCollectorEvidence = $slowEvidenceCollectorEvidence
             slowEvidenceCollectorOwnerJournal =
@@ -2081,6 +2149,8 @@ function Invoke-IsolatedProcess {
             slowThresholdExceeded = $false
             slowEvidenceStatus = "not-triggered"
             slowEvidenceErrorType = $null
+            slowEvidenceErrorMessage = $null
+            slowEvidenceExceptionEvidence = $null
             slowEvidenceCollectorFailureKind = $null
             slowEvidenceCollectorEvidence = $null
             slowEvidenceCollectorOwnerJournal = $null
@@ -2438,6 +2508,11 @@ function New-ProcessPhaseResult {
             $ProcessResult.primaryFailure)) {
         $ProcessResult.primaryFailure
     }
+    elseif ($failureType -eq "SlowEvidenceMissing" -and
+        -not [string]::IsNullOrWhiteSpace(
+            $ProcessResult.slowEvidenceErrorMessage)) {
+        $ProcessResult.slowEvidenceErrorMessage
+    }
     elseif ($null -ne $errorType) {
         $errorType
     }
@@ -2509,6 +2584,9 @@ function New-ProcessPhaseResult {
         slowThresholdExceeded = $ProcessResult.slowThresholdExceeded
         slowEvidenceStatus = $ProcessResult.slowEvidenceStatus
         slowEvidenceErrorType = $ProcessResult.slowEvidenceErrorType
+        slowEvidenceErrorMessage = $ProcessResult.slowEvidenceErrorMessage
+        slowEvidenceExceptionEvidence =
+            $ProcessResult.slowEvidenceExceptionEvidence
         slowEvidenceCollectorFailureKind =
             $ProcessResult.slowEvidenceCollectorFailureKind
         slowEvidenceCollectorEvidence = $ProcessResult.slowEvidenceCollectorEvidence
@@ -2617,6 +2695,110 @@ function New-Statistics {
     )
 }
 
+function Invoke-TargetExitDuringCaptureValidation {
+    $processSupervisionHost = [System.IO.Path]::ChangeExtension(
+        $processSupervisionAssembly,
+        $(if ($IsWindows) { ".exe" } else { $null }))
+    if (-not (Test-Path -LiteralPath $processSupervisionHost -PathType Leaf)) {
+        throw "Process supervision host was not built: $processSupervisionHost"
+    }
+
+    $fixtureRoot = Join-Path $runRoot "target-exit-during-capture"
+    New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
+    $readyPath = Join-Path $fixtureRoot "target.ready.json"
+    $signalPath = Join-Path $fixtureRoot "target.exit"
+    $originalDiagnosticsTool = $script:diagnosticsTool
+    $originalSignal = $env:DOWNKYI_TEST_DIAGNOSTIC_TARGET_EXIT_SIGNAL
+    $originalDelay = $env:DOWNKYI_TEST_DIAGNOSTIC_TARGET_EXIT_DELAY_MS
+    try {
+        $script:diagnosticsTool = $processSupervisionHost
+        $env:DOWNKYI_TEST_DIAGNOSTIC_TARGET_EXIT_SIGNAL = $signalPath
+        $env:DOWNKYI_TEST_DIAGNOSTIC_TARGET_EXIT_DELAY_MS = "3200"
+        $processResult = Invoke-IsolatedProcess `
+            -AssemblyName "TargetExitDuringCaptureFixture" `
+            -Iteration 1 `
+            -Phase "execution" `
+            -FileName $processSupervisionHost `
+            -Arguments @(
+                "--exit-on-file-signal-with-ready",
+                $readyPath,
+                $signalPath) `
+            -OperationTimeoutSeconds 30 `
+            -EvidenceThresholdSeconds 5 `
+            -EvidenceCaptureLeadMilliseconds 3000 `
+            -ReadyEvidencePath $readyPath
+    }
+    finally {
+        $script:diagnosticsTool = $originalDiagnosticsTool
+        $env:DOWNKYI_TEST_DIAGNOSTIC_TARGET_EXIT_SIGNAL = $originalSignal
+        $env:DOWNKYI_TEST_DIAGNOSTIC_TARGET_EXIT_DELAY_MS = $originalDelay
+    }
+
+    $phaseResult = New-ProcessPhaseResult -ProcessResult $processResult
+    $captureCompletedAfterTargetExit =
+        $null -ne $processResult.slowEvidenceCaptureCompletedAfterMilliseconds -and
+        $null -ne $processResult.targetExitedAfterMilliseconds -and
+        $processResult.slowEvidenceCaptureCompletedAfterMilliseconds -ge
+            $processResult.targetExitedAfterMilliseconds
+    $validation = [ordered]@{
+        assembly = $phaseResult.assembly
+        phase = $phaseResult.phase
+        failureType = $phaseResult.failureType
+        primaryFailure = $phaseResult.primaryFailure
+        slowThresholdExceeded = $phaseResult.slowThresholdExceeded
+        slowEvidenceStatus = $phaseResult.slowEvidenceStatus
+        slowEvidenceErrorType = $phaseResult.slowEvidenceErrorType
+        slowEvidenceErrorMessage = $phaseResult.slowEvidenceErrorMessage
+        slowEvidenceExceptionEvidence =
+            $phaseResult.slowEvidenceExceptionEvidence
+        slowEvidenceCollectorFailureKind =
+            $phaseResult.slowEvidenceCollectorFailureKind
+        captureArmedAfterMilliseconds =
+            $phaseResult.slowEvidenceCaptureArmedAfterMilliseconds
+        captureCompletedAfterMilliseconds =
+            $phaseResult.slowEvidenceCaptureCompletedAfterMilliseconds
+        targetExitedAfterMilliseconds =
+            $phaseResult.targetExitedAfterMilliseconds
+        captureCompletedAfterTargetExit = $captureCompletedAfterTargetExit
+        exitCode = $phaseResult.exitCode
+        ownedTreeQuiescent = $phaseResult.ownedTreeQuiescent
+        cleanupFailureCount =
+            @($phaseResult.ownedProcessCleanupFailures).Count
+        collectorStarted =
+            $null -ne $processResult.slowEvidenceCollectorEvidence -and
+            $processResult.slowEvidenceCollectorEvidence.Started
+        targetExitSignalObserved =
+            Test-Path -LiteralPath $signalPath -PathType Leaf
+    }
+    Write-Output (
+        "DOWNKYI_TARGET_EXIT_CAPTURE_RESULT=" +
+            ($validation | ConvertTo-Json -Depth 14 -Compress))
+
+    $valid =
+        $validation.failureType -eq "SlowEvidenceMissing" -and
+        $validation.slowThresholdExceeded -and
+        $validation.slowEvidenceStatus -eq "target-exited-during-capture" -and
+        $validation.slowEvidenceErrorType -eq "TargetExitedDuringCapture" -and
+        $validation.slowEvidenceCollectorFailureKind -eq "CallerCancelled" -and
+        $validation.captureCompletedAfterTargetExit -and
+        $null -ne $validation.captureArmedAfterMilliseconds -and
+        $validation.captureArmedAfterMilliseconds -lt
+            $validation.targetExitedAfterMilliseconds -and
+        $validation.exitCode -eq 0 -and
+        $validation.ownedTreeQuiescent -and
+        $validation.cleanupFailureCount -eq 0 -and
+        $validation.collectorStarted -and
+        $validation.targetExitSignalObserved -and
+        $validation.primaryFailure -like "TargetExitedDuringCapture:*" -and
+        $validation.slowEvidenceErrorMessage -notlike
+            "*CommandNotFoundException*" -and
+        $validation.slowEvidenceErrorMessage -notlike
+            "*not recognized as a name of a cmdlet*"
+    if (-not $valid) {
+        throw "Target-exit-during-capture validation did not produce the typed lifecycle outcome."
+    }
+}
+
 $script:diagnosticsTool = Resolve-DiagnosticsTool
 $ownershipPassed = $true
 $ownershipError = $null
@@ -2652,6 +2834,10 @@ if (-not (Test-Path -LiteralPath $processSupervisionAssembly -PathType Leaf)) {
     throw "Process supervision assembly was not built: $processSupervisionAssembly"
 }
 [Reflection.Assembly]::LoadFrom($processSupervisionAssembly) | Out-Null
+if ($ValidateTargetExitDuringCapture) {
+    Invoke-TargetExitDuringCaptureValidation
+    return
+}
 $allTestProjects = @(
     Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "tests") `
         -Filter "*.Tests.csproj" `

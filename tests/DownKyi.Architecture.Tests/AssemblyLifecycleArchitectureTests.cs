@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 
 namespace DownKyi.Architecture.Tests;
 
@@ -121,6 +123,100 @@ public sealed class AssemblyLifecycleArchitectureTests
     }
 
     [Fact]
+    public void TargetExitDuringSlowCapturePreservesTypedForensicsFailure()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var resultsDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-target-exit-capture-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(resultsDirectory);
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = repositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-File");
+            startInfo.ArgumentList.Add(Path.Combine(
+                repositoryRoot,
+                "script",
+                "test-assembly-lifecycle.ps1"));
+            startInfo.ArgumentList.Add("-Configuration");
+            startInfo.ArgumentList.Add("Release");
+            startInfo.ArgumentList.Add("-NoBuild");
+            startInfo.ArgumentList.Add("-ValidateTargetExitDuringCapture");
+            startInfo.ArgumentList.Add("-ResultsDirectory");
+            startInfo.ArgumentList.Add(resultsDirectory);
+
+            var result = BoundedProcessRunner.Run(
+                startInfo,
+                TestContext.Current.CancellationToken,
+                TimeSpan.FromSeconds(90));
+
+            Assert.Equal(0, result.ExitCode);
+            const string marker = "DOWNKYI_TARGET_EXIT_CAPTURE_RESULT=";
+            var payload = Assert.Single(
+                result.Output.ReplaceLineEndings("\n").Split(
+                    '\n',
+                    StringSplitOptions.RemoveEmptyEntries),
+                line => line.StartsWith(marker, StringComparison.Ordinal));
+            using var document = JsonDocument.Parse(payload[marker.Length..]);
+            var root = document.RootElement;
+            Assert.Equal("SlowEvidenceMissing", GetString(root, "failureType"));
+            Assert.Equal(
+                "target-exited-during-capture",
+                GetString(root, "slowEvidenceStatus"));
+            Assert.Equal(
+                "TargetExitedDuringCapture",
+                GetString(root, "slowEvidenceErrorType"));
+            Assert.Equal(
+                "CallerCancelled",
+                GetString(root, "slowEvidenceCollectorFailureKind"));
+            Assert.StartsWith(
+                "TargetExitedDuringCapture:",
+                GetString(root, "primaryFailure"),
+                StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "CommandNotFoundException",
+                GetString(root, "slowEvidenceErrorMessage"),
+                StringComparison.Ordinal);
+            Assert.Equal(0, root.GetProperty("exitCode").GetInt32());
+            Assert.True(root.GetProperty("slowThresholdExceeded").GetBoolean());
+            Assert.True(root.GetProperty("collectorStarted").GetBoolean());
+            Assert.True(root.GetProperty("targetExitSignalObserved").GetBoolean());
+            Assert.True(root.GetProperty("ownedTreeQuiescent").GetBoolean());
+            Assert.Equal(0, root.GetProperty("cleanupFailureCount").GetInt32());
+            var captureArmed = root.GetProperty(
+                "captureArmedAfterMilliseconds").GetDouble();
+            var targetExit = root.GetProperty(
+                "targetExitedAfterMilliseconds").GetDouble();
+            var captureCompleted = root.GetProperty(
+                "captureCompletedAfterMilliseconds").GetDouble();
+            Assert.True(captureArmed < targetExit);
+            Assert.True(targetExit <= captureCompleted);
+            Assert.True(root.GetProperty(
+                "captureCompletedAfterTargetExit").GetBoolean());
+            Assert.Equal(
+                "DownKyi.ProcessSupervision.DiagnosticCollectorExecutionException",
+                root.GetProperty("slowEvidenceExceptionEvidence")
+                    .GetProperty("outer")
+                    .GetProperty("type")
+                    .GetString());
+        }
+        finally
+        {
+            Directory.Delete(resultsDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ProcessOwnerKeepsAuthoritativePlatformBackends()
     {
         var containment = Read(
@@ -139,6 +235,13 @@ public sealed class AssemblyLifecycleArchitectureTests
     private static string Read(string relativePath)
     {
         return File.ReadAllText(Path.Combine(GetRepositoryRoot(), relativePath));
+    }
+
+    private static string GetString(JsonElement element, string propertyName)
+    {
+        return element.GetProperty(propertyName).GetString()
+            ?? throw new InvalidOperationException(
+                $"The fixture did not provide '{propertyName}'.");
     }
 
     private static string GetRepositoryRoot()

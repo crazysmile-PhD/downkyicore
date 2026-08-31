@@ -35,6 +35,10 @@ internal static class SupervisorHost
 
     private const string EvidenceHoldEnvironmentVariable =
         "DOWNKYI_FORENSICS_CAPTURE_PIPE";
+    private const string TargetExitDiagnosticSignalEnvironmentVariable =
+        "DOWNKYI_TEST_DIAGNOSTIC_TARGET_EXIT_SIGNAL";
+    private const string TargetExitDiagnosticDelayEnvironmentVariable =
+        "DOWNKYI_TEST_DIAGNOSTIC_TARGET_EXIT_DELAY_MS";
     private const byte EvidenceCaptureCompleted = 0xA5;
     private const byte EvidenceCaptureAcknowledged = 0x5A;
 
@@ -54,6 +58,17 @@ internal static class SupervisorHost
     public static async Task<int?> RunIfRequestedAsync(IReadOnlyList<string> arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
+        var targetExitDiagnosticSignal = Environment.GetEnvironmentVariable(
+            TargetExitDiagnosticSignalEnvironmentVariable);
+        if (arguments.Count == 3 &&
+            string.Equals(arguments[0], "report", StringComparison.Ordinal) &&
+            string.Equals(arguments[1], "--process-id", StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(targetExitDiagnosticSignal))
+        {
+            return await RunTargetExitDiagnosticCollectorAsync(
+                    targetExitDiagnosticSignal)
+                .ConfigureAwait(false);
+        }
         if (arguments.Count == 1 &&
             string.Equals(arguments[0], OwnershipProbeArgument, StringComparison.Ordinal))
         {
@@ -551,6 +566,43 @@ internal static class SupervisorHost
         var stderr = WriteCollectorChunksAsync(Console.Error, stderrChunk, chunkCount);
         await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
         return exitCode;
+    }
+
+    private static async Task<int> RunTargetExitDiagnosticCollectorAsync(string signalPath)
+    {
+        if (!int.TryParse(
+                Environment.GetEnvironmentVariable(
+                    TargetExitDiagnosticDelayEnvironmentVariable),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var delayMilliseconds) ||
+            delayMilliseconds is < 1 or > 10_000)
+        {
+            return 2;
+        }
+
+        await Task.Delay(
+                TimeSpan.FromMilliseconds(delayMilliseconds),
+                CancellationToken.None)
+            .ConfigureAwait(false);
+        var temporaryPath = $"{signalPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await File.WriteAllTextAsync(
+                    temporaryPath,
+                    "target-exit",
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            File.Move(temporaryPath, signalPath);
+            await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
+
+        return 0;
     }
 
     private static async Task<int> RunCollectorBlockProbeAsync(
