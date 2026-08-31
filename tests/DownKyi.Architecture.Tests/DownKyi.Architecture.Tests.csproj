@@ -20,4 +20,8 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj" />
+  </ItemGroup>
+
 </Project>
