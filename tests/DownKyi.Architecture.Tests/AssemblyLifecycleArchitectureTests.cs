@@ -88,6 +88,8 @@ public sealed class AssemblyLifecycleArchitectureTests
     {
         var entrypoint = Read("script/test-assembly-lifecycle.ps1");
         var source = ReadLifecycleSources();
+        var supervisorHostCapability = Read(
+            "tools/DownKyi.ProcessSupervision/PlatformSupervisorHostCapability.cs");
         string[] requiredTokens =
         [
             "\"load\"",
@@ -99,29 +101,18 @@ public sealed class AssemblyLifecycleArchitectureTests
             "P50",
             "P95",
             "P99",
-            "WaitReason",
-            "Get-ProcessTree",
             "dotnet-stack",
             "managed-stack.txt",
+            "managed-stack.owned-process.json",
+            "owned-diagnostic-collector",
+            "diagnosticOnly",
             "DOWNKYI_LIFECYCLE_MARKER",
             "stdoutPolluted",
             "stderrPolluted",
-            "residualChildCount",
-            "residualChildren",
-            "residualChildEvidence",
-            "residualChildEvidenceStatus",
-            "residualChildEvidenceErrorType",
-            "residualChildEvidenceCapturedCount",
-            "residualChildEvidenceMissingCount",
-            "residualChildQuiescenceMilliseconds",
-            "transientChildCount",
-            "transientChildren",
-            "transientChildObservedCount",
             "failureType",
             "errorType",
             "workingTreeDirty",
             "slowEvidenceStatus",
-            "slowEvidenceComplete",
             "slowEvidenceMissingCount",
             "slowEvidenceCaptureLeadMilliseconds",
             "slowEvidenceTriggeredBeforeThreshold",
@@ -134,8 +125,14 @@ public sealed class AssemblyLifecycleArchitectureTests
             "markerReadErrorType",
             "markerReaderSelfTestPassed",
             "markerReaderSelfTest",
-            "RedirectStandardInput = $true",
-            "$process.StandardInput.Close()",
+            "ownedProcessFormalGatePassed",
+            "ownedProcessInvariants",
+            "ownedProcessFailures",
+            "ownedProcessProofPath",
+            "[DownKyi.ProcessSupervision.LaunchSpec]::new(",
+            "[DownKyi.ProcessSupervision.OwnedProcessLease]::StartAsync(",
+            "$lease.WaitAsync()",
+            "$ownedOutcome.FormalGatePassed",
             "Test-XunitReporterContractMutation",
             "reporterContractSelfTestPassed",
             "[System.IO.FileShare]::ReadWrite",
@@ -172,6 +169,14 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.Contains(
             "$forensicsSelfTestCaptureLeadValidated =",
             source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RedirectStandardInput = launchSpec.CloseStandardInput",
+            supervisorHostCapability,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "target.StandardInput.Close()",
+            supervisorHostCapability,
             StringComparison.Ordinal);
         AssertUsesSynchronousAutomatedReporting(entrypoint, "assembly-info");
         AssertUsesSynchronousAutomatedReporting(entrypoint, "discovery");
@@ -226,19 +231,19 @@ public sealed class AssemblyLifecycleArchitectureTests
         }
 
         Assert.Contains("function Save-ProcessEvidence", forensics, StringComparison.Ordinal);
+        Assert.Contains("function New-OwnedProcessProof", forensics, StringComparison.Ordinal);
         Assert.Contains(
             "function Invoke-AssemblyLifecycleForensicsSelfTests",
             forensics,
             StringComparison.Ordinal);
         Assert.Contains("--hold-after-unload-ms", forensics, StringComparison.Ordinal);
-        Assert.Contains("--spawn-residual-child-ms", forensics, StringComparison.Ordinal);
         Assert.Contains("[System.IO.FileShare]::None", forensics, StringComparison.Ordinal);
+        Assert.Contains(
+            "function Invoke-OwnedDiagnosticCollector",
+            forensics,
+            StringComparison.Ordinal);
         Assert.Contains("function Invoke-IsolatedProcess", processExecution, StringComparison.Ordinal);
         Assert.Contains("function New-ProcessPhaseResult", resultClassification, StringComparison.Ordinal);
-        Assert.Contains(
-            "function Complete-ResidualChildSelfTestClassification",
-            resultClassification,
-            StringComparison.Ordinal);
         Assert.Contains(
             "function Complete-MarkerReaderSelfTestClassification",
             resultClassification,
@@ -250,10 +255,11 @@ public sealed class AssemblyLifecycleArchitectureTests
         string[] authoritativeFunctions =
         [
             "Save-ProcessEvidence",
+            "New-OwnedProcessProof",
+            "Invoke-OwnedDiagnosticCollector",
             "Invoke-IsolatedProcess",
             "Invoke-AssemblyLifecycleForensicsSelfTests",
             "New-ProcessPhaseResult",
-            "Complete-ResidualChildSelfTestClassification",
             "Complete-MarkerReaderSelfTestClassification",
             "New-AssemblyLifecycleReport",
             "Write-AssemblyLifecycleReport"
@@ -301,55 +307,56 @@ public sealed class AssemblyLifecycleArchitectureTests
     }
 
     [Fact]
-    public void ResidualChildForensicsPreserveIdentityAndFailClosed()
+    public void LifecycleGateUsesTypedQuiescenceAndOwnedDiagnostics()
     {
         var gate = ReadLifecycleSources();
-        var probe = Read("tools/DownKyi.AssemblyLifecycleProbe/Program.cs");
         string[] requiredGateContract =
         [
             "Protect-ProcessDiagnosticText",
-            "Save-ResidualChildEvidence",
-            "Wait-ResidualProcessTree",
-            "residual-children.json",
-            "failureType -eq \"ResidualChildProcess\"",
-            "residualChildSelfTestPassed",
-            "residualChildSelfTest",
-            "childObserved",
-            "identityCaptured",
-            "evidenceManifestWritten",
-            "failureClassified",
-            "transientChildObserved",
-            "transientChildDrained",
-            "transientPhasePassed",
-            "cleanupCompleted",
-            "redactionValidated",
-            "$residualChildSelfTestContractPassed",
-            "$residualChildSelfTestComplete",
-            "$residualChildQuiescenceMilliseconds = 500",
-            "$residualChildPollMilliseconds = 25",
-            "\"--spawn-residual-child-ms\"",
-            "$childProcess.Kill($true)",
-            "$childProcess.WaitForExit(5000)"
+            "New-OwnedProcessProof",
+            "Save-ProcessEvidence",
+            "Invoke-OwnedDiagnosticCollector",
+            "[DownKyi.ProcessSupervision.OwnedProcessLease]::StartAsync(",
+            "$ownedOutcome.FormalGatePassed",
+            "ownedProcessFormalGatePassed",
+            "ownedProcessInvariants",
+            "ownedProcessFailures",
+            "ownedProcessProofPath",
+            "captureMode = \"owned-diagnostic-collector\"",
+            "diagnosticOnly = $true",
+            "managed-stack.owned-process.json",
+            "$forensicsValid = $selfTestPhase.success"
         ];
 
         foreach (var token in requiredGateContract)
         {
             Assert.Contains(token, gate, StringComparison.Ordinal);
         }
+        Assert.Equal(
+            2,
+            Regex.Count(
+                gate,
+                "New-OwnedProcessProof -Outcome",
+                RegexOptions.CultureInvariant));
 
-        Assert.Contains("--spawn-residual-child-ms", probe, StringComparison.Ordinal);
-        Assert.Contains("--child-hold-ms", probe, StringComparison.Ordinal);
-        Assert.Contains("UseShellExecute = true", probe, StringComparison.Ordinal);
-        Assert.DoesNotContain("conhost", gate, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("processName -eq", gate, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(
-            "residualChildCount -eq 0 -or",
-            gate,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "residualChildEvidenceStatus -eq \"captured\" -or",
-            gate,
-            StringComparison.Ordinal);
+        string[] forbiddenSecondOwnerContract =
+        [
+            "Get-Process",
+            "Get-CimInstance",
+            "WaitForExit",
+            ".Kill(",
+            "ProcessStartInfo",
+            "Gate.ResidualChild",
+            "Wait-ResidualProcessTree",
+            "Save-ResidualChildEvidence",
+            "residualChild",
+            "slowEvidenceComplete",
+            "TreeQuiescence"
+        ];
+        foreach (var token in forbiddenSecondOwnerContract)
+        {
+            Assert.DoesNotContain(token, gate, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     [Fact]

@@ -13,8 +13,6 @@ function Write-AssemblyLifecycleReport {
     $statistics = @($Report.statistics)
     $failedResults = @($Report.results | Where-Object { -not $_.success })
     $slowResults = @($Report.results | Where-Object slowThresholdExceeded)
-    $residualChildResults = @($Report.results | Where-Object residualChildCount -gt 0)
-    $transientChildResults = @($Report.results | Where-Object transientChildCount -gt 0)
     $profile = $Report.profile
     $resolvedIterations = $Report.iterations
     $runtime = $Report.runtime
@@ -24,11 +22,6 @@ function Write-AssemblyLifecycleReport {
     $ownershipPassed = $Report.ownershipAuditPassed
     $slowEvidenceCapturedCount = $Report.slowEvidenceCapturedCount
     $slowEvidenceMissingCount = $Report.slowEvidenceMissingCount
-    $residualChildObservedCount = $Report.residualChildObservedCount
-    $residualChildEvidenceCapturedCount = $Report.residualChildEvidenceCapturedCount
-    $residualChildEvidenceMissingCount = $Report.residualChildEvidenceMissingCount
-    $transientChildObservedCount = $Report.transientChildObservedCount
-    $residualChildQuiescenceMilliseconds = $Report.residualChildQuiescenceMilliseconds
     $diagnosticCaptureTotalMs = $Report.diagnosticCaptureTotalMs
     $forensicsSelfTestCaptureLeadValidated = $Report.forensicsSelfTestCaptureLeadValidated
     $reporterContractSelfTestPassed = $Report.reporterContractSelfTestPassed
@@ -37,7 +30,6 @@ function Write-AssemblyLifecycleReport {
     $markerReadErrorCount = $Report.markerReadErrorCount
     $markerReadErrorType = $Report.markerReadErrorType
     $markerReaderSelfTest = $Report.markerReaderSelfTest
-    $residualChildSelfTest = $Report.residualChildSelfTest
     $phaseResultCount = $Report.results.Count
 
     $jsonPath = Join-Path $runRoot "assembly-lifecycle-report.json"
@@ -61,15 +53,6 @@ function Write-AssemblyLifecycleReport {
     $markdown.Add(
         "- Slow phase evidence: $slowEvidenceCapturedCount captured, " +
         "$slowEvidenceMissingCount missing")
-    $markdown.Add(
-        "- Residual children: $residualChildObservedCount observed across " +
-        "$($residualChildResults.Count) phase(s); " +
-        "$residualChildEvidenceCapturedCount evidence manifest(s), " +
-        "$residualChildEvidenceMissingCount missing")
-    $markdown.Add(
-        "- Transient children: $transientChildObservedCount drained within " +
-        "$residualChildQuiescenceMilliseconds ms across " +
-        "$($transientChildResults.Count) phase(s)")
     $markdown.Add("- Diagnostic capture wall time: $diagnosticCaptureTotalMs ms")
     $markdown.Add(
         "- Forensics pre-threshold capture self-test: " +
@@ -89,19 +72,6 @@ function Write-AssemblyLifecycleReport {
         "parsed=$($markerReaderSelfTest.markerParsedAfterRecovery), " +
         "error=$($markerReaderSelfTest.errorType), " +
         "contractChecks=$($markerReaderSelfTest.contractChecks.passed)")
-    $markdown.Add(
-        "- Residual child self-test: executed=$($residualChildSelfTest.executed), " +
-        "passed=$($residualChildSelfTest.passed), " +
-        "observed=$($residualChildSelfTest.childObserved), " +
-        "identity=$($residualChildSelfTest.identityCaptured), " +
-        "evidence=$($residualChildSelfTest.evidenceManifestWritten), " +
-        "classified=$($residualChildSelfTest.failureClassified), " +
-        "transientObserved=$($residualChildSelfTest.transientChildObserved), " +
-        "transientDrained=$($residualChildSelfTest.transientChildDrained), " +
-        "transientPassed=$($residualChildSelfTest.transientPhasePassed), " +
-        "cleanup=$($residualChildSelfTest.cleanupCompleted), " +
-        "redaction=$($residualChildSelfTest.redactionValidated), " +
-        "error=$($residualChildSelfTest.errorType)")
     $markdown.Add("")
     $markdown.Add("| Assembly | Phase | Pass / Runs | Slow / captured | Success | P50 ms | P95 ms | P99 ms | Max ms |")
     $markdown.Add("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
@@ -145,20 +115,17 @@ function Write-AssemblyLifecycleReport {
             $markdown.Add(
                 "- ``$($failure.assembly)`` iteration $($failure.iteration), " +
                 "``$($failure.phase)``: exit=$($failure.exitCode), " +
-                "timeout=$($failure.timedOut), stdoutPolluted=$($failure.stdoutPolluted), " +
+                "formalGate=$($failure.ownedProcessFormalGatePassed), " +
+                "stdoutPolluted=$($failure.stdoutPolluted), " +
                 "stderrPolluted=$($failure.stderrPolluted), " +
-                "residualChildren=$($failure.residualChildCount), " +
                 "failureType=$($failure.failureType), errorType=$($failure.errorType), " +
                 "slowEvidence=$($failure.slowEvidenceStatus), " +
-                "residualEvidence=$($failure.residualChildEvidenceStatus)")
-            foreach ($child in @($failure.residualChildren)) {
+                "proof=``$($failure.ownedProcessProofPath)``")
+            foreach ($typedFailure in @($failure.ownedProcessFailures)) {
                 $markdown.Add(
-                    "  - child pid=$($child.processId), parent=$($child.parentProcessId), " +
-                    "name=``$($child.name)``, created=$($child.createdAtUtc), " +
-                    "command=``$($child.commandLine)``")
-            }
-            foreach ($evidencePath in @($failure.residualChildEvidence)) {
-                $markdown.Add("  - residual evidence: ``$evidencePath``")
+                    "  - typed failure: kind=``$($typedFailure.kind)``, " +
+                    "phase=``$($typedFailure.phase)``, " +
+                    "channel=``$($typedFailure.channel)``")
             }
         }
     }

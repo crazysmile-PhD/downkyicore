@@ -279,6 +279,77 @@
       ]
     },
     {
+      "id": "owned-process-lease",
+      "paths": [
+        "tools/DownKyi.ProcessSupervision/OwnedProcessLease.cs",
+        "tools/DownKyi.ProcessSupervision/OwnedProcessLease.Start.cs",
+        "tools/DownKyi.ProcessSupervision/OwnedProcessLease.Cleanup.cs"
+      ],
+      "owner": "OwnedProcessLease",
+      "start": "StartAsync selects containment from platform facts, starts the inert supervisor and authorizes one target only after ownership is established.",
+      "stop": "WaitAsync or DisposeAsync activates the same completion owner, which responds to target exit, caller cancellation, deadline and lifetime close.",
+      "teardown": "The lease terminates only its containment, reaps its supervisor, proves tree quiescence, drains streams, closes resources within the caller-owned TransitionBudget and publishes one typed outcome.",
+      "allowedMechanisms": [
+        "static_initialization",
+        "external_process",
+        "host_lifecycle",
+        "sync_wait"
+      ]
+    },
+    {
+      "id": "owned-process-supervisor-capability",
+      "paths": [
+        "tools/DownKyi.ProcessSupervision/PlatformSupervisorHostCapability.cs"
+      ],
+      "owner": "OwnedProcessLease internal supervisor capability",
+      "start": "The internal host capability starts the target only after the lease protocol establishes containment and sends launch authorization.",
+      "stop": "Lease finalization or the owner-channel fail-safe asks the capability to finish the direct child path; the capability cannot publish lifecycle results.",
+      "teardown": "Direct-child wait, target stream forwarding and target disposal remain subordinate to the lease protocol and platform containment authority.",
+      "allowedMechanisms": [
+        "external_process"
+      ]
+    },
+    {
+      "id": "owned-process-containment-router",
+      "paths": [
+        "tools/DownKyi.ProcessSupervision/PlatformProcessContainmentRouter.cs"
+      ],
+      "owner": "OwnedProcessLease internal containment selector",
+      "start": "The router creates immutable stateless backend instances and selects one from captured platform facts plus the caller's strength requirement.",
+      "stop": "The router owns no active process, task, timer or containment lifetime.",
+      "teardown": "All lifecycle operations stay on the selected lease/backend authority; the router performs no wait, termination, retry or cleanup.",
+      "allowedMechanisms": [
+        "static_initialization"
+      ]
+    },
+    {
+      "id": "owned-process-supervisor-protocol",
+      "paths": [
+        "tools/DownKyi.ProcessSupervision/SupervisorProtocolCodec.cs",
+        "tools/DownKyi.ProcessSupervision/SupervisorProtocolState.cs"
+      ],
+      "owner": "Pure owned-process supervisor protocol seam",
+      "start": "The codec and state validator use immutable serialization and frame-order metadata; they start no runtime work.",
+      "stop": "Protocol calls return to the lease or internal host without owning process lifetime.",
+      "teardown": "No process, containment, wait, clock or cleanup authority exists in this seam.",
+      "allowedMechanisms": [
+        "static_initialization"
+      ]
+    },
+    {
+      "id": "owned-process-linux-cgroup-authority",
+      "paths": [
+        "tools/DownKyi.ProcessSupervision/LinuxCgroupContainmentLease.cs"
+      ],
+      "owner": "OwnedProcessLease Linux cgroup authority",
+      "start": "The selected backend prepares one delegated cgroup and attaches the lease's inert supervisor before launch authorization.",
+      "stop": "The lease or its internal owner-loss fail-safe terminates only the attached cgroup and observes membership through the same authority.",
+      "teardown": "The backend deletes only its exact owned cgroup after authoritative quiescence or during bounded setup rollback; deletion failure remains typed cleanup evidence.",
+      "allowedMechanisms": [
+        "synchronous_cleanup"
+      ]
+    },
+    {
       "id": "lifecycle-probe",
       "paths": [
         "tools/DownKyi.AssemblyLifecycleProbe/**"

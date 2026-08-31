@@ -41,6 +41,39 @@ process exit as separate fail-closed phases.
 
 ## Dynamic Phases
 
+### Single process owner proof contract
+
+`OwnedProcessLease` is the only public lifecycle authority for an isolated
+phase. The PowerShell gate supplies an immutable `LaunchSpec`, one caller-owned
+monotonic `TransitionBudget`, and the required containment strength, then uses
+only `StartAsync`, `WaitAsync`, and `DisposeAsync`. The supervisor host,
+platform capability, protocol, and containment backends are internal seams;
+diagnostics, report rendering, PowerShell, and workflow code cannot directly
+start a process, terminate, reap, or drain the phase as a second owner.
+
+The 2.1 architecture contract is:
+
+| Question | Authoritative answer |
+| --- | --- |
+| WHO | `OwnedProcessLease` owns start, containment, wait, cancellation/deadline response, termination, reap, quiescence, stream drain, bounded cleanup, and lifetime close. |
+| WHAT | One supervisor/target containment and its immutable typed proof outcome. |
+| ENTRY | `StartAsync(LaunchSpec, TransitionBudget, ProcessContainmentRequirement)`, followed by one `WaitAsync`; `DisposeAsync` closes the same ownership lifetime. |
+| EXIT | The owner publishes once, only after operation handling and bounded cleanup/resource close have completed. |
+| STATE | Every required invariant is exactly `Proven`, `Violated`, or `Unknown`. |
+| FAILURE | All typed operation and cleanup failures are retained; later cleanup evidence cannot replace earlier facts. There is no `PrimaryFailure` contract. |
+| CAPABILITY | The caller declares required strength; an internal immutable-fact router selects the backend and the outcome reports the strength actually established. |
+| CLOCK | The caller creates one monotonic `TransitionBudget`; only the lease consumes its operation and cleanup windows. |
+| RACE | Invariant truth is absorbing for violations and independent of callback/thread scheduling; proof snapshots are deterministic sets, not an event race. |
+| FACT | Direct target wait, containment membership, budget, reap, stream, and resource-close observations are authoritative. Diagnostic timestamps, stacks, logs, and raw evidence cannot change an invariant. |
+
+The formal decision is deliberately small: all required invariants must be
+`Proven`; `Violated` fails, and `Unknown` fails closed. Multiple failure facts
+may coexist. No timeout, cancellation, target-exit, containment, or cleanup fact
+competes for unique first-causal status, and 2.1 defines no cross-source global
+timeline. CI and report code consume `FormalGatePassed` plus the typed invariant
+and failure collections; they may render raw facts as diagnostics but must not
+re-derive lifecycle correctness from them.
+
 `script/test-assembly-lifecycle.ps1` discovers every `*.Tests.csproj`, validates
 its explicit `Windows` / `Linux` / `macOS` ownership set, and probes only
 assemblies whose declaration includes the current OS. It runs each phase in an
@@ -58,7 +91,7 @@ independent child process:
    `started -> disposing -> disposed`, and its process-specific data root must
    be absent.
 6. `process-exit`: the process must exit within the configured post-teardown
-   deadline without residual children or runner-protocol pollution.
+   deadline with typed tree-quiescence proof and no runner-protocol pollution.
 
 The lifecycle gate uses xUnit's synchronous automated reporting mode
 (`-automated sync`) for assembly-info, discovery and execution. This is not a
@@ -165,6 +198,13 @@ teardown performs cancellation, wake-up, wait and bounded join. An unowned or
 unapproved mechanism fails the gate. The inventory is evidence, not a broad
 suppression list.
 
+The process-supervision entries are intentionally path-specific. The lease is
+the lifecycle owner; the supervisor capability is subordinate to its protocol,
+the router and protocol files are pure seams, and the Linux cgroup backend is
+the selected platform authority for its exact cgroup. These entries must not be
+collapsed into a `tools/**` allowance, and neither lifecycle PowerShell nor
+diagnostic collectors are registered as process owners.
+
 ## Profiles
 
 | Profile | Iterations per assembly | Required use |
@@ -191,45 +231,32 @@ pwsh ./script/test-assembly-lifecycle.ps1 `
   -ValidateForensics
 ```
 
-## Timeout Forensics
+## Diagnostic Forensics
 
-On Windows, a slow phase or slow post-teardown exit automatically captures:
+A slow phase or slow post-teardown exit writes a diagnostic-only target
+reference and, when available, runs `dotnet-stack report --process-id` through
+a separate `OwnedProcessLease`. The collector has its own 15-second operation
+budget and bounded cleanup. PowerShell never starts, waits for, kills or reaps
+the collector directly. Its stdout/stderr, typed invariant result and failures
+are retained beside `managed-stack.txt` in
+`managed-stack.owned-process.json`.
 
-- managed process/thread IDs;
-- `ThreadState`, wait reason and processor time;
-- a sanitized process tree containing PID, parent PID and process name;
-- `dotnet-stack report --process-id` output when the tool is available.
-
-Confirmed residual children use a separate evidence path and are written to
-`residual-children.json`. A still-live managed child receives the normal
-thread, process-tree and managed-stack capture; native descendants retain
-identity and thread/process evidence without waiting on an inapplicable
-managed collector. Transient child identity stays in the phase result without
-triggering expensive process forensics after the process has drained.
-The gate samples by PID plus creation time for up to 500 milliseconds. A child
-that drains during that bounded observation remains visible as `transient` in
-the machine report but is not a teardown leak. A child still alive at the
-boundary is a blocking `ResidualChildProcess`; evidence capture never converts
-it to success. This is a two-sample liveness definition, not a process-name
-allowlist, rerun exception or relaxation of the phase/exit thresholds.
+Collector availability, timeout or failure is recorded in the evidence
+manifest as diagnostic status and error data. It never changes the target
+lease's `FormalGatePassed`, invariants or failures. Likewise, the lifecycle
+gate does not infer tree state from PID polling, process names or raw diagnostic
+output. Only the target lease's typed `TreeQuiescence` invariant is
+authoritative; `Unknown` and `Violated` fail closed inside that owner.
 
 CI installs the pinned Microsoft `dotnet-stack` tool and runs
-`-ValidateForensics`. That self-test deliberately holds a marker-aware
-`execution` probe beyond the slow threshold. It fails unless the same code path
-used by test execution produces evidence and a non-empty managed stack.
-On Windows it also opens a valid marker with exclusive sharing and proves that
-the reader tolerates the temporary lock, then parses the marker after release.
-It additionally launches one short-lived and one persistent `dotnet` child.
-The short-lived child must be observed, drain within the same quiescence path
-used by real phases and leave the phase successful. The persistent child must
-preserve its identity and evidence manifest, receive `ResidualChildProcess`
-classification, and be terminated by matching both PID and creation time. The
-same self-test proves that private paths, URLs, cookies and command-line secrets
-are redacted. Schema 2 exposes the detailed
-`residualChildSelfTest` object and top-level `residualChildSelfTestPassed`
-summary. Missing execution, identity, evidence, failure classification or
-cleanup fails closed.
-Timeout evidence is saved before the process tree is terminated.
+`-ValidateForensics`. The held probe exercises the same diagnostic path and
+reports whether a managed stack was captured before the classification
+threshold, but that observation remains separate from target lifecycle truth.
+On Windows the validation also opens a valid marker with exclusive sharing and
+proves that the reader tolerates the temporary lock, then parses the marker
+after release. The former residual-child PID polling, synthetic persistent
+child, and manual PID-plus-creation-time cleanup contract is superseded by the
+lease's authoritative containment and quiescence proof.
 
 Schema 2 records the marker-reader proof as a fail-closed object:
 

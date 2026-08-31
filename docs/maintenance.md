@@ -49,18 +49,16 @@ per test assembly with `-ValidateForensics`. The release workflow uses the
 `artifacts/assembly-lifecycle/release`; neither step may be replaced by a
 successful one-off rerun.
 
-Lifecycle report schema 2 uses the child OS `Process.ExitTime` for post-fixture
-exit, captures marker-aware execution at the unchanged slow threshold, records
-diagnostic collection wall time, and fails a slow phase whose evidence is
-missing. Schema 1 exit values include collector overhead and are historical
-only; do not compare them directly with schema 2.
+Lifecycle report schema 2 consumes the target `OwnedProcessOutcome` typed
+formal gate, invariants and failures. It records diagnostic collection wall
+time separately; diagnostic status never changes target lifecycle truth.
 
 The slow classification threshold remains five seconds. Evidence collection
 is armed 1,000 ms before that boundary so hosted-runner scheduling cannot
 observe a borderline process only after it has exited. Reports expose both the capture
 lead and whether a phase was sampled before the classification boundary;
-`capture-failed` and `process-exited-before-capture` remain fail-closed for
-phases whose final duration reaches the threshold.
+`capture-failed` and `process-exited-before-capture` remain explicit diagnostic
+states rather than lifecycle classifications.
 The `-ValidateForensics` held-child self-test must also set
 `forensicsSelfTestCaptureLeadValidated=true`, proving this arm point executed
 rather than merely existing in source.
@@ -82,17 +80,12 @@ Only Windows sharing/lock error codes count as marker contention.
 `UnauthorizedAccessException` and other I/O errors remain separately visible
 as `markerReadErrorCount` and `markerReadErrorType`.
 
-Residual-child failures are independently fail-closed. Every failed phase must
-preserve a sanitized `residualChildren` identity list plus a
-`residual-children.json` manifest; live managed children also receive thread,
-tree and managed-stack evidence. `-ValidateForensics` must prove this path by
-observing both a short-lived child that drains inside the bounded quiescence
-window and a persistent child that remains blocking. The persistent path must
-write evidence, classify the phase as `ResidualChildProcess` and clean the
-synthetic tree by PID plus creation time. No process-name allowlist is permitted.
-The self-test must also prove path, URL, cookie and secret redaction.
-`residualChildSelfTestPassed` is only the summary;
-the detailed `residualChildSelfTest` fields are the contract.
+Tree quiescence is independently fail-closed inside `OwnedProcessLease`: its
+typed `TreeQuiescence` invariant must be `Proven`. PowerShell, diagnostics,
+workflow and rendering must not poll PIDs, wait for or kill descendants, or
+reconstruct that decision from raw evidence. Managed-stack capture uses its
+own bounded `OwnedProcessLease`; its typed collector outcome and output are
+retained as diagnostic evidence without changing the target formal gate.
 
 PR #116 merged the final lifecycle proof consistency fix into `main` at
 `6a61247`. Strict PR CI `30450175286` and CodeQL `30450175415` passed. Its
@@ -103,27 +96,19 @@ slow execution phases retained evidence. This report validates the corrected
 lifecycle owner and gate, but the final versioned release commit must still
 pass its own Main profile and the 100-iteration Rehearsal profile.
 
-The first v1.1.1 Rehearsal run `30455540672` correctly blocked packaging after
-`DownKyi.Tests` assembly-info iteration 78 observed one residual child. The
-historical report retained only `residualChildCount=1`, so that runner's exact
-child identity cannot be recovered after the hosted VM was destroyed. The
-phase did not execute tests, Host, Dispatcher or application services; its
-stdout was valid xUnit metadata, stderr was empty and exit code was zero.
-Five hundred local repetitions of the same
-`dotnet DownKyi.Tests.dll -assemblyInfo` command observed no residual child,
-excluding a deterministic
-application owner but not the low-probability runner race. The corrected gate
-therefore preserves identity and evidence on every future observation and
-dynamically self-tests the full residual-child failure path. A new Main profile
-and complete Rehearsal remain mandatory; the failed run is not replaced by a
-blind rerun.
+The first v1.1.1 Rehearsal run `30455540672` blocked packaging after a legacy
+PID-observation gate reported leftover work. That schema could not preserve an
+authoritative containment proof after the hosted VM was destroyed. The legacy
+PID polling and manual cleanup contract is superseded: current runs retain the
+single owner's typed containment, quiescence and cleanup proof. A failed run is
+still not replaced by a blind rerun.
 
 After PR #118 merged at `ad5ac64`, Main run `30461640781` proved that the
 original 100 ms capture lead was still insufficient under hosted-runner load.
 `DownKyi.Tests` execution iteration 24 exited successfully at 5007.386 ms but
 the monitor never entered the capture branch while the process was alive.
-The report failed closed with `SlowEvidenceMissing`; residual-child and
-marker-reader self-tests passed and no real residual process was observed.
+The legacy report failed closed on missing slow evidence; its other self-tests
+passed and no leftover work was observed.
 The five-second classification threshold remains unchanged. The capture arm is
 now one second early, and architecture tests prevent reducing it back to the
 demonstrably insufficient 100 ms window. The held-child self-test uses a

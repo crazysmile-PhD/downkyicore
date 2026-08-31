@@ -2590,19 +2590,19 @@ outbound:
 contracts:
   - Formal local Verification runs the ownership audit and five iterations per assembly with timeout forensics validated.
   - PR, main and release-rehearsal profiles run 3, 5 and 100 iterations per assembly; tag release evidence uses the 100-iteration Rehearsal profile.
-  - Every report identifies runtime, OS, architecture, commit SHA, dirty-worktree state, thresholds, phase exit codes, slow-evidence status and P50/P95/P99/max durations.
-  - Every phase exposes general failure/error type; slow-evidence error type is reserved for the diagnostic capture path.
-  - Execution duration includes runner startup through OS process exit; teardown uses fixture marker timestamps, while process-exit uses the child's OS ExitTime and excludes collector overhead.
-  - Marker-aware execution phases are sampled at the unchanged slow threshold; missing slow evidence is a gate failure rather than an unexplained empty array.
+  - Every report identifies runtime, OS, architecture, commit SHA, dirty-worktree state, typed process invariants/failures, proof paths, diagnostic status and P50/P95/P99/max durations.
+  - Every process phase consumes `OwnedProcessOutcome.FormalGatePassed`, `Invariants` and `Failures`; workflow and rendering never reconstruct lifecycle truth from raw evidence.
+  - Execution duration covers the owned target operation; teardown marker measurements and diagnostic collection wall time remain separately visible observations.
+  - Marker-aware execution phases are sampled at the unchanged slow threshold; missing diagnostic evidence remains explicit but cannot change target lifecycle truth.
   - Forensics is armed 1,000 ms before the unchanged classification threshold to survive hosted-runner scheduling gaps; reports disclose the lead and per-phase pre-threshold capture state.
   - The held-child forensics self-test uses a 1.25-second synthetic threshold and must report `forensicsSelfTestCaptureLeadValidated=true`, proving the one-second proactive capture lead executed without a zero-clamped arm.
   - Lifecycle marker reads tolerate bounded writer contention and report contention/retry-exhaustion counts; only Windows sharing/lock error codes are contention, while access and other I/O errors retain a separate count/type; the final marker contract remains blocking.
   - Diagnostic capture wall time is reported separately because managed-stack collection perturbs the instrumented phase; slow execution evidence cannot be presented as post-teardown exit evidence.
-  - Unexpected stdout/stderr, timeout, residual child process, missing teardown marker or failed process exit blocks the gate.
-  - Slow and timed-out Windows processes preserve thread state, wait reason, process tree and a managed stack when `dotnet-stack` is available.
-  - Residual children preserve PID, parent PID, process name, creation time, tree depth and a redacted command line in the phase result plus `residual-children.json`; live managed children also receive thread/tree/stack evidence.
-  - Child processes are classified by bounded liveness, not executable name: identity observed after parent exit is transient when it drains inside the 500 ms quiescence window and residual only when the same PID-plus-creation-time identity survives the boundary. Confirmed residual evidence never changes failure into success.
-  - `ValidateForensics` creates both transient and persistent synthetic children. It fails unless the transient identity is observed and drains without failing the phase, while the persistent identity produces a manifest, `ResidualChildProcess` classification and PID-plus-creation-time cleanup.
+  - Any required owned-process invariant that is `Unknown` or `Violated` fails closed inside `OwnedProcessLease`; output-protocol and fixture checks remain separate test contracts.
+  - Slow and post-teardown diagnostics invoke `dotnet-stack` through a separate bounded `OwnedProcessLease`; PowerShell does not start, wait, kill or reap the collector directly.
+  - Diagnostic manifests retain target reference, collector typed outcome, capture status/error and managed-stack output without modifying the target outcome.
+  - Owned tree quiescence is authoritative only through the target lease's typed `TreeQuiescence` invariant; PID polling, process-name rules and manual residual-child cleanup are not lifecycle gates.
+  - `ValidateForensics` exercises managed-stack capture and reports its result as diagnostic proof, independently of the target formal gate.
   - `ValidateForensics` proves both marker-aware managed-stack capture and exclusive marker-lock recovery; formal Windows profiles fail closed unless the detailed self-test reports execution, positive contention count, recovery, parsing, null error and success, and mutation checks reject inconsistent nominally-passed states.
   - Marker self-test phase status, report summary and formal gate consume one complete proof result rather than re-expanding equivalent predicates.
   - Every scanned lifecycle mechanism, including external process creation, maps to a declared owner with explicit start, stop and teardown behavior.

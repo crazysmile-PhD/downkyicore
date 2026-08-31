@@ -21,6 +21,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\tools\DownKyi.AssemblyLifecycleProbe\DownKyi.AssemblyLifecycleProbe.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj" />
+    <Compile Include="..\ProcessSupervisionTestCases\*.cs" Link="ProcessSupervisionTestCases\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="Fixtures/**/*.cs" />
   </ItemGroup>
 

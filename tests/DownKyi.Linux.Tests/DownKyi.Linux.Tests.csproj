@@ -18,6 +18,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DownKyi.Architecture.Tests\DownKyi.Architecture.Tests.csproj" />
+    <ProjectReference Include="..\..\tools\DownKyi.AssemblyLifecycleProbe\DownKyi.AssemblyLifecycleProbe.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj" />
+    <Compile Include="..\ProcessSupervisionTestCases\*.cs" Link="ProcessSupervisionTestCases\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

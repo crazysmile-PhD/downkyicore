@@ -25,6 +25,9 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $solutionPath = Join-Path $repositoryRoot "DownKyi.sln"
 $probeProject = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj"
 $probeAssembly = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe/bin/$Configuration/net10.0/DownKyi.AssemblyLifecycleProbe.dll"
+$processSupervisionAssembly = Join-Path $repositoryRoot (
+    "tools/DownKyi.ProcessSupervision/bin/$Configuration/net10.0/" +
+    "DownKyi.ProcessSupervision.dll")
 $profileIterations = @{
     Local = 1
     PR = 3
@@ -49,8 +52,13 @@ $script:markerReadRetriesExhaustedCount = 0
 $script:markerReadErrorCount = 0
 $script:markerReadErrorType = $null
 $slowEvidenceCaptureLeadMilliseconds = 1000
-$residualChildQuiescenceMilliseconds = 500
-$residualChildPollMilliseconds = 25
+$processCleanupGraceSeconds = 5
+$processContainmentRequirement = if ($Profile -eq "Rehearsal") {
+    "RequireStrongContainment"
+}
+else {
+    "AllowWeakerFallback"
+}
 
 $componentRoot = Join-Path $PSScriptRoot "assembly-lifecycle"
 . (Join-Path $componentRoot "forensics.ps1")
@@ -62,9 +70,6 @@ $forensicsSelfTestCaptureLeadValidated = $false
 $markerReaderSelfTestRequired = $IsWindows -and
     @("PR", "Main", "Rehearsal", "Flaky").Contains($Profile)
 $markerReaderSelfTestComplete = $false
-$residualChildSelfTestComplete = $false
-$residualChildSelfTest = New-ResidualChildSelfTestState `
-    -Required ($IsWindows -and $ValidateForensics)
 $markerReaderSelfTest = New-MarkerReaderSelfTestState `
     -Required $markerReaderSelfTestRequired
 
@@ -112,6 +117,10 @@ if (-not $NoBuild) {
 if (-not (Test-Path -LiteralPath $probeAssembly -PathType Leaf)) {
     throw "Assembly lifecycle probe was not built: $probeAssembly"
 }
+if (-not (Test-Path -LiteralPath $processSupervisionAssembly -PathType Leaf)) {
+    throw "Process supervision assembly was not built: $processSupervisionAssembly"
+}
+[Reflection.Assembly]::LoadFrom($processSupervisionAssembly) | Out-Null
 
 $allTestProjects = @(
     Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "tests") `
@@ -151,16 +160,10 @@ $forensicsValidation = Invoke-AssemblyLifecycleForensicsSelfTests `
     -SlowPhaseThresholdSeconds $SlowPhaseThresholdSeconds `
     -ExitThresholdSeconds $ExitThresholdSeconds `
     -SlowEvidenceCaptureLeadMilliseconds $slowEvidenceCaptureLeadMilliseconds `
-    -ResidualChildQuiescenceMilliseconds $residualChildQuiescenceMilliseconds `
-    -ResidualChildPollMilliseconds $residualChildPollMilliseconds `
-    -DiagnosticsTool $script:diagnosticsTool `
-    -ResidualChildSelfTest $residualChildSelfTest `
     -MarkerReaderSelfTest $markerReaderSelfTest
 $phaseResults += @($forensicsValidation.phaseResults)
 $forensicsSelfTestCaptureLeadValidated =
     $forensicsValidation.forensicsSelfTestCaptureLeadValidated
-$residualChildSelfTestComplete =
-    $forensicsValidation.residualChildSelfTestComplete
 $markerReaderSelfTestComplete =
     $forensicsValidation.markerReaderSelfTestComplete
 
@@ -254,12 +257,9 @@ $report = New-AssemblyLifecycleReport `
     -PhaseTimeoutSeconds $PhaseTimeoutSeconds `
     -SlowPhaseThresholdSeconds $SlowPhaseThresholdSeconds `
     -SlowEvidenceCaptureLeadMilliseconds $slowEvidenceCaptureLeadMilliseconds `
-    -ResidualChildQuiescenceMilliseconds $residualChildQuiescenceMilliseconds `
-    -ResidualChildPollMilliseconds $residualChildPollMilliseconds `
     -ForensicsSelfTestCaptureLeadValidated $forensicsSelfTestCaptureLeadValidated `
     -ReporterContractSelfTestPassed $reporterContractSelfTestPassed `
     -ExitThresholdSeconds $ExitThresholdSeconds `
-    -DiagnosticsTool $script:diagnosticsTool `
     -OwnershipPassed $ownershipPassed `
     -OwnershipError $ownershipError `
     -MarkerReadContentionCount $script:markerReadContentionCount `
@@ -267,9 +267,7 @@ $report = New-AssemblyLifecycleReport `
     -MarkerReadErrorCount $script:markerReadErrorCount `
     -MarkerReadErrorType $script:markerReadErrorType `
     -MarkerReaderSelfTest $markerReaderSelfTest `
-    -MarkerReaderSelfTestComplete $markerReaderSelfTestComplete `
-    -ResidualChildSelfTest $residualChildSelfTest `
-    -ResidualChildSelfTestComplete $residualChildSelfTestComplete
+    -MarkerReaderSelfTestComplete $markerReaderSelfTestComplete
 Write-AssemblyLifecycleReport `
     -Report $report `
     -RunRoot $runRoot `

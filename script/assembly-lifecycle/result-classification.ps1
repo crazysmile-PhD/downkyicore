@@ -80,41 +80,22 @@ function New-ProcessPhaseResult {
         -Phase $ProcessResult.phase `
         -Content $ProcessResult.stdout
     $stderrClean = [string]::IsNullOrWhiteSpace($ProcessResult.stderr)
-    $slowEvidenceComplete = -not $ProcessResult.slowThresholdExceeded -or
-        $ProcessResult.slowEvidenceStatus -eq "captured"
-    $success = $ProcessResult.exitCode -eq 0 -and
-        -not $ProcessResult.timedOut -and
-        $ProcessResult.residualChildren.Count -eq 0 -and
+    $success = $ProcessResult.ownedProcessFormalGatePassed -eq $true -and
+        $ProcessResult.exitCode -eq 0 -and
         $protocolValid -and
         $stderrClean -and
-        $slowEvidenceComplete -and
         $unexpectedText.Count -eq 0
     $failureType = if ($success) {
         $null
     }
-    elseif ($ProcessResult.timedOut) {
-        "Timeout"
-    }
-    elseif (-not $slowEvidenceComplete) {
-        "SlowEvidenceMissing"
-    }
-    elseif ($ProcessResult.residualChildren.Count -gt 0) {
-        "ResidualChildProcess"
+    elseif (-not $ProcessResult.ownedProcessFormalGatePassed) {
+        "OwnedProcessInvariantFailure"
     }
     elseif (-not $protocolValid -or -not $stderrClean -or $unexpectedText.Count -gt 0) {
         "OutputContractViolation"
     }
     else {
         "ProcessPhaseFailed"
-    }
-    $errorType = if ($failureType -eq "SlowEvidenceMissing") {
-        $ProcessResult.slowEvidenceErrorType
-    }
-    elseif ($failureType -eq "ResidualChildProcess") {
-        $ProcessResult.residualChildEvidenceErrorType
-    }
-    else {
-        $null
     }
     return [pscustomobject]@{
         assembly = $ProcessResult.assembly
@@ -123,38 +104,27 @@ function New-ProcessPhaseResult {
         processId = $ProcessResult.processId
         success = $success
         failureType = $failureType
-        errorType = $errorType
+        errorType = $null
         exitCode = $ProcessResult.exitCode
         durationMs = $ProcessResult.durationMs
-        timedOut = $ProcessResult.timedOut
         stdoutPolluted = -not $protocolValid -or $unexpectedText.Count -gt 0
         stderrPolluted = -not $stderrClean
         unexpectedOutput = $unexpectedText
-        observedChildCount = $ProcessResult.observedChildren.Count
-        observedChildren = @($ProcessResult.observedChildren)
-        transientChildCount = $ProcessResult.transientChildren.Count
-        transientChildren = @($ProcessResult.transientChildren)
-        residualChildCount = $ProcessResult.residualChildren.Count
-        residualChildren = @($ProcessResult.residualChildren)
-        childProcessObservationSampleCount =
-            $ProcessResult.childProcessObservationSampleCount
-        childProcessObservationDurationMs =
-            $ProcessResult.childProcessObservationDurationMs
-        residualChildEvidence = @($ProcessResult.residualChildEvidence)
-        residualChildEvidenceStatus = $ProcessResult.residualChildEvidenceStatus
-        residualChildEvidenceErrorType = $ProcessResult.residualChildEvidenceErrorType
         stdoutPath = $ProcessResult.stdoutPath
         stderrPath = $ProcessResult.stderrPath
         evidence = $ProcessResult.evidence
         slowEvidence = $ProcessResult.slowEvidence
         exitEvidence = $ProcessResult.exitEvidence
-        timeoutEvidence = $ProcessResult.timeoutEvidence
         diagnosticCaptureDurationMs = $ProcessResult.diagnosticCaptureDurationMs
         slowThresholdExceeded = $ProcessResult.slowThresholdExceeded
         slowEvidenceStatus = $ProcessResult.slowEvidenceStatus
         slowEvidenceErrorType = $ProcessResult.slowEvidenceErrorType
         slowEvidenceTriggeredBeforeThreshold =
             $ProcessResult.slowEvidenceTriggeredBeforeThreshold
+        ownedProcessFormalGatePassed = $ProcessResult.ownedProcessFormalGatePassed
+        ownedProcessInvariants = @($ProcessResult.ownedProcessInvariants)
+        ownedProcessFailures = @($ProcessResult.ownedProcessFailures)
+        ownedProcessProofPath = $ProcessResult.ownedProcessProofPath
     }
 }
 
@@ -278,74 +248,56 @@ function New-AssemblyCompletionPhaseResults {
         errorType = $null
         exitCode = if ($markerValid -and $testRootRemoved) { 0 } else { 1 }
         durationMs = $teardownDuration
-        timedOut = $false
         stdoutPolluted = $false
         stderrPolluted = $false
         unexpectedOutput = @()
-        observedChildCount = 0
-        observedChildren = @()
-        transientChildCount = 0
-        transientChildren = @()
-        residualChildCount = 0
-        residualChildren = @()
-        childProcessObservationSampleCount = 0
-        childProcessObservationDurationMs = 0.0
-        residualChildEvidence = @()
-        residualChildEvidenceStatus = "not-triggered"
-        residualChildEvidenceErrorType = $null
         stdoutPath = $null
         stderrPath = $null
         evidence = @()
         slowEvidence = @()
         exitEvidence = @()
-        timeoutEvidence = @()
         diagnosticCaptureDurationMs = 0.0
         slowThresholdExceeded = $false
         slowEvidenceStatus = "not-applicable"
         slowEvidenceErrorType = $null
         slowEvidenceTriggeredBeforeThreshold = $false
+        ownedProcessFormalGatePassed = $execution.ownedProcessFormalGatePassed
+        ownedProcessInvariants = @($execution.ownedProcessInvariants)
+        ownedProcessFailures = @($execution.ownedProcessFailures)
+        ownedProcessProofPath = $execution.ownedProcessProofPath
     }
-    $exitSucceeded = $execution.exitCode -eq 0 -and
-        -not $execution.timedOut -and
-        $execution.residualChildren.Count -eq 0 -and
-        $exitDuration -le ($ExitThresholdSeconds * 1000)
+    $exitSucceeded = $execution.ownedProcessFormalGatePassed -eq $true
     $processExitResult = [pscustomobject]@{
         assembly = $assemblyName
         iteration = $iteration
         phase = "process-exit"
         success = $exitSucceeded
-        failureType = if ($exitSucceeded) { $null } else { "ProcessExitFailed" }
+        failureType = if ($exitSucceeded) {
+            $null
+        }
+        else {
+            "OwnedProcessInvariantFailure"
+        }
         errorType = $null
         exitCode = if ($exitSucceeded) { 0 } else { 1 }
         durationMs = [Math]::Round($exitDuration, 3)
-        timedOut = $execution.timedOut
         stdoutPolluted = $false
         stderrPolluted = $false
         unexpectedOutput = @()
-        observedChildCount = $execution.observedChildren.Count
-        observedChildren = @($execution.observedChildren)
-        transientChildCount = $execution.transientChildren.Count
-        transientChildren = @($execution.transientChildren)
-        residualChildCount = $execution.residualChildren.Count
-        residualChildren = @($execution.residualChildren)
-        childProcessObservationSampleCount =
-            $execution.childProcessObservationSampleCount
-        childProcessObservationDurationMs =
-            $execution.childProcessObservationDurationMs
-        residualChildEvidence = @($execution.residualChildEvidence)
-        residualChildEvidenceStatus = $execution.residualChildEvidenceStatus
-        residualChildEvidenceErrorType = $execution.residualChildEvidenceErrorType
         stdoutPath = $execution.stdoutPath
         stderrPath = $execution.stderrPath
         evidence = $execution.exitEvidence
         slowEvidence = @()
         exitEvidence = $execution.exitEvidence
-        timeoutEvidence = $execution.timeoutEvidence
         diagnosticCaptureDurationMs = 0.0
         slowThresholdExceeded = $false
         slowEvidenceStatus = "not-applicable"
         slowEvidenceErrorType = $null
         slowEvidenceTriggeredBeforeThreshold = $false
+        ownedProcessFormalGatePassed = $execution.ownedProcessFormalGatePassed
+        ownedProcessInvariants = @($execution.ownedProcessInvariants)
+        ownedProcessFailures = @($execution.ownedProcessFailures)
+        ownedProcessProofPath = $execution.ownedProcessProofPath
     }
 
     return @($teardownResult, $processExitResult)
@@ -374,17 +326,11 @@ function New-AssemblyLifecycleReport {
         [Parameter(Mandatory)]
         [int]$SlowEvidenceCaptureLeadMilliseconds,
         [Parameter(Mandatory)]
-        [int]$ResidualChildQuiescenceMilliseconds,
-        [Parameter(Mandatory)]
-        [int]$ResidualChildPollMilliseconds,
-        [Parameter(Mandatory)]
         [bool]$ForensicsSelfTestCaptureLeadValidated,
         [Parameter(Mandatory)]
         [bool]$ReporterContractSelfTestPassed,
         [Parameter(Mandatory)]
         [double]$ExitThresholdSeconds,
-        [AllowNull()]
-        [object]$DiagnosticsTool,
         [Parameter(Mandatory)]
         [bool]$OwnershipPassed,
         [AllowNull()]
@@ -400,11 +346,7 @@ function New-AssemblyLifecycleReport {
         [Parameter(Mandatory)]
         [System.Collections.IDictionary]$MarkerReaderSelfTest,
         [Parameter(Mandatory)]
-        [bool]$MarkerReaderSelfTestComplete,
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]$ResidualChildSelfTest,
-        [Parameter(Mandatory)]
-        [bool]$ResidualChildSelfTestComplete
+        [bool]$MarkerReaderSelfTestComplete
     )
 
     $statistics = New-Statistics -Results $phaseResults
@@ -415,32 +357,9 @@ function New-AssemblyLifecycleReport {
             Where-Object slowEvidenceStatus -eq "captured"
     ).Count
     $slowEvidenceMissingCount = $slowResults.Count - $slowEvidenceCapturedCount
-    $residualChildResults = @(
-        $phaseResults | Where-Object residualChildCount -gt 0
-    )
-    $transientChildResults = @(
-        $phaseResults | Where-Object transientChildCount -gt 0
-    )
-    $transientChildObservedCount = [int](
-        $transientChildResults |
-            Measure-Object -Property transientChildCount -Sum
-    ).Sum
-    $residualChildObservedCount = [int](
-        $residualChildResults |
-            Measure-Object -Property residualChildCount -Sum
-    ).Sum
-    $residualChildEvidenceCapturedCount = @(
-        $residualChildResults |
-            Where-Object residualChildEvidenceStatus -eq "captured"
-    ).Count
-    $residualChildEvidenceMissingCount =
-        $residualChildResults.Count - $residualChildEvidenceCapturedCount
     $markerReaderSelfTestContractPassed =
         -not $markerReaderSelfTest.required -or
         $markerReaderSelfTestComplete
-    $residualChildSelfTestContractPassed =
-        -not $residualChildSelfTest.required -or
-        $residualChildSelfTestComplete
     $diagnosticCaptureTotalMs = [Math]::Round(
         [double](
             $phaseResults |
@@ -461,35 +380,19 @@ function New-AssemblyLifecycleReport {
         phaseTimeoutSeconds = $PhaseTimeoutSeconds
         slowPhaseThresholdSeconds = $SlowPhaseThresholdSeconds
         slowEvidenceCaptureLeadMilliseconds = $slowEvidenceCaptureLeadMilliseconds
-        residualChildQuiescenceMilliseconds =
-            $residualChildQuiescenceMilliseconds
-        residualChildPollMilliseconds = $residualChildPollMilliseconds
         forensicsSelfTestCaptureLeadValidated =
             $forensicsSelfTestCaptureLeadValidated
         reporterContractSelfTestPassed = $reporterContractSelfTestPassed
         exitThresholdSeconds = $ExitThresholdSeconds
-        diagnosticsTool = if ($null -eq $DiagnosticsTool) {
-            "unavailable"
-        }
-        else {
-            [System.IO.Path]::GetFileName($DiagnosticsTool)
-        }
         ownershipAuditPassed = $ownershipPassed
         ownershipAuditErrorType = $ownershipError
         successful = $ownershipPassed -and
             $failedResults.Count -eq 0 -and
-            $markerReaderSelfTestContractPassed -and
-            $residualChildSelfTestContractPassed
+            $markerReaderSelfTestContractPassed
         failedPhaseCount = $failedResults.Count
         slowPhaseCount = $slowResults.Count
         slowEvidenceCapturedCount = $slowEvidenceCapturedCount
         slowEvidenceMissingCount = $slowEvidenceMissingCount
-        residualChildPhaseCount = $residualChildResults.Count
-        residualChildObservedCount = $residualChildObservedCount
-        transientChildPhaseCount = $transientChildResults.Count
-        transientChildObservedCount = $transientChildObservedCount
-        residualChildEvidenceCapturedCount = $residualChildEvidenceCapturedCount
-        residualChildEvidenceMissingCount = $residualChildEvidenceMissingCount
         diagnosticCaptureTotalMs = $diagnosticCaptureTotalMs
         markerReadContentionCount = $MarkerReadContentionCount
         markerReadRetriesExhaustedCount = $MarkerReadRetriesExhaustedCount
@@ -502,39 +405,8 @@ function New-AssemblyLifecycleReport {
             $null
         }
         markerReaderSelfTest = $markerReaderSelfTest
-        residualChildSelfTestPassed = if ($residualChildSelfTest.executed) {
-            $residualChildSelfTestComplete
-        }
-        else {
-            $null
-        }
-        residualChildSelfTest = $residualChildSelfTest
         statistics = $statistics
         results = $phaseResults
-    }
-}
-
-function New-ResidualChildSelfTestState {
-    param(
-        [Parameter(Mandatory)]
-        [bool]$Required
-    )
-
-    return [ordered]@{
-        required = $Required
-        executed = $false
-        passed = $false
-        childObserved = $false
-        identityCaptured = $false
-        evidenceManifestWritten = $false
-        failureClassified = $false
-        transientChildObserved = $false
-        transientChildDrained = $false
-        transientPhasePassed = $false
-        cleanupCompleted = $false
-        redactionValidated = $false
-        observedChildCount = 0
-        errorType = $null
     }
 }
 
@@ -575,10 +447,14 @@ function New-ForensicsSelfTestPhaseResult {
         [object[]]$EvidenceReports
     )
 
-    $forensicsValid = $selfTestPhase.success -and
-        $evidenceReports.Count -gt 0 -and
-        @($evidenceReports | Where-Object { $_.managedStack.captured -eq $true }).Count -gt 0 -and
-        $selfTest.slowEvidenceTriggeredBeforeThreshold
+    $diagnosticEvidenceCaptured = @(
+        $evidenceReports | Where-Object {
+            $_.diagnosticOnly -eq $true -and
+            $_.captureMode -eq "owned-diagnostic-collector" -and
+            $_.managedStack.captured -eq $true
+        }
+    ).Count -gt 0
+    $forensicsValid = $selfTestPhase.success
     $phaseResult = [pscustomobject]@{
         assembly = "Gate.Forensics"
         iteration = 1
@@ -589,269 +465,32 @@ function New-ForensicsSelfTestPhaseResult {
         errorType = $selfTestPhase.errorType
         exitCode = if ($forensicsValid) { 0 } else { 1 }
         durationMs = $selfTest.durationMs
-        timedOut = $selfTest.timedOut
         stdoutPolluted = $selfTestPhase.stdoutPolluted
         stderrPolluted = $selfTestPhase.stderrPolluted
         unexpectedOutput = $selfTestPhase.unexpectedOutput
-        observedChildCount = $selfTestPhase.observedChildCount
-        observedChildren = @($selfTestPhase.observedChildren)
-        transientChildCount = $selfTestPhase.transientChildCount
-        transientChildren = @($selfTestPhase.transientChildren)
-        residualChildCount = $selfTestPhase.residualChildCount
-        residualChildren = @($selfTestPhase.residualChildren)
-        childProcessObservationSampleCount =
-            $selfTestPhase.childProcessObservationSampleCount
-        childProcessObservationDurationMs =
-            $selfTestPhase.childProcessObservationDurationMs
-        residualChildEvidence = @($selfTestPhase.residualChildEvidence)
-        residualChildEvidenceStatus = $selfTestPhase.residualChildEvidenceStatus
-        residualChildEvidenceErrorType = $selfTestPhase.residualChildEvidenceErrorType
         stdoutPath = $selfTest.stdoutPath
         stderrPath = $selfTest.stderrPath
         evidence = $selfTest.evidence
         slowEvidence = $selfTest.slowEvidence
         exitEvidence = $selfTest.exitEvidence
-        timeoutEvidence = $selfTest.timeoutEvidence
         diagnosticCaptureDurationMs = $selfTest.diagnosticCaptureDurationMs
         slowThresholdExceeded = $false
         slowEvidenceStatus = "not-applicable"
         slowEvidenceErrorType = $null
         slowEvidenceTriggeredBeforeThreshold =
             $selfTest.slowEvidenceTriggeredBeforeThreshold
+        ownedProcessFormalGatePassed = $selfTestPhase.ownedProcessFormalGatePassed
+        ownedProcessInvariants = @($selfTestPhase.ownedProcessInvariants)
+        ownedProcessFailures = @($selfTestPhase.ownedProcessFailures)
+        ownedProcessProofPath = $selfTestPhase.ownedProcessProofPath
+        diagnosticEvidenceCaptured = $diagnosticEvidenceCaptured
     }
 
     return [pscustomobject]@{
         phaseResult = $phaseResult
-        captureLeadValidated = $selfTest.slowEvidenceTriggeredBeforeThreshold
-    }
-}
-
-function Set-ResidualChildSelfTestPersistentObservations {
-    param(
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]$SelfTest,
-        [Parameter(Mandatory)]
-        [pscustomobject]$ResidualProbe,
-        [Parameter(Mandatory)]
-        [pscustomobject]$ResidualProbePhase,
-        [Parameter(Mandatory)]
-        [string]$RunRoot
-    )
-
-    $residualChildSelfTest = $SelfTest
-    $runRoot = $RunRoot
-    $residualPayload = $residualProbe.stdout | ConvertFrom-Json -ErrorAction Stop
-    $expectedChildProcessId = [int]$residualPayload.ChildProcessId
-    $observedResidualChildren = @($residualProbe.residualChildren)
-    $matchingChild = @(
-        $observedResidualChildren |
-            Where-Object processId -eq $expectedChildProcessId
-    )
-    $residualChildSelfTest.observedChildCount =
-        $observedResidualChildren.Count
-    $residualChildSelfTest.childObserved = $matchingChild.Count -eq 1
-    $residualChildSelfTest.identityCaptured =
-        $matchingChild.Count -eq 1 -and
-        -not [string]::IsNullOrWhiteSpace($matchingChild[0].name) -and
-        -not [string]::IsNullOrWhiteSpace($matchingChild[0].createdAtUtc)
-    $residualChildSelfTest.evidenceManifestWritten =
-        $residualProbe.residualChildEvidenceStatus -eq "captured" -and
-        @(
-            foreach ($relativePath in $residualProbe.residualChildEvidence) {
-                $manifestPath = Join-Path $runRoot $relativePath (
-                    "residual-children.json")
-                if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-                    $manifestPath
-                }
-            }
-        ).Count -gt 0
-    $residualChildSelfTest.failureClassified =
-        -not $residualProbePhase.success -and
-        $residualProbePhase.failureType -eq "ResidualChildProcess"
-}
-
-function Set-ResidualChildSelfTestTransientObservations {
-    param(
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]$SelfTest,
-        [Parameter(Mandatory)]
-        [pscustomobject]$TransientProbe,
-        [Parameter(Mandatory)]
-        [pscustomobject]$TransientProbePhase,
-        [Parameter(Mandatory)]
-        [string]$RepositoryRoot
-    )
-
-    $residualChildSelfTest = $SelfTest
-    $repositoryRoot = $RepositoryRoot
-    $transientPayload = $transientProbe.stdout |
-        ConvertFrom-Json -ErrorAction Stop
-    $expectedTransientProcessId = [int]$transientPayload.ChildProcessId
-    $matchingTransientObservation = @(
-        $transientProbe.observedChildren |
-            Where-Object processId -eq $expectedTransientProcessId
-    )
-    $matchingTransientDrain = @(
-        $transientProbe.transientChildren |
-            Where-Object processId -eq $expectedTransientProcessId
-    )
-    $matchingTransientResidual = @(
-        $transientProbe.residualChildren |
-            Where-Object processId -eq $expectedTransientProcessId
-    )
-    $residualChildSelfTest.transientChildObserved =
-        $matchingTransientObservation.Count -eq 1
-    $residualChildSelfTest.transientChildDrained =
-        $matchingTransientDrain.Count -eq 1 -and
-        $matchingTransientResidual.Count -eq 0
-    $residualChildSelfTest.transientPhasePassed =
-        $transientProbePhase.success
-    $redactionSample = (
-        "$repositoryRoot https://example.invalid/private " +
-        "SESSDATA=example-cookie-value " +
-        "--rpc-secret `"example secret value`"")
-    $redactedSample = Protect-ProcessDiagnosticText -Value $redactionSample
-    $residualChildSelfTest.redactionValidated =
-        $redactedSample.Contains(
-            "<repository>",
-            [StringComparison]::Ordinal) -and
-        $redactedSample.Contains("<url>", [StringComparison]::Ordinal) -and
-        $redactedSample.Contains(
-            "SESSDATA=<redacted>",
-            [StringComparison]::Ordinal) -and
-        $redactedSample.Contains(
-            "--rpc-secret <redacted>",
-            [StringComparison]::Ordinal) -and
-        -not $redactedSample.Contains(
-            "example-cookie-value",
-            [StringComparison]::Ordinal) -and
-        -not $redactedSample.Contains(
-            "example secret value",
-            [StringComparison]::Ordinal)
-}
-
-function Complete-ResidualChildSelfTestClassification {
-    param(
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]$SelfTest
-    )
-
-    $residualChildSelfTest = $SelfTest
-    $residualChildSelfTest.passed =
-        $residualChildSelfTest.childObserved -and
-        $residualChildSelfTest.identityCaptured -and
-        $residualChildSelfTest.evidenceManifestWritten -and
-        $residualChildSelfTest.failureClassified -and
-        $residualChildSelfTest.transientChildObserved -and
-        $residualChildSelfTest.transientChildDrained -and
-        $residualChildSelfTest.transientPhasePassed -and
-        $residualChildSelfTest.cleanupCompleted -and
-        $residualChildSelfTest.redactionValidated -and
-        $null -eq $residualChildSelfTest.errorType
-    $residualChildSelfTestComplete = $residualChildSelfTest.passed
-    if (-not $residualChildSelfTestComplete -and
-        $null -eq $residualChildSelfTest.errorType) {
-        $residualChildSelfTest.errorType = "ContractNotSatisfied"
-    }
-    return $residualChildSelfTestComplete
-}
-
-function New-ResidualChildSelfTestPhaseResult {
-    param(
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]$SelfTest,
-        [Parameter(Mandatory)]
-        [bool]$Complete,
-        [AllowNull()]
-        [pscustomobject]$ResidualProbe,
-        [Parameter(Mandatory)]
-        [System.Diagnostics.Stopwatch]$Stopwatch
-    )
-
-    $residualChildSelfTest = $SelfTest
-    $residualChildSelfTestComplete = $Complete
-    $residualChildSelfTestStopwatch = $Stopwatch
-    return [pscustomobject]@{
-        assembly = "Gate.ResidualChild"
-        iteration = 1
-        phase = "residual-child-self-test"
-        processId = if ($null -eq $residualProbe) {
-            $PID
-        }
-        else {
-            $residualProbe.processId
-        }
-        success = $residualChildSelfTestComplete
-        failureType = if ($residualChildSelfTestComplete) {
-            $null
-        }
-        else {
-            "ResidualChildSelfTestFailed"
-        }
-        errorType = $residualChildSelfTest.errorType
-        exitCode = if ($residualChildSelfTestComplete) { 0 } else { 1 }
-        durationMs = [Math]::Round(
-            $residualChildSelfTestStopwatch.Elapsed.TotalMilliseconds,
-            3)
-        timedOut = $false
-        stdoutPolluted = $false
-        stderrPolluted = $false
-        unexpectedOutput = @()
-        observedChildCount = 0
-        observedChildren = @()
-        transientChildCount = 0
-        transientChildren = @()
-        residualChildCount = 0
-        residualChildren = @()
-        childProcessObservationSampleCount = 0
-        childProcessObservationDurationMs = 0.0
-        residualChildEvidence = @(
-            if ($null -ne $residualProbe) {
-                $residualProbe.residualChildEvidence
-            }
-        )
-        residualChildEvidenceStatus = if ($null -eq $residualProbe) {
-            "not-triggered"
-        }
-        else {
-            $residualProbe.residualChildEvidenceStatus
-        }
-        residualChildEvidenceErrorType = if ($null -eq $residualProbe) {
-            $null
-        }
-        else {
-            $residualProbe.residualChildEvidenceErrorType
-        }
-        stdoutPath = if ($null -eq $residualProbe) {
-            $null
-        }
-        else {
-            $residualProbe.stdoutPath
-        }
-        stderrPath = if ($null -eq $residualProbe) {
-            $null
-        }
-        else {
-            $residualProbe.stderrPath
-        }
-        evidence = @(
-            if ($null -ne $residualProbe) {
-                $residualProbe.evidence
-            }
-        )
-        slowEvidence = @()
-        exitEvidence = @()
-        timeoutEvidence = @()
-        diagnosticCaptureDurationMs = if ($null -eq $residualProbe) {
-            0.0
-        }
-        else {
-            $residualProbe.diagnosticCaptureDurationMs
-        }
-        slowThresholdExceeded = $false
-        slowEvidenceStatus = "not-applicable"
-        slowEvidenceErrorType = $null
-        slowEvidenceTriggeredBeforeThreshold = $false
+        captureLeadValidated =
+            $diagnosticEvidenceCaptured -and
+            $selfTest.slowEvidenceTriggeredBeforeThreshold
     }
 }
 
@@ -1002,27 +641,14 @@ function New-MarkerReaderSelfTestPhaseResult {
         durationMs = [Math]::Round(
             $markerReaderSelfTestStopwatch.Elapsed.TotalMilliseconds,
             3)
-        timedOut = $false
         stdoutPolluted = $false
         stderrPolluted = $false
         unexpectedOutput = @()
-        observedChildCount = 0
-        observedChildren = @()
-        transientChildCount = 0
-        transientChildren = @()
-        residualChildCount = 0
-        residualChildren = @()
-        childProcessObservationSampleCount = 0
-        childProcessObservationDurationMs = 0.0
-        residualChildEvidence = @()
-        residualChildEvidenceStatus = "not-triggered"
-        residualChildEvidenceErrorType = $null
         stdoutPath = $null
         stderrPath = $null
         evidence = @()
         slowEvidence = @()
         exitEvidence = @()
-        timeoutEvidence = @()
         diagnosticCaptureDurationMs = 0.0
         slowThresholdExceeded = $false
         slowEvidenceStatus = "not-applicable"
