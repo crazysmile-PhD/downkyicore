@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 
 namespace DownKyi.ProcessSupervision;
 
-internal abstract record ProcessContainmentPrimaryFailure
+internal abstract class ProcessContainmentPrimaryFailure
 {
     private protected ProcessContainmentPrimaryFailure(
         string errorType,
@@ -19,7 +19,7 @@ internal abstract record ProcessContainmentPrimaryFailure
     public string Detail { get; }
 }
 
-internal abstract record ProcessContainmentBackendFailure
+internal abstract class ProcessContainmentBackendFailure
     : ProcessContainmentPrimaryFailure
 {
     private protected ProcessContainmentBackendFailure(
@@ -35,23 +35,78 @@ internal abstract record ProcessContainmentBackendFailure
     internal object AuthorityIdentity { get; }
 }
 
-internal abstract record ProcessContainmentCallerFailure
-    : ProcessContainmentPrimaryFailure
+internal enum ProcessContainmentCallerFailureKind
 {
-    private protected ProcessContainmentCallerFailure(
-        ProcessContainmentOperationAuthorityIdentity authorityIdentity,
-        string errorType,
-        string detail)
-        : base(errorType, detail)
-    {
-        ArgumentNullException.ThrowIfNull(authorityIdentity);
-        AuthorityIdentity = authorityIdentity;
-    }
-
-    public ProcessContainmentOperationAuthorityIdentity AuthorityIdentity { get; }
+    Cancellation,
+    DeadlineExceeded
 }
 
-internal abstract record ProcessContainmentContractFailure
+internal sealed class ProcessContainmentCallerFailure
+    : ProcessContainmentPrimaryFailure
+{
+    private readonly object _authorityIdentity;
+
+    private ProcessContainmentCallerFailure(
+        object authorityIdentity,
+        ProcessContainmentCallerFailureKind kind,
+        string detail)
+        : base(ErrorTypeFor(kind), detail)
+    {
+        ArgumentNullException.ThrowIfNull(authorityIdentity);
+        _authorityIdentity = authorityIdentity;
+        Kind = kind;
+    }
+
+    public ProcessContainmentCallerFailureKind Kind { get; }
+
+    private bool IsOwnedBy(object authorityIdentity)
+    {
+        return ReferenceEquals(_authorityIdentity, authorityIdentity);
+    }
+
+    private static string ErrorTypeFor(ProcessContainmentCallerFailureKind kind)
+    {
+        return kind switch
+        {
+            ProcessContainmentCallerFailureKind.Cancellation =>
+                nameof(OperationCanceledException),
+            ProcessContainmentCallerFailureKind.DeadlineExceeded =>
+                nameof(TimeoutException),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+        };
+    }
+
+    internal sealed class Publisher
+    {
+        private readonly object _authorityIdentity = new();
+
+        internal ProcessContainmentCallerFailure PublishCancellation(
+            string detail)
+        {
+            return new ProcessContainmentCallerFailure(
+                _authorityIdentity,
+                ProcessContainmentCallerFailureKind.Cancellation,
+                detail);
+        }
+
+        internal ProcessContainmentCallerFailure PublishDeadlineExceeded(
+            string detail)
+        {
+            return new ProcessContainmentCallerFailure(
+                _authorityIdentity,
+                ProcessContainmentCallerFailureKind.DeadlineExceeded,
+                detail);
+        }
+
+        internal bool Owns(ProcessContainmentCallerFailure failure)
+        {
+            ArgumentNullException.ThrowIfNull(failure);
+            return failure.IsOwnedBy(_authorityIdentity);
+        }
+    }
+}
+
+internal abstract class ProcessContainmentContractFailure
     : ProcessContainmentPrimaryFailure
 {
     private protected ProcessContainmentContractFailure(
@@ -67,26 +122,18 @@ internal abstract record ProcessContainmentContractFailure
     internal object AuthorityIdentity { get; }
 }
 
-internal sealed class ProcessContainmentOperationAuthorityIdentity
-{
-    internal ProcessContainmentOperationAuthorityIdentity()
-    {
-    }
-}
-
 internal sealed class ProcessContainmentCallerAuthority
 {
+    private readonly ProcessContainmentCallerFailure.Publisher _publisher = new();
+
     internal ProcessContainmentCallerAuthority(
         TransitionBudget budget,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(budget);
-        Identity = new ProcessContainmentOperationAuthorityIdentity();
         Budget = budget;
         CancellationToken = cancellationToken;
     }
-
-    public ProcessContainmentOperationAuthorityIdentity Identity { get; }
 
     public TransitionBudget Budget { get; }
 
@@ -100,7 +147,7 @@ internal sealed class ProcessContainmentCallerAuthority
                 "Caller cancellation cannot be published before its bound capability is canceled.");
         }
 
-        return new PublishedCallerCancellationFailure(Identity, detail);
+        return _publisher.PublishCancellation(detail);
     }
 
     internal ProcessContainmentCallerFailure PublishDeadlineExceeded(string detail)
@@ -111,13 +158,13 @@ internal sealed class ProcessContainmentCallerAuthority
                 "Caller deadline cannot be published before the bound root budget observes expiry.");
         }
 
-        return new PublishedCallerDeadlineExceededFailure(Identity, detail);
+        return _publisher.PublishDeadlineExceeded(detail);
     }
 
     internal bool Owns(ProcessContainmentCallerFailure failure)
     {
         ArgumentNullException.ThrowIfNull(failure);
-        return ReferenceEquals(Identity, failure.AuthorityIdentity);
+        return _publisher.Owns(failure);
     }
 }
 
@@ -205,12 +252,33 @@ internal sealed class ProcessContainmentContractGuard
     }
 }
 
-internal abstract record ProcessContainmentOperationResult;
+internal abstract record ProcessContainmentOperationResult
+{
+    private protected ProcessContainmentOperationResult(
+        IEnumerable<ProcessCleanupFailure> cleanupFailures)
+    {
+        ArgumentNullException.ThrowIfNull(cleanupFailures);
+        var snapshot = cleanupFailures.ToArray();
+        if (snapshot.Any(failure => failure is null))
+        {
+            throw new ArgumentException(
+                "Cleanup failures cannot contain a null item.",
+                nameof(cleanupFailures));
+        }
+
+        CleanupFailures = new ReadOnlyCollection<ProcessCleanupFailure>(snapshot);
+    }
+
+    public IReadOnlyList<ProcessCleanupFailure> CleanupFailures { get; }
+}
 
 internal abstract record ProcessContainmentOperationCompleted
     : ProcessContainmentOperationResult
 {
-    private protected ProcessContainmentOperationCompleted(string evidence)
+    private protected ProcessContainmentOperationCompleted(
+        string evidence,
+        IEnumerable<ProcessCleanupFailure> cleanupFailures)
+        : base(cleanupFailures)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(evidence);
         Evidence = evidence;
@@ -225,24 +293,13 @@ internal abstract record ProcessContainmentOperationRejected
     private protected ProcessContainmentOperationRejected(
         ProcessContainmentPrimaryFailure primaryFailure,
         IEnumerable<ProcessCleanupFailure> cleanupFailures)
+        : base(cleanupFailures)
     {
         ArgumentNullException.ThrowIfNull(primaryFailure);
-        ArgumentNullException.ThrowIfNull(cleanupFailures);
-        var snapshot = cleanupFailures.ToArray();
-        if (snapshot.Any(failure => failure is null))
-        {
-            throw new ArgumentException(
-                "Cleanup failures cannot contain a null item.",
-                nameof(cleanupFailures));
-        }
-
         PrimaryFailure = primaryFailure;
-        CleanupFailures = new ReadOnlyCollection<ProcessCleanupFailure>(snapshot);
     }
 
     public ProcessContainmentPrimaryFailure PrimaryFailure { get; }
-
-    public IReadOnlyList<ProcessCleanupFailure> CleanupFailures { get; }
 }
 
 internal sealed class ProcessContainmentOperationAuthority
@@ -257,8 +314,6 @@ internal sealed class ProcessContainmentOperationAuthority
         BackendResults = new ProcessContainmentBackendResultFactory();
         ContractGuard = new ProcessContainmentContractGuard();
     }
-
-    public ProcessContainmentOperationAuthorityIdentity Identity => Caller.Identity;
 
     public ProcessContainmentCallerAuthority Caller { get; }
 
@@ -276,26 +331,32 @@ internal sealed class ProcessContainmentOperationAuthority
     }
 
     internal ProcessContainmentOperationResult FromBackend(
-        ProcessContainmentBackendResult backendResult)
+        ProcessContainmentBackendResult backendResult,
+        IEnumerable<ProcessCleanupFailure> cleanupFailures)
     {
         ArgumentNullException.ThrowIfNull(backendResult);
+        ArgumentNullException.ThrowIfNull(cleanupFailures);
         if (!BackendResults.Owns(backendResult))
         {
             return new PublishedOperationRejected(
                 ContractGuard.AuthoritySubstitution(),
-                []);
+                cleanupFailures);
         }
 
         return backendResult switch
         {
             PublishedBackendSucceeded succeeded =>
-                new PublishedOperationCompleted(succeeded.Evidence),
+                new PublishedOperationCompleted(
+                    succeeded.Evidence,
+                    cleanupFailures),
             PublishedBackendFailed failed when BackendResults.Owns(failed.Failure) =>
-                new PublishedOperationRejected(failed.Failure, []),
+                new PublishedOperationRejected(
+                    failed.Failure,
+                    cleanupFailures),
             _ => new PublishedOperationRejected(
                 ContractGuard.InvalidBackendResult(
                     "The backend returned an unsupported result type."),
-                [])
+                cleanupFailures)
         };
     }
 
@@ -324,7 +385,7 @@ internal sealed class ProcessContainmentOperationAuthority
     }
 }
 
-file sealed record PublishedBackendOperationFailure
+file sealed class PublishedBackendOperationFailure
     : ProcessContainmentBackendFailure
 {
     internal PublishedBackendOperationFailure(
@@ -336,32 +397,7 @@ file sealed record PublishedBackendOperationFailure
     }
 }
 
-file sealed record PublishedCallerCancellationFailure
-    : ProcessContainmentCallerFailure
-{
-    internal PublishedCallerCancellationFailure(
-        ProcessContainmentOperationAuthorityIdentity authorityIdentity,
-        string detail)
-        : base(
-            authorityIdentity,
-            nameof(OperationCanceledException),
-            detail)
-    {
-    }
-}
-
-file sealed record PublishedCallerDeadlineExceededFailure
-    : ProcessContainmentCallerFailure
-{
-    internal PublishedCallerDeadlineExceededFailure(
-        ProcessContainmentOperationAuthorityIdentity authorityIdentity,
-        string detail)
-        : base(authorityIdentity, nameof(TimeoutException), detail)
-    {
-    }
-}
-
-file sealed record PublishedIllegalTransitionFailure
+file sealed class PublishedIllegalTransitionFailure
     : ProcessContainmentContractFailure
 {
     internal PublishedIllegalTransitionFailure(
@@ -372,7 +408,7 @@ file sealed record PublishedIllegalTransitionFailure
     }
 }
 
-file sealed record PublishedInvalidBackendResultFailure
+file sealed class PublishedInvalidBackendResultFailure
     : ProcessContainmentContractFailure
 {
     internal PublishedInvalidBackendResultFailure(
@@ -383,7 +419,7 @@ file sealed record PublishedInvalidBackendResultFailure
     }
 }
 
-file sealed record PublishedAuthoritySubstitutionFailure
+file sealed class PublishedAuthoritySubstitutionFailure
     : ProcessContainmentContractFailure
 {
     internal PublishedAuthoritySubstitutionFailure(object authorityIdentity)
@@ -424,8 +460,10 @@ file sealed record PublishedBackendFailed : ProcessContainmentBackendResult
 file sealed record PublishedOperationCompleted
     : ProcessContainmentOperationCompleted
 {
-    internal PublishedOperationCompleted(string evidence)
-        : base(evidence)
+    internal PublishedOperationCompleted(
+        string evidence,
+        IEnumerable<ProcessCleanupFailure> cleanupFailures)
+        : base(evidence, cleanupFailures)
     {
     }
 }

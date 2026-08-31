@@ -1,3 +1,4 @@
+using System.Reflection;
 using DownKyi.ProcessSupervision;
 
 namespace DownKyi.Architecture.Tests;
@@ -22,11 +23,14 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
         var expired = operation.Caller.PublishDeadlineExceeded(
             "caller deadline expired");
 
-        Assert.Same(operation.Identity, canceled.AuthorityIdentity);
-        Assert.Same(operation.Identity, expired.AuthorityIdentity);
+        Assert.Equal(
+            ProcessContainmentCallerFailureKind.Cancellation,
+            canceled.Kind);
+        Assert.Equal(
+            ProcessContainmentCallerFailureKind.DeadlineExceeded,
+            expired.Kind);
         Assert.Equal(nameof(OperationCanceledException), canceled.ErrorType);
         Assert.Equal(nameof(TimeoutException), expired.ErrorType);
-        Assert.NotEqual(canceled.GetType(), expired.GetType());
     }
 
     [Fact]
@@ -48,7 +52,8 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
         continuation.SetResult();
 
         var rejected = AssertRejected(operation.FromBackend(
-            await delayedResult.ConfigureAwait(true)));
+            await delayedResult.ConfigureAwait(true),
+            []));
 
         Assert.IsAssignableFrom<ProcessContainmentBackendFailure>(
             rejected.PrimaryFailure);
@@ -87,15 +92,13 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
         var foreignBackendResult = AssertRejected(operationA.FromBackend(
             operationB.BackendResults.Failed(
                 new InvalidOperationException("fixture backend B failure"),
-                "backend B failed")));
+                "backend B failed"),
+            []));
         var foreignGuardResult = AssertRejected(operationA.Rejected(
             operationB.ContractGuard.IllegalTransition("guard B failure"),
             []));
 
-        Assert.Same(operationA.Identity, ownCaller.AuthorityIdentity);
         Assert.Same(ownCaller, ownResult.PrimaryFailure);
-        Assert.NotSame(operationA.Identity, operationB.Identity);
-        Assert.NotSame(operationA.Identity, reboundA.Identity);
         Assert.All(
         [
             foreignCallerResult,
@@ -112,6 +115,57 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
                     rejected.PrimaryFailure.Detail,
                     StringComparison.Ordinal);
             });
+    }
+
+    [Fact]
+    public void NonPublicConstructionCannotForgeCallerAuthority()
+    {
+        var clock = new ManualMonotonicTimeProvider();
+        using var cancellation = new CancellationTokenSource();
+        var operation = Operation(clock, cancellation.Token);
+        var constructor = typeof(ProcessContainmentCallerFailure)
+            .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Single(candidate => candidate.GetParameters()
+                .Select(parameter => parameter.ParameterType)
+                .SequenceEqual(
+                [
+                    typeof(object),
+                    typeof(ProcessContainmentCallerFailureKind),
+                    typeof(string)
+                ]));
+        var forged = Assert.IsType<ProcessContainmentCallerFailure>(
+            constructor.Invoke(
+            [
+                new object(),
+                ProcessContainmentCallerFailureKind.Cancellation,
+                "reflected caller failure"
+            ]));
+        var foreignPublisher = new ProcessContainmentCallerFailure.Publisher();
+        var foreignPublished = foreignPublisher.PublishCancellation(
+            "foreign published caller failure");
+        var invalidKind = Assert.Throws<TargetInvocationException>(() =>
+            constructor.Invoke(
+            [
+                new object(),
+                (ProcessContainmentCallerFailureKind)int.MaxValue,
+                "invalid caller failure"
+            ]));
+
+        var rejected = AssertRejected(operation.Rejected(forged, []));
+        var foreignRejected = AssertRejected(operation.Rejected(
+            foreignPublished,
+            []));
+
+        Assert.All([rejected, foreignRejected], candidate =>
+        {
+            Assert.IsAssignableFrom<ProcessContainmentContractFailure>(
+                candidate.PrimaryFailure);
+            Assert.Contains(
+                "does not own this operation lifetime",
+                candidate.PrimaryFailure.Detail,
+                StringComparison.Ordinal);
+        });
+        Assert.IsType<ArgumentOutOfRangeException>(invalidKind.InnerException);
     }
 
     [Fact]
@@ -144,6 +198,82 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
     }
 
     [Fact]
+    public void BackendFailurePublicationPreservesPrimaryAndCleanupSnapshot()
+    {
+        var clock = new ManualMonotonicTimeProvider();
+        using var cancellation = new CancellationTokenSource();
+        var operation = Operation(clock, cancellation.Token);
+        var cleanup = new List<ProcessCleanupFailure>
+        {
+            Cleanup(
+                ProcessCleanupFailureKind.ResourceReleaseFailure,
+                "backend cleanup failed")
+        };
+
+        var backendResult = operation.BackendResults.Failed(
+                new IOException("fixture backend failure"),
+                "backend failed");
+        var publishedPrimary = Assert.IsAssignableFrom<
+            ProcessContainmentBackendFailure>(backendResult.GetType()
+                .GetProperty("Failure")!
+                .GetValue(backendResult));
+        var rejected = AssertRejected(operation.FromBackend(
+            backendResult,
+            cleanup));
+        cleanup.Clear();
+        cleanup.Add(Cleanup(
+            ProcessCleanupFailureKind.StreamDrainFailure,
+            "replacement cleanup failure"));
+
+        Assert.Same(publishedPrimary, rejected.PrimaryFailure);
+        Assert.Equal(nameof(IOException), publishedPrimary.ErrorType);
+        Assert.Equal(
+            ProcessCleanupFailureKind.ResourceReleaseFailure,
+            Assert.Single(rejected.CleanupFailures).Kind);
+    }
+
+    [Fact]
+    public void BackendSuccessAndGuardRejectionPreserveCleanupSnapshots()
+    {
+        var clock = new ManualMonotonicTimeProvider();
+        using var cancellation = new CancellationTokenSource();
+        var operation = Operation(clock, cancellation.Token);
+        var foreignOperation = Operation(clock, cancellation.Token);
+        var successCleanup = new List<ProcessCleanupFailure>
+        {
+            Cleanup(
+                ProcessCleanupFailureKind.StreamDrainFailure,
+                "success cleanup failed")
+        };
+        var guardCleanup = new List<ProcessCleanupFailure>
+        {
+            Cleanup(
+                ProcessCleanupFailureKind.ResourceReleaseFailure,
+                "guard cleanup failed")
+        };
+
+        var completed = Assert.IsAssignableFrom<
+            ProcessContainmentOperationCompleted>(operation.FromBackend(
+                operation.BackendResults.Succeeded("backend evidence"),
+                successCleanup));
+        var guarded = AssertRejected(operation.FromBackend(
+            foreignOperation.BackendResults.Succeeded("foreign evidence"),
+            guardCleanup));
+        successCleanup.Clear();
+        guardCleanup.Clear();
+
+        Assert.Equal("backend evidence", completed.Evidence);
+        Assert.Equal(
+            ProcessCleanupFailureKind.StreamDrainFailure,
+            Assert.Single(completed.CleanupFailures).Kind);
+        Assert.IsAssignableFrom<ProcessContainmentContractFailure>(
+            guarded.PrimaryFailure);
+        Assert.Equal(
+            ProcessCleanupFailureKind.ResourceReleaseFailure,
+            Assert.Single(guarded.CleanupFailures).Kind);
+    }
+
+    [Fact]
     public void FailureFamiliesCannotRepresentContradictoryAuthorityKinds()
     {
         var clock = new ManualMonotonicTimeProvider();
@@ -154,7 +284,8 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
         var backend = AssertRejected(operation.FromBackend(
             operation.BackendResults.Failed(
                 new IOException("fixture backend failure"),
-                "backend failed"))).PrimaryFailure;
+                "backend failed"),
+            [])).PrimaryFailure;
         var contract = operation.ContractGuard.IllegalTransition(
             "illegal transition");
 

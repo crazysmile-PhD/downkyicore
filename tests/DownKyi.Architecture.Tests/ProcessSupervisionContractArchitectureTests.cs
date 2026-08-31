@@ -168,7 +168,6 @@ public sealed class ProcessSupervisionContractArchitectureTests
             typeof(ProcessContainmentOperationResult),
             typeof(ProcessContainmentOperationCompleted),
             typeof(ProcessContainmentOperationRejected),
-            typeof(ProcessContainmentOperationAuthorityIdentity),
             typeof(ProcessContainmentCallerAuthority),
             typeof(ProcessContainmentBackendResultFactory),
             typeof(ProcessContainmentContractGuard),
@@ -279,8 +278,13 @@ public sealed class ProcessSupervisionContractArchitectureTests
             .ToArray();
         Assert.Equal(3, resultEntries.Length);
         Assert.Single(resultEntries, method => method.Name == "FromBackend" &&
-            method.GetParameters()[0].ParameterType ==
-                typeof(ProcessContainmentBackendResult));
+            method.GetParameters()
+                .Select(parameter => parameter.ParameterType)
+                .SequenceEqual(
+                [
+                    typeof(ProcessContainmentBackendResult),
+                    typeof(IEnumerable<ProcessCleanupFailure>)
+                ]));
         Assert.Equal(
             [
                 typeof(ProcessContainmentCallerFailure),
@@ -293,12 +297,19 @@ public sealed class ProcessSupervisionContractArchitectureTests
         Assert.DoesNotContain(resultEntries, method =>
             method.GetParameters()[0].ParameterType ==
                 typeof(ProcessContainmentPrimaryFailure));
+        Assert.All(resultEntries, method => Assert.Equal(
+            typeof(IEnumerable<ProcessCleanupFailure>),
+            method.GetParameters()[1].ParameterType));
+        Assert.Equal(
+            typeof(IReadOnlyList<ProcessCleanupFailure>),
+            typeof(ProcessContainmentOperationResult)
+                .GetProperty(nameof(ProcessContainmentOperationResult.CleanupFailures))!
+                .PropertyType);
         Assert.Equal(
             [
                 nameof(ProcessContainmentOperationAuthority.BackendResults),
                 nameof(ProcessContainmentOperationAuthority.Caller),
-                nameof(ProcessContainmentOperationAuthority.ContractGuard),
-                nameof(ProcessContainmentOperationAuthority.Identity)
+                nameof(ProcessContainmentOperationAuthority.ContractGuard)
             ],
             typeof(ProcessContainmentOperationAuthority)
                 .GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -326,11 +337,58 @@ public sealed class ProcessSupervisionContractArchitectureTests
                                .IsAssignableFrom(type))
             .ToArray();
 
-        Assert.Equal(2, callerFailures.Length);
+        Assert.Empty(callerFailures);
         Assert.Single(backendFailures);
         Assert.Equal(3, contractFailures.Length);
+        Assert.True(typeof(ProcessContainmentCallerFailure).IsSealed);
+        Assert.False(typeof(ProcessContainmentCallerFailure).IsAbstract);
         Assert.All(
-            callerFailures.Concat(backendFailures).Concat(contractFailures),
+            typeof(ProcessContainmentCallerFailure).GetConstructors(
+                BindingFlags.Instance | BindingFlags.NonPublic),
+            constructor => Assert.True(constructor.IsPrivate));
+        Assert.Equal(
+            [
+                nameof(ProcessContainmentCallerFailureKind.Cancellation),
+                nameof(ProcessContainmentCallerFailureKind.DeadlineExceeded)
+            ],
+            Enum.GetNames<ProcessContainmentCallerFailureKind>());
+        Assert.DoesNotContain(
+            typeof(ProcessContainmentCallerFailure).GetProperties(
+                BindingFlags.Instance |
+                BindingFlags.Public |
+                BindingFlags.NonPublic),
+            property => property.Name.Contains(
+                "Authority",
+                StringComparison.Ordinal));
+        Assert.All(
+            typeof(ProcessContainmentCallerFailure)
+                .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+                .Where(field => field.Name.Contains(
+                    "authority",
+                    StringComparison.OrdinalIgnoreCase)),
+            field => Assert.True(field.IsPrivate));
+        Assert.All(
+            typeof(ProcessContainmentCallerFailure.Publisher)
+                .GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
+            field => Assert.True(field.IsPrivate));
+        Assert.DoesNotContain(
+            typeof(ProcessContainmentCallerAuthority).GetProperties(
+                BindingFlags.Instance |
+                BindingFlags.Public |
+                BindingFlags.NonPublic),
+            property => property.Name.Contains(
+                "Identity",
+                StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            typeof(ProcessContainmentOperationAuthority).GetProperties(
+                BindingFlags.Instance |
+                BindingFlags.Public |
+                BindingFlags.NonPublic),
+            property => property.Name.Contains(
+                "Identity",
+                StringComparison.Ordinal));
+        Assert.All(
+            backendFailures.Concat(contractFailures),
             type =>
             {
                 Assert.True(type.IsSealed);
@@ -352,7 +410,6 @@ public sealed class ProcessSupervisionContractArchitectureTests
             typeof(ProcessContainmentOperationResult),
             typeof(ProcessContainmentOperationCompleted),
             typeof(ProcessContainmentOperationRejected),
-            typeof(ProcessContainmentOperationAuthorityIdentity),
             typeof(ProcessContainmentBackendResultFactory),
             typeof(ProcessContainmentContractGuard),
             typeof(ProcessContainmentOperationAuthority)
