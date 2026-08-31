@@ -1,0 +1,190 @@
+name: Issue 183 Desktop Early Return Ownership Audit
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - investigation/issue-183-assembly-info-owner
+    paths:
+      - '.github/workflows/issue-183-desktop-early-return-audit.yml'
+
+env:
+  TARGET_SHA: 75bff22801972ada7cfd24be595b0753780a7592
+
+jobs:
+  audit:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout instrumentation
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: instrumentation
+
+      - name: Checkout exact pre-fix target
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          path: target
+          fetch-depth: 0
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build exact Desktop test executable
+        shell: pwsh
+        working-directory: target
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sha = (& git rev-parse HEAD).Trim()
+          if ($sha -ne $env:TARGET_SHA) { throw "Target SHA mismatch: $sha" }
+          dotnet restore tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj
+          if ($LASTEXITCODE -ne 0) { throw 'Restore failed.' }
+          dotnet build tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj -c Release --no-restore --no-incremental
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+
+      - name: Install ILSpy command line
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\tools" | Out-Null
+          dotnet tool install ilspycmd --tool-path "$env:GITHUB_WORKSPACE\tools"
+          if ($LASTEXITCODE -ne 0) { throw 'ilspycmd install failed.' }
+          & "$env:GITHUB_WORKSPACE\tools\ilspycmd.exe" --version
+
+      - name: Preserve exact assembly-info behavior and binary metadata
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = "$env:GITHUB_WORKSPACE\issue-183-desktop-early-return-audit"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $bin = "$env:GITHUB_WORKSPACE\target\tests\DownKyi.Desktop.Tests\bin\Release\net10.0"
+          Push-Location $bin
+          try {
+            & dotnet '.\DownKyi.Desktop.Tests.dll' '-assemblyInfo' 1> (Join-Path $out 'assembly-info.stdout.txt') 2> (Join-Path $out 'assembly-info.stderr.txt')
+            $exit = $LASTEXITCODE
+          } finally { Pop-Location }
+          if ($exit -ne 0) { throw "assembly-info exited $exit" }
+          Copy-Item (Join-Path $bin 'DownKyi.Desktop.Tests.runtimeconfig.json') $out -ErrorAction Stop
+          Copy-Item (Join-Path $bin 'DownKyi.Desktop.Tests.deps.json') $out -ErrorAction Stop
+
+      - name: Compiled early-return ownership audit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = "$env:GITHUB_WORKSPACE\issue-183-desktop-early-return-audit"
+          $bin = "$env:GITHUB_WORKSPACE\target\tests\DownKyi.Desktop.Tests\bin\Release\net10.0"
+          $ilspy = "$env:GITHUB_WORKSPACE\tools\ilspycmd.exe"
+          $targetDll = Join-Path $bin 'DownKyi.Desktop.Tests.dll'
+          $targetIl = Join-Path $out 'DownKyi.Desktop.Tests.full.il.txt'
+          & $ilspy -il $targetDll 2>&1 | Set-Content -LiteralPath $targetIl -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'Target IL decompile failed.' }
+
+          $targetLines = [IO.File]::ReadAllLines($targetIl)
+          $assemblyAttributeLines = @(
+            $targetLines |
+              Where-Object { $_ -match '^\.custom instance void \[' -or $_ -match '^\s*\.custom instance void \[' }
+          )
+          $assemblyAttributeLines | Set-Content (Join-Path $out 'target-custom-attributes.txt') -Encoding utf8
+
+          $patterns = @(
+            'System.Threading.Thread::.ctor',
+            'System.AppDomain::add_ProcessExit',
+            'System.Runtime.Loader.AssemblyLoadContext::add_Unloading',
+            'System.Console::add_CancelKeyPress',
+            'System.AppDomain::add_UnhandledException',
+            'System.Threading.Thread::set_IsBackground'
+          )
+
+          $assemblies = @(Get-ChildItem -LiteralPath $bin -File -Filter '*.dll' | Sort-Object Name)
+          $hits = [System.Collections.Generic.List[object]]::new()
+          $moduleInitializers = [System.Collections.Generic.List[object]]::new()
+          foreach ($assembly in $assemblies) {
+            $safe = $assembly.BaseName -replace '[^A-Za-z0-9_.-]', '_'
+            $ilPath = Join-Path $out ($safe + '.il.txt')
+            try {
+              & $ilspy -il $assembly.FullName 2>&1 | Set-Content -LiteralPath $ilPath -Encoding utf8
+              if ($LASTEXITCODE -ne 0) { continue }
+            } catch { continue }
+            $lines = [IO.File]::ReadAllLines($ilPath)
+            for ($i = 0; $i -lt $lines.Length; $i++) {
+              foreach ($pattern in $patterns) {
+                if ($lines[$i].Contains($pattern, [StringComparison]::Ordinal)) {
+                  $start = [Math]::Max(0, $i - 15)
+                  $hits.Add([pscustomobject]@{
+                    assembly = $assembly.Name
+                    pattern = $pattern
+                    line = $i + 1
+                    context = ($lines[$start..$i] -join "`n")
+                  })
+                }
+              }
+              if ($lines[$i] -match "\.class .*'<Module>'") {
+                $end = [Math]::Min($lines.Length - 1, $i + 120)
+                $moduleBlock = $lines[$i..$end] -join "`n"
+                if ($moduleBlock -match '\.cctor') {
+                  $moduleInitializers.Add([pscustomobject]@{
+                    assembly = $assembly.Name
+                    line = $i + 1
+                    context = $moduleBlock
+                  })
+                }
+              }
+            }
+          }
+
+          $hits | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $out 'lifecycle-hits.json') -Encoding utf8
+          $moduleInitializers | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $out 'module-initializers.json') -Encoding utf8
+
+          $report = [System.Collections.Generic.List[string]]::new()
+          $report.Add('# Issue #183 Desktop assembly-info compiled early-return audit')
+          $report.Add('')
+          $report.Add("- Exact target: ``$env:TARGET_SHA``")
+          $report.Add("- Output DLLs scanned: $($assemblies.Count)")
+          $report.Add("- Direct lifecycle API references: $($hits.Count)")
+          $report.Add("- Assemblies with module .cctor candidates: $($moduleInitializers.Count)")
+          $report.Add('')
+          $report.Add('## Target assembly custom attributes')
+          if ($assemblyAttributeLines.Count -eq 0) { $report.Add('- None parsed.') }
+          foreach ($line in $assemblyAttributeLines) { $report.Add("- ``$($line.Trim())``") }
+          $report.Add('')
+          $report.Add('## Module initializer candidates')
+          if ($moduleInitializers.Count -eq 0) { $report.Add('- None.') }
+          foreach ($row in $moduleInitializers) { $report.Add("- ``$($row.assembly)`` IL line $($row.line)") }
+          $report.Add('')
+          $report.Add('## Lifecycle API hits')
+          if ($hits.Count -eq 0) { $report.Add('- None.') }
+          foreach ($hit in $hits) {
+            $report.Add("### $($hit.assembly) — $($hit.pattern) — IL line $($hit.line)")
+            $report.Add('```text')
+            $report.Add($hit.context)
+            $report.Add('```')
+          }
+          $report | Set-Content (Join-Path $out 'audit-report.md') -Encoding utf8
+          Get-Content (Join-Path $out 'audit-report.md') | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Upload early-return ownership audit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: issue-183-desktop-early-return-audit
+          path: issue-183-desktop-early-return-audit
+          retention-days: 30
+          compression-level: 1
+
+      - name: Publish run reference
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh pr comment 185 --repo $env:GITHUB_REPOSITORY --body "Issue #183 Desktop assembly-info compiled early-return ownership audit finished: $url`n`nExact target 75bff22. This rerun removes the failed startup-hook dependency and statically audits the exact compiled output for target assembly attributes, module initializers, and direct lifecycle APIs. Inspect audit-report.md before any new dynamic experiment."
