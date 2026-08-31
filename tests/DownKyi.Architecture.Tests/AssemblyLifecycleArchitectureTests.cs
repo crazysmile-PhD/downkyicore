@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -298,6 +300,132 @@ public sealed class AssemblyLifecycleArchitectureTests
             "throw \"Assembly lifecycle seam validation failed",
             validation,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LifecycleAlarmParityContractsExecuteAtThePowerShellBoundary()
+    {
+        var resultsDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"downkyi-lifecycle-alarm-parity-{Guid.NewGuid():N}");
+        Process? process = null;
+        var cleanupFailures = new List<Exception>();
+        var processReaped = true;
+        var primaryFailure = await Record.ExceptionAsync(async () =>
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                WorkingDirectory = RepositoryRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            foreach (var argument in new[]
+                     {
+                         "-NoLogo",
+                         "-NoProfile",
+                         "-NonInteractive",
+                         "-File",
+                         Path.Combine(RepositoryRoot, "script", "test-assembly-lifecycle-seams.ps1"),
+                         "-Configuration",
+                         "Release",
+                         "-BehaviorOnly",
+                         "-ResultsDirectory",
+                         resultsDirectory
+                     })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            process = Process.Start(startInfo);
+            Assert.NotNull(process);
+            var standardOutput = process.StandardOutput.ReadToEndAsync(
+                TestContext.Current.CancellationToken);
+            var standardError = process.StandardError.ReadToEndAsync(
+                TestContext.Current.CancellationToken);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+                TestContext.Current.CancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(60));
+            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(true);
+            var output = await standardOutput.ConfigureAwait(true);
+            var error = await standardError.ConfigureAwait(true);
+            Assert.True(
+                process.ExitCode == 0,
+                $"Lifecycle alarm parity failed. stdout={output} stderr={error}");
+
+            var summaryPath = Path.Combine(
+                resultsDirectory,
+                "lifecycle-alarm-contracts.json");
+            using var summary = JsonDocument.Parse(await File.ReadAllTextAsync(
+                summaryPath,
+                TestContext.Current.CancellationToken).ConfigureAwait(true));
+            Assert.Equal(11, summary.RootElement.GetProperty("passed").GetInt32());
+            Assert.Equal(0, summary.RootElement.GetProperty("failed").GetInt32());
+        }).ConfigureAwait(true);
+
+        if (process is not null)
+        {
+            var processCleanupFailure = await TerminateFixtureProcessTreeAsync(
+                process).ConfigureAwait(true);
+            if (processCleanupFailure is not null)
+            {
+                processReaped = false;
+                cleanupFailures.Add(processCleanupFailure);
+            }
+
+            var disposeFailure = Record.Exception(process.Dispose);
+            if (disposeFailure is not null)
+            {
+                cleanupFailures.Add(disposeFailure);
+            }
+        }
+
+        var directoryCleanupFailure = processReaped ? Record.Exception(() =>
+        {
+            if (Directory.Exists(resultsDirectory))
+            {
+                Directory.Delete(resultsDirectory, recursive: true);
+            }
+        }) : null;
+        if (directoryCleanupFailure is not null)
+        {
+            cleanupFailures.Add(directoryCleanupFailure);
+        }
+
+        if (primaryFailure is not null)
+        {
+            if (cleanupFailures.Count > 0)
+            {
+                throw new AggregateException(
+                    "Lifecycle alarm parity failed and cleanup also failed.",
+                    new[] { primaryFailure }.Concat(cleanupFailures));
+            }
+
+            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+        }
+
+        if (cleanupFailures.Count > 0)
+        {
+            throw new AggregateException(
+                "Lifecycle alarm parity cleanup failed.",
+                cleanupFailures);
+        }
+    }
+
+    private static async Task<Exception?> TerminateFixtureProcessTreeAsync(Process process)
+    {
+        return await Record.ExceptionAsync(async () =>
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            using var reapTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await process.WaitForExitAsync(reapTimeout.Token).ConfigureAwait(true);
+        }).ConfigureAwait(true);
     }
 
     [Fact]
