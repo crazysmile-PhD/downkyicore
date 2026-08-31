@@ -513,3 +513,520 @@ function New-AssemblyLifecycleReport {
         results = $phaseResults
     }
 }
+
+function New-ResidualChildSelfTestState {
+    param(
+        [Parameter(Mandatory)]
+        [bool]$Required
+    )
+
+    return [ordered]@{
+        required = $Required
+        executed = $false
+        passed = $false
+        childObserved = $false
+        identityCaptured = $false
+        evidenceManifestWritten = $false
+        failureClassified = $false
+        transientChildObserved = $false
+        transientChildDrained = $false
+        transientPhasePassed = $false
+        cleanupCompleted = $false
+        redactionValidated = $false
+        observedChildCount = 0
+        errorType = $null
+    }
+}
+
+function New-MarkerReaderSelfTestState {
+    param(
+        [Parameter(Mandatory)]
+        [bool]$Required
+    )
+
+    return [ordered]@{
+        required = $Required
+        executed = $false
+        passed = $false
+        contentionObserved = $false
+        contentionCount = 0
+        recoveredAfterLockRelease = $false
+        markerParsedAfterRecovery = $false
+        errorType = $null
+        contractChecks = [ordered]@{
+            executed = $false
+            passed = $false
+            validProofAccepted = $false
+            errorTypeRejected = $false
+            zeroContentionRejected = $false
+            incompleteProofRejected = $false
+            errorClassificationPassed = $false
+        }
+    }
+}
+
+function New-ForensicsSelfTestPhaseResult {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$SelfTest,
+        [Parameter(Mandatory)]
+        [pscustomobject]$SelfTestPhase,
+        [Parameter(Mandatory)]
+        [object[]]$EvidenceReports
+    )
+
+    $forensicsValid = $selfTestPhase.success -and
+        $evidenceReports.Count -gt 0 -and
+        @($evidenceReports | Where-Object { $_.managedStack.captured -eq $true }).Count -gt 0 -and
+        $selfTest.slowEvidenceTriggeredBeforeThreshold
+    $phaseResult = [pscustomobject]@{
+        assembly = "Gate.Forensics"
+        iteration = 1
+        phase = "forensics-self-test"
+        processId = $selfTest.processId
+        success = $forensicsValid
+        failureType = if ($forensicsValid) { $null } else { "ForensicsSelfTestFailed" }
+        errorType = $selfTestPhase.errorType
+        exitCode = if ($forensicsValid) { 0 } else { 1 }
+        durationMs = $selfTest.durationMs
+        timedOut = $selfTest.timedOut
+        stdoutPolluted = $selfTestPhase.stdoutPolluted
+        stderrPolluted = $selfTestPhase.stderrPolluted
+        unexpectedOutput = $selfTestPhase.unexpectedOutput
+        observedChildCount = $selfTestPhase.observedChildCount
+        observedChildren = @($selfTestPhase.observedChildren)
+        transientChildCount = $selfTestPhase.transientChildCount
+        transientChildren = @($selfTestPhase.transientChildren)
+        residualChildCount = $selfTestPhase.residualChildCount
+        residualChildren = @($selfTestPhase.residualChildren)
+        childProcessObservationSampleCount =
+            $selfTestPhase.childProcessObservationSampleCount
+        childProcessObservationDurationMs =
+            $selfTestPhase.childProcessObservationDurationMs
+        residualChildEvidence = @($selfTestPhase.residualChildEvidence)
+        residualChildEvidenceStatus = $selfTestPhase.residualChildEvidenceStatus
+        residualChildEvidenceErrorType = $selfTestPhase.residualChildEvidenceErrorType
+        stdoutPath = $selfTest.stdoutPath
+        stderrPath = $selfTest.stderrPath
+        evidence = $selfTest.evidence
+        slowEvidence = $selfTest.slowEvidence
+        exitEvidence = $selfTest.exitEvidence
+        timeoutEvidence = $selfTest.timeoutEvidence
+        diagnosticCaptureDurationMs = $selfTest.diagnosticCaptureDurationMs
+        slowThresholdExceeded = $false
+        slowEvidenceStatus = "not-applicable"
+        slowEvidenceErrorType = $null
+        slowEvidenceTriggeredBeforeThreshold =
+            $selfTest.slowEvidenceTriggeredBeforeThreshold
+    }
+
+    return [pscustomobject]@{
+        phaseResult = $phaseResult
+        captureLeadValidated = $selfTest.slowEvidenceTriggeredBeforeThreshold
+    }
+}
+
+function Set-ResidualChildSelfTestPersistentObservations {
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$SelfTest,
+        [Parameter(Mandatory)]
+        [pscustomobject]$ResidualProbe,
+        [Parameter(Mandatory)]
+        [pscustomobject]$ResidualProbePhase,
+        [Parameter(Mandatory)]
+        [string]$RunRoot
+    )
+
+    $residualChildSelfTest = $SelfTest
+    $runRoot = $RunRoot
+    $residualPayload = $residualProbe.stdout | ConvertFrom-Json -ErrorAction Stop
+    $expectedChildProcessId = [int]$residualPayload.ChildProcessId
+    $observedResidualChildren = @($residualProbe.residualChildren)
+    $matchingChild = @(
+        $observedResidualChildren |
+            Where-Object processId -eq $expectedChildProcessId
+    )
+    $residualChildSelfTest.observedChildCount =
+        $observedResidualChildren.Count
+    $residualChildSelfTest.childObserved = $matchingChild.Count -eq 1
+    $residualChildSelfTest.identityCaptured =
+        $matchingChild.Count -eq 1 -and
+        -not [string]::IsNullOrWhiteSpace($matchingChild[0].name) -and
+        -not [string]::IsNullOrWhiteSpace($matchingChild[0].createdAtUtc)
+    $residualChildSelfTest.evidenceManifestWritten =
+        $residualProbe.residualChildEvidenceStatus -eq "captured" -and
+        @(
+            foreach ($relativePath in $residualProbe.residualChildEvidence) {
+                $manifestPath = Join-Path $runRoot $relativePath (
+                    "residual-children.json")
+                if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+                    $manifestPath
+                }
+            }
+        ).Count -gt 0
+    $residualChildSelfTest.failureClassified =
+        -not $residualProbePhase.success -and
+        $residualProbePhase.failureType -eq "ResidualChildProcess"
+}
+
+function Set-ResidualChildSelfTestTransientObservations {
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$SelfTest,
+        [Parameter(Mandatory)]
+        [pscustomobject]$TransientProbe,
+        [Parameter(Mandatory)]
+        [pscustomobject]$TransientProbePhase,
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot
+    )
+
+    $residualChildSelfTest = $SelfTest
+    $repositoryRoot = $RepositoryRoot
+    $transientPayload = $transientProbe.stdout |
+        ConvertFrom-Json -ErrorAction Stop
+    $expectedTransientProcessId = [int]$transientPayload.ChildProcessId
+    $matchingTransientObservation = @(
+        $transientProbe.observedChildren |
+            Where-Object processId -eq $expectedTransientProcessId
+    )
+    $matchingTransientDrain = @(
+        $transientProbe.transientChildren |
+            Where-Object processId -eq $expectedTransientProcessId
+    )
+    $matchingTransientResidual = @(
+        $transientProbe.residualChildren |
+            Where-Object processId -eq $expectedTransientProcessId
+    )
+    $residualChildSelfTest.transientChildObserved =
+        $matchingTransientObservation.Count -eq 1
+    $residualChildSelfTest.transientChildDrained =
+        $matchingTransientDrain.Count -eq 1 -and
+        $matchingTransientResidual.Count -eq 0
+    $residualChildSelfTest.transientPhasePassed =
+        $transientProbePhase.success
+    $redactionSample = (
+        "$repositoryRoot https://example.invalid/private " +
+        "SESSDATA=example-cookie-value " +
+        "--rpc-secret `"example secret value`"")
+    $redactedSample = Protect-ProcessDiagnosticText -Value $redactionSample
+    $residualChildSelfTest.redactionValidated =
+        $redactedSample.Contains(
+            "<repository>",
+            [StringComparison]::Ordinal) -and
+        $redactedSample.Contains("<url>", [StringComparison]::Ordinal) -and
+        $redactedSample.Contains(
+            "SESSDATA=<redacted>",
+            [StringComparison]::Ordinal) -and
+        $redactedSample.Contains(
+            "--rpc-secret <redacted>",
+            [StringComparison]::Ordinal) -and
+        -not $redactedSample.Contains(
+            "example-cookie-value",
+            [StringComparison]::Ordinal) -and
+        -not $redactedSample.Contains(
+            "example secret value",
+            [StringComparison]::Ordinal)
+}
+
+function Complete-ResidualChildSelfTestClassification {
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$SelfTest
+    )
+
+    $residualChildSelfTest = $SelfTest
+    $residualChildSelfTest.passed =
+        $residualChildSelfTest.childObserved -and
+        $residualChildSelfTest.identityCaptured -and
+        $residualChildSelfTest.evidenceManifestWritten -and
+        $residualChildSelfTest.failureClassified -and
+        $residualChildSelfTest.transientChildObserved -and
+        $residualChildSelfTest.transientChildDrained -and
+        $residualChildSelfTest.transientPhasePassed -and
+        $residualChildSelfTest.cleanupCompleted -and
+        $residualChildSelfTest.redactionValidated -and
+        $null -eq $residualChildSelfTest.errorType
+    $residualChildSelfTestComplete = $residualChildSelfTest.passed
+    if (-not $residualChildSelfTestComplete -and
+        $null -eq $residualChildSelfTest.errorType) {
+        $residualChildSelfTest.errorType = "ContractNotSatisfied"
+    }
+    return $residualChildSelfTestComplete
+}
+
+function New-ResidualChildSelfTestPhaseResult {
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$SelfTest,
+        [Parameter(Mandatory)]
+        [bool]$Complete,
+        [AllowNull()]
+        [pscustomobject]$ResidualProbe,
+        [Parameter(Mandatory)]
+        [System.Diagnostics.Stopwatch]$Stopwatch
+    )
+
+    $residualChildSelfTest = $SelfTest
+    $residualChildSelfTestComplete = $Complete
+    $residualChildSelfTestStopwatch = $Stopwatch
+    return [pscustomobject]@{
+        assembly = "Gate.ResidualChild"
+        iteration = 1
+        phase = "residual-child-self-test"
+        processId = if ($null -eq $residualProbe) {
+            $PID
+        }
+        else {
+            $residualProbe.processId
+        }
+        success = $residualChildSelfTestComplete
+        failureType = if ($residualChildSelfTestComplete) {
+            $null
+        }
+        else {
+            "ResidualChildSelfTestFailed"
+        }
+        errorType = $residualChildSelfTest.errorType
+        exitCode = if ($residualChildSelfTestComplete) { 0 } else { 1 }
+        durationMs = [Math]::Round(
+            $residualChildSelfTestStopwatch.Elapsed.TotalMilliseconds,
+            3)
+        timedOut = $false
+        stdoutPolluted = $false
+        stderrPolluted = $false
+        unexpectedOutput = @()
+        observedChildCount = 0
+        observedChildren = @()
+        transientChildCount = 0
+        transientChildren = @()
+        residualChildCount = 0
+        residualChildren = @()
+        childProcessObservationSampleCount = 0
+        childProcessObservationDurationMs = 0.0
+        residualChildEvidence = @(
+            if ($null -ne $residualProbe) {
+                $residualProbe.residualChildEvidence
+            }
+        )
+        residualChildEvidenceStatus = if ($null -eq $residualProbe) {
+            "not-triggered"
+        }
+        else {
+            $residualProbe.residualChildEvidenceStatus
+        }
+        residualChildEvidenceErrorType = if ($null -eq $residualProbe) {
+            $null
+        }
+        else {
+            $residualProbe.residualChildEvidenceErrorType
+        }
+        stdoutPath = if ($null -eq $residualProbe) {
+            $null
+        }
+        else {
+            $residualProbe.stdoutPath
+        }
+        stderrPath = if ($null -eq $residualProbe) {
+            $null
+        }
+        else {
+            $residualProbe.stderrPath
+        }
+        evidence = @(
+            if ($null -ne $residualProbe) {
+                $residualProbe.evidence
+            }
+        )
+        slowEvidence = @()
+        exitEvidence = @()
+        timeoutEvidence = @()
+        diagnosticCaptureDurationMs = if ($null -eq $residualProbe) {
+            0.0
+        }
+        else {
+            $residualProbe.diagnosticCaptureDurationMs
+        }
+        slowThresholdExceeded = $false
+        slowEvidenceStatus = "not-applicable"
+        slowEvidenceErrorType = $null
+        slowEvidenceTriggeredBeforeThreshold = $false
+    }
+}
+
+function Set-MarkerReaderSelfTestObservations {
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$SelfTest,
+        [AllowNull()]
+        [object]$LockedMarker,
+        [AllowNull()]
+        [object]$UnlockedMarker,
+        [Parameter(Mandatory)]
+        [int]$ContentionCount
+    )
+
+    $SelfTest.contentionCount = $ContentionCount
+    $SelfTest.contentionObserved = $ContentionCount -gt 0
+    $SelfTest.recoveredAfterLockRelease = $null -ne $UnlockedMarker
+    $SelfTest.markerParsedAfterRecovery =
+        $null -ne $UnlockedMarker -and
+        $null -ne $UnlockedMarker.started -and
+        $null -ne $UnlockedMarker.disposing -and
+        $null -ne $UnlockedMarker.disposed
+    $SelfTest.passed =
+        $null -eq $LockedMarker -and
+        $SelfTest.contentionObserved -and
+        $SelfTest.recoveredAfterLockRelease -and
+        $SelfTest.markerParsedAfterRecovery
+}
+
+function Complete-MarkerReaderSelfTestClassification {
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$SelfTest
+    )
+
+    $markerReaderSelfTest = $SelfTest
+    if (-not $markerReaderSelfTest.passed -and
+        $null -eq $markerReaderSelfTest.errorType) {
+        $markerReaderSelfTest.errorType = "ContractNotSatisfied"
+    }
+
+    $validProof = [ordered]@{
+        executed = $true
+        passed = $true
+        contentionObserved = $true
+        contentionCount = 1
+        recoveredAfterLockRelease = $true
+        markerParsedAfterRecovery = $true
+        errorType = $null
+    }
+    $proofWithError = [ordered]@{
+        executed = $true
+        passed = $true
+        contentionObserved = $true
+        contentionCount = 1
+        recoveredAfterLockRelease = $true
+        markerParsedAfterRecovery = $true
+        errorType = "UnauthorizedAccessException"
+    }
+    $proofWithoutContention = [ordered]@{
+        executed = $true
+        passed = $true
+        contentionObserved = $true
+        contentionCount = 0
+        recoveredAfterLockRelease = $true
+        markerParsedAfterRecovery = $true
+        errorType = $null
+    }
+    $incompleteProof = [ordered]@{
+        executed = $true
+        passed = $true
+        contentionObserved = $true
+        contentionCount = 1
+        recoveredAfterLockRelease = $true
+        markerParsedAfterRecovery = $false
+        errorType = $null
+    }
+    $markerReaderSelfTest.contractChecks.executed = $true
+    $markerReaderSelfTest.contractChecks.validProofAccepted =
+        Test-MarkerReaderSelfTestProof -SelfTest $validProof
+    $markerReaderSelfTest.contractChecks.errorTypeRejected =
+        -not (Test-MarkerReaderSelfTestProof -SelfTest $proofWithError)
+    $markerReaderSelfTest.contractChecks.zeroContentionRejected =
+        -not (Test-MarkerReaderSelfTestProof -SelfTest $proofWithoutContention)
+    $markerReaderSelfTest.contractChecks.incompleteProofRejected =
+        -not (Test-MarkerReaderSelfTestProof -SelfTest $incompleteProof)
+    $markerReaderSelfTest.contractChecks.errorClassificationPassed =
+        (Get-LifecycleMarkerReadFailureCategory `
+            -Exception ([System.IO.IOException]::new("generic"))) -eq "error" -and
+        (Get-LifecycleMarkerReadFailureCategory `
+            -Exception ([System.UnauthorizedAccessException]::new("denied"))) -eq "error"
+    $markerReaderSelfTest.contractChecks.passed =
+        $markerReaderSelfTest.contractChecks.validProofAccepted -and
+        $markerReaderSelfTest.contractChecks.errorTypeRejected -and
+        $markerReaderSelfTest.contractChecks.zeroContentionRejected -and
+        $markerReaderSelfTest.contractChecks.incompleteProofRejected -and
+        $markerReaderSelfTest.contractChecks.errorClassificationPassed
+    $markerReaderSelfTestComplete =
+        (Test-MarkerReaderSelfTestProof -SelfTest $markerReaderSelfTest) -and
+        $markerReaderSelfTest.contractChecks.passed
+    $markerReaderSelfTestFailureType = if ($markerReaderSelfTestComplete) {
+        $null
+    }
+    elseif ($null -ne $markerReaderSelfTest.errorType) {
+        $markerReaderSelfTest.errorType
+    }
+    else {
+        "ContractChecksFailed"
+    }
+
+    return [pscustomobject]@{
+        complete = $markerReaderSelfTestComplete
+        errorType = $markerReaderSelfTestFailureType
+    }
+}
+
+function New-MarkerReaderSelfTestPhaseResult {
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$SelfTest,
+        [Parameter(Mandatory)]
+        [bool]$Complete,
+        [AllowNull()]
+        [object]$ErrorType,
+        [Parameter(Mandatory)]
+        [System.Diagnostics.Stopwatch]$Stopwatch
+    )
+
+    $markerReaderSelfTest = $SelfTest
+    $markerReaderSelfTestComplete = $Complete
+    $markerReaderSelfTestFailureType = $ErrorType
+    $markerReaderSelfTestStopwatch = $Stopwatch
+    return [pscustomobject]@{
+        assembly = "Gate.MarkerReader"
+        iteration = 1
+        phase = "marker-reader-self-test"
+        processId = $PID
+        success = $markerReaderSelfTestComplete
+        failureType = if ($markerReaderSelfTestComplete) {
+            $null
+        }
+        else {
+            "MarkerReaderSelfTestFailed"
+        }
+        errorType = $markerReaderSelfTestFailureType
+        exitCode = if ($markerReaderSelfTestComplete) { 0 } else { 1 }
+        durationMs = [Math]::Round(
+            $markerReaderSelfTestStopwatch.Elapsed.TotalMilliseconds,
+            3)
+        timedOut = $false
+        stdoutPolluted = $false
+        stderrPolluted = $false
+        unexpectedOutput = @()
+        observedChildCount = 0
+        observedChildren = @()
+        transientChildCount = 0
+        transientChildren = @()
+        residualChildCount = 0
+        residualChildren = @()
+        childProcessObservationSampleCount = 0
+        childProcessObservationDurationMs = 0.0
+        residualChildEvidence = @()
+        residualChildEvidenceStatus = "not-triggered"
+        residualChildEvidenceErrorType = $null
+        stdoutPath = $null
+        stderrPath = $null
+        evidence = @()
+        slowEvidence = @()
+        exitEvidence = @()
+        timeoutEvidence = @()
+        diagnosticCaptureDurationMs = 0.0
+        slowThresholdExceeded = $false
+        slowEvidenceStatus = "not-applicable"
+        slowEvidenceErrorType = $null
+        slowEvidenceTriggeredBeforeThreshold = $false
+    }
+}

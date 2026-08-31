@@ -148,7 +148,7 @@ public sealed class AssemblyLifecycleArchitectureTests
         }
 
         Assert.Contains("-Phase \"execution\"", entrypoint, StringComparison.Ordinal);
-        Assert.Contains("-LifecycleMarkerPath $selfTestMarker", entrypoint, StringComparison.Ordinal);
+        Assert.Contains("-LifecycleMarkerPath $selfTestMarker", source, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "[string]::IsNullOrWhiteSpace($LifecycleMarkerPath) -and",
             source,
@@ -203,9 +203,46 @@ public sealed class AssemblyLifecycleArchitectureTests
         }
 
         Assert.DoesNotContain("function ", entrypoint, StringComparison.Ordinal);
+        Assert.Contains(
+            "Invoke-AssemblyLifecycleForensicsSelfTests",
+            entrypoint,
+            StringComparison.Ordinal);
+        string[] forbiddenEntrypointMechanics =
+        [
+            "Gate.Forensics",
+            "Gate.ResidualChild",
+            "Gate.TransientChild",
+            "Gate.MarkerReader",
+            "--hold-after-unload-ms",
+            "--spawn-residual-child-ms",
+            "[System.IO.FileShare]::None",
+            "$residualChildSelfTest.passed =",
+            "$markerReaderSelfTest.contractChecks",
+            "failureType ="
+        ];
+        foreach (var mechanic in forbiddenEntrypointMechanics)
+        {
+            Assert.DoesNotContain(mechanic, entrypoint, StringComparison.Ordinal);
+        }
+
         Assert.Contains("function Save-ProcessEvidence", forensics, StringComparison.Ordinal);
+        Assert.Contains(
+            "function Invoke-AssemblyLifecycleForensicsSelfTests",
+            forensics,
+            StringComparison.Ordinal);
+        Assert.Contains("--hold-after-unload-ms", forensics, StringComparison.Ordinal);
+        Assert.Contains("--spawn-residual-child-ms", forensics, StringComparison.Ordinal);
+        Assert.Contains("[System.IO.FileShare]::None", forensics, StringComparison.Ordinal);
         Assert.Contains("function Invoke-IsolatedProcess", processExecution, StringComparison.Ordinal);
         Assert.Contains("function New-ProcessPhaseResult", resultClassification, StringComparison.Ordinal);
+        Assert.Contains(
+            "function Complete-ResidualChildSelfTestClassification",
+            resultClassification,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "function Complete-MarkerReaderSelfTestClassification",
+            resultClassification,
+            StringComparison.Ordinal);
         Assert.Contains("function New-AssemblyLifecycleReport", resultClassification, StringComparison.Ordinal);
         Assert.Contains("function Write-AssemblyLifecycleReport", reportRendering, StringComparison.Ordinal);
 
@@ -214,7 +251,10 @@ public sealed class AssemblyLifecycleArchitectureTests
         [
             "Save-ProcessEvidence",
             "Invoke-IsolatedProcess",
+            "Invoke-AssemblyLifecycleForensicsSelfTests",
             "New-ProcessPhaseResult",
+            "Complete-ResidualChildSelfTestClassification",
+            "Complete-MarkerReaderSelfTestClassification",
             "New-AssemblyLifecycleReport",
             "Write-AssemblyLifecycleReport"
         ];
@@ -229,6 +269,35 @@ public sealed class AssemblyLifecycleArchitectureTests
                 firstDeclaration,
                 lifecycleSources.LastIndexOf(declaration, StringComparison.Ordinal));
         }
+    }
+
+    [Fact]
+    public void LifecycleSeamValidationHasCanonicalEntrypoint()
+    {
+        var validation = Read("script/test-assembly-lifecycle-seams.ps1");
+
+        Assert.Contains("Invoke-DownKyiTestProject", validation, StringComparison.Ordinal);
+        Assert.Contains(
+            "Language.Parser]::ParseFile",
+            validation,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Complete-MarkerReaderSelfTestClassification",
+            validation,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests",
+            validation,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AssemblyLifecycleArchitectureTests.trx",
+            validation,
+            StringComparison.Ordinal);
+        Assert.Contains("if ($result.ExitCode -ne 0)", validation, StringComparison.Ordinal);
+        Assert.Contains(
+            "throw \"Assembly lifecycle seam validation failed",
+            validation,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -289,7 +358,9 @@ public sealed class AssemblyLifecycleArchitectureTests
         var source = ReadLifecycleSources();
         string[] requiredContract =
         [
-            "required = $markerReaderSelfTestRequired",
+            "New-MarkerReaderSelfTestState",
+            "-Required $markerReaderSelfTestRequired",
+            "required = $Required",
             "executed = $false",
             "passed = $false",
             "contentionObserved = $false",

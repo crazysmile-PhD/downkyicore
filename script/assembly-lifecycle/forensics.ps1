@@ -615,3 +615,269 @@ function Read-TeardownMarker {
         disposed = if ($disposed.Count -eq 0) { $null } else { $disposed[0] }
     }
 }
+
+function Invoke-AssemblyLifecycleForensicsSelfTests {
+    [CmdletBinding()]
+    param(
+        [switch]$ValidateForensics,
+        [Parameter(Mandatory)]
+        [object[]]$TestProjects,
+        [Parameter(Mandatory)]
+        [string]$Configuration,
+        [Parameter(Mandatory)]
+        [string]$ProbeAssembly,
+        [Parameter(Mandatory)]
+        [string]$RawRoot,
+        [Parameter(Mandatory)]
+        [string]$RunRoot,
+        [Parameter(Mandatory)]
+        [string]$EvidenceRoot,
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [int]$PhaseTimeoutSeconds,
+        [Parameter(Mandatory)]
+        [double]$SlowPhaseThresholdSeconds,
+        [Parameter(Mandatory)]
+        [double]$ExitThresholdSeconds,
+        [Parameter(Mandatory)]
+        [int]$SlowEvidenceCaptureLeadMilliseconds,
+        [Parameter(Mandatory)]
+        [int]$ResidualChildQuiescenceMilliseconds,
+        [Parameter(Mandatory)]
+        [int]$ResidualChildPollMilliseconds,
+        [AllowNull()]
+        [object]$DiagnosticsTool,
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$ResidualChildSelfTest,
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$MarkerReaderSelfTest
+    )
+
+    $phaseResults = @()
+    $forensicsSelfTestCaptureLeadValidated = $false
+    $residualChildSelfTestComplete = $false
+    $markerReaderSelfTestComplete = $false
+    if (-not $ValidateForensics) {
+        return [pscustomobject]@{
+            phaseResults = @()
+            forensicsSelfTestCaptureLeadValidated = $false
+            residualChildSelfTestComplete = $false
+            markerReaderSelfTestComplete = $false
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$DiagnosticsTool)) {
+        throw "Forensics validation requires dotnet-stack."
+    }
+
+    $selfTestAssembly = Join-Path $testProjects[0].DirectoryName (
+        "bin/$Configuration/net10.0/$($testProjects[0].BaseName).dll")
+    $selfTestMarker = Join-Path $rawRoot "Gate.Forensics/iteration-0001/execution.lifecycle"
+    $selfTest = Invoke-IsolatedProcess `
+        -AssemblyName "Gate.Forensics" `
+        -Iteration 1 `
+        -Phase "execution" `
+        -FileName "dotnet" `
+        -Arguments @(
+            $probeAssembly,
+            "--assembly",
+            $selfTestAssembly,
+            "--hold-after-unload-ms",
+            "5000"
+        ) `
+        -LifecycleMarkerPath $selfTestMarker `
+        -EvidenceThresholdSeconds 1.25
+    $selfTestPhase = New-ProcessPhaseResult -ProcessResult $selfTest
+    $evidenceReports = @(
+        foreach ($relativeEvidence in $selfTest.evidence) {
+            $evidencePath = Join-Path $runRoot $relativeEvidence "process-evidence.json"
+            if (Test-Path -LiteralPath $evidencePath -PathType Leaf) {
+                Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+            }
+        }
+    )
+    $forensicsClassification = New-ForensicsSelfTestPhaseResult `
+        -SelfTest $selfTest `
+        -SelfTestPhase $selfTestPhase `
+        -EvidenceReports $evidenceReports
+    $forensicsSelfTestCaptureLeadValidated =
+        $forensicsClassification.captureLeadValidated
+    $phaseResults += $forensicsClassification.phaseResult
+
+    if ($IsWindows) {
+        $residualChildSelfTestStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $residualChildSelfTest.executed = $true
+        $residualProbe = $null
+        $residualProbePhase = $null
+        $transientProbe = $null
+        $transientProbePhase = $null
+        $observedResidualChildren = @()
+        try {
+            $residualProbe = Invoke-IsolatedProcess `
+                -AssemblyName "Gate.ResidualChild" `
+                -Iteration 1 `
+                -Phase "residual-child-probe" `
+                -FileName "dotnet" `
+                -Arguments @(
+                    $probeAssembly,
+                    "--spawn-residual-child-ms",
+                    "20000"
+                )
+            $residualProbePhase = New-ProcessPhaseResult -ProcessResult $residualProbe
+            $observedResidualChildren = @($residualProbe.residualChildren)
+            Set-ResidualChildSelfTestPersistentObservations `
+                -SelfTest $residualChildSelfTest `
+                -ResidualProbe $residualProbe `
+                -ResidualProbePhase $residualProbePhase `
+                -RunRoot $runRoot
+
+            $transientProbe = Invoke-IsolatedProcess `
+                -AssemblyName "Gate.TransientChild" `
+                -Iteration 1 `
+                -Phase "transient-child-probe" `
+                -FileName "dotnet" `
+                -Arguments @(
+                    $probeAssembly,
+                    "--spawn-residual-child-ms",
+                    "250"
+                )
+            $transientProbePhase = New-ProcessPhaseResult `
+                -ProcessResult $transientProbe
+            Set-ResidualChildSelfTestTransientObservations `
+                -SelfTest $residualChildSelfTest `
+                -TransientProbe $transientProbe `
+                -TransientProbePhase $transientProbePhase `
+                -RepositoryRoot $repositoryRoot
+        }
+        catch {
+            $residualChildSelfTest.errorType = $_.Exception.GetType().Name
+        }
+        finally {
+            $cleanupCompleted = $true
+            foreach ($child in $observedResidualChildren) {
+                $childProcess = $null
+                try {
+                    $childProcess = Get-Process `
+                        -Id $child.processId `
+                        -ErrorAction SilentlyContinue
+                    if ($null -eq $childProcess) {
+                        continue
+                    }
+
+                    $actualStart = [DateTimeOffset]$childProcess.StartTime.ToUniversalTime()
+                    $expectedStart = [DateTimeOffset]::Parse(
+                        $child.createdAtUtc,
+                        [System.Globalization.CultureInfo]::InvariantCulture)
+                    if ([Math]::Abs(($actualStart - $expectedStart).TotalSeconds) -gt 1) {
+                        $cleanupCompleted = $false
+                        continue
+                    }
+
+                    $childProcess.Kill($true)
+                    if (-not $childProcess.WaitForExit(5000)) {
+                        $cleanupCompleted = $false
+                    }
+                }
+                catch {
+                    $cleanupCompleted = $false
+                    if ($null -eq $residualChildSelfTest.errorType) {
+                        $residualChildSelfTest.errorType =
+                            $_.Exception.GetType().Name
+                    }
+                }
+                finally {
+                    if ($null -ne $childProcess) {
+                        $childProcess.Dispose()
+                    }
+                }
+            }
+
+            $residualChildSelfTest.cleanupCompleted = $cleanupCompleted
+            $residualChildSelfTestStopwatch.Stop()
+        }
+
+        $residualChildSelfTestComplete =
+            Complete-ResidualChildSelfTestClassification `
+                -SelfTest $residualChildSelfTest
+        $phaseResults += New-ResidualChildSelfTestPhaseResult `
+            -SelfTest $residualChildSelfTest `
+            -Complete $residualChildSelfTestComplete `
+            -ResidualProbe $residualProbe `
+            -Stopwatch $residualChildSelfTestStopwatch
+
+        $markerReaderSelfTestStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $markerReaderSelfTest.executed = $true
+        $markerReaderTestPath = Join-Path $rawRoot "Gate.MarkerReader/read-race.lifecycle"
+        $contentionBaseline = $script:markerReadContentionCount
+        $lockedMarker = $null
+        $exclusiveStream = $null
+        try {
+            New-Item -ItemType Directory -Force `
+                -Path ([System.IO.Path]::GetDirectoryName($markerReaderTestPath)) |
+                Out-Null
+            @(
+                "started|123|1000"
+                "disposing|123|1001"
+                "disposed|123|1002"
+            ) | Set-Content -LiteralPath $markerReaderTestPath -Encoding utf8
+            $exclusiveStream = [System.IO.FileStream]::new(
+                $markerReaderTestPath,
+                [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::None)
+            try {
+                $lockedMarker = Read-TeardownMarker `
+                    -Path $markerReaderTestPath `
+                    -Attempts 2 `
+                    -RetryDelayMilliseconds 1
+            }
+            finally {
+                $exclusiveStream.Dispose()
+                $exclusiveStream = $null
+            }
+
+            $contentionCount =
+                $script:markerReadContentionCount - $contentionBaseline
+            $unlockedMarker = Read-TeardownMarker -Path $markerReaderTestPath
+            Set-MarkerReaderSelfTestObservations `
+                -SelfTest $markerReaderSelfTest `
+                -LockedMarker $lockedMarker `
+                -UnlockedMarker $unlockedMarker `
+                -ContentionCount $contentionCount
+        }
+        catch {
+            $markerReaderSelfTest.errorType = $_.Exception.GetType().Name
+        }
+        finally {
+            if ($null -ne $exclusiveStream) {
+                $exclusiveStream.Dispose()
+            }
+
+            $markerReaderSelfTestStopwatch.Stop()
+        }
+
+        $markerReaderClassification =
+            Complete-MarkerReaderSelfTestClassification `
+                -SelfTest $markerReaderSelfTest
+        $markerReaderSelfTestComplete = $markerReaderClassification.complete
+        $phaseResults += New-MarkerReaderSelfTestPhaseResult `
+            -SelfTest $markerReaderSelfTest `
+            -Complete $markerReaderSelfTestComplete `
+            -ErrorType $markerReaderClassification.errorType `
+            -Stopwatch $markerReaderSelfTestStopwatch
+
+        $script:markerReadContentionCount = 0
+        $script:markerReadRetriesExhaustedCount = 0
+        $script:markerReadErrorCount = 0
+        $script:markerReadErrorType = $null
+    }
+
+    return [pscustomobject]@{
+        phaseResults = @($phaseResults)
+        forensicsSelfTestCaptureLeadValidated =
+            $forensicsSelfTestCaptureLeadValidated
+        residualChildSelfTestComplete = $residualChildSelfTestComplete
+        markerReaderSelfTestComplete = $markerReaderSelfTestComplete
+    }
+}
