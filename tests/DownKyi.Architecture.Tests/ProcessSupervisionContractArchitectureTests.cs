@@ -159,7 +159,20 @@ public sealed class ProcessSupervisionContractArchitectureTests
             typeof(ProcessPrimaryFailure),
             typeof(ProcessCleanupFailure),
             typeof(ProcessTerminalCandidate),
-            typeof(ProcessSupervisionOutcome)
+            typeof(ProcessSupervisionOutcome),
+            typeof(ProcessContainmentPrimaryFailure),
+            typeof(ProcessContainmentBackendResult),
+            typeof(ProcessContainmentBackendFailure),
+            typeof(ProcessContainmentCallerFailure),
+            typeof(ProcessContainmentContractFailure),
+            typeof(ProcessContainmentOperationResult),
+            typeof(ProcessContainmentOperationCompleted),
+            typeof(ProcessContainmentOperationRejected),
+            typeof(ProcessContainmentOperationAuthorityIdentity),
+            typeof(ProcessContainmentCallerAuthority),
+            typeof(ProcessContainmentBackendResultFactory),
+            typeof(ProcessContainmentContractGuard),
+            typeof(ProcessContainmentOperationAuthority)
         ];
 
         foreach (var type in ownerCreatedTypes)
@@ -171,6 +184,206 @@ public sealed class ProcessSupervisionContractArchitectureTests
                     property.SetMethod is null || !property.SetMethod.IsPublic,
                     $"{type.Name}.{property.Name} exposes a public setter."));
         }
+    }
+
+    [Fact]
+    public void OperationAuthorityTaxonomyCannotEscalateBackendResults()
+    {
+        Assert.False(typeof(ProcessContainmentBackendResult).IsAssignableFrom(
+            typeof(ProcessContainmentCallerFailure)));
+        Assert.False(typeof(ProcessContainmentBackendResult).IsAssignableFrom(
+            typeof(ProcessContainmentContractFailure)));
+        Assert.False(typeof(ProcessContainmentBackendResult).IsAssignableFrom(
+            typeof(ProcessCleanupFailure)));
+        Assert.False(typeof(ProcessContainmentCallerFailure).IsAssignableFrom(
+            typeof(ProcessContainmentBackendFailure)));
+        Assert.False(typeof(ProcessContainmentContractFailure).IsAssignableFrom(
+            typeof(ProcessContainmentBackendFailure)));
+
+        var backendFactoryMethods = typeof(ProcessContainmentBackendResultFactory)
+            .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Where(method => method.DeclaringType ==
+                             typeof(ProcessContainmentBackendResultFactory) &&
+                             method.ReturnType ==
+                                 typeof(ProcessContainmentBackendResult))
+            .ToArray();
+        Assert.Equal(
+            ["Failed", "Succeeded"],
+            backendFactoryMethods
+                .Select(method => method.Name)
+                .Order(StringComparer.Ordinal));
+        Assert.All(backendFactoryMethods, method =>
+        {
+            Assert.Equal(
+                typeof(ProcessContainmentBackendResult),
+                method.ReturnType);
+            Assert.DoesNotContain(method.GetParameters(), parameter =>
+                parameter.ParameterType == typeof(TransitionBudget) ||
+                parameter.ParameterType == typeof(CancellationToken) ||
+                parameter.ParameterType ==
+                    typeof(ProcessContainmentCallerAuthority) ||
+                typeof(ProcessContainmentCallerFailure).IsAssignableFrom(
+                    parameter.ParameterType) ||
+                typeof(ProcessContainmentContractFailure).IsAssignableFrom(
+                    parameter.ParameterType));
+        });
+
+        var callerFactoryMethods = typeof(ProcessContainmentCallerAuthority)
+            .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Where(method => method.DeclaringType ==
+                             typeof(ProcessContainmentCallerAuthority) &&
+                             method.ReturnType ==
+                                 typeof(ProcessContainmentCallerFailure))
+            .ToArray();
+        Assert.Equal(
+            ["PublishCancellation", "PublishDeadlineExceeded"],
+            callerFactoryMethods
+                .Select(method => method.Name)
+                .Order(StringComparer.Ordinal));
+        Assert.All(callerFactoryMethods, method => Assert.Equal(
+            typeof(ProcessContainmentCallerFailure),
+            method.ReturnType));
+
+        var rootFactory = typeof(ProcessContainmentOperationAuthority).GetMethod(
+            "Create",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(rootFactory);
+        Assert.Equal(
+            [typeof(TransitionBudget), typeof(CancellationToken)],
+            rootFactory.GetParameters()
+                .Select(parameter => parameter.ParameterType));
+
+        var guardFactories = typeof(ProcessContainmentContractGuard)
+            .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Where(method => method.DeclaringType ==
+                             typeof(ProcessContainmentContractGuard) &&
+                             method.ReturnType ==
+                                 typeof(ProcessContainmentContractFailure))
+            .ToDictionary(method => method.Name, StringComparer.Ordinal);
+        Assert.Equal(
+            ["AuthoritySubstitution", "IllegalTransition", "InvalidBackendResult"],
+            guardFactories.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(
+            typeof(ProcessContainmentContractFailure),
+            guardFactories["IllegalTransition"].ReturnType);
+        Assert.Equal(
+            typeof(ProcessContainmentContractFailure),
+            guardFactories["InvalidBackendResult"].ReturnType);
+
+        var resultEntries = typeof(ProcessContainmentOperationAuthority)
+            .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Where(method => method.DeclaringType ==
+                             typeof(ProcessContainmentOperationAuthority) &&
+                             method.ReturnType ==
+                                 typeof(ProcessContainmentOperationResult))
+            .ToArray();
+        Assert.Equal(3, resultEntries.Length);
+        Assert.Single(resultEntries, method => method.Name == "FromBackend" &&
+            method.GetParameters()[0].ParameterType ==
+                typeof(ProcessContainmentBackendResult));
+        Assert.Equal(
+            [
+                typeof(ProcessContainmentCallerFailure),
+                typeof(ProcessContainmentContractFailure)
+            ],
+            resultEntries
+                .Where(method => method.Name == "Rejected")
+                .Select(method => method.GetParameters()[0].ParameterType)
+                .OrderBy(type => type.FullName, StringComparer.Ordinal));
+        Assert.DoesNotContain(resultEntries, method =>
+            method.GetParameters()[0].ParameterType ==
+                typeof(ProcessContainmentPrimaryFailure));
+        Assert.Equal(
+            [
+                nameof(ProcessContainmentOperationAuthority.BackendResults),
+                nameof(ProcessContainmentOperationAuthority.Caller),
+                nameof(ProcessContainmentOperationAuthority.ContractGuard),
+                nameof(ProcessContainmentOperationAuthority.Identity)
+            ],
+            typeof(ProcessContainmentOperationAuthority)
+                .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Select(property => property.Name)
+                .Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void OperationAuthorityContractsRemainInertAndAreNotRuntimeProof()
+    {
+        var assembly = typeof(ProcessContainmentPrimaryFailure).Assembly;
+        var callerFailures = assembly.GetTypes()
+            .Where(type => type != typeof(ProcessContainmentCallerFailure) &&
+                           typeof(ProcessContainmentCallerFailure)
+                               .IsAssignableFrom(type))
+            .ToArray();
+        var backendFailures = assembly.GetTypes()
+            .Where(type => type != typeof(ProcessContainmentBackendFailure) &&
+                           typeof(ProcessContainmentBackendFailure)
+                               .IsAssignableFrom(type))
+            .ToArray();
+        var contractFailures = assembly.GetTypes()
+            .Where(type => type != typeof(ProcessContainmentContractFailure) &&
+                           typeof(ProcessContainmentContractFailure)
+                               .IsAssignableFrom(type))
+            .ToArray();
+
+        Assert.Equal(2, callerFailures.Length);
+        Assert.Single(backendFailures);
+        Assert.Equal(3, contractFailures.Length);
+        Assert.All(
+            callerFailures.Concat(backendFailures).Concat(contractFailures),
+            type =>
+            {
+                Assert.True(type.IsSealed);
+                Assert.False(type.IsPublic || type.IsNestedPublic);
+                Assert.Empty(type.GetConstructors());
+                Assert.False(typeof(ProcessSupervisionProof).IsAssignableFrom(type));
+                Assert.False(typeof(EstablishedProcessContainmentFact)
+                    .IsAssignableFrom(type));
+            });
+
+        Type[] authorityContractTypes =
+        [
+            typeof(ProcessContainmentCallerAuthority),
+            typeof(ProcessContainmentPrimaryFailure),
+            typeof(ProcessContainmentBackendResult),
+            typeof(ProcessContainmentBackendFailure),
+            typeof(ProcessContainmentCallerFailure),
+            typeof(ProcessContainmentContractFailure),
+            typeof(ProcessContainmentOperationResult),
+            typeof(ProcessContainmentOperationCompleted),
+            typeof(ProcessContainmentOperationRejected),
+            typeof(ProcessContainmentOperationAuthorityIdentity),
+            typeof(ProcessContainmentBackendResultFactory),
+            typeof(ProcessContainmentContractGuard),
+            typeof(ProcessContainmentOperationAuthority)
+        ];
+        string[] forbiddenRuntimeOwners =
+        [
+            "Lease",
+            "StateMachine",
+            "Coordinator",
+            "Executor",
+            "Host"
+        ];
+        Assert.DoesNotContain(authorityContractTypes, type =>
+            forbiddenRuntimeOwners.Any(fragment =>
+                type.Name.Contains(fragment, StringComparison.Ordinal)));
+        Assert.DoesNotContain(
+            authorityContractTypes.SelectMany(type => type.GetMethods(
+                BindingFlags.Instance |
+                BindingFlags.Static |
+                BindingFlags.Public |
+                BindingFlags.NonPublic |
+                BindingFlags.DeclaredOnly)),
+            method => method.Name is "Execute" or "ExecuteAsync" or
+                "Start" or "StartAsync" or "Transition");
+        Assert.All(authorityContractTypes, type =>
+        {
+            Assert.False(typeof(ProcessSupervisionProof).IsAssignableFrom(type));
+            Assert.False(typeof(EstablishedProcessContainmentFact)
+                .IsAssignableFrom(type));
+            Assert.False(typeof(IProcessContainmentBackend).IsAssignableFrom(type));
+        });
     }
 
     [Fact]
