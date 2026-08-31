@@ -4,17 +4,24 @@ internal static class ProcessContainmentBackendRouter
 {
     internal static ProcessContainmentBackendSelectionResult Select(
         ProcessContainmentPlatform platform,
-        IEnumerable<ProcessContainmentBackendDiscovery> discoveries)
+        ProcessContainmentDiscoveryBatch batch)
     {
-        ArgumentNullException.ThrowIfNull(discoveries);
-        var snapshot = discoveries
-            .OrderBy(discovery => discovery.BackendIdentity.Value, StringComparer.Ordinal)
-            .ToArray();
+        ArgumentNullException.ThrowIfNull(batch);
+        if (!Enum.IsDefined(platform))
+        {
+            return Reject(
+                ProcessContainmentSelectionFailureKind.InvalidRequestedPlatform,
+                [],
+                "Requested containment platform is invalid.");
+        }
 
+        var snapshot = batch.Discoveries
+            .OrderBy(
+                discovery => discovery.BackendIdentity.Value,
+                StringComparer.Ordinal)
+            .ToArray();
         var duplicateIdentities = snapshot
-            .GroupBy(
-                discovery => discovery.BackendIdentity,
-                EqualityComparer<ProcessContainmentBackendIdentity>.Default)
+            .GroupBy(discovery => discovery.BackendIdentity)
             .Where(group => group.Count() > 1)
             .Select(group => group.Key)
             .ToArray();
@@ -26,37 +33,8 @@ internal static class ProcessContainmentBackendRouter
                 "Containment backend identities must be unique.");
         }
 
-        var identityMismatches = snapshot
-            .Where(discovery => discovery.BackendIdentity !=
-                discovery.Capability.BackendIdentity)
-            .ToArray();
-        if (identityMismatches.Length > 0)
-        {
-            return Reject(
-                ProcessContainmentSelectionFailureKind.BackendIdentityMismatch,
-                identityMismatches.SelectMany(discovery =>
-                    new[]
-                    {
-                        discovery.BackendIdentity,
-                        discovery.Capability.BackendIdentity
-                    }),
-                "Capability evidence must name the backend that produced it.");
-        }
-
-        var platformMismatches = snapshot
-            .Where(discovery => discovery.BackendPlatform !=
-                discovery.Capability.Platform)
-            .ToArray();
-        if (platformMismatches.Length > 0)
-        {
-            return Reject(
-                ProcessContainmentSelectionFailureKind.BackendPlatformMismatch,
-                platformMismatches.Select(discovery => discovery.BackendIdentity),
-                "Capability evidence platform must match its backend platform.");
-        }
-
         var eligible = snapshot
-            .Where(discovery => discovery.BackendPlatform == platform)
+            .Where(discovery => discovery.Platform == platform)
             .ToArray();
         var contradictory = eligible
             .Where(discovery => discovery.Capability.Evidence
@@ -108,7 +86,9 @@ internal static class ProcessContainmentBackendRouter
         }
 
         return new ProcessContainmentBackendSelected(
-            proven[0].Backend,
+            proven[0].BackendIdentity,
+            proven[0].Platform,
+            proven[0].ExecutionHandle,
             proven[0].Capability);
     }
 

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 
 namespace DownKyi.ProcessSupervision;
 
@@ -21,10 +22,10 @@ internal sealed record ProcessContainmentBackendIdentity
     internal ProcessContainmentBackendIdentity(string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
-        if (!string.Equals(value, value.Trim(), StringComparison.Ordinal))
+        if (!IsCanonicalToken(value))
         {
             throw new ArgumentException(
-                "Containment backend identity must not contain leading or trailing whitespace.",
+                "Containment backend identity must be a lowercase ASCII token separated by single hyphens.",
                 nameof(value));
         }
 
@@ -37,18 +38,52 @@ internal sealed record ProcessContainmentBackendIdentity
     {
         return Value;
     }
+
+    private static bool IsCanonicalToken(string value)
+    {
+        if (value[0] == '-' || value[^1] == '-')
+        {
+            return false;
+        }
+
+        var previousWasHyphen = false;
+        foreach (var character in value)
+        {
+            if (character == '-')
+            {
+                if (previousWasHyphen)
+                {
+                    return false;
+                }
+
+                previousWasHyphen = true;
+                continue;
+            }
+
+            if (character is not (>= 'a' and <= 'z') and
+                not (>= '0' and <= '9'))
+            {
+                return false;
+            }
+
+            previousWasHyphen = false;
+        }
+
+        return true;
+    }
+}
+
+[SuppressMessage(
+    "Design",
+    "CA1040:Avoid empty interfaces",
+    Justification = "The backend is deliberately an opaque execution handle; routing authority lives only in immutable descriptors.")]
+internal interface IProcessContainmentBackend
+{
 }
 
 internal interface IProcessContainmentCapabilityProvider
 {
-    ProcessContainmentCapabilityDiscovery DiscoverCapability();
-}
-
-internal interface IProcessContainmentBackend : IProcessContainmentCapabilityProvider
-{
-    ProcessContainmentBackendIdentity Identity { get; }
-
-    ProcessContainmentPlatform Platform { get; }
+    ProcessContainmentCapabilityReport DiscoverCapability();
 }
 
 internal sealed record ProcessContainmentCapabilityEvidence
@@ -72,20 +107,12 @@ internal sealed record ProcessContainmentCapabilityEvidence
     public string Detail { get; }
 }
 
-internal sealed record ProcessContainmentCapabilityDiscovery
+internal sealed record ProcessContainmentCapabilityReport
 {
-    internal ProcessContainmentCapabilityDiscovery(
-        ProcessContainmentBackendIdentity backendIdentity,
-        ProcessContainmentPlatform platform,
+    internal ProcessContainmentCapabilityReport(
         IEnumerable<ProcessContainmentCapabilityEvidence> evidence)
     {
-        ArgumentNullException.ThrowIfNull(backendIdentity);
         ArgumentNullException.ThrowIfNull(evidence);
-        if (!Enum.IsDefined(platform))
-        {
-            throw new ArgumentOutOfRangeException(nameof(platform), platform, null);
-        }
-
         var snapshot = evidence.ToArray();
         if (snapshot.Any(item => item is null))
         {
@@ -94,51 +121,160 @@ internal sealed record ProcessContainmentCapabilityDiscovery
                 nameof(evidence));
         }
 
-        BackendIdentity = backendIdentity;
-        Platform = platform;
         Evidence = new ReadOnlyCollection<ProcessContainmentCapabilityEvidence>(
             snapshot);
+    }
+
+    public IReadOnlyList<ProcessContainmentCapabilityEvidence> Evidence { get; }
+}
+
+internal sealed record ProcessContainmentBackendRegistration
+{
+    internal ProcessContainmentBackendRegistration(
+        ProcessContainmentBackendIdentity backendIdentity,
+        ProcessContainmentPlatform platform,
+        IProcessContainmentBackend executionHandle,
+        IProcessContainmentCapabilityProvider capabilityProvider)
+    {
+        ArgumentNullException.ThrowIfNull(backendIdentity);
+        ArgumentNullException.ThrowIfNull(executionHandle);
+        ArgumentNullException.ThrowIfNull(capabilityProvider);
+        if (!Enum.IsDefined(platform))
+        {
+            throw new ArgumentOutOfRangeException(nameof(platform), platform, null);
+        }
+
+        BackendIdentity = backendIdentity;
+        Platform = platform;
+        ExecutionHandle = executionHandle;
+        CapabilityProvider = capabilityProvider;
     }
 
     public ProcessContainmentBackendIdentity BackendIdentity { get; }
 
     public ProcessContainmentPlatform Platform { get; }
 
-    public IReadOnlyList<ProcessContainmentCapabilityEvidence> Evidence { get; }
+    public IProcessContainmentBackend ExecutionHandle { get; }
+
+    public IProcessContainmentCapabilityProvider CapabilityProvider { get; }
 }
 
 internal sealed record ProcessContainmentBackendDiscovery
 {
     internal ProcessContainmentBackendDiscovery(
-        IProcessContainmentBackend backend,
-        ProcessContainmentCapabilityDiscovery capability)
+        ProcessContainmentBackendIdentity backendIdentity,
+        ProcessContainmentPlatform platform,
+        IProcessContainmentBackend executionHandle,
+        ProcessContainmentCapabilityReport capability)
     {
-        ArgumentNullException.ThrowIfNull(backend);
-        ArgumentNullException.ThrowIfNull(capability);
-        var backendIdentity = backend.Identity;
         ArgumentNullException.ThrowIfNull(backendIdentity);
-        var backendPlatform = backend.Platform;
-        if (!Enum.IsDefined(backendPlatform))
+        ArgumentNullException.ThrowIfNull(executionHandle);
+        ArgumentNullException.ThrowIfNull(capability);
+        if (!Enum.IsDefined(platform))
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(backend),
-                backendPlatform,
-                "Containment backend platform is invalid.");
+            throw new ArgumentOutOfRangeException(nameof(platform), platform, null);
         }
 
-        Backend = backend;
         BackendIdentity = backendIdentity;
-        BackendPlatform = backendPlatform;
+        Platform = platform;
+        ExecutionHandle = executionHandle;
         Capability = capability;
     }
 
-    public IProcessContainmentBackend Backend { get; }
-
     public ProcessContainmentBackendIdentity BackendIdentity { get; }
 
-    public ProcessContainmentPlatform BackendPlatform { get; }
+    public ProcessContainmentPlatform Platform { get; }
 
-    public ProcessContainmentCapabilityDiscovery Capability { get; }
+    public IProcessContainmentBackend ExecutionHandle { get; }
+
+    public ProcessContainmentCapabilityReport Capability { get; }
+}
+
+internal sealed class ProcessContainmentDiscoveryBatch
+{
+    internal ProcessContainmentDiscoveryBatch(
+        ProcessContainmentBackendDiscovery[] discoveries)
+    {
+        ArgumentNullException.ThrowIfNull(discoveries);
+        if (discoveries.Any(item => item is null))
+        {
+            throw new ArgumentException(
+                "Containment discovery batch cannot contain a null item.",
+                nameof(discoveries));
+        }
+
+        Discoveries = new ReadOnlyCollection<ProcessContainmentBackendDiscovery>(
+            discoveries.ToArray());
+    }
+
+    public IReadOnlyList<ProcessContainmentBackendDiscovery> Discoveries { get; }
+}
+
+internal abstract record ProcessContainmentCapabilityDiscoveryResult;
+
+internal sealed record ProcessContainmentCapabilityDiscoveryCompleted
+    : ProcessContainmentCapabilityDiscoveryResult
+{
+    internal ProcessContainmentCapabilityDiscoveryCompleted(
+        ProcessContainmentDiscoveryBatch batch)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        Batch = batch;
+    }
+
+    public ProcessContainmentDiscoveryBatch Batch { get; }
+}
+
+internal enum ProcessContainmentCapabilityDiscoveryFailureKind
+{
+    RegistrationEnumerationFailed,
+    InvalidRegistration,
+    DuplicateBackendIdentity,
+    CapabilityProviderFailed,
+    InvalidCapabilityReport
+}
+
+internal sealed record ProcessContainmentCapabilityDiscoveryFailure
+{
+    internal ProcessContainmentCapabilityDiscoveryFailure(
+        ProcessContainmentCapabilityDiscoveryFailureKind kind,
+        IEnumerable<ProcessContainmentBackendIdentity> backendIdentities,
+        string errorType,
+        string detail)
+    {
+        ArgumentNullException.ThrowIfNull(backendIdentities);
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(detail);
+        Kind = kind;
+        BackendIdentities = new ReadOnlyCollection<ProcessContainmentBackendIdentity>(
+            backendIdentities
+                .Distinct()
+                .OrderBy(identity => identity.Value, StringComparer.Ordinal)
+                .ToArray());
+        ErrorType = errorType;
+        Detail = detail;
+    }
+
+    public ProcessContainmentCapabilityDiscoveryFailureKind Kind { get; }
+
+    public IReadOnlyList<ProcessContainmentBackendIdentity> BackendIdentities { get; }
+
+    public string ErrorType { get; }
+
+    public string Detail { get; }
+}
+
+internal sealed record ProcessContainmentCapabilityDiscoveryRejected
+    : ProcessContainmentCapabilityDiscoveryResult
+{
+    internal ProcessContainmentCapabilityDiscoveryRejected(
+        ProcessContainmentCapabilityDiscoveryFailure failure)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+        Failure = failure;
+    }
+
+    public ProcessContainmentCapabilityDiscoveryFailure Failure { get; }
 }
 
 internal abstract record ProcessContainmentBackendSelectionResult;
@@ -147,25 +283,33 @@ internal sealed record ProcessContainmentBackendSelected
     : ProcessContainmentBackendSelectionResult
 {
     internal ProcessContainmentBackendSelected(
-        IProcessContainmentBackend backend,
-        ProcessContainmentCapabilityDiscovery capability)
+        ProcessContainmentBackendIdentity backendIdentity,
+        ProcessContainmentPlatform platform,
+        IProcessContainmentBackend executionHandle,
+        ProcessContainmentCapabilityReport capability)
     {
-        ArgumentNullException.ThrowIfNull(backend);
+        ArgumentNullException.ThrowIfNull(backendIdentity);
+        ArgumentNullException.ThrowIfNull(executionHandle);
         ArgumentNullException.ThrowIfNull(capability);
-        Backend = backend;
+        BackendIdentity = backendIdentity;
+        Platform = platform;
+        ExecutionHandle = executionHandle;
         Capability = capability;
     }
 
-    public IProcessContainmentBackend Backend { get; }
+    public ProcessContainmentBackendIdentity BackendIdentity { get; }
 
-    public ProcessContainmentCapabilityDiscovery Capability { get; }
+    public ProcessContainmentPlatform Platform { get; }
+
+    public IProcessContainmentBackend ExecutionHandle { get; }
+
+    public ProcessContainmentCapabilityReport Capability { get; }
 }
 
 internal enum ProcessContainmentSelectionFailureKind
 {
+    InvalidRequestedPlatform,
     DuplicateBackendIdentity,
-    BackendIdentityMismatch,
-    BackendPlatformMismatch,
     ContradictoryCapabilityEvidence,
     UnknownCapability,
     NoProvenBackend,

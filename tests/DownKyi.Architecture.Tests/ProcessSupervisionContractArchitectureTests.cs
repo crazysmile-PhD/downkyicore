@@ -190,8 +190,13 @@ public sealed class ProcessSupervisionContractArchitectureTests
         [
             typeof(ProcessContainmentBackendIdentity),
             typeof(ProcessContainmentCapabilityEvidence),
-            typeof(ProcessContainmentCapabilityDiscovery),
+            typeof(ProcessContainmentCapabilityReport),
+            typeof(ProcessContainmentBackendRegistration),
             typeof(ProcessContainmentBackendDiscovery),
+            typeof(ProcessContainmentDiscoveryBatch),
+            typeof(ProcessContainmentCapabilityDiscoveryCompleted),
+            typeof(ProcessContainmentCapabilityDiscoveryFailure),
+            typeof(ProcessContainmentCapabilityDiscoveryRejected),
             typeof(ProcessContainmentBackendSelected),
             typeof(ProcessContainmentSelectionFailure),
             typeof(ProcessContainmentBackendRejected),
@@ -214,6 +219,28 @@ public sealed class ProcessSupervisionContractArchitectureTests
                     property.SetMethod is null || !property.SetMethod.IsPublic,
                     $"{type.Name}.{property.Name} exposes a public setter."));
         });
+
+        Assert.Empty(typeof(IProcessContainmentBackend).GetProperties());
+        Assert.Empty(typeof(IProcessContainmentBackend).GetMethods());
+
+        var selection = typeof(ProcessContainmentBackendRouter).GetMethod(
+            "Select",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(selection);
+        Assert.Equal(
+            typeof(ProcessContainmentDiscoveryBatch),
+            selection.GetParameters()[1].ParameterType);
+
+        Assert.Equal(
+            [
+                nameof(ProcessContainmentBackendSelected.BackendIdentity),
+                nameof(ProcessContainmentBackendSelected.Platform),
+                nameof(ProcessContainmentBackendSelected.ExecutionHandle),
+                nameof(ProcessContainmentBackendSelected.Capability)
+            ],
+            typeof(ProcessContainmentBackendSelected)
+                .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Select(property => property.Name));
     }
 
     [Fact]

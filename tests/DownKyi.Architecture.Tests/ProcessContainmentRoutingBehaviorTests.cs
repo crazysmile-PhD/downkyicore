@@ -4,111 +4,189 @@ namespace DownKyi.Architecture.Tests;
 
 public sealed class ProcessContainmentRoutingBehaviorTests
 {
-    [Fact]
-    public void ExactlyOneProvenBackendIsSelectedIndependentOfProviderOrder()
+    [Theory]
+    [InlineData("Windows-job")]
+    [InlineData("windows\u200B-job")]
+    [InlineData("caf\u00E9")]
+    [InlineData("cafe\u0301")]
+    [InlineData("-windows-job")]
+    [InlineData("windows-job-")]
+    [InlineData("windows--job")]
+    [InlineData("windows_job")]
+    public void BackendIdentityRejectsNonCanonicalTokens(string value)
     {
-        var proven = Backend(
+        Assert.Throws<ArgumentException>(() =>
+            new ProcessContainmentBackendIdentity(value));
+    }
+
+    [Fact]
+    public void CoordinatorInvokesProvidersInCanonicalOrderBeforeRouting()
+    {
+        var forward = RunOrderSensitiveDiscovery(reverse: false);
+        var reverse = RunOrderSensitiveDiscovery(reverse: true);
+
+        Assert.Equal(["alpha-backend", "beta-backend"], forward.Invocations);
+        Assert.Equal(forward.Invocations, reverse.Invocations);
+        Assert.Equal("alpha-backend", forward.Selected.BackendIdentity.Value);
+        Assert.Equal(
+            forward.Selected.BackendIdentity,
+            reverse.Selected.BackendIdentity);
+    }
+
+    [Fact]
+    public void RegistrationEnumerationFailureIsTypedBeforeProviderInvocation()
+    {
+        var providerInvoked = false;
+        var registration = Registration(
+            "windows-job",
+            ProcessContainmentPlatform.Windows,
+            () =>
+            {
+                providerInvoked = true;
+                return Report(ProcessContainmentCapabilityState.Proven);
+            });
+
+        var result = ProcessContainmentCapabilityDiscoveryCoordinator.Discover(
+            ThrowAfterFirst(registration));
+
+        var failure = AssertDiscoveryRejected(
+            result,
+            ProcessContainmentCapabilityDiscoveryFailureKind.RegistrationEnumerationFailed);
+        Assert.Equal(nameof(InvalidOperationException), failure.ErrorType);
+        Assert.False(providerInvoked);
+    }
+
+    [Fact]
+    public void CapabilityProviderFailureIsTyped()
+    {
+        var registration = Registration(
+            "windows-job",
+            ProcessContainmentPlatform.Windows,
+            () => throw new InvalidOperationException("fixture discovery failure"));
+
+        var failure = AssertDiscoveryRejected(
+            ProcessContainmentCapabilityDiscoveryCoordinator.Discover([registration]),
+            ProcessContainmentCapabilityDiscoveryFailureKind.CapabilityProviderFailed,
+            "windows-job");
+
+        Assert.Equal(nameof(InvalidOperationException), failure.ErrorType);
+        Assert.DoesNotContain(
+            "fixture discovery failure",
+            failure.Detail,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SelectedBackendUsesFrozenDescriptorInsteadOfLiveHandleMetadata()
+    {
+        var handle = new FixtureBackend
+        {
+            LiveIdentity = "windows-job",
+            LivePlatform = ProcessContainmentPlatform.Windows
+        };
+        var registration = Registration(
+            "windows-job",
+            ProcessContainmentPlatform.Windows,
+            () => Report(ProcessContainmentCapabilityState.Proven),
+            handle);
+        var selected = Assert.IsType<ProcessContainmentBackendSelected>(
+            ProcessContainmentBackendRouter.Select(
+                ProcessContainmentPlatform.Windows,
+                DiscoverBatch(registration)));
+
+        handle.LiveIdentity = "linux-cgroup";
+        handle.LivePlatform = ProcessContainmentPlatform.Linux;
+
+        Assert.Equal("windows-job", selected.BackendIdentity.Value);
+        Assert.Equal(ProcessContainmentPlatform.Windows, selected.Platform);
+        Assert.Same(handle, selected.ExecutionHandle);
+        Assert.Equal(
+            ProcessContainmentCapabilityState.Proven,
+            Assert.Single(selected.Capability.Evidence).State);
+    }
+
+    [Fact]
+    public void ExactlyOneProvenBackendIsSelectedWithUnavailableAlternatives()
+    {
+        var proven = Registration(
             "windows-job",
             ProcessContainmentPlatform.Windows,
             ProcessContainmentCapabilityState.Proven);
-        var unavailableA = Backend(
+        var unavailableA = Registration(
             "windows-alt-a",
             ProcessContainmentPlatform.Windows,
             ProcessContainmentCapabilityState.Unavailable);
-        var unavailableB = Backend(
+        var unavailableB = Registration(
             "windows-alt-b",
             ProcessContainmentPlatform.Windows,
             ProcessContainmentCapabilityState.Unavailable);
-        var providers = new[] { proven, unavailableA, unavailableB };
 
-        foreach (var permutation in Permutations(providers))
-        {
-            var selected = Assert.IsType<ProcessContainmentBackendSelected>(
-                ProcessContainmentBackendRouter.Select(
-                    ProcessContainmentPlatform.Windows,
-                    permutation.Select(Discover)));
+        var selected = Assert.IsType<ProcessContainmentBackendSelected>(
+            ProcessContainmentBackendRouter.Select(
+                ProcessContainmentPlatform.Windows,
+                DiscoverBatch(unavailableB, proven, unavailableA)));
 
-            Assert.Same(proven, selected.Backend);
-            Assert.Equal(proven.Identity, selected.Capability.BackendIdentity);
-            Assert.All(selected.Capability.Evidence, evidence =>
-                Assert.Equal(
-                    ProcessContainmentCapabilityState.Proven,
-                    evidence.State));
-        }
+        Assert.Equal("windows-job", selected.BackendIdentity.Value);
     }
 
     [Fact]
     public void ZeroProvenBackendsFailClosed()
     {
-        var unavailable = Backend(
+        var unavailable = Registration(
             "windows-unavailable",
             ProcessContainmentPlatform.Windows,
             ProcessContainmentCapabilityState.Unavailable);
 
-        AssertRejected(
+        AssertSelectionRejected(
             ProcessContainmentBackendRouter.Select(
                 ProcessContainmentPlatform.Windows,
-                []),
+                DiscoverBatch()),
             ProcessContainmentSelectionFailureKind.NoProvenBackend);
-        AssertRejected(
+        AssertSelectionRejected(
             ProcessContainmentBackendRouter.Select(
                 ProcessContainmentPlatform.Windows,
-                [Discover(unavailable)]),
+                DiscoverBatch(unavailable)),
             ProcessContainmentSelectionFailureKind.NoProvenBackend,
             "windows-unavailable");
     }
 
     [Fact]
-    public void MultipleProvenBackendsFailClosedIndependentOfProviderOrder()
+    public void MultipleProvenBackendsFailClosed()
     {
-        var first = Backend(
+        var first = Registration(
             "linux-cgroup",
             ProcessContainmentPlatform.Linux,
             ProcessContainmentCapabilityState.Proven);
-        var second = Backend(
+        var second = Registration(
             "linux-process-group",
             ProcessContainmentPlatform.Linux,
             ProcessContainmentCapabilityState.Proven);
-        var forward = new[] { Discover(first), Discover(second) };
 
-        var forwardFailure = AssertRejected(
+        AssertSelectionRejected(
             ProcessContainmentBackendRouter.Select(
                 ProcessContainmentPlatform.Linux,
-                forward),
+                DiscoverBatch(second, first)),
             ProcessContainmentSelectionFailureKind.MultipleProvenBackends,
             "linux-cgroup",
             "linux-process-group");
-        var reverseFailure = AssertRejected(
-            ProcessContainmentBackendRouter.Select(
-                ProcessContainmentPlatform.Linux,
-                forward.Reverse()),
-            ProcessContainmentSelectionFailureKind.MultipleProvenBackends,
-            "linux-cgroup",
-            "linux-process-group");
-
-        Assert.Equal(forwardFailure.Kind, reverseFailure.Kind);
-        Assert.Equal(forwardFailure.Detail, reverseFailure.Detail);
-        Assert.Equal(
-            forwardFailure.BackendIdentities,
-            reverseFailure.BackendIdentities);
     }
 
     [Fact]
     public void UnknownCapabilityBlocksAProvenFallback()
     {
-        var unknown = Backend(
+        var unknown = Registration(
             "linux-cgroup",
             ProcessContainmentPlatform.Linux,
             ProcessContainmentCapabilityState.Unknown);
-        var fallback = Backend(
+        var fallback = Registration(
             "linux-process-group",
             ProcessContainmentPlatform.Linux,
             ProcessContainmentCapabilityState.Proven);
 
-        AssertRejected(
+        AssertSelectionRejected(
             ProcessContainmentBackendRouter.Select(
                 ProcessContainmentPlatform.Linux,
-                [Discover(fallback), Discover(unknown)]),
+                DiscoverBatch(fallback, unknown)),
             ProcessContainmentSelectionFailureKind.UnknownCapability,
             "linux-cgroup");
     }
@@ -116,51 +194,61 @@ public sealed class ProcessContainmentRoutingBehaviorTests
     [Fact]
     public void EmptyCapabilityEvidenceIsUnknownAndFailsClosed()
     {
-        var backend = Backend(
+        var registration = Registration(
             "mac-process-group",
             ProcessContainmentPlatform.MacOS);
 
-        AssertRejected(
+        AssertSelectionRejected(
             ProcessContainmentBackendRouter.Select(
                 ProcessContainmentPlatform.MacOS,
-                [Discover(backend)]),
+                DiscoverBatch(registration)),
             ProcessContainmentSelectionFailureKind.UnknownCapability,
             "mac-process-group");
     }
 
     [Fact]
-    public void PlatformMismatchFailsClosedBeforeSelection()
+    public void DuplicateRegistrationIdentityFailsBeforeProviderInvocation()
     {
-        var backend = Backend(
-            "windows-job",
-            ProcessContainmentPlatform.Windows,
-            capabilityPlatform: ProcessContainmentPlatform.Linux,
-            ProcessContainmentCapabilityState.Proven);
-
-        AssertRejected(
-            ProcessContainmentBackendRouter.Select(
+        var invocationCount = 0;
+        ProcessContainmentBackendRegistration CreateDuplicate()
+        {
+            return Registration(
+                "windows-job",
                 ProcessContainmentPlatform.Windows,
-                [Discover(backend)]),
-            ProcessContainmentSelectionFailureKind.BackendPlatformMismatch,
+                () =>
+                {
+                    invocationCount++;
+                    return Report(ProcessContainmentCapabilityState.Proven);
+                });
+        }
+
+        AssertDiscoveryRejected(
+            ProcessContainmentCapabilityDiscoveryCoordinator.Discover(
+                [CreateDuplicate(), CreateDuplicate()]),
+            ProcessContainmentCapabilityDiscoveryFailureKind.DuplicateBackendIdentity,
             "windows-job");
+        Assert.Equal(0, invocationCount);
     }
 
     [Fact]
-    public void DuplicateBackendIdentityFailsClosedEvenWhenEvidenceAgrees()
+    public void RouterRejectsDuplicateIdentityInSealedBatch()
     {
-        var first = Backend(
-            "windows-job",
-            ProcessContainmentPlatform.Windows,
-            ProcessContainmentCapabilityState.Proven);
-        var duplicate = Backend(
-            "windows-job",
-            ProcessContainmentPlatform.Windows,
-            ProcessContainmentCapabilityState.Proven);
+        var batch = new ProcessContainmentDiscoveryBatch(
+        [
+            Discovery(
+                "windows-job",
+                ProcessContainmentPlatform.Windows,
+                ProcessContainmentCapabilityState.Proven),
+            Discovery(
+                "windows-job",
+                ProcessContainmentPlatform.Windows,
+                ProcessContainmentCapabilityState.Proven)
+        ]);
 
-        AssertRejected(
+        AssertSelectionRejected(
             ProcessContainmentBackendRouter.Select(
                 ProcessContainmentPlatform.Windows,
-                [Discover(first), Discover(duplicate)]),
+                batch),
             ProcessContainmentSelectionFailureKind.DuplicateBackendIdentity,
             "windows-job");
     }
@@ -168,50 +256,32 @@ public sealed class ProcessContainmentRoutingBehaviorTests
     [Fact]
     public void ContradictoryCapabilityEvidenceFailsClosed()
     {
-        var backend = Backend(
+        var registration = Registration(
             "linux-cgroup",
             ProcessContainmentPlatform.Linux,
             ProcessContainmentCapabilityState.Proven,
             ProcessContainmentCapabilityState.Unavailable);
 
-        AssertRejected(
+        AssertSelectionRejected(
             ProcessContainmentBackendRouter.Select(
                 ProcessContainmentPlatform.Linux,
-                [Discover(backend)]),
+                DiscoverBatch(registration)),
             ProcessContainmentSelectionFailureKind.ContradictoryCapabilityEvidence,
             "linux-cgroup");
     }
 
     [Fact]
-    public void CapabilityIdentityMismatchFailsClosed()
-    {
-        var backend = Backend(
-            "windows-job",
-            ProcessContainmentPlatform.Windows,
-            capabilityIdentity: "different-backend",
-            ProcessContainmentCapabilityState.Proven);
-
-        AssertRejected(
-            ProcessContainmentBackendRouter.Select(
-                ProcessContainmentPlatform.Windows,
-                [Discover(backend)]),
-            ProcessContainmentSelectionFailureKind.BackendIdentityMismatch,
-            "different-backend",
-            "windows-job");
-    }
-
-    [Fact]
     public void ProvidersForOtherPlatformsDoNotCompeteWithRequestedPlatform()
     {
-        var windows = Backend(
+        var windows = Registration(
             "windows-job",
             ProcessContainmentPlatform.Windows,
             ProcessContainmentCapabilityState.Proven);
-        var linux = Backend(
+        var linux = Registration(
             "linux-cgroup",
             ProcessContainmentPlatform.Linux,
             ProcessContainmentCapabilityState.Proven);
-        var mac = Backend(
+        var mac = Registration(
             "mac-process-group",
             ProcessContainmentPlatform.MacOS,
             ProcessContainmentCapabilityState.Proven);
@@ -219,31 +289,98 @@ public sealed class ProcessContainmentRoutingBehaviorTests
         var selected = Assert.IsType<ProcessContainmentBackendSelected>(
             ProcessContainmentBackendRouter.Select(
                 ProcessContainmentPlatform.MacOS,
-                [Discover(windows), Discover(mac), Discover(linux)]));
+                DiscoverBatch(windows, mac, linux)));
 
-        Assert.Same(mac, selected.Backend);
+        Assert.Equal("mac-process-group", selected.BackendIdentity.Value);
+        Assert.Equal(ProcessContainmentPlatform.MacOS, selected.Platform);
     }
 
     [Fact]
-    public void CapabilityDiscoverySnapshotsEvidenceBeforeRouting()
+    public void InvalidRequestedPlatformHasOneTypedFailure()
     {
-        var identity = new ProcessContainmentBackendIdentity("windows-job");
-        var mutable = new List<ProcessContainmentCapabilityEvidence>
+        var result = ProcessContainmentBackendRouter.Select(
+            (ProcessContainmentPlatform)999,
+            DiscoverBatch());
+
+        AssertSelectionRejected(
+            result,
+            ProcessContainmentSelectionFailureKind.InvalidRequestedPlatform);
+    }
+
+    [Fact]
+    public void CapabilityReportAndDiscoveryBatchSnapshotTheirInputs()
+    {
+        var evidence = new List<ProcessContainmentCapabilityEvidence>
         {
             Evidence(ProcessContainmentCapabilityState.Proven)
         };
-        var capability = new ProcessContainmentCapabilityDiscovery(
-            identity,
+        var capability = new ProcessContainmentCapabilityReport(evidence);
+        evidence.Clear();
+        var first = new ProcessContainmentBackendDiscovery(
+            Identity("windows-job"),
             ProcessContainmentPlatform.Windows,
-            mutable);
-        mutable.Clear();
+            new FixtureBackend(),
+            capability);
+        var mutableDiscoveries = new[] { first };
+        var batch = new ProcessContainmentDiscoveryBatch(mutableDiscoveries);
+        mutableDiscoveries[0] = Discovery(
+            "replacement",
+            ProcessContainmentPlatform.Windows,
+            ProcessContainmentCapabilityState.Unavailable);
 
         Assert.Equal(
             ProcessContainmentCapabilityState.Proven,
             Assert.Single(capability.Evidence).State);
+        Assert.Same(first, Assert.Single(batch.Discoveries));
     }
 
-    private static ProcessContainmentSelectionFailure AssertRejected(
+    private static OrderSensitiveResult RunOrderSensitiveDiscovery(bool reverse)
+    {
+        var invocationOrder = new List<string>();
+        var counter = 0;
+        ProcessContainmentBackendRegistration Create(string identity)
+        {
+            return Registration(
+                identity,
+                ProcessContainmentPlatform.Windows,
+                () =>
+                {
+                    invocationOrder.Add(identity);
+                    var state = counter++ == 0
+                        ? ProcessContainmentCapabilityState.Proven
+                        : ProcessContainmentCapabilityState.Unavailable;
+                    return Report(state);
+                });
+        }
+
+        var alpha = Create("alpha-backend");
+        var beta = Create("beta-backend");
+        var registrations = reverse
+            ? new[] { beta, alpha }
+            : new[] { alpha, beta };
+        var batch = DiscoverBatch(registrations);
+        var selected = Assert.IsType<ProcessContainmentBackendSelected>(
+            ProcessContainmentBackendRouter.Select(
+                ProcessContainmentPlatform.Windows,
+                batch));
+        return new OrderSensitiveResult(invocationOrder, selected);
+    }
+
+    private static ProcessContainmentCapabilityDiscoveryFailure AssertDiscoveryRejected(
+        ProcessContainmentCapabilityDiscoveryResult result,
+        ProcessContainmentCapabilityDiscoveryFailureKind expectedKind,
+        params string[] expectedIdentities)
+    {
+        var failure = Assert.IsType<ProcessContainmentCapabilityDiscoveryRejected>(
+            result).Failure;
+        Assert.Equal(expectedKind, failure.Kind);
+        Assert.Equal(
+            expectedIdentities,
+            failure.BackendIdentities.Select(identity => identity.Value));
+        return failure;
+    }
+
+    private static ProcessContainmentSelectionFailure AssertSelectionRejected(
         ProcessContainmentBackendSelectionResult result,
         ProcessContainmentSelectionFailureKind expectedKind,
         params string[] expectedIdentities)
@@ -256,53 +393,55 @@ public sealed class ProcessContainmentRoutingBehaviorTests
         return failure;
     }
 
-    private static ProcessContainmentBackendDiscovery Discover(
-        FixtureBackend backend)
+    private static ProcessContainmentDiscoveryBatch DiscoverBatch(
+        params ProcessContainmentBackendRegistration[] registrations)
+    {
+        return Assert.IsType<ProcessContainmentCapabilityDiscoveryCompleted>(
+            ProcessContainmentCapabilityDiscoveryCoordinator.Discover(registrations)).Batch;
+    }
+
+    private static ProcessContainmentBackendRegistration Registration(
+        string identity,
+        ProcessContainmentPlatform platform,
+        params ProcessContainmentCapabilityState[] states)
+    {
+        return Registration(identity, platform, () => Report(states));
+    }
+
+    private static ProcessContainmentBackendRegistration Registration(
+        string identity,
+        ProcessContainmentPlatform platform,
+        Func<ProcessContainmentCapabilityReport> discover,
+        FixtureBackend? handle = null)
+    {
+        return new ProcessContainmentBackendRegistration(
+            Identity(identity),
+            platform,
+            handle ?? new FixtureBackend(),
+            new FixtureCapabilityProvider(discover));
+    }
+
+    private static ProcessContainmentBackendDiscovery Discovery(
+        string identity,
+        ProcessContainmentPlatform platform,
+        params ProcessContainmentCapabilityState[] states)
     {
         return new ProcessContainmentBackendDiscovery(
-            backend,
-            backend.DiscoverCapability());
+            Identity(identity),
+            platform,
+            new FixtureBackend(),
+            Report(states));
     }
 
-    private static FixtureBackend Backend(
-        string identity,
-        ProcessContainmentPlatform platform,
-        params ProcessContainmentCapabilityState[] states)
+    private static ProcessContainmentBackendIdentity Identity(string value)
     {
-        return Backend(identity, platform, null, null, states);
+        return new ProcessContainmentBackendIdentity(value);
     }
 
-    private static FixtureBackend Backend(
-        string identity,
-        ProcessContainmentPlatform platform,
-        ProcessContainmentPlatform capabilityPlatform,
+    private static ProcessContainmentCapabilityReport Report(
         params ProcessContainmentCapabilityState[] states)
     {
-        return Backend(identity, platform, null, capabilityPlatform, states);
-    }
-
-    private static FixtureBackend Backend(
-        string identity,
-        ProcessContainmentPlatform platform,
-        string capabilityIdentity,
-        params ProcessContainmentCapabilityState[] states)
-    {
-        return Backend(identity, platform, capabilityIdentity, null, states);
-    }
-
-    private static FixtureBackend Backend(
-        string identity,
-        ProcessContainmentPlatform platform,
-        string? capabilityIdentity,
-        ProcessContainmentPlatform? capabilityPlatform,
-        params ProcessContainmentCapabilityState[] states)
-    {
-        var backendIdentity = new ProcessContainmentBackendIdentity(identity);
-        var discovery = new ProcessContainmentCapabilityDiscovery(
-            new ProcessContainmentBackendIdentity(capabilityIdentity ?? identity),
-            capabilityPlatform ?? platform,
-            states.Select(Evidence));
-        return new FixtureBackend(backendIdentity, platform, discovery);
+        return new ProcessContainmentCapabilityReport(states.Select(Evidence));
     }
 
     private static ProcessContainmentCapabilityEvidence Evidence(
@@ -313,51 +452,38 @@ public sealed class ProcessContainmentRoutingBehaviorTests
             $"fixture {state}");
     }
 
-    private static IEnumerable<IReadOnlyList<FixtureBackend>> Permutations(
-        IReadOnlyList<FixtureBackend> providers)
+    private static IEnumerable<ProcessContainmentBackendRegistration> ThrowAfterFirst(
+        ProcessContainmentBackendRegistration registration)
     {
-        for (var first = 0; first < providers.Count; first++)
-        {
-            for (var second = 0; second < providers.Count; second++)
-            {
-                if (second == first)
-                {
-                    continue;
-                }
-
-                var third = Enumerable.Range(0, providers.Count)
-                    .Single(index => index != first && index != second);
-                yield return
-                [
-                    providers[first],
-                    providers[second],
-                    providers[third]
-                ];
-            }
-        }
+        yield return registration;
+        throw new InvalidOperationException("fixture enumeration failure");
     }
+
+    private sealed record OrderSensitiveResult(
+        IReadOnlyList<string> Invocations,
+        ProcessContainmentBackendSelected Selected);
 
     private sealed class FixtureBackend : IProcessContainmentBackend
     {
-        private readonly ProcessContainmentCapabilityDiscovery _capability;
+        internal string LiveIdentity { get; set; } = "fixture";
 
-        internal FixtureBackend(
-            ProcessContainmentBackendIdentity identity,
-            ProcessContainmentPlatform platform,
-            ProcessContainmentCapabilityDiscovery capability)
+        internal ProcessContainmentPlatform LivePlatform { get; set; } =
+            ProcessContainmentPlatform.Windows;
+    }
+
+    private sealed class FixtureCapabilityProvider : IProcessContainmentCapabilityProvider
+    {
+        private readonly Func<ProcessContainmentCapabilityReport> _discover;
+
+        internal FixtureCapabilityProvider(
+            Func<ProcessContainmentCapabilityReport> discover)
         {
-            Identity = identity;
-            Platform = platform;
-            _capability = capability;
+            _discover = discover;
         }
 
-        public ProcessContainmentBackendIdentity Identity { get; }
-
-        public ProcessContainmentPlatform Platform { get; }
-
-        public ProcessContainmentCapabilityDiscovery DiscoverCapability()
+        public ProcessContainmentCapabilityReport DiscoverCapability()
         {
-            return _capability;
+            return _discover();
         }
     }
 }
