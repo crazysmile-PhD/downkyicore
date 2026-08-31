@@ -86,7 +86,8 @@ public sealed class AssemblyLifecycleArchitectureTests
     [Fact]
     public void LifecycleGateMeasuresEveryProcessStageAndCapturesForensics()
     {
-        var source = Read("script/test-assembly-lifecycle.ps1");
+        var entrypoint = Read("script/test-assembly-lifecycle.ps1");
+        var source = ReadLifecycleSources();
         string[] requiredTokens =
         [
             "\"load\"",
@@ -146,7 +147,7 @@ public sealed class AssemblyLifecycleArchitectureTests
             Assert.Contains(token, source, StringComparison.Ordinal);
         }
 
-        Assert.Contains("-Phase \"execution\"", source, StringComparison.Ordinal);
+        Assert.Contains("-Phase \"execution\"", entrypoint, StringComparison.Ordinal);
         Assert.Contains("-LifecycleMarkerPath $selfTestMarker", source, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "[string]::IsNullOrWhiteSpace($LifecycleMarkerPath) -and",
@@ -172,15 +173,137 @@ public sealed class AssemblyLifecycleArchitectureTests
             "$forensicsSelfTestCaptureLeadValidated =",
             source,
             StringComparison.Ordinal);
-        AssertUsesSynchronousAutomatedReporting(source, "assembly-info");
-        AssertUsesSynchronousAutomatedReporting(source, "discovery");
-        AssertUsesSynchronousAutomatedReporting(source, "execution");
+        AssertUsesSynchronousAutomatedReporting(entrypoint, "assembly-info");
+        AssertUsesSynchronousAutomatedReporting(entrypoint, "discovery");
+        AssertUsesSynchronousAutomatedReporting(entrypoint, "execution");
+    }
+
+    [Fact]
+    public void LifecycleEntrypointDelegatesDistinctResponsibilities()
+    {
+        var entrypoint = Read("script/test-assembly-lifecycle.ps1");
+        var forensics = Read("script/assembly-lifecycle/forensics.ps1");
+        var processExecution = Read("script/assembly-lifecycle/process-execution.ps1");
+        var resultClassification = Read("script/assembly-lifecycle/result-classification.ps1");
+        var reportRendering = Read("script/assembly-lifecycle/report-rendering.ps1");
+
+        string[] componentFiles =
+        [
+            "forensics.ps1",
+            "process-execution.ps1",
+            "result-classification.ps1",
+            "report-rendering.ps1"
+        ];
+        foreach (var componentFile in componentFiles)
+        {
+            Assert.Contains(
+                $"Join-Path $componentRoot \"{componentFile}\"",
+                entrypoint,
+                StringComparison.Ordinal);
+        }
+
+        Assert.DoesNotContain("function ", entrypoint, StringComparison.Ordinal);
+        Assert.Contains(
+            "Invoke-AssemblyLifecycleForensicsSelfTests",
+            entrypoint,
+            StringComparison.Ordinal);
+        string[] forbiddenEntrypointMechanics =
+        [
+            "Gate.Forensics",
+            "Gate.ResidualChild",
+            "Gate.TransientChild",
+            "Gate.MarkerReader",
+            "--hold-after-unload-ms",
+            "--spawn-residual-child-ms",
+            "[System.IO.FileShare]::None",
+            "$residualChildSelfTest.passed =",
+            "$markerReaderSelfTest.contractChecks",
+            "failureType ="
+        ];
+        foreach (var mechanic in forbiddenEntrypointMechanics)
+        {
+            Assert.DoesNotContain(mechanic, entrypoint, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("function Save-ProcessEvidence", forensics, StringComparison.Ordinal);
+        Assert.Contains(
+            "function Invoke-AssemblyLifecycleForensicsSelfTests",
+            forensics,
+            StringComparison.Ordinal);
+        Assert.Contains("--hold-after-unload-ms", forensics, StringComparison.Ordinal);
+        Assert.Contains("--spawn-residual-child-ms", forensics, StringComparison.Ordinal);
+        Assert.Contains("[System.IO.FileShare]::None", forensics, StringComparison.Ordinal);
+        Assert.Contains("function Invoke-IsolatedProcess", processExecution, StringComparison.Ordinal);
+        Assert.Contains("function New-ProcessPhaseResult", resultClassification, StringComparison.Ordinal);
+        Assert.Contains(
+            "function Complete-ResidualChildSelfTestClassification",
+            resultClassification,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "function Complete-MarkerReaderSelfTestClassification",
+            resultClassification,
+            StringComparison.Ordinal);
+        Assert.Contains("function New-AssemblyLifecycleReport", resultClassification, StringComparison.Ordinal);
+        Assert.Contains("function Write-AssemblyLifecycleReport", reportRendering, StringComparison.Ordinal);
+
+        var lifecycleSources = ReadLifecycleSources();
+        string[] authoritativeFunctions =
+        [
+            "Save-ProcessEvidence",
+            "Invoke-IsolatedProcess",
+            "Invoke-AssemblyLifecycleForensicsSelfTests",
+            "New-ProcessPhaseResult",
+            "Complete-ResidualChildSelfTestClassification",
+            "Complete-MarkerReaderSelfTestClassification",
+            "New-AssemblyLifecycleReport",
+            "Write-AssemblyLifecycleReport"
+        ];
+        foreach (var functionName in authoritativeFunctions)
+        {
+            var declaration = $"function {functionName} {{";
+            var firstDeclaration = lifecycleSources.IndexOf(
+                declaration,
+                StringComparison.Ordinal);
+            Assert.True(firstDeclaration >= 0, $"Missing lifecycle function: {functionName}");
+            Assert.Equal(
+                firstDeclaration,
+                lifecycleSources.LastIndexOf(declaration, StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    public void LifecycleSeamValidationHasCanonicalEntrypoint()
+    {
+        var validation = Read("script/test-assembly-lifecycle-seams.ps1");
+
+        Assert.Contains("Invoke-DownKyiTestProject", validation, StringComparison.Ordinal);
+        Assert.Contains(
+            "Language.Parser]::ParseFile",
+            validation,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Complete-MarkerReaderSelfTestClassification",
+            validation,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "DownKyi.Architecture.Tests.AssemblyLifecycleArchitectureTests",
+            validation,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AssemblyLifecycleArchitectureTests.trx",
+            validation,
+            StringComparison.Ordinal);
+        Assert.Contains("if ($result.ExitCode -ne 0)", validation, StringComparison.Ordinal);
+        Assert.Contains(
+            "throw \"Assembly lifecycle seam validation failed",
+            validation,
+            StringComparison.Ordinal);
     }
 
     [Fact]
     public void ResidualChildForensicsPreserveIdentityAndFailClosed()
     {
-        var gate = Read("script/test-assembly-lifecycle.ps1");
+        var gate = ReadLifecycleSources();
         var probe = Read("tools/DownKyi.AssemblyLifecycleProbe/Program.cs");
         string[] requiredGateContract =
         [
@@ -232,10 +355,12 @@ public sealed class AssemblyLifecycleArchitectureTests
     [Fact]
     public void WindowsMarkerReaderSelfTestIsDetailedAndFailsClosed()
     {
-        var source = Read("script/test-assembly-lifecycle.ps1");
+        var source = ReadLifecycleSources();
         string[] requiredContract =
         [
-            "required = $markerReaderSelfTestRequired",
+            "New-MarkerReaderSelfTestState",
+            "-Required $markerReaderSelfTestRequired",
+            "required = $Required",
             "executed = $false",
             "passed = $false",
             "contentionObserved = $false",
@@ -445,6 +570,17 @@ public sealed class AssemblyLifecycleArchitectureTests
         return File.ReadAllText(Path.Combine(
             RepositoryRoot,
             relativePath.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
+    private static string ReadLifecycleSources()
+    {
+        return string.Join(
+            '\n',
+            Read("script/test-assembly-lifecycle.ps1"),
+            Read("script/assembly-lifecycle/forensics.ps1"),
+            Read("script/assembly-lifecycle/process-execution.ps1"),
+            Read("script/assembly-lifecycle/result-classification.ps1"),
+            Read("script/assembly-lifecycle/report-rendering.ps1"));
     }
 
     private static bool IsGeneratedPath(string path)
