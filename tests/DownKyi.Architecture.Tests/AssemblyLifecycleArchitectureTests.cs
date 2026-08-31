@@ -134,8 +134,10 @@ public sealed class AssemblyLifecycleArchitectureTests
             "markerReadErrorType",
             "markerReaderSelfTestPassed",
             "markerReaderSelfTest",
-            "RedirectStandardInput = $true",
-            "$process.StandardInput.Close()",
+            "OwnedProcessLease]::StartAsync",
+            "TransitionBudget]::Start",
+            "ownedTreeQuiescent",
+            "ownedProcessCleanupFailures",
             "Test-XunitReporterContractMutation",
             "reporterContractSelfTestPassed",
             "[System.IO.FileShare]::ReadWrite",
@@ -301,15 +303,19 @@ public sealed class AssemblyLifecycleArchitectureTests
     }
 
     [Fact]
-    public void ResidualChildForensicsPreserveIdentityAndFailClosed()
+    public void LifecycleProcessCorrectnessHasOneLeaseOwner()
     {
         var gate = ReadLifecycleSources();
+        var processExecution = Read("script/assembly-lifecycle/process-execution.ps1");
+        var forensics = Read("script/assembly-lifecycle/forensics.ps1");
+        var lease = Read("tools/DownKyi.ProcessSupervision/OwnedProcessLease.cs");
+        var contracts = Read("tools/DownKyi.ProcessSupervision/ProcessSupervisionContracts.cs");
+        var platform = Read("tools/DownKyi.ProcessSupervision/PlatformProcessContainment.cs");
         var probe = Read("tools/DownKyi.AssemblyLifecycleProbe/Program.cs");
         string[] requiredGateContract =
         [
             "Protect-ProcessDiagnosticText",
-            "Save-ResidualChildEvidence",
-            "Wait-ResidualProcessTree",
+            "Save-OwnedTreeEvidence",
             "residual-children.json",
             "failureType -eq \"ResidualChildProcess\"",
             "residualChildSelfTestPassed",
@@ -327,9 +333,7 @@ public sealed class AssemblyLifecycleArchitectureTests
             "$residualChildSelfTestComplete",
             "$residualChildQuiescenceMilliseconds = 500",
             "$residualChildPollMilliseconds = 25",
-            "\"--spawn-residual-child-ms\"",
-            "$childProcess.Kill($true)",
-            "$childProcess.WaitForExit(5000)"
+            "\"--spawn-residual-child-ms\""
         ];
 
         foreach (var token in requiredGateContract)
@@ -340,6 +344,33 @@ public sealed class AssemblyLifecycleArchitectureTests
         Assert.Contains("--spawn-residual-child-ms", probe, StringComparison.Ordinal);
         Assert.Contains("--child-hold-ms", probe, StringComparison.Ordinal);
         Assert.Contains("UseShellExecute = true", probe, StringComparison.Ordinal);
+        Assert.Contains(
+            "[DownKyi.ProcessSupervision.OwnedProcessLease]::StartAsync",
+            processExecution,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[DownKyi.ProcessSupervision.TransitionBudget]::Start",
+            processExecution,
+            StringComparison.Ordinal);
+        Assert.Contains("public async Task<OwnedProcessOutcome> WaitAsync", lease, StringComparison.Ordinal);
+        Assert.Contains("TerminateAndReapAsync", lease, StringComparison.Ordinal);
+        Assert.Contains("WaitForTreeQuiescenceAsync", lease, StringComparison.Ordinal);
+        Assert.Contains("Task.WhenAll(_standardOutput, _standardError)", lease, StringComparison.Ordinal);
+        Assert.Contains("CleanupFailures", contracts, StringComparison.Ordinal);
+        Assert.Contains("WindowsJobContainmentLease", platform, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            Regex.Count(
+                lease,
+                @"\b_?containment\.Terminate\(\);",
+                RegexOptions.CultureInvariant));
+        Assert.DoesNotContain("[System.Diagnostics.Process]::new", processExecution, StringComparison.Ordinal);
+        Assert.DoesNotContain("Wait-ResidualProcessTree", forensics, StringComparison.Ordinal);
+        Assert.DoesNotContain("Save-ResidualChildEvidence", forensics, StringComparison.Ordinal);
+        Assert.DoesNotContain("$childProcess.Kill", forensics, StringComparison.Ordinal);
+        Assert.DoesNotContain("$childProcess.WaitForExit", forensics, StringComparison.Ordinal);
+        Assert.DoesNotContain("Start-Sleep", processExecution, StringComparison.Ordinal);
+        Assert.DoesNotContain("Stop-Process", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("conhost", gate, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("processName -eq", gate, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(

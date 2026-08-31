@@ -25,6 +25,9 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $solutionPath = Join-Path $repositoryRoot "DownKyi.sln"
 $probeProject = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe/DownKyi.AssemblyLifecycleProbe.csproj"
 $probeAssembly = Join-Path $repositoryRoot "tools/DownKyi.AssemblyLifecycleProbe/bin/$Configuration/net10.0/DownKyi.AssemblyLifecycleProbe.dll"
+$processSupervisionAssembly = Join-Path $repositoryRoot (
+    "tools/DownKyi.ProcessSupervision/bin/$Configuration/net10.0/" +
+    "DownKyi.ProcessSupervision.dll")
 $profileIterations = @{
     Local = 1
     PR = 3
@@ -49,6 +52,7 @@ $script:markerReadRetriesExhaustedCount = 0
 $script:markerReadErrorCount = 0
 $script:markerReadErrorType = $null
 $slowEvidenceCaptureLeadMilliseconds = 1000
+$processCleanupGraceSeconds = 5
 $residualChildQuiescenceMilliseconds = 500
 $residualChildPollMilliseconds = 25
 
@@ -112,6 +116,10 @@ if (-not $NoBuild) {
 if (-not (Test-Path -LiteralPath $probeAssembly -PathType Leaf)) {
     throw "Assembly lifecycle probe was not built: $probeAssembly"
 }
+if (-not (Test-Path -LiteralPath $processSupervisionAssembly -PathType Leaf)) {
+    throw "Process supervision assembly was not built: $processSupervisionAssembly"
+}
+[Reflection.Assembly]::LoadFrom($processSupervisionAssembly) | Out-Null
 
 $allTestProjects = @(
     Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "tests") `

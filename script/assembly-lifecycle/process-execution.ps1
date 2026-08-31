@@ -12,6 +12,8 @@ function Invoke-IsolatedProcess {
         [string[]]$Arguments,
         [hashtable]$Environment = @{},
         [string]$LifecycleMarkerPath,
+        [ValidateRange(1, 3600)]
+        [int]$OperationTimeoutSeconds = $PhaseTimeoutSeconds,
         [double]$EvidenceThresholdSeconds = $SlowPhaseThresholdSeconds
     )
 
@@ -21,23 +23,25 @@ function Invoke-IsolatedProcess {
     $stdoutPath = Join-Path $phaseDirectory "$Phase.stdout.txt"
     $stderrPath = Join-Path $phaseDirectory "$Phase.stderr.txt"
 
-    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $FileName
-    $startInfo.WorkingDirectory = $repositoryRoot
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardInput = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    foreach ($argument in $Arguments) {
-        $startInfo.ArgumentList.Add($argument)
-    }
+    $launchEnvironment = [Collections.Generic.Dictionary[string, string]]::new(
+        [StringComparer]::Ordinal)
     foreach ($entry in $Environment.GetEnumerator()) {
-        $startInfo.Environment[$entry.Key] = [string]$entry.Value
+        $launchEnvironment[$entry.Key] = [string]$entry.Value
     }
 
-    $process = [System.Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
+
+    $launchSpec = [DownKyi.ProcessSupervision.LaunchSpec]::new(
+        $FileName,
+        [string[]]$Arguments,
+        $repositoryRoot,
+        $launchEnvironment,
+        $true)
+    $budget = [DownKyi.ProcessSupervision.TransitionBudget]::Start(
+        [TimeSpan]::FromSeconds($OperationTimeoutSeconds),
+        [TimeSpan]::FromSeconds($processCleanupGraceSeconds))
+    $lease = $null
+    $operationResult = $null
+    $operationFailure = $null
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $timedOut = $false
     $evidence = @()
@@ -60,39 +64,48 @@ function Invoke-IsolatedProcess {
         0,
         $EvidenceThresholdSeconds - ($slowEvidenceCaptureLeadMilliseconds / 1000))
     try {
-        if (-not $process.Start()) {
-            throw "Process did not start for $AssemblyName/$Phase."
-        }
+        $lease = [DownKyi.ProcessSupervision.OwnedProcessLease]::StartAsync(
+            $launchSpec,
+            $budget).GetAwaiter().GetResult()
 
-        $processId = $process.Id
-        $processStartedAt = [DateTimeOffset]$process.StartTime.ToUniversalTime()
-        $process.StandardInput.Close()
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-        while (-not $process.WaitForExit(25)) {
+        $processId = $lease.TargetProcessId
+        $waitTask = $lease.WaitAsync()
+        while (-not $waitTask.Wait(25)) {
             if (-not $slowEvidenceAttempted -and
                 $stopwatch.Elapsed.TotalSeconds -ge $evidenceCaptureThresholdSeconds) {
                 $slowEvidenceTriggeredBeforeThreshold =
                     $stopwatch.Elapsed.TotalSeconds -lt $EvidenceThresholdSeconds
                 $slowEvidenceAttempted = $true
                 $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                $diagnosticProcess = $null
                 try {
-                    $evidencePath = Save-ProcessEvidence `
-                        -Process $process `
-                        -AssemblyName $AssemblyName `
-                        -Iteration $Iteration `
-                        -Phase $Phase `
-                        -Reason "slow-phase"
-                    $evidence += $evidencePath
-                    $slowEvidence += $evidencePath
-                    $slowEvidenceCaptured = $true
-                    $slowEvidenceStatus = "captured"
+                    $diagnosticProcess = Get-Process `
+                        -Id $processId `
+                        -ErrorAction SilentlyContinue
+                    if ($null -eq $diagnosticProcess) {
+                        $slowEvidenceStatus = "process-exited-before-capture"
+                    }
+                    else {
+                        $evidencePath = Save-ProcessEvidence `
+                            -Process $diagnosticProcess `
+                            -AssemblyName $AssemblyName `
+                            -Iteration $Iteration `
+                            -Phase $Phase `
+                            -Reason "slow-phase"
+                        $evidence += $evidencePath
+                        $slowEvidence += $evidencePath
+                        $slowEvidenceCaptured = $true
+                        $slowEvidenceStatus = "captured"
+                    }
                 }
                 catch {
                     $slowEvidenceStatus = "capture-failed"
                     $slowEvidenceErrorType = $_.Exception.GetType().Name
                 }
                 finally {
+                    if ($null -ne $diagnosticProcess) {
+                        $diagnosticProcess.Dispose()
+                    }
                     $captureStopwatch.Stop()
                     $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
                 }
@@ -109,17 +122,26 @@ function Invoke-IsolatedProcess {
                     ([DateTimeOffset]::UtcNow - $teardownObservedAt).TotalSeconds -ge
                         $ExitThresholdSeconds) {
                     $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                    $diagnosticProcess = $null
                     try {
-                        $evidencePath = Save-ProcessEvidence `
-                            -Process $process `
-                            -AssemblyName $AssemblyName `
-                            -Iteration $Iteration `
-                            -Phase $Phase `
-                            -Reason "slow-exit-after-teardown"
-                        $evidence += $evidencePath
-                        $exitEvidence += $evidencePath
+                        $diagnosticProcess = Get-Process `
+                            -Id $processId `
+                            -ErrorAction SilentlyContinue
+                        if ($null -ne $diagnosticProcess) {
+                            $evidencePath = Save-ProcessEvidence `
+                                -Process $diagnosticProcess `
+                                -AssemblyName $AssemblyName `
+                                -Iteration $Iteration `
+                                -Phase $Phase `
+                                -Reason "slow-exit-after-teardown"
+                            $evidence += $evidencePath
+                            $exitEvidence += $evidencePath
+                        }
                     }
                     finally {
+                        if ($null -ne $diagnosticProcess) {
+                            $diagnosticProcess.Dispose()
+                        }
                         $captureStopwatch.Stop()
                         $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
                     }
@@ -127,27 +149,6 @@ function Invoke-IsolatedProcess {
                 }
             }
 
-            if ($stopwatch.Elapsed.TotalSeconds -ge $PhaseTimeoutSeconds) {
-                $timedOut = $true
-                $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-                try {
-                    $evidencePath = Save-ProcessEvidence `
-                        -Process $process `
-                        -AssemblyName $AssemblyName `
-                        -Iteration $Iteration `
-                        -Phase $Phase `
-                        -Reason "timeout"
-                    $evidence += $evidencePath
-                    $timeoutEvidence += $evidencePath
-                }
-                finally {
-                    $captureStopwatch.Stop()
-                    $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
-                }
-                $process.Kill($true)
-                $process.WaitForExit()
-                break
-            }
         }
 
         $stopwatch.Stop()
@@ -158,10 +159,33 @@ function Invoke-IsolatedProcess {
             }
         }
 
-        $processExitedAtUnixMs = ([DateTimeOffset]$process.ExitTime.ToUniversalTime()).
-            ToUnixTimeMilliseconds()
-        $stdout = $stdoutTask.GetAwaiter().GetResult()
-        $stderr = $stderrTask.GetAwaiter().GetResult()
+        $outcome = $null
+        $ownedFailure = $null
+        try {
+            $outcome = $waitTask.GetAwaiter().GetResult()
+        }
+        catch [DownKyi.ProcessSupervision.OwnedProcessExecutionException] {
+            $ownedFailure = $_.Exception
+        }
+
+        $processExitedAtUnixMs = if ($null -ne $outcome) {
+            $outcome.TargetExitedAtUnixMilliseconds
+        }
+        else {
+            $ownedFailure.Failure.TargetExitedAtUnixMilliseconds
+        }
+        $stdout = if ($null -ne $outcome) {
+            $outcome.StandardOutput
+        }
+        else {
+            $ownedFailure.Failure.StandardOutput
+        }
+        $stderr = if ($null -ne $outcome) {
+            $outcome.StandardError
+        }
+        else {
+            $ownedFailure.Failure.StandardError
+        }
         [System.IO.File]::WriteAllText(
             $stdoutPath,
             $stdout,
@@ -170,19 +194,40 @@ function Invoke-IsolatedProcess {
             $stderrPath,
             $stderr,
             [System.Text.UTF8Encoding]::new($false))
-        $childProcessObservation = Wait-ResidualProcessTree `
-                -RootProcessId $processId `
-                -NotBeforeUtc $processStartedAt `
-                -QuiescenceMilliseconds $residualChildQuiescenceMilliseconds `
-                -PollMilliseconds $residualChildPollMilliseconds
-        $observedChildren = @($childProcessObservation.observedChildren)
-        $transientChildren = @($childProcessObservation.transientChildren)
-        $residualChildren = @($childProcessObservation.residualChildren)
+        $ownedTreeQuiescent = if ($null -ne $outcome) {
+            $outcome.TreeQuiescent
+        }
+        else {
+            $ownedFailure.Failure.TreeQuiescent
+        }
+        $ownedFailureKind = if ($null -eq $ownedFailure) {
+            $null
+        }
+        else {
+            $ownedFailure.Failure.Kind.ToString()
+        }
+        $timedOut = $ownedFailureKind -in @(
+            "OperationDeadlineExceeded",
+            "StreamDrainDeadlineExceeded")
+        $residualChildren = if (-not $ownedTreeQuiescent -and
+            $ownedFailureKind -eq "OwnedTreeNotQuiescent") {
+            @([pscustomobject]@{
+                processId = $null
+                parentProcessId = $null
+                name = "owned-process-tree"
+                createdAtUtc = $null
+                containmentId = $ownedFailure.Failure.Ownership.ContainmentId
+                containmentKind = $ownedFailure.Failure.Ownership.ContainmentKind.ToString()
+            })
+        }
+        else {
+            @()
+        }
         if ($residualChildren.Count -gt 0) {
             $captureStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
             try {
-                $residualCapture = Save-ResidualChildEvidence `
-                    -Children $residualChildren `
+                $residualCapture = Save-OwnedTreeEvidence `
+                    -Failure $ownedFailure.Failure `
                     -AssemblyName $AssemblyName `
                     -Iteration $Iteration `
                     -Phase $Phase
@@ -200,12 +245,12 @@ function Invoke-IsolatedProcess {
                 $diagnosticCaptureDurationMs += $captureStopwatch.Elapsed.TotalMilliseconds
             }
         }
-        return [pscustomobject]@{
+        $operationResult = [pscustomobject]@{
             assembly = $AssemblyName
             iteration = $Iteration
             phase = $Phase
             processId = $processId
-            exitCode = $process.ExitCode
+            exitCode = if ($null -ne $outcome) { $outcome.ExitCode } else { 1 }
             durationMs = [Math]::Round($stopwatch.Elapsed.TotalMilliseconds, 3)
             timedOut = $timedOut
             stdout = $stdout
@@ -214,13 +259,11 @@ function Invoke-IsolatedProcess {
                 Replace([System.IO.Path]::DirectorySeparatorChar, '/')
             stderrPath = [System.IO.Path]::GetRelativePath($runRoot, $stderrPath).
                 Replace([System.IO.Path]::DirectorySeparatorChar, '/')
-            observedChildren = $observedChildren
-            transientChildren = $transientChildren
+            observedChildren = @()
+            transientChildren = @()
             residualChildren = $residualChildren
-            childProcessObservationSampleCount =
-                $childProcessObservation.sampleCount
-            childProcessObservationDurationMs =
-                $childProcessObservation.elapsedMilliseconds
+            childProcessObservationSampleCount = 0
+            childProcessObservationDurationMs = 0.0
             residualChildEvidence = @($residualChildEvidence)
             residualChildEvidenceStatus = $residualChildEvidenceStatus
             residualChildEvidenceErrorType = $residualChildEvidenceErrorType
@@ -234,13 +277,54 @@ function Invoke-IsolatedProcess {
             slowEvidenceErrorType = $slowEvidenceErrorType
             slowEvidenceTriggeredBeforeThreshold =
                 $slowEvidenceTriggeredBeforeThreshold
+            ownedTreeQuiescent = $ownedTreeQuiescent
+            ownedProcessFailureKind = $ownedFailureKind
+            ownedProcessCleanupFailures = @(
+                if ($null -ne $ownedFailure) {
+                    $ownedFailure.CleanupFailures | ForEach-Object {
+                        $_.GetType().Name
+                    }
+                }
+            )
+            processOwnership = if ($null -ne $outcome) {
+                $outcome.Ownership
+            }
+            else {
+                $ownedFailure.Failure.Ownership
+            }
             processExitedAtUnixMs = $processExitedAtUnixMs
             observedAtUnixMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         }
     }
-    finally {
-        $process.Dispose()
+    catch {
+        $operationFailure = $_.Exception
     }
+
+    $cleanupFailures = [Collections.Generic.List[Exception]]::new()
+    try {
+        if ($null -ne $lease) {
+            $lease.DisposeAsync().AsTask().GetAwaiter().GetResult()
+        }
+    }
+    catch {
+        $cleanupFailures.Add($_.Exception)
+    }
+    if ($null -ne $operationFailure) {
+        if ($cleanupFailures.Count -gt 0) {
+            throw [AggregateException]::new(
+                "Lifecycle phase and owned child-process cleanup both failed.",
+                @($operationFailure) + $cleanupFailures.ToArray())
+        }
+
+        throw $operationFailure
+    }
+    if ($cleanupFailures.Count -gt 0) {
+        throw [AggregateException]::new(
+            "Lifecycle owned child-process cleanup failed.",
+            $cleanupFailures.ToArray())
+    }
+
+    return $operationResult
 }
 
 function Assert-XunitSynchronousAutomatedReporting {

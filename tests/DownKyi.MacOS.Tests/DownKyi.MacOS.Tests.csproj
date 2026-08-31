@@ -21,6 +21,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\tools\DownKyi.ProcessSupervision\DownKyi.ProcessSupervision.csproj" />
+    <Compile Include="..\ProcessSupervisionTestCases\OwnedProcessLeasePlatformTests.cs" Link="OwnedProcessLeasePlatformTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="Fixtures/**/*.cs" />
   </ItemGroup>
 

@@ -2574,7 +2574,9 @@ type: workflow
 paths:
   - script/audit-lifecycle-ownership.ps1
   - script/test-assembly-lifecycle.ps1
+  - script/assembly-lifecycle
   - tools/DownKyi.AssemblyLifecycleProbe
+  - tools/DownKyi.ProcessSupervision
   - tests/TestInfrastructure
   - tests/DownKyi.Architecture.Tests/AssemblyLifecycleArchitectureTests.cs
   - docs/testing/assembly-lifecycle-owners.json
@@ -2600,9 +2602,9 @@ contracts:
   - Diagnostic capture wall time is reported separately because managed-stack collection perturbs the instrumented phase; slow execution evidence cannot be presented as post-teardown exit evidence.
   - Unexpected stdout/stderr, timeout, residual child process, missing teardown marker or failed process exit blocks the gate.
   - Slow and timed-out Windows processes preserve thread state, wait reason, process tree and a managed stack when `dotnet-stack` is available.
-  - Residual children preserve PID, parent PID, process name, creation time, tree depth and a redacted command line in the phase result plus `residual-children.json`; live managed children also receive thread/tree/stack evidence.
-  - Child processes are classified by bounded liveness, not executable name: identity observed after parent exit is transient when it drains inside the 500 ms quiescence window and residual only when the same PID-plus-creation-time identity survives the boundary. Confirmed residual evidence never changes failure into success.
-  - `ValidateForensics` creates both transient and persistent synthetic children. It fails unless the transient identity is observed and drains without failing the phase, while the persistent identity produces a manifest, `ResidualChildProcess` classification and PID-plus-creation-time cleanup.
+  - `OwnedProcessLease` is the single correctness owner for process start, platform containment, wait, cancellation, timeout, termination, reap, tree quiescence, stream drain and primary-plus-cleanup failure preservation on one caller-owned monotonic budget.
+  - PID, parent PID, process name, creation time, tree depth and redacted command line remain diagnostic observations only; they never authorize containment, termination, cleanup or success.
+  - `ValidateForensics` creates transient and persistent synthetic children. Platform containment must let the transient tree become quiescent, reject the persistent tree as `ResidualChildProcess`, terminate and reap it through the same lease, and preserve a containment-authority manifest.
   - `ValidateForensics` proves both marker-aware managed-stack capture and exclusive marker-lock recovery; formal Windows profiles fail closed unless the detailed self-test reports execution, positive contention count, recovery, parsing, null error and success, and mutation checks reject inconsistent nominally-passed states.
   - Marker self-test phase status, report summary and formal gate consume one complete proof result rather than re-expanding equivalent predicates.
   - Every scanned lifecycle mechanism, including external process creation, maps to a declared owner with explicit start, stop and teardown behavior.

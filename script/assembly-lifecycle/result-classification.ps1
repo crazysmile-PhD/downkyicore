@@ -643,17 +643,19 @@ function Set-ResidualChildSelfTestPersistentObservations {
     $residualPayload = $residualProbe.stdout | ConvertFrom-Json -ErrorAction Stop
     $expectedChildProcessId = [int]$residualPayload.ChildProcessId
     $observedResidualChildren = @($residualProbe.residualChildren)
-    $matchingChild = @(
-        $observedResidualChildren |
-            Where-Object processId -eq $expectedChildProcessId
-    )
     $residualChildSelfTest.observedChildCount =
         $observedResidualChildren.Count
-    $residualChildSelfTest.childObserved = $matchingChild.Count -eq 1
+    $residualChildSelfTest.childObserved =
+        $expectedChildProcessId -gt 0 -and
+        $observedResidualChildren.Count -eq 1 -and
+        $residualProbe.ownedProcessFailureKind -eq "OwnedTreeNotQuiescent"
     $residualChildSelfTest.identityCaptured =
-        $matchingChild.Count -eq 1 -and
-        -not [string]::IsNullOrWhiteSpace($matchingChild[0].name) -and
-        -not [string]::IsNullOrWhiteSpace($matchingChild[0].createdAtUtc)
+        $null -ne $residualProbe.processOwnership -and
+        $residualProbe.processOwnership.OwnershipEstablished -and
+        -not [string]::IsNullOrWhiteSpace(
+            [string]$residualProbe.processOwnership.ContainmentId) -and
+        -not [string]::IsNullOrWhiteSpace(
+            [string]$residualProbe.processOwnership.MembershipId)
     $residualChildSelfTest.evidenceManifestWritten =
         $residualProbe.residualChildEvidenceStatus -eq "captured" -and
         @(
@@ -687,23 +689,12 @@ function Set-ResidualChildSelfTestTransientObservations {
     $transientPayload = $transientProbe.stdout |
         ConvertFrom-Json -ErrorAction Stop
     $expectedTransientProcessId = [int]$transientPayload.ChildProcessId
-    $matchingTransientObservation = @(
-        $transientProbe.observedChildren |
-            Where-Object processId -eq $expectedTransientProcessId
-    )
-    $matchingTransientDrain = @(
-        $transientProbe.transientChildren |
-            Where-Object processId -eq $expectedTransientProcessId
-    )
-    $matchingTransientResidual = @(
-        $transientProbe.residualChildren |
-            Where-Object processId -eq $expectedTransientProcessId
-    )
     $residualChildSelfTest.transientChildObserved =
-        $matchingTransientObservation.Count -eq 1
+        $expectedTransientProcessId -gt 0 -and
+        $transientProbe.ownedTreeQuiescent
     $residualChildSelfTest.transientChildDrained =
-        $matchingTransientDrain.Count -eq 1 -and
-        $matchingTransientResidual.Count -eq 0
+        $transientProbe.ownedTreeQuiescent -and
+        @($transientProbe.residualChildren).Count -eq 0
     $residualChildSelfTest.transientPhasePassed =
         $transientProbePhase.success
     $redactionSample = (

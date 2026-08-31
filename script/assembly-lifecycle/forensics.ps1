@@ -183,82 +183,6 @@ function Get-ProcessTree {
     return $result
 }
 
-function Get-ProcessIdentityKey {
-    param(
-        [Parameter(Mandatory)]
-        [object]$Process
-    )
-
-    return "{0}|{1}" -f $Process.processId, $Process.createdAtUtc
-}
-
-function Wait-ResidualProcessTree {
-    param(
-        [Parameter(Mandatory)]
-        [int]$RootProcessId,
-        [Parameter(Mandatory)]
-        [DateTimeOffset]$NotBeforeUtc,
-        [Parameter(Mandatory)]
-        [ValidateRange(1, 5000)]
-        [int]$QuiescenceMilliseconds,
-        [Parameter(Mandatory)]
-        [ValidateRange(1, 1000)]
-        [int]$PollMilliseconds
-    )
-
-    $observed = [System.Collections.Generic.Dictionary[string, object]]::new(
-        [StringComparer]::Ordinal)
-    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $sampleCount = 0
-    $children = @()
-    do {
-        $children = @(
-            Get-ProcessTree `
-                -RootProcessId $RootProcessId `
-                -NotBeforeUtc $NotBeforeUtc
-        )
-        $sampleCount++
-        foreach ($child in $children) {
-            $observed[(Get-ProcessIdentityKey -Process $child)] = $child
-        }
-
-        if ($children.Count -eq 0 -and $sampleCount -ge 2) {
-            break
-        }
-
-        if ($stopwatch.ElapsedMilliseconds -ge $QuiescenceMilliseconds) {
-            break
-        }
-
-        Start-Sleep -Milliseconds $PollMilliseconds
-    }
-    while ($true)
-    $stopwatch.Stop()
-
-    $residualKeys = [System.Collections.Generic.HashSet[string]]::new(
-        [StringComparer]::Ordinal)
-    foreach ($child in $children) {
-        $null = $residualKeys.Add((Get-ProcessIdentityKey -Process $child))
-    }
-    $transientChildren = @(
-        foreach ($entry in $observed.GetEnumerator()) {
-            if (-not $residualKeys.Contains($entry.Key)) {
-                $entry.Value
-            }
-        }
-    )
-
-    return [pscustomobject]@{
-        observedChildren = @($observed.Values)
-        transientChildren = $transientChildren
-        residualChildren = $children
-        sampleCount = $sampleCount
-        elapsedMilliseconds = [Math]::Round(
-            $stopwatch.Elapsed.TotalMilliseconds,
-            3)
-    }
-}
-
 function Save-ManagedStack {
     param(
         [Parameter(Mandatory)]
@@ -402,10 +326,10 @@ function Save-ProcessEvidence {
         Replace([System.IO.Path]::DirectorySeparatorChar, '/')
 }
 
-function Save-ResidualChildEvidence {
+function Save-OwnedTreeEvidence {
     param(
         [Parameter(Mandatory)]
-        [object[]]$Children,
+        [object]$Failure,
         [Parameter(Mandatory)]
         [string]$AssemblyName,
         [Parameter(Mandatory)]
@@ -417,81 +341,14 @@ function Save-ResidualChildEvidence {
     $directory = Join-Path $evidenceRoot (
         "$AssemblyName/iteration-{0:D4}/{1}-residual-children" -f $Iteration, $Phase)
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
-    $childEvidence = @()
-    $captureErrors = @()
-    foreach ($child in $Children) {
-        $captureState = "exited-before-capture"
-        $processEvidencePath = $null
-        $captureErrorType = $null
-        $childProcess = $null
-        try {
-            $childProcess = Get-Process `
-                -Id $child.processId `
-                -ErrorAction SilentlyContinue
-            if ($null -eq $childProcess) {
-                $captureState = "exited-before-capture"
-            }
-            else {
-                $actualStart = [DateTimeOffset]$childProcess.StartTime.ToUniversalTime()
-                $expectedStart = if (
-                    [string]::IsNullOrWhiteSpace([string]$child.createdAtUtc)
-                ) {
-                    $actualStart
-                }
-                else {
-                    [DateTimeOffset]::Parse(
-                        $child.createdAtUtc,
-                        [System.Globalization.CultureInfo]::InvariantCulture)
-                }
-                if ([Math]::Abs(($actualStart - $expectedStart).TotalSeconds) -gt 1) {
-                    $captureState = "process-identity-changed"
-                    $captureErrorType = "ProcessIdentityChanged"
-                }
-                else {
-                    $processEvidencePath = Save-ProcessEvidence `
-                        -Process $childProcess `
-                        -AssemblyName $AssemblyName `
-                        -Iteration $Iteration `
-                        -Phase $Phase `
-                        -Reason "residual-child-$($child.processId)" `
-                        -SkipManagedStack:(
-                            [string]$child.name -notmatch
-                                '^(?:dotnet|pwsh|testhost|xunit|DownKyi).*\.exe$')
-                    $captureState = "captured"
-                }
-            }
-        }
-        catch [System.InvalidOperationException] {
-            $captureState = "exited-before-capture"
-        }
-        catch {
-            $captureState = "capture-failed"
-            $captureErrorType = $_.Exception.GetType().Name
-        }
-        finally {
-            if ($null -ne $childProcess) {
-                $childProcess.Dispose()
-            }
-        }
-
-        if ($null -ne $captureErrorType) {
-            $captureErrors += $captureErrorType
-        }
-        $childEvidence += [pscustomobject]@{
-            processId = $child.processId
-            createdAtUtc = $child.createdAtUtc
-            captureState = $captureState
-            processEvidencePath = $processEvidencePath
-            errorType = $captureErrorType
-        }
-    }
-
     $manifest = [ordered]@{
         capturedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
-        reason = "residual-child-process"
-        observedChildren = $Children
-        childEvidence = $childEvidence
-        captureErrors = @($captureErrors | Select-Object -Unique)
+        reason = "owned-process-tree-not-quiescent"
+        failureKind = $Failure.Kind.ToString()
+        supervisorProcessId = $Failure.SupervisorProcessId
+        targetProcessId = $Failure.TargetProcessId
+        treeQuiescent = $Failure.TreeQuiescent
+        ownership = $Failure.Ownership
     }
     $manifestPath = Join-Path $directory "residual-children.json"
     $manifest |
@@ -500,18 +357,7 @@ function Save-ResidualChildEvidence {
     return [pscustomobject]@{
         evidencePath = [System.IO.Path]::GetRelativePath($runRoot, $directory).
             Replace([System.IO.Path]::DirectorySeparatorChar, '/')
-        capturedChildCount = @(
-            $childEvidence | Where-Object captureState -eq "captured"
-        ).Count
-        exitedBeforeCaptureCount = @(
-            $childEvidence | Where-Object captureState -eq "exited-before-capture"
-        ).Count
-        errorType = if ($captureErrors.Count -eq 0) {
-            $null
-        }
-        else {
-            [string]$captureErrors[0]
-        }
+        errorType = $null
     }
 }
 
@@ -723,7 +569,9 @@ function Invoke-AssemblyLifecycleForensicsSelfTests {
                     $probeAssembly,
                     "--spawn-residual-child-ms",
                     "20000"
-                )
+                ) `
+                -OperationTimeoutSeconds 1 `
+                -EvidenceThresholdSeconds 60
             $residualProbePhase = New-ProcessPhaseResult -ProcessResult $residualProbe
             $observedResidualChildren = @($residualProbe.residualChildren)
             Set-ResidualChildSelfTestPersistentObservations `
@@ -754,46 +602,11 @@ function Invoke-AssemblyLifecycleForensicsSelfTests {
             $residualChildSelfTest.errorType = $_.Exception.GetType().Name
         }
         finally {
-            $cleanupCompleted = $true
-            foreach ($child in $observedResidualChildren) {
-                $childProcess = $null
-                try {
-                    $childProcess = Get-Process `
-                        -Id $child.processId `
-                        -ErrorAction SilentlyContinue
-                    if ($null -eq $childProcess) {
-                        continue
-                    }
-
-                    $actualStart = [DateTimeOffset]$childProcess.StartTime.ToUniversalTime()
-                    $expectedStart = [DateTimeOffset]::Parse(
-                        $child.createdAtUtc,
-                        [System.Globalization.CultureInfo]::InvariantCulture)
-                    if ([Math]::Abs(($actualStart - $expectedStart).TotalSeconds) -gt 1) {
-                        $cleanupCompleted = $false
-                        continue
-                    }
-
-                    $childProcess.Kill($true)
-                    if (-not $childProcess.WaitForExit(5000)) {
-                        $cleanupCompleted = $false
-                    }
-                }
-                catch {
-                    $cleanupCompleted = $false
-                    if ($null -eq $residualChildSelfTest.errorType) {
-                        $residualChildSelfTest.errorType =
-                            $_.Exception.GetType().Name
-                    }
-                }
-                finally {
-                    if ($null -ne $childProcess) {
-                        $childProcess.Dispose()
-                    }
-                }
-            }
-
-            $residualChildSelfTest.cleanupCompleted = $cleanupCompleted
+            $residualChildSelfTest.cleanupCompleted =
+                $null -ne $residualProbe -and
+                @($residualProbe.ownedProcessCleanupFailures).Count -eq 0 -and
+                $null -ne $transientProbe -and
+                @($transientProbe.ownedProcessCleanupFailures).Count -eq 0
             $residualChildSelfTestStopwatch.Stop()
         }
 

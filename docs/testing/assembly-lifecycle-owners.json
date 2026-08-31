@@ -279,6 +279,21 @@
       ]
     },
     {
+      "id": "owned-process-lease",
+      "paths": [
+        "tools/DownKyi.ProcessSupervision/**"
+      ],
+      "owner": "OwnedProcessLease",
+      "start": "OwnedProcessLease starts one inert supervisor and establishes platform containment before authorizing its target.",
+      "stop": "The caller supplies cancellation and one monotonic TransitionBudget; OwnedProcessLease waits, terminates and reaps only its contained process tree.",
+      "teardown": "OwnedProcessLease preserves the primary failure together with bounded termination, reap, quiescence and stream-drain cleanup failures; SupervisorHost executes only under that lease authority.",
+      "allowedMechanisms": [
+        "external_process",
+        "host_lifecycle",
+        "synchronous_cleanup"
+      ]
+    },
+    {
       "id": "lifecycle-probe",
       "paths": [
         "tools/DownKyi.AssemblyLifecycleProbe/**"
