@@ -30,6 +30,8 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     private const int VideoNumberInPage = 30;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _downloadCancellation;
+
+    public DownKyiAsyncCommandGate DownloadCommandGate { get; } = new();
     private bool _isLoadingPage;
     private bool _hasMoreHistory = true;
     private int _loadVersion;
@@ -237,7 +239,10 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     private DownKyiAsyncDelegateCommand? _addToDownloadCommand;
 
     public DownKyiAsyncDelegateCommand AddToDownloadCommand =>
-        _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(true), _logger);
+        _addToDownloadCommand ??= new DownKyiAsyncDelegateCommand(
+            () => AddToDownloadAsync(true),
+            _logger,
+            executionGate: DownloadCommandGate);
 
     /// <summary>
     /// 添加选中项到下载列表事件
@@ -246,7 +251,15 @@ internal class ViewMyHistoryViewModel : ViewModelBase
     private DownKyiAsyncDelegateCommand? _addAllToDownloadCommand;
 
     public DownKyiAsyncDelegateCommand AddAllToDownloadCommand =>
-        _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(() => AddToDownloadAsync(false), _logger);
+        _addAllToDownloadCommand ??= new DownKyiAsyncDelegateCommand(
+            () => AddToDownloadAsync(false),
+            _logger,
+            executionGate: DownloadCommandGate);
+
+    private RelayCommand? _cancelDownloadPreparationCommand;
+
+    public RelayCommand CancelDownloadPreparationCommand =>
+        _cancelDownloadPreparationCommand ??= new RelayCommand(() => _downloadCancellation?.Cancel());
 
     private DownKyiAsyncDelegateCommand? _loadMoreCommand;
 

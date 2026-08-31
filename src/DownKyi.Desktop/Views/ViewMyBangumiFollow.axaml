@@ -292,11 +292,18 @@
                     Foreground="{DynamicResource BrushTextDark}"
                     IsChecked="{Binding IsSelectAll, Mode=TwoWay}" />
 
-                <custom:CustomPager
+                <Grid
                     Grid.Column="1"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    DataContext="{Binding Pager}" />
+                    IsVisible="{Binding !DownloadCommandGate.IsExecuting}">
+                    <custom:CustomPager DataContext="{Binding Pager}" />
+                </Grid>
+
+                <custom:DownloadPreparationStatus
+                    Grid.Column="1"
+                    CancelCommand="{Binding CancelDownloadPreparationCommand}"
+                    IsActive="{Binding DownloadCommandGate.IsExecuting}" />
 
                 <Button
                     Grid.Column="2"

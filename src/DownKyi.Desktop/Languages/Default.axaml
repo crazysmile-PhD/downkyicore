@@ -91,6 +91,7 @@
     <!--  Publication  -->
     <system:String x:Key="DownloadSelectedPublication">下载选中项</system:String>
     <system:String x:Key="DownloadAllPublication">下载全部</system:String>
+    <system:String x:Key="PreparingDownloads">正在添加到下载列表…</system:String>
     <system:String x:Key="PublicationWait">请稍等，马上就好~</system:String>
     
     <!--  Friend  -->

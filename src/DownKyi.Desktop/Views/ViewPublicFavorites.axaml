@@ -263,8 +263,13 @@
                     Content="{DynamicResource AddAllToDownload}"
                     FontSize="12"
                     Foreground="{DynamicResource BrushText}" />
-            </StackPanel>
 
+                <custom:DownloadPreparationStatus
+                    Margin="0,12,0,0"
+                    CancelCommand="{Binding CancelDownloadPreparationCommand}"
+                    IsActive="{Binding DownloadCommandGate.IsExecuting}"
+                    Orientation="Vertical" />
+            </StackPanel>
 
             <!--  右侧内容区  -->
             <ListBox

@@ -16,6 +16,7 @@ namespace DownKyi.ViewModels.DownloadManager;
 
 internal class ViewDownloadFinishedViewModel : ViewModelBase
 {
+    private readonly DownKyiAsyncCommandGate _listMutationCommandGate = new();
     public const string Tag = "PageDownloadManagerDownloadFinished";
 
     private readonly IDownloadManagerCoordinator _downloadManagerCoordinator;
@@ -126,7 +127,10 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     private DownKyiAsyncDelegateCommand? _loadMoreCommand;
 
     public DownKyiAsyncDelegateCommand LoadMoreCommand =>
-        _loadMoreCommand ??= new DownKyiAsyncDelegateCommand(LoadNextPageAsync, _logger);
+        _loadMoreCommand ??= new DownKyiAsyncDelegateCommand(
+            LoadNextPageAsync,
+            _logger,
+            executionGate: _listMutationCommandGate);
 
     private Task LoadNextPageAsync() => LoadNextPageAsync(retryIfBusy: false);
 
@@ -176,7 +180,11 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
 
     // 清空下载完成列表事件
     private DownKyiAsyncDelegateCommand? _clearAllDownloadedCommand;
-    public DownKyiAsyncDelegateCommand ClearAllDownloadedCommand => _clearAllDownloadedCommand ??= new DownKyiAsyncDelegateCommand(ExecuteClearAllDownloadedCommand, _logger);
+    public DownKyiAsyncDelegateCommand ClearAllDownloadedCommand =>
+        _clearAllDownloadedCommand ??= new DownKyiAsyncDelegateCommand(
+            ExecuteClearAllDownloadedCommand,
+            _logger,
+            executionGate: _listMutationCommandGate);
 
     /// <summary>
     /// 清空下载完成列表事件
@@ -247,7 +255,11 @@ internal class ViewDownloadFinishedViewModel : ViewModelBase
     // 删除事件
     private DownKyiAsyncDelegateCommand<DownloadedItem>? _removeVideoCommand;
 
-    public DownKyiAsyncDelegateCommand<DownloadedItem> RemoveVideoCommand => _removeVideoCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(ExecuteRemoveVideoCommand, _logger);
+    public DownKyiAsyncDelegateCommand<DownloadedItem> RemoveVideoCommand =>
+        _removeVideoCommand ??= new DownKyiAsyncDelegateCommand<DownloadedItem>(
+            ExecuteRemoveVideoCommand,
+            _logger,
+            executionGate: _listMutationCommandGate);
 
     /// <summary>
     /// 删除事件

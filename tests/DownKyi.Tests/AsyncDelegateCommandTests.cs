@@ -112,6 +112,51 @@ public sealed class AsyncDelegateCommandTests
         Assert.Equal(1, Volatile.Read(ref executionCount));
     }
 
+    [Fact]
+    public async Task SharedGateDisablesSiblingCommandAndRejectsOverlappingExecution()
+    {
+        var gate = new DownKyiAsyncCommandGate();
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstExecutionCount = 0;
+        var secondExecutionCount = 0;
+        var first = new DownKyiAsyncDelegateCommand(
+            async () =>
+            {
+                Interlocked.Increment(ref firstExecutionCount);
+                firstStarted.TrySetResult();
+                await releaseFirst.Task.ConfigureAwait(true);
+            },
+            new RecordingLogger(),
+            executionGate: gate);
+        var second = new DownKyiAsyncDelegateCommand(
+            () =>
+            {
+                Interlocked.Increment(ref secondExecutionCount);
+                return Task.CompletedTask;
+            },
+            new RecordingLogger(),
+            executionGate: gate);
+        var firstCompletion = ObserveCompletion(first);
+
+        first.Execute(null);
+        await firstStarted.Task.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.True(gate.IsExecuting);
+        Assert.False(first.CanExecute(null));
+        Assert.False(second.CanExecute(null));
+        second.Execute(null);
+        Assert.Equal(0, Volatile.Read(ref secondExecutionCount));
+
+        releaseFirst.TrySetResult();
+        await firstCompletion.WaitAsync(TestContext.Current.CancellationToken).ConfigureAwait(true);
+
+        Assert.False(gate.IsExecuting);
+        Assert.True(first.CanExecute(null));
+        Assert.True(second.CanExecute(null));
+        Assert.Equal(1, Volatile.Read(ref firstExecutionCount));
+    }
+
     private static Task ObserveCompletion(DownKyiAsyncDelegateCommand command)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
