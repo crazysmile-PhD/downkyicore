@@ -67,6 +67,11 @@ public sealed record ProcessCleanupFailure
         string errorType,
         string message)
     {
+        if (!Enum.IsDefined(kind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
+        }
+
         ArgumentException.ThrowIfNullOrWhiteSpace(errorType);
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
         Kind = kind;

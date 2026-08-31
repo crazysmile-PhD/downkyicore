@@ -274,6 +274,20 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
     }
 
     [Fact]
+    public void UndefinedCleanupFailureCannotEnterOperationResult()
+    {
+        var clock = new ManualMonotonicTimeProvider();
+        using var cancellation = new CancellationTokenSource();
+        var operation = Operation(clock, cancellation.Token);
+        var backendResult = operation.BackendResults.Succeeded(
+            "backend evidence");
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => operation.FromBackend(
+            backendResult,
+            UndefinedCleanupFailures()));
+    }
+
+    [Fact]
     public void FailureFamiliesCannotRepresentContradictoryAuthorityKinds()
     {
         var clock = new ManualMonotonicTimeProvider();
@@ -379,6 +393,14 @@ public sealed class ProcessContainmentOperationAuthorityBehaviorTests
             kind,
             nameof(InvalidOperationException),
             detail);
+    }
+
+    private static IEnumerable<ProcessCleanupFailure> UndefinedCleanupFailures()
+    {
+        yield return new ProcessCleanupFailure(
+            (ProcessCleanupFailureKind)int.MaxValue,
+            nameof(InvalidOperationException),
+            "undefined cleanup failure");
     }
 
     private sealed class ManualMonotonicTimeProvider : TimeProvider
