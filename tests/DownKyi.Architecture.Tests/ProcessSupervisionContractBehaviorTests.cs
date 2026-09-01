@@ -217,6 +217,20 @@ public sealed class ProcessSupervisionContractBehaviorTests
         Assert.True(outcome.Proof.FormalGatePassed);
     }
 
+    [Fact]
+    public void UndefinedCleanupFailureCannotEnterSupervisionOutcome()
+    {
+        var primary = Primary(
+            ProcessPrimaryFailureKind.ExecutionFailure,
+            authoritySequence: 1);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ProcessSupervisionOutcome(
+                primary,
+                ProveAll().Build(),
+                UndefinedCleanupFailures()));
+    }
+
     private static ProcessTerminalCandidate Primary(
         ProcessPrimaryFailureKind kind,
         long authoritySequence)
@@ -250,6 +264,14 @@ public sealed class ProcessSupervisionContractBehaviorTests
         }
 
         return builder;
+    }
+
+    private static IEnumerable<ProcessCleanupFailure> UndefinedCleanupFailures()
+    {
+        yield return new ProcessCleanupFailure(
+            (ProcessCleanupFailureKind)int.MaxValue,
+            nameof(InvalidOperationException),
+            "undefined cleanup failure");
     }
 
     private sealed class ManualMonotonicTimeProvider : TimeProvider
