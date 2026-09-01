@@ -386,7 +386,21 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Run native recovery tooling regressions
-        run: dotnet test tooling/tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj -c Release
+        shell: pwsh
+        run: >
+          ./tooling/script/test-project.ps1
+          -ProjectPath ./tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj
+          -Configuration Release
+          -ResultsDirectory ./artifacts/test-results/macos-recovery-${{ matrix.cpu }}
+      - name: Upload recovery tooling test results and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovery-tooling-test-results-${{ matrix.cpu }}
+          path: |
+            tooling/artifacts/test-results/macos-recovery-${{ matrix.cpu }}
+            tooling/artifacts/test-flight-recorder
+          if-no-files-found: ignore
       - name: Install Python
         uses: actions/setup-python@v6
         with:
