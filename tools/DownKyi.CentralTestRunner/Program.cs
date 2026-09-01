@@ -21,6 +21,31 @@ internal static class Program
             return 0;
         }
 
+        if (args.Length > 1 && string.Equals(args[0], "fixture-hold-marker", StringComparison.Ordinal))
+        {
+            await File.WriteAllTextAsync(args[1], Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .ConfigureAwait(false);
+            await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            return 0;
+        }
+
+        if (args.Length > 4 && string.Equals(args[0], "fixture-sensitive-hold", StringComparison.Ordinal))
+        {
+            await Console.Out.WriteLineAsync($"Authorization: Bearer {args[1]}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync(
+                $"authenticated=https://example.invalid/video?access_token={args[2]}&mid={args[3]}")
+                .ConfigureAwait(false);
+            await Console.Out.WriteLineAsync(
+                $"personal-path={Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)}")
+                .ConfigureAwait(false);
+            await Console.Error.WriteLineAsync($"Cookie: SESSDATA={args[4]}; bili_jct={args[1]}")
+                .ConfigureAwait(false);
+            await Console.Out.FlushAsync().ConfigureAwait(false);
+            await Console.Error.FlushAsync().ConfigureAwait(false);
+            await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(false);
+            return 0;
+        }
+
         using var cancellation = new CancellationTokenSource();
         Console.CancelKeyPress += (_, eventArgs) =>
         {

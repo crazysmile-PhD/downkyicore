@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Xml.Linq;
 
 namespace DownKyi.CentralTestRunner;
@@ -7,23 +8,26 @@ namespace DownKyi.CentralTestRunner;
 internal sealed record TestProjectDefinition(
     string Project,
     string[] Platforms,
-    bool UseInProcessXunit);
+    string? InProcessTargetFramework)
+{
+    public bool UseInProcessXunit => InProcessTargetFramework is not null;
+}
+
+internal sealed record TestRunnerPolicyDocument(
+    int SchemaVersion,
+    TestRunnerPolicyProject[] Projects);
+
+internal sealed record TestRunnerPolicyProject(
+    string Project,
+    string Runner,
+    string? TargetFramework);
 
 internal static class CentralTestCommand
 {
-    private static readonly TestProjectDefinition[] Projects =
-    [
-        new("tests/DownKyi.Application.Tests/DownKyi.Application.Tests.csproj", ["Windows", "Linux", "macOS"], false),
-        new("tests/DownKyi.Architecture.Tests/DownKyi.Architecture.Tests.csproj", ["Windows", "Linux", "macOS"], false),
-        new("tests/DownKyi.Core.Tests/DownKyi.Core.Tests.csproj", ["Windows", "Linux", "macOS"], false),
-        new("tests/DownKyi.Desktop.Tests/DownKyi.Desktop.Tests.csproj", ["Windows", "Linux", "macOS"], true),
-        new("tests/DownKyi.Domain.Tests/DownKyi.Domain.Tests.csproj", ["Windows", "Linux", "macOS"], false),
-        new("tests/DownKyi.Infrastructure.Tests/DownKyi.Infrastructure.Tests.csproj", ["Windows", "Linux", "macOS"], false),
-        new("tests/DownKyi.Linux.Tests/DownKyi.Linux.Tests.csproj", ["Linux"], false),
-        new("tests/DownKyi.MacOS.Tests/DownKyi.MacOS.Tests.csproj", ["macOS"], false),
-        new("tests/DownKyi.Tests/DownKyi.Tests.csproj", ["Windows", "Linux", "macOS"], true),
-        new("tests/DownKyi.Windows.Tests/DownKyi.Windows.Tests.csproj", ["Windows"], false)
-    ];
+    private static readonly JsonSerializerOptions PolicyJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
     {
@@ -45,12 +49,14 @@ internal static class CentralTestCommand
         CommandOptions options,
         CancellationToken cancellationToken)
     {
+        var repositoryRoot = Path.GetFullPath(options.RepositoryRoot);
+        var projects = DiscoverProjects(repositoryRoot);
         var platform = GetCurrentPlatform();
-        var selected = Projects
+        var selected = projects
             .Where(project => project.Platforms.Contains(platform, StringComparer.Ordinal))
             .ToArray();
 
-        Console.WriteLine($"Selected {selected.Length} of {Projects.Length} test projects for '{platform}'.");
+        Console.WriteLine($"Selected {selected.Length} of {projects.Length} test projects for '{platform}'.");
         foreach (var project in selected)
         {
             var projectOptions = options with
@@ -59,7 +65,7 @@ internal static class CentralTestCommand
                 TrxName = $"{Path.GetFileNameWithoutExtension(project.Project)}.trx",
                 Classes = []
             };
-            var exitCode = await RunProjectAsync(projectOptions, cancellationToken).ConfigureAwait(false);
+            var exitCode = await RunProjectAsync(projectOptions, cancellationToken, projects).ConfigureAwait(false);
             if (exitCode != 0)
             {
                 return exitCode;
@@ -72,7 +78,8 @@ internal static class CentralTestCommand
 
     private static async Task<int> RunProjectAsync(
         CommandOptions options,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<TestProjectDefinition>? discoveredProjects = null)
     {
         if (string.IsNullOrWhiteSpace(options.Project))
         {
@@ -81,7 +88,7 @@ internal static class CentralTestCommand
 
         var repositoryRoot = Path.GetFullPath(options.RepositoryRoot);
         var relativeProject = NormalizeProject(repositoryRoot, options.Project);
-        var definition = Projects.SingleOrDefault(project =>
+        var definition = (discoveredProjects ?? DiscoverProjects(repositoryRoot)).SingleOrDefault(project =>
             string.Equals(project.Project, relativeProject, StringComparison.Ordinal));
         if (definition is null)
         {
@@ -101,6 +108,16 @@ internal static class CentralTestCommand
             throw new FileNotFoundException("Allowlisted test project is missing.", relativeProject);
         }
 
+        var resultsDirectory = string.IsNullOrWhiteSpace(options.ResultsDirectory)
+            ? Path.Combine(repositoryRoot, "artifacts", "test-results")
+            : Path.GetFullPath(options.ResultsDirectory, repositoryRoot);
+        var trxName = string.IsNullOrWhiteSpace(options.TrxName)
+            ? $"{Path.GetFileNameWithoutExtension(relativeProject)}.trx"
+            : ValidateTrxName(options.TrxName);
+        var trxPath = Path.Combine(resultsDirectory, trxName);
+        Directory.CreateDirectory(resultsDirectory);
+        File.Delete(trxPath);
+
         if (!options.NoBuild)
         {
             var buildExitCode = await BuildProjectAsync(
@@ -114,18 +131,12 @@ internal static class CentralTestCommand
             }
         }
 
-        var resultsDirectory = string.IsNullOrWhiteSpace(options.ResultsDirectory)
-            ? Path.Combine(repositoryRoot, "artifacts", "test-results")
-            : Path.GetFullPath(options.ResultsDirectory, repositoryRoot);
-        var trxName = string.IsNullOrWhiteSpace(options.TrxName)
-            ? $"{Path.GetFileNameWithoutExtension(relativeProject)}.trx"
-            : ValidateTrxName(options.TrxName);
-        var trxPath = Path.Combine(resultsDirectory, trxName);
-        Directory.CreateDirectory(resultsDirectory);
-        File.Delete(trxPath);
-
         var startInfo = definition.UseInProcessXunit
-            ? CreateInProcessXunitStartInfo(projectPath, options, trxPath)
+            ? CreateInProcessXunitStartInfo(
+                projectPath,
+                definition.InProcessTargetFramework!,
+                options,
+                trxPath)
             : CreateVstestStartInfo(projectPath, options, resultsDirectory, trxName);
         startInfo.WorkingDirectory = repositoryRoot;
         var evidenceDirectory = string.IsNullOrWhiteSpace(options.EvidenceDirectory)
@@ -180,26 +191,48 @@ internal static class CentralTestCommand
         bool noRestore,
         CancellationToken cancellationToken)
     {
-        using var process = new Process
+        var startInfo = new ProcessStartInfo("dotnet")
         {
-            StartInfo = new ProcessStartInfo("dotnet")
-            {
-                UseShellExecute = false
-            }
+            UseShellExecute = false
         };
-        process.StartInfo.ArgumentList.Add("build");
-        process.StartInfo.ArgumentList.Add(projectPath);
-        process.StartInfo.ArgumentList.Add("-c");
-        process.StartInfo.ArgumentList.Add(configuration);
-        process.StartInfo.ArgumentList.Add("-nodeReuse:false");
-        process.StartInfo.ArgumentList.Add("-p:UseSharedCompilation=false");
+        startInfo.ArgumentList.Add("build");
+        startInfo.ArgumentList.Add(projectPath);
+        startInfo.ArgumentList.Add("-c");
+        startInfo.ArgumentList.Add(configuration);
+        startInfo.ArgumentList.Add("-nodeReuse:false");
+        startInfo.ArgumentList.Add("-p:UseSharedCompilation=false");
         if (noRestore)
         {
-            process.StartInfo.ArgumentList.Add("--no-restore");
+            startInfo.ArgumentList.Add("--no-restore");
         }
 
+        return await RunBuildProcessAsync(startInfo, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<int> RunBuildProcessAsync(
+        ProcessStartInfo startInfo,
+        CancellationToken cancellationToken,
+        TimeSpan? cleanupTimeout = null)
+    {
+        using var process = new Process { StartInfo = startInfo };
         process.Start();
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            await process.WaitForExitAsync()
+                .WaitAsync(cleanupTimeout ?? TimeSpan.FromSeconds(5))
+                .ConfigureAwait(false);
+            throw;
+        }
+
         return process.ExitCode;
     }
 
@@ -248,6 +281,7 @@ internal static class CentralTestCommand
 
     private static ProcessStartInfo CreateInProcessXunitStartInfo(
         string projectPath,
+        string targetFramework,
         CommandOptions options,
         string? trxPath)
     {
@@ -264,7 +298,7 @@ internal static class CentralTestCommand
             projectDirectory,
             "bin",
             options.Configuration,
-            "net10.0",
+            targetFramework,
             $"{assemblyName}.dll");
         if (!File.Exists(assemblyPath))
         {
@@ -309,6 +343,125 @@ internal static class CentralTestCommand
     {
         var fullPath = Path.GetFullPath(project, repositoryRoot);
         return Path.GetRelativePath(repositoryRoot, fullPath).Replace('\\', '/');
+    }
+
+    internal static TestProjectDefinition[] DiscoverProjects(string repositoryRoot)
+    {
+        var testsDirectory = Path.Combine(repositoryRoot, "tests");
+        if (!Directory.Exists(testsDirectory))
+        {
+            throw new DirectoryNotFoundException($"The repository test directory is missing: {testsDirectory}");
+        }
+
+        var policyPath = Path.Combine(repositoryRoot, "docs", "testing", "test-runner-policy.json");
+        if (!File.Exists(policyPath))
+        {
+            throw new FileNotFoundException("The test runner policy is missing.", policyPath);
+        }
+
+        var policy = JsonSerializer.Deserialize<TestRunnerPolicyDocument>(
+            File.ReadAllText(policyPath),
+            PolicyJsonOptions) ?? throw new InvalidDataException("The test runner policy is empty.");
+        if (policy.SchemaVersion != 1 || policy.Projects is null)
+        {
+            throw new InvalidDataException("The test runner policy schema is unsupported.");
+        }
+
+        var policies = new Dictionary<string, TestRunnerPolicyProject>(StringComparer.Ordinal);
+        foreach (var entry in policy.Projects)
+        {
+            var project = NormalizeProject(repositoryRoot, entry.Project);
+            if (!policies.TryAdd(project, entry))
+            {
+                throw new InvalidDataException($"The test runner policy contains duplicate project '{project}'.");
+            }
+        }
+
+        var projects = Directory.EnumerateFiles(
+                testsDirectory,
+                "*.Tests.csproj",
+                SearchOption.AllDirectories)
+            .Where(path => !IsBuildOutput(path))
+            .Order(StringComparer.Ordinal)
+            .Select(path =>
+            {
+                var project = NormalizeProject(repositoryRoot, path);
+                var platforms = ReadDeclaredPlatforms(path, project);
+                policies.TryGetValue(project, out var runnerPolicy);
+                if (runnerPolicy is not null &&
+                    !string.Equals(runnerPolicy.Runner, "xunit-in-process", StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        $"Test project '{project}' has unsupported runner '{runnerPolicy.Runner}'.");
+                }
+                if (runnerPolicy is not null && string.IsNullOrWhiteSpace(runnerPolicy.TargetFramework))
+                {
+                    throw new InvalidDataException(
+                        $"Test project '{project}' requires a target framework for xunit-in-process.");
+                }
+
+                policies.Remove(project);
+                return new TestProjectDefinition(
+                    project,
+                    platforms,
+                    runnerPolicy?.TargetFramework);
+            })
+            .ToArray();
+
+        if (policies.Count > 0)
+        {
+            throw new InvalidDataException(
+                $"The test runner policy references unknown project(s): {string.Join(", ", policies.Keys.Order(StringComparer.Ordinal))}");
+        }
+
+        return projects;
+    }
+
+    private static string[] ReadDeclaredPlatforms(string projectPath, string projectIdentity)
+    {
+        var document = XDocument.Load(projectPath);
+        var declarations = document
+            .Descendants()
+            .Where(element => string.Equals(
+                element.Name.LocalName,
+                "DownKyiTestPlatforms",
+                StringComparison.Ordinal))
+            .ToArray();
+        if (declarations.Length != 1)
+        {
+            throw new InvalidDataException(
+                $"Test project '{projectIdentity}' must declare exactly one DownKyiTestPlatforms value.");
+        }
+
+        var declaration = declarations[0];
+        if (declaration.Attributes().Any(attribute =>
+                string.Equals(attribute.Name.LocalName, "Condition", StringComparison.Ordinal)) ||
+            declaration.Parent?.Attributes().Any(attribute =>
+                string.Equals(attribute.Name.LocalName, "Condition", StringComparison.Ordinal)) == true)
+        {
+            throw new InvalidDataException(
+                $"Test project '{projectIdentity}' must declare DownKyiTestPlatforms unconditionally.");
+        }
+
+        var platforms = declaration.Value.Split(';')
+            .Select(value => value.Trim())
+            .ToArray();
+        if (platforms.Length == 0 ||
+            platforms.Any(string.IsNullOrWhiteSpace) ||
+            platforms.Distinct(StringComparer.Ordinal).Count() != platforms.Length)
+        {
+            throw new InvalidDataException(
+                $"Test project '{projectIdentity}' has invalid DownKyiTestPlatforms metadata.");
+        }
+
+        return platforms;
+    }
+
+    private static bool IsBuildOutput(string path)
+    {
+        return path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(segment => string.Equals(segment, "bin", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(segment, "obj", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string GetCurrentPlatform()
