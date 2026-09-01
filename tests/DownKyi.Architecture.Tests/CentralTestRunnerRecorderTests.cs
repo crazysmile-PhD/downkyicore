@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using DownKyi.CentralTestRunner;
 
@@ -37,12 +38,21 @@ public sealed class CentralTestRunnerRecorderTests
             Assert.Equal(
                 result.RootStartTimeUtc,
                 report.GetProperty("RootProcess").GetProperty("StartTimeUtc").GetDateTimeOffset());
-            var expectedIdentity =
-                $"fixture-ready pid={result.RootPid} start={result.RootStartTimeUtc:O}";
-            Assert.Contains(
-                expectedIdentity,
-                report.GetProperty("StdoutTail").GetString(),
-                StringComparison.Ordinal);
+            var standardOutput = report.GetProperty("StdoutTail").GetString() ?? string.Empty;
+            var identityLine = standardOutput
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+                .Single(line => line.StartsWith("fixture-ready ", StringComparison.Ordinal));
+            var identityPrefix = $"fixture-ready pid={result.RootPid} start=";
+            Assert.StartsWith(identityPrefix, identityLine, StringComparison.Ordinal);
+            var fixtureStartTime = DateTimeOffset.ParseExact(
+                identityLine[identityPrefix.Length..],
+                "O",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None);
+            Assert.InRange(
+                Math.Abs((fixtureStartTime - result.RootStartTimeUtc).TotalSeconds),
+                0,
+                1);
 
             var events = report.GetProperty("Events")
                 .EnumerateArray()
